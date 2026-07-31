@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useRef, useState, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { X, Zap, Send, Clock, Pencil, Trash2, Paperclip, RotateCcw } from 'lucide-react';
@@ -60,34 +60,62 @@ function QueuedRow({
   const interruptToggle = useInterruptToggleEntry();
   const fileCount = message.files?.length ?? 0;
   const isRecovered = message.recoverySteerId != null;
+  const actionPendingRef = useRef(false);
+  const [actionPending, setActionPending] = useState(false);
+  /** A recovered item has a replayable parked source. Edit/remove must first
+   * cancel that source by receipt; local-only rows settle synchronously through
+   * the same control. The ref closes the pre-render double-click window. */
+  const afterDiscard = useCallback(
+    (action: () => void) => {
+      if (actionPendingRef.current) {
+        return;
+      }
+      actionPendingRef.current = true;
+      setActionPending(true);
+      void (async () => {
+        let discarded = false;
+        try {
+          discarded = await steering.discardQueued(message);
+        } catch {
+          // The steering hook reports request failures and leaves the row in
+          // place. Keep this guard for test/custom control implementations.
+        }
+        if (!discarded) {
+          actionPendingRef.current = false;
+          setActionPending(false);
+          return;
+        }
+        action();
+      })();
+    },
+    [message, steering],
+  );
   // A recovered item is consumed atomically only when it starts a normal
-  // generation. Re-steering/editing/removing it would leave or duplicate the
-  // parked server source, so keep the safe Send-now path until that handoff.
+  // generation. Re-steering it would leave or duplicate the parked source;
+  // Edit/remove are safe because `afterDiscard` tombstones that source first.
   const canSteerNow = steering.duringRunActive && steering.canSteer && !isRecovered;
   const showPrimary = canSteerNow || (!steering.duringRunActive && steering.canSendQueuedNow);
   /** `canSteer` is defined as false while paused on approval, but the
    *  escalation control must stay visible-and-disabled there — hiding it
    *  during the pause is exactly the discoverability gap this button fixes. */
   const showEscalate =
-    !isRecovered &&
-    (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
+    !isRecovered && (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
 
-  const entries: MenuEntry[] = isRecovered
-    ? []
-    : [
-        {
-          key: 'edit',
-          label: localize('com_ui_edit_message'),
-          icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
-          onClick: () => {
-            steering.removeQueued(message.id);
-            onEditToComposer(message.text, message.files, {
-              quotes: message.quotes,
-              manualSkills: message.manualSkills,
-            });
-          },
-        },
-      ];
+  const entries: MenuEntry[] = [
+    {
+      key: 'edit',
+      label: localize('com_ui_edit_message'),
+      icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
+      disabled: actionPending,
+      onClick: () =>
+        afterDiscard(() => {
+          onEditToComposer(message.text, message.files, {
+            quotes: message.quotes,
+            manualSkills: message.manualSkills,
+          });
+        }),
+    },
+  ];
   const preferences: MenuEntry[] = [toggleEntry, interruptToggle];
 
   return (
@@ -104,6 +132,7 @@ function QueuedRow({
         <button
           type="button"
           className={PRIMARY_BTN_CLASS}
+          disabled={actionPending}
           onClick={() => steering.sendQueuedNow(message)}
         >
           {canSteerNow ? (
@@ -123,31 +152,31 @@ function QueuedRow({
         <EscalateNowButton
           surface="queued"
           messageText={message.text}
-          disabled={steering.pausedOnApproval || interruptPending}
+          disabled={steering.pausedOnApproval || interruptPending || actionPending}
           onClick={() => steering.sendQueuedNow(message, { preempt: true })}
         />
       )}
-      {!isRecovered && (
-        <button
-          type="button"
-          aria-label={localize('com_ui_remove_queued')}
-          onClick={() => {
-            /* Same safety net as the in-flight cancel: return the words to the
-             * composer when it is free (the gated restore refuses rather than
-             * clobber a draft), then remove either way. */
+      <button
+        type="button"
+        aria-label={localize('com_ui_remove_queued')}
+        disabled={actionPending}
+        onClick={() =>
+          afterDiscard(() => {
+            /* Same safety net as the in-flight cancel: once removal is safely
+             * settled, return the words to the composer when it is free (the
+             * gated restore refuses rather than clobber a draft). */
             onRestoreToComposer(
               message.text,
               message.files,
               { quotes: message.quotes, manualSkills: message.manualSkills },
               conversationId,
             );
-            steering.removeQueued(message.id);
-          }}
-          className={ICON_BTN_CLASS}
-        >
-          <Trash2 className="h-4 w-4" aria-hidden="true" />
-        </button>
-      )}
+          })
+        }
+        className={ICON_BTN_CLASS}
+      >
+        <Trash2 className="h-4 w-4" aria-hidden="true" />
+      </button>
       <RowMenu
         label={localize('com_ui_more_options')}
         entries={entries}

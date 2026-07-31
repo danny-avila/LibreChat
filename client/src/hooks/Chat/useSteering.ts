@@ -9,6 +9,7 @@ import type { GenerationProtocolVersion } from '~/data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
   useGetMessagesByConvoId,
+  useCancelSteerMutation,
   useSteerMessageMutation,
   useMarkFilesUsageMutation,
   supportsGenerationProtocolV2,
@@ -172,6 +173,7 @@ export default function useSteering({
   /** `mutate` is a stable callback; the mutation result objects are fresh
    * every render and would defeat the memoized return value below. */
   const { mutate: steerMessage } = useSteerMessageMutation();
+  const { mutateAsync: cancelSteer } = useCancelSteerMutation();
   const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
   const defaultAction = useRecoilValue<DuringRunAction>(store.duringRunDefaultAction);
   const setDefaultAction = useSetRecoilState(store.duringRunDefaultAction);
@@ -639,6 +641,43 @@ export default function useSteering({
         );
       },
     [queueKey],
+  );
+
+  /** Remove a queued row without leaving its terminal recovery source behind.
+   * Ordinary rows are client-only and can disappear immediately. A v2
+   * leftover first uses its durable receipt to atomically discard the parked
+   * server copy; only a confirmed result lets Edit/Remove re-home the words.
+   * This is the same idempotent cancel endpoint used by waiting steer chips,
+   * but it deliberately omits the active epoch: the receipt belongs to the
+   * terminal source generation, not whichever run now occupies the chat. */
+  const discardQueued = useCallback(
+    async (item: QueuedMessage): Promise<boolean> => {
+      if (item.recoverySteerId == null) {
+        removeQueued(item.id);
+        return true;
+      }
+      if (item.recoveryClientSteerId == null || !hasRealConvoId) {
+        showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
+        return false;
+      }
+      try {
+        const { removed } = await cancelSteer({
+          conversationId,
+          steerId: item.recoverySteerId,
+          clientSteerId: item.recoveryClientSteerId,
+        });
+        if (removed !== true) {
+          showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
+          return false;
+        }
+        removeQueued(item.id);
+        return true;
+      } catch {
+        showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
+        return false;
+      }
+    },
+    [cancelSteer, conversationId, hasRealConvoId, localize, removeQueued, showToast],
   );
 
   /** Capture-then-remove, including the item's neighbours, so any refused send
@@ -1395,6 +1434,7 @@ export default function useSteering({
       queueReclaimedSteer,
       enqueue,
       removeQueued,
+      discardQueued,
       sendQueuedNow,
       interruptAndSend,
       interruptSteer,
@@ -1420,6 +1460,7 @@ export default function useSteering({
       queueReclaimedSteer,
       enqueue,
       removeQueued,
+      discardQueued,
       sendQueuedNow,
       interruptAndSend,
       interruptSteer,

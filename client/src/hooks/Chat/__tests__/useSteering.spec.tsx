@@ -10,11 +10,13 @@ const CONVO_ID = 'convo-steer-ui';
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const mockMutate = jest.fn();
+const mockCancelSteer = jest.fn();
 const mockShowToast = jest.fn();
 const mockMarkUsage = jest.fn();
 let mockMessages: TMessage[] | undefined;
 
 jest.mock('~/data-provider', () => ({
+  useCancelSteerMutation: () => ({ mutateAsync: mockCancelSteer }),
   useSteerMessageMutation: () => ({ mutate: mockMutate }),
   useGetMessagesByConvoId: (_id: string, config?: { select?: (messages: unknown) => unknown }) => ({
     data: config?.select ? config.select(mockMessages) : mockMessages,
@@ -1504,6 +1506,80 @@ describe('useSteering', () => {
       });
       expect(result.current.queue.map((item) => item.text)).toEqual(['two']);
       expect(mockMutate).not.toHaveBeenCalled();
+    });
+
+    it('atomically discards a recovered queue source before removing its row', async () => {
+      mockCancelSteer.mockResolvedValueOnce({ removed: true, generationProtocolVersion: 2 });
+      const recovered = {
+        id: 'queued-leftover',
+        text: 'edit this next',
+        createdAt: 1,
+        recoverySteerId: 'server-leftover',
+        recoveryClientSteerId: 'client-leftover',
+      };
+      const { result } = setupWithState({}, ({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [recovered]);
+      });
+
+      let discarded = false;
+      await act(async () => {
+        discarded = await result.current.steering.discardQueued(recovered);
+      });
+
+      expect(discarded).toBe(true);
+      expect(mockCancelSteer).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        steerId: 'server-leftover',
+        clientSteerId: 'client-leftover',
+      });
+      expect(result.current.queue).toEqual([]);
+    });
+
+    it('keeps a recovered queue row when its parked source cannot be discarded', async () => {
+      mockCancelSteer.mockResolvedValueOnce({ removed: false, generationProtocolVersion: 2 });
+      const recovered = {
+        id: 'queued-leftover',
+        text: 'do not duplicate me',
+        createdAt: 1,
+        recoverySteerId: 'server-leftover',
+        recoveryClientSteerId: 'client-leftover',
+      };
+      const { result } = setupWithState({}, ({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [recovered]);
+      });
+
+      let discarded = true;
+      await act(async () => {
+        discarded = await result.current.steering.discardQueued(recovered);
+      });
+
+      expect(discarded).toBe(false);
+      expect(result.current.queue).toEqual([recovered]);
+      expect(mockShowToast).toHaveBeenCalledWith({
+        message: 'Could not cancel the steering message — it may still reach the agent',
+        status: 'error',
+      });
+    });
+
+    it('fails closed for a recovered row without a durable receipt correlation', async () => {
+      const recovered = {
+        id: 'queued-leftover',
+        text: 'keep this visible',
+        createdAt: 1,
+        recoverySteerId: 'server-leftover',
+      };
+      const { result } = setupWithState({}, ({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [recovered]);
+      });
+
+      let discarded = true;
+      await act(async () => {
+        discarded = await result.current.steering.discardQueued(recovered);
+      });
+
+      expect(discarded).toBe(false);
+      expect(mockCancelSteer).not.toHaveBeenCalled();
+      expect(result.current.queue).toEqual([recovered]);
     });
 
     it('sendQueuedNow steers whenever steering is available, even under the queue preference', () => {

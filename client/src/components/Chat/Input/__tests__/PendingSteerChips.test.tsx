@@ -2,7 +2,7 @@ import React from 'react';
 import { getDefaultStore } from 'jotai';
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import userEvent from '@testing-library/user-event';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import { escalatingSteerFamily } from '~/store/steer';
@@ -10,6 +10,10 @@ import PendingSteerChips from '../PendingSteerChips';
 import store from '~/store';
 
 const mockRemoveQueued = jest.fn();
+const mockDiscardQueued = jest.fn(async (message: QueuedMessage) => {
+  mockRemoveQueued(message.id);
+  return true;
+});
 const mockSendQueuedNow = jest.fn();
 const mockRetrySteer = jest.fn();
 const mockRestoreToComposer = jest.fn(() => true);
@@ -41,6 +45,7 @@ const steeringStub = (overrides: Partial<SteeringControls> = {}) =>
     canSteer: false,
     pausedOnApproval: false,
     removeQueued: mockRemoveQueued,
+    discardQueued: mockDiscardQueued,
     sendQueuedNow: mockSendQueuedNow,
     retrySteer: mockRetrySteer,
     setDefaultAction: jest.fn(),
@@ -151,9 +156,9 @@ describe('PendingSteerChips — queued trash', () => {
     window.localStorage.clear();
   });
 
-  it('returns the words to the composer before removing a queued message', () => {
+  it('returns the words to the composer when removing a queued message', async () => {
     // The trash is non-destructive: it hands the text (and its carried context)
-    // to the gated restore first, so the words are not gone forever.
+    // to the gated restore once removal succeeds, so the words are not gone forever.
     renderChips([
       {
         id: 'q1',
@@ -165,24 +170,113 @@ describe('PendingSteerChips — queued trash', () => {
     ]);
     fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
 
-    expect(mockRestoreToComposer).toHaveBeenCalledWith(
-      'later thought',
-      undefined,
-      { quotes: ['a quote'], manualSkills: ['a-skill'] },
-      CONVO_ID,
-    );
-    expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+    await waitFor(() => {
+      expect(mockRestoreToComposer).toHaveBeenCalledWith(
+        'later thought',
+        undefined,
+        { quotes: ['a quote'], manualSkills: ['a-skill'] },
+        CONVO_ID,
+      );
+      expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+    });
   });
 
-  it('still removes the message even when the composer refuses the restore', () => {
+  it('still removes the message even when the composer refuses the restore', async () => {
     // Occupied composer / other chat: the gated restore returns false, but the
     // trash must reliably remove either way.
     mockRestoreToComposer.mockReturnValueOnce(false);
     renderChips([{ id: 'q2', text: 'drop me', createdAt: 1 }]);
     fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
 
-    expect(mockRestoreToComposer).toHaveBeenCalled();
-    expect(mockRemoveQueued).toHaveBeenCalledWith('q2');
+    await waitFor(() => {
+      expect(mockRestoreToComposer).toHaveBeenCalled();
+      expect(mockRemoveQueued).toHaveBeenCalledWith('q2');
+    });
+  });
+
+  it('discards a recovered source before restoring and removing its queued row', async () => {
+    let confirmDiscard: ((discarded: boolean) => void) | undefined;
+    mockDiscardQueued.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          confirmDiscard = resolve;
+        }),
+    );
+    const recovered = {
+      id: 'q-recovered',
+      text: 'recovered words',
+      createdAt: 1,
+      recoverySteerId: 'server-source',
+      recoveryClientSteerId: 'client-source',
+    };
+    renderChips([recovered]);
+
+    fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+    expect(mockDiscardQueued).toHaveBeenCalledWith(recovered);
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+
+    await act(async () => {
+      confirmDiscard?.(true);
+    });
+    expect(mockRestoreToComposer).toHaveBeenCalledWith(
+      'recovered words',
+      undefined,
+      { quotes: undefined, manualSkills: undefined },
+      CONVO_ID,
+    );
+  });
+
+  it('offers Edit for a recovered row and leaves it untouched when discard is refused', async () => {
+    const user = userEvent.setup();
+    mockDiscardQueued.mockResolvedValueOnce(false);
+    const recovered = {
+      id: 'q-recovered',
+      text: 'safe to edit only after discard',
+      createdAt: 1,
+      recoverySteerId: 'server-source',
+      recoveryClientSteerId: 'client-source',
+    };
+    renderChips([recovered]);
+
+    await user.click(screen.getByLabelText('com_ui_more_options'));
+    await user.click(await screen.findByRole('menuitem', { name: 'com_ui_edit_message' }));
+
+    await waitFor(() => expect(mockDiscardQueued).toHaveBeenCalledWith(recovered));
+    expect(mockEditToComposer).not.toHaveBeenCalled();
+    expect(screen.getByText('safe to edit only after discard')).toBeInTheDocument();
+  });
+
+  it('restores a recovered row to the composer only after Edit confirms discard', async () => {
+    const user = userEvent.setup();
+    let confirmDiscard: ((discarded: boolean) => void) | undefined;
+    mockDiscardQueued.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          confirmDiscard = resolve;
+        }),
+    );
+    const recovered = {
+      id: 'q-recovered-edit',
+      text: 'edit recovered words',
+      createdAt: 1,
+      recoverySteerId: 'server-source',
+      recoveryClientSteerId: 'client-source',
+      quotes: ['kept quote'],
+      manualSkills: ['kept skill'],
+    };
+    renderChips([recovered]);
+
+    await user.click(screen.getByLabelText('com_ui_more_options'));
+    await user.click(await screen.findByRole('menuitem', { name: 'com_ui_edit_message' }));
+    expect(mockEditToComposer).not.toHaveBeenCalled();
+
+    await act(async () => {
+      confirmDiscard?.(true);
+    });
+    expect(mockEditToComposer).toHaveBeenCalledWith('edit recovered words', undefined, {
+      quotes: ['kept quote'],
+      manualSkills: ['kept skill'],
+    });
   });
 });
 
