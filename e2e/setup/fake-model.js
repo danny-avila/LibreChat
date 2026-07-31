@@ -72,6 +72,7 @@ const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
 const BACKGROUND_TOOL_NAME = 'slow_echo_mcp_e2e-memory';
 const DEFERRED_HITL_TOOL_NAME = BACKGROUND_TOOL_NAME;
+const DEFERRED_HITL_CONTROL_TOOL_NAME = 'recall_fact_mcp_e2e-memory';
 const TOOL_SEARCH_NAME = 'tool_search';
 const ASK_USER_QUESTION_NAME = 'ask_user_question';
 const CHECK_BACKGROUND_TASK_TOOL_NAME = 'check_background_task';
@@ -1383,16 +1384,27 @@ function deferredHitlCallId(label, phase) {
 function validateDeferredHitlSchema(agentContext, { expectBound }) {
   const tools = getGraphTools(agentContext);
   const tool = tools.get(DEFERRED_HITL_TOOL_NAME);
+  const failures = [];
+  if (tools.has(DEFERRED_HITL_CONTROL_TOOL_NAME)) {
+    failures.push(
+      `${DEFERRED_HITL_CONTROL_TOOL_NAME} negative control was provider-bound without discovery`,
+    );
+  }
   if (!expectBound) {
-    return tool == null
-      ? []
-      : [`${DEFERRED_HITL_TOOL_NAME} was bound before tool_search discovered it`];
+    if (tool != null) {
+      failures.push(`${DEFERRED_HITL_TOOL_NAME} was bound before tool_search discovered it`);
+    }
+    return failures;
   }
   if (!tool) {
-    return [`${DEFERRED_HITL_TOOL_NAME} was not provider-bound`];
+    failures.push(`${DEFERRED_HITL_TOOL_NAME} was not provider-bound`);
+    return failures;
   }
 
   const schema = tool.schema;
+  if (schema?.type !== 'object') {
+    failures.push(`${DEFERRED_HITL_TOOL_NAME} schema was not typed as object`);
+  }
   const properties =
     schema &&
     typeof schema === 'object' &&
@@ -1403,18 +1415,27 @@ function validateDeferredHitlSchema(agentContext, { expectBound }) {
       ? schema.properties
       : null;
   if (!properties) {
-    return [`${DEFERRED_HITL_TOOL_NAME} did not expose an object properties schema`];
+    failures.push(`${DEFERRED_HITL_TOOL_NAME} did not expose an object properties schema`);
+    return failures;
   }
 
-  const failures = [];
+  const propertyNames = Object.keys(properties).sort();
+  if (JSON.stringify(propertyNames) !== JSON.stringify(['delay_ms', 'text'])) {
+    failures.push(
+      `${DEFERRED_HITL_TOOL_NAME} properties differed from delay_ms,text (${propertyNames.join(',')})`,
+    );
+  }
   if (properties.text?.type !== 'string') {
     failures.push(`${DEFERRED_HITL_TOOL_NAME}.text was not typed as string`);
   }
   if (properties.delay_ms?.type !== 'number') {
     failures.push(`${DEFERRED_HITL_TOOL_NAME}.delay_ms was not typed as number`);
   }
-  if (!Array.isArray(schema.required) || !schema.required.includes('text')) {
-    failures.push(`${DEFERRED_HITL_TOOL_NAME}.text was not required`);
+  const required = Array.isArray(schema.required) ? [...schema.required].sort() : null;
+  if (JSON.stringify(required) !== JSON.stringify(['text'])) {
+    failures.push(
+      `${DEFERRED_HITL_TOOL_NAME} required fields differed from text (${required?.join(',') ?? 'invalid'})`,
+    );
   }
   return failures;
 }
@@ -1471,7 +1492,7 @@ function deferredHitlInvocationResponse({ graph, messages, options, runManager }
         {
           id: probeCallId,
           name: DEFERRED_HITL_TOOL_NAME,
-          args: { text: `resume-${label}`, delay_ms: 1 },
+          args: { text: `resume-${label}` },
           type: 'tool_call',
         },
       ],

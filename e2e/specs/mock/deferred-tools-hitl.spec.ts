@@ -16,6 +16,7 @@ import {
 const MCP_SERVER_NAME = 'e2e-memory';
 const MCP_SERVER_TOOL_ID = `sys__server__sys_mcp_${MCP_SERVER_NAME}`;
 const DEFERRED_TOOL_ID = `slow_echo_mcp_${MCP_SERVER_NAME}`;
+const DEFERRED_CONTROL_TOOL_ID = `recall_fact_mcp_${MCP_SERVER_NAME}`;
 const ASK_USER_QUESTION_TOOL_ID = 'ask_user_question';
 const PROMPT_MARKER = 'E2E_DEFERRED_HITL:';
 const DESCRIPTION =
@@ -39,14 +40,15 @@ function isResumeRequest(request: Request) {
   );
 }
 
-async function waitForDeferredTool(page: Page) {
+async function waitForDeferredTools(page: Page) {
   const token = await getAccessToken(page);
   let latestTools: MCPToolsResponse | null = null;
 
   for (let attempt = 0; attempt < 20; attempt++) {
     latestTools = await fetchJson<MCPToolsResponse>(page, '/api/mcp/tools', token);
     const tools = latestTools.servers?.[MCP_SERVER_NAME]?.tools ?? [];
-    if (tools.some((tool) => tool.pluginKey === DEFERRED_TOOL_ID)) {
+    const toolIds = new Set(tools.map((tool) => tool.pluginKey));
+    if (toolIds.has(DEFERRED_TOOL_ID) && toolIds.has(DEFERRED_CONTROL_TOOL_ID)) {
       return;
     }
     await page.waitForTimeout(500);
@@ -54,13 +56,18 @@ async function waitForDeferredTool(page: Page) {
 
   expect(
     latestTools?.servers?.[MCP_SERVER_NAME]?.tools,
-    `Expected ${MCP_SERVER_NAME} to expose ${DEFERRED_TOOL_ID}`,
-  ).toEqual(expect.arrayContaining([expect.objectContaining({ pluginKey: DEFERRED_TOOL_ID })]));
+    `Expected ${MCP_SERVER_NAME} to expose both deferred test tools`,
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ pluginKey: DEFERRED_TOOL_ID }),
+      expect.objectContaining({ pluginKey: DEFERRED_CONTROL_TOOL_ID }),
+    ]),
+  );
 }
 
-async function createAndSelectAgent(page: Page): Promise<string> {
+async function createAgent(page: Page): Promise<{ id: string; name: string }> {
   await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
-  await waitForDeferredTool(page);
+  await waitForDeferredTools(page);
 
   const token = await getAccessToken(page);
   const agentName = uniqueAgentName('E2E Deferred HITL Agent');
@@ -74,20 +81,31 @@ async function createAndSelectAgent(page: Page): Promise<string> {
       instructions: 'Discover the requested tool, ask the user, then run the discovered tool.',
       provider: MOCK_ENDPOINTS[0].label,
       model: MOCK_ENDPOINTS[0].model,
-      tools: [MCP_SERVER_TOOL_ID, DEFERRED_TOOL_ID, ASK_USER_QUESTION_TOOL_ID],
-      tool_options: { [DEFERRED_TOOL_ID]: { defer_loading: true } },
+      tools: [
+        MCP_SERVER_TOOL_ID,
+        DEFERRED_TOOL_ID,
+        DEFERRED_CONTROL_TOOL_ID,
+        ASK_USER_QUESTION_TOOL_ID,
+      ],
+      tool_options: {
+        [DEFERRED_TOOL_ID]: { defer_loading: true },
+        [DEFERRED_CONTROL_TOOL_ID]: { defer_loading: true },
+      },
     },
   });
   expect(agent.tools).toEqual(
-    expect.arrayContaining([DEFERRED_TOOL_ID, ASK_USER_QUESTION_TOOL_ID]),
+    expect.arrayContaining([DEFERRED_TOOL_ID, DEFERRED_CONTROL_TOOL_ID, ASK_USER_QUESTION_TOOL_ID]),
   );
 
+  return { id: agent.id, name: agentName };
+}
+
+async function selectAgent(page: Page, agentName: string) {
   const form = await openAgentBuilder(page);
   await form.getByRole('combobox', { name: 'Agent', exact: true }).click();
   await page.getByRole('option', { name: agentName }).click();
   await expect(form.getByLabel('Agent name')).toHaveValue(agentName);
   await form.getByRole('button', { name: 'Select Agent' }).click();
-  return agent.id;
 }
 
 test.describe('deferred tools across HITL resume', () => {
@@ -102,7 +120,9 @@ test.describe('deferred tools across HITL resume', () => {
     let agentId: string | undefined;
 
     try {
-      agentId = await createAndSelectAgent(page);
+      const agent = await createAgent(page);
+      agentId = agent.id;
+      await selectAgent(page, agent.name);
 
       const response = await sendMessage(page, `${PROMPT_MARKER}${label}`);
       expect(response.ok()).toBeTruthy();
@@ -138,9 +158,9 @@ test.describe('deferred tools across HITL resume', () => {
       expect(body.endpoint).toBe('agents');
       expect(resumeResponse.ok()).toBeTruthy();
 
-      /** The fake provider checks the deferred tool's full JSON schema after
-       * tool_search and checks it again in the first model call after resume.
-       * It only invokes the real MCP slow_echo tool if both checks pass. */
+      /** The fake provider checks the deferred tool's exact JSON schema after
+       * tool_search and again after resume, while a second deferred tool stays
+       * unbound as a negative control. It invokes real MCP only if all pass. */
       const expectedFinal =
         `E2E deferred HITL passed ${label}: ` + `E2E slow echo: resume-${label}`;
       const terminal = messagesView(page).getByText(
