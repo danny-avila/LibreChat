@@ -23,7 +23,11 @@ export type SearchApiKeyFormData = {
 const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
   const queryClient = useQueryClient();
   const isEntityTool = options?.isEntityTool ?? true;
-  const updateUserPlugins = useUpdateUserPluginsMutation({
+  /* `mutate` rather than the mutation object: react-query hands back a fresh
+     result object on every render, and depending on it made both callbacks
+     below new identities each time — which travelled up through
+     `useSearchApiKeyForm` into `BadgeRowProvider`'s context value. */
+  const { mutate: updateUserPlugins } = useUpdateUserPluginsMutation({
     onMutate: (vars) => {
       queryClient.setQueryData([QueryKeys.toolAuth, Tools.web_search], () => {
         return {
@@ -69,7 +73,7 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
         {} as Record<string, string>,
       );
 
-      updateUserPlugins.mutate({
+      updateUserPlugins({
         pluginKey: Tools.web_search,
         action: 'install',
         auth,
@@ -80,7 +84,7 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
   );
 
   const removeTool = useCallback(() => {
-    updateUserPlugins.mutate({
+    updateUserPlugins({
       pluginKey: Tools.web_search,
       action: 'uninstall',
       auth: {},

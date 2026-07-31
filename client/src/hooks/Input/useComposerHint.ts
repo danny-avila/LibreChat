@@ -1,4 +1,5 @@
 import type { LocalizeFunction } from '~/common';
+import { useShortcutDisplay } from '~/hooks/useKeyboardShortcuts';
 import { isMacPlatform } from '~/utils/shortcuts';
 import useLocalize from '~/hooks/useLocalize';
 
@@ -44,6 +45,9 @@ export function composeHint(
   state: ComposerHintState,
   localize: LocalizeFunction,
   isMac: boolean,
+  /** The live binding for `stopGenerating`, which the user can rebind or clear
+   *  outright — so the stop line is built from it rather than naming a key. */
+  stopShortcut: string,
 ): ComposerHint {
   if (state.answerModeActive) {
     return { text: localize('com_ui_composer_hint_answer'), kind: 'state' };
@@ -85,7 +89,15 @@ export function composeHint(
   }
 
   if (state.isSubmitting) {
-    return { text: localize('com_ui_composer_hint_stop'), kind: 'state' };
+    /* Nothing to advertise when the binding has been cleared: the stop button
+       is right there, and naming a key that does nothing is worse than saying
+       only that a reply is running. */
+    return {
+      text: stopShortcut
+        ? `${stopShortcut} ${localize('com_ui_composer_hint_stop')}`
+        : localize('com_ui_composer_hint_running'),
+      kind: 'state',
+    };
   }
 
   if (state.hasText) {
@@ -107,5 +119,6 @@ export function composeHint(
 
 export default function useComposerHint(state: ComposerHintState): ComposerHint {
   const localize = useLocalize();
-  return composeHint(state, localize, isMacPlatform);
+  const stopShortcut = useShortcutDisplay('stopGenerating');
+  return composeHint(state, localize, isMacPlatform, stopShortcut);
 }

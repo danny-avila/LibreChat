@@ -832,16 +832,8 @@ describe('useSteering', () => {
       );
     });
 
-    it('retry resubmits a failed interrupt-steer AS an interrupt', () => {
-      const { result } = setup();
-      act(() => {
-        result.current.retrySteer('chip-1', 'retry me', undefined, undefined, { preempt: true });
-      });
-      expect(mockMutate).toHaveBeenCalledWith(
-        expect.objectContaining({ text: 'retry me', preempt: true }),
-        expect.anything(),
-      );
-    });
+    /* Retry lives in `useSteerRecovery` now, which owns the chip actions the
+       thread's pending block renders; its own spec covers the preempt carry. */
 
     it('an ordinary steer does not preempt by default', () => {
       const { result } = setup({}, ({ set }) => {

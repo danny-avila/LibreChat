@@ -37,11 +37,12 @@ export type RestoreToComposer = (
 interface QueueProps {
   steering: SteeringControls;
   conversationId: string;
+  /** Returns whether the composer took the words; see `editToComposer`. */
   onEditToComposer: (
     text: string,
     files?: TMessage['files'],
     context?: QueuedMessageContext,
-  ) => void;
+  ) => boolean;
   onRestoreToComposer: RestoreToComposer;
 }
 
@@ -217,10 +218,20 @@ function QueueRow({
         type="button"
         aria-label={localize('com_ui_edit_message')}
         onClick={() => {
-          steering.removeQueued(message.id);
-          onEditToComposer(message.text, message.files, {
+          /* Same order as the trash below: dropped only once the words are
+             somewhere else. A paused question owns the composer, and removing
+             the row anyway would leave the message nowhere at all. */
+          const taken = onEditToComposer(message.text, message.files, {
             quotes: message.quotes,
             manualSkills: message.manualSkills,
+          });
+          if (taken) {
+            steering.removeQueued(message.id);
+            return;
+          }
+          showToast({
+            message: localize('com_ui_queue_edit_blocked'),
+            status: 'warning',
           });
         }}
         className={ICON_BTN}
