@@ -6,6 +6,7 @@ import { FileText, FileSpreadsheet, FileCode, FileImage, File } from 'lucide-rea
 import type { TAttachment, TFile } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, OutputRenderer, isError } from './ToolOutput';
+import { toolPanelSpacingClassName } from './disclosure';
 import FilePreviewDialog from './FilePreviewDialog';
 import { sortPagesByRelevance, cn } from '~/utils';
 import { useToolCallIntent } from './Parts/intent';
@@ -348,8 +349,6 @@ export default function RetrievalCall({
   const cancelled = !isSubmitting && initialProgress < 1 && !errorState;
   const hasOutput = !!output && !isError(output);
   const autoExpand = useRecoilValue(store.autoExpandTools);
-  const [showOutput, setShowOutput] = useState(() => autoExpand && hasOutput);
-  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showOutput);
 
   const fileSources = useMemo(() => extractFileSources(attachments), [attachments]);
   const parsedResults = useMemo(
@@ -370,6 +369,9 @@ export default function RetrievalCall({
   );
 
   const hasResults = displayResults.length > 0;
+  const hasExpandableContent = !errorState && hasResults;
+  const [showOutput, setShowOutput] = useState(() => autoExpand && hasExpandableContent);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showOutput);
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
@@ -404,10 +406,14 @@ export default function RetrievalCall({
   }, [displayResults, previewIndex]);
 
   useEffect(() => {
-    if (autoExpand && hasOutput) {
+    if (!hasExpandableContent) {
+      setShowOutput(false);
+      return;
+    }
+    if (autoExpand) {
       setShowOutput(true);
     }
-  }, [autoExpand, hasOutput]);
+  }, [autoExpand, hasExpandableContent]);
 
   const handleToggleOutput = useCallback(() => {
     setShowOutput((prev) => {
@@ -420,7 +426,7 @@ export default function RetrievalCall({
   }, [onExpand]);
 
   return (
-    <div className="my-1">
+    <div>
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
           if (progress < 1 && !cancelled) {
@@ -435,22 +441,22 @@ export default function RetrievalCall({
       <div className="relative my-1 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
-          onClick={hasOutput ? handleToggleOutput : undefined}
+          onClick={hasExpandableContent ? handleToggleOutput : undefined}
           inProgressText={intent ?? localize('com_ui_searching_files')}
           finishedText={intent ?? localize('com_ui_retrieved_files')}
           errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <ToolIcon type="file_search" isAnimating={progress < 1 && !cancelled && !errorState} />
           }
-          hasInput={hasOutput}
+          hasInput={hasExpandableContent}
           isExpanded={showOutput}
           error={cancelled}
         />
       </div>
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
-          {hasOutput && hasResults && (
-            <div className="my-2 flex flex-col gap-2">
+          {hasExpandableContent && (
+            <div className={cn(toolPanelSpacingClassName, 'flex flex-col gap-2')}>
               {displayResults.map((item, i) => {
                 return (
                   <div
