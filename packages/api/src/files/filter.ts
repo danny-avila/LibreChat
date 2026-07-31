@@ -6,7 +6,7 @@ import type { ServerRequest } from '~/types';
 /**
  * Checks if a MIME type is supported by the endpoint configuration
  * @param mimeType - The MIME type to check
- * @param supportedMimeTypes - Array of RegExp patterns to match against
+ * @param supportedMimeTypes - Array of compiled matchers (RegexLike) to test against
  * @returns True if the MIME type matches any pattern
  */
 function isMimeTypeSupported(mimeType: string, supportedMimeTypes?: RegexLike[]): boolean {
