@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Copy, CopyCheck } from 'lucide-react';
 import {
+  SystemRoles,
+  Permissions,
+  ResourceType,
+  PermissionBits,
+  PermissionTypes,
+} from 'librechat-data-provider';
+import {
   Label,
   Input,
   Button,
@@ -14,16 +21,9 @@ import {
   OGDialogContent,
   OGDialogTemplate,
 } from '@librechat/client';
-import {
-  SystemRoles,
-  Permissions,
-  ResourceType,
-  PermissionBits,
-  PermissionTypes,
-} from 'librechat-data-provider';
+import type { MCPServerInitialValues } from './hooks/useMCPServerForm';
 import { useAuthContext, useHasAccess, useResourcePermissions, MCPServerDefinition } from '~/hooks';
 import { GenericGrantAccessDialog } from '~/components/Sharing';
-import type { MCPServerFormData } from './hooks/useMCPServerForm';
 import { useMCPServerForm } from './hooks/useMCPServerForm';
 import { useLocalize, useCopyToClipboard } from '~/hooks';
 import MCPServerForm from './MCPServerForm';
@@ -34,7 +34,7 @@ interface MCPServerDialogProps {
   children?: React.ReactNode;
   triggerRef?: React.MutableRefObject<HTMLDivElement | HTMLButtonElement | null>;
   server?: MCPServerDefinition | null;
-  initialValues?: Partial<MCPServerFormData>;
+  initialValues?: MCPServerInitialValues;
 }
 
 export default function MCPServerDialog({

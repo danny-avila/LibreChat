@@ -55,9 +55,13 @@ export interface MCPServerFormData {
   trust: boolean;
 }
 
+export type MCPServerInitialValues = Partial<
+  Pick<MCPServerFormData, 'title' | 'description' | 'icon' | 'url' | 'type'>
+>;
+
 interface UseMCPServerFormProps {
   server?: MCPServerDefinition | null;
-  initialValues?: Partial<MCPServerFormData>;
+  initialValues?: MCPServerInitialValues;
   onSuccess?: (serverName: string, isOAuth: boolean) => void;
   onClose?: () => void;
 }
