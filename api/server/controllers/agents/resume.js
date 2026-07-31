@@ -788,8 +788,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       // Carry the user's MCP auth so approved MCP tools run with their credentials.
       userMCPAuthMap: result.userMCPAuthMap,
       // Replay deferred tools discovered before the pause (captured at pause). The rebuilt
-      // graph passes `messages: []`, so without these an approved deferred tool would be
-      // absent from the schema-only toolMap and resume would fail with "unknown tool".
+      // graph passes `messages: []`, so without these the model would lose their schemas.
       discoveredToolNames: job.metadata?.discoveredTools,
     });
 

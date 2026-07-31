@@ -9,6 +9,12 @@ export interface ApprovalLifecycleCallbacks {
   onExpired?: (streamId: string, createdAt: number) => void;
 }
 
+export interface ApprovalPauseOptions {
+  discoveredTools?: string[];
+  /** Generation identity observed by the interrupted run. */
+  expectedCreatedAt?: number;
+}
+
 /**
  * The guarded lifecycle of a run paused for human review (`requires_action`).
  *
@@ -42,20 +48,36 @@ export class ApprovalLifecycle {
    * Returns `false` when the job was not running (aborted mid-flight, gone),
    * so a late interrupt is dropped rather than pausing a dead job.
    */
-  async pause(streamId: string, pendingAction: Agents.PendingAction): Promise<boolean> {
+  async pause(
+    streamId: string,
+    pendingAction: Agents.PendingAction,
+    options?: ApprovalPauseOptions,
+  ): Promise<boolean> {
     const job = await this.store.getJob(streamId);
-    if (!job || job.status !== 'running') {
+    if (
+      !job ||
+      job.status !== 'running' ||
+      (options?.expectedCreatedAt != null && job.createdAt !== options.expectedCreatedAt)
+    ) {
       return false;
     }
+    const discoveredTools = options?.discoveredTools;
+    const expectedCreatedAt = options?.expectedCreatedAt ?? job.createdAt;
     const ok = await this.store.transitionStatus(streamId, {
       from: 'running',
       to: 'requires_action',
       // pendingActionId is the flat mirror the atomic resolve/expire guard on.
-      patch: { pendingAction, pendingActionId: pendingAction.actionId },
-      expectCreatedAt: job.createdAt,
+      patch: {
+        pendingAction,
+        pendingActionId: pendingAction.actionId,
+        ...(discoveredTools != null && discoveredTools.length > 0
+          ? { discoveredTools: [...discoveredTools] }
+          : {}),
+      },
+      expectCreatedAt: expectedCreatedAt,
     });
     if (ok) {
-      this.callbacks.onPaused?.(streamId, job.createdAt);
+      this.callbacks.onPaused?.(streamId, expectedCreatedAt);
       logger.debug(
         `[ApprovalLifecycle] paused for review: ${streamId} action=${pendingAction.actionId}`,
       );

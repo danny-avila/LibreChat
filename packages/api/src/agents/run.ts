@@ -154,6 +154,30 @@ export function extractDiscoveredToolsFromHistory(messages: BaseMessage[]): Set<
   return discoveredTools;
 }
 
+export interface RunDiscoverySnapshot {
+  getDiscoveredTools?: () => string[];
+  getRunMessages?: () => BaseMessage[] | undefined;
+}
+
+/** Reads canonical run discovery state, with best-effort history parsing for older releases. */
+export function getRunDiscoveredTools(run: RunDiscoverySnapshot): string[] {
+  if (typeof run.getDiscoveredTools === 'function') {
+    const discoveredTools = run.getDiscoveredTools();
+    if (Array.isArray(discoveredTools)) {
+      return Array.from(new Set(discoveredTools));
+    }
+  }
+
+  if (typeof run.getRunMessages !== 'function') {
+    return [];
+  }
+  const messages = run.getRunMessages();
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return [];
+  }
+  return Array.from(extractDiscoveredToolsFromHistory(messages));
+}
+
 /**
  * Extracts skill names that were invoked in previous turns from raw message payload.
  * Scans assistant messages for tool_call content parts where name === 'skill'.
@@ -1085,9 +1109,9 @@ export async function createRun({
    * extraction. The HITL resume path rebuilds the graph with `messages: []` (state
    * comes from the durable checkpoint), so the in-turn `tool_search` results that
    * would normally mark a deferred tool discovered aren't present — without this the
-   * paused tool would be absent from the rebuilt schema-only toolMap and resume would
-   * fail with "unknown tool". Captured at pause via `extractDiscoveredToolsFromHistory`
-   * and replayed here. Merged with (not replacing) any names extracted from `messages`.
+   * paused tool's schema would be absent from the rebuilt model binding. Captured at
+   * pause from canonical run state (with message parsing for older SDK releases) and
+   * replayed here. Merged with (not replacing) names extracted from `messages`.
    */
   discoveredToolNames?: string[];
   summarizationConfig?: SummarizationConfig;

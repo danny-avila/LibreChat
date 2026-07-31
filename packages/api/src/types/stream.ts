@@ -27,7 +27,7 @@ export interface GenerationJobMetadata {
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause. A resume
    * replays these into `createRun` because the rebuilt graph uses `messages: []`, so
-   * without them the paused deferred tool would be missing from the schema-only toolMap.
+   * without them the rebuilt model would lose the discovered tool schemas.
    */
   discoveredTools?: string[];
   /** See `SerializableJobData.preemptCapable`. */
