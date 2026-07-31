@@ -99,7 +99,7 @@ function ImageStrip({ images, label }: { images: ImageResult[]; label: string })
               target="_blank"
               rel="noopener noreferrer"
               aria-label={image.title || image.domain || label}
-              className="block h-28 overflow-hidden rounded-xl border border-border-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+              className="block h-28 overflow-hidden rounded-xl border border-border-light no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
               style={{ aspectRatio: ratio }}
             >
               <img
@@ -125,7 +125,7 @@ function ShoppingStrip({ items, label }: { items: ShoppingResult[]; label: strin
             href={item.link}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex w-full flex-col rounded-xl border border-border-light p-2 transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+            className="flex w-full flex-col rounded-xl border border-border-light p-2 no-underline transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
           >
             {item.imageUrl && (
               <div className="mb-2 aspect-square w-full shrink-0 overflow-hidden rounded-lg bg-surface-tertiary">
