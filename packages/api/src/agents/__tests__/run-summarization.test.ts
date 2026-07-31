@@ -1207,6 +1207,58 @@ async function callAndCaptureRunConfig({
   return createMock.mock.calls[0][0] as Record<string, unknown>;
 }
 
+function getPrimaryLLMConfig(runConfig: Record<string, unknown>): Record<string, unknown> {
+  const graphConfig = runConfig.graphConfig as { agents: Array<{ clientOptions: unknown }> };
+  return graphConfig.agents[0].clientOptions as Record<string, unknown>;
+}
+
+describe('OpenAI Responses prompt cache key', () => {
+  it.each(['openAI', 'azureOpenAI'])(
+    'defaults %s Responses requests to the stable agent id',
+    async (provider) => {
+      const runConfig = await callAndCaptureRunConfig({
+        overrides: {
+          provider,
+          endpoint: provider,
+          model_parameters: { model: 'gpt-5.6-terra', useResponsesApi: true },
+        },
+      });
+
+      expect(getPrimaryLLMConfig(runConfig).promptCacheKey).toBe('agent_1');
+    },
+  );
+
+  it('preserves an explicit prompt cache key', async () => {
+    const runConfig = await callAndCaptureRunConfig({
+      overrides: {
+        model_parameters: {
+          model: 'gpt-5.6-terra',
+          useResponsesApi: true,
+          promptCacheKey: 'conversation-specific-key',
+        },
+      },
+    });
+
+    expect(getPrimaryLLMConfig(runConfig).promptCacheKey).toBe('conversation-specific-key');
+  });
+
+  it.each([
+    ['OpenAI Chat Completions', 'openAI', { model: 'gpt-5.6-terra' }],
+    ['Anthropic Messages', 'anthropic', { model: 'claude-sonnet-5' }],
+    ['Bedrock', 'bedrock', { model: 'global.anthropic.claude-sonnet-5-v1:0' }],
+  ])('does not add a key for %s', async (_name, provider, modelParameters) => {
+    const runConfig = await callAndCaptureRunConfig({
+      overrides: {
+        provider,
+        endpoint: provider,
+        model_parameters: modelParameters,
+      },
+    });
+
+    expect(getPrimaryLLMConfig(runConfig).promptCacheKey).toBeUndefined();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Suite: Langfuse run config
 // ---------------------------------------------------------------------------

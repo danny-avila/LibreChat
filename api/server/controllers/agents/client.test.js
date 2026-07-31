@@ -168,6 +168,11 @@ describe('AgentClient - startup telemetry', () => {
     expect(startupTelemetry.mark.mock.calls.map(([milestone]) => milestone)).toEqual([
       'run_input_prepared',
     ]);
+    expect(mockFormatAgentMessages.mock.calls[0][4]).toEqual({
+      provider: EModelEndpoint.openAI,
+      model: 'gpt-4',
+      useResponsesApi: false,
+    });
     expect(processStream).not.toHaveBeenCalled();
 
     runCreation.resolve(run);

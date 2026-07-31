@@ -315,6 +315,28 @@ describe('createResponse controller', () => {
     };
   });
 
+  it('passes the initialized provider, model, and API mode when formatting history', async () => {
+    const { formatAgentMessages } = require('@librechat/agents');
+    const { initializeAgent } = require('@librechat/api');
+    initializeAgent.mockResolvedValueOnce({
+      id: 'agent-123',
+      provider: 'openAI',
+      model: 'gpt-5.6-terra',
+      model_parameters: { useResponsesApi: true },
+      toolRegistry: {},
+      edges: [],
+      agentContextAttachments: [],
+    });
+
+    await createResponse(req, res);
+
+    expect(formatAgentMessages.mock.calls[0][4]).toEqual({
+      provider: 'openAI',
+      model: 'gpt-5.6-terra',
+      useResponsesApi: true,
+    });
+  });
+
   describe('conversation ownership validation', () => {
     it('should skip ownership check when previous_response_id is not provided', async () => {
       const { getConvo } = require('~/models');

@@ -1658,15 +1658,13 @@ class AgentClient extends BaseClient {
         manualSkillPrimes,
         alwaysApplySkillPrimes,
       });
-      const formatOptions =
-        needsReasoningContentFormat || freshSkillPrimeNames.size > 0
-          ? {
-              ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
-              ...(freshSkillPrimeNames.size > 0
-                ? { skipSkillBodyNames: freshSkillPrimeNames }
-                : {}),
-            }
-          : undefined;
+      const formatOptions = {
+        provider: this.options.agent.provider,
+        model: this.options.agent.model_parameters?.model,
+        useResponsesApi: this.options.agent.model_parameters?.useResponsesApi === true,
+        ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
+        ...(freshSkillPrimeNames.size > 0 ? { skipSkillBodyNames: freshSkillPrimeNames } : {}),
+      };
       let {
         messages: initialMessages,
         indexTokenCountMap,
