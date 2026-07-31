@@ -1,11 +1,11 @@
 import { memo, useEffect, useRef } from 'react';
 import { useWatch } from 'react-hook-form';
-import { Button } from '@librechat/client';
-import { Check, ChevronDown, CornerDownLeft, TriangleAlert, X } from 'lucide-react';
+import { Button, TooltipAnchor } from '@librechat/client';
+import { ChevronDown, CornerDownLeft, TriangleAlert } from 'lucide-react';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
+import AskOptions from '~/components/Chat/ask/options';
 import { useChatFormContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 /**
  * Composer popover for a live `ask_user_question` pause. Single-select rows
@@ -15,10 +15,10 @@ import { cn } from '~/utils';
  * Submit confirms —
  * folding in any free-form text typed in the composer, exactly like Enter
  * would. The footer hint is a button that focuses the composer — the
- * free-form answer box. Collapse (chevron) hides the popover but keeps
- * answer mode live via the chat card; × dismisses it entirely. Pure
- * rendering off {@link useAskAnswerMode}; disappears the moment an answer
- * submits from any surface, and locks while one is in flight.
+ * free-form answer box. The chevron moves the question to the chat card and
+ * releases the composer (the card's chevron moves it back). Pure rendering
+ * off {@link useAskAnswerMode}; disappears the moment an answer submits from
+ * any surface, and locks while one is in flight.
  */
 function AskUserQuestionPopoverContent({
   conversationId,
@@ -66,7 +66,6 @@ function AskUserQuestionPopoverPanel({
     submit,
     submitOption,
     skip,
-    dismiss,
     collapse,
     handlePopoverKeyDown,
   } = ask;
@@ -108,7 +107,7 @@ function AskUserQuestionPopoverPanel({
           scroll region: the panel is absolutely positioned, so anything that
           overflows it is unreachable by page scroll. */}
       <div
-        className="popover border-token-border-light flex max-h-[60vh] flex-col rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700"
+        className="flex max-h-[60vh] flex-col rounded-2xl border border-border-light bg-surface-secondary p-2 shadow-lg [view-transition-name:ask-question]"
         onKeyDown={handlePopoverKeyDown}
       >
         <div className="flex shrink-0 items-start justify-between gap-2 p-2">
@@ -122,60 +121,34 @@ function AskUserQuestionPopoverPanel({
               </p>
             )}
           </div>
-          <div className="flex items-center">
-            <button
-              type="button"
-              aria-label={localize('com_ui_collapse')}
-              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
-              onClick={collapse}
-            >
-              <ChevronDown className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              aria-label={localize('com_ui_close')}
-              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
-              onClick={dismiss}
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-        <div ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto">
-          {options.map((option, index) => {
-            const isChecked = multiSelect && checked.includes(index);
-            return (
+          {/* Single exit: moves the question to the chat card and hands the
+              composer back for normal messages. */}
+          <TooltipAnchor
+            description={localize('com_ui_ask_move_to_chat')}
+            side="top"
+            render={
               <button
-                key={option.value}
-                ref={(el) => {
-                  optionRefs.current[index] = el;
-                }}
                 type="button"
-                role={multiSelect ? 'checkbox' : undefined}
-                aria-checked={multiSelect ? isChecked : undefined}
-                disabled={locked}
-                className={cn(
-                  'flex w-full items-center gap-3 rounded-lg p-2 text-left text-sm text-text-primary',
-                  selected === index ? 'bg-surface-active' : 'hover:bg-surface-hover',
-                  locked ? 'cursor-not-allowed opacity-60' : '',
-                )}
-                onClick={() => (multiSelect ? toggleChecked(index) : submitOption(index))}
+                aria-label={localize('com_ui_ask_move_to_chat')}
+                className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+                onClick={collapse}
               >
-                <span
-                  className={cn(
-                    'flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs',
-                    isChecked
-                      ? 'bg-surface-submit text-white'
-                      : 'bg-surface-tertiary text-text-secondary',
-                  )}
-                >
-                  {isChecked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}
-                </span>
-                <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{option.label}</span>
+                <ChevronDown className="size-4" aria-hidden="true" />
               </button>
-            );
-          })}
+            }
+          />
         </div>
+        <AskOptions
+          options={options}
+          multiSelect={multiSelect}
+          checked={checked}
+          selected={selected}
+          locked={locked}
+          onActivate={(index) => (multiSelect ? toggleChecked(index) : submitOption(index))}
+          optionRefs={optionRefs}
+          listRef={listRef}
+          className="relative min-h-0 flex-1 overflow-y-auto"
+        />
         {/** A failed submission keeps the question answerable (controls stay
          *   enabled), but the chat card that would show the error is hidden
          *   while the popover is up — so surface it here for retry guidance. */}
@@ -188,7 +161,7 @@ function AskUserQuestionPopoverPanel({
         <div className="flex shrink-0 items-center justify-between gap-2 p-2">
           <button
             type="button"
-            className="text-xs italic text-text-secondary hover:text-text-primary hover:underline"
+            className="cursor-text rounded-md text-xs text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
             onClick={() => textAreaRef?.current?.focus()}
           >
             {options.length === 0
