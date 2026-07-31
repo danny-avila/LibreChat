@@ -136,9 +136,14 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                   )}
                 >
                   {content}
+                  {/* Named + opaque so a view transition (the ask_user_question
+                      popover ⇄ chat-card morph) paints the whole composer band
+                      over the travelling card instead of letting it show
+                      through below the composer. The background matches the
+                      page, so normal rendering is unchanged. */}
                   <div
                     className={cn(
-                      'w-full',
+                      'w-full bg-presentation [view-transition-name:chat-form]',
                       isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                     )}
                   >

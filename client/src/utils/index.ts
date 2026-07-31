@@ -11,6 +11,7 @@ export * from './share';
 export * from './files';
 export * from './latex';
 export * from './tilde';
+export * from './morph';
 export * from './forms';
 export * from './roles';
 export * from './errors';
