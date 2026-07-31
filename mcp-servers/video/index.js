@@ -6,14 +6,50 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY;
-const DASHSCOPE_BASE_URL = process.env.DASHSCOPE_BASE_URL || 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/video-generation/generation';
-const MODEL = process.env.VIDEO_MODEL || 'cogvideox-v1.5';
-const POLL_INTERVAL = parseInt(process.env.VIDEO_POLL_INTERVAL || '5', 10);
+const VARIANT = process.env.VIDEO_API_VARIANT || 'dashscope';
+const DASHSCOPE_API_HOST = process.env.DASHSCOPE_API_HOST || (
+  VARIANT === 'tokenplan'
+    ? 'https://token-plan.ap-southeast-1.maas.aliyuncs.com'
+    : 'https://dashscope-intl.aliyuncs.com'
+);
+const MODEL = process.env.VIDEO_MODEL || (
+  VARIANT === 'tokenplan' ? 'happyhorse-1.1-t2v' : 'cogvideox-v1.5'
+);
+const POLL_INTERVAL = parseInt(process.env.VIDEO_POLL_INTERVAL || '10', 10);
 const POLL_TIMEOUT = parseInt(process.env.VIDEO_POLL_TIMEOUT || '600', 10);
 
 if (!DASHSCOPE_API_KEY) {
   console.error('Error: DASHSCOPE_API_KEY environment variable is required');
   process.exit(1);
+}
+
+function getSubmitUrl() {
+  if (VARIANT === 'tokenplan') {
+    return `${DASHSCOPE_API_HOST}/api/v1/services/aigc/video-generation/video-synthesis`;
+  }
+  return `${DASHSCOPE_API_HOST}/api/v1/services/aigc/video-generation/generation`;
+}
+
+function getPollUrl(taskId) {
+  if (VARIANT === 'tokenplan') {
+    return `${DASHSCOPE_API_HOST}/api/v1/tasks/${taskId}`;
+  }
+  return `${DASHSCOPE_API_HOST}/api/v1/services/aigc/video-generation/generation?task_id=${taskId}`;
+}
+
+function extractVideoUrls(data) {
+  if (VARIANT === 'tokenplan') {
+    const videoUrl = data.output?.video_url;
+    if (!videoUrl) {
+      throw new Error('Video generation completed but no video_url in response');
+    }
+    return [videoUrl];
+  }
+  const results = data.output?.results;
+  if (!results || results.length === 0) {
+    throw new Error('Video generation completed but no results returned');
+  }
+  return results.map(r => r.video_url).filter(Boolean);
 }
 
 const server = new Server(
@@ -53,12 +89,18 @@ async function submitVideoTask(prompt) {
     },
   };
 
-  const response = await fetch(DASHSCOPE_BASE_URL, {
+  const headers = {
+    'Authorization': `Bearer ${DASHSCOPE_API_KEY}`,
+    'Content-Type': 'application/json',
+  };
+
+  if (VARIANT === 'tokenplan') {
+    headers['X-DashScope-Async'] = 'enable';
+  }
+
+  const response = await fetch(getSubmitUrl(), {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${DASHSCOPE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(requestBody),
   });
 
@@ -78,7 +120,7 @@ async function submitVideoTask(prompt) {
 
 async function pollVideoTask(taskId, timeout) {
   const startTime = Date.now();
-  const pollUrl = `${DASHSCOPE_BASE_URL}?task_id=${taskId}`;
+  const pollUrl = getPollUrl(taskId);
 
   while (true) {
     const elapsed = (Date.now() - startTime) / 1000;
@@ -98,11 +140,7 @@ async function pollVideoTask(taskId, timeout) {
     const data = await response.json();
 
     if (data.output?.task_status === 'SUCCEEDED') {
-      const results = data.output.results;
-      if (!results || results.length === 0) {
-        throw new Error('Video generation completed but no results returned');
-      }
-      return results.map(r => r.video_url).filter(Boolean);
+      return extractVideoUrls(data);
     }
 
     if (data.output?.task_status === 'FAILED') {
@@ -158,7 +196,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Video MCP server running on stdio');
+  console.error(`Video MCP server running on stdio (variant: ${VARIANT})`);
 }
 
 main().catch((error) => {
