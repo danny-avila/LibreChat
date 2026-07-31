@@ -74,14 +74,18 @@ export function parseUnifiedDiff(diff: string): ParsedDiff {
   return { lines, additions, deletions, hasLineNumbers };
 }
 
-const LINE_NUMBER_CLASS = 'w-9 shrink-0 select-none pr-1.5 text-right text-text-tertiary';
-
 const LINE_MARKERS: Record<DiffLine['type'], string> = {
   add: '+',
   del: '-',
   context: '',
   hunk: '',
 };
+
+/** One number per row keeps the gutter compact: the old line for removals
+ *  (it no longer exists in the new file) and the new line otherwise. */
+function lineNumber(line: DiffLine): number | undefined {
+  return line.type === 'del' ? line.oldLine : (line.newLine ?? line.oldLine);
+}
 
 export default function DiffView({ parsed }: { parsed: ParsedDiff }) {
   const { lines, hasLineNumbers } = parsed;
@@ -90,7 +94,7 @@ export default function DiffView({ parsed }: { parsed: ParsedDiff }) {
   return (
     <div
       data-testid="diff-view"
-      className="max-h-[300px] overflow-auto bg-surface-chat py-2 font-mono text-xs leading-5 dark:bg-surface-primary-alt"
+      className="max-h-[300px] overflow-y-auto bg-surface-chat py-2 font-mono text-xs leading-5 dark:bg-surface-primary-alt"
     >
       {lines.map((line, index) => {
         if (line.type === 'hunk') {
@@ -116,14 +120,14 @@ export default function DiffView({ parsed }: { parsed: ParsedDiff }) {
             )}
           >
             {hasLineNumbers && (
-              <>
-                <span className={LINE_NUMBER_CLASS}>{line.oldLine ?? ''}</span>
-                <span className={LINE_NUMBER_CLASS}>{line.newLine ?? ''}</span>
-              </>
+              <span className="w-9 shrink-0 select-none pr-1 text-right text-[11px] text-text-tertiary">
+                {lineNumber(line) ?? ''}
+              </span>
             )}
             <span
               className={cn(
-                'w-6 shrink-0 select-none text-center font-semibold',
+                'shrink-0 select-none text-center font-semibold',
+                hasLineNumbers ? 'w-5' : 'w-6',
                 line.type === 'add' && 'text-green-600 dark:text-green-400',
                 line.type === 'del' && 'text-red-600 dark:text-red-400',
               )}
