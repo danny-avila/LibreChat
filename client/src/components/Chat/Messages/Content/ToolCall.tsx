@@ -11,9 +11,9 @@ import {
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
+import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { cn, getToolDisplayLabel, logger } from '~/utils';
 import { toolPanelSpacingClassName } from './disclosure';
-import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
