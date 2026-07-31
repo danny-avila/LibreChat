@@ -638,6 +638,10 @@ async function loadToolDefinitionsWrapper({
    * fail closed when the audit is incomplete.
    */
   let defsFilteredTools = filteredTools;
+  /** Complete audit names, forwarded to the definitions loader so its alias
+   *  fallback can tell "server not found" from "server found but currently
+   *  unavailable" — only the former may fall back to the raw alias. */
+  let defsAccessibleServerNames;
   if (hasFilteredMCPTools) {
     const collisionAudit = await resolveCollisionAuditNames({
       rawServerNames: mcpRawServerNames,
@@ -645,6 +649,9 @@ async function loadToolDefinitionsWrapper({
       userId: req.user.id,
       role: req.user?.role,
     });
+    if (collisionAudit.complete) {
+      defsAccessibleServerNames = collisionAudit.names;
+    }
     const defsShadowedServers = findShadowedServerNames(collisionAudit.names);
     if (defsShadowedServers.size > 0 || !collisionAudit.complete) {
       const defsAliases = buildServerNameAliases(collisionAudit.names);
@@ -955,6 +962,7 @@ async function loadToolDefinitionsWrapper({
       provider: agent.provider,
       mcpServerNames,
       rawServerNames: mcpRawServerNames,
+      accessibleServerNames: defsAccessibleServerNames,
     },
     {
       isBuiltInTool,
@@ -963,7 +971,9 @@ async function loadToolDefinitionsWrapper({
     },
   );
 
-  for (const serverName of getMCPServerNamesFromTools(filteredTools, mcpServerNames)) {
+  /** OAuth discovery must not reconnect (or prompt for) a server whose
+   *  definitions the collision filter deliberately rejected. */
+  for (const serverName of getMCPServerNamesFromTools(defsFilteredTools, mcpServerNames)) {
     if (pendingOAuthServers.has(serverName)) {
       continue;
     }
@@ -1039,6 +1049,7 @@ async function loadToolDefinitionsWrapper({
           provider: agent.provider,
           mcpServerNames,
           rawServerNames: mcpRawServerNames,
+          accessibleServerNames: defsAccessibleServerNames,
         },
         {
           isBuiltInTool,

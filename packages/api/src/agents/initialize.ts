@@ -702,10 +702,17 @@ export async function initializeAgent(
     (agent.tools ?? []).some(
       (tool) => typeof tool === 'string' && tool.includes(Constants.mcp_delimiter),
     ) || Object.keys(agent.tool_options ?? {}).some((key) => key.includes(Constants.mcp_delimiter));
-  let mcpHealNames: readonly string[] | null = configRawServerNames;
+  /**
+   * The COMPLETE audit set actually resolved this initialization — from the
+   * agent-key heal or the skill-prime heal — threaded to the tool loader so
+   * its collision guards neither repeat the lookup nor mistake the
+   * operator-only list for a complete audit.
+   */
+  let resolvedAuditNames: readonly string[] | undefined;
   if (hasMCPKeyCandidates) {
-    mcpHealNames = await resolveHealNames();
+    const mcpHealNames = await resolveHealNames();
     if (mcpHealNames != null) {
+      resolvedAuditNames = mcpHealNames;
       const healedKeys = normalizeAgentToolKeys({
         tools: agent.tools ?? undefined,
         toolOptions: agent.tool_options,
@@ -999,6 +1006,9 @@ export async function initializeAgent(
       prime.allowedTools?.some((name) => name.includes(Constants.mcp_delimiter)),
     );
     const primeHealNames = primesNeedHeal ? await resolveHealNames() : null;
+    if (primeHealNames != null) {
+      resolvedAuditNames = primeHealNames;
+    }
     const primesForUnion =
       primeHealNames != null
         ? combinedPrimes.map((prime) =>
@@ -1055,7 +1065,7 @@ export async function initializeAgent(
       model: agent.model,
       tool_options: agent.tool_options,
       tool_resources,
-      accessibleMcpServerNames: mcpHealNames ?? undefined,
+      accessibleMcpServerNames: resolvedAuditNames,
     });
 
   let loadToolsResult;

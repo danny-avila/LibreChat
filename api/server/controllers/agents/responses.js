@@ -90,6 +90,7 @@ function createToolLoader(signal, definitionsOnly = true) {
     provider,
     tool_options,
     tool_resources,
+    accessibleMcpServerNames,
   }) {
     const agent = { id: agentId, tools, provider, model, tool_options };
     try {
@@ -100,6 +101,7 @@ function createToolLoader(signal, definitionsOnly = true) {
         signal,
         tool_resources,
         definitionsOnly,
+        accessibleMcpServerNames,
         streamId: null,
       });
     } catch (error) {

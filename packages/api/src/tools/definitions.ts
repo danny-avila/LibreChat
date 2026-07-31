@@ -52,6 +52,15 @@ export interface LoadToolDefinitionsParams {
    * instructions and other config-keyed consumers read that field raw.
    */
   rawServerNames?: readonly string[];
+  /**
+   * Every server the user can reach (operator + user DB), from a COMPLETE
+   * collision audit. When a parsed name appears here, it IS a real server —
+   * a null tool fetch then means "currently unavailable" (OAuth pending,
+   * missing user variables, disconnected) and must NOT fall back to the raw
+   * alias, or the aliased server's definitions would be emitted under the
+   * unavailable server's names.
+   */
+  accessibleServerNames?: readonly string[];
 }
 
 export interface ActionToolDefinition {
@@ -99,6 +108,7 @@ export async function loadToolDefinitions(
     provider,
     mcpServerNames,
     rawServerNames,
+    accessibleServerNames,
   } = params;
   const { getOrFetchMCPServerTools, isBuiltInTool, getActionToolDefinitions } = deps;
   const serverNameAliases = buildServerNameAliases(rawServerNames ?? []);
@@ -186,8 +196,14 @@ export async function loadToolDefinitions(
       let resolvedName = parsed;
       let fetched = await getOrFetchMCPServerTools(userId, parsed);
       if (!fetched) {
+        /** Alias fallback is for "server not found" ONLY: when the parsed
+         *  name is a known accessible server, a null fetch means it is
+         *  temporarily unavailable (OAuth pending, missing user variables,
+         *  disconnected) and rerouting to the alias would emit the OTHER
+         *  server's definitions under this server's names. */
+        const parsedIsKnownServer = accessibleServerNames?.includes(parsed) === true;
         const aliased = serverNameAliases.get(parsed);
-        if (aliased != null && aliased !== parsed) {
+        if (!parsedIsKnownServer && aliased != null && aliased !== parsed) {
           fetched = await getOrFetchMCPServerTools(userId, aliased);
           if (fetched) {
             resolvedName = aliased;

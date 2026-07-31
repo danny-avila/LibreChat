@@ -673,6 +673,33 @@ describe('definitions.ts', () => {
         expect((toolDef as { serverName?: string }).serverName).toBe('Connector: Company');
       });
 
+      it('does not alias-fallback when the parsed name IS a known accessible server', async () => {
+        /** A null fetch for a KNOWN server means it is temporarily
+         *  unavailable (OAuth pending, missing vars) — rerouting to the raw
+         *  alias would emit the other server's definitions under its names. */
+        mockGetOrFetchMCPServerTools.mockResolvedValue(null);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['search_mcp_Connector__Company'],
+          mcpServerNames: ['Connector__Company'],
+          rawServerNames: ['Connector: Company'],
+          accessibleServerNames: ['Connector__Company', 'Connector: Company'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledTimes(1);
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledWith('user-123', 'Connector__Company');
+        expect(result.toolDefinitions).toHaveLength(0);
+      });
+
       it('prefers a server resolving under the parsed name as-is over the raw alias', async () => {
         /** A user-DB server may be named exactly like an operator server's
          *  normalized form; its tools must keep its own identity instead of
