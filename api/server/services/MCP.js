@@ -21,6 +21,7 @@ const {
   buildMCPAuthRunStepEndDeltaEvent,
   isUserSourced,
   checkAccessWithRequestCache,
+  getServerCustomUserVars,
   requiresEphemeralUserConnection,
   containsGraphTokenPlaceholder,
 } = require('@librechat/api');
@@ -213,10 +214,6 @@ async function resolveAllMcpConfigs(userId, user) {
   }
 
   return await registry.getAllServerConfigs(userId, configServers);
-}
-
-function getServerCustomUserVars(userMCPAuthMap, serverName) {
-  return userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 }
 
 /**
