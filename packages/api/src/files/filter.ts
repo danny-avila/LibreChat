@@ -1,5 +1,6 @@
 import { getEndpointFileConfig, mergeFileConfig, fileConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
+import type { RegexLike } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 
 /**
@@ -8,7 +9,7 @@ import type { ServerRequest } from '~/types';
  * @param supportedMimeTypes - Array of RegExp patterns to match against
  * @returns True if the MIME type matches any pattern
  */
-function isMimeTypeSupported(mimeType: string, supportedMimeTypes?: RegExp[]): boolean {
+function isMimeTypeSupported(mimeType: string, supportedMimeTypes?: RegexLike[]): boolean {
   if (!supportedMimeTypes || supportedMimeTypes.length === 0) {
     return true;
   }

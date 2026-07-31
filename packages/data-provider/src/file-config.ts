@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { EndpointFileConfig, FileConfig } from './types/files';
+import type { EndpointFileConfig, FileConfig, RegexLike } from './types/files';
 import { EModelEndpoint, isAgentsEndpoint, isDocumentSupportedProvider } from './schemas';
 import { normalizeEndpointName } from './utils';
 
@@ -490,7 +490,7 @@ export const fileConfig = {
   stt: {
     supportedMimeTypes: defaultSTTMimeTypes,
   },
-  checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
+  checkType: function (fileType: string, supportedTypes: RegexLike[] = supportedMimeTypes) {
     return supportedTypes.some((regex) => regex.test(fileType));
   },
 };
@@ -543,12 +543,24 @@ export const fileConfigSchema = z.object({
 
 export type TFileConfig = z.infer<typeof fileConfigSchema>;
 
-/** Helper function to safely convert string patterns to RegExp objects */
-export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
-  patterns.reduce((acc: RegExp[], pattern) => {
+/**
+ * Compiler for admin-supplied MIME patterns. Defaults to native `RegExp`, which browser
+ * builds keep so no extra dependency is bundled. The server swaps in a linear-time engine
+ * via `setFileConfigRegexCompiler` so an admin-authored catastrophic-backtracking pattern
+ * cannot ReDoS the shared event loop when tested against an uploaded file's MIME type.
+ */
+let compileMimeRegex: (pattern: string) => RegexLike = (pattern) => new RegExp(pattern);
+
+/** Override the MIME-pattern compiler; the server injects a linear-time engine at startup. */
+export const setFileConfigRegexCompiler = (compile: (pattern: string) => RegexLike): void => {
+  compileMimeRegex = compile;
+};
+
+/** Helper function to safely convert string patterns to matcher objects */
+export const convertStringsToRegex = (patterns: string[]): RegexLike[] =>
+  patterns.reduce((acc: RegexLike[], pattern) => {
     try {
-      const regex = new RegExp(pattern);
-      acc.push(regex);
+      acc.push(compileMimeRegex(pattern));
     } catch (error) {
       console.error(`Invalid regex pattern "${pattern}" skipped.`, error);
     }
@@ -556,7 +568,7 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
   }, []);
 
 /** Detects whether the given MIME type patterns accept all file types (e.g., `.*` or `.+`). */
-export const isPermissiveMimeConfig = (types?: RegExp[]): boolean => {
+export const isPermissiveMimeConfig = (types?: RegexLike[]): boolean => {
   if (!types || types.length === 0) {
     return false;
   }
@@ -714,7 +726,7 @@ const isRepresentable = (mimeType: string): boolean =>
  * picker never hides a file the path would have accepted.
  */
 const buildMimeAccept = (
-  types: RegExp[],
+  types: RegexLike[],
   { categories, documentMimeTypes }: MimeUploadCapability,
 ): string | undefined => {
   const permittedSet = new Set<MimeUploadCategory>(categories);
@@ -792,7 +804,7 @@ const buildMimeAccept = (
  * `supportedMimeTypes` on upload.
  */
 export const getConfiguredMimeAccept = (
-  types: RegExp[] | undefined,
+  types: RegexLike[] | undefined,
   capability: MimeUploadCapability,
 ): string | undefined => {
   /** Referential identity with the built-in list signals an unconfigured endpoint (keep provider filter). */

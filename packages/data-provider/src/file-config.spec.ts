@@ -8,6 +8,7 @@ import {
   isAnthropicDocumentType,
   isPermissiveMimeConfig,
   convertStringsToRegex,
+  setFileConfigRegexCompiler,
   documentParserMimeTypes,
   getEndpointFileConfig,
   applicationMimeTypes,
@@ -1612,5 +1613,28 @@ describe('getConfiguredMimeAccept', () => {
     );
     expect(accept.has('.epub')).toBe(true);
     expect(accept.has('.parquet')).toBe(true);
+  });
+});
+
+describe('setFileConfigRegexCompiler (MIME pattern compiler seam)', () => {
+  afterEach(() => {
+    setFileConfigRegexCompiler((pattern) => new RegExp(pattern));
+  });
+
+  it('defaults to a native RegExp compiler', () => {
+    const [regex] = convertStringsToRegex(['^text/']);
+    expect(regex.test('text/csv')).toBe(true);
+    expect(regex.test('image/png')).toBe(false);
+  });
+
+  it('routes patterns through an injected compiler', () => {
+    const seen: string[] = [];
+    setFileConfigRegexCompiler((pattern) => {
+      seen.push(pattern);
+      return { test: () => false };
+    });
+    const compiled = convertStringsToRegex(['application/pdf', 'text/*']);
+    expect(seen).toEqual(['application/pdf', 'text/*']);
+    expect(compiled.every((matcher) => matcher.test('anything') === false)).toBe(true);
   });
 });

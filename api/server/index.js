@@ -44,9 +44,10 @@ const {
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
-const { startExpiredFileSweep } = require('./services/Files/process');
+const { setFileConfigRegexCompiler } = require('librechat-data-provider');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
+const { startExpiredFileSweep } = require('./services/Files/process');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
@@ -56,6 +57,11 @@ const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const { RE2JS } = require('re2js');
+
+/** Compile admin-configured file-config MIME patterns with a linear-time engine so a
+ *  catastrophic-backtracking pattern cannot ReDoS the event loop when tested on upload. */
+setFileConfigRegexCompiler((pattern) => RE2JS.compile(pattern));
 
 /** Reject messageFilter PII patterns the RE2 runtime engine cannot compile, at config load. */
 configureMessageFilterRegexValidator();
