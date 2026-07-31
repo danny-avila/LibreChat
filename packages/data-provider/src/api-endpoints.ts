@@ -177,6 +177,10 @@ export const loginGoogle = () => `${BASE_URL}/api/auth/google`;
 export const refreshToken = (retry?: boolean) =>
   `${BASE_URL}/api/auth/refresh${retry === true ? '?retry=true' : ''}`;
 
+export const exodeEmbedConfig = () => `${BASE_URL}/api/auth/exode/config`;
+
+export const exodeExchange = () => `${BASE_URL}/api/auth/exode/exchange`;
+
 export const requestPasswordReset = () => `${BASE_URL}/api/auth/requestPasswordReset`;
 
 export const resetPassword = () => `${BASE_URL}/api/auth/resetPassword`;

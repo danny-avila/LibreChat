@@ -26,7 +26,13 @@ import {
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
-import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
+import type {
+  TAuthConfig,
+  TUserContext,
+  TAuthContext,
+  TExternalSession,
+  TResError,
+} from '~/common';
 import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
 import useTimeout from './useTimeout';
 import store from '~/store';
@@ -45,6 +51,8 @@ const AuthContextProvider = ({
   children: ReactNode;
 }) => {
   const isExternalRedirectRef = useRef(false);
+  const embeddedRef = useRef(authConfig?.embedded === true);
+  embeddedRef.current = authConfig?.embedded === true;
   const [user, setUser] = useRecoilState(store.user);
   const logoutRedirectRef = useRef<string | undefined>(undefined);
   const [token, setToken] = useState<string | undefined>(undefined);
@@ -99,6 +107,28 @@ const AuthContextProvider = ({
     [navigate, setUser, setQueriesEnabled],
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
+
+  const acceptExternalSession = useCallback(
+    (session: TExternalSession) => {
+      setError(undefined);
+      setUserContext({
+        token: session.token,
+        user: session.user,
+        isAuthenticated: true,
+      });
+    },
+    [setUserContext],
+  );
+
+  const clearExternalSession = useCallback(() => {
+    setTokenHeader(undefined);
+    setQueriesEnabled(false);
+    setUserContext({
+      token: undefined,
+      user: undefined,
+      isAuthenticated: false,
+    });
+  }, [setQueriesEnabled, setUserContext]);
 
   const loginUser = useLoginUserMutation({
     onSuccess: (data: t.TLoginResponse) => {
@@ -172,6 +202,9 @@ const AuthContextProvider = ({
   };
 
   const silentRefresh = useCallback(() => {
+    if (embeddedRef.current) {
+      return;
+    }
     if (authConfig?.test === true) {
       console.log('Test mode. Skipping silent refresh.');
       return;
@@ -274,6 +307,8 @@ const AuthContextProvider = ({
       error,
       login,
       logout,
+      acceptExternalSession,
+      clearExternalSession,
       setError,
       roles: {
         [SystemRoles.USER]: userRole,
@@ -293,6 +328,8 @@ const AuthContextProvider = ({
       isCustomRole,
       userRoleName,
       customRole,
+      acceptExternalSession,
+      clearExternalSession,
     ],
   );
 

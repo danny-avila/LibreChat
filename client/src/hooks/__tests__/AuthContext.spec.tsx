@@ -2,7 +2,7 @@
  * @jest-environment @happy-dom/jest-environment
  */
 import React from 'react';
-import { render, act } from '@testing-library/react';
+import { render, act, fireEvent, waitFor } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -72,11 +72,34 @@ const authConfig: TAuthConfig = { loginRedirect: '/login', test: true };
 function TestConsumer() {
   const ctx = useAuthContext();
   return (
-    <div
-      data-testid="consumer"
-      data-authenticated={ctx.isAuthenticated}
-      data-roles={JSON.stringify(ctx.roles ?? {})}
-    />
+    <>
+      <div
+        data-testid="consumer"
+        data-authenticated={ctx.isAuthenticated}
+        data-token={ctx.token}
+        data-roles={JSON.stringify(ctx.roles ?? {})}
+      />
+      <button
+        data-testid="accept-external"
+        onClick={() =>
+          ctx.acceptExternalSession({
+            token: 'external-token',
+            user: {
+              id: 'external-user',
+              username: '',
+              email: 'external@users.exode.invalid',
+              name: 'External User',
+              avatar: '',
+              role: 'USER',
+              provider: 'exode',
+              createdAt: '',
+              updatedAt: '',
+            },
+          })
+        }
+      />
+      <button data-testid="clear-external" onClick={ctx.clearExternalSession} />
+    </>
   );
 }
 
@@ -116,6 +139,54 @@ function renderProviderLive() {
     </QueryClientProvider>,
   );
 }
+
+function renderEmbeddedProvider() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RecoilRoot>
+        <MemoryRouter>
+          <AuthContextProvider authConfig={{ loginRedirect: '/login', embedded: true }}>
+            <TestConsumer />
+          </AuthContextProvider>
+        </MemoryRouter>
+      </RecoilRoot>
+    </QueryClientProvider>,
+  );
+}
+
+describe('AuthContextProvider — external embedded sessions', () => {
+  const mockSetTokenHeader = jest.requireMock('librechat-data-provider').setTokenHeader;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('accepts and clears a JWT supplied by the Exode bridge', async () => {
+    const view = renderEmbeddedProvider();
+
+    fireEvent.click(view.getByTestId('accept-external'));
+    await waitFor(() => {
+      expect(view.getByTestId('consumer')).toHaveAttribute('data-authenticated', 'true');
+    });
+    expect(view.getByTestId('consumer')).toHaveAttribute('data-token', 'external-token');
+    expect(mockSetTokenHeader).toHaveBeenCalledWith('external-token');
+
+    fireEvent.click(view.getByTestId('clear-external'));
+    await waitFor(() => {
+      expect(view.getByTestId('consumer')).toHaveAttribute('data-authenticated', 'false');
+    });
+    expect(mockSetTokenHeader).toHaveBeenCalledWith(undefined);
+  });
+
+  it('does not use cookie silent refresh in embedded mode', () => {
+    renderEmbeddedProvider();
+    expect(mockRefreshMutate).not.toHaveBeenCalled();
+  });
+});
 
 describe('AuthContextProvider — login onError redirect handling', () => {
   beforeEach(() => {

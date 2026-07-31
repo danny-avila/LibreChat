@@ -8,6 +8,14 @@ import { clearAllConversationStorage } from '~/utils';
 import store from '~/store';
 
 /* login/logout */
+export const useExodeExchangeMutation = (
+  options?: t.MutationOptions<t.TExodeExchangeResponse, t.TExodeExchangeRequest>,
+): UseMutationResult<t.TExodeExchangeResponse, unknown, t.TExodeExchangeRequest, unknown> =>
+  useMutation([MutationKeys.exodeExchange], {
+    mutationFn: (payload) => dataService.exchangeExodeBootstrap(payload),
+    ...(options || {}),
+  });
+
 export const useLogoutUserMutation = (
   options?: t.LogoutOptions,
 ): UseMutationResult<t.TLogoutResponse, unknown, undefined, unknown> => {

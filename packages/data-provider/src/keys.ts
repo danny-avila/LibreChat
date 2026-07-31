@@ -64,6 +64,7 @@ export enum QueryKeys {
   resourcePermissions = 'resourcePermissions',
   effectivePermissions = 'effectivePermissions',
   graphToken = 'graphToken',
+  exodeEmbedConfig = 'exodeEmbedConfig',
   /* MCP Servers */
   mcpServers = 'mcpServers',
   mcpServer = 'mcpServer',
@@ -103,6 +104,7 @@ export enum MutationKeys {
   loginUser = 'loginUser',
   logoutUser = 'logoutUser',
   refreshToken = 'refreshToken',
+  exodeExchange = 'exodeExchange',
   avatarUpload = 'avatarUpload',
   speechToText = 'speechToText',
   textToSpeech = 'textToSpeech',

@@ -5,6 +5,20 @@ import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query
 import type t from 'librechat-data-provider';
 import store from '~/store';
 
+export const useExodeEmbedConfigQuery = (): QueryObserverResult<t.TExodeEmbedConfig> =>
+  useQuery<t.TExodeEmbedConfig>(
+    [QueryKeys.exodeEmbedConfig],
+    () => dataService.getExodeEmbedConfig(),
+    {
+      staleTime: Infinity,
+      cacheTime: Infinity,
+      retry: false,
+      refetchOnMount: false,
+      refetchOnReconnect: false,
+      refetchOnWindowFocus: false,
+    },
+  );
+
 export const useGetUserQuery = (
   config?: UseQueryOptions<t.TUser>,
 ): QueryObserverResult<t.TUser> => {

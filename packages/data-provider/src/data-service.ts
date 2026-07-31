@@ -161,6 +161,16 @@ export const login = (payload: t.TLoginUser): Promise<t.TLoginResponse> => {
   return request.post(endpoints.login(), payload);
 };
 
+export const getExodeEmbedConfig = (): Promise<t.TExodeEmbedConfig> => {
+  return request.get(endpoints.exodeEmbedConfig());
+};
+
+export const exchangeExodeBootstrap = (
+  payload: t.TExodeExchangeRequest,
+): Promise<t.TExodeExchangeResponse> => {
+  return request.post(endpoints.exodeExchange(), payload);
+};
+
 export const logout = (): Promise<m.TLogoutResponse> => {
   return request.post(endpoints.logout());
 };

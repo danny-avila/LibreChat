@@ -534,6 +534,25 @@ export type TLoginResponse = {
   tempToken?: string;
 };
 
+export type TExodeEmbedConfig = {
+  enabled: boolean;
+  protocol: 1;
+  allowedOrigins: string[];
+};
+
+export type TExodeExchangeRequest = {
+  token: string;
+  handshakeId: string;
+  parentOrigin: string;
+};
+
+export type TExodeExchangeResponse = {
+  token: string;
+  tokenExpiresAt: string;
+  mcpExpiresAt: string;
+  user: TUser;
+};
+
 /** Shared payload for any operation that requires OTP or backup-code verification. */
 export type TOTPVerificationPayload = {
   token?: string;

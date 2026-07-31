@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
+import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
 import {
   Login,
   VerifyEmail,
@@ -12,6 +12,7 @@ import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import { ExodeBridge, isExodeEmbedLocation } from '~/components/Exode';
 import WithRum from '~/lib/rum/WithRum';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
@@ -22,14 +23,24 @@ import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
 
-const AuthLayout = () => (
-  <AuthContextProvider>
-    <WithRum>
+const AuthLayout = () => {
+  const location = useLocation();
+  const embedded = isExodeEmbedLocation(location.pathname, location.search);
+  const content = embedded ? (
+    <ExodeBridge>
       <Outlet />
-    </WithRum>
-    <ApiErrorWatcher />
-  </AuthContextProvider>
-);
+    </ExodeBridge>
+  ) : (
+    <Outlet />
+  );
+
+  return (
+    <AuthContextProvider authConfig={{ loginRedirect: '/login', embedded }}>
+      <WithRum>{content}</WithRum>
+      <ApiErrorWatcher />
+    </AuthContextProvider>
+  );
+};
 
 const loadInlinePromptsView = () =>
   import('~/components/Prompts/layouts/InlinePromptsView').then((m) => ({
@@ -103,6 +114,10 @@ export const router = createBrowserRouter(
       element: <AuthLayout />,
       errorElement: <RouteErrorBoundary />,
       children: [
+        {
+          path: 'embed/exode',
+          element: <Navigate to="/c/new?embed=exode" replace={true} />,
+        },
         {
           path: '/',
           element: <LoginLayout />,

@@ -5,6 +5,8 @@ const mockForceRefreshCloudFrontAuthCookies = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   createSetBalanceConfig: jest.fn(() => (req, res, next) => next()),
+  createExodeConfigController: jest.fn(() => (_req, res) => res.sendStatus(404)),
+  createExodeExchangeController: jest.fn(() => (_req, res) => res.sendStatus(404)),
   forceRefreshCloudFrontAuthCookies: (...args) => mockForceRefreshCloudFrontAuthCookies(...args),
 }));
 
@@ -37,9 +39,19 @@ jest.mock('~/server/controllers/auth/LoginController', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  findUser: jest.fn(),
+  createUser: jest.fn(),
+  updateUser: jest.fn(),
+  generateToken: jest.fn(),
   findBalanceByUser: jest.fn(),
   upsertBalanceFields: jest.fn(),
 }));
+
+jest.mock('~/server/services/PluginService', () => ({ updateUserPluginAuth: jest.fn() }));
+jest.mock('~/server/services/Config/getCachedTools', () => ({
+  invalidateCachedTools: jest.fn(),
+}));
+jest.mock('~/config', () => ({ getMCPManager: jest.fn() }));
 
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),

@@ -357,6 +357,7 @@ actions:
 #   allowedAddresses:
 #     - 'host.docker.internal:8080'
 #     - '127.0.0.1:8080'
+#     - 'ai-chat-mcp:50054' # Required by the Exode example below when it resolves privately
 
 # Example MCP Servers Object Structure
 # mcpServers:
@@ -372,6 +373,19 @@ actions:
 #       - -y
 #       - "@modelcontextprotocol/server-puppeteer"
 #     timeout: 300000  # 5 minutes timeout for this server
+#   exode:
+#     type: streamable-http
+#     url: http://ai-chat-mcp:50054/mcp
+#     headers:
+#       Authorization: 'Bearer {{EXODE_AI_TOKEN}}'
+#       x-user-id: '{{LIBRECHAT_USER_ID}}'
+#       x-agent-id: '{{LIBRECHAT_AGENT_ID}}'
+#     customUserVars:
+#       EXODE_AI_TOKEN:
+#         title: Exode AI access token
+#         description: Managed by the Exode iframe bridge
+#         sensitive: true
+#     timeout: 60000
 #   filesystem:
 #     # type: stdio
 #     command: npx

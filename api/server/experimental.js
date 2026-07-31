@@ -20,6 +20,8 @@ const {
   QUERY_DEVTOOLS_HEADER,
   performStartupChecks,
   handleJsonParseError,
+  getExodeFrameAncestors,
+  isExodeEmbedRequest,
   deleteAgentCheckpoint,
   initializeFileStorage,
   loadToolApprovalHooks,
@@ -357,6 +359,9 @@ if (cluster.isMaster) {
         Expires: process.env.INDEX_EXPIRES || '0',
       });
       res.vary(QUERY_DEVTOOLS_HEADER);
+      if (isExodeEmbedRequest(req.path, req.query.embed)) {
+        res.set('Content-Security-Policy', `frame-ancestors ${getExodeFrameAncestors()}`);
+      }
 
       const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
       const saneLang = lang.replace(/"/g, '&quot;');
@@ -372,6 +377,7 @@ if (cluster.isMaster) {
 
     /** Middleware */
     app.use(noIndex);
+    app.use('/api/auth/exode/exchange', express.json({ limit: '32kb' }));
     app.use(express.json({ limit: '3mb' }));
     app.use(express.urlencoded({ extended: true, limit: '3mb' }));
 

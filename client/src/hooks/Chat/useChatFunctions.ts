@@ -401,8 +401,15 @@ export default function useChatFunctions({
       parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
       conversationId = null;
-      const projectSearch = chatProjectId ? `?projectId=${encodeURIComponent(chatProjectId)}` : '';
-      navigate(`/c/new${projectSearch}`, { state: { focusChat: true } });
+      const nextParams = new URLSearchParams();
+      if (chatProjectId) {
+        nextParams.set('projectId', chatProjectId);
+      }
+      if (new URLSearchParams(window.location.search).get('embed') === 'exode') {
+        nextParams.set('embed', 'exode');
+      }
+      const nextSearch = nextParams.size > 0 ? `?${nextParams.toString()}` : '';
+      navigate(`/c/new${nextSearch}`, { state: { focusChat: true } });
     }
 
     const targetParentMessageId = isRegenerate ? messageId : latestMessage?.parentMessageId;

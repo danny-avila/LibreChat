@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { useMediaQuery } from '@librechat/client';
 import {
   PromptGroupsProvider,
@@ -25,6 +25,7 @@ import { TermsAndConditionsModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
 import store from '~/store';
+import { isExodeEmbedLocation } from '~/components/Exode';
 
 /** Isolates keyboard shortcut listeners so they only mount after auth. */
 function KeyboardShortcutsProvider() {
@@ -42,6 +43,8 @@ export default function Root() {
   const [bannerHeight, setBannerHeight] = useState(0);
   const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const location = useLocation();
+  const embedded = isExodeEmbedLocation(location.pathname, location.search);
 
   const { isAuthenticated, logout } = useAuthContext();
 
@@ -83,10 +86,13 @@ export default function Root() {
         <AssistantsMapContext.Provider value={assistantsMap}>
           <AgentsMapContext.Provider value={agentsMap}>
             <PromptGroupsProvider>
-              <Banner onHeightChange={setBannerHeight} />
-              <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
+              {!embedded && <Banner onHeightChange={setBannerHeight} />}
+              <div
+                className="flex"
+                style={{ height: `calc(100dvh - ${embedded ? 0 : bannerHeight}px)` }}
+              >
                 <div className="relative z-0 flex h-full w-full overflow-hidden">
-                  <UnifiedSidebar />
+                  {!embedded && <UnifiedSidebar />}
                   <div
                     className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
                     style={{
@@ -112,7 +118,7 @@ export default function Root() {
               modalContent={config.interface.termsOfService.modalContent}
             />
           )}
-          <KeyboardShortcutsProvider />
+          {!embedded && <KeyboardShortcutsProvider />}
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
     </SetConvoProvider>

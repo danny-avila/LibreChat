@@ -497,8 +497,15 @@ export type TAuthContext = {
   error: string | undefined;
   login: (data: t.TLoginUser) => void;
   logout: (redirect?: string) => void;
+  acceptExternalSession: (session: TExternalSession) => void;
+  clearExternalSession: () => void;
   setError: React.Dispatch<React.SetStateAction<string | undefined>>;
   roles?: Record<string, t.TRole | null | undefined>;
+};
+
+export type TExternalSession = {
+  token: string;
+  user: t.TUser;
 };
 
 export type TUserContext = {
@@ -511,6 +518,7 @@ export type TUserContext = {
 export type TAuthConfig = {
   loginRedirect: string;
   test?: boolean;
+  embedded?: boolean;
 };
 
 export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &

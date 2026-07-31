@@ -1,5 +1,11 @@
 const express = require('express');
-const { createSetBalanceConfig, forceRefreshCloudFrontAuthCookies } = require('@librechat/api');
+const { getTenantId } = require('@librechat/data-schemas');
+const {
+  createSetBalanceConfig,
+  createExodeConfigController,
+  createExodeExchangeController,
+  forceRefreshCloudFrontAuthCookies,
+} = require('@librechat/api');
 const {
   resetPasswordRequestController,
   resetPasswordController,
@@ -17,8 +23,18 @@ const {
 const { verify2FAWithTempToken } = require('~/server/controllers/auth/TwoFactorAuthController');
 const { logoutController } = require('~/server/controllers/auth/LogoutController');
 const { loginController } = require('~/server/controllers/auth/LoginController');
-const { findBalanceByUser, upsertBalanceFields } = require('~/models');
+const {
+  findUser,
+  createUser,
+  updateUser,
+  generateToken,
+  findBalanceByUser,
+  upsertBalanceFields,
+} = require('~/models');
+const { updateUserPluginAuth } = require('~/server/services/PluginService');
+const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { getAppConfig } = require('~/server/services/Config');
+const { getMCPManager } = require('~/config');
 const middleware = require('~/server/middleware');
 
 const setBalanceConfig = createSetBalanceConfig({
@@ -28,6 +44,16 @@ const setBalanceConfig = createSetBalanceConfig({
 });
 
 const router = express.Router();
+const exodeExchangeController = createExodeExchangeController({
+  findUser,
+  createUser,
+  updateUser,
+  generateToken,
+  updateUserPluginAuth,
+  invalidateCachedTools,
+  getMCPManager,
+  getTenantId,
+});
 const getCloudFrontAuthCookieRefreshResult = (req, res) => {
   const warmedResult = req.cloudFrontAuthCookieRefreshResult;
   if (warmedResult && (warmedResult.attempted || !warmedResult.enabled)) {
@@ -51,6 +77,8 @@ router.post(
   loginController,
 );
 router.post('/refresh', refreshController);
+router.get('/exode/config', createExodeConfigController());
+router.post('/exode/exchange', middleware.loginLimiter, exodeExchangeController);
 router.post('/cloudfront/refresh', middleware.requireJwtAuth, (req, res) => {
   const result = getCloudFrontAuthCookieRefreshResult(req, res);
   if (!result.enabled) {
