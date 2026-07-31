@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Tools } from 'librechat-data-provider';
-import { Globe, ChevronDown } from 'lucide-react';
+import { Globe, ChevronDown, Info } from 'lucide-react';
+import { HoverCard, HoverCardTrigger, HoverCardPortal, HoverCardContent } from '@librechat/client';
 import type {
   TAttachment,
   ValidSource,
@@ -12,6 +13,7 @@ import { disclosureChevronClassName, toolPanelSpacingClassName } from './disclos
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { StackedFavicons } from '~/components/Web/Sources';
 import { useLocalize, useExpandCollapse } from '~/hooks';
+import parseJsonField from './Parts/parseJsonField';
 import { useToolCallIntent } from './Parts/intent';
 import { useSearchContext } from '~/Providers';
 import cn from '~/utils/cn';
@@ -206,6 +208,7 @@ export default function WebSearch({
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const sourceCount = allSources.length;
+  const [showDetails, setShowDetails] = useState(false);
   const [showSourceList, setShowSourceList] = useState(() => autoExpand && sourceCount > 0);
   const { style: sourceExpandStyle, ref: sourceExpandRef } = useExpandCollapse(showSourceList);
 
@@ -232,42 +235,104 @@ export default function WebSearch({
   if (complete) {
     const hasSourceData = sourceCount > 0;
     const completedText = intent ?? localize('com_ui_web_searched');
+    const query = parseJsonField(args, 'query');
+    const hasDetails = !!query || !!answerBox;
 
     return (
-      <div className="my-1">
+      <div className="group/websearch my-1">
         <span className="sr-only" aria-live="polite" aria-atomic="true">
           {completedText}
         </span>
-        <button
-          type="button"
-          className={cn(
-            'tool-status-text group/disclosure flex h-5 items-center gap-2 rounded-full',
-            hasSourceData
-              ? 'text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
-              : 'pointer-events-none text-text-secondary',
+        <div className="relative flex h-5 items-center gap-1.5">
+          <button
+            type="button"
+            className={cn(
+              'tool-status-text group/disclosure flex h-5 min-w-0 items-center gap-2 rounded-full',
+              hasSourceData
+                ? 'text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
+                : 'pointer-events-none text-text-secondary',
+            )}
+            disabled={!hasSourceData}
+            onClick={hasSourceData ? handleToggleSources : undefined}
+            aria-expanded={hasSourceData ? showSourceList : undefined}
+            aria-label={
+              hasSourceData
+                ? `${completedText} - ${localize(sourceCount === 1 ? 'com_ui_web_search_source' : 'com_ui_web_search_sources', { count: sourceCount })}`
+                : completedText
+            }
+          >
+            {hasSourceData ? (
+              <SourceFaviconStack sources={allSources} />
+            ) : (
+              <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+            )}
+            <span className="min-w-0 truncate font-medium">{completedText}</span>
+            {hasSourceData && (
+              <ChevronDown
+                className={cn(
+                  disclosureChevronClassName,
+                  'size-3.5',
+                  showSourceList && 'rotate-180',
+                )}
+                aria-hidden="true"
+              />
+            )}
+          </button>
+          {hasDetails && (
+            <HoverCard openDelay={50} open={showDetails} onOpenChange={setShowDetails}>
+              <HoverCardTrigger
+                tabIndex={0}
+                className={cn(
+                  'ml-auto inline-flex cursor-help items-center justify-center rounded-md p-1 text-text-secondary opacity-0 transition-all duration-200 ease-out',
+                  'hover:bg-surface-hover hover:text-text-primary',
+                  'group-focus-within/websearch:opacity-100 group-hover/websearch:opacity-100',
+                  'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+                )}
+                onFocus={() => setShowDetails(true)}
+                onBlur={() => setShowDetails(false)}
+                aria-label={localize('com_ui_web_search_details')}
+              >
+                <Info className="size-3.5" aria-hidden="true" />
+              </HoverCardTrigger>
+              <HoverCardPortal>
+                <HoverCardContent side="top" className="z-[999] w-80">
+                  <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+                    {query && (
+                      <div>
+                        <div className="text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+                          {localize('com_ui_search_query')}
+                        </div>
+                        <div className="mt-0.5 text-sm text-text-primary">{query}</div>
+                      </div>
+                    )}
+                    <div className="text-xs text-text-secondary">
+                      {localize(
+                        sourceCount === 1
+                          ? 'com_ui_web_search_source'
+                          : 'com_ui_web_search_sources',
+                        { count: sourceCount },
+                      )}
+                    </div>
+                    {answerBox && (answerBox.title || answerBox.snippet) && (
+                      <div className="border-t border-border-light pt-2">
+                        {answerBox.title && (
+                          <div className="text-sm font-medium text-text-primary">
+                            {answerBox.title}
+                          </div>
+                        )}
+                        {answerBox.snippet && (
+                          <div className="mt-1 text-xs leading-relaxed text-text-secondary">
+                            {answerBox.snippet}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </HoverCardContent>
+              </HoverCardPortal>
+            </HoverCard>
           )}
-          disabled={!hasSourceData}
-          onClick={hasSourceData ? handleToggleSources : undefined}
-          aria-expanded={hasSourceData ? showSourceList : undefined}
-          aria-label={
-            hasSourceData
-              ? `${completedText} - ${localize(sourceCount === 1 ? 'com_ui_web_search_source' : 'com_ui_web_search_sources', { count: sourceCount })}`
-              : completedText
-          }
-        >
-          {hasSourceData ? (
-            <SourceFaviconStack sources={allSources} />
-          ) : (
-            <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-          )}
-          <span className="min-w-0 truncate font-medium">{completedText}</span>
-          {hasSourceData && (
-            <ChevronDown
-              className={cn(disclosureChevronClassName, 'size-3.5', showSourceList && 'rotate-180')}
-              aria-hidden="true"
-            />
-          )}
-        </button>
+        </div>
         {hasSourceData && (
           <div style={sourceExpandStyle}>
             <div className="overflow-hidden" ref={sourceExpandRef}>
@@ -277,20 +342,6 @@ export default function WebSearch({
                   'mt-1.5 max-h-[280px] overflow-y-auto rounded-lg border border-border-light',
                 )}
               >
-                {answerBox && (answerBox.title || answerBox.snippet) && (
-                  <div className="border-b border-border-light px-3 py-2.5">
-                    {answerBox.title && (
-                      <div className="text-xs font-semibold text-text-primary">
-                        {answerBox.title}
-                      </div>
-                    )}
-                    {answerBox.snippet && (
-                      <div className="mt-0.5 text-xs leading-relaxed text-text-secondary">
-                        {answerBox.snippet}
-                      </div>
-                    )}
-                  </div>
-                )}
                 {allSources.map((source, i) => {
                   const domain = getCleanDomain(source.link);
                   const snippet = 'snippet' in source ? source.snippet : undefined;
@@ -303,7 +354,7 @@ export default function WebSearch({
                       className={cn(
                         'flex gap-2.5 px-3 py-2 transition-colors hover:bg-surface-hover',
                         snippet ? 'items-start' : 'items-center',
-                        (i > 0 || !!answerBox) && 'border-t border-border-light',
+                        i > 0 && 'border-t border-border-light',
                       )}
                     >
                       <FaviconImage
