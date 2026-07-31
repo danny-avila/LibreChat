@@ -2078,7 +2078,11 @@ class AgentClient extends BaseClient {
     // and the streamed args were dropped (name-less chunks) — without this the
     // unfinished turn saves an empty ask part the record card can't render.
     if (interrupt.payload?.type === 'ask_user_question' && Array.isArray(this.contentParts)) {
-      const stamped = attachAskUserQuestionArgs(this.contentParts, interrupt.payload.question);
+      const stamped = attachAskUserQuestionArgs(
+        this.contentParts,
+        interrupt.payload.question,
+        interrupt.payload.tool_call_id,
+      );
       if (stamped !== this.contentParts) {
         this.contentParts.length = 0;
         this.contentParts.push(...stamped);

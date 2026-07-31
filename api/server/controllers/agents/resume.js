@@ -773,6 +773,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         seedContent,
         pendingAction.payload.question,
         req.body.answer,
+        pendingAction.payload.tool_call_id,
       );
     }
     if (client.contentParts) {

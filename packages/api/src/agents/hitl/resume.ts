@@ -301,6 +301,36 @@ export function createContentIndexOffsetHandlers(
 }
 
 /**
+ * Locate the ask part a stamp should target. With a `toolCallId` (the SDK
+ * surfaces the interrupting call's id on the payload from `@librechat/agents`
+ * > 3.3.8) the match is exact — several ask parts in one turn each get their
+ * own question/answer. Without one, fall back to the newest ask part that
+ * passes `isStampable` (a re-pause targets the newest question; earlier ones
+ * already carry their answers).
+ */
+function findAskPartIndex<
+  TPart extends { type?: string; tool_call?: { id?: string; name?: string } },
+>(content: TPart[], toolCallId: string | undefined, isStampable: (part: TPart) => boolean): number {
+  for (let i = content.length - 1; i >= 0; i--) {
+    const part = content[i];
+    const toolCall = part?.tool_call;
+    if (part?.type !== 'tool_call' || toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME) {
+      continue;
+    }
+    if (toolCallId != null && toolCallId.length > 0) {
+      if (toolCall.id === toolCallId) {
+        return i;
+      }
+      continue;
+    }
+    if (isStampable(part)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
  * Stamp the answered question onto the paused `ask_user_question` tool-call part
  * before the resume run seeds it back into the content pipeline.
  *
@@ -312,36 +342,38 @@ export function createContentIndexOffsetHandlers(
  * The authoritative data exists anyway: the pendingAction payload carries the full
  * question, and the resume request carries the user's answer.
  *
- * Patches the LAST unanswered ask part (a re-pause targets the newest question;
- * earlier ones already carry their answers). Pure — returns the input array when
- * nothing matched.
+ * Targets the payload's `tool_call_id` part when present (exact attribution for
+ * multi-ask turns), else the LAST unanswered ask part. Pure — returns the input
+ * array when nothing matched.
  */
 export function attachAskUserQuestionAnswer<
-  TPart extends { type?: string; tool_call?: { name?: string; output?: unknown } },
->(content: TPart[], question: Agents.AskUserQuestionRequest, answer: string): TPart[] {
-  for (let i = content.length - 1; i >= 0; i--) {
-    const part = content[i];
-    const toolCall = part?.tool_call;
-    if (
-      part?.type !== 'tool_call' ||
-      toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME ||
-      (typeof toolCall.output === 'string' && toolCall.output.length > 0)
-    ) {
-      continue;
-    }
-    const next = [...content];
-    next[i] = {
-      ...part,
-      tool_call: {
-        ...toolCall,
-        args: JSON.stringify(question),
-        output: answer,
-        progress: 1,
-      },
-    };
-    return next;
+  TPart extends { type?: string; tool_call?: { id?: string; name?: string; output?: unknown } },
+>(
+  content: TPart[],
+  question: Agents.AskUserQuestionRequest,
+  answer: string,
+  toolCallId?: string,
+): TPart[] {
+  const index = findAskPartIndex(
+    content,
+    toolCallId,
+    (part) => !(typeof part.tool_call?.output === 'string' && part.tool_call.output.length > 0),
+  );
+  if (index < 0) {
+    return content;
   }
-  return content;
+  const part = content[index];
+  const next = [...content];
+  next[index] = {
+    ...part,
+    tool_call: {
+      ...part.tool_call,
+      args: JSON.stringify(question),
+      output: answer,
+      progress: 1,
+    },
+  };
+  return next;
 }
 
 /**
@@ -351,33 +383,29 @@ export function attachAskUserQuestionAnswer<
  * reaches the answer-resume stamp, and the streamed args were dropped by the
  * aggregator (name-less chunks), so without this the persisted unfinished turn
  * carries an empty ask part the record card can't render a question from.
- * Targets the newest ask part with empty args and no output. Pure.
+ * Targets the payload's `tool_call_id` part when present, else the newest ask
+ * part with empty args and no output. Pure.
  */
 export function attachAskUserQuestionArgs<
   TPart extends {
     type?: string;
-    tool_call?: { name?: string; args?: unknown; output?: unknown };
+    tool_call?: { id?: string; name?: string; args?: unknown; output?: unknown };
   },
->(content: TPart[], question: Agents.AskUserQuestionRequest): TPart[] {
-  for (let i = content.length - 1; i >= 0; i--) {
-    const part = content[i];
-    const toolCall = part?.tool_call;
+>(content: TPart[], question: Agents.AskUserQuestionRequest, toolCallId?: string): TPart[] {
+  const index = findAskPartIndex(content, toolCallId, (part) => {
+    const toolCall = part.tool_call;
     const hasArgs =
       (typeof toolCall?.args === 'string' && toolCall.args.trim().length > 0) ||
       (toolCall?.args != null &&
         typeof toolCall.args === 'object' &&
         Object.keys(toolCall.args as object).length > 0);
-    if (
-      part?.type !== 'tool_call' ||
-      toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME ||
-      hasArgs ||
-      (typeof toolCall.output === 'string' && toolCall.output.length > 0)
-    ) {
-      continue;
-    }
-    const next = [...content];
-    next[i] = { ...part, tool_call: { ...toolCall, args: JSON.stringify(question) } };
-    return next;
+    return !hasArgs && !(typeof toolCall?.output === 'string' && toolCall.output.length > 0);
+  });
+  if (index < 0) {
+    return content;
   }
-  return content;
+  const part = content[index];
+  const next = [...content];
+  next[index] = { ...part, tool_call: { ...part.tool_call, args: JSON.stringify(question) } };
+  return next;
 }
