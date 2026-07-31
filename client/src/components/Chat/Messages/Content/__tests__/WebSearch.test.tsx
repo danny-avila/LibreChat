@@ -16,6 +16,8 @@ jest.mock('~/hooks', () => ({
       com_ui_web_searched: 'Searched the web',
       com_ui_web_search_source: `${values?.count ?? 1} source`,
       com_ui_web_search_sources: `${values?.count ?? 0} sources`,
+      com_ui_web_search_details: 'Search details',
+      com_ui_search_query: 'Query',
     };
     return translations[key] || key;
   },
@@ -56,6 +58,7 @@ jest.mock('~/components/Web/Sources', () => ({
 
 jest.mock('lucide-react', () => ({
   Globe: () => <span data-testid="globe-icon" />,
+  Info: () => <span data-testid="info-icon" />,
   ChevronDown: ({ className }: { className?: string }) => (
     <span data-testid="chevron-icon" className={className} />
   ),
@@ -88,6 +91,7 @@ function renderWebSearch({
   isSubmitting = false,
   isLast = false,
   initialProgress = 1,
+  args,
   output,
 }: {
   searchResults?: Record<string, SearchResultData>;
@@ -95,6 +99,7 @@ function renderWebSearch({
   isSubmitting?: boolean;
   isLast?: boolean;
   initialProgress?: number;
+  args?: string | Record<string, unknown>;
   output?: string | null;
 }) {
   return render(
@@ -104,6 +109,7 @@ function renderWebSearch({
           initialProgress={initialProgress}
           isSubmitting={isSubmitting}
           isLast={isLast}
+          args={args}
           output={output}
           attachments={attachments}
         />
@@ -291,7 +297,7 @@ describe('WebSearch', () => {
       expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('renders snippets, dates, and the answer box in the source list', () => {
+    it('renders snippets and dates in the source list', () => {
       const attachment = {
         type: Tools.web_search,
         [Tools.web_search]: {
@@ -304,6 +310,24 @@ describe('WebSearch', () => {
               date: 'Jun 12, 2026',
             },
           ],
+        },
+      } as unknown as TAttachment;
+
+      renderWebSearch({ attachments: [attachment] });
+
+      expect(
+        screen.getByText('How context windows change what assistants can do.'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('Jun 12, 2026')).toBeInTheDocument();
+      expect(screen.getByText('example.com')).toBeInTheDocument();
+    });
+
+    it('tucks the query and answer box behind the details hover card', async () => {
+      const attachment = {
+        type: Tools.web_search,
+        [Tools.web_search]: {
+          turn: 0,
+          organic: [{ link: 'https://example.com/context', title: 'Context windows explained' }],
           answerBox: {
             title: 'What is a context window?',
             snippet: 'The amount of text a model can consider at once.',
@@ -311,17 +335,22 @@ describe('WebSearch', () => {
         },
       } as unknown as TAttachment;
 
-      renderWebSearch({ attachments: [attachment] });
+      renderWebSearch({
+        attachments: [attachment],
+        args: { query: 'largest context window LLM 2026' },
+      });
 
-      expect(screen.getByText('What is a context window?')).toBeInTheDocument();
+      expect(screen.queryByText('What is a context window?')).not.toBeInTheDocument();
+
+      const trigger = screen.getByLabelText('Search details');
+      fireEvent.focus(trigger);
+
+      expect(await screen.findByText('What is a context window?')).toBeInTheDocument();
       expect(
         screen.getByText('The amount of text a model can consider at once.'),
       ).toBeInTheDocument();
-      expect(
-        screen.getByText('How context windows change what assistants can do.'),
-      ).toBeInTheDocument();
-      expect(screen.getByText('Jun 12, 2026')).toBeInTheDocument();
-      expect(screen.getByText('example.com')).toBeInTheDocument();
+      expect(screen.getByText('largest context window LLM 2026')).toBeInTheDocument();
+      expect(screen.getByText('1 source')).toBeInTheDocument();
     });
 
     it('uses standard tool-row spacing and reveals its chevron on hover or focus', () => {
@@ -332,7 +361,8 @@ describe('WebSearch', () => {
       renderWebSearch({ searchResults });
 
       const button = screen.getByRole('button', { name: /Searched the web/ });
-      expect(button.parentElement).toHaveClass('my-1');
+      expect(button.parentElement).toHaveClass('h-5');
+      expect(button.parentElement?.parentElement).toHaveClass('my-1');
       expect(button).not.toHaveClass('py-1');
       expect(button).not.toHaveClass('transition-colors');
       const chevron = screen.getByTestId('chevron-icon');
