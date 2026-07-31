@@ -58,6 +58,8 @@ jest.mock('~/components/Web/Sources', () => ({
 jest.mock('lucide-react', () => ({
   Globe: () => <span data-testid="globe-icon" />,
   Info: () => <span data-testid="info-icon" />,
+  Star: () => <span data-testid="star-icon" />,
+  MapPin: () => <span data-testid="map-pin-icon" />,
   ChevronDown: ({ className }: { className?: string }) => (
     <span data-testid="chevron-icon" className={className} />
   ),
@@ -344,6 +346,66 @@ describe('WebSearch', () => {
       ).toBeInTheDocument();
       expect(screen.getByText('largest context window LLM 2026')).toBeInTheDocument();
       expect(screen.getByText('1 source')).toBeInTheDocument();
+    });
+
+    it('renders shopping, image, and place verticals in the expanded panel', () => {
+      const attachment = {
+        type: Tools.web_search,
+        [Tools.web_search]: {
+          turn: 0,
+          organic: [{ link: 'https://example.com/a', title: 'A source' }],
+          images: [
+            {
+              title: 'Rain vortex',
+              imageUrl: 'https://img.example.com/full.jpg',
+              thumbnailUrl: 'https://img.example.com/thumb.jpg',
+              thumbnailWidth: 300,
+              thumbnailHeight: 200,
+              link: 'https://host.example.com/page',
+            },
+          ],
+          shopping: [
+            {
+              title: 'Gingko Mini Smart Book',
+              link: 'https://shop.example.com/book',
+              price: '35,70 \u20ac',
+              source: 'Amazon',
+              rating: 4.7,
+              ratingCount: 1284,
+              delivery: 'Free delivery',
+            },
+          ],
+          places: [
+            {
+              name: 'Blue Bottle Coffee',
+              category: 'Coffee shop',
+              address: '300 S Broadway',
+              rating: 4.6,
+              ratingCount: 812,
+            },
+          ],
+        },
+      } as unknown as TAttachment;
+
+      renderWebSearch({ attachments: [attachment] });
+
+      const imageLink = screen.getByLabelText('Rain vortex');
+      expect(imageLink).toHaveAttribute('href', 'https://host.example.com/page');
+      expect(imageLink.querySelector('img')).toHaveAttribute(
+        'src',
+        'https://img.example.com/thumb.jpg',
+      );
+
+      const product = screen.getByText('Gingko Mini Smart Book').closest('a');
+      expect(product).toHaveAttribute('href', 'https://shop.example.com/book');
+      expect(screen.getByText('35,70 \u20ac \u00b7 Amazon')).toBeInTheDocument();
+      expect(screen.getByText('Free delivery')).toBeInTheDocument();
+      expect(screen.getByText('4.7')).toBeInTheDocument();
+
+      expect(screen.getByText('Blue Bottle Coffee')).toBeInTheDocument();
+      expect(screen.getByText('Coffee shop \u00b7 300 S Broadway')).toBeInTheDocument();
+      expect(screen.getByText('4.6')).toBeInTheDocument();
+      expect(screen.getByText('(812)')).toBeInTheDocument();
     });
 
     it('uses standard tool-row spacing and reveals its chevron on hover or focus', () => {
