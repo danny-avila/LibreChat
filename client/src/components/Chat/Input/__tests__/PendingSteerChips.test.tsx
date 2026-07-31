@@ -134,10 +134,13 @@ describe('PendingSteerChips — queued primary availability', () => {
       steering: {
         duringRunActive: false,
         canSendQueuedNow: false,
+        canSteer: false,
+        pausedOnApproval: true,
       },
     });
 
     expect(screen.queryByText('com_ui_send_now')).toBeNull();
+    expect(screen.getByTestId('queued-interrupt-now')).toBeDisabled();
     expect(mockSendQueuedNow).not.toHaveBeenCalled();
   });
 });
@@ -246,6 +249,17 @@ describe('PendingSteerChips — queued interrupt-now', () => {
      *  discoverable-but-disabled there, not vanish with the primary. */
     renderChips([queuedMessage], {
       steering: { duringRunActive: true, canSteer: false, pausedOnApproval: true },
+    });
+    const button = screen.getByTestId('queued-interrupt-now');
+    expect(button).toBeDisabled();
+
+    fireEvent.click(button);
+    expect(mockSendQueuedNow).not.toHaveBeenCalled();
+  });
+
+  it('stays visible but disabled while ask-user answer mode owns the composer', () => {
+    renderChips([queuedMessage], {
+      steering: { duringRunActive: false, canSteer: false, pausedOnApproval: true },
     });
     const button = screen.getByTestId('queued-interrupt-now');
     expect(button).toBeDisabled();

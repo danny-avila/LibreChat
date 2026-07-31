@@ -304,7 +304,13 @@ export default function useSteering({
       select: hasLiveToolApproval,
     },
   );
-  const pausedOnApproval = duringRunActive ? (liveToolApproval ?? false) : false;
+  /** Both approval cards and `ask_user_question` suspend the current
+   * generation while keeping its submission slot occupied. Answer mode hides
+   * the ordinary during-run composer, but waiting-message controls still need
+   * to know a live generation exists so they remain discoverable and disabled
+   * instead of looking as though the action disappeared. */
+  const pausedOnApproval =
+    enabled && isSubmitting ? answerModeActive || (liveToolApproval ?? false) : false;
 
   /** Whether a steer can reach the live run right now — independent of the
    *  user's default action, so the per-send menu can always override to

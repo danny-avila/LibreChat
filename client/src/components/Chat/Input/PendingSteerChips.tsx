@@ -69,7 +69,8 @@ function QueuedRow({
    *  escalation control must stay visible-and-disabled there — hiding it
    *  during the pause is exactly the discoverability gap this button fixes. */
   const showEscalate =
-    !isRecovered && steering.duringRunActive && (steering.canSteer || steering.pausedOnApproval);
+    !isRecovered &&
+    (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
 
   const entries: MenuEntry[] = isRecovered
     ? []

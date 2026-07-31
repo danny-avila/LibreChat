@@ -177,13 +177,16 @@ describe('useSteering', () => {
       expect(stopGenerating).toHaveBeenCalledTimes(1);
     });
 
-    it('is inactive for assistants endpoints, secondary composers, and answer mode', () => {
+    it('is inactive but exposes the paused state for ask-user answer mode', () => {
       expect(
         setup({ conversation: { endpoint: EModelEndpoint.assistants } as TConversation }).result
           .current.duringRunActive,
       ).toBe(false);
       expect(setup({ index: 1 }).result.current.duringRunActive).toBe(false);
-      expect(setup({ answerModeActive: true }).result.current.duringRunActive).toBe(false);
+      const answerMode = setup({ answerModeActive: true }).result.current;
+      expect(answerMode.duringRunActive).toBe(false);
+      expect(answerMode.pausedOnApproval).toBe(true);
+      expect(answerMode.canSteer).toBe(false);
     });
   });
 
