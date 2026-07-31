@@ -366,6 +366,7 @@ const Part = memo(function Part({
               isSubmitting={isSubmitting}
               runStepStatus={toolCall.runStepStatus}
               attachments={attachments}
+              hideAttachments={hideAttachments}
               isLast={isLast}
               onExpand={onToolExpand}
             />

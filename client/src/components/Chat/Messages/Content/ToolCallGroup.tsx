@@ -24,6 +24,7 @@ import { isError, StackedToolIcons } from './ToolOutput';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import SearchVerticals from './verticals';
 import store from '~/store';
 
 interface ToolMeta {
@@ -551,7 +552,10 @@ export default function ToolCallGroup({
         )}
       </div>
       {groupAttachments && groupAttachments.length > 0 && (
-        <AttachmentGroup attachments={groupAttachments} />
+        <>
+          <SearchVerticals attachments={groupAttachments} />
+          <AttachmentGroup attachments={groupAttachments} />
+        </>
       )}
     </div>
   );
