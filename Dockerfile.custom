@@ -82,6 +82,8 @@ COPY mcp-servers/video-openrouter/index.js /app/mcp-servers/video-openrouter/ind
 COPY mcp-servers/document-generator/package.json /app/mcp-servers/document-generator/package.json
 COPY mcp-servers/document-generator/index.js /app/mcp-servers/document-generator/index.js
 COPY mcp-servers/document-generator/generators /app/mcp-servers/document-generator/generators
+COPY mcp-servers/file-reader/package.json /app/mcp-servers/file-reader/package.json
+COPY mcp-servers/file-reader/index.js /app/mcp-servers/file-reader/index.js
 
 # Install MCP server dependencies
 RUN cd /app/mcp-servers/image && npm install --production
@@ -89,6 +91,7 @@ RUN cd /app/mcp-servers/image-openrouter && npm install --production
 RUN cd /app/mcp-servers/video && npm install --production
 RUN cd /app/mcp-servers/video-openrouter && npm install --production
 RUN cd /app/mcp-servers/document-generator && npm install --production
+RUN cd /app/mcp-servers/file-reader && npm install --production
 
 # Return to node user
 USER node
