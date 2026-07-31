@@ -11,13 +11,13 @@ import type {
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
+import { cn, getToolDisplayLabel, getActivityLabelPart, getActivityLabelText } from '~/utils';
 import { ToolAuthWarning, ToolAuthWarningContext } from './auth';
+import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { AttachmentGroup, ReasoningCompact } from './Parts';
 import { isError, StackedToolIcons } from './ToolOutput';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
-import { cn, getToolDisplayLabel, getActivityLabelPart, getActivityLabelText } from '~/utils';
-import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import SearchVerticals from './verticals';
 import store from '~/store';
 
@@ -280,7 +280,6 @@ export default function ToolCallGroup({
    *  card. While a multi-question turn streams, the still-open question's
    *  tool_call part has no output yet, so keep the present tense. */
   const askQuestionsDone = allAskQuestions && (allCompleted || !isSubmitting);
-
 
   /** For a single-tool group, lead with the tool's own (capitalized) label
    *  instead of the generic "Used 1 tool — name", which reads awkwardly. */

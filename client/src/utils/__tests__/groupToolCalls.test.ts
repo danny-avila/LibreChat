@@ -183,7 +183,6 @@ describe('groupSequentialToolCalls with activity labels', () => {
   });
 });
 
-
 describe('groupSequentialToolCalls reasoning transparency', () => {
   it('groups two adjacent tool calls', () => {
     const result = groupSequentialToolCalls(withIndex([toolCall('a'), toolCall('b')]));
