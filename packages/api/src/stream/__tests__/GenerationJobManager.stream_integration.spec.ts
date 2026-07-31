@@ -2686,7 +2686,30 @@ describe('GenerationJobManager Integration Tests', () => {
       const router = createReplica();
       const streamId = `${testPrefix}-preempt-xreplica-stale-${Date.now()}`;
 
-      const job = await owner.createJob(streamId, 'user-1');
+      const job = await owner.createJob(streamId, 'user-1', undefined, {
+        initialMetadata: { preemptCapable: true },
+      });
+
+      const enqueuePreempt = async (steerId: string) => {
+        const enqueued = await router.steering.enqueueVersioned(
+          streamId,
+          {
+            steerId,
+            text: steerId,
+            userId: 'user-1',
+            createdAt: Date.now(),
+          },
+          true,
+          job.createdAt,
+        );
+        if (typeof enqueued === 'number') {
+          throw new Error(`Unexpected enqueue rejection for ${steerId}: ${enqueued}`);
+        }
+        return enqueued.item;
+      };
+      const controlBefore = await enqueuePreempt('control-before');
+      const stale = await enqueuePreempt('steer-stale');
+      const controlAfter = await enqueuePreempt('control-after');
 
       /**
        * A negative assertion cannot be established by waiting: an undelivered
@@ -2697,15 +2720,32 @@ describe('GenerationJobManager Integration Tests', () => {
        * behind — proves the stale arm has already had its chance to land.
        */
       await publishUntil(
-        () => router.requestPreempt(streamId, 'control-before', job.createdAt),
+        () =>
+          router.requestPreempt(
+            streamId,
+            controlBefore.steerId,
+            job.createdAt,
+            controlBefore.preemptRevision ?? 0,
+          ),
         () => owner.getArmedPreemptIds(streamId).includes('control-before'),
         'the first control arm',
       );
 
-      await router.requestPreempt(streamId, 'steer-stale', job.createdAt - 1);
+      await router.requestPreempt(
+        streamId,
+        stale.steerId,
+        job.createdAt - 1,
+        stale.preemptRevision ?? 0,
+      );
 
       await publishUntil(
-        () => router.requestPreempt(streamId, 'control-after', job.createdAt),
+        () =>
+          router.requestPreempt(
+            streamId,
+            controlAfter.steerId,
+            job.createdAt,
+            controlAfter.preemptRevision ?? 0,
+          ),
         () => owner.getArmedPreemptIds(streamId).includes('control-after'),
         'the second control arm',
       );
