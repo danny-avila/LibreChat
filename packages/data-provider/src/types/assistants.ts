@@ -211,7 +211,6 @@ export type SupportContact = {
 
 export type AgentOwnerContact = {
   name?: string;
-  email?: string;
 };
 
 /**

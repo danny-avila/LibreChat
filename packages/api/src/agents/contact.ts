@@ -11,7 +11,6 @@ export interface AgentContactSource {
 export interface AgentOwnerContactSource {
   name?: string | null;
   username?: string | null;
-  email?: string | null;
 }
 
 const normalizeContactValue = (value?: string | null): string | undefined => {
@@ -30,6 +29,11 @@ export const hasSupportContact = (agent: AgentContactSource): boolean => {
   return !!normalizeContactValue(support.name) || !!normalizeContactValue(support.email);
 };
 
+/**
+ * Resolves a display-only owner contact for agents without an explicit support contact.
+ * Never includes the owner's account email; emails are only exposed when the owner
+ * opts in by configuring `support_contact`.
+ */
 export function resolveAgentOwnerContact(
   agent: AgentContactSource,
   owner: AgentOwnerContactSource | null,
@@ -42,14 +46,10 @@ export function resolveAgentOwnerContact(
     normalizeContactValue(owner.name) ??
     normalizeContactValue(owner.username) ??
     normalizeContactValue(agent.authorName);
-  const email = normalizeContactValue(owner.email);
 
-  if (!name && !email) {
+  if (!name) {
     return undefined;
   }
 
-  return {
-    ...(name ? { name } : {}),
-    ...(email ? { email } : {}),
-  };
+  return { name };
 }

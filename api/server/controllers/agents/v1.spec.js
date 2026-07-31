@@ -603,10 +603,8 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(200);
       const response = mockRes.json.mock.calls[0][0];
-      expect(response.owner_contact).toEqual({
-        name: 'Primary Owner',
-        email: 'primary.owner@example.com',
-      });
+      expect(response.owner_contact).toEqual({ name: 'Primary Owner' });
+      expect(response.owner_contact).not.toHaveProperty('email');
     });
 
     test('should not return owner_contact when support_contact is present', async () => {
@@ -1556,10 +1554,8 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       await getListAgentsHandler(mockReq, mockRes);
 
       const response = mockRes.json.mock.calls[0][0];
-      expect(response.data[0].owner_contact).toEqual({
-        name: 'List Owner',
-        email: 'list.owner@example.com',
-      });
+      expect(response.data[0].owner_contact).toEqual({ name: 'List Owner' });
+      expect(response.data[0].owner_contact).not.toHaveProperty('email');
     });
 
     test('should use the first ACL owner when an agent has multiple owners', async () => {
@@ -1589,10 +1585,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       await getListAgentsHandler(mockReq, mockRes);
 
       const response = mockRes.json.mock.calls[0][0];
-      expect(response.data[0].owner_contact).toEqual({
-        name: 'First Owner',
-        email: 'first.owner@example.com',
-      });
+      expect(response.data[0].owner_contact).toEqual({ name: 'First Owner' });
     });
 
     test('should omit owner_contact when no owner user can be resolved', async () => {
