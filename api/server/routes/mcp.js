@@ -255,11 +255,21 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
               const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
               const hasSession = !hasCsrf && validateOAuthSession(req, parsed.userId);
               if (hasCsrf || hasSession) {
-                await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
-                logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
-                  flowId,
-                  error: oauthError,
-                });
+                /** A stale mapping can resolve a superseded attempt's state to the
+                 *  current flow (deterministic flow ids); only fail the flow this
+                 *  error callback actually belongs to */
+                const flowMeta = await MCPOAuthHandler.getFlowState(flowId, flowManager);
+                if (flowMeta?.state === state) {
+                  await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
+                  logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
+                    flowId,
+                    error: oauthError,
+                  });
+                } else {
+                  logger.warn('[MCP OAuth] Skipping failFlow for superseded OAuth error callback', {
+                    flowId,
+                  });
+                }
               }
             }
           }
