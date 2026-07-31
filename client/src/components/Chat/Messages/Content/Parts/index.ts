@@ -10,6 +10,7 @@ export { default as Summary } from './Summary';
 export { default as AgentUpdate } from './AgentUpdate';
 export { default as EditTextPart } from './EditTextPart';
 export { default as SkillCall } from './SkillCall';
+export { default as MemoryCall } from './MemoryCall';
 export { default as ReadFileCall } from './ReadFileCall';
 export { default as FileAuthoringCall } from './FileAuthoringCall';
 export { default as BashCall } from './BashCall';
