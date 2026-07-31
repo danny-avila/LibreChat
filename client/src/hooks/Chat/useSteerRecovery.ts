@@ -32,7 +32,10 @@ export default function useSteerRecovery(conversationId: string) {
         }
         return snapshot.getLoadable(store.isSubmittingFamily(key)).getValue() !== true;
       }
-      return true;
+      /* Held by no slot at all: the user navigated to another chat, which says
+         nothing about the run they left behind. Reading that as the end is the
+         same mistake as reading the unmount as the end, one step further out. */
+      return false;
     },
     [conversationId],
   );
@@ -97,9 +100,26 @@ export default function useSteerRecovery(conversationId: string) {
            run ends, which is exactly when a retry's ack tends to land: those
            callbacks never ran, and the chip was left saying `sending` for the
            rest of the conversation with the words neither sent nor queued. */
-        steerMessage({ conversationId, text: steer.text, files: steer.files })
+        /* `preempt` rides along: a chip that failed as an interrupt-steer has to
+           retry AS one. Resent without it the words land at the run's next tool
+           step instead of sealing the stream, which is a different action than
+           the one the user asked for and the chip still claims to be. */
+        steerMessage({
+          conversationId,
+          text: steer.text,
+          files: steer.files,
+          ...(steer.preempt === true && { preempt: true }),
+        })
           .then((response) => {
-            acknowledgeRetry(steerId, { ...steer, steerId: response.steerId, status: 'pending' });
+            acknowledgeRetry(steerId, {
+              ...steer,
+              steerId: response.steerId,
+              status: 'pending',
+              /* The server echoes what it actually armed: without the
+                 capability it queues the steer and reports `preempt: false`,
+                 which relabels the chip rather than failing it. */
+              preempt: response.preempt === true,
+            });
           })
           .catch((error: unknown) => {
             const code = getSteerErrorCode(error);

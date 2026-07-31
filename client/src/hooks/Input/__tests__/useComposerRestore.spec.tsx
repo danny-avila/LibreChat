@@ -184,10 +184,40 @@ describe('useComposerRestore', () => {
   describe('editToComposer', () => {
     it('replaces the draft outright, unlike the guarded restore', () => {
       const { result, currentText } = setup({ draft: 'half a thought' });
+      let taken = false;
       act(() => {
-        result.current.editToComposer('the queued message');
+        taken = result.current.editToComposer('the queued message');
       });
+      expect(taken).toBe(true);
       expect(currentText()).toBe('the queued message');
+    });
+
+    /* The one thing it refuses: while a question pause is live the composer is
+       the answer box, so a queued message dropped in here reads as a draft and
+       answers the tool on the next Enter instead of being edited. */
+    it('refuses while a paused question owns the composer', () => {
+      const { result, currentText, setFiles } = setup({ answerModeActive: true });
+      let taken = true;
+      act(() => {
+        taken = result.current.editToComposer('the queued message', [
+          { file_id: 'f1', filename: 'notes.pdf', filepath: '/f1', type: 'application/pdf' },
+        ]);
+      });
+      expect(taken).toBe(false);
+      expect(currentText()).toBe('');
+      expect(setFiles).not.toHaveBeenCalled();
+    });
+
+    /* A question can start pausing the run between render and click. */
+    it('refuses on a pause that started after the last render it was read in', () => {
+      const { result, rerender, currentText } = setup();
+      rerender({ conversationId: CONVO_ID, answerModeActive: true });
+      let taken = true;
+      act(() => {
+        taken = result.current.editToComposer('too late');
+      });
+      expect(taken).toBe(false);
+      expect(currentText()).toBe('');
     });
 
     it('restores attachments as already-uploaded entries', () => {

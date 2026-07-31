@@ -299,6 +299,11 @@ export const EDITING_ALLOWED_SHORTCUTS: ReadonlySet<ShortcutActionId> = new Set(
   'showShortcuts',
   'submitMessage',
   'escalateSteer',
+  /* The composer keeps focus across a send, so this is where a user reads the
+     hint naming it and where they press it. Filtering it out as an editing
+     chord made the one shortcut the composer advertises the one that did
+     nothing; it is a no-op whenever no reply is running. */
+  'stopGenerating',
 ]);
 
 export type ShortcutAction = ShortcutDefinition & {

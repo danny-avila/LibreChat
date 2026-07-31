@@ -198,7 +198,7 @@ describe('Queue', () => {
   });
 
   it('hands the whole message to the composer to edit', () => {
-    const onEdit = jest.fn();
+    const onEdit = jest.fn().mockReturnValue(true);
     renderQueue([queued({ id: 'q1', quotes: ['a quote'], manualSkills: ['writer'] })], steering, {
       onEditToComposer: onEdit,
     });
@@ -208,6 +208,20 @@ describe('Queue', () => {
       manualSkills: ['writer'],
     });
     expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+  });
+
+  /* Edit used to drop the row first and hand the words over second, so a
+     composer that refuses — a paused question owns it — destroyed the message
+     outright. Same restore-then-remove order as the trash. */
+  it('keeps the message queued when the composer refuses to take it for editing', () => {
+    const onEdit = jest.fn().mockReturnValue(false);
+    renderQueue([queued({ id: 'q1' })], steering, { onEditToComposer: onEdit });
+    fireEvent.click(screen.getByLabelText('com_ui_edit_message'));
+    expect(onEdit).toHaveBeenCalled();
+    expect(mockRemoveQueued).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_queue_edit_blocked' }),
+    );
   });
 
   /* The region is removed with the rail and re-inserted with its old text
@@ -242,6 +256,70 @@ describe('Queue', () => {
     act(() => setQueue([]));
     act(() => setQueue([queued({ id: 'q3', text: 'a new message' })]));
     expect(screen.getByRole('status')).toHaveTextContent('');
+  });
+
+  /* The rows move as the pointer crosses them, so the queue has already changed
+     by the time a drag ends. Only a drag that never landed anywhere puts it
+     back — and `didDrop` reports a landing even though the rows declare no
+     `drop` handler, which is what makes the plain `hover` sortable work. */
+  describe('drag reordering', () => {
+    /* The handle only drags on a hover-capable pointer, and the suite's
+       `matchMedia` answers `false` to everything — which is the touch device
+       the rail deliberately refuses to drag on. */
+    const realMatchMedia = window.matchMedia;
+    beforeEach(() => {
+      window.matchMedia = ((query: string) =>
+        ({
+          matches: query === '(hover: hover)',
+          media: query,
+          onchange: null,
+          addListener: jest.fn(),
+          removeListener: jest.fn(),
+          addEventListener: jest.fn(),
+          removeEventListener: jest.fn(),
+          dispatchEvent: jest.fn(),
+        }) as unknown as MediaQueryList) as typeof window.matchMedia;
+    });
+    afterEach(() => {
+      window.matchMedia = realMatchMedia;
+    });
+
+    /* jsdom has no DataTransfer, and the HTML5 backend reads one off every
+       event it handles. */
+    const dataTransfer = () => ({
+      dropEffect: 'move',
+      effectAllowed: 'move',
+      files: [],
+      items: [],
+      types: [],
+      setData: () => undefined,
+      getData: () => '',
+      setDragImage: () => undefined,
+    });
+
+    const dragFirstRowOntoSecond = (drop: boolean) => {
+      renderQueue([queued({ id: 'q1' }), queued({ id: 'q2' })]);
+      const grip = screen.getAllByTestId('queued-message-grip')[0];
+      const secondRow = screen.getAllByTestId('queued-message-row')[1];
+      const dt = dataTransfer();
+
+      fireEvent.dragStart(grip, { dataTransfer: dt });
+      fireEvent.dragOver(secondRow, { dataTransfer: dt });
+      if (drop) {
+        fireEvent.drop(secondRow, { dataTransfer: dt });
+      }
+      fireEvent.dragEnd(grip, { dataTransfer: dt });
+    };
+
+    it('keeps the new order when the drag is dropped on the rail', () => {
+      dragFirstRowOntoSecond(true);
+      expect(mockRestoreQueuedOrder).not.toHaveBeenCalled();
+    });
+
+    it('puts the order back when the drag is abandoned', () => {
+      dragFirstRowOntoSecond(false);
+      expect(mockRestoreQueuedOrder).toHaveBeenCalledWith(['q1', 'q2']);
+    });
   });
 
   it('shows an attachment count when files ride along', () => {

@@ -4,7 +4,7 @@ import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation } from 'librechat-data-provider';
-import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
+import type { ExtendedFile, FileSetter, ConvoGenerator, TAskFunction } from '~/common';
 import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import {
   useTextarea,
@@ -299,7 +299,27 @@ const ChatForm = memo(function ChatForm({
 
   const composerItems = useComposerItems(conversationId, quotesEnabled);
   const attachTarget = useAttachTarget(conversation, disableInputs);
-  const dictation = useDictation({ ask: submitMessage, methods, isSubmitting });
+  const { active: answerModeActive, submitText: submitAnswerText } = answerMode;
+  /** The same gate `onSubmit` applies: while a question pause is live the
+   *  composer IS the answer box, so a dictated turn has to answer it rather
+   *  than start a turn the paused run would drop. */
+  const dictationAsk = useCallback<TAskFunction>(
+    (props) => {
+      if (answerModeActive && submitAnswerText(props.text)) {
+        return;
+      }
+      return submitMessage({ text: props.text });
+    },
+    [answerModeActive, submitAnswerText, submitMessage],
+  );
+  const dictation = useDictation({
+    ask: dictationAsk,
+    methods,
+    /* Answer mode leaves the run submitting while handing the composer over,
+       which is exactly when speech must still reach it — the send button is
+       enabled on the same terms. */
+    isSubmitting: isSubmitting && !answerModeActive,
+  });
   const uploadingCount = useMemo(() => {
     let count = 0;
     for (const file of files.values()) {
@@ -570,7 +590,12 @@ const ChatForm = memo(function ChatForm({
                   isRTL={isRTL}
                   disabled={disableInputs}
                   agentId={conversation?.agent_id}
-                  endpoint={endpoint}
+                  /* The RAW endpoint, not the effective type above: the attach
+                     destinations resolve the provider from its name, so a
+                     custom endpoint reduced to `custom` loses the uploads its
+                     provider actually takes (OpenRouter's video and audio).
+                     `endpointType` beside it carries the resolved type. */
+                  endpoint={conversation?.endpoint}
                   endpointType={attachTarget.endpointType}
                   endpointFileConfig={attachTarget.endpointFileConfig}
                   useResponsesApi={attachTarget.useResponsesApi}

@@ -1,3 +1,6 @@
+/**
+ * @jest-environment jsdom
+ */
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { FileConfigInput } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
@@ -71,8 +74,8 @@ jest.mock('~/utils', () => ({
 }));
 
 function getFileInput(container: HTMLElement): HTMLInputElement {
-  const input = container.querySelector('input[type="file"]');
-  if (!(input instanceof HTMLInputElement)) {
+  const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+  if (input == null) {
     throw new Error('Upload input was not rendered');
   }
   return input;
@@ -113,9 +116,7 @@ describe('UploadSkillDialog', () => {
     });
 
     fireEvent.change(getFileInput(container), {
-      target: {
-        files: [file],
-      },
+      target: { files: [file] },
     });
 
     expect(mockMutate).not.toHaveBeenCalled();
@@ -133,9 +134,7 @@ describe('UploadSkillDialog', () => {
     });
 
     fireEvent.change(getFileInput(container), {
-      target: {
-        files: [file],
-      },
+      target: { files: [file] },
     });
 
     expect(mockShowToast).not.toHaveBeenCalled();
@@ -152,9 +151,7 @@ describe('UploadSkillDialog', () => {
     });
 
     fireEvent.change(getFileInput(container), {
-      target: {
-        files: [file],
-      },
+      target: { files: [file] },
     });
 
     expect(mockShowToast).not.toHaveBeenCalled();
