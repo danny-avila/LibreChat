@@ -8,6 +8,14 @@ const mockSetValue = jest.fn();
 const mockGetValues = jest.fn((): string[] => []);
 const mockInitializeServer = jest.fn();
 const mockIsConnectionDeferred = jest.fn((): boolean => false);
+const mockToggleIntentAll = jest.fn();
+const mockIsToolProgrammaticOnly = jest.fn((_toolId: string): boolean => false);
+const mockCapabilities = {
+  deferredToolsEnabled: false,
+  programmaticToolsEnabled: false,
+  backgroundToolsEnabled: false,
+  toolIntentsEnabled: false,
+};
 
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({ control: {}, setValue: mockSetValue, getValues: mockGetValues }),
@@ -26,10 +34,7 @@ jest.mock('~/components/ui', () => ({
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useCopyToClipboard: () => jest.fn(),
-  useAgentCapabilities: () => ({
-    deferredToolsEnabled: false,
-    programmaticToolsEnabled: false,
-  }),
+  useAgentCapabilities: () => mockCapabilities,
   useGetAgentsConfig: () => ({ agentsConfig: { capabilities: [] } }),
   useMCPServerManager: () => ({
     getServerStatusIconProps: () => null,
@@ -45,15 +50,20 @@ jest.mock('~/hooks', () => ({
     isToolDeferred: () => false,
     isToolProgrammatic: () => false,
     isToolBackground: () => false,
+    isToolIntent: () => false,
+    isToolProgrammaticOnly: mockIsToolProgrammaticOnly,
     toggleToolDefer: jest.fn(),
     toggleToolProgrammatic: jest.fn(),
     toggleToolBackground: jest.fn(),
+    toggleToolIntent: jest.fn(),
     areAllToolsDeferred: () => false,
     areAllToolsProgrammatic: () => false,
     areAllToolsBackground: () => false,
+    areAllToolsIntent: () => false,
     toggleDeferAll: jest.fn(),
     toggleProgrammaticAll: jest.fn(),
     toggleBackgroundAll: jest.fn(),
+    toggleIntentAll: mockToggleIntentAll,
   }),
 }));
 
@@ -96,6 +106,7 @@ jest.mock('~/components/MCP/McpOAuthDialog', () => ({
 jest.mock('@librechat/client', () => {
   const React = jest.requireActual('react');
   return {
+    TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,
     Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) =>
       React.createElement('button', { type: 'button', onClick }, children),
     Checkbox: ({
@@ -141,6 +152,10 @@ describe('McpSection', () => {
     mockInitializeServer.mockReset();
     mockIsConnectionDeferred.mockReset();
     mockIsConnectionDeferred.mockReturnValue(false);
+    mockToggleIntentAll.mockClear();
+    mockIsToolProgrammaticOnly.mockReset();
+    mockIsToolProgrammaticOnly.mockReturnValue(false);
+    mockCapabilities.toolIntentsEnabled = false;
   });
 
   test('renders one row per tool', () => {
@@ -281,6 +296,27 @@ describe('McpSection', () => {
       ['sys__server__sys_mcp_srv', 'mcp:srv:b'],
       expect.objectContaining({ shouldDirty: true }),
     );
+  });
+
+  test('bulk intent toggle renders only when the tool_intents capability is enabled', () => {
+    const { unmount } = render(<McpSection item={item} />);
+    expect(screen.queryByRole('button', { name: 'com_ui_mcp_intent_all' })).not.toBeInTheDocument();
+    unmount();
+
+    mockCapabilities.toolIntentsEnabled = true;
+    render(<McpSection item={item} />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_mcp_intent_all' }));
+    expect(mockToggleIntentAll).toHaveBeenCalledWith(item.server.tools);
+  });
+
+  test('bulk intent skips programmatic-only tools (label can never reach them)', () => {
+    mockCapabilities.toolIntentsEnabled = true;
+    mockIsToolProgrammaticOnly.mockImplementation((toolId: string) => toolId === 'mcp:srv:a');
+    render(<McpSection item={item} />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_mcp_intent_all' }));
+    expect(mockToggleIntentAll).toHaveBeenCalledWith([
+      expect.objectContaining({ tool_id: 'mcp:srv:b' }),
+    ]);
   });
 
   test('shows the runtime-tools hint when attached via the wildcard', () => {

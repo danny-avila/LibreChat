@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Clock, Code2, Zap } from 'lucide-react';
+import { Clock, Code2, Captions, Zap } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { Button, Spinner, Checkbox, Skeleton } from '@librechat/client';
 import type { MouseEvent } from 'react';
@@ -76,21 +76,30 @@ export default function McpSection({ item }: Props) {
   const [autoSelectPending, setAutoSelectPending] = useState(false);
   const { mcpServersMap, mcpToolsLoading } = useAgentPanelContext();
   const { agentsConfig } = useGetAgentsConfig();
-  const { deferredToolsEnabled, programmaticToolsEnabled, backgroundToolsEnabled } =
-    useAgentCapabilities(agentsConfig?.capabilities);
+  const {
+    deferredToolsEnabled,
+    programmaticToolsEnabled,
+    backgroundToolsEnabled,
+    toolIntentsEnabled,
+  } = useAgentCapabilities(agentsConfig?.capabilities);
   const {
     isToolDeferred,
     isToolProgrammatic,
     isToolBackground,
+    isToolIntent,
+    isToolProgrammaticOnly,
     toggleToolDefer,
     toggleToolProgrammatic,
     toggleToolBackground,
+    toggleToolIntent,
     areAllToolsDeferred,
     areAllToolsProgrammatic,
     areAllToolsBackground,
+    areAllToolsIntent,
     toggleDeferAll,
     toggleProgrammaticAll,
     toggleBackgroundAll,
+    toggleIntentAll,
   } = useMCPToolOptions();
 
   const serverName = item.server.serverName;
@@ -154,6 +163,11 @@ export default function McpSection({ item }: Props) {
   const allDeferred = areAllToolsDeferred(tools);
   const allProgrammatic = areAllToolsProgrammatic(tools);
   const allBackground = areAllToolsBackground(tools);
+  /** Programmatic-only tools can never carry an intent label (the backend's
+   *  `canInjectIntentParam` skips non-direct tools), so both the bulk toggle
+   *  and its all-state only consider tools the label can actually reach. */
+  const intentEligibleTools = tools.filter((tool) => !isToolProgrammaticOnly(tool.tool_id));
+  const allIntent = areAllToolsIntent(intentEligibleTools);
   const statusIconProps = getServerStatusIconProps(serverName);
   const configDialogProps = getConfigDialogProps();
   const connectionState = statusIconProps?.serverStatus?.connectionState;
@@ -339,7 +353,21 @@ export default function McpSection({ item }: Props) {
                   onToggle={() => toggleBackgroundAll(tools)}
                 />
               )}
-              {(deferredToolsEnabled || programmaticToolsEnabled || backgroundToolsEnabled) && (
+              {toolIntentsEnabled && (
+                <OptionToggle
+                  icon={Captions}
+                  size="md"
+                  pressed={allIntent}
+                  disabled={intentEligibleTools.length === 0}
+                  label={localize(allIntent ? 'com_ui_mcp_unintent_all' : 'com_ui_mcp_intent_all')}
+                  activeClass="text-teal-600 dark:text-teal-500"
+                  onToggle={() => toggleIntentAll(intentEligibleTools)}
+                />
+              )}
+              {(deferredToolsEnabled ||
+                programmaticToolsEnabled ||
+                backgroundToolsEnabled ||
+                toolIntentsEnabled) && (
                 <span className="mx-1 h-4 w-px bg-border-light" aria-hidden="true" />
               )}
               <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-xs text-text-secondary">
@@ -376,13 +404,21 @@ export default function McpSection({ item }: Props) {
                   isDeferred={deferredToolsEnabled && isToolDeferred(tool.tool_id)}
                   isProgrammatic={programmaticToolsEnabled && isToolProgrammatic(tool.tool_id)}
                   isBackground={backgroundToolsEnabled && isToolBackground(tool.tool_id)}
+                  isIntent={
+                    toolIntentsEnabled &&
+                    isToolIntent(tool.tool_id) &&
+                    !isToolProgrammaticOnly(tool.tool_id)
+                  }
+                  intentDisabled={isToolProgrammaticOnly(tool.tool_id)}
                   deferredToolsEnabled={deferredToolsEnabled}
                   programmaticToolsEnabled={programmaticToolsEnabled}
                   backgroundToolsEnabled={backgroundToolsEnabled}
+                  toolIntentsEnabled={toolIntentsEnabled}
                   onToggleSelect={() => toggleToolSelect(tool.tool_id)}
                   onToggleDefer={() => toggleToolDefer(tool.tool_id)}
                   onToggleProgrammatic={() => toggleToolProgrammatic(tool.tool_id)}
                   onToggleBackground={() => toggleToolBackground(tool.tool_id)}
+                  onToggleIntent={() => toggleToolIntent(tool.tool_id)}
                 />
               ))}
             </div>
