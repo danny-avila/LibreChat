@@ -24,21 +24,28 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  /** Pure helpers (normalizeServerName, splitMCPToolKey, schema utils, ...)
+   *  stay REAL so key-normalization paths are exercised, not mirrored. */
+  ...jest.requireActual('@librechat/api'),
   sendEvent: jest.fn(),
   MCPOAuthHandler: jest.fn(),
   isMCPDomainAllowed: jest.fn(),
-  normalizeServerName: jest.fn((name) => name),
-  normalizeJsonSchema: jest.fn((schema) => schema),
   GenerationJobManager: jest.fn(),
-  resolveJsonSchemaRefs: jest.fn((schema) => schema),
   buildOAuthToolCallName: jest.fn((name) => name),
   /** Mirrors the real resolver so these tests still exercise the wrapper's own
    *  plumbing - loading the request config and degrading on failure - rather than
-   *  the resolution logic, which is unit-tested in packages/api. */
-  resolveMCPServerContext: jest.fn(async ({ mcpConfig, ensureConfigServers }) => ({
-    configServers: await ensureConfigServers(mcpConfig),
-    serverNames: Object.keys(mcpConfig),
-  })),
+   *  the resolution logic, which is unit-tested in packages/api. Like the real
+   *  resolver, a lazy-init failure keeps the name lists. */
+  resolveMCPServerContext: jest.fn(async ({ mcpConfig, ensureConfigServers }) => {
+    const rawServerNames = Object.keys(mcpConfig);
+    let configServers = {};
+    try {
+      configServers = await ensureConfigServers(mcpConfig);
+    } catch {
+      /* tolerated: name lists derive from the config snapshot alone */
+    }
+    return { configServers, serverNames: rawServerNames, rawServerNames };
+  }),
 }));
 
 jest.mock('~/cache', () => ({ getLogStores: jest.fn() }));
@@ -60,12 +67,18 @@ jest.mock('~/server/services/Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
 }));
 
+const { Constants } = require('librechat-data-provider');
+
 const { getAppConfig } = require('~/server/services/Config');
+const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const {
+  createMCPTool,
+  healMcpToolNames,
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
   resolveMcpServerContext,
+  resolveCollisionAuditNames,
 } = require('../MCP');
 
 describe('resolveConfigServers', () => {
@@ -134,16 +147,23 @@ describe('resolveMcpServerContext', () => {
 
     const result = await resolveMcpServerContext({ user: { id: 'u1' } });
 
-    expect(result).toEqual({ configServers: {}, serverNames: [] });
+    expect(result).toEqual({ configServers: {}, serverNames: [], rawServerNames: [] });
   });
 
-  it('degrades to empty when ensureConfigServers throws', async () => {
+  it('keeps the name lists when only ensureConfigServers throws', async () => {
+    /** The name lists derive from the config snapshot alone; losing them
+     *  would leave normalized tool keys unresolvable for the whole request —
+     *  a strictly worse degradation than missing overlay configs. */
     getAppConfig.mockResolvedValue({ mcpConfig: { srv: {} } });
     mockRegistry.ensureConfigServers.mockRejectedValue(new Error('inspect failed'));
 
     const result = await resolveMcpServerContext({ user: { id: 'u1' } });
 
-    expect(result).toEqual({ configServers: {}, serverNames: [] });
+    expect(result).toEqual({
+      configServers: {},
+      serverNames: ['srv'],
+      rawServerNames: ['srv'],
+    });
   });
 });
 
@@ -225,5 +245,231 @@ describe('resolveAllMcpConfigs', () => {
     getAppConfig.mockRejectedValue(new Error('mongo down'));
 
     await expect(resolveAllMcpConfigs('u1', { id: 'u1' })).rejects.toThrow('mongo down');
+  });
+});
+
+describe('healMcpToolNames', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const req = { user: { id: 'u1', role: 'user' } };
+
+  it('heals a legacy raw-keyed assistant tool to the normalized cache key', async () => {
+    /** Assistant docs saved pre-normalization resubmit the raw-suffixed
+     *  string on every edit; the controllers' exact lookup would silently
+     *  drop the tool. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'Connector: Company': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'Connector: Company': {} });
+    const canonicalKey = `search${Constants.mcp_delimiter}Connector__Company`;
+    const toolDefinitions = { [canonicalKey]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`search${Constants.mcp_delimiter}Connector: Company`, 'code_interpreter'],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([canonicalKey, 'code_interpreter']);
+  });
+
+  it('leaves a SHADOWED raw name untouched (fail closed like the runtime heal)', async () => {
+    /** With `foo` and `foo!` both configured, rewriting `search_mcp_foo!`
+     *  would land on the WINNER server's key. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { foo: {}, 'foo!': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ foo: {}, 'foo!': {} });
+    const toolDefinitions = { [`search${Constants.mcp_delimiter}foo`]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`search${Constants.mcp_delimiter}foo!`],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([`search${Constants.mcp_delimiter}foo!`]);
+  });
+
+  it('skips the config read entirely when every delimiter-bearing name resolves', async () => {
+    const key = `search${Constants.mcp_delimiter}srv`;
+    const healed = await healMcpToolNames({
+      req,
+      tools: [key, 'web_search'],
+      toolDefinitions: { [key]: { type: 'function' } },
+    });
+
+    expect(healed).toEqual([key, 'web_search']);
+    expect(getAppConfig).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on a CROSS-TIER shadow (user-DB server owns the normalized slot)', async () => {
+    /** Operator config alone shows `foo!` unshadowed, but a user-DB server
+     *  named `foo` owns the normalized slot — rewriting would bind the
+     *  saved assistant to the DB server's tool at execution. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'foo!': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({
+      foo: { name: 'foo' },
+      'foo!': { name: 'foo!' },
+    });
+    const toolDefinitions = { [`search${Constants.mcp_delimiter}foo`]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`search${Constants.mcp_delimiter}foo!`],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([`search${Constants.mcp_delimiter}foo!`]);
+  });
+
+  it('skips healing entirely when the collision audit cannot complete', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'Connector: Company': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockRejectedValue(new Error('redis down'));
+    const canonicalKey = `search${Constants.mcp_delimiter}Connector__Company`;
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`search${Constants.mcp_delimiter}Connector: Company`],
+      toolDefinitions: { [canonicalKey]: { type: 'function' } },
+    });
+
+    expect(healed).toEqual([`search${Constants.mcp_delimiter}Connector: Company`]);
+  });
+
+  it('dedupes when the payload carries both spellings of the same tool', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'Connector: Company': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'Connector: Company': {} });
+    const canonicalKey = `search${Constants.mcp_delimiter}Connector__Company`;
+    const toolDefinitions = { [canonicalKey]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [
+        `search${Constants.mcp_delimiter}Connector: Company`,
+        canonicalKey,
+        'code_interpreter',
+      ],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([canonicalKey, 'code_interpreter']);
+  });
+});
+
+describe('resolveCollisionAuditNames', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('restores config names the tolerant merged read silently dropped', async () => {
+    /** `resolveAllMcpConfigs` swallows `ensureConfigServers` failures, so a
+     *  transient init error can omit a config-only server from the merged
+     *  map — the audit would then miss the `foo` / `foo!` collision while
+     *  still claiming completeness. The snapshot-derived raw names must be
+     *  unioned back in. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'foo!': {} } });
+    mockRegistry.ensureConfigServers.mockRejectedValue(new Error('init failed'));
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ foo: { name: 'foo' } });
+
+    const audit = await resolveCollisionAuditNames({
+      rawServerNames: ['foo!'],
+      userId: 'u1',
+      role: 'user',
+    });
+
+    expect(audit.complete).toBe(true);
+    expect([...audit.names].sort()).toEqual(['foo', 'foo!']);
+  });
+
+  it('reports incomplete when the merged read itself fails', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'foo!': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockRejectedValue(new Error('redis down'));
+
+    const audit = await resolveCollisionAuditNames({
+      rawServerNames: ['foo!'],
+      userId: 'u1',
+      role: 'user',
+    });
+
+    expect(audit.complete).toBe(false);
+    expect(audit.names).toEqual(['foo!']);
+  });
+});
+
+describe('createMCPTool', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const rawServerName = 'Connector: Company';
+  const legacyToolKey = `search${Constants.mcp_delimiter}${rawServerName}`;
+  const canonicalToolKey = `search${Constants.mcp_delimiter}Connector__Company`;
+  const toolFunction = {
+    name: canonicalToolKey,
+    description: 'Search the company connector',
+    parameters: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
+  };
+
+  it('resolves a legacy raw-spelled key against the normalized availableTools index', async () => {
+    /** Assistants and direct tool calls persisted pre-normalization bypass
+     *  the agent-boundary heal and arrive with RAW keys; `availableTools`
+     *  is keyed canonically, so the lookup must cover both spellings
+     *  instead of stubbing the tool as unavailable. */
+    const toolInstance = await createMCPTool({
+      user: { id: 'user-1' },
+      toolKey: legacyToolKey,
+      serverName: rawServerName,
+      availableTools: { [canonicalToolKey]: { type: 'function', function: toolFunction } },
+      config: { type: 'stdio', command: 'node' },
+      provider: 'openAI',
+    });
+
+    expect(toolInstance).toBeDefined();
+    expect(toolInstance.name).toBe(canonicalToolKey);
+    expect(toolInstance.description).toBe(toolFunction.description);
+    expect(reinitMCPServer).not.toHaveBeenCalled();
+  });
+
+  it('parses a legacy key whose raw server name contains the delimiter', async () => {
+    /** A raw name like `foo_mcp_bar!` defeats the generic last-delimiter
+     *  split (`toolName` would become `search_mcp_foo`), so the boundary
+     *  candidates must include the RAW resolved name — not only its
+     *  normalized form — for the canonical rebuild to hit the index. */
+    const delimiterRawName = 'foo_mcp_bar!';
+    const legacyKey = `search${Constants.mcp_delimiter}${delimiterRawName}`;
+    /** `normalizeServerName` strips the trailing underscore the `!` leaves. */
+    const canonicalKey = `search${Constants.mcp_delimiter}foo_mcp_bar`;
+    const delimiterToolFunction = {
+      name: canonicalKey,
+      description: 'Search the delimiter-named server',
+      parameters: { type: 'object', properties: {} },
+    };
+
+    const toolInstance = await createMCPTool({
+      user: { id: 'user-1' },
+      toolKey: legacyKey,
+      serverName: delimiterRawName,
+      availableTools: { [canonicalKey]: { type: 'function', function: delimiterToolFunction } },
+      config: { type: 'stdio', command: 'node' },
+      provider: 'openAI',
+    });
+
+    expect(toolInstance).toBeDefined();
+    expect(toolInstance.name).toBe(canonicalKey);
+    expect(reinitMCPServer).not.toHaveBeenCalled();
+  });
+
+  it('still resolves the canonical key directly', async () => {
+    const toolInstance = await createMCPTool({
+      user: { id: 'user-1' },
+      toolKey: canonicalToolKey,
+      serverName: rawServerName,
+      availableTools: { [canonicalToolKey]: { type: 'function', function: toolFunction } },
+      config: { type: 'stdio', command: 'node' },
+      provider: 'openAI',
+    });
+
+    expect(toolInstance).toBeDefined();
+    expect(toolInstance.name).toBe(canonicalToolKey);
+    expect(reinitMCPServer).not.toHaveBeenCalled();
   });
 });

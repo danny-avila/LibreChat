@@ -6,6 +6,8 @@ import McpSection from '../sections/McpSection';
 
 const mockSetValue = jest.fn();
 const mockGetValues = jest.fn((): string[] => []);
+const mockGetToolOptions = jest.fn((): Record<string, object> | undefined => undefined);
+const mockMcpServersMap = jest.fn((): Map<string, object> => new Map());
 const mockInitializeServer = jest.fn();
 const mockIsConnectionDeferred = jest.fn((): boolean => false);
 const mockToggleIntentAll = jest.fn();
@@ -19,11 +21,12 @@ const mockCapabilities = {
 
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({ control: {}, setValue: mockSetValue, getValues: mockGetValues }),
-  useWatch: () => mockGetValues(),
+  useWatch: ({ name }: { name: string }) =>
+    name === 'tool_options' ? mockGetToolOptions() : mockGetValues(),
 }));
 
 jest.mock('~/Providers', () => ({
-  useAgentPanelContext: () => ({ mcpServersMap: new Map() }),
+  useAgentPanelContext: () => ({ mcpServersMap: mockMcpServersMap() }),
 }));
 
 jest.mock('~/components/ui', () => ({
@@ -155,6 +158,10 @@ describe('McpSection', () => {
     mockToggleIntentAll.mockClear();
     mockIsToolProgrammaticOnly.mockReset();
     mockIsToolProgrammaticOnly.mockReturnValue(false);
+    mockGetToolOptions.mockReset();
+    mockGetToolOptions.mockReturnValue(undefined);
+    mockMcpServersMap.mockReset();
+    mockMcpServersMap.mockReturnValue(new Map());
     mockCapabilities.toolIntentsEnabled = false;
   });
 
@@ -317,6 +324,142 @@ describe('McpSection', () => {
     expect(mockToggleIntentAll).toHaveBeenCalledWith([
       expect.objectContaining({ tool_id: 'mcp:srv:b' }),
     ]);
+  });
+
+  test('legacy raw-keyed form ids show as selected for a special-character server', () => {
+    /** Tool ids in the catalog now embed the normalized server name; an agent
+     *  saved before that convention must still show its tools checked. */
+    const specialItem: McpItem = {
+      ...item,
+      id: 'Connector: Company',
+      name: 'Connector: Company',
+      server: {
+        serverName: 'Connector: Company',
+        isConfigured: true,
+        tools: [{ tool_id: 'search_mcp_Connector__Company', name: 'Search' }],
+        metadata: { description: 'desc' },
+      } as never,
+      toolCount: 1,
+    };
+    mockGetValues.mockReturnValue(['search_mcp_Connector: Company']);
+    render(<McpSection item={specialItem} />);
+    expect(screen.getByTestId('tool-search_mcp_Connector__Company')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  test('selection updates REPLACE legacy raw-keyed ids instead of letting them survive', () => {
+    const specialItem: McpItem = {
+      ...item,
+      id: 'Connector: Company',
+      name: 'Connector: Company',
+      server: {
+        serverName: 'Connector: Company',
+        isConfigured: true,
+        tools: [{ tool_id: 'search_mcp_Connector__Company', name: 'Search' }],
+        metadata: { description: 'desc' },
+      } as never,
+      toolCount: 1,
+    };
+    mockGetValues.mockReturnValue(['search_mcp_Connector: Company']);
+    render(<McpSection item={specialItem} />);
+    /** Deselecting the (legacy-selected) tool must drop the raw id rather
+     *  than leave it behind for the runtime heal to keep active. */
+    fireEvent.click(screen.getByTestId('tool-search_mcp_Connector__Company'));
+    expect(mockSetValue).toHaveBeenCalledWith(
+      'tools',
+      ['sys__server__sys_mcp_Connector: Company'],
+      expect.objectContaining({ shouldDirty: true }),
+    );
+  });
+
+  test('migrates legacy raw-keyed tool_options to the current normalized ids', () => {
+    /** Persisted options must be readable and clearable through the toggles,
+     *  which index by the normalized catalog id; an existing normalized entry
+     *  wins over the legacy one on collision. */
+    const specialItem: McpItem = {
+      ...item,
+      id: 'Connector: Company',
+      name: 'Connector: Company',
+      server: {
+        serverName: 'Connector: Company',
+        isConfigured: true,
+        tools: [{ tool_id: 'search_mcp_Connector__Company', name: 'Search' }],
+        metadata: { description: 'desc' },
+      } as never,
+      toolCount: 1,
+    };
+    mockGetToolOptions.mockReturnValue({
+      'search_mcp_Connector: Company': { run_in_background: true, defer_loading: true },
+      search_mcp_Connector__Company: { run_in_background: false },
+      other_tool: { describe_intent: true },
+    });
+    render(<McpSection item={specialItem} />);
+    expect(mockSetValue).toHaveBeenCalledWith('tool_options', {
+      other_tool: { describe_intent: true },
+      search_mcp_Connector__Company: { run_in_background: false, defer_loading: true },
+    });
+  });
+
+  test('never migrates keys of a SHADOWED server (normalized slot claimed by another)', () => {
+    /** With servers `foo` and `foo!`, rewriting `search_mcp_foo!` would land
+     *  on `search_mcp_foo` — the WINNER server's key — so saving would apply
+     *  the shadowed server's defer/background/intent settings to the other
+     *  server's tool. The runtime heal leaves shadowed keys raw; the form
+     *  migration must fail closed the same way. */
+    mockMcpServersMap.mockReturnValue(
+      new Map<string, object>([
+        ['foo', {}],
+        ['foo!', {}],
+      ]),
+    );
+    const shadowedServer: McpItem = {
+      ...item,
+      id: 'foo!',
+      name: 'foo!',
+      server: {
+        serverName: 'foo!',
+        isConfigured: true,
+        tools: [{ tool_id: 'search_mcp_foo', name: 'Search' }],
+        metadata: { description: 'desc' },
+      } as never,
+      toolCount: 1,
+    };
+    mockGetToolOptions.mockReturnValue({
+      'search_mcp_foo!': { run_in_background: true },
+    });
+    render(<McpSection item={shadowedServer} />);
+    expect(mockSetValue).not.toHaveBeenCalledWith('tool_options', expect.anything());
+  });
+
+  test('never migrates entries that belong to a LONGER server sharing this suffix', () => {
+    /** With servers `!bar` and `foo_mcp_!bar`, the longer server's legacy key
+     *  also suffix-ends with `_mcp_!bar` — opening the shorter server's dialog
+     *  must not reassign or corrupt the longer server's persisted settings. */
+    mockMcpServersMap.mockReturnValue(
+      new Map<string, object>([
+        ['!bar', {}],
+        ['foo_mcp_!bar', {}],
+      ]),
+    );
+    const shortServer: McpItem = {
+      ...item,
+      id: '!bar',
+      name: '!bar',
+      server: {
+        serverName: '!bar',
+        isConfigured: true,
+        tools: [{ tool_id: 'search_mcp_bar', name: 'Search' }],
+        metadata: { description: 'desc' },
+      } as never,
+      toolCount: 1,
+    };
+    mockGetToolOptions.mockReturnValue({
+      'search_mcp_foo_mcp_!bar': { run_in_background: true },
+    });
+    render(<McpSection item={shortServer} />);
+    expect(mockSetValue).not.toHaveBeenCalledWith('tool_options', expect.anything());
   });
 
   test('shows the runtime-tools hint when attached via the wildcard', () => {

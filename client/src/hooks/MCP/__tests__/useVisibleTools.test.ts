@@ -33,6 +33,29 @@ describe('useVisibleTools', () => {
     expect(result.current.mcpServerNames).toEqual(['gitlab']);
   });
 
+  it('resolves normalized-spelling ids back to the raw server key of the servers map', () => {
+    /** Tool ids embed `normalizeServerName(server)` while the servers map is
+     *  keyed raw — a special-character server must resolve to its raw map key
+     *  instead of surfacing the normalized segment as an unknown orphan. */
+    const specialMap = new Map<string, MCPServerInfo>([
+      ['Connector: Company', {} as MCPServerInfo],
+    ]);
+    const { result } = renderHook(() =>
+      useVisibleTools([`search${d}Connector__Company`], regularTools, specialMap),
+    );
+    expect(result.current.mcpServerNames).toEqual(['Connector: Company']);
+  });
+
+  it('still resolves legacy raw-spelling ids for a special-character server', () => {
+    const specialMap = new Map<string, MCPServerInfo>([
+      ['Connector: Company', {} as MCPServerInfo],
+    ]);
+    const { result } = renderHook(() =>
+      useVisibleTools([`search${d}Connector: Company`], regularTools, specialMap),
+    );
+    expect(result.current.mcpServerNames).toEqual(['Connector: Company']);
+  });
+
   it('keeps regular (non-MCP) tools separate from MCP server names', () => {
     const { result } = renderHook(() =>
       useVisibleTools(['web_search'], regularTools, mcpServersMap),

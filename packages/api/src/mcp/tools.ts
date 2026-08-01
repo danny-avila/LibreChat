@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants } from 'librechat-data-provider';
+import { Constants, normalizeServerName } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/agents';
 import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from './types';
 import { requiresEphemeralUserConnection } from './utils';
@@ -88,8 +88,14 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         return serverTools;
       }
 
+      /** Cache keys are MODEL-FACING: they become builder tool ids, agent.tools
+       *  entries, tool_options keys, and definition names, and must equal the
+       *  runtime instance name (`createToolInstance` in MCP.js), which embeds
+       *  `normalizeServerName(serverName)`. The cache STORE itself stays keyed
+       *  by the raw config name. */
+      const keyServerName = normalizeServerName(serverName);
       for (const tool of tools) {
-        const name = `${tool.name}${mcpDelimiter}${serverName}`;
+        const name = `${tool.name}${mcpDelimiter}${keyServerName}`;
         const entry: LCFunctionTool = {
           type: 'function',
           ['function']: {
@@ -164,6 +170,44 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     }
   }
 
+  /**
+   * Heals cache entries written before keys embedded the normalized server
+   * name. The definitions-only loader treats the returned map as
+   * authoritative — a per-key miss does NOT trigger a reconnect the way the
+   * instance path does — so a stale raw-keyed entry would make the server's
+   * tools vanish for up to the cache TTL after rollout. Rewriting at read
+   * time covers every consumer without a coordinated invalidation; safe
+   * server names (the common case) return the map untouched.
+   */
+  function normalizeCachedToolKeys(
+    tools: LCAvailableTools | null,
+    serverName: string,
+  ): LCAvailableTools | null {
+    if (!tools) {
+      return tools;
+    }
+    const normalized = normalizeServerName(serverName);
+    if (normalized === serverName) {
+      return tools;
+    }
+    const legacySuffix = `${Constants.mcp_delimiter}${serverName}`;
+    let changed = false;
+    const next: LCAvailableTools = {};
+    for (const [key, entry] of Object.entries(tools)) {
+      if (!key.endsWith(legacySuffix)) {
+        next[key] = entry;
+        continue;
+      }
+      const rebuiltKey = `${key.slice(0, key.length - serverName.length)}${normalized}`;
+      next[rebuiltKey] = {
+        ...entry,
+        ['function']: { ...entry['function'], name: rebuiltKey },
+      };
+      changed = true;
+    }
+    return changed ? next : tools;
+  }
+
   async function getMCPServerTools(
     userId: string,
     serverName: string,
@@ -173,7 +217,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       return null;
     }
     try {
-      return (await getCachedTools({ userId, serverName })) ?? null;
+      const cached = (await getCachedTools({ userId, serverName })) ?? null;
+      return normalizeCachedToolKeys(cached, serverName);
     } catch (error) {
       logger.error(`[getMCPServerTools] Error fetching cached tools for ${serverName}:`, error);
       return null;

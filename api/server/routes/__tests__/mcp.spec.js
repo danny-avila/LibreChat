@@ -3044,6 +3044,33 @@ describe('MCP Routes', () => {
       );
     });
 
+    it('reserves the normalized spelling of special-character config names too', async () => {
+      /** Tool keys embed `normalizeServerName(server)`, so a generated slug
+       *  must not collide with that form either. */
+      const validConfig = {
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Test SSE Server',
+      };
+
+      mockResolveMcpConfigNames.mockResolvedValueOnce(['Connector: Company']);
+      mockRegistryInstance.addServer.mockResolvedValue({
+        serverName: 'test-sse-server',
+        config: validConfig,
+      });
+
+      const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
+
+      expect(response.status).toBe(201);
+      expect(mockRegistryInstance.addServer).toHaveBeenCalledWith(
+        'temp_server_name',
+        expect.anything(),
+        'DB',
+        'test-user-id',
+        ['Connector: Company', 'Connector__Company'],
+      );
+    });
+
     it('should reject stdio config for security reasons', async () => {
       const stdioConfig = {
         type: 'stdio',

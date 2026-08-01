@@ -69,7 +69,7 @@ const {
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
-const { resolveConfigServers } = require('~/server/services/MCP');
+const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPManager } = require('~/config');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
@@ -90,6 +90,7 @@ function createToolLoader(signal, definitionsOnly = true) {
     provider,
     tool_options,
     tool_resources,
+    accessibleMcpServerNames,
   }) {
     const agent = { id: agentId, tools, provider, model, tool_options };
     try {
@@ -100,6 +101,7 @@ function createToolLoader(signal, definitionsOnly = true) {
         signal,
         tool_resources,
         definitionsOnly,
+        accessibleMcpServerNames,
         streamId: null,
       });
     } catch (error) {
@@ -380,6 +382,7 @@ const createResponse = async (req, res) => {
       getFiles: db.getFiles,
       getUserKey: db.getUserKey,
       getMessages: db.getMessages,
+      getAccessibleMcpServerNames,
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
       getUserCodeFiles: db.getUserCodeFiles,
@@ -732,6 +735,7 @@ const createResponse = async (req, res) => {
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
+            accessibleMcpServerNames: ctx.accessibleMcpServerNames,
           });
           return enrichLoadedToolsWithAgentContext({
             result,
@@ -914,6 +918,7 @@ const createResponse = async (req, res) => {
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
+            accessibleMcpServerNames: ctx.accessibleMcpServerNames,
           });
           return enrichLoadedToolsWithAgentContext({
             result,

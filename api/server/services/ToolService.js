@@ -29,6 +29,10 @@ const {
   buildMCPAuthRunStepCompletedEvent,
   isFileAuthoringToolDefinition,
   ASK_USER_QUESTION_TOOL_NAME,
+  splitMCPToolKey,
+  buildServerNameAliases,
+  findShadowedServerNames,
+  isNormalizationSensitiveName,
 } = require('@librechat/api');
 const {
   Time,
@@ -69,7 +73,12 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
-const { createMCPPermissionContext, resolveMcpServerContext } = require('~/server/services/MCP');
+const {
+  createMCPPermissionContext,
+  resolveMcpServerContext,
+  getAccessibleMcpServerNames,
+  resolveCollisionAuditNames,
+} = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
@@ -548,6 +557,7 @@ async function loadToolDefinitionsWrapper({
   streamId = null,
   jobCreatedAt,
   tool_resources,
+  accessibleMcpServerNames,
 }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
@@ -610,9 +620,64 @@ async function loadToolDefinitionsWrapper({
   /** Only MCP tool keys need the server context; a purely non-MCP agent should not
    *  pay an app-config lookup on startup. */
   const hasFilteredMCPTools = filteredTools.some((t) => t.includes(Constants.mcp_delimiter));
-  const { configServers, serverNames: mcpServerNames } = hasFilteredMCPTools
+  const {
+    configServers,
+    serverNames: mcpServerNames,
+    rawServerNames: mcpRawServerNames = [],
+  } = hasFilteredMCPTools
     ? await resolveMcpServerContext(req)
-    : { configServers: {}, serverNames: [] };
+    : { configServers: {}, serverNames: [], rawServerNames: [] };
+
+  /**
+   * Shadowed servers must not emit definitions: their normalized function
+   * names equal the winning server's, and the default execution path later
+   * resolves those names directly — selecting a shadowed server's definition
+   * could execute another server's action. Audited against the full
+   * accessible set (threaded from the caller's heal, or fetched only when a
+   * configured name needs normalization); normalization-sensitive references
+   * fail closed when the audit is incomplete.
+   */
+  let defsFilteredTools = filteredTools;
+  /** Complete audit names, forwarded to the definitions loader so its alias
+   *  fallback can tell "server not found" from "server found but currently
+   *  unavailable" — only the former may fall back to the raw alias. */
+  let defsAccessibleServerNames;
+  if (hasFilteredMCPTools) {
+    const collisionAudit = await resolveCollisionAuditNames({
+      rawServerNames: mcpRawServerNames,
+      accessibleServerNames: accessibleMcpServerNames,
+      userId: req.user.id,
+      role: req.user?.role,
+    });
+    if (collisionAudit.complete) {
+      defsAccessibleServerNames = collisionAudit.names;
+    }
+    const defsShadowedServers = findShadowedServerNames(collisionAudit.names);
+    if (defsShadowedServers.size > 0 || !collisionAudit.complete) {
+      const defsAliases = buildServerNameAliases(collisionAudit.names);
+      const boundaryCandidates = [...collisionAudit.names, ...defsAliases.keys()];
+      defsFilteredTools = filteredTools.filter((tool) => {
+        if (!tool.includes(Constants.mcp_delimiter)) {
+          return true;
+        }
+        const [, parsed] = splitMCPToolKey(tool, boundaryCandidates);
+        const serverName = parsed != null ? (defsAliases.get(parsed) ?? parsed) : parsed;
+        if (serverName == null) {
+          return true;
+        }
+        if (
+          defsShadowedServers.has(serverName) ||
+          (!collisionAudit.complete && isNormalizationSensitiveName(serverName, mcpRawServerNames))
+        ) {
+          logger.warn(
+            `[Tool Definitions] Skipping MCP tool "${tool}": server "${serverName}" is shadowed by a name collision (or the collision audit is unavailable); rename one server or retry.`,
+          );
+          return false;
+        }
+        return true;
+      });
+    }
+  }
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
@@ -620,7 +685,7 @@ async function loadToolDefinitionsWrapper({
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: filteredTools,
       userId: req.user.id,
-      serverNames: mcpServerNames,
+      serverNames: mcpRawServerNames,
       findPluginAuthsByKeys,
     });
   }
@@ -738,6 +803,9 @@ async function loadToolDefinitionsWrapper({
     return cachedOAuthStart;
   };
 
+  /** Name-preserving: the definitions loader resolves normalized-vs-raw
+   *  spellings itself (direct identity first, alias fallback), so this
+   *  closure must look up EXACTLY the name it is given. */
   const getOrFetchMCPServerTools = async (userId, serverName) => {
     const addPendingOAuthServer = async () => {
       const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
@@ -886,13 +954,15 @@ async function loadToolDefinitionsWrapper({
     {
       userId: req.user.id,
       agentId: agent.id,
-      tools: filteredTools,
+      tools: defsFilteredTools,
       toolOptions: agent.tool_options,
       deferredToolsEnabled,
       programmaticToolsEnabled,
       codeExecutionEnabled,
       provider: agent.provider,
       mcpServerNames,
+      rawServerNames: mcpRawServerNames,
+      accessibleServerNames: defsAccessibleServerNames,
     },
     {
       isBuiltInTool,
@@ -901,7 +971,9 @@ async function loadToolDefinitionsWrapper({
     },
   );
 
-  for (const serverName of getMCPServerNamesFromTools(filteredTools, mcpServerNames)) {
+  /** OAuth discovery must not reconnect (or prompt for) a server whose
+   *  definitions the collision filter deliberately rejected. */
+  for (const serverName of getMCPServerNamesFromTools(defsFilteredTools, mcpServerNames)) {
     if (pendingOAuthServers.has(serverName)) {
       continue;
     }
@@ -969,13 +1041,15 @@ async function loadToolDefinitionsWrapper({
         {
           userId: req.user.id,
           agentId: agent.id,
-          tools: filteredTools,
+          tools: defsFilteredTools,
           toolOptions: agent.tool_options,
           deferredToolsEnabled,
           programmaticToolsEnabled,
           codeExecutionEnabled,
           provider: agent.provider,
           mcpServerNames,
+          rawServerNames: mcpRawServerNames,
+          accessibleServerNames: defsAccessibleServerNames,
         },
         {
           isBuiltInTool,
@@ -1112,6 +1186,7 @@ async function loadAgentTools({
   streamId = null,
   jobCreatedAt,
   definitionsOnly = true,
+  accessibleMcpServerNames,
 }) {
   if (definitionsOnly) {
     return loadToolDefinitionsWrapper({
@@ -1121,6 +1196,7 @@ async function loadAgentTools({
       streamId,
       jobCreatedAt,
       tool_resources,
+      accessibleMcpServerNames,
     });
   }
 
@@ -1190,10 +1266,16 @@ async function loadAgentTools({
     webSearchCallbacks = createOnSearchResults(res, streamId, jobCreatedAt);
   }
 
-  /** Resolved once and threaded into `loadTools` so the request app config is read once. */
-  const mcpServerContext = _agentTools?.some((t) => t.includes(Constants.mcp_delimiter))
+  /** Resolved once and threaded into `loadTools` so the request app config is
+   *  read once. The accessible set (operator + user DB), when the caller's
+   *  heal already fetched it, rides along so execution-side collision guards
+   *  see cross-tier shadowing without another registry round-trip. */
+  let mcpServerContext = _agentTools?.some((t) => t.includes(Constants.mcp_delimiter))
     ? await resolveMcpServerContext(req)
     : undefined;
+  if (mcpServerContext && accessibleMcpServerNames?.length) {
+    mcpServerContext = { ...mcpServerContext, accessibleServerNames: accessibleMcpServerNames };
+  }
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
@@ -1201,7 +1283,7 @@ async function loadAgentTools({
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: _agentTools,
       userId: req.user.id,
-      serverNames: mcpServerContext.serverNames,
+      serverNames: mcpServerContext.rawServerNames ?? mcpServerContext.serverNames,
       findPluginAuthsByKeys,
     });
   }
@@ -1483,6 +1565,7 @@ async function loadAgentTools({
  * @param {string|null} [params.streamId] - Stream ID for web search callbacks
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
  * @param {boolean} [params.actionsEnabled] - Whether the actions capability is enabled
+ * @param {readonly string[]} [params.accessibleMcpServerNames] - COMPLETE accessible-server audit resolved at initialization
  * @returns {Promise<{ loadedTools: Array, configurable: Object }>}
  */
 async function loadToolsForExecution({
@@ -1501,6 +1584,7 @@ async function loadToolsForExecution({
   streamId = null,
   jobCreatedAt,
   actionsEnabled,
+  accessibleMcpServerNames,
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
@@ -1681,6 +1765,10 @@ async function loadToolsForExecution({
         uploadImageBuffer,
         returnMetadata: true,
         mcpAvailableTools,
+        /** Initialization's COMPLETE audit snapshot — reused so a transient
+         *  registry failure at execution can't fail-closed a tool the same
+         *  turn already advertised. */
+        accessibleMcpServerNames,
         requestScopedConnections: mcpRequestScopedConnections,
         [Tools.web_search]: webSearchCallbacks,
       },
@@ -1872,4 +1960,7 @@ module.exports = {
   loadToolsForExecution,
   processRequiredActions,
   resolveAgentCapabilities,
+  /** Re-exported for controllers that already depend on (and mock) this
+   *  module, avoiding a fresh heavy `services/MCP` require chain there. */
+  getAccessibleMcpServerNames,
 };

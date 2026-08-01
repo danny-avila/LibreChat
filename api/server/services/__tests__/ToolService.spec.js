@@ -90,8 +90,15 @@ jest.mock('~/server/services/MCP', () => ({
   resolveMcpServerNames: (...args) => mockResolveMcpServerNames(...args),
   resolveMcpServerContext: async (...args) => {
     const configServers = (await mockResolveConfigServers(...args)) ?? {};
-    return { configServers, serverNames: Object.keys(configServers) };
+    const serverNames = Object.keys(configServers);
+    return { configServers, serverNames, rawServerNames: serverNames };
   },
+  /** Mirrors the real resolver's shape; these fixtures use safe names, so the
+   *  raw set is always the complete audit. */
+  resolveCollisionAuditNames: jest.fn(async ({ rawServerNames, accessibleServerNames }) => ({
+    names: accessibleServerNames?.length ? accessibleServerNames : rawServerNames,
+    complete: true,
+  })),
   createMCPPermissionContext: jest.fn((req) => ({
     canUseServers: (user) => mockUserCanUseMCPServers(user, req),
   })),

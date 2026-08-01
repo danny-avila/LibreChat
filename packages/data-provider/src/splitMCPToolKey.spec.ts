@@ -1,4 +1,10 @@
-import { Constants, splitMCPToolKey, splitToolCallName } from './config';
+import {
+  Constants,
+  splitMCPToolKey,
+  splitToolCallName,
+  normalizeMCPToolKey,
+  buildServerNameAliases,
+} from './config';
 
 describe('splitMCPToolKey', () => {
   it('splits a normal single-delimiter key like String.split would', () => {
@@ -116,6 +122,73 @@ describe('splitMCPToolKey boundary alignment', () => {
       'search',
       'Google_mcp_Workspace',
     ]);
+  });
+});
+
+describe('buildServerNameAliases', () => {
+  it('maps normalized forms back to raw config names, including identity entries', () => {
+    const aliases = buildServerNameAliases(['plain', 'Connector: Company']);
+    expect(aliases.get('plain')).toBe('plain');
+    expect(aliases.get('Connector__Company')).toBe('Connector: Company');
+    expect(aliases.get('Connector: Company')).toBeUndefined();
+  });
+
+  it('skips empty names', () => {
+    expect(buildServerNameAliases(['', 'srv']).size).toBe(1);
+  });
+
+  it('resolves normalized-name collisions to the FIRST configured name deterministically', () => {
+    /** `Sales Force` and `Sales:Force` both normalize to `Sales_Force`; their
+     *  tool keys are inherently ambiguous, so routing must at least be stable
+     *  (the collision itself is warned about at context resolution). */
+    const aliases = buildServerNameAliases(['Sales Force', 'Sales:Force']);
+    expect(aliases.get('Sales_Force')).toBe('Sales Force');
+  });
+
+  it('an identity name owns its slot regardless of configuration order', () => {
+    /** A server literally named `Sales_Force` must never have its keys
+     *  rerouted to a special-character server that normalizes onto it. */
+    expect(buildServerNameAliases(['Sales Force', 'Sales_Force']).get('Sales_Force')).toBe(
+      'Sales_Force',
+    );
+    expect(buildServerNameAliases(['Sales_Force', 'Sales Force']).get('Sales_Force')).toBe(
+      'Sales_Force',
+    );
+  });
+});
+
+describe('normalizeMCPToolKey', () => {
+  const d = Constants.mcp_delimiter;
+
+  it('rewrites the server segment of a raw-keyed tool to its normalized form', () => {
+    expect(normalizeMCPToolKey(`search${d}Connector: Company`, ['Connector: Company'])).toBe(
+      `search${d}Connector__Company`,
+    );
+  });
+
+  it('is a no-op for already-normalized keys and safe server names', () => {
+    expect(normalizeMCPToolKey(`search${d}Connector__Company`, ['Connector: Company'])).toBe(
+      `search${d}Connector__Company`,
+    );
+    expect(normalizeMCPToolKey(`search${d}plain`, ['plain'])).toBe(`search${d}plain`);
+  });
+
+  it('is a no-op when no configured raw name matches (unconfigured or non-MCP keys)', () => {
+    expect(normalizeMCPToolKey(`search${d}gone server`, ['Connector: Company'])).toBe(
+      `search${d}gone server`,
+    );
+    expect(normalizeMCPToolKey('web_search', ['Connector: Company'])).toBe('web_search');
+  });
+
+  it('resolves the boundary by longest raw match, preserving delimiter-bearing tool names', () => {
+    /** The tool half may itself contain the delimiter (gateway-prefixed names). */
+    expect(normalizeMCPToolKey(`gitlab-get${d}server_version${d}My Server`, ['My Server'])).toBe(
+      `gitlab-get${d}server_version${d}My_Server`,
+    );
+    /** `normalizeServerName` strips the trailing `_` it substitutes for `!`. */
+    expect(normalizeMCPToolKey(`search${d}My${d}Server!`, ['Server!', `My${d}Server!`])).toBe(
+      `search${d}My${d}Server`,
+    );
   });
 });
 
