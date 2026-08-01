@@ -29,7 +29,7 @@ function recorder(): { sink: Parameters<typeof runImport>[0]['batch']; recorded:
       finishConversation: (title, _createdAt, convo, model) => {
         recorded.conversations.push({ title, convo, model });
       },
-      maybeFlush: async () => undefined,
+      maybeFlush: async () => false,
       saveBatch: async () => undefined,
     },
   };

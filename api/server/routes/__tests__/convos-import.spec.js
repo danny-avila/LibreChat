@@ -307,25 +307,39 @@ describe('conversation import job API (real router, real Mongo)', () => {
   });
 
   it('rejects a file that is neither json nor zip', async () => {
-    await request(app)
+    const rejected = await request(app)
       .post('/api/convos/import')
       .attach('file', Buffer.from('nope'), 'notes.txt')
       .expect(400);
+
+    expect(rejected.body.jobId).toBeUndefined();
   });
 
   it('404s a job belonging to another user', async () => {
-    await request(app).get('/api/convos/import/jobs/does-not-exist').expect(404);
+    const missing = await request(app).get('/api/convos/import/jobs/does-not-exist').expect(404);
+
+    expect(missing.body.message).toBe('Import job not found');
   });
 
   it("scopes jobs by user: another user gets 404, not the first user's job", async () => {
     const filepath = await buildChatGptExportZip();
+    const owner = userId;
     const uploaded = await request(app)
       .post('/api/convos/import')
       .attach('file', filepath)
       .expect(202);
 
     userId = new mongoose.Types.ObjectId().toString();
-    await request(app).get(`/api/convos/import/jobs/${uploaded.body.jobId}`).expect(404);
+    const denied = await request(app)
+      .get(`/api/convos/import/jobs/${uploaded.body.jobId}`)
+      .expect(404);
+    expect(denied.body.message).toBe('Import job not found');
+
+    userId = owner;
+    const visible = await request(app)
+      .get(`/api/convos/import/jobs/${uploaded.body.jobId}`)
+      .expect(200);
+    expect(visible.body.jobId).toBe(uploaded.body.jobId);
   });
 
   it('imports a bare ChatGPT .json upload through the job API, matching the zip pipeline', async () => {

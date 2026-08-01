@@ -734,9 +734,9 @@ export type TImportJob = {
 };
 
 /**
- * Returned when the upload is a ChatGPT export (zip or bare JSON): the
- * archive has been inspected and a job created, but nothing is imported
- * until the job is confirmed via the start endpoint.
+ * Returned when the upload is a ChatGPT, Claude, or Grok export (zip or bare
+ * JSON): the archive has been inspected and a job created, but nothing is
+ * imported until the job is confirmed via the start endpoint.
  */
 export type TImportJobStarted = {
   jobId: string;
@@ -744,8 +744,8 @@ export type TImportJobStarted = {
 };
 
 /**
- * Returned when the upload is a Claude, ChatbotUI, or LibreChat export:
- * these formats import synchronously and never produce a job.
+ * Returned when the upload is a ChatbotUI or LibreChat export: these formats
+ * import synchronously and never produce a job.
  */
 export type TImportCompleted = {
   message: string;
@@ -754,8 +754,9 @@ export type TImportCompleted = {
 /**
  * Response from the import endpoint. The upload is inspected by content,
  * not extension, so the same route can either start a background job
- * (ChatGPT exports) or complete synchronously (every other supported
- * format) — narrow with `isImportJobStarted` rather than assuming shape.
+ * (ChatGPT, Claude, and Grok exports) or complete synchronously (every other
+ * supported format) — narrow with `isImportJobStarted` rather than assuming
+ * shape.
  */
 export type TImportResponse = TImportJobStarted | TImportCompleted;
 
