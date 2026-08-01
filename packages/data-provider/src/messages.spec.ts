@@ -1,4 +1,5 @@
 import type { ParentMessage } from './messages';
+import type { TFile } from './types/files';
 import type { TMessage } from './types';
 import { buildTree } from './messages';
 
@@ -125,7 +126,7 @@ describe('buildTree', () => {
   });
 
   it('maps files through fileMap and skips undefined entries', () => {
-    const file = { file_id: 'f1', filename: 'hydrated.png' };
+    const file = { file_id: 'f1', filename: 'hydrated.png' } as TFile;
     const tree = buildTree({
       messages: [
         undefined,
