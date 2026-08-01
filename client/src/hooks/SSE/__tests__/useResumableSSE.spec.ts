@@ -790,6 +790,42 @@ describe('useResumableSSE', () => {
     expect(mockSSEInstances).toHaveLength(countBefore404);
   });
 
+  it.each([
+    { status: 'error' as const, outcome: 'error' as const },
+    { status: 'aborted' as const, outcome: 'aborted' as const },
+  ])('finalizes a 404 with authoritative $status status when messages fail', async (terminal) => {
+    jest.useFakeTimers();
+    mockFetchQuery.mockRejectedValueOnce(new Error('message refetch failed'));
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      status: terminal.status,
+      createdAt: 1000,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 404 });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: CONV_ID,
+        outcome: terminal.outcome,
+        generationCreatedAt: 1000,
+      }),
+    );
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
+    expect(mockSetShowStopButton).toHaveBeenLastCalledWith(false);
+    expect(jest.getTimerCount()).toBe(0);
+    unmount();
+  });
+
   it('seeds sidebar and message caches for a new conversation once the stream id is known', async () => {
     const submission = buildSubmission({
       conversation: {},

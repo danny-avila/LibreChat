@@ -2468,6 +2468,7 @@ export default function useResumableSSE(
           // recovered follow-up consumes its exact source. Prefer these
           // authoritative leftovers over guessing from local chips.
           let confirmedV2Terminal = false;
+          let terminalStatus: StreamStatusResponse | undefined;
           try {
             const status = await fetchStreamStatus(recoveryConvoId);
             if (!isCurrentSubscription()) {
@@ -2572,6 +2573,7 @@ export default function useResumableSSE(
             confirmedV2Terminal =
               generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
               supportsGenerationProtocolV2(status);
+            terminalStatus = status;
             const canRecoverTerminalSteers = generationProtocolVersion === 1 || confirmedV2Terminal;
             const unrecovered = canRecoverTerminalSteers ? (status.unrecoveredSteers ?? []) : [];
             if (unrecovered.length > 0) {
@@ -2599,7 +2601,9 @@ export default function useResumableSSE(
             });
           }
 
-          if (convoId && persistedMessages == null) {
+          const hasAuthoritativeFailure =
+            terminalStatus?.status === 'error' || terminalStatus?.status === 'aborted';
+          if (convoId && persistedMessages == null && !hasAuthoritativeFailure) {
             // A missing stream only proves that the transport job is gone. If
             // durable history is temporarily unavailable, keep this
             // submission as the recovery owner and reconcile again later.
@@ -2638,14 +2642,14 @@ export default function useResumableSSE(
               generationProtocolVersion,
             });
           }
-          // The true outcome is unknown here (job record already cleaned up):
-          // a non-'completed' outcome releases parked interrupt flags without
-          // auto-sending queued messages the user may not want fired.
+          // Preserve an authoritative failure. Otherwise a cleaned-up stream
+          // remains conservatively aborted so parked text is not auto-sent.
           setRunEnd({
             conversationId: recoveryConvoId,
-            outcome: 'aborted',
+            outcome: terminalStatus?.status === 'error' ? 'error' : 'aborted',
             startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
             endedAt: Date.now(),
+            generationCreatedAt: terminalStatus?.createdAt ?? generationCreatedAt,
           });
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
