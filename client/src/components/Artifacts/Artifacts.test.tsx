@@ -4,6 +4,7 @@ import Artifacts from './Artifacts';
 
 const mockRequestFullscreen = jest.fn<Promise<void>, []>();
 const mockExitFullscreen = jest.fn<Promise<void>, []>();
+let mockIsMobile = false;
 
 jest.mock('@radix-ui/react-tabs', () => ({
   Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -19,7 +20,7 @@ jest.mock('@librechat/client', () => ({
     <button {...props}>{children}</button>
   ),
   Spinner: () => <span />,
-  useMediaQuery: () => false,
+  useMediaQuery: () => mockIsMobile,
   Radio: () => null,
 }));
 
@@ -101,6 +102,9 @@ const renderArtifacts = () => {
 describe('Artifacts fullscreen preview', () => {
   beforeEach(() => {
     jest.useFakeTimers();
+    mockRequestFullscreen.mockReset();
+    mockExitFullscreen.mockReset();
+    mockIsMobile = false;
     setFullscreenElement(null);
     Object.defineProperty(document, 'fullscreenEnabled', {
       configurable: true,
@@ -127,7 +131,9 @@ describe('Artifacts fullscreen preview', () => {
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     jest.useRealTimers();
   });
 
@@ -147,6 +153,30 @@ describe('Artifacts fullscreen preview', () => {
 
     expect(mockExitFullscreen).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: 'com_ui_enter_full_screen' })).toBeInTheDocument();
+  });
+
+  it('expands the mobile artifact panel to fill the fullscreen container', async () => {
+    mockIsMobile = true;
+    renderArtifacts();
+
+    const closeButton = screen.getByRole('button', { name: 'com_ui_close' });
+    const panel = closeButton.parentElement?.parentElement?.parentElement;
+
+    expect(panel).toHaveStyle({ height: '90vh' });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_enter_full_screen' }));
+    });
+
+    expect(panel).toHaveStyle({ height: '100%' });
+    expect(panel).toHaveClass('inset-0', 'rounded-none');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_exit_full_screen' }));
+    });
+
+    expect(panel).toHaveStyle({ height: '90vh' });
+    expect(panel).toHaveClass('inset-x-0', 'bottom-0', 'rounded-t-[20px]');
   });
 
   it('hides the fullscreen control when the browser does not support it', () => {

@@ -261,7 +261,8 @@ export default function Artifacts() {
             'flex w-full flex-col bg-surface-primary text-xl text-text-primary',
             isMobile
               ? cn(
-                  'fixed inset-x-0 bottom-0 z-[100] rounded-t-[20px] shadow-[0_-10px_60px_rgba(0,0,0,0.35)]',
+                  'fixed z-[100] shadow-[0_-10px_60px_rgba(0,0,0,0.35)]',
+                  isFullscreen ? 'inset-0 rounded-none' : 'inset-x-0 bottom-0 rounded-t-[20px]',
                   isVisible && !isClosing
                     ? 'translate-y-0 opacity-100'
                     : 'duration-250 translate-y-full opacity-0 transition-all',
@@ -274,9 +275,11 @@ export default function Artifacts() {
                     : 'translate-x-5 opacity-0 transition-all duration-300',
                 ),
           )}
-          style={isMobile ? { height: `${height}vh` } : { overflow: 'hidden' }}
+          style={
+            isMobile ? { height: isFullscreen ? '100%' : `${height}vh` } : { overflow: 'hidden' }
+          }
         >
-          {isMobile && (
+          {isMobile && !isFullscreen && (
             <div
               className="flex flex-shrink-0 cursor-grab items-center justify-center bg-surface-primary-alt pb-1.5 pt-2.5 active:cursor-grabbing"
               onPointerDown={handleDragStart}
