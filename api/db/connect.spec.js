@@ -9,24 +9,18 @@ describe('buildMongoConnectionOptions', () => {
       bufferCommands: false,
       maxIdleTimeMS: 60000,
       heartbeatFrequencyMS: 10000,
-      socketTimeoutMS: 45000,
-      serverSelectionTimeoutMS: 10000,
     });
   });
 
-  test('respects explicit overrides for all four new tunables', () => {
+  test('respects explicit overrides for both new tunables', () => {
     const options = buildMongoConnectionOptions({
       MONGO_MAX_IDLE_TIME_MS: '120000',
       MONGO_HEARTBEAT_FREQUENCY_MS: '5000',
-      MONGO_SOCKET_TIMEOUT_MS: '30000',
-      MONGO_SERVER_SELECTION_TIMEOUT_MS: '20000',
     });
 
     expect(options).toMatchObject({
       maxIdleTimeMS: 120000,
       heartbeatFrequencyMS: 5000,
-      socketTimeoutMS: 30000,
-      serverSelectionTimeoutMS: 20000,
     });
   });
 
@@ -40,10 +34,10 @@ describe('buildMongoConnectionOptions', () => {
 
   test('respects an explicit 0 rather than treating it as unset', () => {
     const options = buildMongoConnectionOptions({
-      MONGO_SOCKET_TIMEOUT_MS: '0',
+      MONGO_MAX_IDLE_TIME_MS: '0',
     });
 
-    expect(options.socketTimeoutMS).toBe(0);
+    expect(options.maxIdleTimeMS).toBe(0);
   });
 
   test('keeps existing pool tunables absent when unset (unchanged behavior)', () => {
@@ -79,17 +73,10 @@ describe('connectDb connection event listeners', () => {
     process.env.MONGO_URI = mongoServer.getUri();
 
     jest.resetModules();
-
-    jest.doMock('@librechat/data-schemas', () => ({
-      logger: {
-        warn: jest.fn(),
-        info: jest.fn(),
-        error: jest.fn(),
-      },
-    }));
-
     mongoose = require('mongoose');
     ({ logger } = require('@librechat/data-schemas'));
+    jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    jest.spyOn(logger, 'info').mockImplementation(() => {});
     ({ connectDb } = require('./connect'));
   });
 

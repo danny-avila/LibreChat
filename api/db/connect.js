@@ -14,8 +14,6 @@ if (!MONGO_URI) {
 /** Applied when the corresponding env var is unset or not a valid number. */
 const DEFAULT_MAX_IDLE_TIME_MS = 60000;
 const DEFAULT_HEARTBEAT_FREQUENCY_MS = 10000;
-const DEFAULT_SOCKET_TIMEOUT_MS = 45000;
-const DEFAULT_SERVER_SELECTION_TIMEOUT_MS = 10000;
 
 /**
  * Parses an env var as an integer, falling back to `defaultValue` when the
@@ -53,13 +51,6 @@ function buildMongoConnectionOptions(env = process.env) {
     env.MONGO_HEARTBEAT_FREQUENCY_MS,
     DEFAULT_HEARTBEAT_FREQUENCY_MS,
   );
-  /** How long a socket may stay inactive before an operation on it fails, bounding how long a half-dead connection can block a request. */
-  const socketTimeoutMS = parseEnvInt(env.MONGO_SOCKET_TIMEOUT_MS, DEFAULT_SOCKET_TIMEOUT_MS);
-  /** How long the driver waits for a suitable server (e.g. a new primary after an election) before failing an operation. */
-  const serverSelectionTimeoutMS = parseEnvInt(
-    env.MONGO_SERVER_SELECTION_TIMEOUT_MS,
-    DEFAULT_SERVER_SELECTION_TIMEOUT_MS,
-  );
   /** Set to false to disable automatic index creation for all models associated with this connection. */
   const autoIndex =
     env.MONGO_AUTO_INDEX != undefined ? isEnabled(env.MONGO_AUTO_INDEX) || false : undefined;
@@ -71,8 +62,6 @@ function buildMongoConnectionOptions(env = process.env) {
     bufferCommands: false,
     maxIdleTimeMS,
     heartbeatFrequencyMS,
-    socketTimeoutMS,
-    serverSelectionTimeoutMS,
     ...(maxPoolSize ? { maxPoolSize } : {}),
     ...(minPoolSize ? { minPoolSize } : {}),
     ...(maxConnecting ? { maxConnecting } : {}),
@@ -110,11 +99,11 @@ mongoose.connection.on('close', () => {
 });
 
 async function connectDb() {
-  if (cached.conn && cached.conn?._readyState === 1) {
+  if (cached.conn && cached.conn?.readyState === 1) {
     return cached.conn;
   }
 
-  const disconnected = cached.conn && cached.conn?._readyState !== 1;
+  const disconnected = cached.conn && cached.conn?.readyState !== 1;
   if (!cached.promise || disconnected) {
     const opts = buildMongoConnectionOptions();
     logger.info('Mongo Connection options');
