@@ -1422,6 +1422,29 @@ export default function useResumableSSE(
         }, 30_000);
         return true;
       };
+      const belongsToReplacementGeneration = (status: StreamStatusResponse): boolean =>
+        status.createdAt != null &&
+        (generationCreatedAt == null || status.createdAt !== generationCreatedAt);
+      const releaseTerminalReplacement = (
+        conversationId: string,
+        status: StreamStatusResponse,
+        authoritativeValues: unknown[],
+      ) => {
+        queryClient.setQueryData(streamStatusQueryKey(conversationId), status);
+        settleAppliedSteerParts(conversationId, authoritativeValues);
+        resetLive({ ...currentSubmission, userMessage });
+        persistedMessageReconciliationAttemptsRef.current = 0;
+        terminalReconciliationStatusRef.current = null;
+        removeActiveJob(currentStreamId);
+        clearAttachedGenerationCreatedAt();
+        setIsSubmitting(false);
+        setShowStopButton(false);
+        setSubmission(null);
+        setStreamId(null);
+        optimisticStreamIdsRef.current.delete(currentStreamId);
+        createdStreamIdsRef.current.delete(currentStreamId);
+        reconnectAttemptRef.current = 0;
+      };
 
       sse.addEventListener('open', () => {
         if (!isCurrentSubscription()) {
@@ -2508,11 +2531,7 @@ export default function useResumableSSE(
               }, 1_000);
               return;
             }
-            if (
-              status.active === true &&
-              status.createdAt != null &&
-              (generationCreatedAt == null || status.createdAt !== generationCreatedAt)
-            ) {
+            if (status.active === true && belongsToReplacementGeneration(status)) {
               const handedOff = await handoffToReplacement(recoveryConvoId, status);
               if (!isCurrentSubscription()) {
                 return;
@@ -2598,7 +2617,10 @@ export default function useResumableSSE(
             const canRecoverTerminalSteers = generationProtocolVersion === 1 || confirmedV2Terminal;
             const unrecovered = canRecoverTerminalSteers ? (status.unrecoveredSteers ?? []) : [];
             if (unrecovered.length > 0) {
-              const recoverySteerId = getRecoverySteerId(currentSubmission);
+              const recoverySteerId =
+                confirmedV2Terminal && belongsToReplacementGeneration(status)
+                  ? null
+                  : getRecoverySteerId(currentSubmission);
               convertSteersToQueued(recoveryConvoId, unrecovered, {
                 generationProtocolVersion,
                 ...(recoverySteerId != null && {
@@ -2631,6 +2653,21 @@ export default function useResumableSSE(
             if (retryPersistedMessageReconciliation(terminalStatus)) {
               return;
             }
+          }
+
+          if (
+            terminalStatus?.active === false &&
+            generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
+            supportsGenerationProtocolV2(terminalStatus) &&
+            belongsToReplacementGeneration(terminalStatus)
+          ) {
+            releaseTerminalReplacement(recoveryConvoId, terminalStatus, [
+              ...(persistedMessages ?? []),
+              ...(terminalStatus.resumeState?.aggregatedContent ??
+                terminalStatus.aggregatedContent ??
+                []),
+            ]);
+            return;
           }
 
           persistedMessageReconciliationAttemptsRef.current = 0;
@@ -2914,11 +2951,7 @@ export default function useResumableSSE(
             status = undefined;
           }
 
-          if (
-            status?.active === true &&
-            status.createdAt != null &&
-            (generationCreatedAt == null || status.createdAt !== generationCreatedAt)
-          ) {
+          if (status?.active === true && belongsToReplacementGeneration(status)) {
             const handedOff = await handoffToReplacement(recoveryConvoId, status);
             if (!isCurrentSubscription()) {
               return;
@@ -3053,12 +3086,16 @@ export default function useResumableSSE(
           const confirmedV2Terminal =
             generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
             supportsGenerationProtocolV2(status);
+          const terminalBelongsToReplacement =
+            confirmedV2Terminal && belongsToReplacementGeneration(status);
           const reconciledIds = new Set(collectAppliedSteerIds(authoritativeValues));
           settleAppliedSteerParts(recoveryConvoId, authoritativeValues);
           const canRecoverTerminalSteers = generationProtocolVersion === 1 || confirmedV2Terminal;
           const unrecovered = canRecoverTerminalSteers ? (status.unrecoveredSteers ?? []) : [];
           if (unrecovered.length > 0) {
-            const recoverySteerId = getRecoverySteerId(currentSubmission);
+            const recoverySteerId = terminalBelongsToReplacement
+              ? null
+              : getRecoverySteerId(currentSubmission);
             convertSteersToQueued(recoveryConvoId, unrecovered, {
               generationProtocolVersion,
               ...(recoverySteerId != null && {
@@ -3072,11 +3109,20 @@ export default function useResumableSSE(
               }
             }
           }
-          if (persistedMessages && (generationProtocolVersion === 1 || confirmedV2Terminal)) {
+          if (
+            !terminalBelongsToReplacement &&
+            persistedMessages &&
+            (generationProtocolVersion === 1 || confirmedV2Terminal)
+          ) {
             convertLocalSteersToQueued(recoveryConvoId, {
               excludeSteerIds: reconciledIds,
               generationProtocolVersion,
             });
+          }
+
+          if (terminalBelongsToReplacement) {
+            releaseTerminalReplacement(recoveryConvoId, status, authoritativeValues);
+            return;
           }
 
           resetLive({ ...currentSubmission, userMessage });

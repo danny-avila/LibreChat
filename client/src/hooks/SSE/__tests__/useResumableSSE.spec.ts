@@ -827,6 +827,50 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('does not finalize a terminal replacement epoch after a 404', async () => {
+    const replacementStatus = {
+      active: false,
+      status: 'complete',
+      streamId: CONV_ID,
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+      resumeState: { pendingSteers: [], aggregatedContent: [{ type: 'text', text: 'new epoch' }] },
+    } as const;
+    mockFetchStreamStatus.mockResolvedValue(replacementStatus);
+    const submission = {
+      ...buildSubmission(),
+      resumeStreamId: CONV_ID,
+      resumeGenerationCreatedAt: 1000,
+      resumeGenerationProtocolVersion: 2,
+    } as TSubmission & {
+      resumeStreamId: string;
+      resumeGenerationCreatedAt: number;
+      resumeGenerationProtocolVersion: 2;
+    };
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 404 });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetQueryData).toHaveBeenCalledWith(['streamStatus', CONV_ID], replacementStatus);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
+    expect(
+      mockSetQueryData.mock.calls.filter(
+        ([queryKey]) => Array.isArray(queryKey) && queryKey[0] === QueryKeys.allConversations,
+      ),
+    ).toHaveLength(0);
+    expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
+    unmount();
+  });
+
   it('seeds sidebar and message caches for a new conversation once the stream id is known', async () => {
     const submission = buildSubmission({
       conversation: {},
@@ -3701,6 +3745,59 @@ describe('useResumableSSE', () => {
     expect(mockSetRunEnd).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: CONV_ID, outcome: 'completed' }),
     );
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
+    expect(jest.getTimerCount()).toBe(0);
+    unmount();
+  });
+
+  it('does not finalize a terminal replacement epoch at the reconnect ceiling', async () => {
+    jest.useFakeTimers();
+    const replacementStatus = {
+      active: false,
+      status: 'complete',
+      streamId: CONV_ID,
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+      resumeState: { pendingSteers: [], aggregatedContent: [{ type: 'text', text: 'new epoch' }] },
+    } as const;
+    mockFetchStreamStatus.mockResolvedValue(replacementStatus);
+    const submission = {
+      ...buildSubmission(),
+      resumeStreamId: CONV_ID,
+      resumeGenerationCreatedAt: 1000,
+      resumeGenerationProtocolVersion: 2,
+    } as TSubmission & {
+      resumeStreamId: string;
+      resumeGenerationCreatedAt: number;
+      resumeGenerationProtocolVersion: 2;
+    };
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+      await act(async () => {
+        getLastSSE()._emit('error');
+        await Promise.resolve();
+      });
+      await advanceRetryTimer(delay);
+    }
+    await act(async () => {
+      getLastSSE()._emit('error');
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetQueryData).toHaveBeenCalledWith(['streamStatus', CONV_ID], replacementStatus);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
+    expect(
+      mockSetQueryData.mock.calls.filter(
+        ([queryKey]) => Array.isArray(queryKey) && queryKey[0] === QueryKeys.allConversations,
+      ),
+    ).toHaveLength(0);
+    expect(mockSetSubmission).toHaveBeenCalledWith(null);
     expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
     expect(jest.getTimerCount()).toBe(0);
     unmount();
