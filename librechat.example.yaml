@@ -870,6 +870,22 @@ endpoints:
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+#   # Outbound search and scrape requests are validated at connect time against
+#   # their resolved IP and blocked from reaching private, loopback, link-local,
+#   # or cloud-metadata space. `allowedAddresses` is an SSRF exemption list, NOT a
+#   # strict whitelist: hostname/IP + port pairs listed here bypass that block for
+#   # one deliberately-private endpoint (for example a self-hosted SearXNG
+#   # instance); public destinations continue to work normally.
+#   #
+#   # Entries must include a port: `host:port`, `private.ip:port`, or `[ipv6]:port`.
+#   # Do not use URLs, paths, CIDR ranges, bare hosts/IPs, or public IP literals.
+#   # A hostname entry trusts whatever IP that name resolves to on the listed port,
+#   # so only list hosts you fully control and whose DNS cannot be repointed by an
+#   # attacker. Listing an attacker-controllable or DNS-rebindable host re-opens the
+#   # private-address path this guard closes. Prefer literal IPs where you can.
+#   # allowedAddresses:
+#   #   - 'searxng:8080'
+#   #   - '127.0.0.1:8080'
 #
 # Tavily as both search and scraper provider example:
 # webSearch:

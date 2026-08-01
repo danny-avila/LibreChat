@@ -6,6 +6,7 @@ const {
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
+  createSSRFSafeAgents,
   splitMCPToolKey,
   buildServerNameAliases,
   findShadowedServerNames,
@@ -396,6 +397,7 @@ const loadTools = async ({
         webSearchConfig: webSearch,
       });
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
+      const { httpAgent, httpsAgent } = createSSRFSafeAgents(webSearch?.allowedAddresses);
       requestedTools[tool] = async () => {
         toolContextMap[tool] = buildWebSearchContext();
         dynamicToolContextMap[tool] = buildWebSearchDynamicContext(
@@ -403,6 +405,8 @@ const loadTools = async ({
         );
         return createSearchTool({
           ...result.authResult,
+          httpAgent,
+          httpsAgent,
           onSearchResults,
           onGetHighlights,
           logger,

@@ -12,6 +12,26 @@ const mockCreateMCPTools = jest.fn();
 const mockGetServerConfig = jest.fn();
 const mockGetAccessibleMcpServerNames = jest.fn(async () => []);
 
+const mockHttpAgent = { __agent: 'http' };
+const mockHttpsAgent = { __agent: 'https' };
+const mockCreateSearchTool = jest.fn(() => ({ name: 'web_search' }));
+const mockCreateSSRFSafeAgents = jest.fn(() => ({
+  httpAgent: mockHttpAgent,
+  httpsAgent: mockHttpsAgent,
+}));
+const mockLoadWebSearchAuth = jest.fn(async () => ({ authResult: { searchProvider: 'serper' } }));
+
+jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
+  createSearchTool: (...args) => mockCreateSearchTool(...args),
+}));
+
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  loadWebSearchAuth: (...args) => mockLoadWebSearchAuth(...args),
+  createSSRFSafeAgents: (...args) => mockCreateSSRFSafeAgents(...args),
+}));
+
 jest.mock('~/server/services/PluginService', () => mockPluginService);
 
 jest.mock('~/server/services/Config', () => ({
@@ -70,7 +90,7 @@ jest.mock('~/config', () => ({
 }));
 
 const { Calculator } = require('@librechat/agents');
-const { Constants } = require('librechat-data-provider');
+const { Tools, Constants } = require('librechat-data-provider');
 const { ASK_USER_QUESTION_TOOL_NAME } = require('@librechat/api');
 
 const { User } = require('~/db/models');
@@ -810,6 +830,53 @@ describe('Tool Handlers', () => {
           availableTools: discoveredTools,
           requestBody,
           toolKey: secondToolKey,
+        }),
+      );
+    });
+  });
+
+  describe('web_search SSRF-safe agent wiring', () => {
+    const buildReq = () => ({
+      user: { id: fakeUser._id.toString(), role: 'USER' },
+      body: {},
+    });
+
+    it('threads the SSRF-safe agents into the search tool config and passes allowedAddresses through', async () => {
+      const allowedAddresses = ['localhost:8888'];
+      const toolMap = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [Tools.web_search],
+        returnMap: true,
+        webSearch: { allowedAddresses },
+        options: { req: buildReq() },
+      });
+      await toolMap[Tools.web_search]();
+
+      expect(mockCreateSSRFSafeAgents).toHaveBeenCalledTimes(1);
+      expect(mockCreateSSRFSafeAgents).toHaveBeenCalledWith(allowedAddresses);
+      expect(mockCreateSearchTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          httpAgent: mockHttpAgent,
+          httpsAgent: mockHttpsAgent,
+        }),
+      );
+    });
+
+    it('still threads the agents when allowedAddresses is omitted', async () => {
+      const toolMap = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [Tools.web_search],
+        returnMap: true,
+        webSearch: {},
+        options: { req: buildReq() },
+      });
+      await toolMap[Tools.web_search]();
+
+      expect(mockCreateSSRFSafeAgents).toHaveBeenCalledWith(undefined);
+      expect(mockCreateSearchTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          httpAgent: mockHttpAgent,
+          httpsAgent: mockHttpsAgent,
         }),
       );
     });
