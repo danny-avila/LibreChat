@@ -45,17 +45,19 @@ The deployment is a hybrid:
   trace suppression uses a destination-scoped gateway path that also skips
   central media export for that run.
 - Tenant export is conditional. LibreChat uses a destination-scoped gateway URL
-  only when tenant keys are configured, the tenant base URL matches a configured
-  startup destination, and `LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED` is not true.
+  only when the saved connection is enabled with tenant keys, its destination
+  key matches a configured startup destination, and
+  `LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED` is not true.
   Other traces are still exported to central through the gateway without tenant
   auth.
 - User feedback scores use Langfuse's direct REST API from the LibreChat API
   process. Central scores use LibreChat's normal central Langfuse env config;
   tenant scores use tenant app configuration when tenant fanout is enabled.
 
-Tenant Langfuse keys are expected to come from LibreChat app configuration, for
-example from an admin panel or another configuration data source. They are not
-defined in this gateway config.
+Tenant Langfuse keys are expected to come from LibreChat app configuration.
+When available, an authorized administrator can configure and verify the
+connection under **Settings > Langfuse**; LibreChat encrypts the secret key at
+rest. The keys are not defined in this gateway config.
 
 ## Limitations
 
@@ -65,9 +67,9 @@ defined in this gateway config.
   destination.
 - Tenant Langfuse API keys can be added, changed, or disabled in tenant app
   configuration at runtime without restarting LibreChat or the gateway.
-- Tenant app configuration must set a Langfuse base URL matching one of the
-  startup destinations before tenant trace/score export is enabled; keys alone
-  are treated as central-only.
+- Tenant app configuration must select a destination key from
+  `LANGFUSE_FANOUT_TENANT_DESTINATIONS` before tenant trace/score export is
+  enabled; keys alone do not enable tenant export.
 - `LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED=true` can be set on LibreChat as an
   emergency switch to stop tenant trace and score export while keeping central
   gateway export active. When omitted, false, or blank, tenant export remains
