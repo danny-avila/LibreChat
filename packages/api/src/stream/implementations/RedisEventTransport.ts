@@ -508,6 +508,7 @@ export class RedisEventTransport implements IEventTransport {
       if (
         streamState.count === 0 &&
         parsed.type !== EventTypes.ABORT &&
+        parsed.type !== EventTypes.ABORT_ACK &&
         parsed.type !== EventTypes.PREEMPT
       ) {
         return;
