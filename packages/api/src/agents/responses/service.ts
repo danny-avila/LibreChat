@@ -275,11 +275,14 @@ export function sendResponsesErrorResponse(
  * RESPONSE CONTEXT
  * ============================================================================= */
 
+/** Distinguishes a response ID from a conversation ID when a client hands one back */
+export const RESPONSE_ID_PREFIX = 'resp_';
+
 /**
  * Generate a unique response ID
  */
 export function generateResponseId(): string {
-  return `resp_${Date.now().toString(36)}${Math.random().toString(36).substring(2, 8)}`;
+  return `${RESPONSE_ID_PREFIX}${Date.now().toString(36)}${Math.random().toString(36).substring(2, 8)}`;
 }
 
 /**
@@ -336,6 +339,8 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   handlers: Record<string, { handle: (event: string, data: unknown) => void }>;
   state: StreamState;
   finalizeStream: () => void;
+  closeOpenStreams: () => void;
+  completeStream: () => void;
 } {
   const state: StreamState = {
     messageStarted: false,
@@ -578,15 +583,23 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   };
 
   /**
-   * Finalize the stream - close open items and emit completed
+   * Emit the terminal events. Callers that persist the response should run this only once the
+   * response is retrievable, since it hands the client its cue to use the response ID.
    */
-  const finalizeStream = (): void => {
-    closeOpenStreams();
+  const completeStream = (): void => {
     emitResponseCompleted(config);
     writeDone(config.res);
   };
 
-  return { handlers, state, finalizeStream };
+  /**
+   * Finalize the stream - close open items and emit completed
+   */
+  const finalizeStream = (): void => {
+    closeOpenStreams();
+    completeStream();
+  };
+
+  return { handlers, state, finalizeStream, closeOpenStreams, completeStream };
 }
 
 /* =============================================================================

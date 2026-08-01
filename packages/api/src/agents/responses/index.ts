@@ -169,6 +169,7 @@ export {
   // Error response
   sendResponsesErrorResponse,
   // Context
+  RESPONSE_ID_PREFIX,
   generateResponseId,
   createResponseContext,
   // Streaming setup
