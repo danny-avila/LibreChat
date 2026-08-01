@@ -1,5 +1,6 @@
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { SteerMediaClient, SteerFileFetcher } from '../media';
+import type { SteerFileFetcher } from '../request';
+import type { SteerMediaClient } from '../media';
 import { buildSteerMedia, stampSteerPartMedia } from '../media';
 
 jest.spyOn(console, 'log').mockImplementation();

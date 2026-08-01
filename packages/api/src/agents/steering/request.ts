@@ -1,13 +1,14 @@
 import { createHash, randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import { SteerEvents } from 'librechat-data-provider';
+import type { IMongoFile } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
 import type {
   GenerationProtocolVersion,
   SteerQueueItem,
   SteerReceipt,
 } from '~/stream/interfaces/IJobStore';
-import type { SteerFileFetcher } from './media';
+import type { SteerRequestUser } from './refs';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,
@@ -34,10 +35,12 @@ export function getSteerMaxLength(): number {
   return parseInt(process.env.STEER_MAX_LENGTH ?? '', 10) || DEFAULT_STEER_MAX_LENGTH;
 }
 
-export interface SteerRequestUser {
-  id?: string;
-  tenantId?: string;
-}
+/** `db.getFiles`-shaped dependency (injected — this package has no DB access). */
+export type SteerFileFetcher = (
+  filter: Record<string, unknown>,
+  sortOptions: Record<string, unknown>,
+  selectFields: Record<string, unknown>,
+) => Promise<IMongoFile[] | null | undefined>;
 
 export interface SteerRequestBody {
   conversationId?: unknown;

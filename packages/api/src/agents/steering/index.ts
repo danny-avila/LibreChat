@@ -14,15 +14,16 @@ export {
   STEER_MAX_FILES,
 } from './request';
 export type {
-  SteerRequestUser,
   SteerRequestBody,
   SteerRequestDeps,
   SteerRunContext,
   SteerCancelBody,
+  SteerFileFetcher,
   SteerRequestResult,
 } from './request';
 export { buildSteerMedia, stampSteerPartMedia } from './media';
-export type { SteerMediaClient, SteerFileFetcher, StampedSteerMedia } from './media';
+export type { SteerMediaClient, StampedSteerMedia } from './media';
 export { createSteerIndexOffsetHandlers } from './offset';
 export type { SteerOffsetState } from './offset';
 export { toSteerFileRef } from './refs';
+export type { SteerRequestUser } from './refs';

@@ -25,13 +25,18 @@ import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/ag
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
 import type { Response as ServerResponse } from 'express';
 import type {
+  ResolvedManualSkill,
+  ResolvedAlwaysApplySkill,
+  TListSkillsByAccess,
+  TGetSkillByName,
+} from './skills';
+import type {
   ServerRequest,
   EndpointDbMethods,
   EndpointTokenConfig,
   InitializeResultBase,
 } from '~/types';
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
-import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
 import {
   injectSkillCatalog,
@@ -529,77 +534,9 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     files?: Array<{ file_id: string }>;
   }> | null>;
   /** List skill summaries for catalog injection (paginated, omits body/frontmatter) */
-  listSkillsByAccess?: (params: {
-    accessibleIds: import('mongoose').Types.ObjectId[];
-    limit: number;
-    cursor?: string | null;
-  }) => Promise<{
-    skills: Array<{
-      _id: import('mongoose').Types.ObjectId;
-      name: string;
-      description: string;
-      author: import('mongoose').Types.ObjectId;
-      /**
-       * When `true`, the skill is excluded from the catalog injected into
-       * the agent's additional_instructions and the model cannot invoke it
-       * via the `skill` tool. Manual `$` invocation is unaffected.
-       */
-      disableModelInvocation?: boolean;
-      /**
-       * When `false`, the skill is hidden from the `$` popover and rejected
-       * by the manual-invocation resolver. Defaults to `true`.
-       */
-      userInvocable?: boolean;
-      /** True for deployment-directory skills that are loaded in memory. */
-      deployment?: boolean;
-    }>;
-    has_more?: boolean;
-    after?: string | null;
-  }>;
-  /**
-   * Load a single skill by name, constrained to an ACL-accessible ID set.
-   * Returns the full document (including `body`) so manual invocation can
-   * prime SKILL.md without a second DB round-trip.
-   *
-   * `preferUserInvocable` (manual paths): on a same-name collision,
-   * prefer the newest doc with `userInvocable !== false`.
-   * `preferModelInvocable` (model paths — `skill` / `read_file`): on a
-   * same-name collision, prefer the newest doc with
-   * `disableModelInvocation !== true`. Both fall back to the newest match
-   * so the explicit-rejection error paths still fire when only the
-   * non-preferred variant exists.
-   */
-  getSkillByName?: (
-    name: string,
-    accessibleIds: import('mongoose').Types.ObjectId[],
-    options?: { preferUserInvocable?: boolean; preferModelInvocable?: boolean },
-  ) => Promise<{
-    _id: import('mongoose').Types.ObjectId;
-    name: string;
-    body: string;
-    author: import('mongoose').Types.ObjectId;
-    /**
-     * Skill-declared tool allowlist, forwarded verbatim from the skill doc.
-     * Surfaced so the resolver can carry it onto `ResolvedManualSkill` for
-     * future runtime enforcement without a second round-trip.
-     */
-    allowedTools?: string[];
-    /**
-     * Set when the skill was authored with `disable-model-invocation: true`.
-     * The skill tool handler short-circuits on this so a model that names
-     * such a skill (e.g. via hallucination or stale catalog) gets a clear
-     * rejection instead of silently executing.
-     */
-    disableModelInvocation?: boolean;
-    /**
-     * Set when the skill was authored with `user-invocable: false`. The
-     * manual-invocation resolver skips with a warn log so an API-direct
-     * caller can't bypass the popover-side filter.
-     */
-    userInvocable?: boolean;
-    /** True for deployment-directory skills that are loaded in memory. */
-    deployment?: boolean;
-  } | null>;
+  listSkillsByAccess?: TListSkillsByAccess;
+  /** Load a single skill by name, constrained to an ACL-accessible ID set. */
+  getSkillByName?: TGetSkillByName;
   /**
    * Load accessible skills with `alwaysApply: true`, eagerly including
    * `body` so the priming pipeline can splice at turn start without a
