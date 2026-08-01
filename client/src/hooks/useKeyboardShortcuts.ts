@@ -1035,6 +1035,13 @@ export default function useKeyboardShortcuts() {
         return;
       }
 
+      /** A handler closer to the target already consumed this keypress
+       *  (composer verdicts, menus, editors), so the global action must
+       *  not double-fire on it. */
+      if (e.defaultPrevented) {
+        return;
+      }
+
       const binding = bindingFromEvent(e);
       if (!binding) {
         return;
