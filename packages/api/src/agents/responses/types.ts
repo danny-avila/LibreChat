@@ -769,6 +769,8 @@ export interface ResponseContext {
   previousResponseId?: string;
   /** Instructions */
   instructions?: string;
+  /** Store flag */
+  store?: boolean;
 }
 
 /** Validation result for requests */
