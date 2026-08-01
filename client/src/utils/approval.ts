@@ -424,9 +424,12 @@ export function splitOtherOption(options: Agents.AskUserQuestionOption[] | undef
  * in-flight cache, a replayed event) can put one back. Honouring it would
  * reopen the popover on a question the user already answered.
  */
-export function findLiveAskUserQuestion(
-  messages: TMessage[] | null | undefined,
-): { actionId: string; question: Agents.AskUserQuestionRequest; messageId: string } | null {
+export function findLiveAskUserQuestion(messages: TMessage[] | null | undefined): {
+  actionId: string;
+  question: Agents.AskUserQuestionRequest;
+  messageId: string;
+  tool_call_id?: string;
+} | null {
   if (!Array.isArray(messages)) {
     return null;
   }
@@ -440,7 +443,12 @@ export function findLiveAskUserQuestion(
       const part = content[j];
       if (isAskUserQuestionPart(part) && !isAnsweredAskUserQuestionPart(part)) {
         const ask = (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION];
-        return { actionId: ask.actionId, question: ask.question, messageId: message.messageId };
+        return {
+          actionId: ask.actionId,
+          question: ask.question,
+          messageId: message.messageId,
+          tool_call_id: ask.tool_call_id,
+        };
       }
     }
   }

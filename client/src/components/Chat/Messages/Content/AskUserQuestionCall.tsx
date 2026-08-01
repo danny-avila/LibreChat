@@ -1,5 +1,6 @@
 import { MessageCircleQuestion, TriangleAlert } from 'lucide-react';
 import { getSubmittedAskAnswer, parseAskUserQuestionArgs } from '~/utils/approval';
+import AskUserQuestionProgress from './AskUserQuestionProgress';
 import { useLocalize } from '~/hooks';
 
 /**
@@ -37,12 +38,14 @@ export default function AskUserQuestionCall({
    * While the turn is live and unanswered, the INTERACTIVE card (rendered from
    * the pendingAction's synthetic part) owns the question UI — rendering the
    * durable record too would duplicate it with a misleading "no answer" line.
-   * Once the user answers, the submit handler stamps `output` onto this part,
-   * so the record takes over immediately; an abandoned pause only shows its
-   * "no answer" state after the turn is no longer submitting.
+   * Until that pause actually starts (args still streaming, interrupt not yet
+   * delivered) the progress card fills the gap. Once the user answers, the
+   * submit handler stamps `output` onto this part, so the record takes over
+   * immediately; an abandoned pause only shows its "no answer" state after
+   * the turn is no longer submitting.
    */
   if (!answered && !failed && isSubmitting) {
-    return null;
+    return <AskUserQuestionProgress args={args} toolCallId={toolCallId} />;
   }
 
   if (failed) {

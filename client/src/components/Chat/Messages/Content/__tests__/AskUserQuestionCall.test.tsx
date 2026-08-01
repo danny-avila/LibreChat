@@ -26,10 +26,25 @@ jest.mock('~/utils/approval', () => ({
   },
 }));
 
+jest.mock('../AskUserQuestionProgress', () => ({
+  __esModule: true,
+  default: () => {
+    const { createElement } = jest.requireActual<typeof React>('react');
+    return createElement('div', { 'data-testid': 'ask-progress' });
+  },
+}));
+
 describe('AskUserQuestionCall', () => {
   const args = JSON.stringify({
     question: 'How would you like me to get the data?',
     options: [{ label: 'Use public data', value: 'public' }],
+  });
+
+  test('renders the progress card while the call is live and unanswered', () => {
+    render(<AskUserQuestionCall args={args} output="" toolCallId="call_1" isSubmitting />);
+
+    expect(screen.getByTestId('ask-progress')).toBeInTheDocument();
+    expect(screen.queryByText('You answered:')).not.toBeInTheDocument();
   });
 
   test('renders a successful tool result as the user answer', () => {
