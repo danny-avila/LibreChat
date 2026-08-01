@@ -1,6 +1,6 @@
 {
   "chat_direction_left_to_right": "algo precisa ir aqui. Está vazio",
-  "chat_direction_right_to_left": "algo precisa ir aqui. esta vazio",
+  "chat_direction_right_to_left": "Da direita para a esquerda",
   "com_a11y_ai_composing": "A IA ainda está compondo.",
   "com_a11y_chats_date_section": "Chats de {{date}}",
   "com_a11y_end": "A IA terminou de responder.",
@@ -75,6 +75,7 @@
   "com_agents_load_more_label": "Carregar mais agentes da categoria {{category}}",
   "com_agents_loading": "Carregando...",
   "com_agents_marketplace": "Marketplace de Agentes",
+  "com_agents_marketplace_subtitle": "Descubra e utilize agentes de IA poderosos para aprimorar seus fluxos de trabalho e produtividade",
   "com_agents_mcp_description_placeholder": "Explique o que ele faz em poucas palavras",
   "com_agents_mcp_icon_size": "Tamanho mínimo 128 x 128 px",
   "com_agents_mcp_name_placeholder": "Ferramenta personalizada",
