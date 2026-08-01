@@ -64,10 +64,11 @@ const targets = [
 ];
 
 /**
- * Recursively collects every type-only dependency specifier: top-level
- * `import type` / `export type ... from` declarations plus `import('...')`
- * type expressions (TSImportType), which nest arbitrarily deep inside other
- * declarations. All three forms carry the specifier as `source.value`.
+ * Recursively collects every type-only dependency specifier: `import type` /
+ * `export type ... from` declarations, inline type specifiers (`import { type
+ * Foo } from` — kind lives on the child specifier, source on the parent), and
+ * `import('...')` type expressions (TSImportType), which nest arbitrarily deep
+ * inside other declarations. All forms carry the specifier as `source.value`.
  */
 const collectTypeSpecifiers = (node, specifiers) => {
   if (node === null || typeof node !== 'object') {
@@ -79,8 +80,12 @@ const collectTypeSpecifiers = (node, specifiers) => {
     }
     return;
   }
-  const kind = node.type === 'TSImportType' ? 'type' : (node.importKind ?? node.exportKind);
-  if (kind === 'type' && typeof node.source?.value === 'string') {
+  const typeOnly =
+    node.type === 'TSImportType' ||
+    (node.importKind ?? node.exportKind) === 'type' ||
+    (Array.isArray(node.specifiers) &&
+      node.specifiers.some((s) => (s.importKind ?? s.exportKind) === 'type'));
+  if (typeOnly && typeof node.source?.value === 'string') {
     specifiers.add(node.source.value);
   }
   for (const value of Object.values(node)) {
