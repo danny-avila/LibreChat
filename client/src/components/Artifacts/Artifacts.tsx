@@ -69,7 +69,8 @@ export default function Artifacts() {
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(document.fullscreenElement === artifactContainerRef.current);
+      const container = artifactContainerRef.current;
+      setIsFullscreen(container !== null && document.fullscreenElement === container);
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -368,6 +369,7 @@ export default function Artifacts() {
                 <ArtifactVersion
                   currentIndex={currentIndex}
                   totalVersions={orderedArtifactIds.length}
+                  portal={!isFullscreen}
                   onVersionChange={(index) => {
                     const target = orderedArtifactIds[index];
                     if (target) {
