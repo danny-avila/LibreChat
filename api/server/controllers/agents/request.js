@@ -1562,7 +1562,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         const shouldGenerateTitle =
-          addTitle && parentMessageId === Constants.NO_PARENT && isNewConvo && !terminalWasAborted;
+          addTitle &&
+          parentMessageId === Constants.NO_PARENT &&
+          isNewConvo &&
+          !terminalWasAborted &&
+          !preemptIncomplete;
 
         // Save user message BEFORE sending final event to avoid race condition
         // where client refetch happens before database is updated
@@ -1616,10 +1620,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           );
         }
 
-        // If the user stopped this turn, cancel the title BEFORE unblocking its
-        // persistence wait — otherwise resolving `convoReady` lets the title task
-        // resume and save before the later abort runs.
-        if (terminalWasAborted) {
+        // If the user stopped this turn — or an empty preempt boundary truncated
+        // it, which persists under the same honest `unfinished` contract — cancel
+        // the title BEFORE unblocking its persistence wait; otherwise resolving
+        // `convoReady` lets the title task resume and save before the later abort runs.
+        if (terminalWasAborted || preemptIncomplete) {
           titleAbortController.abort();
         } else {
           job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
