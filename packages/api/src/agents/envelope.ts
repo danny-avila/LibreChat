@@ -143,10 +143,11 @@ function cloneJsonValue(value: unknown, path: string, ancestors: WeakSet<object>
           );
         }
         const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-        if (descriptor?.get || descriptor?.set) {
+        if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
           throw new AgentRunEnvelopeError(`${path}[${index}] must not be an accessor property`);
         }
-        cloned.push(cloneJsonValue(value[index], `${path}[${index}]`, ancestors));
+        const itemValue: unknown = descriptor.value;
+        cloned.push(cloneJsonValue(itemValue, `${path}[${index}]`, ancestors));
       }
       return cloned;
     }
@@ -163,14 +164,15 @@ function cloneJsonValue(value: unknown, path: string, ancestors: WeakSet<object>
       if (descriptor?.enumerable !== true) {
         throw new AgentRunEnvelopeError(`${path}.${key} must be an enumerable property`);
       }
-      if (descriptor?.get || descriptor?.set) {
+      if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
         throw new AgentRunEnvelopeError(`${path}.${key} must not be an accessor property`);
       }
+      const propertyValue: unknown = descriptor.value;
       Object.defineProperty(cloned, key, {
         configurable: true,
         enumerable: true,
         writable: true,
-        value: cloneJsonValue((value as Record<string, unknown>)[key], `${path}.${key}`, ancestors),
+        value: cloneJsonValue(propertyValue, `${path}.${key}`, ancestors),
       });
     }
     return cloned;
