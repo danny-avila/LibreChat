@@ -843,6 +843,13 @@ const primeFiles = async (options) => {
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
   const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.execute_code]?.files ?? [];
+  /** Runtime entries identify candidates only; database records remain authoritative for storage metadata. */
+  const candidateFileIds = new Set(file_ids);
+  for (const file of resourceFiles) {
+    if (typeof file?.file_id === 'string') {
+      candidateFileIds.add(file.file_id);
+    }
+  }
 
   /* Step 1 of the priming trace: input volume. Pair with the
    * per-file `[primeCodeFiles] file=...` lines and the final
@@ -854,7 +861,8 @@ const primeFiles = async (options) => {
   );
 
   // Get all files first
-  const allFiles = (await getFiles({ file_id: { $in: file_ids } }, null, { text: 0 })) ?? [];
+  const allFiles =
+    (await getFiles({ file_id: { $in: Array.from(candidateFileIds) } }, null, { text: 0 })) ?? [];
 
   // Filter by access if user and agent are provided
   let dbFiles;
@@ -868,8 +876,6 @@ const primeFiles = async (options) => {
   } else {
     dbFiles = allFiles;
   }
-
-  dbFiles = dbFiles.concat(resourceFiles);
 
   const files = [];
   const sessions = new Map();

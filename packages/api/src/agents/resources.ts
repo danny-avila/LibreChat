@@ -5,6 +5,25 @@ import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { Request as ServerRequest } from 'express';
 
+import { TOOL_RESOURCE_KEYS } from './orphans';
+
+/** Removes runtime-only file records before persisted Agent resources enter tool initialization. */
+const sanitizePersistedToolResources = (
+  tool_resources: AgentToolResources | undefined,
+): AgentToolResources => {
+  const sanitized: AgentToolResources = {};
+  for (const key of TOOL_RESOURCE_KEYS) {
+    const resource = tool_resources?.[key];
+    if (!resource) {
+      continue;
+    }
+    const persistedResource = { ...resource };
+    delete persistedResource.files;
+    sanitized[key] = persistedResource;
+  }
+  return sanitized;
+};
+
 /**
  * Function type for retrieving files from the database
  * @param filter - MongoDB filter query for files
@@ -180,6 +199,7 @@ export const primeResources = async ({
 }> => {
   const requestAttachments: Array<TFile> = [];
   const agentContextAttachments: Array<TFile> = [];
+  const persistedToolResources = sanitizePersistedToolResources(_tool_resources);
   try {
     /**
      * Array to collect all unique files that will be returned as attachments
@@ -202,7 +222,7 @@ export const primeResources = async ({
      * The agent's tool resources object that will be updated with categorized files
      * Create a shallow copy first to avoid mutating the original
      */
-    const tool_resources: AgentToolResources = { ...(_tool_resources ?? {}) };
+    const tool_resources: AgentToolResources = { ...persistedToolResources };
 
     // Deep copy each resource to avoid mutating nested objects/arrays
     for (const [resourceType, resource] of Object.entries(tool_resources)) {
@@ -357,7 +377,7 @@ export const primeResources = async ({
       requestAttachments: safeAttachments,
       agentContextAttachments:
         agentContextAttachments.length > 0 ? agentContextAttachments : undefined,
-      tool_resources: _tool_resources,
+      tool_resources: persistedToolResources,
     };
   }
 };

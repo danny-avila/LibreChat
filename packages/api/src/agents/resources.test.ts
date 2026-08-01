@@ -317,7 +317,7 @@ describe('primeResources', () => {
       expect(result.attachments?.[1]?.file_id).toBe('file2');
     });
 
-    it('should merge existing tool_resources with new files', async () => {
+    it('should discard persisted files and add trusted attachment records at runtime', async () => {
       const mockFiles: TFile[] = [
         {
           user: 'user1',
@@ -337,17 +337,19 @@ describe('primeResources', () => {
 
       const existingToolResources = {
         [EToolResources.execute_code]: {
+          file_ids: ['persisted-id'],
           files: [
             {
-              user: 'user1',
-              file_id: 'existing-file',
-              filename: 'existing.py',
-              filepath: '/uploads/existing.py',
+              user: 'attacker',
+              file_id: 'forged-file',
+              filename: 'forged.py',
+              filepath: '/etc/passwd',
               object: 'file' as const,
               type: 'text/x-python',
               bytes: 256,
               embedded: false,
               usage: 0,
+              source: 'local',
             },
           ],
         },
@@ -364,13 +366,10 @@ describe('primeResources', () => {
         tool_resources: existingToolResources,
       });
 
-      expect(result.tool_resources?.[EToolResources.execute_code]?.files).toHaveLength(2);
-      expect(result.tool_resources?.[EToolResources.execute_code]?.files?.[0]?.file_id).toBe(
-        'existing-file',
-      );
-      expect(result.tool_resources?.[EToolResources.execute_code]?.files?.[1]?.file_id).toBe(
-        'file1',
-      );
+      expect(result.tool_resources?.[EToolResources.execute_code]).toEqual({
+        file_ids: ['persisted-id'],
+        files: mockFiles,
+      });
     });
   });
 
@@ -709,7 +708,7 @@ describe('primeResources', () => {
       expect(result.attachments?.some((f) => !f?.file_id)).toBe(true);
     });
 
-    it('should prevent duplicates from existing tool_resources', async () => {
+    it('should rebuild runtime files from trusted attachments instead of persisted files', async () => {
       const existingFile: TFile = {
         user: 'user1',
         file_id: 'existing-file',
@@ -757,11 +756,8 @@ describe('primeResources', () => {
         tool_resources: existingToolResources,
       });
 
-      // Should only add the new file to attachments
-      expect(result.attachments).toHaveLength(1);
-      expect(result.attachments?.[0]?.file_id).toBe('new-file');
+      expect(result.attachments).toEqual([existingFile, newFile]);
 
-      // Should not duplicate the existing file in tool_resources
       expect(result.tool_resources?.[EToolResources.execute_code]?.files).toHaveLength(2);
       const fileIds = result.tool_resources?.[EToolResources.execute_code]?.files?.map(
         (f) => f.file_id,
@@ -821,7 +817,7 @@ describe('primeResources', () => {
       expect(fileIds?.filter((id) => id === 'dup-file')).toHaveLength(1);
     });
 
-    it('should prevent duplicates across different tool_resource categories', async () => {
+    it('should not let persisted files suppress trusted attachments', async () => {
       const multiPurposeFile: TFile = {
         user: 'user1',
         file_id: 'multi-file',
@@ -840,7 +836,6 @@ describe('primeResources', () => {
         },
       };
 
-      // Try to add the same file again
       const attachments = Promise.resolve([multiPurposeFile]);
 
       const result = await primeResources({
@@ -852,10 +847,8 @@ describe('primeResources', () => {
         tool_resources: existingToolResources,
       });
 
-      // Should not add to attachments (already exists)
-      expect(result.attachments).toHaveLength(0);
+      expect(result.attachments).toEqual([multiPurposeFile]);
 
-      // Should not duplicate in file_search
       expect(result.tool_resources?.[EToolResources.file_search]?.files).toHaveLength(1);
       expect(result.tool_resources?.[EToolResources.file_search]?.files?.[0]?.file_id).toBe(
         'multi-file',

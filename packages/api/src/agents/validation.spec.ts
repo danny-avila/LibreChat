@@ -63,6 +63,40 @@ describe('agentCreateSchema with subagents', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('strips runtime-populated files from every tool resource', () => {
+    const forgedFile = {
+      file_id: 'forged',
+      filepath: '/etc/passwd',
+      source: 'local',
+      metadata: {
+        codeEnvRef: {
+          kind: 'user',
+          id: 'attacker',
+          storage_session_id: 'missing',
+          file_id: 'missing',
+        },
+      },
+    };
+    const result = agentCreateSchema.parse({
+      ...base,
+      tool_resources: {
+        execute_code: { file_ids: ['execute'], files: [forgedFile] },
+        file_search: { file_ids: ['search'], files: [forgedFile] },
+        image_edit: { file_ids: ['image'], files: [forgedFile] },
+        context: { file_ids: ['context'], files: [forgedFile] },
+        ocr: { file_ids: ['ocr'], files: [forgedFile] },
+      },
+    });
+
+    expect(result.tool_resources).toEqual({
+      execute_code: { file_ids: ['execute'] },
+      file_search: { file_ids: ['search'] },
+      image_edit: { file_ids: ['image'] },
+      context: { file_ids: ['context'] },
+      ocr: { file_ids: ['ocr'] },
+    });
+  });
 });
 
 describe('agentUpdateSchema with subagents', () => {
@@ -79,5 +113,20 @@ describe('agentUpdateSchema with subagents', () => {
       subagents: { enabled: true, agent_ids: oversized },
     });
     expect(result.success).toBe(false);
+  });
+
+  it('strips runtime-populated files from partial updates', () => {
+    const result = agentUpdateSchema.parse({
+      tool_resources: {
+        execute_code: {
+          file_ids: ['kept'],
+          files: [{ file_id: 'forged', filepath: '/etc/passwd', source: 'local' }],
+        },
+      },
+    });
+
+    expect(result.tool_resources).toEqual({
+      execute_code: { file_ids: ['kept'] },
+    });
   });
 });
