@@ -13,6 +13,8 @@ const {
   createRun,
   applyContextToAgent,
   buildToolSet,
+  AgentRunEnvelopeError,
+  createAgentRunEnvelope,
   buildAgentScopedContext,
   buildAgentContextAttachmentsByAgentId,
   createSafeUser,
@@ -284,25 +286,20 @@ function convertMessagesToOutputItems(messages) {
 }
 
 /**
- * Create Response - POST /v1/responses
+ * Runs a validated Responses envelope in the current process.
+ * Express remains runtime-only state while the envelope is the portable run input.
  *
- * Creates a model response following the Open Responses API specification.
- * Supports both streaming and non-streaming responses.
- *
- * @param {import('express').Request} req
- * @param {import('express').Response} res
+ * @param {import('@librechat/api').ResponsesRunEnvelope} envelope
+ * @param {{req: import('express').Request, res: import('express').Response}} runtime
  */
-const createResponse = async (req, res) => {
+const executeResponse = async (envelope, { req, res }) => {
   const appConfig = req.config;
-  const requestStartTime = Date.now();
-
-  // Validate request
-  const validation = validateResponseRequest(req.body);
-  if (isValidationFailure(validation)) {
-    return sendResponsesErrorResponse(res, 400, validation.error);
-  }
-
-  const request = validation.request;
+  const requestStartTime = envelope.receivedAt;
+  const request = envelope.payload;
+  const { principal } = envelope;
+  // The local executor keeps the current Express-dependent initialization path,
+  // but all request-body reads now observe the detached envelope payload.
+  req.body = request;
   const agentId = request.model;
   const isStreaming = request.stream === true;
   const summarizationConfig = appConfig?.summarization;
@@ -348,7 +345,7 @@ const createResponse = async (req, res) => {
           'invalid_request',
         );
       }
-      if (!(await db.getConvo(req.user?.id, request.previous_response_id))) {
+      if (!(await db.getConvo(principal.userId, request.previous_response_id))) {
         return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
       }
     }
@@ -397,12 +394,12 @@ const createResponse = async (req, res) => {
       appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities,
     );
     const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
-    const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
+    const ephemeralSkillsToggle = request.ephemeralAgent?.skills === true;
     const accessibleSkillIds = skillsCapabilityEnabled
       ? withDeploymentSkillIds(
           await findAccessibleResources({
-            userId: req.user.id,
-            role: req.user.role,
+            userId: principal.userId,
+            role: principal.role,
             resourceType: ResourceType.SKILL,
             requiredPermissions: PermissionBits.VIEW,
           }),
@@ -410,8 +407,8 @@ const createResponse = async (req, res) => {
       : [];
     const editableSkillIds = skillsCapabilityEnabled
       ? await findAccessibleResources({
-          userId: req.user.id,
-          role: req.user.role,
+          userId: principal.userId,
+          role: principal.role,
           resourceType: ResourceType.SKILL,
           requiredPermissions: PermissionBits.EDIT,
         })
@@ -421,13 +418,13 @@ const createResponse = async (req, res) => {
       : false;
 
     const { skillStates, defaultActiveOnShare } = await loadSkillStates({
-      userId: req.user.id,
+      userId: principal.userId,
       appConfig,
       getUserById: db.getUserById,
       accessibleSkillIds,
     });
 
-    const manualSkills = extractManualSkills(req.body);
+    const manualSkills = extractManualSkills(request);
 
     const primaryScopedSkillIds = resolveAgentScopedSkillIds({
       agent,
@@ -611,7 +608,7 @@ const createResponse = async (req, res) => {
     // Load previous messages if previous_response_id is provided
     let previousMessages = [];
     if (request.previous_response_id) {
-      const userId = req.user?.id ?? 'api-user';
+      const userId = principal.userId;
       previousMessages = await loadPreviousMessages(request.previous_response_id, userId);
     }
 
@@ -777,7 +774,7 @@ const createResponse = async (req, res) => {
       };
 
       // Create and run the agent
-      const userId = req.user?.id ?? 'api-user';
+      const userId = principal.userId;
       const userMCPAuthMap = mergedMCPAuthMap;
 
       const run = await createRun({
@@ -795,7 +792,7 @@ const createResponse = async (req, res) => {
           conversationId,
         },
         user: { id: userId },
-        tenantId: req.user?.tenantId,
+        tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
         subagentUsageSink: createSubagentUsageSink(collectedUsage),
@@ -958,7 +955,7 @@ const createResponse = async (req, res) => {
           : {}),
       };
 
-      const userId = req.user?.id ?? 'api-user';
+      const userId = principal.userId;
       const userMCPAuthMap = mergedMCPAuthMap;
 
       const run = await createRun({
@@ -976,7 +973,7 @@ const createResponse = async (req, res) => {
           conversationId,
         },
         user: { id: userId },
-        tenantId: req.user?.tenantId,
+        tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
         subagentUsageSink: createSubagentUsageSink(collectedUsage),
@@ -1088,6 +1085,41 @@ const createResponse = async (req, res) => {
       sendResponsesErrorResponse(res, statusCode, errorMessage, errorType);
     }
   }
+};
+
+/**
+ * Open Responses ingress adapter for agents.
+ * Authentication and remote-agent authorization have already run in route middleware.
+ *
+ * POST /v1/responses
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ */
+const createResponse = async (req, res) => {
+  const receivedAt = Date.now();
+  const validation = validateResponseRequest(req.body);
+  if (isValidationFailure(validation)) {
+    return sendResponsesErrorResponse(res, 400, validation.error);
+  }
+
+  let envelope;
+  try {
+    envelope = createAgentRunEnvelope({
+      protocol: 'responses',
+      requestId: req.requestId ?? req.id ?? `agent-run-${nanoid()}`,
+      receivedAt,
+      principal: req.user,
+      payload: validation.request,
+    });
+  } catch (error) {
+    if (error instanceof AgentRunEnvelopeError) {
+      return sendResponsesErrorResponse(res, 400, error.message, 'invalid_request');
+    }
+    throw error;
+  }
+
+  return executeResponse(envelope, { req, res });
 };
 
 /**
