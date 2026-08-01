@@ -80,8 +80,6 @@ export async function uploadDocumentToMistral({
   const form = new FormData();
   form.append('purpose', 'ocr');
   const actualFileName = fileName || path.basename(filePath);
-  const fileStream = fs.createReadStream(filePath);
-  form.append('file', fileStream, { filename: actualFileName });
 
   const config: AxiosRequestConfig = {
     headers: {
@@ -94,6 +92,9 @@ export async function uploadDocumentToMistral({
 
   applyAxiosProxyConfig(config, `${baseURL}/files`);
   applySSRFSafeAgentIfDirect(config, `${baseURL}/files`, allowedAddresses);
+
+  const fileStream = fs.createReadStream(filePath);
+  form.append('file', fileStream, { filename: actualFileName });
 
   return axios
     .post(`${baseURL}/files`, form, config)

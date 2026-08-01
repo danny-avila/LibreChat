@@ -176,7 +176,7 @@ export function applySSRFSafeAgentIfDirect(
   const literalHost = hostname.replace(/^\[|\]$/g, '');
   if (isIP(literalHost)) {
     const exemptSet = normalizeAllowedAddressesSet(allowedAddresses);
-    const normalizedPort = normalizePort(port);
+    const normalizedPort = normalizePort(port || (protocol === 'https:' ? '443' : '80'));
     const hostnameAllowed = isAddressInAllowedSet(literalHost, exemptSet, normalizedPort);
     const blockedAddress = getBlockedLookupAddress(
       literalHost,

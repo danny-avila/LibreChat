@@ -2511,6 +2511,18 @@ describe('MistralOCR Service', () => {
       expect(config.maxRedirects).toBe(0);
     });
 
+    it('does not open the upload file stream when the OCR target is a blocked literal private IP', async () => {
+      (jest.mocked(fs).createReadStream as jest.Mock).mockClear();
+      await expect(
+        uploadDocumentToMistral({
+          apiKey: 'k',
+          filePath: '/tmp/doc.pdf',
+          baseURL: 'http://10.0.0.5:8080',
+        }),
+      ).rejects.toMatchObject({ code: 'ESSRF' });
+      expect(jest.mocked(fs).createReadStream).not.toHaveBeenCalled();
+    });
+
     it('preserves proxy precedence and still disables redirects', async () => {
       process.env.PROXY = 'http://proxy.example.com:8080';
       mockAxios.post!.mockResolvedValueOnce({ data: { pages: [] } });

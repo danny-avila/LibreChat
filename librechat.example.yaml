@@ -265,9 +265,9 @@ registration:
 # host:port is permitted even when it resolves to a private IP, so list only hosts you fully
 # control and that cannot be repointed by an attacker. Do not list attacker-controllable or
 # DNS-rebindable hostnames, because doing so re-opens the private-address path this guard
-# closes. Prefer literal IPs over hostnames. Entries must include a port (`host:port`,
-# `private.ip:port`, or `[ipv6]:port`); do not use URLs, paths, CIDR ranges, bare hosts/IPs,
-# or public IP literals.
+# closes. Prefer a private IP literal over a hostname when exempting a private target. Entries
+# must include a port (`host:port`, `private.ip:port`, or `[ipv6]:port`); do not use URLs, paths,
+# CIDR ranges, bare hosts/IPs, or public IP literals.
 # speech:
 #   tts:
 #     openai:

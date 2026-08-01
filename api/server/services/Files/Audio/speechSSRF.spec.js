@@ -9,21 +9,9 @@ jest.mock('./streamAudio', () => ({
   splitTextIntoChunks: jest.fn(),
 }));
 
-const http = require('node:http');
 const axios = require('axios');
 const { STTService } = require('./STTService');
 const { textToSpeech } = require('./TTSService');
-
-const httpAgentPrototype = http.Agent.prototype;
-
-function spyLookupResult(host) {
-  return new Promise((resolve) => {
-    jest.spyOn(httpAgentPrototype, 'createConnection').mockImplementation((options) => {
-      options.lookup(host, {}, (err, address) => resolve({ err, address }));
-      return {};
-    });
-  });
-}
 
 afterEach(() => {
   jest.restoreAllMocks();
@@ -35,38 +23,26 @@ describe('STT sttRequest SSRF guard (real agent)', () => {
   const audioBuffer = Buffer.from('audio');
   const provider = { url: 'http://10.0.0.5:8080', apiKey: 'sk', model: 'whisper-1' };
 
-  it('sets maxRedirects 0, attaches agents, and blocks a private target via the real lookup', async () => {
-    axios.post.mockResolvedValue({ status: 200, data: { text: 'ok' } });
+  it('blocks a private-IP provider url with ESSRF before any request goes out', async () => {
     const service = new STTService();
-    const lookupResult = spyLookupResult('10.0.0.5');
-
-    await service.sttRequest('openai', provider, { audioBuffer, audioFile, language: '' });
-
-    const options = axios.post.mock.calls[0][2];
-    expect(options.maxRedirects).toBe(0);
-    expect(options.httpAgent).toBeDefined();
-    expect(options.httpsAgent).toBeDefined();
-
-    options.httpAgent.createConnection({ host: '10.0.0.5', port: 8080 });
-    const { err } = await lookupResult;
-    expect(err).toBeTruthy();
-    expect(err.code).toBe('ESSRF');
+    await expect(
+      service.sttRequest('openai', provider, { audioBuffer, audioFile, language: '' }),
+    ).rejects.toMatchObject({ code: 'ESSRF' });
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it('exempts a host:port in the section allowedAddresses via the real lookup', async () => {
+  it('exempts a host:port in the section allowedAddresses and sets maxRedirects 0 with agents', async () => {
     axios.post.mockResolvedValue({ status: 200, data: { text: 'ok' } });
     const service = new STTService();
-    const lookupResult = spyLookupResult('10.0.0.5');
 
     await service.sttRequest('openai', provider, { audioBuffer, audioFile, language: '' }, [
       '10.0.0.5:8080',
     ]);
 
     const options = axios.post.mock.calls[0][2];
-    options.httpAgent.createConnection({ host: '10.0.0.5', port: 8080 });
-    const { err, address } = await lookupResult;
-    expect(err).toBeNull();
-    expect(address).toBe('10.0.0.5');
+    expect(options.maxRedirects).toBe(0);
+    expect(options.httpAgent).toBeDefined();
+    expect(options.httpsAgent).toBeDefined();
   });
 });
 
@@ -93,10 +69,17 @@ describe('TTS textToSpeech SSRF guard (real agent)', () => {
     return { req, res };
   }
 
-  it('threads the section allowedAddresses so the private target is blocked via the real lookup', async () => {
-    axios.post.mockResolvedValue({ status: 200, data: { pipe: jest.fn(), on: jest.fn() } });
+  it('blocks a private-IP provider url and never issues the outbound request', async () => {
     const { req, res } = buildReqRes();
-    const lookupResult = spyLookupResult('10.0.0.5');
+
+    await textToSpeech(req, res);
+
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('exempts a host:port in the section allowedAddresses and sets maxRedirects 0 with agents', async () => {
+    axios.post.mockResolvedValue({ status: 200, data: { pipe: jest.fn(), on: jest.fn() } });
+    const { req, res } = buildReqRes(['10.0.0.5:8080']);
 
     await textToSpeech(req, res);
 
@@ -104,24 +87,5 @@ describe('TTS textToSpeech SSRF guard (real agent)', () => {
     expect(options.maxRedirects).toBe(0);
     expect(options.httpAgent).toBeDefined();
     expect(options.httpsAgent).toBeDefined();
-
-    options.httpAgent.createConnection({ host: '10.0.0.5', port: 8080 });
-    const { err } = await lookupResult;
-    expect(err).toBeTruthy();
-    expect(err.code).toBe('ESSRF');
-  });
-
-  it('exempts a host:port present in the section allowedAddresses via the real lookup', async () => {
-    axios.post.mockResolvedValue({ status: 200, data: { pipe: jest.fn(), on: jest.fn() } });
-    const { req, res } = buildReqRes(['10.0.0.5:8080']);
-    const lookupResult = spyLookupResult('10.0.0.5');
-
-    await textToSpeech(req, res);
-
-    const options = axios.post.mock.calls[0][2];
-    options.httpAgent.createConnection({ host: '10.0.0.5', port: 8080 });
-    const { err, address } = await lookupResult;
-    expect(err).toBeNull();
-    expect(address).toBe('10.0.0.5');
   });
 });

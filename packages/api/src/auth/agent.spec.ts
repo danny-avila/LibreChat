@@ -453,4 +453,16 @@ describe('applySSRFSafeAgentIfDirect', () => {
     applySSRFSafeAgentIfDirect(config, 'http://8.8.8.8:80');
     expect(config.httpAgent).toBeDefined();
   });
+
+  it('exempts a literal private IP on the default http port when the URL omits it', () => {
+    const config: AxiosRequestConfig = {};
+    applySSRFSafeAgentIfDirect(config, 'http://127.0.0.1', ['127.0.0.1:80']);
+    expect(config.httpAgent).toBeDefined();
+  });
+
+  it('exempts a literal private IP on the default https port when the URL omits it', () => {
+    const config: AxiosRequestConfig = {};
+    applySSRFSafeAgentIfDirect(config, 'https://127.0.0.1', ['127.0.0.1:443']);
+    expect(config.httpsAgent).toBeDefined();
+  });
 });
