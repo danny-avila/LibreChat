@@ -11,10 +11,7 @@ function LocationProbe() {
 
 function renderMarkdown(content: string, currentFilePath = 'SKILL.md') {
   return render(
-    <MemoryRouter
-      initialEntries={['/skills/skill-id']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-    >
+    <MemoryRouter initialEntries={['/skills/skill-id']}>
       <SkillMarkdownRenderer
         content={content}
         skillId="skill-id"
