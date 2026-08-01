@@ -76,6 +76,14 @@ export default function useMissingConversationRecovery({
           return;
         }
         if (cancelled) {
+          // A legacy status read destructively claims these steers. Preserve
+          // their words even though the abandoned view must receive no updates.
+          const claimedSteers = dedupeSteersById(verifiedStatus.unrecoveredSteers);
+          if (claimedSteers.length > 0) {
+            convertSteersToQueued(conversationId, claimedSteers, {
+              generationProtocolVersion: getGenerationProtocolVersion(verifiedStatus),
+            });
+          }
           return;
         }
 

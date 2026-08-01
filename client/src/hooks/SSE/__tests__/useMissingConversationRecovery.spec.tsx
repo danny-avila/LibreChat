@@ -348,4 +348,49 @@ describe('useMissingConversationRecovery', () => {
       pageParams: [undefined],
     });
   });
+
+  it('retains steers claimed by a status response after recovery is cancelled', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onConfirmedMissing = jest.fn();
+    const claimedSteer = { steerId: 'cancelled-claim', text: 'retain me', createdAt: 1 };
+    let resolveStatus!: (status: {
+      active: boolean;
+      generationProtocolVersion: number;
+      unrecoveredSteers: (typeof claimedSteer)[];
+    }) => void;
+    mockGetMessages.mockRejectedValue({ status: 404 });
+    mockFetchStreamStatus.mockReturnValue(
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      }),
+    );
+
+    const { unmount } = renderHook(
+      () =>
+        useMissingConversationRecovery({
+          conversationId: CONVERSATION_ID,
+          enabled: true,
+          onConfirmedMissing,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    await advanceRecoveryDelay();
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID);
+
+    unmount();
+    await act(async () => {
+      resolveStatus({
+        active: false,
+        generationProtocolVersion: 1,
+        unrecoveredSteers: [claimedSteer],
+      });
+      await Promise.resolve();
+    });
+
+    expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONVERSATION_ID, [claimedSteer], {
+      generationProtocolVersion: 1,
+    });
+    expect(queryClient.getQueryData(['streamStatus', CONVERSATION_ID])).toBeUndefined();
+    expect(onConfirmedMissing).not.toHaveBeenCalled();
+  });
 });
