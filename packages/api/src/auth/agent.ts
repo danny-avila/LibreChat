@@ -1,6 +1,7 @@
 import dns from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
+import type { AxiosRequestConfig } from 'axios';
 import type { LookupFunction } from 'node:net';
 import {
   normalizePort,
@@ -141,4 +142,36 @@ export function createSSRFSafeUndiciConnect(
     ? buildSSRFSafeLookup(allowedAddresses, port)
     : ssrfSafeLookup;
   return { lookup };
+}
+
+/**
+ * Attaches SSRF-safe HTTP(S) agents to an axios config for a direct request.
+ * Rejects non-http(s) (and unparseable) target urls, since the agents validate
+ * the resolved IP at connect time but never inspect the scheme. Sets
+ * `maxRedirects: 0` unconditionally so a redirect cannot bypass that check, and
+ * leaves the agents untouched when a proxy or agent is already set.
+ *
+ * @param config - The axios request config to mutate.
+ * @param url - The request target URL (http/https only).
+ * @param allowedAddresses - Optional admin exemption list of host:port pairs.
+ */
+export function applySSRFSafeAgentIfDirect(
+  config: AxiosRequestConfig,
+  url: string,
+  allowedAddresses?: string[] | null,
+): AxiosRequestConfig {
+  const { protocol } = new URL(url);
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    throw new Error(`Unsupported URL scheme for SSRF-guarded request: ${protocol}`);
+  }
+
+  config.maxRedirects = 0;
+  if (config.httpsAgent || config.httpAgent || config.proxy) {
+    return config;
+  }
+
+  const { httpAgent, httpsAgent } = createSSRFSafeAgents(allowedAddresses);
+  config.httpAgent = httpAgent;
+  config.httpsAgent = httpsAgent;
+  return config;
 }

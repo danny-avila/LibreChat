@@ -257,6 +257,17 @@ registration:
 # Note: If balance.enabled is true, transactions will always be enabled
 # regardless of this setting to ensure balance tracking works correctly
 
+# Speech (STT/TTS) outbound requests to operator-provided target URLs are SSRF-guarded
+# at connect time: private, loopback, link-local, and cloud-metadata targets are blocked
+# by default. To point STT/TTS at a private or self-hosted service (LocalAI, a self-hosted
+# Whisper server), add its host:port to `allowedAddresses` on the `stt` / `tts` section.
+# SECURITY: `allowedAddresses` entries are trusted before the private-IP check. A listed
+# host:port is permitted even when it resolves to a private IP, so list only hosts you fully
+# control and that cannot be repointed by an attacker. Do not list attacker-controllable or
+# DNS-rebindable hostnames, because doing so re-opens the private-address path this guard
+# closes. Prefer literal IPs over hostnames. Entries must include a port (`host:port`,
+# `private.ip:port`, or `[ipv6]:port`); do not use URLs, paths, CIDR ranges, bare hosts/IPs,
+# or public IP literals.
 # speech:
 #   tts:
 #     openai:
@@ -264,13 +275,32 @@ registration:
 #       apiKey: '${TTS_API_KEY}'
 #       model: ''
 #       voices: ['']
-
+#     allowedAddresses:
+#       - 'localhost:8020'
+#       - '127.0.0.1:8020'
 #
 #   stt:
 #     openai:
 #       url: ''
 #       apiKey: '${STT_API_KEY}'
 #       model: ''
+#     allowedAddresses:
+#       - 'localhost:8000'
+#       - '127.0.0.1:8000'
+
+# OCR (Mistral / Mistral-compatible) outbound requests to `ocr.baseURL` are SSRF-guarded at
+# connect time with the same default-deny for private targets. To point OCR at a private or
+# self-hosted Mistral-compatible service, add its host:port to `allowedAddresses`. The same
+# trust caveat as speech applies: a listed host:port is trusted before the private-IP check,
+# so list only hosts you fully control and that cannot be repointed by an attacker. Entries
+# must include a port and must not be URLs, paths, CIDR ranges, bare hosts/IPs, or public IP
+# literals.
+# ocr:
+#   baseURL: '${OCR_BASEURL}'
+#   apiKey: '${OCR_API_KEY}'
+#   allowedAddresses:
+#     - 'localhost:8080'
+#     - '127.0.0.1:8080'
 
 # rateLimits:
 #   fileUploads:
