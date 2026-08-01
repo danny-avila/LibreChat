@@ -1192,33 +1192,51 @@ const getListAgentsHandler = async (req, res) => {
     const refreshKey = `${userId}:agents_avatar_refresh`;
 
     /**
-     * These four reads share no inputs, so they resolve together rather than chaining
-     * four round trips ahead of the list query. The viewer skill scope is only consumed
-     * when the page is non-empty; dispatching it here trades one wasted lookup on the
-     * (cheap) zero-agent path for one less serial hop on every populated page.
+     * These reads share no inputs, so they resolve together rather than chaining round
+     * trips ahead of the list query. The viewer skill scope and the editable set are only
+     * consumed when the page is non-empty; dispatching them here trades a wasted lookup on
+     * the (cheap) zero-agent path for one less serial hop on every populated page.
+     *
+     * `editableIds` lets a VIEW-scoped response mark which agents the caller may also edit,
+     * so consumers wanting just the editable subset can filter one shared VIEW fetch rather
+     * than issuing a second full paginated walk under an EDIT-scoped cache key. Requests
+     * that already ask for EDIT get it for free: everything they match is editable.
      */
-    const [accessibleIds, publiclyAccessibleIds, cachedRefreshEntry, accessibleSkillIds] =
-      await Promise.all([
-        findAccessibleResources({
-          userId,
-          role: req.user.role,
-          resourceType: ResourceType.AGENT,
-          requiredPermissions: requiredPermission,
-        }),
-        findPubliclyAccessibleResources({
-          resourceType: ResourceType.AGENT,
-          requiredPermissions: PermissionBits.VIEW,
-        }),
-        cache.get(refreshKey),
-        canReturnSkillConfig
-          ? null
-          : findAccessibleResources({
-              userId,
-              role: req.user.role,
-              resourceType: ResourceType.SKILL,
-              requiredPermissions: PermissionBits.VIEW,
-            }),
-      ]);
+    const [
+      accessibleIds,
+      publiclyAccessibleIds,
+      cachedRefreshEntry,
+      accessibleSkillIds,
+      editableIds,
+    ] = await Promise.all([
+      findAccessibleResources({
+        userId,
+        role: req.user.role,
+        resourceType: ResourceType.AGENT,
+        requiredPermissions: requiredPermission,
+      }),
+      findPubliclyAccessibleResources({
+        resourceType: ResourceType.AGENT,
+        requiredPermissions: PermissionBits.VIEW,
+      }),
+      cache.get(refreshKey),
+      canReturnSkillConfig
+        ? null
+        : findAccessibleResources({
+            userId,
+            role: req.user.role,
+            resourceType: ResourceType.SKILL,
+            requiredPermissions: PermissionBits.VIEW,
+          }),
+      canReturnSkillConfig
+        ? null
+        : findAccessibleResources({
+            userId,
+            role: req.user.role,
+            resourceType: ResourceType.AGENT,
+            requiredPermissions: PermissionBits.EDIT,
+          }),
+    ]);
 
     const isValidCachedRefresh =
       cachedRefreshEntry != null &&
@@ -1284,6 +1302,8 @@ const getListAgentsHandler = async (req, res) => {
       : new Set(mergeDeploymentSkillIds(accessibleSkillIds).map((oid) => oid.toString()));
 
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
+    /** Null for EDIT-scoped requests, where every matched agent is editable by definition. */
+    const editableSet = editableIds ? new Set(editableIds.map((oid) => oid.toString())) : null;
     const agentsWithContacts = await attachOwnerContacts(agents);
 
     const urlCache = cachedRefresh?.urlCache;
@@ -1295,6 +1315,7 @@ const getListAgentsHandler = async (req, res) => {
         if (agent?._id && publicSet.has(agent._id.toString())) {
           agent.isPublic = true;
         }
+        agent.isEditable = editableSet == null || editableSet.has(agent?._id?.toString());
         if (
           urlCache &&
           agent?.id &&

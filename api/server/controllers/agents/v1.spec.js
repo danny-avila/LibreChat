@@ -1676,6 +1676,49 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.data[0].owner_contact).toBeUndefined();
     });
 
+    test('should mark isEditable per agent on a VIEW-scoped list', async () => {
+      mockReq.user.id = userA.toString();
+      mockReq.query = { requiredPermission: String(PermissionBits.VIEW) };
+      /** VIEW reaches all three; the EDIT lookup only reaches agentA1. */
+      findAccessibleResources.mockImplementation(({ resourceType, requiredPermissions }) => {
+        if (resourceType === 'agent' && requiredPermissions === PermissionBits.EDIT) {
+          return Promise.resolve([agentA1._id]);
+        }
+        if (resourceType === 'agent') {
+          return Promise.resolve([agentA1._id, agentA2._id, agentA3._id]);
+        }
+        return Promise.resolve([]);
+      });
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const byId = Object.fromEntries(
+        mockRes.json.mock.calls[0][0].data.map((a) => [a.id, a.isEditable]),
+      );
+      expect(byId[agentA1.id]).toBe(true);
+      expect(byId[agentA2.id]).toBe(false);
+      expect(byId[agentA3.id]).toBe(false);
+    });
+
+    test('should mark every agent editable when the request is already EDIT-scoped', async () => {
+      mockReq.user.id = userA.toString();
+      mockReq.query = { requiredPermission: String(PermissionBits.EDIT) };
+      findAccessibleResources.mockResolvedValue([agentA1._id, agentA2._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data.every((a) => a.isEditable === true)).toBe(true);
+      /** No extra EDIT lookup: an EDIT-scoped match is editable by definition. */
+      const editCalls = findAccessibleResources.mock.calls.filter(
+        ([args]) =>
+          args.resourceType === 'agent' && args.requiredPermissions === PermissionBits.EDIT,
+      );
+      expect(editCalls).toHaveLength(1);
+    });
+
     test('should return only expected safe list fields for VIEW callers', async () => {
       const hiddenSkillId = new mongoose.Types.ObjectId();
       await Agent.findByIdAndUpdate(agentA1._id, {
@@ -1721,6 +1764,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           'conversation_starters',
           'description',
           'id',
+          'isEditable',
           'is_promoted',
           'name',
           'support_contact',

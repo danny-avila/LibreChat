@@ -304,6 +304,12 @@ export type Agent = {
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
+  /**
+   * Whether the requesting user holds EDIT on this agent. Set by the list endpoint so a
+   * single VIEW-scoped fetch can serve consumers that only need the editable subset,
+   * instead of issuing a second full paginated walk under an EDIT-scoped cache key.
+   */
+  isEditable?: boolean;
   version?: number;
   category?: string;
   support_contact?: SupportContact;
