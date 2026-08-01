@@ -128,10 +128,16 @@ export function useMCPServerForm({
       };
     }
 
+    const initialUrl = initialValues?.url ?? '';
+    const normalizedInitialUrl = normalizeUrl(initialUrl);
+    const titleFromInitialUrl = isValidUrl(normalizedInitialUrl)
+      ? extractServerNameFromUrl(normalizedInitialUrl)
+      : '';
+
     return {
-      title: initialValues?.title ?? '',
+      title: initialValues?.title || titleFromInitialUrl,
       description: initialValues?.description ?? '',
-      url: initialValues?.url ?? '',
+      url: initialUrl,
       type: initialValues?.type ?? 'streamable-http',
       icon: initialValues?.icon ?? '',
       auth: {
