@@ -183,3 +183,6 @@ hive-mind-prompt-*.txt
 CLAUDE.md
 .gsd
 codedb.snapshot
+
+# Local git worktrees
+.worktrees/
