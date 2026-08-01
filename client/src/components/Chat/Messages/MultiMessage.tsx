@@ -1,4 +1,4 @@
-import { memo, useEffect, useCallback } from 'react';
+import { memo, useEffect, useRef, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
@@ -25,16 +25,70 @@ function MultiMessage({
     [messagesTree?.length, setSiblingIdx],
   );
 
-  useEffect(() => {
-    // reset siblingIdx when the tree changes, mostly when a new message is submitting.
-    setSiblingIdx(0);
-  }, [messagesTree?.length, setSiblingIdx]);
+  const siblingIdxRef = useRef(siblingIdx);
+  siblingIdxRef.current = siblingIdx;
+  /** Identity of this level's last committed display (`viewedId`) and its
+   *  newest child (`newestId`), for the reconciliation below. */
+  const displayedRef = useRef<{ newestId?: string; viewedId?: string }>({});
+  const treeRef = useRef<typeof messagesTree | null>(null);
 
+  /**
+   * Sibling selection is positional (reversed index), so a change to the
+   * children array would silently change WHAT this level displays. Reconcile
+   * by identity instead of blanket-resetting:
+   *
+   * - A NEW newest child means a submission landed here (send, regenerate,
+   *   edit-resubmit all append) — follow it, the long-standing behavior.
+   * - Same newest child means background churn (an abandoned preempt sibling
+   *   restored at finalize, a refetch merge dropping an optimistic row) —
+   *   keep the message the user was viewing, recomputing its reversed index
+   *   from its new position. Only when it no longer exists does the selection
+   *   fall back to the newest.
+   *
+   * Keyed on tree identity via `treeRef` (streaming mints a fresh array per
+   * write); a plain `siblingIdx` change (the user paging the switcher) only
+   * records the newly viewed identity.
+   */
   useEffect(() => {
-    if (messagesTree?.length && siblingIdx >= messagesTree.length) {
-      setSiblingIdx(0);
+    const length = messagesTree?.length ?? 0;
+    const treeChanged = treeRef.current !== messagesTree;
+    treeRef.current = messagesTree;
+    if (!messagesTree || length === 0) {
+      displayedRef.current = {};
+      return;
     }
-  }, [siblingIdx, messagesTree?.length, setSiblingIdx]);
+    const newestId = messagesTree[length - 1]?.messageId;
+    const currentIdx = siblingIdxRef.current;
+
+    if (!treeChanged) {
+      displayedRef.current = {
+        newestId,
+        viewedId: messagesTree[length - currentIdx - 1]?.messageId,
+      };
+      return;
+    }
+
+    const previous = displayedRef.current;
+    let nextSiblingIdx = currentIdx;
+    if (previous.newestId !== newestId) {
+      nextSiblingIdx = 0;
+    } else if (currentIdx > 0 && previous.viewedId != null) {
+      const viewedIndex = messagesTree.findIndex(
+        (message) => message?.messageId === previous.viewedId,
+      );
+      nextSiblingIdx = viewedIndex >= 0 ? length - viewedIndex - 1 : 0;
+    } else if (currentIdx >= length) {
+      nextSiblingIdx = 0;
+    }
+
+    if (nextSiblingIdx !== currentIdx) {
+      setSiblingIdx(nextSiblingIdx);
+    }
+    displayedRef.current = {
+      newestId,
+      viewedId: messagesTree[length - nextSiblingIdx - 1]?.messageId,
+    };
+  }, [messagesTree, siblingIdx, setSiblingIdx]);
 
   if (!(messagesTree && messagesTree.length)) {
     return null;
