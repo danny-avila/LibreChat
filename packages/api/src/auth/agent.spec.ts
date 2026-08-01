@@ -420,4 +420,37 @@ describe('applySSRFSafeAgentIfDirect', () => {
     expect(config.httpsAgent).toBeUndefined();
     expect(config.maxRedirects).toBe(0);
   });
+
+  it('blocks a literal private IPv4 host that skips the agent DNS lookup', () => {
+    let code: string | undefined;
+    try {
+      applySSRFSafeAgentIfDirect({}, 'http://127.0.0.1:9000');
+    } catch (err) {
+      code = (err as NodeJS.ErrnoException).code;
+    }
+    expect(code).toBe('ESSRF');
+  });
+
+  it('blocks a literal private IPv6 host', () => {
+    let code: string | undefined;
+    try {
+      applySSRFSafeAgentIfDirect({}, 'http://[::1]:9000');
+    } catch (err) {
+      code = (err as NodeJS.ErrnoException).code;
+    }
+    expect(code).toBe('ESSRF');
+  });
+
+  it('exempts a literal private IP present in allowedAddresses', () => {
+    const config: AxiosRequestConfig = {};
+    applySSRFSafeAgentIfDirect(config, 'http://127.0.0.1:9000', ['127.0.0.1:9000']);
+    expect(config.httpAgent).toBeDefined();
+    expect(config.maxRedirects).toBe(0);
+  });
+
+  it('allows a public literal IP', () => {
+    const config: AxiosRequestConfig = {};
+    applySSRFSafeAgentIfDirect(config, 'http://8.8.8.8:80');
+    expect(config.httpAgent).toBeDefined();
+  });
 });

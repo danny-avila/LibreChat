@@ -54,11 +54,9 @@ jest.mock('~/utils/files', () => ({
   readFileAsBuffer: jest.fn(),
 }));
 
-import http from 'node:http';
 import * as fs from 'fs';
 import axios from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import type { LookupFunction } from 'node:net';
 import type { Readable } from 'stream';
 import type {
   MistralFileUploadResponse,
@@ -2481,54 +2479,22 @@ describe('MistralOCR Service', () => {
   });
 
   describe('SSRF connect-time guard', () => {
-    const httpAgentPrototype = http.Agent.prototype as unknown as {
-      createConnection: (options: Record<string, unknown>) => unknown;
-    };
-
     afterEach(() => {
       jest.restoreAllMocks();
       delete process.env.PROXY;
     });
 
-    function captureConfigHttpAgent(): {
-      createConnection: (o: Record<string, unknown>) => unknown;
-    } {
-      const config = mockAxios.post!.mock.calls[0][2] as {
-        httpAgent: { createConnection: (o: Record<string, unknown>) => unknown };
-      };
-      return config.httpAgent;
-    }
-
-    function spyLookupResult(host: string) {
-      return new Promise<{ err: NodeJS.ErrnoException | null; address: string }>((resolve) => {
-        jest.spyOn(httpAgentPrototype, 'createConnection').mockImplementation(((
-          options: Record<string, unknown>,
-        ) => {
-          (options.lookup as LookupFunction)(host, {}, (err, address) =>
-            resolve({ err, address: address as string }),
-          );
-          return {};
-        }) as never);
-      });
-    }
-
-    it('blocks a private-IP baseURL with ESSRF through the real lookup', async () => {
-      const lookupResult = spyLookupResult('10.0.0.5');
-      mockAxios.post!.mockResolvedValueOnce({ data: { pages: [] } });
-      await performOCR({
-        apiKey: 'k',
-        url: 'https://document-url.com',
-        baseURL: 'http://10.0.0.5:8080',
-      });
-
-      captureConfigHttpAgent().createConnection({ host: '10.0.0.5', port: 8080 });
-      const { err } = await lookupResult;
-      expect(err).toBeTruthy();
-      expect(err!.code).toBe('ESSRF');
+    it('blocks a literal private-IP baseURL with ESSRF', async () => {
+      await expect(
+        performOCR({
+          apiKey: 'k',
+          url: 'https://document-url.com',
+          baseURL: 'http://10.0.0.5:8080',
+        }),
+      ).rejects.toMatchObject({ code: 'ESSRF' });
     });
 
-    it('exempts a host:port present in ocr.allowedAddresses through the real lookup', async () => {
-      const lookupResult = spyLookupResult('10.0.0.5');
+    it('exempts a literal private IP present in ocr.allowedAddresses', async () => {
       mockAxios.post!.mockResolvedValueOnce({ data: { pages: [] } });
       await performOCR({
         apiKey: 'k',
@@ -2537,10 +2503,12 @@ describe('MistralOCR Service', () => {
         allowedAddresses: ['10.0.0.5:8080'],
       });
 
-      captureConfigHttpAgent().createConnection({ host: '10.0.0.5', port: 8080 });
-      const { err, address } = await lookupResult;
-      expect(err).toBeNull();
-      expect(address).toBe('10.0.0.5');
+      const config = mockAxios.post!.mock.calls[0][2] as {
+        httpAgent?: unknown;
+        maxRedirects?: number;
+      };
+      expect(config.httpAgent).toBeDefined();
+      expect(config.maxRedirects).toBe(0);
     });
 
     it('preserves proxy precedence and still disables redirects', async () => {

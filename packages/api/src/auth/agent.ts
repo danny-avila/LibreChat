@@ -1,6 +1,7 @@
 import dns from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
+import { isIP } from 'node:net';
 import type { AxiosRequestConfig } from 'axios';
 import type { LookupFunction } from 'node:net';
 import {
@@ -160,7 +161,7 @@ export function applySSRFSafeAgentIfDirect(
   url: string,
   allowedAddresses?: string[] | null,
 ): AxiosRequestConfig {
-  const { protocol } = new URL(url);
+  const { protocol, hostname, port } = new URL(url);
   if (protocol !== 'http:' && protocol !== 'https:') {
     throw new Error(`Unsupported URL scheme for SSRF-guarded request: ${protocol}`);
   }
@@ -168,6 +169,24 @@ export function applySSRFSafeAgentIfDirect(
   config.maxRedirects = 0;
   if (config.httpsAgent || config.httpAgent || config.proxy) {
     return config;
+  }
+
+  // Node skips the agent's custom DNS lookup for IP-literal hosts, so the connect-time
+  // private-IP check never runs for e.g. http://127.0.0.1; block literal private IPs here.
+  const literalHost = hostname.replace(/^\[|\]$/g, '');
+  if (isIP(literalHost)) {
+    const exemptSet = normalizeAllowedAddressesSet(allowedAddresses);
+    const normalizedPort = normalizePort(port);
+    const hostnameAllowed = isAddressInAllowedSet(literalHost, exemptSet, normalizedPort);
+    const blockedAddress = getBlockedLookupAddress(
+      literalHost,
+      hostnameAllowed,
+      exemptSet,
+      normalizedPort,
+    );
+    if (blockedAddress) {
+      throw createSSRFLookupError(literalHost, blockedAddress);
+    }
   }
 
   const { httpAgent, httpsAgent } = createSSRFSafeAgents(allowedAddresses);
