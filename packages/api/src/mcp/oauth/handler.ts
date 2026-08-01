@@ -470,6 +470,14 @@ export class MCPOAuthHandler {
     );
   }
 
+  private static oauthUrlsMatch(left: string, right: string): boolean {
+    try {
+      return new URL(left).href === new URL(right).href;
+    } catch {
+      return false;
+    }
+  }
+
   public static buildStoredClientMetadata(
     metadata?: OAuthMetadata,
     resourceMetadata?: OAuthProtectedResourceMetadata,
@@ -1484,7 +1492,56 @@ export class MCPOAuthHandler {
 
         let tokenUrl: string;
         let authMethods: string[] | undefined;
-        if (config?.token_url) {
+        const hasStoredClientSecret = !!metadata.clientInfo.client_secret;
+        if (hasStoredClientSecret) {
+          /** Keep confidential stored clients bound to the endpoint and auth policy captured by their original flow. */
+          if (!metadata.storedTokenEndpoint) {
+            throw new Error(
+              '[MCPOAuth] Stored OAuth client_secret is missing its bound token endpoint; re-authentication is required.',
+            );
+          }
+          if (config?.client_id) {
+            const storedAuthMethod =
+              resolveTokenEndpointAuthMethod({
+                tokenAuthMethods: metadata.storedAuthMethods ?? ['client_secret_basic'],
+                preferredMethod: metadata.clientInfo.token_endpoint_auth_method,
+              }) ?? 'client_secret_basic';
+            const hasConfiguredAuthPolicy =
+              config.token_exchange_method !== undefined ||
+              config.token_endpoint_auth_methods_supported !== undefined;
+            let configuredAuthMethod = storedAuthMethod;
+            if (!config.client_secret) {
+              configuredAuthMethod = 'none';
+            } else if (hasConfiguredAuthPolicy) {
+              configuredAuthMethod =
+                resolveTokenEndpointAuthMethod({
+                  tokenExchangeMethod: config.token_exchange_method,
+                  tokenAuthMethods: config.token_endpoint_auth_methods_supported ?? [
+                    'client_secret_basic',
+                  ],
+                }) ?? 'client_secret_basic';
+            }
+            if (
+              !config.token_url ||
+              !this.oauthUrlsMatch(metadata.storedTokenEndpoint, config.token_url) ||
+              metadata.clientInfo.client_id !== config.client_id ||
+              metadata.clientInfo.client_secret !== config.client_secret ||
+              storedAuthMethod !== configuredAuthMethod
+            ) {
+              throw new Error(
+                '[MCPOAuth] Stored OAuth client binding no longer matches current OAuth client configuration; re-authentication is required.',
+              );
+            }
+          }
+          await this.validateOAuthUrl(
+            metadata.storedTokenEndpoint,
+            'token_url',
+            allowedDomains,
+            allowedAddresses,
+          );
+          tokenUrl = metadata.storedTokenEndpoint;
+          authMethods = metadata.storedAuthMethods;
+        } else if (config?.token_url) {
           await this.validateOAuthUrl(
             config.token_url,
             'token_url',
@@ -1580,7 +1637,7 @@ export class MCPOAuthHandler {
           /** Default to client_secret_basic if no methods specified (per RFC 8414) */
           const tokenAuthMethods = authMethods ?? ['client_secret_basic'];
           const authMethod = resolveTokenEndpointAuthMethod({
-            tokenExchangeMethod: config?.token_exchange_method,
+            tokenExchangeMethod: hasStoredClientSecret ? undefined : config?.token_exchange_method,
             tokenAuthMethods,
             preferredMethod: metadata.clientInfo.token_endpoint_auth_method,
           });
