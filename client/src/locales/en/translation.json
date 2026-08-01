@@ -545,7 +545,7 @@
   "com_nav_info_collapse_user_messages": "When enabled, long user messages render collapsed to a preview with a Show more option, so pasted text or code cannot dominate the conversation. The full text stays in the page, ready to copy or search.",
   "com_nav_info_default_temporary_chat": "When enabled, new chats will start with temporary chat mode activated by default. Temporary chats are not saved to your history.",
   "com_nav_info_during_run_action": "Queued messages send automatically when the reply finishes. Sending into the reply adds your message to the response the assistant is writing right now.",
-  "com_nav_info_enter_to_send": "When enabled, pressing `ENTER` will send your message. When disabled, pressing Enter will add a new line, and you'll need to press `CTRL + ENTER` / `⌘ + ENTER` to send your message.",
+  "com_nav_info_enter_to_send": "When enabled, pressing `ENTER` will send your message, and `SHIFT + ENTER` or `CTRL + ENTER` / `⌘ + ENTER` will add a new line. When disabled, pressing Enter will add a new line, and you'll need to press `CTRL + ENTER` / `⌘ + ENTER` to send your message.",
   "com_nav_info_fork_change_default": "`Visible messages only` includes just the direct path to the selected message. `Include related branches` adds branches along the path. `Include all to/from here` includes all connected messages and branches.",
   "com_nav_info_fork_split_target_setting": "When enabled, forking will commence from the target message to the latest message in the conversation, according to the behavior selected.",
   "com_nav_info_latex_parsing": "When enabled, LaTeX code in messages will be rendered as mathematical equations. Disabling this may improve performance if you don't need LaTeX rendering.",
