@@ -2235,6 +2235,70 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.json).toHaveBeenCalled();
     });
 
+    test('should serve the refreshed filepath in the same response on cache miss', async () => {
+      const agentId = agentWithS3Avatar.id;
+      mockCache.get.mockResolvedValue(false);
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+      refreshS3Url.mockResolvedValue('new-s3-path.jpg');
+
+      const mockReq = {
+        user: { id: userA.toString(), role: 'USER' },
+        query: {},
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const responseData = mockRes.json.mock.calls[0][0];
+      const agent = responseData.data.find((a) => a.id === agentId);
+      /** The refresh runs alongside the list query, so the refreshed path must reach the
+       *  response through `urlCache` rather than through what the list query read. */
+      expect(agent.avatar.filepath).toBe('new-s3-path.jpg');
+    });
+
+    test('should scope the refresh query to S3 avatars without filtering the list query', async () => {
+      const db = require('~/models');
+      const listSpy = jest.spyOn(db, 'getListAgentsByAccess');
+      mockCache.get.mockResolvedValue(false);
+      findAccessibleResources.mockResolvedValue([agentWithLocalAvatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      const mockReq = {
+        user: { id: userA.toString(), role: 'USER' },
+        query: {},
+      };
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn().mockReturnThis(),
+      };
+
+      try {
+        await getListAgentsHandler(mockReq, mockRes);
+
+        /** The refresh pass must query only S3-avatar agents — `refreshListAvatars`
+         *  skips non-S3 entries anyway, so without this assertion the filter could
+         *  regress to `{}` (reloading the whole accessible set) unnoticed. */
+        expect(listSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ otherParams: { 'avatar.source': FileSources.s3 } }),
+        );
+        /** The user-facing list query keeps the request filter, not the refresh scope. */
+        expect(listSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ includeSkillConfig: true, otherParams: {} }),
+        );
+
+        expect(refreshS3Url).not.toHaveBeenCalled();
+        const responseData = mockRes.json.mock.calls[0][0];
+        const agent = responseData.data.find((a) => a.id === agentWithLocalAvatar.id);
+        expect(agent.avatar.filepath).toBe('local-path.jpg');
+      } finally {
+        listSpy.mockRestore();
+      }
+    });
+
     test('should refresh avatars for all accessible agents (VIEW permission)', async () => {
       mockCache.get.mockResolvedValue(false);
       // User A has access to both their own agent and userB's agent

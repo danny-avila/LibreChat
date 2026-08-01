@@ -1188,33 +1188,62 @@ const getListAgentsHandler = async (req, res) => {
       filter.$or = [{ name: regex }, { description: regex }];
     }
 
-    // Get agent IDs the user has VIEW access to via ACL
-    const accessibleIds = await findAccessibleResources({
-      userId,
-      role: req.user.role,
-      resourceType: ResourceType.AGENT,
-      requiredPermissions: requiredPermission,
-    });
+    const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
+    const refreshKey = `${userId}:agents_avatar_refresh`;
 
-    const publiclyAccessibleIds = await findPubliclyAccessibleResources({
-      resourceType: ResourceType.AGENT,
-      requiredPermissions: PermissionBits.VIEW,
-    });
+    /**
+     * These four reads share no inputs, so they resolve together rather than chaining
+     * four round trips ahead of the list query. The viewer skill scope is only consumed
+     * when the page is non-empty; dispatching it here trades one wasted lookup on the
+     * (cheap) zero-agent path for one less serial hop on every populated page.
+     */
+    const [accessibleIds, publiclyAccessibleIds, cachedRefreshEntry, accessibleSkillIds] =
+      await Promise.all([
+        findAccessibleResources({
+          userId,
+          role: req.user.role,
+          resourceType: ResourceType.AGENT,
+          requiredPermissions: requiredPermission,
+        }),
+        findPubliclyAccessibleResources({
+          resourceType: ResourceType.AGENT,
+          requiredPermissions: PermissionBits.VIEW,
+        }),
+        cache.get(refreshKey),
+        canReturnSkillConfig
+          ? null
+          : findAccessibleResources({
+              userId,
+              role: req.user.role,
+              resourceType: ResourceType.SKILL,
+              requiredPermissions: PermissionBits.VIEW,
+            }),
+      ]);
+
+    const isValidCachedRefresh =
+      cachedRefreshEntry != null &&
+      typeof cachedRefreshEntry === 'object' &&
+      cachedRefreshEntry.urlCache != null;
 
     /**
      * Refresh all S3 avatars for this user's accessible agent set (not only the current page)
-     * This addresses page-size limits preventing refresh of agents beyond the first page
+     * This addresses page-size limits preventing refresh of agents beyond the first page.
+     *
+     * Scoped to agents that actually carry an S3 avatar: deployments on any other file
+     * strategy match nothing here instead of loading (and walking) up to
+     * `MAX_AVATAR_REFRESH_AGENTS` full agent documents to discover there is no work.
+     * Runs alongside the list query rather than before it — refreshed paths reach the
+     * response through `urlCache` below, not through what the list query happened to read.
      */
-    const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
-    const refreshKey = `${userId}:agents_avatar_refresh`;
-    let cachedRefresh = await cache.get(refreshKey);
-    const isValidCachedRefresh =
-      cachedRefresh != null && typeof cachedRefresh === 'object' && cachedRefresh.urlCache != null;
-    if (!isValidCachedRefresh) {
+    const resolveAvatarRefresh = async () => {
+      if (isValidCachedRefresh) {
+        logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
+        return cachedRefreshEntry;
+      }
       try {
         const fullList = await db.getListAgentsByAccess({
           accessibleIds,
-          otherParams: {},
+          otherParams: { 'avatar.source': FileSources.s3 },
           limit: MAX_AVATAR_REFRESH_AGENTS,
           after: null,
         });
@@ -1224,41 +1253,35 @@ const getListAgentsHandler = async (req, res) => {
           refreshS3Url,
           updateAgent: db.updateAgent,
         });
-        cachedRefresh = { urlCache };
-        await cache.set(refreshKey, cachedRefresh, Time.THIRTY_MINUTES);
+        const refreshEntry = { urlCache };
+        await cache.set(refreshKey, refreshEntry, Time.THIRTY_MINUTES);
+        return refreshEntry;
       } catch (err) {
         logger.error('[/Agents] Error refreshing avatars for full list: %o', err);
+        return null;
       }
-    } else {
-      logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
-    }
+    };
 
     // Use the new ACL-aware function
-    const data = await db.getListAgentsByAccess({
-      accessibleIds,
-      otherParams: filter,
-      limit,
-      after: cursor,
-      includeSkillConfig: true,
-    });
+    const [cachedRefresh, data] = await Promise.all([
+      resolveAvatarRefresh(),
+      db.getListAgentsByAccess({
+        accessibleIds,
+        otherParams: filter,
+        limit,
+        after: cursor,
+        includeSkillConfig: true,
+      }),
+    ]);
 
     const agents = data?.data ?? [];
     if (!agents.length) {
       return res.json(data);
     }
 
-    let accessibleSkillSet = null;
-    if (!canReturnSkillConfig) {
-      const accessibleSkillIds = await findAccessibleResources({
-        userId,
-        role: req.user.role,
-        resourceType: ResourceType.SKILL,
-        requiredPermissions: PermissionBits.VIEW,
-      });
-      accessibleSkillSet = new Set(
-        mergeDeploymentSkillIds(accessibleSkillIds).map((oid) => oid.toString()),
-      );
-    }
+    const accessibleSkillSet = canReturnSkillConfig
+      ? null
+      : new Set(mergeDeploymentSkillIds(accessibleSkillIds).map((oid) => oid.toString()));
 
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
     const agentsWithContacts = await attachOwnerContacts(agents);

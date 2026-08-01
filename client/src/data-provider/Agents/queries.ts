@@ -16,12 +16,21 @@ export const defaultAgentParams: t.AgentListParams = {
   requiredPermission: PermissionBits.EDIT,
 };
 
+/**
+ * Page size for the internal pagination walk. Callers consume the flattened result, so
+ * every page costs a serial round trip with no benefit — request the server's maximum
+ * (`getListAgentsByAccess` caps at 1000) so realistic agent sets resolve in one request.
+ * Kept out of the query key: this is a transport detail, not part of the query identity.
+ */
+const WALK_PAGE_SIZE = 1000;
+
 /** Walk the cursor pagination and return all pages flattened into one `AgentListResponse`. */
 async function fetchAllAgentPages(params: t.AgentListParams): Promise<t.AgentListResponse> {
   const pages: t.AgentListResponse[] = [];
   let cursor: string | null | undefined = params.cursor;
   do {
     const page = await dataService.listAgents({
+      limit: WALK_PAGE_SIZE,
       ...params,
       ...(cursor ? { cursor } : {}),
     });
