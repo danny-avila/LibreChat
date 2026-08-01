@@ -28,10 +28,15 @@ export default function useMissingConversationRecovery({
   const convertSteersToQueued = useSteerConvert();
   const onConfirmedMissingRef = useRef(onConfirmedMissing);
   const { data: streamStatus, isFetching, isSuccess } = useStreamStatus(conversationId, enabled);
+  const streamStatusRef = useRef(streamStatus);
 
   useLayoutEffect(() => {
     onConfirmedMissingRef.current = onConfirmedMissing;
   }, [onConfirmedMissing]);
+
+  useLayoutEffect(() => {
+    streamStatusRef.current = streamStatus;
+  }, [streamStatus]);
 
   useEffect(() => {
     if (
@@ -46,6 +51,7 @@ export default function useMissingConversationRecovery({
     }
 
     let cancelled = false;
+    const initialStatus = streamStatusRef.current;
     const timeout = setTimeout(() => {
       void (async () => {
         let recoveredMessages: TMessage[] | null = null;
@@ -93,12 +99,16 @@ export default function useMissingConversationRecovery({
         }
 
         const leftoverSteers = dedupeSteersById(
+          initialStatus?.unrecoveredSteers,
+          initialStatus?.resumeState?.pendingSteers,
           verifiedStatus.unrecoveredSteers,
           verifiedStatus.resumeState?.pendingSteers,
         );
         if (leftoverSteers.length > 0) {
+          const generationStatus =
+            verifiedStatus.generationProtocolVersion == null ? initialStatus : verifiedStatus;
           convertSteersToQueued(conversationId, leftoverSteers, {
-            generationProtocolVersion: getGenerationProtocolVersion(verifiedStatus),
+            generationProtocolVersion: getGenerationProtocolVersion(generationStatus),
           });
           return;
         }

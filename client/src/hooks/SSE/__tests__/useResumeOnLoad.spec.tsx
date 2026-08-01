@@ -489,6 +489,56 @@ describe('useResumeOnLoad', () => {
     ).toHaveLength(1);
   });
 
+  it('treats the empty submission sentinel as idle for a verified handoff', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    let status: StreamStatusResponse = { active: false };
+    mockUseStreamStatus.mockImplementation(() => ({
+      isSuccess: true,
+      isFetching: false,
+      data: status,
+    }));
+    const rendered = renderUseResumeOnLoad({
+      submission: {} as TSubmission,
+      messages: [buildUserMessage(CONVERSATION_ID)],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    status = {
+      active: true,
+      generationHandoff: true,
+      generationProtocolVersion: 2,
+      status: 'running',
+      streamId: CONVERSATION_ID,
+      createdAt: 2000,
+      resumeState: {
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'handoff content' }],
+        responseMessageId: RESPONSE_MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        userMessage: {
+          messageId: USER_MESSAGE_ID,
+          parentMessageId: String(Constants.NO_PARENT),
+          conversationId: CONVERSATION_ID,
+          text: 'Hello',
+        },
+      },
+    };
+    rendered.rerender();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const resumed = observedSubmissions[observedSubmissions.length - 1] as TSubmission & {
+      resumeGenerationCreatedAt?: number;
+    };
+    expect(resumed.resumeGenerationCreatedAt).toBe(2000);
+  });
+
   it('strips the paused user/assistant rows from submission.messages (no duplicate on resume)', async () => {
     const observedSubmissions: Array<TSubmission | null> = [];
     mockUseStreamStatus.mockReturnValue({

@@ -357,15 +357,17 @@ export default function useResumeOnLoad(
 
   // Check for active stream when conversation changes
   const submissionConvoId = currentSubmission?.conversation?.conversationId;
+  const hasCurrentSubmission =
+    currentSubmission != null && Object.keys(currentSubmission).length > 0;
   const loadedMessages = messagesLoaded ? getMessages() : undefined;
   const hasExplicitSubmissionMatch = !!conversationId && submissionConvoId === conversationId;
   const hasHydratedMessageMatch =
     submissionConvoId == null &&
     hasSubmissionUserMessage(currentSubmission, loadedMessages, conversationId);
   const hasActiveSubmissionForThisConvo =
-    !!currentSubmission && (hasExplicitSubmissionMatch || hasHydratedMessageMatch);
+    hasCurrentSubmission && (hasExplicitSubmissionMatch || hasHydratedMessageMatch);
   const hasStaleSubmissionForDifferentConvo =
-    !!currentSubmission && submissionConvoId != null && submissionConvoId !== conversationId;
+    hasCurrentSubmission && submissionConvoId != null && submissionConvoId !== conversationId;
 
   const shouldCheck =
     resumableEnabled &&
@@ -386,7 +388,7 @@ export default function useResumeOnLoad(
       resumableEnabled,
       conversationId,
       messagesLoaded,
-      hasCurrentSubmission: !!currentSubmission,
+      hasCurrentSubmission,
       currentSubmissionConvoId: currentSubmission?.conversation?.conversationId,
       isSuccess,
       isFetching,
@@ -441,7 +443,7 @@ export default function useResumeOnLoad(
     const isUnconsumedHandoff =
       streamStatus.generationHandoff === true && consumedHandoffStatusRef.current !== streamStatus;
     if (
-      currentSubmission == null &&
+      !hasCurrentSubmission &&
       isUnconsumedHandoff &&
       streamStatus.active &&
       processedConvoRef.current === conversationId
@@ -575,6 +577,7 @@ export default function useResumeOnLoad(
     conversationId,
     resumableEnabled,
     messagesLoaded,
+    hasCurrentSubmission,
     hasActiveSubmissionForThisConvo,
     submissionConvoId,
     hasStaleSubmissionForDifferentConvo,

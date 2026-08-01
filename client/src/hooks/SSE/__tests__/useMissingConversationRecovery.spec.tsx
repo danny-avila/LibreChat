@@ -297,4 +297,55 @@ describe('useMissingConversationRecovery', () => {
       pageParams: [undefined],
     });
   });
+
+  it('retains steers claimed by the initial legacy status read', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onConfirmedMissing = jest.fn();
+    const claimedSteer = { steerId: 'initial-claim', text: 'retain me', createdAt: 1 };
+    mockUseStreamStatus.mockReturnValue({
+      data: {
+        active: false,
+        generationProtocolVersion: 1,
+        unrecoveredSteers: [claimedSteer],
+      },
+      isFetching: false,
+      isSuccess: true,
+    });
+    mockGetMessages.mockRejectedValue({ status: 404 });
+    mockFetchStreamStatus.mockResolvedValue({ active: false, generationProtocolVersion: 1 });
+    queryClient.setQueryData([QueryKeys.allConversations], {
+      pages: [
+        {
+          conversations: [{ conversationId: CONVERSATION_ID }],
+          nextCursor: null,
+        },
+      ],
+      pageParams: [undefined],
+    });
+
+    renderHook(
+      () =>
+        useMissingConversationRecovery({
+          conversationId: CONVERSATION_ID,
+          enabled: true,
+          onConfirmedMissing,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    await advanceRecoveryDelay();
+
+    expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONVERSATION_ID, [claimedSteer], {
+      generationProtocolVersion: 1,
+    });
+    expect(onConfirmedMissing).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData([QueryKeys.allConversations])).toEqual({
+      pages: [
+        {
+          conversations: [{ conversationId: CONVERSATION_ID }],
+          nextCursor: null,
+        },
+      ],
+      pageParams: [undefined],
+    });
+  });
 });
