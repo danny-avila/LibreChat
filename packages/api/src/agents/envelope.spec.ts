@@ -50,6 +50,7 @@ describe('createAgentRunEnvelope', () => {
     });
     expect(JSON.parse(JSON.stringify(envelope))).toEqual(envelope);
     expect(JSON.stringify(envelope)).not.toContain('must-not-cross');
+    expect(envelope.payload.ephemeralAgent?.skills).toBe(true);
   });
 
   it('detaches the payload from the Express request body', () => {
@@ -122,6 +123,7 @@ describe('createAgentRunEnvelope', () => {
 
     expect(envelope.protocol).toBe('responses');
     expect(envelope.payload).toEqual(payload);
+    expect(envelope.payload.isTemporary).toBe(true);
   });
 
   it('requires an authenticated user id', () => {

@@ -1,3 +1,4 @@
+import type { TEphemeralAgent } from 'librechat-data-provider';
 import type { ChatCompletionRequest } from './openai';
 import type { ResponseRequest } from './responses';
 
@@ -20,6 +21,17 @@ export interface AgentRunPrincipalInput {
   tenantId?: string;
 }
 
+/** LibreChat request fields consumed by execution but not declared by the public protocols. */
+export interface AgentRunPayloadExtensions {
+  ephemeralAgent?: TEphemeralAgent | null;
+  manualSkills?: string[];
+  timezone?: string;
+  isTemporary?: boolean;
+}
+
+export type ChatCompletionRunPayload = ChatCompletionRequest & AgentRunPayloadExtensions;
+export type ResponsesRunPayload = ResponseRequest & AgentRunPayloadExtensions;
+
 interface AgentRunEnvelopeBase {
   version: typeof AGENT_RUN_ENVELOPE_VERSION;
   requestId: string;
@@ -29,12 +41,12 @@ interface AgentRunEnvelopeBase {
 
 export interface ChatCompletionRunEnvelope extends AgentRunEnvelopeBase {
   protocol: 'chat.completions';
-  payload: ChatCompletionRequest;
+  payload: ChatCompletionRunPayload;
 }
 
 export interface ResponsesRunEnvelope extends AgentRunEnvelopeBase {
   protocol: 'responses';
-  payload: ResponseRequest;
+  payload: ResponsesRunPayload;
 }
 
 export type AgentRunEnvelope = ChatCompletionRunEnvelope | ResponsesRunEnvelope;
@@ -45,14 +57,14 @@ export type CreateAgentRunEnvelopeInput =
       requestId: string;
       receivedAt: number;
       principal: AgentRunPrincipalInput | null | undefined;
-      payload: ChatCompletionRequest;
+      payload: ChatCompletionRunPayload;
     }
   | {
       protocol: 'responses';
       requestId: string;
       receivedAt: number;
       principal: AgentRunPrincipalInput | null | undefined;
-      payload: ResponseRequest;
+      payload: ResponsesRunPayload;
     };
 
 type CreateChatCompletionRunEnvelopeInput = Extract<
@@ -211,7 +223,7 @@ export function createAgentRunEnvelope(input: CreateAgentRunEnvelopeInput): Agen
     return {
       ...base,
       protocol: input.protocol,
-      payload: payload as unknown as ChatCompletionRequest,
+      payload: payload as unknown as ChatCompletionRunPayload,
     };
   }
 
@@ -219,7 +231,7 @@ export function createAgentRunEnvelope(input: CreateAgentRunEnvelopeInput): Agen
     return {
       ...base,
       protocol: input.protocol,
-      payload: payload as unknown as ResponseRequest,
+      payload: payload as unknown as ResponsesRunPayload,
     };
   }
 
