@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useGetStartupConfig } from '~/data-provider';
 
 const MCP_NAME_PARAM = 'name';
 const MCP_URL_PARAM = 'url';
@@ -8,17 +9,23 @@ const MCP_TRANSPORT_PARAM = 'transport';
 export default function MCPAddRedirect() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { data: startupConfig, isLoading } = useGetStartupConfig();
+  const deepLinksEnabled = startupConfig?.interface?.mcpServers?.deepLinks !== false;
 
   useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
     const mcpName = searchParams.get(MCP_NAME_PARAM) ?? undefined;
     const mcpUrl = searchParams.get(MCP_URL_PARAM) ?? undefined;
     const mcpTransport = searchParams.get(MCP_TRANSPORT_PARAM) ?? undefined;
 
     navigate('/c/new', {
       replace: true,
-      state: { mcpName, mcpUrl, mcpTransport },
+      state: deepLinksEnabled ? { mcpName, mcpUrl, mcpTransport } : null,
     });
-  }, [searchParams, navigate]);
+  }, [deepLinksEnabled, isLoading, searchParams, navigate]);
 
   return null;
 }
