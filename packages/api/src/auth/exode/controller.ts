@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
-import type { IUser, IPluginAuth } from '@librechat/data-schemas';
+import { SystemRoles } from 'librechat-data-provider';
+import type { IUser, IPluginAuth, BalanceConfig } from '@librechat/data-schemas';
 import type { RequestHandler } from 'express';
 import type { ExodeUserDeps } from './user';
 import type { ExodeExchangeResponse } from './types';
@@ -23,6 +24,11 @@ export interface ExodeExchangeDeps extends ExodeUserDeps {
   invalidateCachedTools: (options: { userId: string; serverName: string }) => Promise<void>;
   getMCPManager: () => MCPManager;
   getTenantId: () => string | undefined;
+  /**
+   * Resolved per request, not at construction: the app config is loaded asynchronously and can
+   * change without a restart, so capturing it once would pin the balance settings forever.
+   */
+  getAppConfig?: (options?: { role?: string }) => Promise<{ balance?: BalanceConfig } | undefined>;
   fetcher?: typeof fetch;
   now?: () => number;
 }
@@ -72,12 +78,13 @@ export function createExodeExchangeController(deps: ExodeExchangeDeps): RequestH
         config,
         deps.fetcher,
       );
-      const user = await upsertExodeUser(
-        exchange.identity,
-        config.issuer,
-        deps.getTenantId(),
-        deps,
-      );
+      /** Same balance settings every other registration path uses (see AuthService.registerUser) */
+      const appConfig = await deps.getAppConfig?.({ role: SystemRoles.USER });
+
+      const user = await upsertExodeUser(exchange.identity, config.issuer, deps.getTenantId(), {
+        ...deps,
+        balanceConfig: appConfig?.balance,
+      });
       const userId = String(user._id);
       const pluginKey = `mcp_${config.mcpServerName}`;
       const pluginAuth = await deps.updateUserPluginAuth(

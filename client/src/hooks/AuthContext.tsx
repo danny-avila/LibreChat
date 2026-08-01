@@ -8,7 +8,8 @@ import {
   createContext,
 } from 'react';
 import { debounce } from 'lodash';
-import { useRecoilState, useSetRecoilState } from 'recoil';
+import { useQueryClient } from '@tanstack/react-query';
+import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
 import {
   apiBaseUrl,
@@ -33,7 +34,13 @@ import type {
   TExternalSession,
   TResError,
 } from '~/common';
-import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
+import {
+  SESSION_KEY,
+  isSafeRedirect,
+  getPostLoginRedirect,
+  clearAllConversationStorage,
+} from '~/utils';
+import { useClearStates } from '~/hooks/Config';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
@@ -59,6 +66,11 @@ const AuthContextProvider = ({
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const setQueriesEnabled = useSetRecoilState<boolean>(store.queriesEnabled);
+
+  /** Used by clearExternalSession to tear down as thoroughly as logout does */
+  const queryClient = useQueryClient();
+  const clearStates = useClearStates();
+  const resetDefaultPreset = useResetRecoilState(store.defaultPreset);
 
   const userRoleName = user?.role ?? '';
   const isCustomRole = isAuthenticated && !!user?.role && !isSystemRoleName(user.role);
@@ -120,15 +132,33 @@ const AuthContextProvider = ({
     [setUserContext],
   );
 
+  /**
+   * Tear down an externally-supplied session.
+   *
+   * Clears the same state `logout` does. Dropping only the token would leave the previous
+   * principal's conversations in local storage and their responses in the query cache — and the
+   * embed can switch principal in place (a different school, or a different user in a shared
+   * browser) without a page load, so the next session would render the previous one's data.
+   */
   const clearExternalSession = useCallback(() => {
     setTokenHeader(undefined);
     setQueriesEnabled(false);
+    resetDefaultPreset();
+    clearStates();
+    clearAllConversationStorage();
+    queryClient.removeQueries();
     setUserContext({
       token: undefined,
       user: undefined,
       isAuthenticated: false,
     });
-  }, [setQueriesEnabled, setUserContext]);
+  }, [
+    clearStates,
+    queryClient,
+    resetDefaultPreset,
+    setQueriesEnabled,
+    setUserContext,
+  ]);
 
   const loginUser = useLoginUserMutation({
     onSuccess: (data: t.TLoginResponse) => {

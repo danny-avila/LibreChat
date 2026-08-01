@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
 import {
   Login,
@@ -25,7 +26,20 @@ import Root from './Root';
 
 const AuthLayout = () => {
   const location = useLocation();
-  const embedded = isExodeEmbedLocation(location.pathname, location.search);
+
+  /**
+   * Sticky for the lifetime of the page load, deliberately.
+   *
+   * Derived fresh from the URL, this flips to false the moment the app navigates somewhere
+   * without `?embed=exode` — which unmounts ExodeBridge, whose cleanup clears the session, so
+   * sending the very first message logged the user out and left a blank frame with no way back.
+   * An embedded session stays embedded until the iframe is reloaded; a normal page load never
+   * becomes one, since this only ever latches on.
+   */
+  const embeddedRef = useRef(false);
+  embeddedRef.current =
+    embeddedRef.current || isExodeEmbedLocation(location.pathname, location.search);
+  const embedded = embeddedRef.current;
   const content = embedded ? (
     <ExodeBridge>
       <Outlet />

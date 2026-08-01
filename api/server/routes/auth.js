@@ -53,6 +53,8 @@ const exodeExchangeController = createExodeExchangeController({
   invalidateCachedTools,
   getMCPManager,
   getTenantId,
+  /** So exode-provisioned accounts get a Balance record like every other registration path */
+  getAppConfig,
 });
 const getCloudFrontAuthCookieRefreshResult = (req, res) => {
   const warmedResult = req.cloudFrontAuthCookieRefreshResult;

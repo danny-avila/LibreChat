@@ -103,6 +103,24 @@ export function getExodeFrameAncestors(): string {
   return allowedOrigins.length > 0 ? allowedOrigins.join(' ') : "'none'";
 }
 
-export function isExodeEmbedRequest(path: string, embedQuery?: string): boolean {
-  return path === '/embed/exode' || embedQuery === 'exode';
+/**
+ * Whether this request should be served with the embed CSP.
+ *
+ * `embedQuery` is widened to Express's real type: a repeated parameter (`?embed=exode&embed=x`)
+ * arrives as an array, and a strict `=== 'exode'` on it is false — which dropped the
+ * `frame-ancestors` header while the client, reading the same URL with
+ * `URLSearchParams.get('embed')`, still saw `'exode'` and activated the bridge. That is the wrong
+ * way round to fail, so any occurrence of `exode` counts here: the check errs towards *setting*
+ * the restriction.
+ */
+export function isExodeEmbedRequest(path: string, embedQuery?: unknown): boolean {
+  if (path === '/embed/exode') {
+    return true;
+  }
+
+  if (Array.isArray(embedQuery)) {
+    return embedQuery.some((value) => value === 'exode');
+  }
+
+  return embedQuery === 'exode';
 }

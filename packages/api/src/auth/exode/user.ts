@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { SystemRoles } from 'librechat-data-provider';
-import type { IUser, CreateUserRequest } from '@librechat/data-schemas';
+import type { IUser, CreateUserRequest, BalanceConfig } from '@librechat/data-schemas';
 import type { FilterQuery, Types } from 'mongoose';
 import type { ExodeExchangeUser, ExodeIdentity } from './types';
 import { ExodeExchangeError } from './types';
@@ -10,11 +10,17 @@ export interface ExodeUserDeps {
   findUser: (criteria: FilterQuery<IUser>) => Promise<IUser | null>;
   createUser: (
     data: CreateUserRequest,
-    balanceConfig?: undefined,
+    balanceConfig?: BalanceConfig,
     disableTTL?: boolean,
     returnUser?: boolean,
   ) => Promise<Types.ObjectId | Partial<IUser>>;
   updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  /**
+   * The deployment's balance settings, as every other registration path passes them.
+   * Omitted, no Balance record is created and the account cannot spend anything on a
+   * deployment that runs with CHECK_BALANCE — the user reaches the chat and every message fails.
+   */
+  balanceConfig?: BalanceConfig;
 }
 
 function isDuplicateKeyError(error: unknown): boolean {
@@ -88,7 +94,7 @@ export async function upsertExodeUser(
         provider: 'exode',
         role: SystemRoles.USER,
       },
-      undefined,
+      deps.balanceConfig,
       true,
       false,
     );

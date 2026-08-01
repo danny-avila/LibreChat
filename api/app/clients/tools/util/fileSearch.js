@@ -122,6 +122,12 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
         return body;
       };
 
+      /**
+       * Each result is paired with the file it came from here, at the point the request is made.
+       * Filtering out failures below reindexes the array, so carrying the file alongside its
+       * result is what keeps them associated — recovering it from a positional index afterwards
+       * silently mis-attributes every citation after the first failed query.
+       */
       const queryPromises = files.map((file) =>
         axios
           .post(`${process.env.RAG_API_URL}/query`, createQueryBody(file), {
@@ -130,6 +136,7 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
               'Content-Type': 'application/json',
             },
           })
+          .then((result) => ({ file, result }))
           .catch((error) => {
             logAxiosError({
               message: 'Error encountered in `file_search` while querying file',
@@ -140,19 +147,19 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
       );
 
       const results = await Promise.all(queryPromises);
-      const validResults = results.filter((result) => result !== null);
+      const validResults = results.filter((entry) => entry !== null);
 
       if (validResults.length === 0) {
         return ['No results found or errors occurred while searching the files.', undefined];
       }
 
       const formattedResults = validResults
-        .flatMap((result, fileIndex) =>
+        .flatMap(({ file, result }) =>
           result.data.map(([docInfo, distance]) => ({
             filename: docInfo.metadata.source.split('/').pop(),
             content: docInfo.page_content,
             distance,
-            file_id: files[fileIndex]?.file_id,
+            file_id: file?.file_id,
             page: docInfo.metadata.page || null,
           })),
         )
