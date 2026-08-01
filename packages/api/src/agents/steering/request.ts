@@ -1,13 +1,13 @@
 import { createHash, randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import { SteerEvents } from 'librechat-data-provider';
+import type { IMongoFile } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
 import type {
   GenerationProtocolVersion,
   SteerQueueItem,
   SteerReceipt,
 } from '~/stream/interfaces/IJobStore';
-import type { SteerFileFetcher } from './media';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,
@@ -38,6 +38,13 @@ export interface SteerRequestUser {
   id?: string;
   tenantId?: string;
 }
+
+/** `db.getFiles`-shaped dependency (injected — this package has no DB access). */
+export type SteerFileFetcher = (
+  filter: Record<string, unknown>,
+  sortOptions: Record<string, unknown>,
+  selectFields: Record<string, unknown>,
+) => Promise<IMongoFile[] | null | undefined>;
 
 export interface SteerRequestBody {
   conversationId?: unknown;

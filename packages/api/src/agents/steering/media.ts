@@ -3,9 +3,9 @@ import { formatMessage } from '@librechat/agents';
 import { ContentTypes } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
+import type { SteerRequestUser, SteerFileFetcher } from './request';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
 import type { SteerMediaResult } from './runtime';
-import type { SteerRequestUser } from './request';
 import { toSteerFileRef, collectFileIds, buildOwnerFilter } from './refs';
 import { prependFileContext } from '../client';
 
@@ -17,13 +17,6 @@ export interface SteerMediaClient {
     files: IMongoFile[],
   ): Promise<IMongoFile[] | undefined>;
 }
-
-/** `db.getFiles`-shaped dependency (injected — this package has no DB access). */
-export type SteerFileFetcher = (
-  filter: Record<string, unknown>,
-  sortOptions: Record<string, unknown>,
-  selectFields: Record<string, unknown>,
-) => Promise<IMongoFile[] | null | undefined>;
 
 interface PseudoMessage {
   messageId: string;
