@@ -1,5 +1,6 @@
 import React from 'react';
-import { RecoilRoot, useSetRecoilState, type MutableSnapshot } from 'recoil';
+import { RecoilRoot, useSetRecoilState } from 'recoil';
+import type { MutableSnapshot } from 'recoil';
 import type { Artifact } from '~/common';
 import { act, fireEvent, render, screen } from 'test/layout-test-utils';
 import { ArtifactsProvider, EditorProvider } from '~/Providers';
