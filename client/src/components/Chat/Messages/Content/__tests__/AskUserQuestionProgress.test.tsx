@@ -17,15 +17,18 @@ jest.mock('~/Providers/ChatContext', () => {
   };
 });
 
-let mockLiveAsk: { actionId: string; tool_call_id?: string } | null = null;
+let mockLivePauses: { ids: string[]; hasUnattributed: boolean } = {
+  ids: [],
+  hasUnattributed: false,
+};
 
 jest.mock('~/data-provider', () => ({
-  useGetMessagesByConvoId: () => ({ data: mockLiveAsk }),
+  useGetMessagesByConvoId: () => ({ data: mockLivePauses }),
 }));
 
 describe('AskUserQuestionProgress', () => {
   beforeEach(() => {
-    mockLiveAsk = null;
+    mockLivePauses = { ids: [], hasUnattributed: false };
   });
 
   test('streams the question text from partial args', () => {
@@ -56,7 +59,7 @@ describe('AskUserQuestionProgress', () => {
   });
 
   test('hides once the interactive pause for this call is live', () => {
-    mockLiveAsk = { actionId: 'action-1', tool_call_id: 'call_1' };
+    mockLivePauses = { ids: ['call_1'], hasUnattributed: false };
 
     const { container } = render(
       <AskUserQuestionProgress args={'{"question":"Ready?"}'} toolCallId="call_1" />,
@@ -66,7 +69,7 @@ describe('AskUserQuestionProgress', () => {
   });
 
   test('hides for an unattributed live pause (no tool_call_id on the payload)', () => {
-    mockLiveAsk = { actionId: 'action-1' };
+    mockLivePauses = { ids: [], hasUnattributed: true };
 
     const { container } = render(
       <AskUserQuestionProgress args={'{"question":"Ready?"}'} toolCallId="call_1" />,
@@ -76,12 +79,22 @@ describe('AskUserQuestionProgress', () => {
   });
 
   test("stays visible while a DIFFERENT call's pause is interactive", () => {
-    mockLiveAsk = { actionId: 'action-1', tool_call_id: 'call_1' };
+    mockLivePauses = { ids: ['call_1'], hasUnattributed: false };
 
     render(
       <AskUserQuestionProgress args={'{"question":"Second question?"}'} toolCallId="call_2" />,
     );
 
     expect(screen.getByText('Second question?')).toBeInTheDocument();
+  });
+
+  test('hides when its own pause is live alongside a newer sibling pause', () => {
+    mockLivePauses = { ids: ['call_1', 'call_2'], hasUnattributed: false };
+
+    const { container } = render(
+      <AskUserQuestionProgress args={'{"question":"First question?"}'} toolCallId="call_1" />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
   });
 });

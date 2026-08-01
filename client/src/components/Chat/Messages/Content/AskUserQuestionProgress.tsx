@@ -1,6 +1,6 @@
 import { useContext } from 'react';
 import { MessageCircleQuestion } from 'lucide-react';
-import { findLiveAskUserQuestion } from '~/utils/approval';
+import { collectLiveAskToolCallIds } from '~/utils/approval';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { ChatContext } from '~/Providers/ChatContext';
 import parseJsonField from './Parts/parseJsonField';
@@ -31,20 +31,23 @@ export default function AskUserQuestionProgress({
   const localize = useLocalize();
   const conversationId = useContext(ChatContext)?.conversation?.conversationId;
   const enabled = conversationId != null && conversationId !== 'new';
-  const { data: liveAsk } = useGetMessagesByConvoId(enabled ? conversationId : '', {
+  const { data: livePauses } = useGetMessagesByConvoId(enabled ? conversationId : '', {
     enabled,
-    select: findLiveAskUserQuestion,
+    select: collectLiveAskToolCallIds,
   });
   const question = parseJsonField(args, 'question');
 
   /**
-   * The pause went interactive: the popover (or the interactive card) now owns
-   * this question's UI. An unattributed live ask (no `tool_call_id` on older
-   * payloads) can't be matched to a call, so treat it as owning every
-   * placeholder rather than duplicating the question on screen.
+   * THIS call's pause went interactive: the popover (or the interactive card)
+   * now owns the question's UI. Checked against every live pause, not just the
+   * newest, so a sibling pause arriving later can never resurrect this card
+   * next to its own interactive one. An unattributed live ask (no
+   * `tool_call_id` on older payloads) can't be matched to a call, so treat it
+   * as owning every placeholder rather than duplicating the question on screen.
    */
   const interactive =
-    liveAsk != null && (liveAsk.tool_call_id == null || liveAsk.tool_call_id === toolCallId);
+    livePauses != null &&
+    (livePauses.hasUnattributed || (toolCallId != null && livePauses.ids.includes(toolCallId)));
   if (interactive) {
     return null;
   }

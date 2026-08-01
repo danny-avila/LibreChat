@@ -424,12 +424,9 @@ export function splitOtherOption(options: Agents.AskUserQuestionOption[] | undef
  * in-flight cache, a replayed event) can put one back. Honouring it would
  * reopen the popover on a question the user already answered.
  */
-export function findLiveAskUserQuestion(messages: TMessage[] | null | undefined): {
-  actionId: string;
-  question: Agents.AskUserQuestionRequest;
-  messageId: string;
-  tool_call_id?: string;
-} | null {
+export function findLiveAskUserQuestion(
+  messages: TMessage[] | null | undefined,
+): { actionId: string; question: Agents.AskUserQuestionRequest; messageId: string } | null {
   if (!Array.isArray(messages)) {
     return null;
   }
@@ -443,16 +440,48 @@ export function findLiveAskUserQuestion(messages: TMessage[] | null | undefined)
       const part = content[j];
       if (isAskUserQuestionPart(part) && !isAnsweredAskUserQuestionPart(part)) {
         const ask = (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION];
-        return {
-          actionId: ask.actionId,
-          question: ask.question,
-          messageId: message.messageId,
-          tool_call_id: ask.tool_call_id,
-        };
+        return { actionId: ask.actionId, question: ask.question, messageId: message.messageId };
       }
     }
   }
   return null;
+}
+
+/**
+ * EVERY live (unanswered) ask pause across the conversation, as the set of
+ * tool_call_ids their synthetic parts attribute, plus whether any live part
+ * lacks attribution (older payloads). Unlike {@link findLiveAskUserQuestion}
+ * (newest-only, the popover's signal), this lets a per-call surface — the
+ * streaming progress card — test whether ITS OWN pause is live even when a
+ * newer sibling pause exists.
+ */
+export function collectLiveAskToolCallIds(messages: TMessage[] | null | undefined): {
+  ids: string[];
+  hasUnattributed: boolean;
+} {
+  const ids: string[] = [];
+  let hasUnattributed = false;
+  if (!Array.isArray(messages)) {
+    return { ids, hasUnattributed };
+  }
+  for (const message of messages) {
+    const content = message?.content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    for (const part of content) {
+      if (!isAskUserQuestionPart(part) || isAnsweredAskUserQuestionPart(part)) {
+        continue;
+      }
+      const toolCallId = (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION].tool_call_id;
+      if (toolCallId == null) {
+        hasUnattributed = true;
+      } else {
+        ids.push(toolCallId);
+      }
+    }
+  }
+  return { ids, hasUnattributed };
 }
 
 /**
