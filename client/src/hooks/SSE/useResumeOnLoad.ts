@@ -12,10 +12,7 @@ import {
   carriedSteerContext,
   getBranchSiblingIndexesForTarget,
 } from '~/utils';
-import {
-  getGenerationProtocolVersion,
-  supportsGenerationProtocolV2,
-} from '~/data-provider/SSE/protocol';
+import { getGenerationProtocolVersion } from '~/data-provider/SSE/protocol';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useStreamStatus } from '~/data-provider';
 import store from '~/store';
@@ -441,10 +438,8 @@ export default function useResumeOnLoad(
      * cached the replacement snapshot; allow the same conversation to be
      * processed again so this epoch becomes the active resume submission. */
     const generationProtocolVersion = getGenerationProtocolVersion(streamStatus);
-    const isGenerationProtocolV2 = supportsGenerationProtocolV2(streamStatus);
     const isUnconsumedHandoff =
-      streamStatus.generationHandoff === true &&
-      consumedHandoffStatusRef.current !== streamStatus;
+      streamStatus.generationHandoff === true && consumedHandoffStatusRef.current !== streamStatus;
     if (
       currentSubmission == null &&
       isUnconsumedHandoff &&
