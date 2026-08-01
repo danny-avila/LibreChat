@@ -85,8 +85,22 @@ option values themselves.
 
 No change to how connection or query errors propagate to the application layer —
 this stays a "harden the connection" PR, not an "change what users see" PR. The
-new event listeners only log; they don't retry, don't throw, and don't alter
-`connectDb()`'s return value or `cached.conn`.
+new event listeners only log; they don't retry and don't throw.
+
+**Amendment (ratified during Task 2 implementation):** implementing the
+`disconnected`/`reconnected` integration test surfaced a pre-existing bug in
+`connectDb()`: it cached `mongoose` (the module) into `cached.conn`, and
+`_readyState` does not exist on that object (only on `mongoose.connection`).
+This meant `cached.conn?._readyState === 1` was always `false`, so the "return
+cached connection" branch could never trigger — every call reconnected from
+scratch instead of reusing the cached connection, which undermines this very
+PR's goal of stable, recycled connections. `connectDb()` now resolves
+`cached.conn` to `mongoose.connection` instead of `mongoose`. No caller in the
+codebase used the old return value as anything other than a readiness check or
+discarded it outright (`api/server/index.js:114`,
+`api/server/experimental.js:281`), so this is safe. This was flagged by the
+task reviewer as a plan-conflicting change and ratified by the project owner
+rather than reverted.
 
 ### Testing
 

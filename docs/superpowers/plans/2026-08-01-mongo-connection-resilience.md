@@ -301,6 +301,8 @@ EOF
 - Consumes: nothing from Task 1 beyond the existing `mongoose.connection` singleton and `logger` already imported in `api/db/connect.js`.
 - Produces: no new exports. Purely adds listeners as a module-load side effect, matching the existing `error` listener already in the file.
 
+**Amendment (ratified, see spec doc):** implementing this task's own Step 1 test (`expect(conn.readyState).toBe(1)`) surfaced a pre-existing bug — `connectDb()` cached the `mongoose` module into `cached.conn`, which has no `_readyState`, so the cache-hit branch could never trigger. `connectDb()`'s `mongoose.connect(...).then((mongoose) => { return mongoose; })` is amended to `return mongoose.connection;` as part of this task. This was flagged as a plan-conflicting change by the task reviewer and explicitly ratified by the project owner — no caller in the codebase relied on the old return value.
+
 - [ ] **Step 1: Write the failing tests**
 
 Append to `api/db/connect.spec.js` (add these requires at the top of the file, above the existing `buildMongoConnectionOptions` describe block):
