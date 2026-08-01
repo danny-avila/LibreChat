@@ -162,7 +162,7 @@ async function submitAndCapture(page: Page, submit: Locator) {
 
 async function expectCompletedApprovalToolOutput(page: Page, toolCallId: string, output: string) {
   const view = messagesView(page);
-  const groupToggle = view.getByRole('button', { name: /^Used \d+ tools$/ }).last();
+  const groupToggle = view.getByRole('button', { name: /^Ran \d+ actions/ }).last();
   const toolCall = view.locator(`[data-testid="tool-call"][data-tool-call-id="${toolCallId}"]`);
 
   // On reload, the conversation arrives asynchronously and multi-tool groups
@@ -502,8 +502,7 @@ test.describe('tool approvals', () => {
       await expect(submit).toBeEnabled();
 
       const groupToggle = messagesView(page).getByRole('button', {
-        name: 'Used 2 tools',
-        exact: true,
+        name: /^Running 2 actions/,
       });
       const groupPanel = messagesView(page).getByTestId('tool-call-group-panel').last();
       await Promise.all([
