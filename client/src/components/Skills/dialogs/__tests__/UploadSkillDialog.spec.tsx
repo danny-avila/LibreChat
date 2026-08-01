@@ -67,8 +67,8 @@ jest.mock('~/utils', () => ({
 }));
 
 function getFileInput(container: HTMLElement): HTMLInputElement {
-  const input = container.querySelector('input[type="file"]');
-  if (!(input instanceof HTMLInputElement)) {
+  const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+  if (input == null) {
     throw new Error('Upload input was not rendered');
   }
   return input;
