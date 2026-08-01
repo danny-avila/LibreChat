@@ -1,20 +1,20 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import * as Tabs from '@radix-ui/react-tabs';
-import { Code, Play, RefreshCw, X } from 'lucide-react';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
+import { Code, Maximize2, Minimize2, Play, RefreshCw, X } from 'lucide-react';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react';
+import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
+import { isCodeOnlyArtifact, isPreviewOnlyArtifact } from '~/utils/artifacts';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
 import ArtifactTabs from './ArtifactTabs';
-import { isCodeOnlyArtifact, isPreviewOnlyArtifact } from '~/utils/artifacts';
-import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, logger } from '~/utils';
 import store from '~/store';
 
 const MAX_BLUR_AMOUNT = 32;
@@ -26,9 +26,11 @@ export default function Artifacts() {
   const { isSharedConvo } = useShareContext();
   const isMobile = useMediaQuery('(max-width: 868px)');
   const previewRef = useRef<SandpackPreviewRef>();
+  const artifactContainerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [height, setHeight] = useState(90);
   const [isDragging, setIsDragging] = useState(false);
@@ -64,6 +66,15 @@ export default function Artifacts() {
       setIsMounted(false);
     };
   }, [isMobile]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === artifactContainerRef.current);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   useEffect(() => {
     if (!isMobile) {
@@ -186,6 +197,23 @@ export default function Artifacts() {
     setTimeout(() => setIsRefreshing(false), 750);
   };
 
+  const handleFullscreen = async () => {
+    const container = artifactContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    try {
+      if (document.fullscreenElement === container) {
+        await document.exitFullscreen();
+        return;
+      }
+      await container.requestFullscreen();
+    } catch (error) {
+      logger.error('Failed to toggle artifact fullscreen mode:', error);
+    }
+  };
+
   const closeArtifacts = () => {
     if (isMobile) {
       setIsClosing(true);
@@ -208,7 +236,7 @@ export default function Artifacts() {
 
   return (
     <Tabs.Root value={displayedTab} onValueChange={setActiveTab} asChild>
-      <div className="flex h-full w-full flex-col">
+      <div ref={artifactContainerRef} className="flex h-full w-full flex-col bg-surface-primary">
         {/* Mobile backdrop with dynamic blur */}
         {isMobile && (
           <div
@@ -310,6 +338,23 @@ export default function Artifacts() {
                       className="transition-transform duration-200"
                       aria-hidden="true"
                     />
+                  )}
+                </Button>
+              )}
+              {(displayedTab === 'preview' || isFullscreen) && document.fullscreenEnabled && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9"
+                  onClick={handleFullscreen}
+                  aria-label={localize(
+                    isFullscreen ? 'com_ui_exit_full_screen' : 'com_ui_enter_full_screen',
+                  )}
+                >
+                  {isFullscreen ? (
+                    <Minimize2 size={16} aria-hidden="true" />
+                  ) : (
+                    <Maximize2 size={16} aria-hidden="true" />
                   )}
                 </Button>
               )}
