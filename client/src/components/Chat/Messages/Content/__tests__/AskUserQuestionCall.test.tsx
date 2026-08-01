@@ -34,6 +34,14 @@ jest.mock('../AskUserQuestionProgress', () => ({
   },
 }));
 
+jest.mock('../Container', () => ({
+  __esModule: true,
+  default: ({ children }: { children: React.ReactNode }) => {
+    const { createElement } = jest.requireActual<typeof React>('react');
+    return createElement('div', null, children);
+  },
+}));
+
 describe('AskUserQuestionCall', () => {
   const args = JSON.stringify({
     question: 'How would you like me to get the data?',
@@ -52,6 +60,31 @@ describe('AskUserQuestionCall', () => {
 
     expect(screen.getByText('You answered:')).toBeInTheDocument();
     expect(screen.getByText('Use public data')).toBeInTheDocument();
+  });
+
+  test('holds the streaming cursor under the answered card while the resume is in flight', () => {
+    const { container } = render(
+      <AskUserQuestionCall
+        args={args}
+        output="public"
+        toolCallId="call_1"
+        isSubmitting
+        showCursor
+      />,
+    );
+
+    expect(screen.getByText('You answered:')).toBeInTheDocument();
+    expect(container.querySelector('.result-thinking')).not.toBeNull();
+  });
+
+  test('shows no cursor once the record is not the streaming tail', () => {
+    const settled = render(<AskUserQuestionCall args={args} output="public" showCursor />);
+    expect(settled.container.querySelector('.result-thinking')).toBeNull();
+
+    const midStream = render(
+      <AskUserQuestionCall args={args} output="public" toolCallId="call_1" isSubmitting />,
+    );
+    expect(midStream.container.querySelector('.result-thinking')).toBeNull();
   });
 
   test('renders schema rejection as an internal question failure, not a user answer', () => {
