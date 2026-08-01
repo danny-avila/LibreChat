@@ -4,6 +4,8 @@ on:
     paths:
       - 'api/**'
       - 'packages/**'
+      - 'config/circular-deps.mjs'
+      - '.github/workflows/backend-review.yml'
       - '!**.md'
 
 permissions:

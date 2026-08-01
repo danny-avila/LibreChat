@@ -8,6 +8,7 @@ import type {
   SteerQueueItem,
   SteerReceipt,
 } from '~/stream/interfaces/IJobStore';
+import type { SteerRequestUser } from './refs';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,
@@ -32,11 +33,6 @@ const STEER_DISARM_ACK_TIMEOUT_MS = 1000;
 /** Character cap for a single steer message (env-overridable). */
 export function getSteerMaxLength(): number {
   return parseInt(process.env.STEER_MAX_LENGTH ?? '', 10) || DEFAULT_STEER_MAX_LENGTH;
-}
-
-export interface SteerRequestUser {
-  id?: string;
-  tenantId?: string;
 }
 
 /** `db.getFiles`-shaped dependency (injected — this package has no DB access). */

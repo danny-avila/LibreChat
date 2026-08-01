@@ -25,9 +25,17 @@ const targets = [
     name: 'librechat-data-provider',
     dir: 'packages/data-provider',
     entries: ['src/index.ts', 'src/react-query/index.ts'],
-    alias: { src: 'src' },
-    internal: ['src/'],
+    alias: { 'librechat-data-provider/react-query': 'src/react-query/index.ts', src: 'src' },
+    internal: ['src/', 'librechat-data-provider/react-query'],
     minModules: 20,
+    /**
+     * Grandfathered: the core type modules (schemas, config, api-endpoints,
+     * types/{assistants,agents,runs,web}) hold six pre-existing type-only
+     * knots that need their own untangling PR. Runtime edges are still
+     * enforced; the exclusion is logged on every run so it cannot read as
+     * full coverage.
+     */
+    typeEdges: false,
   },
   {
     name: '@librechat/data-schemas',
@@ -36,6 +44,14 @@ const targets = [
     alias: { '~': 'src' },
     internal: ['~'],
     minModules: 75,
+  },
+  {
+    name: '@librechat/client',
+    dir: 'packages/client',
+    entries: ['src/index.ts'],
+    alias: { '~': 'src' },
+    internal: ['~'],
+    minModules: 100,
   },
   {
     name: 'api server',
@@ -47,20 +63,61 @@ const targets = [
   },
 ];
 
+/**
+ * Bundlers erase `import type` / `export type ... from` edges before building
+ * the module graph, so purely type-level cycles (the declaration-graph kind)
+ * would never be reported. Re-materialize each type-only specifier as a bare
+ * side-effect import so the scanned graph carries type edges too. Uses the
+ * real parser (not a regex) so imports inside string templates never count.
+ */
+const typeEdgesPlugin = (parseAst) => ({
+  name: 'type-edges',
+  transform(code, id) {
+    const extension = /\.([mc]?tsx?)(?:$|\?)/.exec(id)?.[1];
+    if (!extension) {
+      return null;
+    }
+    const { body } = parseAst(code, { lang: extension.endsWith('x') ? 'tsx' : 'ts' });
+    const specifiers = new Set();
+    for (const node of body) {
+      const kind = node.importKind ?? node.exportKind;
+      if (kind === 'type' && node.source?.value) {
+        specifiers.add(node.source.value);
+      }
+    }
+    if (specifiers.size === 0) {
+      return null;
+    }
+    const edges = [...specifiers].map((s) => `\nimport ${JSON.stringify(s)};`).join('');
+    return { code: code + edges, map: null };
+  },
+});
+
+/** Stub style/asset imports: rolldown no longer bundles CSS, and assets carry no module edges. */
+const assetsPlugin = {
+  name: 'assets-as-empty',
+  load(id) {
+    if (/\.(css|scss|sass|less|svg|png|jpe?g|gif|webp)(?:$|\?)/.test(id)) {
+      return { code: 'export {};', moduleType: 'js' };
+    }
+    return null;
+  },
+};
+
 /** Loads the rolldown instance the tsdown builds run on, keeping resolution semantics identical. */
 async function loadRolldown() {
   const apiRequire = createRequire(path.join(root, 'packages/api/package.json'));
   const tsdownRequire = createRequire(apiRequire.resolve('tsdown'));
-  const rolldownEntry = tsdownRequire.resolve('rolldown');
-  const { rolldown } = await import(pathToFileURL(rolldownEntry).href);
-  return rolldown;
+  const { rolldown } = await import(pathToFileURL(tsdownRequire.resolve('rolldown')).href);
+  const { parseAst } = await import(pathToFileURL(tsdownRequire.resolve('rolldown/parseAst')).href);
+  return { rolldown, parseAst };
 }
 
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (message) => message.replace(/\u001B\[[0-9;]*m/g, '');
 const relativize = (message) => stripAnsi(message).replaceAll(root + path.sep, '');
 
-async function scan(rolldown, target) {
+async function scan({ rolldown, parseAst }, target) {
   const cycles = [];
   const unresolved = [];
   const isInternal = (id) =>
@@ -75,6 +132,7 @@ async function scan(rolldown, target) {
       platform: 'node',
       resolve: { alias },
       external: (id) => !isInternal(id),
+      plugins: [...(target.typeEdges === false ? [] : [typeEdgesPlugin(parseAst)]), assetsPlugin],
       checks: { circularDependency: true },
       onLog(_level, log) {
         if (log.code === 'CIRCULAR_DEPENDENCY') {
@@ -111,7 +169,11 @@ function report({ target, cycles, unresolved, modules, error }) {
   }
 
   if (problems.length === 0) {
-    console.log(`✓ ${target.name}: no circular dependencies (${modules} modules)`);
+    const scope =
+      target.typeEdges === false
+        ? 'runtime edges only, type edges grandfathered'
+        : 'runtime + type edges';
+    console.log(`✓ ${target.name}: no circular dependencies (${modules} modules, ${scope})`);
     return true;
   }
   console.error(`✗ ${target.name}:`);
@@ -121,8 +183,8 @@ function report({ target, cycles, unresolved, modules, error }) {
   return false;
 }
 
-const rolldown = await loadRolldown();
-const results = await Promise.all(targets.map((target) => scan(rolldown, target)));
+const engine = await loadRolldown();
+const results = await Promise.all(targets.map((target) => scan(engine, target)));
 const passed = results.map(report).every(Boolean);
 
 if (!passed) {

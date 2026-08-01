@@ -3,9 +3,10 @@ import { formatMessage } from '@librechat/agents';
 import { ContentTypes } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
-import type { SteerRequestUser, SteerFileFetcher } from './request';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
+import type { SteerFileFetcher } from './request';
 import type { SteerMediaResult } from './runtime';
+import type { SteerRequestUser } from './refs';
 import { toSteerFileRef, collectFileIds, buildOwnerFilter } from './refs';
 import { prependFileContext } from '../client';
 
