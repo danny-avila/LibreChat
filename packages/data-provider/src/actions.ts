@@ -636,6 +636,31 @@ export type DomainValidationResult = {
   normalizedClientDomain?: string;
 };
 
+function getExplicitPort(value: string): string | null {
+  const protocolSeparatorIndex = value.indexOf('://');
+  const authorityStart = protocolSeparatorIndex === -1 ? 0 : protocolSeparatorIndex + 3;
+  const authority = value.slice(authorityStart).split(/[/?#]/, 1)[0];
+  const host = authority.slice(authority.lastIndexOf('@') + 1);
+  const portMatch = host.startsWith('[')
+    ? host.match(/^\[[^\]]+\]:(\d+)$/)
+    : host.match(/^[^:]+:(\d+)$/);
+
+  if (!portMatch) {
+    return null;
+  }
+
+  const port = Number(portMatch[1]);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`Invalid port in domain: ${value}`);
+  }
+
+  return String(port);
+}
+
+function getDefaultActionPort(protocol: string): string {
+  return protocol === 'https:' ? '443' : '80';
+}
+
 /**
  * Validates client domain matches OpenAPI spec server URL domain (SSRF prevention).
  * @param clientProvidedDomain - Domain from client (with/without protocol)
@@ -669,6 +694,7 @@ export function validateActionDomain(
     /** Extract hostname from client domain if it's a full URL */
     let clientHostname = clientProvidedDomain;
     let clientHasProtocol = false;
+    const clientExplicitPort = getExplicitPort(clientProvidedDomain);
 
     // Check for any protocol in the client domain
     if (clientProvidedDomain.includes('://')) {
@@ -689,6 +715,9 @@ export function validateActionDomain(
         // If parsing fails, treat as hostname
         clientHasProtocol = false;
       }
+    } else if (clientExplicitPort !== null) {
+      const clientUrl = new URL(`https://${clientProvidedDomain}`);
+      clientHostname = clientUrl.hostname;
     }
 
     /** Normalize IPv6 addresses by removing brackets for comparison */
@@ -718,20 +747,33 @@ export function validateActionDomain(
       }
     }
 
-    if (
+    const domainMatches =
       normalizedSpecDomain === normalizedClientDomain ||
-      (!clientHasProtocol && isIPAddress && normalizedClientHostname === normalizedSpecHostname)
-    ) {
+      (!clientHasProtocol && isIPAddress && normalizedClientHostname === normalizedSpecHostname);
+
+    if (!domainMatches) {
       return {
-        isValid: true,
+        isValid: false,
+        message: `Domain mismatch: Client provided '${clientProvidedDomain}', but spec uses '${specHostname}'`,
         normalizedSpecDomain,
         normalizedClientDomain,
       };
     }
 
+    if (clientExplicitPort !== null) {
+      const specEffectivePort = specUrl.port || getDefaultActionPort(specUrl.protocol);
+      if (clientExplicitPort !== specEffectivePort) {
+        return {
+          isValid: false,
+          message: `Port mismatch: Client provided '${clientProvidedDomain}', but spec uses effective port '${specEffectivePort}'`,
+          normalizedSpecDomain,
+          normalizedClientDomain,
+        };
+      }
+    }
+
     return {
-      isValid: false,
-      message: `Domain mismatch: Client provided '${clientProvidedDomain}', but spec uses '${specHostname}'`,
+      isValid: true,
       normalizedSpecDomain,
       normalizedClientDomain,
     };
