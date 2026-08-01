@@ -786,7 +786,15 @@ const createResponse = async (req, res) => {
           messageId: responseId,
           conversationId,
         },
-        user: { id: userId },
+        /**
+         * Forward the full resolved user (email, name, username, …), not just the
+         * id: `createRun` → `buildAgentInput` → `resolveConfigHeaders` needs those
+         * fields to substitute `{{LIBRECHAT_USER_*}}` custom-header placeholders.
+         * Passing only `{ id }` left them literal on the Agents API path while the
+         * chat UI (which forwards the full user) resolved them (issue #14479). The
+         * `id` fallback (`req.user?.id ?? 'api-user'`) is preserved via `userId`.
+         */
+        user: { ...createSafeUser(req.user), id: userId },
         tenantId: req.user?.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
@@ -965,7 +973,15 @@ const createResponse = async (req, res) => {
           messageId: responseId,
           conversationId,
         },
-        user: { id: userId },
+        /**
+         * Forward the full resolved user (email, name, username, …), not just the
+         * id: `createRun` → `buildAgentInput` → `resolveConfigHeaders` needs those
+         * fields to substitute `{{LIBRECHAT_USER_*}}` custom-header placeholders.
+         * Passing only `{ id }` left them literal on the Agents API path while the
+         * chat UI (which forwards the full user) resolved them (issue #14479). The
+         * `id` fallback (`req.user?.id ?? 'api-user'`) is preserved via `userId`.
+         */
+        user: { ...createSafeUser(req.user), id: userId },
         tenantId: req.user?.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */

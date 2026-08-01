@@ -557,6 +557,35 @@ describe('createResponse controller', () => {
         }),
       );
     });
+
+    it('forwards the full resolved user (not just the id) to createRun so {{LIBRECHAT_USER_*}} header placeholders resolve (issue #14479)', async () => {
+      const api = require('@librechat/api');
+      /**
+       * `createSafeUser` projects the allowed user fields (id, email, name,
+       * username, …). Echo those here so we can assert the controller forwards
+       * the full user — header resolution (`resolveConfigHeaders` →
+       * `processUserPlaceholders`) needs email/name/username, not just the id,
+       * to substitute `{{LIBRECHAT_USER_EMAIL}}` and friends. Passing only
+       * `{ id }` left those placeholders literal on the Agents API path.
+       */
+      api.createSafeUser.mockImplementation((u) =>
+        u ? { id: u.id, email: u.email, name: u.name, username: u.username } : {},
+      );
+      req.user = {
+        id: 'user-123',
+        email: 'alice@example.com',
+        name: 'Alice',
+        username: 'alice',
+      };
+
+      await createResponse(req, res);
+
+      expect(api.createRun).toHaveBeenCalledTimes(1);
+      const runArgs = api.createRun.mock.calls[0][0];
+      expect(runArgs.user).toEqual(
+        expect.objectContaining({ id: 'user-123', email: 'alice@example.com' }),
+      );
+    });
   });
 
   describe('token usage recording - streaming', () => {
