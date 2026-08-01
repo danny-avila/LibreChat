@@ -370,11 +370,11 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       const composerText = e.currentTarget.value;
       if (composerText.trim().length > 0) {
         // The composer IS the free-form answer box: Enter submits the typed
-        // text (before useTextarea's submitting-lock can swallow it). Not for
-        // a batch, which answers in its card — its Enter belongs to the normal
-        // send path, so leave the event untouched rather than preventDefault
-        // an event we are about to decline.
-        if (e.key === 'Enter' && !e.shiftKey && !batchMode) {
+        // text (before useTextarea's submitting-lock can swallow it). The
+        // newline chords are left to the normal path so the answer box breaks
+        // lines the same way the composer does. A batch answers in its card,
+        // so its Enter belongs to the normal send path.
+        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !batchMode) {
           e.preventDefault();
           return submitText(composerText);
         }
