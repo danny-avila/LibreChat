@@ -348,8 +348,10 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       const composerText = e.currentTarget.value;
       if (composerText.trim().length > 0) {
         // The composer IS the free-form answer box: Enter submits the typed
-        // text (before useTextarea's submitting-lock can swallow it).
-        if (e.key === 'Enter' && !e.shiftKey) {
+        // text (before useTextarea's submitting-lock can swallow it). The
+        // newline chords are left to the normal path so the answer box breaks
+        // lines the same way the composer does.
+        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
           e.preventDefault();
           return submitText(composerText);
         }
