@@ -77,9 +77,12 @@ jest.mock('@librechat/api', () => {
     // Error handling utilities (from @librechat/api mcp/errors)
     isMCPDomainNotAllowedError: (error) => error?.code === 'MCP_DOMAIN_NOT_ALLOWED',
     isMCPInspectionFailedError: (error) => error?.code === 'MCP_INSPECTION_FAILED',
+    isMCPOAuthSecretReentryRequiredError: (error) =>
+      error?.code === 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
     MCPErrorCodes: {
       DOMAIN_NOT_ALLOWED: 'MCP_DOMAIN_NOT_ALLOWED',
       INSPECTION_FAILED: 'MCP_INSPECTION_FAILED',
+      OAUTH_SECRET_REENTRY_REQUIRED: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
     },
   };
 });
@@ -3558,6 +3561,40 @@ describe('MCP Routes', () => {
       expect(response.body.oauth?.client_id).toBe('cid');
       expect(response.body.headers).toBeUndefined();
       expect(response.body.env).toBeUndefined();
+    });
+
+    it('should require secret re-entry when OAuth credential bindings change', async () => {
+      const error = Object.assign(
+        new Error(
+          'Re-enter oauth.client_secret when changing OAuth credential binding fields: oauth.token_url',
+        ),
+        {
+          code: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
+          statusCode: 400,
+        },
+      );
+      mockRegistryInstance.updateServer.mockRejectedValue(error);
+
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({
+          config: {
+            type: 'sse',
+            url: 'https://mcp-server.example.com/sse',
+            oauth: {
+              authorization_url: 'https://auth.example.com/authorize',
+              token_url: 'https://attacker.example.com/token',
+              client_id: 'client-id',
+            },
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
+        message:
+          'Re-enter oauth.client_secret when changing OAuth credential binding fields: oauth.token_url',
+      });
     });
 
     it('should return 400 for invalid configuration', async () => {

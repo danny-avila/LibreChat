@@ -10,6 +10,7 @@ import type { AllMethods, MCPServerDocument } from '@librechat/data-schemas';
 
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
+import { MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
 import { AccessControlService } from '~/acl/accessControlService';
 
 /**
@@ -90,6 +91,73 @@ function sanitizeUserManagedOAuthConfig(config: ParsedServerConfig): ParsedServe
       }),
     },
   };
+}
+
+function normalizeOAuthUrl(value?: string): string | undefined {
+  if (!value) {
+    return value;
+  }
+
+  try {
+    return new URL(value).href;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeOAuthMethods(values?: readonly string[]): string | undefined {
+  if (!values) {
+    return undefined;
+  }
+  return JSON.stringify([...new Set(values)].sort());
+}
+
+function getChangedOAuthSecretBindingFields(
+  existingConfig: MCPServerDocument['config'],
+  updatedConfig: ParsedServerConfig,
+): string[] {
+  const existingOAuth = existingConfig.oauth;
+  const updatedOAuth = updatedConfig.oauth;
+  if (!existingOAuth || !updatedOAuth) {
+    return [];
+  }
+
+  const fields = [
+    ['url', normalizeOAuthUrl(existingConfig.url), normalizeOAuthUrl(updatedConfig.url)],
+    [
+      'oauth.authorization_url',
+      normalizeOAuthUrl(existingOAuth.authorization_url),
+      normalizeOAuthUrl(updatedOAuth.authorization_url),
+    ],
+    [
+      'oauth.token_url',
+      normalizeOAuthUrl(existingOAuth.token_url),
+      normalizeOAuthUrl(updatedOAuth.token_url),
+    ],
+    ['oauth.client_id', existingOAuth.client_id, updatedOAuth.client_id],
+    [
+      'oauth.token_exchange_method',
+      existingOAuth.token_exchange_method,
+      updatedOAuth.token_exchange_method,
+    ],
+    [
+      'oauth.token_endpoint_auth_methods_supported',
+      normalizeOAuthMethods(existingOAuth.token_endpoint_auth_methods_supported),
+      normalizeOAuthMethods(updatedOAuth.token_endpoint_auth_methods_supported),
+    ],
+    [
+      'oauth.revocation_endpoint',
+      normalizeOAuthUrl(existingOAuth.revocation_endpoint),
+      normalizeOAuthUrl(updatedOAuth.revocation_endpoint),
+    ],
+    [
+      'oauth.revocation_endpoint_auth_methods_supported',
+      normalizeOAuthMethods(existingOAuth.revocation_endpoint_auth_methods_supported),
+      normalizeOAuthMethods(updatedOAuth.revocation_endpoint_auth_methods_supported),
+    ],
+  ] as const;
+
+  return fields.filter(([, existing, updated]) => existing !== updated).map(([field]) => field);
 }
 
 /**
@@ -225,10 +293,21 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     /** Transformed user-provided API key config (adds customUserVars and headers) */
     configToSave = this.transformUserApiKeyConfig(configToSave);
 
+    const preservesOAuthSecret =
+      !config.oauth?.client_secret &&
+      !!existingServer?.config?.oauth?.client_secret &&
+      !!configToSave.oauth;
+    if (preservesOAuthSecret && existingServer && configToSave.oauth) {
+      const changedFields = getChangedOAuthSecretBindingFields(existingServer.config, configToSave);
+      if (changedFields.length > 0) {
+        throw new MCPOAuthSecretReentryRequiredError(changedFields);
+      }
+    }
+
     /** Encrypted config before storing in database */
     configToSave = await this.encryptConfig(configToSave);
 
-    if (!config.oauth?.client_secret && existingServer?.config?.oauth?.client_secret) {
+    if (preservesOAuthSecret && existingServer && configToSave.oauth) {
       configToSave = {
         ...configToSave,
         oauth: {
