@@ -761,33 +761,34 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('retains 404 recovery and retries when persisted messages cannot be fetched', async () => {
+  it('bounds 404 retries when persisted messages remain unavailable', async () => {
     jest.useFakeTimers();
-    mockFetchQuery.mockRejectedValueOnce(new Error('message refetch failed'));
-    mockFetchStreamStatus.mockResolvedValue({ active: false, status: 'complete' });
+    mockFetchQuery.mockRejectedValue(new Error('message refetch failed'));
+    mockFetchStreamStatus.mockResolvedValue({ active: false });
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
 
     const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
     await flushMicrotasks();
-    const countBefore404 = mockSSEInstances.length;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+        await Promise.resolve();
+      });
+      await flushMicrotasks();
 
-    await act(async () => {
-      getLastSSE()._emit('error', { responseCode: 404 });
-      await Promise.resolve();
-    });
-    await flushMicrotasks();
+      if (attempt < 2) {
+        expect(mockSetRunEnd).not.toHaveBeenCalled();
+        expect(jest.getTimerCount()).toBe(1);
+        await advanceRetryTimer(30_000);
+      }
+    }
 
-    expect(mockSetRunEnd).not.toHaveBeenCalled();
-    expect(mockSetSubmission).not.toHaveBeenCalledWith(null);
-    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(true);
+    expect(mockSetRunEnd).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'aborted' }));
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
     expect(mockSetShowStopButton).toHaveBeenLastCalledWith(false);
-    expect(mockSSEInstances).toHaveLength(countBefore404);
-    expect(jest.getTimerCount()).toBe(1);
-
+    expect(jest.getTimerCount()).toBe(0);
     unmount();
-    await advanceRetryTimer(30_000);
-    expect(mockSSEInstances).toHaveLength(countBefore404);
   });
 
   it.each([
@@ -3646,7 +3647,7 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('retains terminal recovery and retries when persisted messages cannot be fetched', async () => {
+  it('preserves completion across delayed terminal reconciliation', async () => {
     jest.useFakeTimers();
     mockFetchStreamStatus.mockResolvedValue({
       active: false,
@@ -3689,6 +3690,19 @@ describe('useResumableSSE', () => {
     await advanceRetryTimer(30_000);
     expect(mockSSEInstances).toHaveLength(countAtCeiling + 1);
     expect(getLastSSE().stream).toHaveBeenCalledTimes(1);
+
+    mockFetchStreamStatus.mockRejectedValueOnce(new Error('job already cleaned up'));
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 404 });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'completed' }),
+    );
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
+    expect(jest.getTimerCount()).toBe(0);
     unmount();
   });
 
