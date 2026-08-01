@@ -48,7 +48,7 @@ async function advanceRecoveryDelay() {
 describe('useMissingConversationRecovery', () => {
   beforeEach(() => {
     jest.useFakeTimers();
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     mockUseStreamStatus.mockReturnValue({
       data: { active: false },
       isFetching: false,

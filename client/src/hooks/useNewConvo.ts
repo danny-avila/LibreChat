@@ -43,6 +43,7 @@ import { useApplyModelSpecEffects } from './Agents';
 import { usePauseGlobalAudio } from './Audio';
 import { useHasAccess } from '~/hooks';
 import store from '~/store';
+import { navigateToNewConversation } from './useNewConvo.utils';
 
 const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
@@ -269,11 +270,7 @@ const useNewConvo = (index = 0) => {
           if (!disableFocus) {
             requestChatFocus();
           }
-          if (replaceHistory) {
-            navigate(path, { replace: true });
-          } else {
-            navigate(path);
-          }
+          navigateToNewConversation(navigate, path, replaceHistory);
           return;
         }
 
