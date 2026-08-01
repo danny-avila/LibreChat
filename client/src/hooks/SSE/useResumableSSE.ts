@@ -2999,7 +2999,7 @@ export default function useResumableSSE(
             });
           }
 
-          if (persistedMessages == null) {
+          if (status.status === 'complete' && persistedMessages == null) {
             // Terminal status is authoritative for the job, but not for its
             // durable messages. A transient history failure must not clear the
             // submission and strand the completed response until reload.
@@ -3008,7 +3008,7 @@ export default function useResumableSSE(
           }
 
           const authoritativeValues = [
-            ...persistedMessages,
+            ...(persistedMessages ?? []),
             ...(status.resumeState?.aggregatedContent ?? status.aggregatedContent ?? []),
           ];
           const confirmedV2Terminal =

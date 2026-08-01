@@ -3656,6 +3656,52 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it.each([
+    { status: 'error' as const, outcome: 'error' as const },
+    { status: 'aborted' as const, outcome: 'aborted' as const },
+  ])('finalizes a $status status when persisted messages cannot be fetched', async (terminal) => {
+    jest.useFakeTimers();
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      status: terminal.status,
+      streamId: CONV_ID,
+      createdAt: 1000,
+      resumeState: { pendingSteers: [], aggregatedContent: [] },
+    });
+    mockFetchQuery.mockRejectedValueOnce(new Error('message refetch failed'));
+    const submission = {
+      ...buildSubmission(),
+      resumeStreamId: CONV_ID,
+      resumeGenerationCreatedAt: 1000,
+    } as TSubmission & { resumeStreamId: string; resumeGenerationCreatedAt: number };
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+      await act(async () => {
+        getLastSSE()._emit('error');
+        await Promise.resolve();
+      });
+      await advanceRetryTimer(delay);
+    }
+    const countAtCeiling = mockSSEInstances.length;
+    await act(async () => {
+      getLastSSE()._emit('error');
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: terminal.outcome }),
+    );
+    expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
+    expect(mockSSEInstances).toHaveLength(countAtCeiling);
+    unmount();
+  });
+
   it.each([undefined, 500, 503])(
     'does not call errorHandler for responseCode %s (reconnect path)',
     async (responseCode) => {
