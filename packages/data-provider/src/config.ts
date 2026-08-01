@@ -1191,6 +1191,7 @@ const ttsLocalaiSchema = z.object({
 });
 
 const ttsSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenlabs: ttsElevenLabsSchema.optional(),
@@ -1213,6 +1214,7 @@ const sttAzureOpenAISchema = z.object({
 });
 
 const sttSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   openai: sttOpenaiSchema.optional(),
   azureOpenAI: sttAzureOpenAISchema.optional(),
 });
@@ -1779,6 +1781,7 @@ export const webSearchSchema = z.object({
 export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 
 export const ocrSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   mistralModel: z.string().optional(),
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
   apiKeyPreview: apiKeyPreviewSchema,
