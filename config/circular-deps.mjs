@@ -64,11 +64,38 @@ const targets = [
 ];
 
 /**
- * Bundlers erase `import type` / `export type ... from` edges before building
- * the module graph, so purely type-level cycles (the declaration-graph kind)
- * would never be reported. Re-materialize each type-only specifier as a bare
- * side-effect import so the scanned graph carries type edges too. Uses the
- * real parser (not a regex) so imports inside string templates never count.
+ * Recursively collects every type-only dependency specifier: top-level
+ * `import type` / `export type ... from` declarations plus `import('...')`
+ * type expressions (TSImportType), which nest arbitrarily deep inside other
+ * declarations. All three forms carry the specifier as `source.value`.
+ */
+const collectTypeSpecifiers = (node, specifiers) => {
+  if (node === null || typeof node !== 'object') {
+    return;
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      collectTypeSpecifiers(item, specifiers);
+    }
+    return;
+  }
+  const kind = node.type === 'TSImportType' ? 'type' : (node.importKind ?? node.exportKind);
+  if (kind === 'type' && typeof node.source?.value === 'string') {
+    specifiers.add(node.source.value);
+  }
+  for (const value of Object.values(node)) {
+    if (value !== null && typeof value === 'object') {
+      collectTypeSpecifiers(value, specifiers);
+    }
+  }
+};
+
+/**
+ * Bundlers erase type-only edges before building the module graph, so purely
+ * type-level cycles (the declaration-graph kind) would never be reported.
+ * Re-materialize each type-only specifier as a bare side-effect import so the
+ * scanned graph carries type edges too. Uses the real parser (not a regex) so
+ * imports inside string templates never count.
  */
 const typeEdgesPlugin = (parseAst) => ({
   name: 'type-edges',
@@ -79,12 +106,7 @@ const typeEdgesPlugin = (parseAst) => ({
     }
     const { body } = parseAst(code, { lang: extension.endsWith('x') ? 'tsx' : 'ts' });
     const specifiers = new Set();
-    for (const node of body) {
-      const kind = node.importKind ?? node.exportKind;
-      if (kind === 'type' && node.source?.value) {
-        specifiers.add(node.source.value);
-      }
-    }
+    collectTypeSpecifiers(body, specifiers);
     if (specifiers.size === 0) {
       return null;
     }
