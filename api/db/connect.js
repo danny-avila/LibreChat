@@ -106,7 +106,7 @@ mongoose.connection.on('reconnected', () => {
 });
 
 mongoose.connection.on('close', () => {
-  logger.warn('[connectDb] MongoDB connection closed');
+  logger.info('[connectDb] MongoDB connection closed');
 });
 
 async function connectDb() {

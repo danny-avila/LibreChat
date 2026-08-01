@@ -98,7 +98,10 @@ PR's goal of stable, recycled connections. `connectDb()` now resolves
 `cached.conn` to `mongoose.connection` instead of `mongoose`. No caller in the
 codebase used the old return value as anything other than a readiness check or
 discarded it outright (`api/server/index.js:114`,
-`api/server/experimental.js:281`), so this is safe. This was flagged by the
+`api/server/experimental.js:281`, `config/connect.js:30`), so this is safe,
+except for `e2e/setup/cleanupUser.ts:28,74`, which called `.connection.close()`
+on the returned value and was fixed in the final review pass to call `.close()`
+directly on the connection object now returned. This was flagged by the
 task reviewer as a plan-conflicting change and ratified by the project owner
 rather than reverted.
 

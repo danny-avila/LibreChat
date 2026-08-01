@@ -121,8 +121,8 @@ describe('connectDb connection event listeners', () => {
     );
   });
 
-  test('logs a warning when the connection emits "close"', () => {
+  test('logs info when the connection emits "close"', () => {
     mongoose.connection.emit('close');
-    expect(logger.warn).toHaveBeenCalledWith('[connectDb] MongoDB connection closed');
+    expect(logger.info).toHaveBeenCalledWith('[connectDb] MongoDB connection closed');
   });
 });
