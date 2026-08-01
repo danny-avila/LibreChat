@@ -9,8 +9,9 @@ const MCP_TRANSPORT_PARAM = 'transport';
 export default function MCPAddRedirect() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { data: startupConfig, isLoading } = useGetStartupConfig();
-  const deepLinksEnabled = startupConfig?.interface?.mcpServers?.deepLinks !== false;
+  const { data: startupConfig, isLoading, isError } = useGetStartupConfig();
+  const deepLinksEnabled =
+    !isError && startupConfig != null && startupConfig.interface?.mcpServers?.deepLinks !== false;
 
   useEffect(() => {
     if (isLoading) {

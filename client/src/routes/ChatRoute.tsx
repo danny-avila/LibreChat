@@ -26,10 +26,12 @@ import {
   useAssistantListMap,
   useIdChangeEffect,
   useAppStartup,
+  useMCPDeepLink,
   useNewConvo,
   useLocalize,
 } from '~/hooks';
 import { ToolCallsMapProvider } from '~/Providers';
+import MCPDeepLinkDialog from '~/components/SidePanel/MCPBuilder/MCPDeepLinkDialog';
 import ChatView from '~/components/Chat/ChatView';
 import { NotificationSeverity } from '~/common';
 import useAuthRedirect from './useAuthRedirect';
@@ -40,6 +42,7 @@ const isValidChatProjectId = (projectId: string | null): projectId is string =>
   projectId != null && /^[a-f\d]{24}$/i.test(projectId);
 
 export default function ChatRoute() {
+  const mcpDeepLink = useMCPDeepLink();
   const { data: startupConfig } = useGetStartupConfig();
   const { isAuthenticated, user, roles } = useAuthRedirect();
   const queryClient = useQueryClient();
@@ -274,34 +277,31 @@ export default function ChatRoute() {
     conversation?.conversationId,
   ]);
 
+  let content: JSX.Element | null = null;
+
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
-    return (
+    content = (
       <div className="flex h-screen items-center justify-center" aria-live="polite" role="status">
         <Spinner className="text-text-primary" />
       </div>
     );
-  }
-
-  if (!isAuthenticated) {
-    return null;
-  }
-
-  // if not a conversation
-  if (conversation?.conversationId === Constants.SEARCH) {
-    return null;
-  }
-  // if conversationId not match
-  if (conversation?.conversationId !== conversationId && !conversation) {
-    return null;
-  }
-  // if conversationId is null
-  if (!conversationId) {
-    return null;
+  } else if (
+    isAuthenticated &&
+    conversation != null &&
+    conversation.conversationId !== Constants.SEARCH &&
+    conversationId
+  ) {
+    content = (
+      <ToolCallsMapProvider conversationId={conversation.conversationId ?? ''}>
+        <ChatView index={index} project={verifiedChatProjectId ? projectQuery.data : undefined} />
+      </ToolCallsMapProvider>
+    );
   }
 
   return (
-    <ToolCallsMapProvider conversationId={conversation.conversationId ?? ''}>
-      <ChatView index={index} project={verifiedChatProjectId ? projectQuery.data : undefined} />
-    </ToolCallsMapProvider>
+    <>
+      {isAuthenticated && <MCPDeepLinkDialog {...mcpDeepLink} />}
+      {content}
+    </>
   );
 }

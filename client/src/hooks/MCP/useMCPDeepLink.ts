@@ -13,7 +13,7 @@ interface MCPDeepLinkState {
   mcpTransport?: string;
 }
 
-interface MCPDeepLinkResult {
+export interface MCPDeepLinkResult {
   isOpen: boolean;
   initialValues: MCPServerInitialValues | undefined;
   onOpenChange: (open: boolean) => void;

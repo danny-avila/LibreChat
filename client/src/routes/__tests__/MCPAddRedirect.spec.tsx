@@ -26,7 +26,11 @@ const createTestRouter = (initialEntry: string) =>
 
 describe('MCPAddRedirect', () => {
   beforeEach(() => {
-    mockUseGetStartupConfig.mockReturnValue({ data: { interface: {} }, isLoading: false });
+    mockUseGetStartupConfig.mockReturnValue({
+      data: { interface: {} },
+      isLoading: false,
+      isError: false,
+    });
   });
 
   it('should redirect to /c/new forwarding all params via route state', async () => {
@@ -66,6 +70,7 @@ describe('MCPAddRedirect', () => {
     mockUseGetStartupConfig.mockReturnValue({
       data: { interface: { mcpServers: { deepLinks: false } } },
       isLoading: false,
+      isError: false,
     });
     const router = createTestRouter(
       '/mcps/add?name=My+Server&url=https://example.com/mcp&transport=sse',
@@ -81,7 +86,7 @@ describe('MCPAddRedirect', () => {
   });
 
   it('should not redirect while startup config is loading', async () => {
-    mockUseGetStartupConfig.mockReturnValue({ data: undefined, isLoading: true });
+    mockUseGetStartupConfig.mockReturnValue({ data: undefined, isLoading: true, isError: false });
     const router = createTestRouter('/mcps/add?name=My+Server');
     render(<RouterProvider router={router} future={{ v7_startTransition: true }} />);
 
@@ -89,5 +94,16 @@ describe('MCPAddRedirect', () => {
       expect(mockUseGetStartupConfig).toHaveBeenCalled();
     });
     expect(router.state.location.pathname).toBe('/mcps/add');
+  });
+
+  it('should discard MCP params when startup config fails to load', async () => {
+    mockUseGetStartupConfig.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+    const router = createTestRouter('/mcps/add?name=My+Server');
+    render(<RouterProvider router={router} future={{ v7_startTransition: true }} />);
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/c/new');
+    });
+    expect(router.state.location.state).toBeNull();
   });
 });
