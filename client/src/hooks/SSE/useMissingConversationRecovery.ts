@@ -2,8 +2,14 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
-import { fetchStreamStatus, streamStatusQueryKey, useStreamStatus } from '~/data-provider';
-import { isNotFoundError, removeConvoFromAllQueries } from '~/utils';
+import {
+  fetchStreamStatus,
+  getGenerationProtocolVersion,
+  streamStatusQueryKey,
+  useStreamStatus,
+} from '~/data-provider';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { dedupeSteersById, isNotFoundError, removeConvoFromAllQueries } from '~/utils';
 
 const MESSAGE_RECHECK_DELAY_MS = 1_000;
 
@@ -19,6 +25,7 @@ export default function useMissingConversationRecovery({
   onConfirmedMissing,
 }: MissingConversationRecoveryParams) {
   const queryClient = useQueryClient();
+  const convertSteersToQueued = useSteerConvert();
   const onConfirmedMissingRef = useRef(onConfirmedMissing);
   const { data: streamStatus, isFetching, isSuccess } = useStreamStatus(conversationId, enabled);
 
@@ -63,8 +70,27 @@ export default function useMissingConversationRecovery({
           return;
         }
 
-        queryClient.setQueryData(streamStatusQueryKey(conversationId), verifiedStatus);
+        queryClient.setQueryData(
+          streamStatusQueryKey(conversationId),
+          verifiedStatus.active
+            ? {
+                ...verifiedStatus,
+                generationHandoff: true,
+              }
+            : verifiedStatus,
+        );
         if (verifiedStatus.active) {
+          return;
+        }
+
+        const leftoverSteers = dedupeSteersById(
+          verifiedStatus.unrecoveredSteers,
+          verifiedStatus.resumeState?.pendingSteers,
+        );
+        if (leftoverSteers.length > 0) {
+          convertSteersToQueued(conversationId, leftoverSteers, {
+            generationProtocolVersion: getGenerationProtocolVersion(verifiedStatus),
+          });
           return;
         }
 
@@ -80,5 +106,13 @@ export default function useMissingConversationRecovery({
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [conversationId, enabled, isFetching, isSuccess, queryClient, streamStatus?.active]);
+  }, [
+    conversationId,
+    convertSteersToQueued,
+    enabled,
+    isFetching,
+    isSuccess,
+    queryClient,
+    streamStatus?.active,
+  ]);
 }

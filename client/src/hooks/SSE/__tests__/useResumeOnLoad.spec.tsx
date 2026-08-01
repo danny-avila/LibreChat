@@ -4,6 +4,7 @@ import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
+import type { StreamStatusResponse } from '~/data-provider';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import useResumeOnLoad from '../useResumeOnLoad';
 import store from '~/store';
@@ -360,6 +361,70 @@ describe('useResumeOnLoad', () => {
     );
     expect(replacementInstalls).toHaveLength(1);
     expect(observedSubmissions[observedSubmissions.length - 1]).toBeNull();
+  });
+
+  it('reprocesses a route when verification discovers a newly active generation', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    let status: StreamStatusResponse = { active: false };
+    mockUseStreamStatus.mockImplementation(() => ({
+      isSuccess: true,
+      isFetching: false,
+      data: status,
+    }));
+    const rendered = renderUseResumeOnLoad({
+      messages: [buildUserMessage(CONVERSATION_ID)],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(observedSubmissions.filter(Boolean)).toHaveLength(0);
+
+    status = {
+      active: true,
+      generationHandoff: true,
+      generationProtocolVersion: 2,
+      status: 'running',
+      streamId: CONVERSATION_ID,
+      createdAt: 2000,
+      resumeState: {
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'now active' }],
+        responseMessageId: RESPONSE_MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        userMessage: {
+          messageId: USER_MESSAGE_ID,
+          parentMessageId: String(Constants.NO_PARENT),
+          conversationId: CONVERSATION_ID,
+          text: 'Hello',
+        },
+      },
+    };
+    rendered.rerender();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const resumed = observedSubmissions[observedSubmissions.length - 1] as TSubmission & {
+      resumeStreamId?: string;
+      resumeGenerationCreatedAt?: number;
+    };
+    expect(resumed.resumeStreamId).toBe(CONVERSATION_ID);
+    expect(resumed.resumeGenerationCreatedAt).toBe(2000);
+
+    await act(async () => {
+      rendered.setSubmission(null);
+      await Promise.resolve();
+    });
+    expect(
+      observedSubmissions.filter(
+        (candidate) =>
+          (candidate as (TSubmission & { resumeGenerationCreatedAt?: number }) | null)
+            ?.resumeGenerationCreatedAt === 2000,
+      ),
+    ).toHaveLength(1);
   });
 
   it('strips the paused user/assistant rows from submission.messages (no duplicate on resume)', async () => {

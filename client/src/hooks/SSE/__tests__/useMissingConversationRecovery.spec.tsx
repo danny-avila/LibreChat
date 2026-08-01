@@ -8,6 +8,7 @@ import useMissingConversationRecovery from '../useMissingConversationRecovery';
 
 const mockUseStreamStatus = jest.fn();
 const mockFetchStreamStatus = jest.fn();
+const mockConvertSteersToQueued = jest.fn();
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -22,8 +23,15 @@ jest.mock('librechat-data-provider', () => {
 
 jest.mock('~/data-provider', () => ({
   fetchStreamStatus: (...args: unknown[]) => mockFetchStreamStatus(...args),
+  getGenerationProtocolVersion: (value: { generationProtocolVersion?: number }) =>
+    value.generationProtocolVersion === 2 ? 2 : 1,
   streamStatusQueryKey: (conversationId: string) => ['streamStatus', conversationId],
   useStreamStatus: (...args: unknown[]) => mockUseStreamStatus(...args),
+}));
+
+jest.mock('~/hooks/Chat/useSteerConvert', () => ({
+  __esModule: true,
+  default: () => mockConvertSteersToQueued,
 }));
 
 const CONVERSATION_ID = 'missing-conversation';
@@ -157,7 +165,12 @@ describe('useMissingConversationRecovery', () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const onConfirmedMissing = jest.fn();
     mockGetMessages.mockRejectedValue({ status: 404 });
-    mockFetchStreamStatus.mockResolvedValue({ active: true, streamId: CONVERSATION_ID });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      generationProtocolVersion: 2,
+      streamId: CONVERSATION_ID,
+      createdAt: 2000,
+    });
 
     renderHook(
       () =>
@@ -172,8 +185,61 @@ describe('useMissingConversationRecovery', () => {
 
     expect(queryClient.getQueryData(['streamStatus', CONVERSATION_ID])).toEqual({
       active: true,
+      generationHandoff: true,
+      generationProtocolVersion: 2,
       streamId: CONVERSATION_ID,
+      createdAt: 2000,
     });
     expect(onConfirmedMissing).not.toHaveBeenCalled();
+  });
+
+  it('retains the route and converts parked steers before a destructive status claim is lost', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onConfirmedMissing = jest.fn();
+    const unrecoveredSteer = { steerId: 'parked', text: 'recover me', createdAt: 1 };
+    const pendingSteer = { steerId: 'pending', text: 'also recover me', createdAt: 2 };
+    mockGetMessages.mockRejectedValue({ status: 404 });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      generationProtocolVersion: 2,
+      unrecoveredSteers: [unrecoveredSteer],
+      resumeState: { pendingSteers: [unrecoveredSteer, pendingSteer] },
+    });
+    queryClient.setQueryData([QueryKeys.allConversations], {
+      pages: [
+        {
+          conversations: [{ conversationId: CONVERSATION_ID }],
+          nextCursor: null,
+        },
+      ],
+      pageParams: [undefined],
+    });
+
+    renderHook(
+      () =>
+        useMissingConversationRecovery({
+          conversationId: CONVERSATION_ID,
+          enabled: true,
+          onConfirmedMissing,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    await advanceRecoveryDelay();
+
+    expect(mockConvertSteersToQueued).toHaveBeenCalledWith(
+      CONVERSATION_ID,
+      [unrecoveredSteer, pendingSteer],
+      { generationProtocolVersion: 2 },
+    );
+    expect(onConfirmedMissing).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData([QueryKeys.allConversations])).toEqual({
+      pages: [
+        {
+          conversations: [{ conversationId: CONVERSATION_ID }],
+          nextCursor: null,
+        },
+      ],
+      pageParams: [undefined],
+    });
   });
 });
