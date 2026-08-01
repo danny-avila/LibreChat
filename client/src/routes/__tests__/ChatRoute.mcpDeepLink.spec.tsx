@@ -1,6 +1,6 @@
 import React from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ChatRoute from '../ChatRoute';
 
 const mockUseMCPDeepLink = jest.fn(() => ({

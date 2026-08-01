@@ -1,7 +1,7 @@
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { MCPDeepLinkResult } from '~/hooks';
-import { useHasAccess } from '~/hooks';
 import MCPServerDialog from './MCPServerDialog';
+import { useHasAccess } from '~/hooks';
 
 export default function MCPDeepLinkDialog({
   isOpen,

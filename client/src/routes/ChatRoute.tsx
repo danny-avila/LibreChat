@@ -17,12 +17,6 @@ import {
   clearMessagesCache,
 } from '~/utils';
 import {
-  useGetConvoIdQuery,
-  useGetStartupConfig,
-  useGetEndpointsQuery,
-  useProjectQuery,
-} from '~/data-provider';
-import {
   useAssistantListMap,
   useIdChangeEffect,
   useAppStartup,
@@ -30,8 +24,14 @@ import {
   useNewConvo,
   useLocalize,
 } from '~/hooks';
-import { ToolCallsMapProvider } from '~/Providers';
+import {
+  useGetConvoIdQuery,
+  useGetStartupConfig,
+  useGetEndpointsQuery,
+  useProjectQuery,
+} from '~/data-provider';
 import MCPDeepLinkDialog from '~/components/SidePanel/MCPBuilder/MCPDeepLinkDialog';
+import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import { NotificationSeverity } from '~/common';
 import useAuthRedirect from './useAuthRedirect';
