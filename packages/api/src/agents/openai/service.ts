@@ -120,6 +120,8 @@ interface InitializedAgent {
   toolContextMap: Record<string, unknown>;
   maxContextTokens: number;
   userMCPAuthMap?: Record<string, Record<string, string>>;
+  /** Names of tools with the host-injected `intent` label param (see `agents/intent.ts`). */
+  intentToolNames?: string[];
   [key: string]: unknown;
 }
 
@@ -160,6 +162,18 @@ interface InitializeAgentParams {
    * absent / `undefined` disables background tool calls on this route.
    */
   backgroundToolsAvailable?: boolean;
+  /**
+   * Whether the admin-level `tool_intents` capability is enabled. Gates
+   * `applyIntentLabels` in `initializeAgent` (the injected `intent` label
+   * param); absent / `undefined` disables intent labels on this route.
+   *
+   * Boundary: injection and the capability-off sanitize operate on the
+   * `toolDefinitions`/`toolRegistry` surfaces. A custom `LoadToolsFn` that
+   * returns only structured tool INSTANCES bypasses both — such loaders
+   * must provide definition/registry surfaces to participate in intent
+   * labels (matching how the in-repo tool loader behaves).
+   */
+  toolIntentsAvailable?: boolean;
 }
 
 /**
@@ -467,6 +481,8 @@ export async function createAgentChatCompletion(
      *  tools in via tool_options.run_in_background silently lose the
      *  background param + poll tool on this route. */
     const backgroundToolsAvailable = capabilityEnabled(AgentCapabilities.run_in_background);
+    /** Same gate for the injected `intent` label param. */
+    const toolIntentsAvailable = capabilityEnabled(AgentCapabilities.tool_intents);
 
     // Initialize the agent first to check for disableStreaming
     const initializedAgent = await deps.initializeAgent({
@@ -485,6 +501,7 @@ export async function createAgentChatCompletion(
       codeEnvAvailable,
       statefulSessionsAvailable,
       backgroundToolsAvailable,
+      toolIntentsAvailable,
     });
 
     // Determine if streaming is enabled (check both request and agent config)
@@ -571,6 +588,13 @@ export async function createAgentChatCompletion(
               thread_id: conversationId,
               user_id: userId,
               user: safeUser,
+              /** Same per-agent channel the in-repo controllers thread via
+               *  `loadTools`: without it, the executor's PTC path cannot
+               *  strip host-injected `intent` params from the schemas the
+               *  sandbox bridge advertises on this route. */
+              ...(initializedAgent.intentToolNames?.length
+                ? { intentToolNames: initializedAgent.intentToolNames }
+                : {}),
             },
             signal: abortController.signal,
             streamMode: 'values',

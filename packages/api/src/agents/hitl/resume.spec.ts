@@ -437,6 +437,32 @@ describe('attachAskUserQuestionAnswer', () => {
     const content = [{ type: 'text' } as never, askPart('done')];
     expect(attachAskUserQuestionAnswer(content as never, question as never, 'x')).toBe(content);
   });
+
+  it('targets the payload tool_call_id exactly when provided (multi-ask turn)', () => {
+    const first = {
+      type: 'tool_call',
+      tool_call: { id: 'tc_a', name: 'ask_user_question', args: '' },
+    };
+    const second = {
+      type: 'tool_call',
+      tool_call: { id: 'tc_b', name: 'ask_user_question', args: '' },
+    };
+    const next = attachAskUserQuestionAnswer(
+      [first, second] as never,
+      question as never,
+      'the answer',
+      'tc_a',
+    );
+    expect((next[0] as { tool_call: { output?: string } }).tool_call.output).toBe('the answer');
+    expect((next[1] as { tool_call: { output?: string } }).tool_call.output).toBeUndefined();
+  });
+
+  it('returns the input untouched when the payload tool_call_id matches no part', () => {
+    const content = [askPart()];
+    expect(
+      attachAskUserQuestionAnswer(content as never, question as never, 'x', 'tc_missing'),
+    ).toBe(content);
+  });
 });
 
 describe('attachAskUserQuestionArgs (pause-time stamp)', () => {
@@ -461,5 +487,17 @@ describe('attachAskUserQuestionArgs (pause-time stamp)', () => {
       { type: 'tool_call', tool_call: { name: 'ask_user_question', args: '', output: 'done' } },
     ];
     expect(attachAskUserQuestionArgs(answered as never, question as never)).toBe(answered);
+  });
+
+  it('targets the payload tool_call_id exactly when provided (multi-ask turn)', () => {
+    const content = [
+      { type: 'tool_call', tool_call: { id: 'tc_a', name: 'ask_user_question', args: '' } },
+      { type: 'tool_call', tool_call: { id: 'tc_b', name: 'ask_user_question', args: '' } },
+    ];
+    const next = attachAskUserQuestionArgs(content as never, question as never, 'tc_a');
+    expect(JSON.parse((next[0] as { tool_call: { args: string } }).tool_call.args)).toEqual(
+      question,
+    );
+    expect((next[1] as { tool_call: { args: string } }).tool_call.args).toBe('');
   });
 });

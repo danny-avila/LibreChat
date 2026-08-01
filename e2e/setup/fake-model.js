@@ -26,9 +26,14 @@ const ASSERT_AGENT_CONTEXT_MARKER = 'E2E_ASSERT_AGENT_CONTEXT:';
 const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
+const ORDERED_REPLY_MARKER = 'E2E_ORDERED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
+const EMPTY_SLOW_REPLY_MARKER = 'E2E_EMPTY_SLOW_REPLY:';
 const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
 const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
+const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
+const STEER_LATE_REPLY_MARKER = 'E2E_STEER_LATE_REPLY:';
+const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
@@ -38,6 +43,7 @@ const TOOL_APPROVAL_MARKER = 'E2E_TOOL_APPROVAL:';
 const TOOL_APPROVAL_BATCH_MARKER = 'E2E_TOOL_APPROVAL_BATCH:';
 const TOOL_APPROVAL_RESTRICTED_MARKER = 'E2E_TOOL_APPROVAL_RESTRICTED:';
 const TOOL_APPROVAL_REWRITE_MARKER = 'E2E_TOOL_APPROVAL_REWRITE:';
+const DEFERRED_HITL_MARKER = 'E2E_DEFERRED_HITL:';
 const HANDOFF_MARKER = 'E2E_HANDOFF:';
 const HANDOFF_TOOL_PREFIX = 'lc_transfer_to_';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
@@ -49,9 +55,16 @@ const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
 const AGENT_CONTEXT_ASSERTION_FINAL_TEXT = 'E2E agent context assertion passed';
 const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
 const STEER_TOOL_FINAL_TEXT = 'E2E steer tool reply done';
+const STEER_SPLIT_FINAL_TEXT = 'E2E steer split reply done';
+const STEER_LATE_FINAL_TEXT = 'E2E steer late reply done';
+const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
+const ACTIVITY_FINAL_TEXT = 'E2E activity reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
+const ORDERED_CHUNK_DELAY_MS = 2;
+const ORDERED_REPLY_PIECES = 64;
 const SLOW_REPLY_CHUNKS = 160;
+const EMPTY_SLOW_REPLY_CHUNKS = 600;
 const RESUME_ICON_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_RESUME_ICON_CHUNK_DELAY_MS) || 60;
 const RESUME_ICON_REPLY_CHUNKS = 240;
 const CREATE_FILE_TOOL_NAME = 'create_file';
@@ -61,6 +74,10 @@ const SKILL_TOOL_NAME = 'skill';
 const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
 const BACKGROUND_TOOL_NAME = 'slow_echo_mcp_e2e-memory';
+const DEFERRED_HITL_TOOL_NAME = BACKGROUND_TOOL_NAME;
+const DEFERRED_HITL_CONTROL_TOOL_NAME = 'recall_fact_mcp_e2e-memory';
+const TOOL_SEARCH_NAME = 'tool_search';
+const ASK_USER_QUESTION_NAME = 'ask_user_question';
 const CHECK_BACKGROUND_TASK_TOOL_NAME = 'check_background_task';
 const APPROVAL_TOOL_NAME = 'approval_probe_mcp_e2e-memory';
 const APPROVAL_TOOL_CALL_PREFIX = 'call_e2e_approval_';
@@ -396,14 +413,30 @@ function replyResponses(text) {
     };
   }
 
-  const slowName = getMarkerValue(text, SLOW_REPLY_MARKER);
-  if (slowName) {
-    const chunks = Array.from(
-      { length: SLOW_REPLY_CHUNKS },
-      (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+  const orderedName = getMarkerValue(text, ORDERED_REPLY_MARKER);
+  if (orderedName) {
+    const pieces = Array.from(
+      { length: ORDERED_REPLY_PIECES },
+      (_, index) => `piece-${String(index).padStart(3, '0')}`,
     ).join(' ');
     return {
-      responses: [`E2E slow reply ${slowName} ${chunks}`],
+      responses: [`E2E ordered reply ${orderedName} ${pieces}`],
+      sleep: ORDERED_CHUNK_DELAY_MS,
+    };
+  }
+
+  const slowName = getMarkerValue(text, SLOW_REPLY_MARKER);
+  if (slowName) {
+    return slowReplyResponses(slowName);
+  }
+
+  /** Keep a generation live after `created` without producing any content
+   * that the abort persistence filter accepts. The browser regression waits
+   * for the user row, then interrupts this whitespace-only stream. */
+  const emptySlowName = getMarkerValue(text, EMPTY_SLOW_REPLY_MARKER);
+  if (emptySlowName) {
+    return {
+      responses: [' '.repeat(EMPTY_SLOW_REPLY_CHUNKS)],
       sleep: SLOW_CHUNK_DELAY_MS,
     };
   }
@@ -859,18 +892,193 @@ function steerToolReplyResponses(label, toolNames) {
       ],
     };
   }
-  const chunks = Array.from(
+  let invocation = 0;
+  return {
+    responses: [''],
+    sleep: SLOW_CHUNK_DELAY_MS,
+    resolveInvocation: async (messages) => {
+      invocation += 1;
+      if (invocation === 1) {
+        return {
+          response: `E2E steer tool preamble ${label} ${slowChunkPayload()}`,
+          toolCalls: [
+            {
+              id: `call_e2e_steer_${label}`,
+              name: toolName,
+              args: { fact: `steer boundary ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      return { response: `${STEER_TOOL_FINAL_TEXT} ${label} ${steerEchoSuffix(messages)}` };
+    },
+  };
+}
+
+/**
+ * Model-visible injection proof: echoes every steer-injected user message the
+ * model actually received (`additional_kwargs.source === 'steer'`, stamped by
+ * the SDK's `convertInjectedMessages`), so specs can assert the words reached
+ * the model rather than only that the UI rendered a part.
+ */
+function steerEchoSuffix(messages) {
+  const steerTexts = (messages ?? [])
+    .filter((message) => message?.additional_kwargs?.source === 'steer')
+    .map((message) => getContentText(message.content));
+  return `[steers-seen=${steerTexts.length}] ${steerTexts.join(' | ')}`.trim();
+}
+
+/**
+ * Pure-text stream used by the no-tool preemption specs. A cooperative seal
+ * self-loops through the same model instance, so a distinct second response
+ * proves both that generation resumed and that the injected steer reached the
+ * model. Without a seal, only the slow first response is ever requested.
+ */
+function slowReplyResponses(label) {
+  let invocation = 0;
+  return {
+    responses: [''],
+    sleep: SLOW_CHUNK_DELAY_MS,
+    resolveInvocation: async (messages) => {
+      invocation += 1;
+      if (invocation === 1) {
+        return { response: `E2E slow reply ${label} ${slowChunkPayload()}` };
+      }
+      return {
+        response: `${SLOW_REPLY_CONTINUATION_TEXT} ${label} ${steerEchoSuffix(messages)}`,
+      };
+    },
+  };
+}
+
+/** Slow word-chunk payload shared by the steer scenarios. */
+function slowChunkPayload() {
+  return Array.from(
     { length: SLOW_REPLY_CHUNKS },
     (_, index) => `chunk-${String(index).padStart(3, '0')}`,
   ).join(' ');
+}
+
+/**
+ * Three-turn run with TWO tool boundaries for the split-steer e2e: turn 1
+ * streams a slow preamble then calls the MCP tool (boundary A), turn 2 streams
+ * a slow middle segment then calls it again (boundary B), turn 3 streams the
+ * final text. Lets a test land one steer before each boundary.
+ */
+function steerSplitReplyResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith(STEER_TOOL_NAME_PREFIX));
+  if (!toolName) {
+    return {
+      responses: [
+        `E2E steer split reply unavailable: no ${STEER_TOOL_NAME_PREFIX} tool advertised.`,
+      ],
+    };
+  }
+  let invocation = 0;
   return {
-    responses: [`E2E steer tool preamble ${label} ${chunks}`, `${STEER_TOOL_FINAL_TEXT} ${label}`],
+    responses: [''],
     sleep: SLOW_CHUNK_DELAY_MS,
+    resolveInvocation: async (messages) => {
+      invocation += 1;
+      if (invocation === 1) {
+        return {
+          response: `E2E steer split preamble ${label} ${slowChunkPayload()}`,
+          toolCalls: [
+            {
+              id: `call_e2e_steer_split_a_${label}`,
+              name: toolName,
+              args: { fact: `steer split boundary A ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      if (invocation === 2) {
+        return {
+          response: `E2E steer split middle ${label} ${slowChunkPayload()}`,
+          toolCalls: [
+            {
+              id: `call_e2e_steer_split_b_${label}`,
+              name: toolName,
+              args: { fact: `steer split boundary B ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      return { response: `${STEER_SPLIT_FINAL_TEXT} ${label} ${steerEchoSuffix(messages)}` };
+    },
+  };
+}
+
+/**
+ * Two-turn run whose FINAL segment streams slowly: turn 1 streams a slow
+ * preamble then calls the MCP tool (the only boundary), turn 2 streams a slow
+ * final text. Lets a test submit a steer AFTER the last boundary — no drain
+ * point remains, so the terminal path must convert it to a queued follow-up.
+ */
+function steerLateReplyResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith(STEER_TOOL_NAME_PREFIX));
+  if (!toolName) {
+    return {
+      responses: [
+        `E2E steer late reply unavailable: no ${STEER_TOOL_NAME_PREFIX} tool advertised.`,
+      ],
+    };
+  }
+  let invocation = 0;
+  return {
+    responses: [''],
+    sleep: SLOW_CHUNK_DELAY_MS,
+    resolveInvocation: async () => {
+      invocation += 1;
+      if (invocation === 1) {
+        return {
+          response: `E2E steer late preamble ${label} ${slowChunkPayload()}`,
+          toolCalls: [
+            {
+              id: `call_e2e_steer_late_${label}`,
+              name: toolName,
+              args: { fact: `steer late boundary ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      return { response: `${STEER_LATE_FINAL_TEXT} ${label} ${slowChunkPayload()}` };
+    },
+  };
+}
+
+/**
+ * Two-turn run with a real tool boundary for the activity-label e2e: turn 1
+ * emits TWO parallel `remember_fact` calls (one `PostToolBatch` -> one label),
+ * turn 2 streams the final text. The args are distinct and the MCP fixture
+ * echoes them back prefixed, so a spec can tell an OUTPUT ("E2E MCP memory
+ * noted: ...") from an INPUT in the recorded label prompt — which is the whole
+ * point of labeling after the batch rather than before it.
+ */
+function activityReplyResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith(STEER_TOOL_NAME_PREFIX));
+  if (!toolName) {
+    return {
+      responses: [`E2E activity reply unavailable: no ${STEER_TOOL_NAME_PREFIX} tool advertised.`],
+    };
+  }
+  return {
+    responses: ['', `${ACTIVITY_FINAL_TEXT} ${label}`],
     toolCalls: [
       {
-        id: `call_e2e_steer_${label}`,
+        id: `call_e2e_activity_alpha_${label}`,
         name: toolName,
-        args: { fact: `steer boundary ${label}` },
+        args: { fact: `activity alpha ${label}` },
+        type: 'tool_call',
+      },
+      {
+        id: `call_e2e_activity_beta_${label}`,
+        name: toolName,
+        args: { fact: `activity beta ${label}` },
         type: 'tool_call',
       },
     ],
@@ -1175,6 +1383,201 @@ function getGraphTools(agentContext) {
   return result;
 }
 
+function getInvocationAgentContext(graph, options, runManager) {
+  const directAgentId = runManager?.metadata?.agentId ?? options?.metadata?.agentId;
+  const agentId =
+    typeof directAgentId === 'string'
+      ? directAgentId
+      : getAgentIdFromInvocationOptions(options, runManager);
+  if (typeof agentId === 'string') {
+    const context = graph?.agentContexts?.get(agentId);
+    if (context) {
+      return context;
+    }
+  }
+  if (graph?.agentContexts?.size === 1) {
+    return graph.agentContexts.values().next().value;
+  }
+  return null;
+}
+
+function findToolMessage(messages, toolCallId) {
+  return (messages ?? []).find(
+    (message) => messageType(message) === 'tool' && message?.tool_call_id === toolCallId,
+  );
+}
+
+function deferredHitlCallId(label, phase) {
+  return `call_e2e_deferred_hitl_${phase}_${label}`;
+}
+
+function validateDeferredHitlSchema(agentContext, { expectBound }) {
+  const tools = getGraphTools(agentContext);
+  const tool = tools.get(DEFERRED_HITL_TOOL_NAME);
+  const failures = [];
+  if (tools.has(DEFERRED_HITL_CONTROL_TOOL_NAME)) {
+    failures.push(
+      `${DEFERRED_HITL_CONTROL_TOOL_NAME} negative control was provider-bound without discovery`,
+    );
+  }
+  if (!expectBound) {
+    if (tool != null) {
+      failures.push(`${DEFERRED_HITL_TOOL_NAME} was bound before tool_search discovered it`);
+    }
+    return failures;
+  }
+  if (!tool) {
+    failures.push(`${DEFERRED_HITL_TOOL_NAME} was not provider-bound`);
+    return failures;
+  }
+
+  const schema = tool.schema;
+  if (schema?.type !== 'object') {
+    failures.push(`${DEFERRED_HITL_TOOL_NAME} schema was not typed as object`);
+  }
+  const properties =
+    schema &&
+    typeof schema === 'object' &&
+    !Array.isArray(schema) &&
+    schema.properties &&
+    typeof schema.properties === 'object' &&
+    !Array.isArray(schema.properties)
+      ? schema.properties
+      : null;
+  if (!properties) {
+    failures.push(`${DEFERRED_HITL_TOOL_NAME} did not expose an object properties schema`);
+    return failures;
+  }
+
+  const propertyNames = Object.keys(properties).sort();
+  if (JSON.stringify(propertyNames) !== JSON.stringify(['delay_ms', 'text'])) {
+    failures.push(
+      `${DEFERRED_HITL_TOOL_NAME} properties differed from delay_ms,text (${propertyNames.join(',')})`,
+    );
+  }
+  if (properties.text?.type !== 'string') {
+    failures.push(`${DEFERRED_HITL_TOOL_NAME}.text was not typed as string`);
+  }
+  if (properties.delay_ms?.type !== 'number') {
+    failures.push(`${DEFERRED_HITL_TOOL_NAME}.delay_ms was not typed as number`);
+  }
+  const required = Array.isArray(schema.required) ? [...schema.required].sort() : null;
+  if (JSON.stringify(required) !== JSON.stringify(['text'])) {
+    failures.push(
+      `${DEFERRED_HITL_TOOL_NAME} required fields differed from text (${required?.join(',') ?? 'invalid'})`,
+    );
+  }
+  return failures;
+}
+
+/**
+ * Public-flow deferred-tool/HITL tracer. Every phase is inferred from message
+ * history because `/resume` rebuilds both the graph and this fake-model hook.
+ * Inspecting `getToolsForBinding()` mirrors the schemas a real provider sees;
+ * the registry alone would give a false positive for still-deferred tools.
+ */
+function deferredHitlInvocationResponse({ graph, messages, options, runManager }) {
+  const label = getMarkerValue(getLatestUserText(messages), DEFERRED_HITL_MARKER);
+  if (!label) {
+    return null;
+  }
+
+  const searchCallId = deferredHitlCallId(label, 'search');
+  const askCallId = deferredHitlCallId(label, 'ask');
+  const probeCallId = deferredHitlCallId(label, 'probe');
+  const searchResult = findToolMessage(messages, searchCallId);
+  const askResult = findToolMessage(messages, askCallId);
+  const probeResult = findToolMessage(messages, probeCallId);
+  const agentContext = getInvocationAgentContext(graph, options, runManager);
+  if (!agentContext) {
+    return { response: `E2E deferred HITL failed ${label}: active agent context was unavailable` };
+  }
+
+  if (probeResult) {
+    const expectedOutput = `E2E slow echo: resume-${label}`;
+    const output = getContentText(probeResult.content);
+    if (!output.includes(expectedOutput)) {
+      return {
+        response: `E2E deferred HITL failed ${label}: unexpected probe output ${output || '(empty)'}`,
+      };
+    }
+    return { response: `E2E deferred HITL passed ${label}: ${expectedOutput}` };
+  }
+
+  if (askResult) {
+    const failures = validateDeferredHitlSchema(agentContext, { expectBound: true });
+    const expectedAnswer = `continue-${label}`;
+    const answer = getContentText(askResult.content);
+    if (!answer.includes(expectedAnswer)) {
+      failures.push(
+        `ask answer mismatch (expected ${expectedAnswer}, received ${answer || '(empty)'})`,
+      );
+    }
+    if (failures.length > 0) {
+      return { response: `E2E deferred HITL failed ${label}: ${failures.join('; ')}` };
+    }
+    return {
+      response: '',
+      toolCalls: [
+        {
+          id: probeCallId,
+          name: DEFERRED_HITL_TOOL_NAME,
+          args: { text: `resume-${label}` },
+          type: 'tool_call',
+        },
+      ],
+    };
+  }
+
+  if (searchResult) {
+    const failures = validateDeferredHitlSchema(agentContext, { expectBound: true });
+    const searchOutput = getContentText(searchResult.content);
+    if (!searchOutput.includes(DEFERRED_HITL_TOOL_NAME)) {
+      failures.push(`${TOOL_SEARCH_NAME} output did not include ${DEFERRED_HITL_TOOL_NAME}`);
+    }
+    if (failures.length > 0) {
+      return { response: `E2E deferred HITL failed ${label}: ${failures.join('; ')}` };
+    }
+    return {
+      response: '',
+      toolCalls: [
+        {
+          id: askCallId,
+          name: ASK_USER_QUESTION_NAME,
+          args: {
+            question: `Continue deferred schema check ${label}?`,
+            options: [{ label: `Continue ${label}`, value: `continue-${label}` }],
+          },
+          type: 'tool_call',
+        },
+      ],
+    };
+  }
+
+  const failures = validateDeferredHitlSchema(agentContext, { expectBound: false });
+  const boundTools = getGraphTools(agentContext);
+  if (!boundTools.has(TOOL_SEARCH_NAME)) {
+    failures.push(`${TOOL_SEARCH_NAME} was not provider-bound`);
+  }
+  if (!boundTools.has(ASK_USER_QUESTION_NAME)) {
+    failures.push(`${ASK_USER_QUESTION_NAME} was not provider-bound`);
+  }
+  if (failures.length > 0) {
+    return { response: `E2E deferred HITL failed ${label}: ${failures.join('; ')}` };
+  }
+  return {
+    response: '',
+    toolCalls: [
+      {
+        id: searchCallId,
+        name: TOOL_SEARCH_NAME,
+        args: { query: DEFERRED_HITL_TOOL_NAME, max_results: 1 },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
 function validateHandoffTool(route, tool, toolName) {
   const failures = [];
   const expectedDescription = route.description ?? `Transfer control to agent '${route.to}'`;
@@ -1436,6 +1839,21 @@ function resolveResponses({ graph, messages, text, toolNames }) {
     return steerToolReplyResponses(steerToolLabel, toolNames);
   }
 
+  const steerSplitLabel = getMarkerValue(text, STEER_SPLIT_REPLY_MARKER);
+  if (steerSplitLabel) {
+    return steerSplitReplyResponses(steerSplitLabel, toolNames);
+  }
+
+  const steerLateLabel = getMarkerValue(text, STEER_LATE_REPLY_MARKER);
+  if (steerLateLabel) {
+    return steerLateReplyResponses(steerLateLabel, toolNames);
+  }
+
+  const activityLabel = getMarkerValue(text, ACTIVITY_REPLY_MARKER);
+  if (activityLabel) {
+    return activityReplyResponses(activityLabel, toolNames);
+  }
+
   if (text.includes(ASSERT_AGENT_CONTEXT_MARKER)) {
     return {
       responses: [MOCK_REPLY],
@@ -1566,7 +1984,15 @@ module.exports = function fakeModelHook(run, context) {
     sleep,
     toolCalls,
     thrownError,
-    resolveInvocation,
+    resolveInvocation: async (streamMessages, streamOptions, runManager) =>
+      deferredHitlInvocationResponse({
+        graph,
+        messages: streamMessages,
+        options: streamOptions,
+        runManager,
+      }) ??
+      resolveInvocation?.(streamMessages, streamOptions, runManager) ??
+      null,
     resolveOnStream: (streamMessages, streamOptions, runManager) =>
       approvalOutcomeResponses(streamMessages) ??
       resolveOnStream?.(streamMessages, streamOptions, runManager) ??

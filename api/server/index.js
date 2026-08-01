@@ -29,6 +29,7 @@ const {
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
   registerShutdownTask,
+  configureServerTimeouts,
   setupGracefulShutdown,
   updateInterfacePermissions,
 } = require('@librechat/api');
@@ -267,6 +268,7 @@ const startServer = async () => {
   app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
   app.use('/api/admin', routes.adminAuth);
   app.use('/api/admin/config', routes.adminConfig);
+  app.use('/api/admin/langfuse', routes.adminLangfuse);
   app.use('/api/admin/grants', routes.adminGrants);
   app.use('/api/admin/groups', routes.adminGroups);
   app.use('/api/admin/roles', routes.adminRoles);
@@ -361,6 +363,14 @@ const startServer = async () => {
       logger.error('Post-listen initialization failed:', initErr);
       process.exit(1);
     }
+  });
+
+  configureServerTimeouts(server);
+  logger.info('HTTP server timeout configuration', {
+    keepAliveTimeout: server.keepAliveTimeout,
+    keepAliveTimeoutBuffer: server.keepAliveTimeoutBuffer,
+    headersTimeout: server.headersTimeout,
+    requestTimeout: server.requestTimeout,
   });
 
   setupGracefulShutdown(server);

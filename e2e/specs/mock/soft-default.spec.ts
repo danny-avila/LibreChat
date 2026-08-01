@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { TStartupConfig } from 'librechat-data-provider';
 import type { Page } from '@playwright/test';
 import {
   NEW_CHAT_PATH,
@@ -153,6 +154,47 @@ test.describe('soft default model spec', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
     await expect(modelTrigger(page)).not.toHaveText('Select a model');
+  });
+
+  // Regression: agents-only deployment (`addedEndpoints: [agents]`) — the selector
+  // offers specs and agent picks only, so `hasEphemeralModelOptions` is false and the
+  // soft default used to re-arm on every New Chat, discarding the user's agent. A
+  // concrete agent pick is the one real selection such deployments provide and must
+  // survive New Chat and a cold load; the soft default must still land fresh
+  // instances. The allow-list is narrowed via `/api/config` interception because the
+  // gate resolves entirely client-side from the startup config.
+  test('a selected agent survives New Chat in an agents-only allow-list', async ({ page }) => {
+    test.setTimeout(120000);
+    await page.route('**/api/config', async (route) => {
+      const response = await route.fetch();
+      const config = (await response.json()) as TStartupConfig;
+      if (config.modelSpecs) {
+        config.modelSpecs = { ...config.modelSpecs, addedEndpoints: ['agents'] };
+      }
+      await route.fulfill({ response, json: config });
+    });
+
+    await startFresh(page);
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    const agentName = uniqueName('E2E Agents Only');
+    await createAgent(page, agentName);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+
+    await selectAgent(page, agentName);
+    await sendAndAwaitReply(page, 'agents-only agent conversation');
+
+    await newChat(page);
+    await expect(modelTrigger(page)).toContainText(agentName, { timeout: 15000 });
+
+    // Cold load (not the SPA transition): ChatRoute resolves purely from getDefaultModelSpec.
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(agentName, { timeout: 15000 });
+
+    // The soft default still owns the fresh-instance landing under this allow-list.
+    await page.evaluate(() => localStorage.clear());
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
   });
 
   // Regression: softDefault spec on an endpoint kept out of `addedEndpoints` (e.g. a

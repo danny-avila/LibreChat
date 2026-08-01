@@ -1,5 +1,15 @@
 import type { Agents, TFile, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
+import type { RecoveredSteerPayload } from '../SteerRecovery';
+
+/**
+ * A pause owner has this long to durably persist the interrupted turn before
+ * the barrier is considered abandoned. An abandoned barrier must fail closed:
+ * exposing its action id again would let a resume drive history that may never
+ * have reached the message database.
+ */
+export const PAUSE_PERSISTENCE_TIMEOUT_MS = 30_000;
+export const PAUSE_PERSISTENCE_TIMEOUT_ERROR = 'Paused response persistence timed out';
 
 /**
  * Job status enum.
@@ -10,6 +20,10 @@ import type { StandardGraph } from '@librechat/agents';
  */
 export type JobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
 
+/** Immutable wire/storage contract selected when a generation is created.
+ * Missing markers on pre-rollout records are interpreted as protocol v1. */
+export type GenerationProtocolVersion = 1 | 2;
+
 /**
  * Serializable job data - no object references, suitable for Redis/external storage
  */
@@ -19,9 +33,25 @@ export interface SerializableJobData {
   tenantId?: string;
   status: JobStatus;
   createdAt: number;
+  generationProtocolVersion?: GenerationProtocolVersion;
+  /** Saver-level checkpoint scope for this exact generation. New jobs use
+   * their final store-assigned epoch; LangGraph still sees an empty root
+   * `checkpoint_ns`, which the saver adapter maps to this storage scope.
+   * Legacy paused jobs omit it and use the historical unscoped storage. */
+  checkpointNamespace?: string;
   completedAt?: number;
   conversationId?: string;
   error?: string;
+
+  /** Stable identity of the HTTP submission that created this generation.
+   * Internal-only: lets an expired idempotency lease recognize the same live
+   * job instead of replacing and billing it again. */
+  idempotencyClientRequestId?: string;
+
+  /** Parked steer leased into this ordinary recovery turn. The source text is
+   * hidden while this exact generation is active and consumed only after the
+   * user message is durably persisted. */
+  recoveredSteerId?: string;
 
   /** User message metadata */
   userMessage?: {
@@ -44,12 +74,34 @@ export interface SerializableJobData {
   responseMessageId?: string;
 
   /**
+   * Whether this run has activity labels enabled (per-endpoint
+   * `activityLabel: true`). Set once at run start so the resume path can
+   * decide whether to reconcile label gaps WITHOUT reading content — the
+   * first label of a run can be claimed inside the snapshot->subscribe
+   * window, so the snapshot itself is not a reliable signal.
+   */
+  activityLabels?: boolean;
+
+  /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause, captured
    * so a resume can replay them into `createRun` — the rebuilt graph uses `messages: []`
-   * (state comes from the checkpoint), so without these the paused deferred tool would be
-   * absent from the schema-only toolMap and resume would fail with "unknown tool".
+   * (state comes from the checkpoint), so without these the rebuilt model would lose
+   * the discovered tool schemas.
    */
   discoveredTools?: string[];
+  /**
+   * Whether the replica that OWNS this generation can seal mid-stream
+   * (`PreemptBoundary` wiring). Recorded at createJob because the steer route
+   * may land on a different replica — during a rolling deploy its own SDK
+   * probe would answer for the wrong process. Absent on jobs created before
+   * preempt shipped, which reads as incapable: the honest outcome.
+   */
+  preemptCapable?: boolean;
+
+  /** Explicitly false until the provider-owning replica has installed its
+   * generation-fenced abort subscription. Missing is conservative legacy
+   * evidence and must be treated like true by replacement handoff. */
+  providerAbortReady?: boolean;
 
   /** Whether the user-message created event has been emitted */
   createdEventEmitted?: boolean;
@@ -62,6 +114,13 @@ export interface SerializableJobData {
 
   /** Serialized final event for replay */
   finalEvent?: string;
+
+  /** Abort won its terminal CAS but the route is still saving the partial
+   * response / pruning HITL state. No normal terminal payload may be exposed
+   * while true. */
+  terminalPersistencePending?: boolean;
+  /** Crash-recovery deadline basis for `terminalPersistencePending`. */
+  terminalPersistenceStartedAt?: number;
 
   /** Serialized title event for replay during active-stream resume */
   titleEvent?: string;
@@ -126,6 +185,64 @@ export interface SerializableJobData {
   steersClosed?: boolean;
 }
 
+/** Exact active hash replaced by one atomic job creation. Built-in stores keep
+ * this as non-enumerable transaction metadata; Redis also retains a private
+ * receipt in the replacement hash so a committed create with a lost reply can
+ * reconstruct it without exposing it through normal job serialization. */
+export type ReplacedGeneration = Pick<
+  SerializableJobData,
+  'createdAt' | 'status' | 'conversationId' | 'providerAbortReady'
+>;
+
+/** Latest generation epoch checked by a conditional create. A retained epoch
+ * can outlive its job hash, so inactive mismatches intentionally omit job-only
+ * metadata while still telling the caller which generation won the race.
+ * When all predecessor evidence has expired, `createdAt` safely echoes the
+ * caller's finite expected epoch and `verified` is false; the create is still
+ * rejected, but response consumers can preserve the queued turn without
+ * mistaking that fallback for an observed generation. */
+export type GenerationPredecessorState = Pick<SerializableJobData, 'createdAt'> &
+  Partial<Pick<SerializableJobData, 'status' | 'conversationId'>> & {
+    active: boolean;
+    /** False only when neither the job nor its retained epoch was observable.
+     * Missing values are compatible with pre-marker mismatch producers. */
+    verified?: boolean;
+  };
+
+export interface CreatedJobData extends SerializableJobData {
+  /** The predecessor observed inside the same transaction that installed this
+   * job. Non-enumerable in the built-in stores to keep it out of serializers. */
+  replacedJob?: ReplacedGeneration;
+  /** Transitive transaction receipts inherited from replacements whose
+   * managers may have lost their create replies. Ordered oldest to newest. */
+  replacedJobs?: readonly ReplacedGeneration[];
+  /** Opaque manager-minted proof for one create invocation. Non-enumerable in
+   * built-in stores and used only to reconcile a commit whose reply was lost. */
+  creationAttemptId?: string;
+}
+
+/** The store installed a generation, but another creator replaced it before
+ * cross-slot membership reconciliation completed. The exact predecessor
+ * metadata still has to reach the manager so its owner is stopped/notified. */
+export class JobCreationSupersededError extends Error {
+  constructor(readonly createdJob: CreatedJobData) {
+    super('Generation job was replaced during creation');
+    this.name = 'JobCreationSupersededError';
+  }
+}
+
+/** A conditional create observed a different current generation than the
+ * caller's last authoritative status read. The store rejects before replacing
+ * that generation, so queued client work can be restored safely. */
+export class JobPredecessorMismatchError extends Error {
+  readonly code = 'GENERATION_PREDECESSOR_MISMATCH';
+
+  constructor(readonly currentJob: GenerationPredecessorState) {
+    super('Generation predecessor changed before creation');
+    this.name = 'JobPredecessorMismatchError';
+  }
+}
+
 export type JobMetadataPatch = Partial<
   Pick<
     SerializableJobData,
@@ -140,6 +257,8 @@ export type JobMetadataPatch = Partial<
     | 'isTemporary'
     | 'promptTokens'
     | 'discoveredTools'
+    | 'preemptCapable'
+    | 'generationProtocolVersion'
   >
 >;
 
@@ -170,6 +289,9 @@ export function isPendingActionStale(job: Pick<SerializableJobData, 'pendingActi
  */
 export interface SteerQueueItem {
   steerId: string;
+  /** Client-generated correlation id. It lets a terminal event that beats the
+   *  202 ACK match the server item to its optimistic local chip. */
+  clientSteerId?: string;
   text: string;
   userId: string;
   createdAt: number;
@@ -177,6 +299,80 @@ export interface SteerQueueItem {
    *  drain re-fetches each file by id scoped to the run's user and encodes
    *  fresh, so nothing here is trusted beyond identifying the file. */
   files?: Partial<TFile>[];
+  /** The steer asked to seal the live model stream at the next provider-safe
+   *  boundary instead of waiting for a tool step. Durable so a parked,
+   *  claimed, or replayed chip keeps its "interrupting" label. */
+  preempt?: boolean;
+  /** Monotonic per-steer arm revision. A capability downgrade increments it
+   * so an older cross-replica arm cannot resurrect after the disarm, while a
+   * later explicit arm with a newer revision remains valid. */
+  preemptRevision?: number;
+}
+
+/** Durable acknowledgement keyed by `clientSteerId`. It outlives the queue
+ * and live job for a bounded window so a lost 202 cannot make Retry inject
+ * the same instruction twice after drain, terminal cleanup, or replacement. */
+export interface SteerReceipt {
+  clientSteerId: string;
+  fingerprint: string;
+  userId: string;
+  tenantId?: string;
+  agentId?: string;
+  endpoint?: string;
+  /** Generation epoch that accepted the item. Receipts intentionally survive
+   * replacement, so queue absence is only "delivered" while this exact
+   * generation remains active; a newer epoch means the predecessor dropped
+   * an undrained item and the client must recover it as a leftover. */
+  generationCreatedAt: number;
+  item: SteerQueueItem;
+  position: number;
+  /** `claimed` is the crash-recoverable window between an atomic queue drain
+   * and the durable applied-content record. It is not settled: a live client
+   * keeps the chip pending, and a dead/replaced generation repairs it to a
+   * leftover instead of silently dropping the instruction. */
+  /** `recovered` means one recovery surface already claimed a leftover. A
+   * later retry is settled without re-queuing the same follow-up. */
+  state: 'queued' | 'claimed' | 'delivered' | 'leftover' | 'recovered' | 'cancelled';
+}
+
+export type SteerReceiptInput = Omit<SteerReceipt, 'item' | 'position' | 'state'>;
+export type SteerEnqueueReceiptResult = SteerReceipt | SteerEnqueueResult | number;
+
+/** Capability-normalized atomic enqueue result for callers without a stable
+ * client receipt id (legacy/API compatibility path). */
+export interface SteerEnqueueResult {
+  item: SteerQueueItem;
+  position: number;
+}
+
+export type SteerEnqueueVersionedResult = SteerEnqueueResult | number;
+
+/**
+ * Cross-replica preempt signal. Unlike abort this does NOT stop the run — it
+ * asks the generating replica to seal its current model stream at the next
+ * provider-safe boundary so the queued steer can inject there. Fenced by
+ * `createdAt`: a stale publish must never arm a replacement job on the same
+ * streamId.
+ */
+export interface PreemptMessage {
+  op: 'arm' | 'clear';
+  /** Generation identity (`SerializableJobData.createdAt`) this belongs to. */
+  createdAt: number;
+  steerIds: string[];
+  /** Per-id arm revision. Omitted by legacy senders (treated as revision 0). */
+  revisions?: Record<string, number>;
+}
+
+/** {@link IJobStoreV2.armSteer}: `armed` flipped the flag in place; `missing`
+ *  covers every unavailable interleaving (paused, drained, cancelled, closed,
+ *  replaced generation); `incapable` means the live owner cannot seal. */
+export type SteerArmOutcome = 'armed' | 'missing' | 'incapable';
+
+export interface SteerArmResult {
+  outcome: SteerArmOutcome;
+  /** Present only for an armed item. */
+  revision?: number;
+  item?: SteerQueueItem;
 }
 
 /** Maximum steers a single run can have queued at once. */
@@ -187,6 +383,11 @@ export const STEER_ENQUEUE_NOT_RUNNING = -1;
 
 /** `enqueueSteer` rejection: the queue is at {@link STEER_QUEUE_MAX_DEPTH}. */
 export const STEER_ENQUEUE_QUEUE_FULL = -2;
+
+/** `enqueueSteerWithReceipt` rejection: the bounded, unexpired receipt
+ * history is full. Existing ids still replay; only a new identity is refused
+ * so idempotency evidence is never evicted inside its recovery window. */
+export const STEER_ENQUEUE_RECEIPT_FULL = -3;
 
 /**
  * Arguments for an atomic {@link IJobStore.transitionStatus} compare-and-set.
@@ -212,16 +413,37 @@ export interface JobStatusTransition {
    * the same stream ID.
    */
   expectCreatedAt?: number;
+  /** Extend all current steer receipts in the SAME atomic step as this
+   * transition. Used by running→requires_action so no enqueue can land between
+   * a pre-pause TTL pass and the status CAS. */
+  steerReceiptTtlSeconds?: number;
 }
 
 /** Value stored under an idempotency claim: the stream a retried request should attach to. */
 export interface IdempotencyClaimValue {
   streamId: string;
   conversationId: string;
+  /** Wire/storage protocol selected by the request that first won this claim.
+   * Missing values are legacy v1. Keeping the marker in both idempotency
+   * tombstones lets a retry recover the original contract after its job hash
+   * has already been cleaned up. */
+  generationProtocolVersion?: GenerationProtocolVersion;
   /** Epoch ms the claim was written — lets a losing duplicate tell a winner that is still
    *  starting (recent, no job yet → retry) from one that already finished and was cleaned
    *  up (old, no job → attach and let the client refetch). */
   claimedAt?: number;
+  /** Lease owner verified atomically by createJob; stale-request takeover
+   * changes it so the abandoned winner can no longer create a generation. */
+  claimToken?: string;
+  /** Proof that a takeover token was derived by CAS from this predecessor.
+   * If a connection drops after the primary CAS but before the legacy CAS,
+   * the next replica can finish only that exact, same-coordinate split rather
+   * than treating an arbitrary token mismatch as repairable. */
+  previousClaimToken?: string;
+  /** Written atomically with job creation. Once present, a missing job is an
+   * already-started/cleaned generation and can never be taken over as an
+   * abandoned pre-create lease. */
+  startedAt?: number;
 }
 
 /** Result of an atomic {@link IJobStore.claimIdempotencyKey} attempt. */
@@ -230,6 +452,18 @@ export interface IdempotencyClaimResult {
   claimed: boolean;
   /** When `claimed` is false, the stream the original request is already driving. */
   existing?: IdempotencyClaimValue;
+  /** The durable namespace that established the result. Manager-level claims
+   * use `legacy` only for an old, tokenless claim that must remain
+   * duplicate-only during a rolling upgrade. Store implementations may omit
+   * this field because they operate on one physical key at a time. */
+  source?: 'primary' | 'legacy';
+}
+
+/** Owner-authorized parked recovery payload plus the protocol that controls
+ * its delivery semantics. V1 is destructive (legacy GETDEL); v2 is leased. */
+export interface ParkedSteerClaim {
+  payload: string;
+  generationProtocolVersion: GenerationProtocolVersion;
 }
 
 /**
@@ -314,6 +548,14 @@ export interface UsageMetadata {
 export interface AbortResult {
   /** Whether the abort was successful */
   success: boolean;
+  /** Distinguishes an epoch-fenced abort from ordinary not-found/terminal
+   * failures so an HTTP caller can return RUN_REPLACED instead of silently
+   * reporting success for a newer generation it deliberately did not stop. */
+  failureReason?: 'generation_replaced' | 'job_still_active';
+  /** The generation was stopped, but the caller's required durable side
+   * effects failed before normal FINAL publication. The manager emitted a
+   * conservative reconciliation frame instead. */
+  persistenceFailed?: boolean;
   /** The job data at time of abort */
   jobData: SerializableJobData | null;
   /** Aggregated content from the stream */
@@ -355,16 +597,102 @@ export interface ResumeState {
 }
 
 /**
- * Interface for job storage backend.
- * Implementations can use in-memory Map, Redis, KV store, etc.
+ * Backward-compatible public job-store contract.
  *
- * Content state is tied to jobs:
- * - In-memory: Holds WeakRef to graph for live content/run steps access
- * - Redis: Persists chunks, reconstructs content on reconnect
- *
- * This consolidates job metadata + content state into a single interface.
+ * This is the pre-v2 extension surface kept for third-party stores compiled
+ * against earlier `@librechat/api` releases. The generation manager validates
+ * the additional {@link IJobStoreV2} capabilities before accepting a custom
+ * store at runtime.
  */
 export interface IJobStore {
+  initialize(): Promise<void>;
+
+  createJob(
+    streamId: string,
+    userId: string,
+    conversationId?: string,
+    tenantId?: string,
+    initialMetadata?: JobMetadataPatch,
+  ): Promise<SerializableJobData>;
+
+  getJob(streamId: string): Promise<SerializableJobData | null>;
+  updateJob(
+    streamId: string,
+    updates: Partial<SerializableJobData>,
+    expectedCreatedAt?: number,
+  ): Promise<void>;
+  transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean>;
+
+  claimIdempotencyKey(
+    key: string,
+    value: IdempotencyClaimValue,
+    ttlSeconds: number,
+  ): Promise<IdempotencyClaimResult>;
+  releaseIdempotencyKey(key: string): Promise<void>;
+
+  deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean>;
+  hasJob(streamId: string): Promise<boolean>;
+  getRunningJobs(): Promise<SerializableJobData[]>;
+  cleanup(): Promise<number>;
+  recordActivity?(streamId: string, expectedCreatedAt?: number): void;
+  getJobCount(): Promise<number>;
+  getJobCountByStatus(status: JobStatus): Promise<number>;
+  destroy(): Promise<void>;
+  getActiveJobIdsByUser(userId: string, tenantId?: string): Promise<string[]>;
+
+  setGraph(streamId: string, graph: StandardGraph, expectedCreatedAt?: number): void;
+  setContentParts(
+    streamId: string,
+    contentParts: Agents.MessageContentComplex[],
+    expectedCreatedAt?: number,
+  ): void;
+  getContentParts(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<{ content: Agents.MessageContentComplex[] } | null>;
+  getRunSteps(streamId: string, expectedCreatedAt?: number): Promise<Agents.RunStep[]>;
+
+  /** Legacy stores returned `void`; v2 stores return whether the epoch-fenced
+   * append committed. Accept both here so existing implementations remain
+   * source-compatible. */
+  appendChunk(
+    streamId: string,
+    event: unknown,
+    expectedCreatedAt?: number,
+  ): Promise<void | boolean>;
+
+  clearContentState(streamId: string, expectedCreatedAt?: number): void;
+  saveRunSteps?(
+    streamId: string,
+    runSteps: Agents.RunStep[],
+    expectedCreatedAt?: number,
+  ): Promise<void>;
+  setCollectedUsage(
+    streamId: string,
+    collectedUsage: UsageMetadata[],
+    expectedCreatedAt?: number,
+  ): void;
+  getCollectedUsage(streamId: string, expectedCreatedAt?: number): UsageMetadata[];
+
+  enqueueSteer(streamId: string, item: SteerQueueItem, expectedCreatedAt?: number): Promise<number>;
+  drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
+  closeAndDrainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
+  peekSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
+  removeSteer(streamId: string, steerId: string): Promise<boolean>;
+  parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void>;
+  claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined>;
+  clearSteers(streamId: string): Promise<void>;
+}
+
+/**
+ * Full store contract required by the current generation runtime.
+ *
+ * Built-in stores implement this interface. Its overrides deliberately narrow
+ * the legacy return types while its extra methods provide the atomicity needed
+ * for terminal ownership, durable steering receipts, recovery, and idempotent
+ * generation startup.
+ */
+export interface IJobStoreV2 extends IJobStore {
   /** Initialize the store (e.g., connect to Redis, start cleanup intervals) */
   initialize(): Promise<void>;
 
@@ -375,7 +703,23 @@ export interface IJobStore {
     conversationId?: string,
     tenantId?: string,
     initialMetadata?: JobMetadataPatch,
-  ): Promise<SerializableJobData>;
+    recoveredSteerId?: string,
+    idempotencyClaimKey?: string,
+    idempotencyClaimToken?: string,
+    idempotencyClientRequestId?: string,
+    recoveredSteerPayload?: RecoveredSteerPayload,
+    creationAttemptId?: string,
+    expectedPredecessorCreatedAt?: number,
+  ): Promise<CreatedJobData>;
+
+  /** Remove transaction-time predecessor receipts after their handoff was
+   * delivered. The current creation attempt id fences a late acknowledgement
+   * from clearing receipts inherited by a replacement. */
+  acknowledgeReplacedJobs?(
+    streamId: string,
+    creationAttemptId: string,
+    replacedCreatedAts: readonly number[],
+  ): Promise<boolean>;
 
   /** Get a job by streamId (streamId === conversationId) */
   getJob(streamId: string): Promise<SerializableJobData | null>;
@@ -389,6 +733,15 @@ export interface IJobStore {
     updates: Partial<SerializableJobData>,
     expectedCreatedAt?: number,
   ): Promise<void>;
+
+  /** Atomically replaces an abort persistence-pending marker with the one
+   * terminal payload that late subscribers may consume. Exactly one of the
+   * owner, its failure path, or stale-owner recovery wins. */
+  finalizeTerminalPersistence(
+    streamId: string,
+    expectedCreatedAt: number,
+    finalEvent: string,
+  ): Promise<boolean>;
 
   /**
    * Atomically transition a job's status, **only if** it is currently `from`.
@@ -413,6 +766,20 @@ export interface IJobStore {
   transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean>;
 
   /**
+   * Terminal variant of {@link transitionStatus} that atomically captures and
+   * parks every queued/claimed steer owned by the winning generation. `null`
+   * means the status CAS lost; an array (including an empty one) means it won.
+   *
+   * Abort uses this primitive so it can include exact leftovers in its final
+   * event without destructively draining a run before terminal ownership is
+   * established.
+   */
+  transitionStatusAndDrainSteers(
+    streamId: string,
+    args: JobStatusTransition,
+  ): Promise<SteerQueueItem[] | null>;
+
+  /**
    * Atomically claim an idempotency key so a retried start-generation request
    * attaches to the original stream instead of starting a second billed
    * generation. The first caller gets `{ claimed: true }` and should create the
@@ -432,11 +799,47 @@ export interface IJobStore {
     ttlSeconds: number,
   ): Promise<IdempotencyClaimResult>;
 
+  /** Compare-and-swap an abandoned pre-create claim. */
+  takeoverIdempotencyKey(
+    key: string,
+    expected: IdempotencyClaimValue,
+    value: IdempotencyClaimValue,
+    ttlSeconds: number,
+  ): Promise<boolean>;
+
+  /** Mark a token-owned claim as having created its generation. Used by the
+   * rolling-upgrade bridge to tombstone the legacy key after the same-slot
+   * primary key was committed by createJob. */
+  markIdempotencyKeyStarted(
+    key: string,
+    claimToken: string,
+    startedAt: number,
+    ttlSeconds: number,
+  ): Promise<boolean>;
+
+  /** Atomically attach a freshly reacquired claim to the still-live job that
+   * was created by the same client request. The job and claim keys share a
+   * Redis hash slot, so a replacement cannot cross this validation. */
+  adoptIdempotencyKeyForJob(
+    key: string,
+    expected: IdempotencyClaimValue,
+    streamId: string,
+    userId: string,
+    clientRequestId: string,
+    tenantId: string | undefined,
+    expectedCreatedAt: number,
+    ttlSeconds: number,
+    /** A pre-bridge job has no durable request id. This mode may tombstone a
+     * freshly reacquired claim against that exact active owner/epoch, but must
+     * still reject every different non-empty request id. */
+    allowMissingClientRequestId?: boolean,
+  ): Promise<boolean>;
+
   /**
    * Release a previously-claimed idempotency key so the submission can be retried
    * (e.g. the start failed before generation began). No-op if the key is absent.
    */
-  releaseIdempotencyKey(key: string): Promise<void>;
+  releaseIdempotencyKey(key: string, expected?: IdempotencyClaimValue): Promise<void>;
 
   /**
    * Delete a job, optionally only when the stream still belongs to the expected
@@ -556,7 +959,14 @@ export interface IJobStore {
    * @param expectedCreatedAt - Optional generation identity. When supplied, the append is
    *   refused if the stream ID now belongs to a replacement generation.
    */
-  appendChunk(streamId: string, event: unknown, expectedCreatedAt?: number): Promise<void>;
+  appendChunk(
+    streamId: string,
+    event: unknown,
+    expectedCreatedAt?: number,
+    /** When present, the same durable write records this drained steer as
+     * delivered. Redis performs both mutations in one same-slot Lua step. */
+    deliveredSteer?: SteerQueueItem,
+  ): Promise<boolean>;
 
   /**
    * Clear all content state for a job.
@@ -615,7 +1025,32 @@ export interface IJobStore {
    * {@link STEER_ENQUEUE_NOT_RUNNING} when the job is missing, not running,
    * or closed, or {@link STEER_ENQUEUE_QUEUE_FULL} at max depth.
    */
-  enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number>;
+  enqueueSteer(streamId: string, item: SteerQueueItem, expectedCreatedAt?: number): Promise<number>;
+
+  /** Atomic capability-normalized enqueue. Unlike enqueue→arm, no fallible
+   * mutation occurs after the item becomes durable and before its ACK. */
+  enqueueSteerVersioned(
+    streamId: string,
+    item: SteerQueueItem,
+    wantsPreempt: boolean,
+    expectedCreatedAt?: number,
+  ): Promise<SteerEnqueueVersionedResult>;
+
+  /** Atomic receipt lookup + capability-normalized enqueue. An existing
+   * receipt wins even if the live queue is now full, paused, drained, or the
+   * generation has ended/replaced. Numeric results are enqueue rejection
+   * codes (including {@link STEER_ENQUEUE_RECEIPT_FULL}); a receipt reports
+   * either the existing or newly inserted item. */
+  enqueueSteerWithReceipt(
+    streamId: string,
+    item: SteerQueueItem,
+    receipt: SteerReceiptInput,
+    wantsPreempt: boolean,
+    expectedCreatedAt?: number,
+  ): Promise<SteerEnqueueReceiptResult>;
+
+  /** Read a bounded receipt without requiring the live job/queue. */
+  getSteerReceipt(streamId: string, clientSteerId: string): Promise<SteerReceipt | null>;
 
   /**
    * Atomically take ALL queued steers, FIFO. Empty array when none. With
@@ -624,6 +1059,15 @@ export interface IJobStore {
    * consume a replacement job's queue.
    */
   drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
+
+  /** Put a failed claimed batch back at the FIFO front, preserving its order
+   * and receipt state. This is the rollback for a durable applied-part write
+   * that failed after the atomic drain. */
+  restoreClaimedSteers(
+    streamId: string,
+    items: SteerQueueItem[],
+    expectedCreatedAt?: number,
+  ): Promise<boolean>;
 
   /**
    * Atomically CLOSE the queue to new steers, then take all queued items
@@ -643,32 +1087,98 @@ export interface IJobStore {
    */
   peekSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
 
+  /** Drained but not yet durably applied items. Kept separate from the live
+   * FIFO so a reconnect can render them without a second owner injecting them. */
+  peekClaimedSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
+
   /** Remove ONE queued steer by id (user-cancelled before injection).
-   *  False when it was no longer queued — already drained or run ended. */
-  removeSteer(streamId: string, steerId: string): Promise<boolean>;
+   *  False when it was no longer queued — already drained or run ended — or
+   *  when `expectedCreatedAt` belongs to a replaced generation. */
+  removeSteer(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<boolean>;
+
+  /**
+   * Atomically set `preempt: true` on ONE queued steer IN PLACE, preserving
+   * its FIFO position (the user escalated a waiting steer to an interrupt;
+   * the whole queue drains at the seal, so its order must not change).
+   * Guarded like {@link enqueueSteer}: `missing` when the job is not running,
+   * the steer is no longer queued, the queue is closed, or (with
+   * `expectedCreatedAt`) the stream belongs to another generation. The owner's
+   * LIVE `preemptCapable` is part of the same atomic predicate — a HITL resume
+   * on a rolling deploy can rewrite it for the SAME generation, so a value
+   * read before the call is not trustworthy — and an incapable owner answers
+   * `incapable` with the item left unflagged.
+   */
+  armSteer(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<SteerArmOutcome>;
+
+  /** Versioned form used by the HTTP arm route so its publication carries
+   * the revision atomically assigned with the durable flag. */
+  armSteerVersioned(
+    streamId: string,
+    steerId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerArmResult>;
+
+  /** Atomically remove `preempt` from every queued steer only when the
+   * generation's current owner is incapable. Returns the changed steer ids
+   * (used to tombstone late arm publications), or `null` when the generation
+   * is missing/replaced or currently capable. */
+  downgradeSteerPreempts(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerQueueItem[] | null>;
 
   /**
    * Persist terminally-drained steers under their OWN bounded-TTL key so a
    * client with no live subscriber can recover them via the status route.
    * Deliberately independent of the job record — the default `completeJob`
    * path deletes the job immediately, and recovery must survive that.
-   * Overwrites any prior payload; cleared by `createJob` (a replacement run
-   * invalidates recovery — a live client had to start it).
+   * Merges with any prior payload. `createJob` leases the selected recovery
+   * item while that generation is active; the item is removed only after its
+   * ordinary user message is durably persisted.
    * When `expectedCreatedAt` is supplied, the write is conditional on that
    * generation still owning the stream ID.
    */
   parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void>;
 
-  /**
-   * Claim-on-read: atomically return AND remove the parked payload, so a
-   * second reload cannot re-mint chips the user already dismissed. The
-   * removal is gated on `ownerFragment` (an opaque substring of the
-   * serialized payload, e.g. `"userId":"u1"`) INSIDE the same atomic step —
-   * a non-owner probe returns nothing and leaves the payload untouched
-   * instead of deleting it ahead of the owner check. Stores stay
-   * schema-free: the caller parses and authorizes the returned payload.
-   */
-  claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined>;
+  /** Owner-gated recovery read. A source leased to a matching active recovery
+   * generation is hidden but retained; it becomes visible again if startup
+   * fails, and is removed only after durable user-message persistence. */
+  claimParkedSteers(
+    streamId: string,
+    ownerUserId: string,
+    ownerTenantId?: string,
+  ): Promise<string | undefined>;
+
+  /** Protocol-aware form of {@link claimParkedSteers}. Existing callers may
+   * keep using the payload-only method. */
+  claimParkedSteersDetailed(
+    streamId: string,
+    ownerUserId: string,
+    ownerTenantId?: string,
+    requestedProtocolVersion?: GenerationProtocolVersion,
+  ): Promise<ParkedSteerClaim | undefined>;
+
+  /** Commit a recovery handoff after its ordinary user message is durable.
+   * Guarded by generation identity and owner, and idempotent for retries. */
+  consumeParkedSteer(
+    streamId: string,
+    steerId: string,
+    ownerUserId: string,
+    ownerTenantId: string | undefined,
+    expectedCreatedAt: number,
+  ): Promise<boolean>;
+
+  /** Owner-gated terminal reclaim. Atomically removes one leftover from the
+   * parked payload and marks its receipt cancelled, making edit/queue/dismiss
+   * retries idempotent without reviving an already-started recovery. */
+  discardSteerLeftover(
+    streamId: string,
+    clientSteerId: string,
+    steerId: string,
+    ownerUserId: string,
+    ownerTenantId?: string,
+    expectedGenerationCreatedAt?: number,
+  ): Promise<boolean>;
 
   /** Drop any queued steers (terminal cleanup backstop). */
   clearSteers(streamId: string): Promise<void>;
@@ -729,6 +1239,19 @@ export interface IEventTransport {
    */
   emitAbort?(streamId: string, generationId?: number): void;
 
+  /** Awaitable, generation-correlated abort handoff. Resolves true only after
+   * the replica owning that generation processes the abort. */
+  emitAbortConfirmed?(streamId: string, generationId: number): Promise<boolean>;
+
+  /** Publish a predecessor DONE only while the current job's opaque creation
+   * attempt still carries that predecessor in its durable receipt chain. */
+  emitReplacedDoneConfirmed?(
+    streamId: string,
+    event: unknown,
+    replacedGenerationId: number,
+    creationAttemptId: string,
+  ): Promise<void>;
+
   /**
    * Register callback for abort signals from any replica (Redis mode).
    * Called when abort is triggered from any replica.
@@ -739,7 +1262,29 @@ export interface IEventTransport {
    */
   onAbort?(
     streamId: string,
-    callback: (generationId?: number) => void,
+    /** Return true only when this replica owns and stopped the tagged generation. */
+    callback: (generationId?: number) => void | boolean,
+  ): void | (() => void) | Promise<void | (() => void)>;
+
+  /**
+   * Publish a preempt arm/clear to all replicas (Redis mode). Unlike abort
+   * this does NOT stop the run — it asks the generating replica to seal its
+   * current model stream at the next provider-safe boundary. Fenced by
+   * {@link PreemptMessage.createdAt} against replacement jobs.
+   * Optional - only implemented in Redis transport.
+   */
+  emitPreempt?(streamId: string, msg: PreemptMessage): void | Promise<number>;
+
+  /**
+   * Register callback for preempt signals from any replica (Redis mode).
+   * An async implementation resolves only after it can receive messages.
+   * The returned function removes only this registration, allowing a terminal
+   * generation to release its channel without affecting a same-stream replacement.
+   * Optional - only implemented in Redis transport.
+   */
+  onPreempt?(
+    streamId: string,
+    callback: (msg: PreemptMessage) => void,
   ): void | (() => void) | Promise<void | (() => void)>;
 
   /** Get subscriber count for a stream */

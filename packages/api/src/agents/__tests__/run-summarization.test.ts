@@ -224,6 +224,13 @@ beforeEach(() => {
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
   delete process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS;
   delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
+  delete process.env.LANGFUSE_TRACING_ENABLED;
+  delete process.env.LANGFUSE_SAMPLE_RATE;
+  process.env.TENANT_ISOLATION_STRICT = 'true';
+});
+
+afterAll(() => {
+  delete process.env.TENANT_ISOLATION_STRICT;
 });
 
 // ---------------------------------------------------------------------------
@@ -1244,18 +1251,17 @@ describe('Langfuse run config', () => {
   });
 
   it('adds tenant Langfuse credentials from tenant-scoped app config', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout-collector:4318';
 
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
-          fanout: {
-            enabled: true,
-          },
         },
       } as unknown as AppConfig,
     });
@@ -1283,6 +1289,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -1311,6 +1318,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
         },
@@ -1333,6 +1341,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'us',
@@ -1360,6 +1369,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -1382,6 +1392,7 @@ describe('Langfuse run config', () => {
         tenantId: 'tenant-1',
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'us',
@@ -1414,6 +1425,7 @@ describe('Langfuse run config', () => {
         tenantId: 'tenant-1',
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'eu',
@@ -1443,6 +1455,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -1471,6 +1484,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -1500,6 +1514,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'unconfigured',
@@ -1525,7 +1540,7 @@ describe('Langfuse run config', () => {
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
       appConfig: {
-        langfuse: {},
+        langfuse: { enabled: true },
       } as AppConfig,
     });
 
@@ -1568,6 +1583,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
         },
@@ -1593,6 +1609,7 @@ describe('Langfuse run config', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
@@ -1627,6 +1644,7 @@ describe('Langfuse run config', () => {
         tenantId: 'tenant-1',
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'eu',
@@ -1656,6 +1674,7 @@ describe('Langfuse run config', () => {
         tenantId: 'tenant-1',
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'eu',
@@ -1678,69 +1697,10 @@ describe('Langfuse run config', () => {
     },
   );
 
-  it('uses central env Langfuse config when tenant fanout.enabled=false overrides deployment fanout env', async () => {
-    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
-    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
-    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
+  it('keeps central collector tracing when tenant Langfuse export is disabled', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
 
-    const callArgs = await callAndCaptureRunConfig({
-      tenantId: 'tenant-1',
-      appConfig: {
-        langfuse: {
-          publicKey: 'pk-tenant-1',
-          secretKey: encryptV3('sk-tenant-1'),
-          destination: 'eu',
-          fanout: {
-            enabled: false,
-          },
-        },
-      } as AppConfig,
-    });
-
-    expect(callArgs.langfuse).toEqual({
-      deterministicTraceId: true,
-      publicKey: 'pk-central',
-      secretKey: 'sk-central',
-      baseUrl: 'https://central.langfuse.example',
-      metadata: { 'librechat.tenant.id': 'tenant-1' },
-      tags: ['tenant:tenant-1'],
-    });
-  });
-
-  it('uses central env Langfuse config when tenant fanout.enabled is the string false', async () => {
-    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
-    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
-    process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
-    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
-    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
-
-    const callArgs = await callAndCaptureRunConfig({
-      tenantId: 'tenant-1',
-      appConfig: {
-        langfuse: {
-          publicKey: 'pk-tenant-1',
-          secretKey: encryptV3('sk-tenant-1'),
-          destination: 'eu',
-          fanout: {
-            enabled: 'false',
-          },
-        },
-      } as unknown as AppConfig,
-    });
-
-    expect(callArgs.langfuse).toEqual({
-      deterministicTraceId: true,
-      publicKey: 'pk-central',
-      secretKey: 'sk-central',
-      baseUrl: 'https://central.langfuse.example',
-      metadata: { 'librechat.tenant.id': 'tenant-1' },
-      tags: ['tenant:tenant-1'],
-    });
-  });
-
-  it('honors tenant Langfuse enabled=false as a tracing opt-out', async () => {
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
       appConfig: {
@@ -1754,13 +1714,16 @@ describe('Langfuse run config', () => {
 
     expect(callArgs.langfuse).toEqual({
       deterministicTraceId: true,
-      enabled: false,
+      baseUrl: 'http://collector-from-env:4318',
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
   });
 
-  it('honors tenant Langfuse enabled as the string false', async () => {
+  it('keeps central collector tracing when tenant Langfuse enabled is the string false', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
       appConfig: {
@@ -1774,7 +1737,7 @@ describe('Langfuse run config', () => {
 
     expect(callArgs.langfuse).toEqual({
       deterministicTraceId: true,
-      enabled: false,
+      baseUrl: 'http://collector-from-env:4318',
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -1922,9 +1885,8 @@ describe('toolOutputReferences gating', () => {
 // durable checkpoint), so the in-turn `tool_search` results that mark a deferred
 // tool discovered aren't on the critical path. createRun's `discoveredToolNames`
 // input replays those names — captured at pause — so the paused deferred tool is
-// promoted back into `toolDefinitions` (and `defer_loading` flipped) and is present
-// in the rebuilt schema-only toolMap. Without it, the approved tool would be missing
-// and resume would fail with "unknown tool".
+// promoted back into `toolDefinitions` (and `defer_loading` flipped) and its schema
+// is restored to the rebuilt model binding.
 // ---------------------------------------------------------------------------
 describe('createRun deferred-tool replay (HITL resume)', () => {
   /** Agent whose discoverable `deep_tool` lives ONLY in the registry (deferred). */

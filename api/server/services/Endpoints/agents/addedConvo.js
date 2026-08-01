@@ -10,6 +10,7 @@ const {
 const { isEphemeralAgentId } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getMCPServerTools } = require('~/server/services/Config');
+const { getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getSkillDbMethods, canAuthorSkillFiles } = require('./skillDeps');
 const db = require('~/models');
 
@@ -82,6 +83,7 @@ const processAddedConvo = async ({
   defaultActiveOnShare,
   codeEnvAvailable,
   backgroundToolsAvailable,
+  toolIntentsAvailable,
   statefulSessionsAvailable,
   memoryAvailable,
 }) => {
@@ -180,6 +182,7 @@ const processAddedConvo = async ({
         }),
         codeEnvAvailable,
         backgroundToolsAvailable,
+        toolIntentsAvailable,
         statefulSessionsAvailable,
         memoryAvailable,
         skillStates,
@@ -190,6 +193,7 @@ const processAddedConvo = async ({
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
         getConvoFiles: db.getConvoFiles,
+        getAccessibleMcpServerNames,
         updateFilesUsage: db.updateFilesUsage,
         getUserCodeFiles: db.getUserCodeFiles,
         getUserKeyValues: db.getUserKeyValues,

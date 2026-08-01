@@ -22,6 +22,9 @@ jest.mock('~/Providers', () => ({
 jest.mock('../Parts', () => ({
   EditTextPart: () => <div data-testid="edit-text-part" />,
   EmptyText: () => <div data-testid="empty-text" />,
+  AgentUpdate: ({ currentAgentId }: { currentAgentId: string }) => (
+    <div data-testid="post-steer-agent-update" data-agent-id={currentAgentId} />
+  ),
 }));
 
 jest.mock('../MemoryArtifacts', () => ({
@@ -56,7 +59,19 @@ jest.mock('../Part', () => ({
 }));
 
 jest.mock('../ParallelContent', () => ({
-  ParallelContentRenderer: () => <div data-testid="parallel-renderer" />,
+  /** Invokes `renderResumeAttribution` per content index like the real
+   *  renderer does for its sequential stretches, so the wiring is testable. */
+  ParallelContentRenderer: ({
+    content,
+    renderResumeAttribution,
+  }: {
+    content?: Array<TMessageContentParts | undefined>;
+    renderResumeAttribution?: (idx: number) => React.ReactNode;
+  }) => (
+    <div data-testid="parallel-renderer">
+      {content?.map((_, idx) => renderResumeAttribution?.(idx))}
+    </div>
+  ),
 }));
 
 import ContentParts from '../ContentParts';
@@ -137,5 +152,110 @@ describe('ContentParts — interim skill cards', () => {
     expect(skillCard).toBeTruthy();
     expect(textPart).toBeTruthy();
     expect(skillCard.compareDocumentPosition(textPart)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+});
+
+describe('ContentParts — post-steer author re-attribution', () => {
+  const steerPart = {
+    type: ContentTypes.STEER,
+    steer: 'go left',
+  } as unknown as TMessageContentParts;
+  const textPart = (text: string) =>
+    ({ type: ContentTypes.TEXT, text }) as unknown as TMessageContentParts;
+  const header = <div data-testid="author-header" />;
+
+  it('re-renders the author header between a steer and the content that resumes after it', () => {
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[textPart('a'), steerPart, textPart('b')]}
+        authorHeader={header}
+      />,
+    );
+    const headers = screen.getAllByTestId('author-header');
+    expect(headers).toHaveLength(1);
+    const steer = screen.getByTestId(`real-part-${ContentTypes.STEER}`);
+    const textParts = screen.getAllByTestId(`real-part-${ContentTypes.TEXT}`);
+    expect(steer.compareDocumentPosition(headers[0])).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(headers[0].compareDocumentPosition(textParts[1])).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('renders one header per steer block and none after a trailing steer', () => {
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[textPart('a'), steerPart, steerPart, textPart('b'), steerPart]}
+        authorHeader={header}
+      />,
+    );
+    expect(screen.getAllByTestId('author-header')).toHaveLength(1);
+  });
+
+  it('skips empty content slots when finding the part that resumes after a steer', () => {
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[steerPart, undefined, textPart('b')]}
+        authorHeader={header}
+      />,
+    );
+    expect(screen.getAllByTestId('author-header')).toHaveLength(1);
+  });
+
+  it('renders no header when authorHeader is not provided', () => {
+    render(<ContentParts {...baseProps} content={[textPart('a'), steerPart, textPart('b')]} />);
+    expect(screen.queryByTestId('author-header')).toBeNull();
+  });
+
+  it('re-attributes to the ACTIVE agent when a handoff preceded the steer', () => {
+    const agentUpdate = {
+      type: ContentTypes.AGENT_UPDATE,
+      [ContentTypes.AGENT_UPDATE]: { agentId: 'agent_b', index: 1 },
+    } as unknown as TMessageContentParts;
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[textPart('a'), agentUpdate, textPart('b'), steerPart, textPart('c')]}
+        authorHeader={header}
+      />,
+    );
+    const marker = screen.getAllByTestId('post-steer-agent-update');
+    expect(marker).toHaveLength(1);
+    expect(marker[0]).toHaveAttribute('data-agent-id', 'agent_b');
+    expect(screen.queryByTestId('author-header')).toBeNull();
+  });
+
+  it('provides resume attribution to the parallel renderer for its sequential stretches', () => {
+    const parallelText = {
+      type: ContentTypes.TEXT,
+      text: 'column',
+      groupId: 1,
+    } as unknown as TMessageContentParts;
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[parallelText, steerPart, textPart('resumed')]}
+        authorHeader={header}
+      />,
+    );
+    const renderer = screen.getByTestId('parallel-renderer');
+    expect(renderer).toBeTruthy();
+    expect(screen.getAllByTestId('author-header')).toHaveLength(1);
+  });
+
+  it('keeps the top-level header when the handoff comes AFTER the steer', () => {
+    const agentUpdate = {
+      type: ContentTypes.AGENT_UPDATE,
+      [ContentTypes.AGENT_UPDATE]: { agentId: 'agent_b', index: 2 },
+    } as unknown as TMessageContentParts;
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[textPart('a'), steerPart, agentUpdate, textPart('b')]}
+        authorHeader={header}
+      />,
+    );
+    expect(screen.getAllByTestId('author-header')).toHaveLength(1);
+    expect(screen.queryByTestId('post-steer-agent-update')).toBeNull();
   });
 });

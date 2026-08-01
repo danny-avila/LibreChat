@@ -1290,12 +1290,51 @@ export class MCPOAuthHandler {
   /**
    * Deletes an orphaned state mapping when a flow is replaced.
    * Prevents old authorization URLs from resolving after a flow restart.
+   * Returns `false` when the underlying store rejected the delete.
    */
   static async deleteStateMapping(
     state: string,
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
+  ): Promise<boolean> {
+    return flowManager.deleteFlow(state, this.STATE_MAP_TYPE);
+  }
+
+  /**
+   * Deletes an OAuth flow together with its state mapping, for teardown paths
+   * that don't already hold the flow (e.g. server uninstall). The flow is
+   * deleted first on purpose: it is what makes a provider callback
+   * completable, and teardown runs after the server's tokens were removed, so
+   * a surviving callback-capable flow could recreate credentials the user
+   * just revoked. A failure between the two deletes leaves at worst an
+   * orphaned mapping, which the callback's stored-state equality gates reduce
+   * to a clean invalid_state. Both deletes are attempted regardless of the
+   * other's outcome; any reported storage failure is surfaced as a rejection
+   * for the caller's best-effort logging.
+   */
+  static async deleteFlowAndStateMapping(
+    flowId: string,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
   ): Promise<void> {
-    await flowManager.deleteFlow(state, this.STATE_MAP_TYPE);
+    /** A failed metadata read must not abort teardown: the flow is deleted
+     *  blindly and the unidentifiable mapping is left to the callback gates */
+    let state: string | null = null;
+    let metadataReadFailed = false;
+    try {
+      const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
+      const metadata = flowState?.metadata as MCPOAuthFlowMetadata | undefined;
+      state = typeof metadata?.state === 'string' ? metadata.state : null;
+    } catch {
+      metadataReadFailed = true;
+    }
+
+    const flowDeleted = await flowManager.deleteFlow(flowId, this.FLOW_TYPE);
+    const mappingDeleted = state ? await this.deleteStateMapping(state, flowManager) : true;
+
+    if (metadataReadFailed || !flowDeleted || !mappingDeleted) {
+      throw new Error(
+        `Failed to fully delete OAuth flow ${flowId} (metadata read ok: ${!metadataReadFailed}, flow deleted: ${flowDeleted}, state mapping deleted: ${mappingDeleted})`,
+      );
+    }
   }
 
   /**

@@ -3,11 +3,45 @@ import { ReasoningResponseKey } from 'librechat-data-provider';
 import { ToolMessage, AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
 import {
   extractDiscoveredToolsFromHistory,
+  getRunDiscoveredTools,
   getReasoningKey,
   isDeepSeekReasoningProvider,
   shouldReplayReasoningContent,
   anyAgentReplaysReasoningContent,
 } from './run';
+
+describe('getRunDiscoveredTools', () => {
+  it('uses the run discovery snapshot instead of reconstructing it from messages', () => {
+    const messages = [
+      new ToolMessage({
+        content: JSON.stringify({ tools: [{ name: 'save_project_mcp_linear' }] }),
+        tool_call_id: 'call_1',
+        name: 'tool_search',
+      }),
+    ];
+
+    expect(
+      getRunDiscoveredTools({
+        getDiscoveredTools: () => ['save_issue_mcp_linear'],
+        getRunMessages: () => messages,
+      }),
+    ).toEqual(['save_issue_mcp_linear']);
+  });
+
+  it('falls back to tool-search messages for agents releases without a snapshot API', () => {
+    const messages = [
+      new ToolMessage({
+        content: JSON.stringify({ tools: [{ name: 'save_issue_mcp_linear' }] }),
+        tool_call_id: 'call_1',
+        name: 'tool_search',
+      }),
+    ];
+
+    expect(getRunDiscoveredTools({ getRunMessages: () => messages })).toEqual([
+      'save_issue_mcp_linear',
+    ]);
+  });
+});
 
 describe('extractDiscoveredToolsFromHistory', () => {
   it('extracts tool names from tool_search JSON output', () => {

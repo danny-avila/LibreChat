@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { isEphemeralAgentId } from 'librechat-data-provider';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
-import { formatSkillCatalog, SkillToolDefinition } from '@librechat/agents';
+import { formatSkillCatalog, SkillToolDefinition, ReadFileToolDefinition } from '@librechat/agents';
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Agent } from 'librechat-data-provider';
@@ -350,6 +350,15 @@ export interface InjectSkillCatalogResult {
   toolDefinitions: LCTool[] | undefined;
   skillCount: number;
   /**
+   * Tool names the skills capability manages this run: the `skill` tool (when
+   * anything is model-invocable) and `read_file` (always, for primed skill
+   * references). `bash_tool` is excluded even when this call registers it —
+   * it belongs to the `execute_code` capability, which reports it itself.
+   * `initializeAgent` records these under the `skills` marker so spec
+   * selections naming `skills` govern exactly these definitions.
+   */
+  toolNames: string[];
+  /**
    * IDs of skills the runtime is authorized to resolve via `getSkillByName`.
    * Includes `disable-model-invocation: true` skills even though they're
    * absent from the catalog text — the skill-tool handler needs to be able
@@ -404,6 +413,7 @@ export async function injectSkillCatalog(
     return {
       toolDefinitions: inputDefs,
       skillCount: 0,
+      toolNames: [],
       activeSkillIds: [],
       activeSkillNames: new Set<string>(),
     };
@@ -469,6 +479,7 @@ export async function injectSkillCatalog(
     return {
       toolDefinitions: inputDefs,
       skillCount: 0,
+      toolNames: [],
       activeSkillIds: [],
       activeSkillNames: new Set<string>(),
     };
@@ -590,9 +601,15 @@ export async function injectSkillCatalog(
   });
   workingDefs = codeExecResult.toolDefinitions;
 
+  const toolNames =
+    catalogVisibleSkills.length > 0
+      ? [skillToolDef.name, ReadFileToolDefinition.name]
+      : [ReadFileToolDefinition.name];
+
   return {
     toolDefinitions: workingDefs,
     skillCount: catalogVisibleSkills.length,
+    toolNames,
     activeSkillIds: executableSkills.map((s) => s._id),
     activeSkillNames: new Set<string>(executableSkills.map((s) => s.name)),
   };

@@ -2,6 +2,12 @@ import { StandardGraph } from '@librechat/agents';
 import { StepTypes } from 'librechat-data-provider';
 import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
+import type { SteerQueueItem, SteerReceipt } from '../interfaces/IJobStore';
+import {
+  PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+  STEER_ENQUEUE_RECEIPT_FULL,
+} from '../interfaces/IJobStore';
+import { clearRedisTestPrefix } from './helpers/redis';
 
 /** Suppress winston Console transport output (survives jest.resetModules) */
 jest.spyOn(console, 'log').mockImplementation();
@@ -45,6 +51,9 @@ describe('RedisJobStore Integration Tests', () => {
     process.env.REDIS_KEY_PREFIX = testPrefix;
     process.env.REDIS_PING_INTERVAL = '0';
     process.env.REDIS_RETRY_MAX_ATTEMPTS = '5';
+    // This suite exercises the receipt-safe current behavior. Rollout-specific
+    // v1 defaults and mixed-client downgrade paths live in protocolRollout.
+    process.env.GENERATION_PROTOCOL_VERSION = '2';
 
     jest.resetModules();
 
@@ -62,14 +71,9 @@ describe('RedisJobStore Integration Tests', () => {
       return;
     }
 
-    // Clean up all test keys (delete individually for cluster compatibility)
     try {
-      const keys = await ioredisClient.keys(`${testPrefix}*`);
-      // Also clean up stream keys which use hash tags
-      const streamKeys = await ioredisClient.keys(`stream:*`);
-      const allKeys = [...keys, ...streamKeys];
-      // Delete individually to avoid CROSSSLOT errors in cluster mode
-      await Promise.all(allKeys.map((key) => ioredisClient!.del(key)));
+      const keyPrefix = String(ioredisClient.options.keyPrefix ?? '');
+      await clearRedisTestPrefix(ioredisClient, keyPrefix);
     } catch (error) {
       console.warn('Error cleaning up test keys:', error);
     }
@@ -125,6 +129,45 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('returns the exact predecessor captured by the atomic replacement script', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `test-replaced-owner-${Date.now()}`;
+      const predecessor = await store.createJob(streamId, 'user-1', streamId);
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        expectCreatedAt: predecessor.createdAt,
+      });
+
+      const replacement = await store.createJob(streamId, 'user-1', streamId);
+
+      expect(predecessor.checkpointNamespace).toBe(String(predecessor.createdAt));
+      expect(replacement.checkpointNamespace).toBe(String(replacement.createdAt));
+      expect(replacement.checkpointNamespace).not.toBe(predecessor.checkpointNamespace);
+      expect(replacement.replacedJob).toEqual({
+        createdAt: predecessor.createdAt,
+        status: 'requires_action',
+        conversationId: streamId,
+      });
+      // The receipt is durably reconstructed for lost-reply recovery, but it
+      // remains non-enumerable so ordinary job serializers cannot expose it.
+      const durableReplacement = await store.getJob(streamId);
+      expect((durableReplacement as typeof replacement).replacedJob).toEqual(
+        replacement.replacedJob,
+      );
+      expect(Object.getOwnPropertyDescriptor(durableReplacement!, 'replacedJob')).toMatchObject({
+        enumerable: false,
+      });
+      expect(Object.keys(durableReplacement!)).not.toContain('replacedJob');
+      await store.destroy();
+    });
+
     test('should update job status', async () => {
       if (!ioredisClient) {
         return;
@@ -143,6 +186,62 @@ describe('RedisJobStore Integration Tests', () => {
       expect(job?.status).toBe('complete');
       expect(job?.completedAt).toBeDefined();
 
+      await store.destroy();
+    });
+
+    test('atomically rewrites a requires_action barrier in the same status', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `same-status-pause-${Date.now()}`;
+      const job = await store.createJob(streamId, 'user-1', streamId);
+      const first = buildPendingAction(`${streamId}-first`);
+      const second = buildPendingAction(`${streamId}-second`);
+
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'requires_action',
+          expectCreatedAt: job.createdAt,
+          patch: {
+            pendingAction: first,
+            pendingActionId: first.actionId,
+            terminalPersistenceStartedAt: 1234,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'requires_action',
+          to: 'requires_action',
+          expectActionId: first.actionId,
+          expectCreatedAt: job.createdAt,
+          patch: { pendingAction: second, pendingActionId: second.actionId },
+          clear: ['terminalPersistenceStartedAt'],
+        }),
+      ).resolves.toBe(true);
+      await expect(store.getJob(streamId)).resolves.toMatchObject({
+        status: 'requires_action',
+        pendingActionId: second.actionId,
+        pendingAction: { actionId: second.actionId },
+      });
+      expect((await store.getJob(streamId))?.terminalPersistenceStartedAt).toBeUndefined();
+
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'requires_action',
+          to: 'requires_action',
+          expectActionId: first.actionId,
+          expectCreatedAt: job.createdAt,
+          patch: { pendingAction: first, pendingActionId: first.actionId },
+        }),
+      ).resolves.toBe(false);
+      expect((await store.getJob(streamId))?.pendingActionId).toBe(second.actionId);
       await store.destroy();
     });
 
@@ -374,15 +473,181 @@ describe('RedisJobStore Integration Tests', () => {
         expect((await store.peekSteers(streamId)).map((steer) => steer.steerId)).toEqual([
           'replacement-steer',
         ]);
-        await expect(
-          store.claimParkedSteers(streamId, `"userId":"${userId}"`),
-        ).resolves.toBeUndefined();
+        const parked = await store.claimParkedSteers(streamId, userId);
+        expect(parked).toBeDefined();
+        expect(JSON.parse(parked as string)).toMatchObject({
+          userId,
+          steers: [{ steerId: 'old-steer', text: 'do not leak this' }],
+        });
         expect(await ioredisClient.smembers('stream:running')).toContain(streamId);
         expect(await store.getActiveJobIdsByUser(userId)).toContain(streamId);
       } finally {
         releaseTransition?.();
         restoreEval?.();
         now.mockRestore();
+        await store.destroy();
+      }
+    });
+  });
+
+  describe('Steer queue arm (in-place escalation)', () => {
+    test('arms a queued steer in place, preserving FIFO order and every field', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `arm-steer-${Date.now()}`;
+
+      try {
+        const job = await store.createJob(streamId, 'user-1', streamId, undefined, {
+          preemptCapable: true,
+        });
+        await store.enqueueSteer(streamId, {
+          steerId: 'first',
+          text: 'earlier instruction',
+          userId: 'user-1',
+          createdAt: 1,
+          files: [{ file_id: 'f1' }] as never,
+        });
+        await store.enqueueSteer(streamId, {
+          steerId: 'second',
+          text: 'later instruction',
+          userId: 'user-1',
+          createdAt: 2,
+        });
+
+        await expect(store.armSteer(streamId, 'first', job.createdAt)).resolves.toBe('armed');
+
+        const queue = await store.peekSteers(streamId);
+        expect(queue.map((item) => item.steerId)).toEqual(['first', 'second']);
+        /** Whole-item decode/patch/encode: nothing but the flag changes. */
+        expect(queue[0]).toMatchObject({
+          steerId: 'first',
+          text: 'earlier instruction',
+          userId: 'user-1',
+          createdAt: 1,
+          preempt: true,
+        });
+        expect(queue[0].files).toEqual([{ file_id: 'f1' }]);
+        expect(queue[1].preempt).toBeUndefined();
+      } finally {
+        await store.destroy();
+      }
+    });
+
+    test('matches the decoded steer id exactly instead of a caller-built JSON fragment', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `arm-steer-exact-id-${Date.now()}`;
+
+      try {
+        const job = await store.createJob(streamId, 'user-1', streamId, undefined, {
+          preemptCapable: true,
+        });
+        await store.enqueueSteer(streamId, {
+          steerId: 'target',
+          text: 'matching payload',
+          userId: 'user-1',
+          createdAt: 1,
+        });
+
+        /** The old optimization embedded this value in a JSON search fragment,
+         * which matched the real item's adjacent `steerId` + `text` fields. */
+        await expect(
+          store.armSteer(streamId, 'target","text":"matching payload', job.createdAt),
+        ).resolves.toBe('missing');
+        const queue = await store.peekSteers(streamId, job.createdAt);
+        expect(queue).toHaveLength(1);
+        expect(queue[0].steerId).toBe('target');
+        expect(queue[0].preempt).toBeUndefined();
+      } finally {
+        await store.destroy();
+      }
+    });
+
+    test('refuses to arm a capable job after it enters requires_action', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `arm-steer-paused-${Date.now()}`;
+
+      try {
+        const job = await store.createJob(streamId, 'user-1', streamId, undefined, {
+          preemptCapable: true,
+        });
+        await store.enqueueSteer(streamId, {
+          steerId: 'kept',
+          text: 'wait until the run resumes',
+          userId: 'user-1',
+          createdAt: 1,
+          files: [{ file_id: 'f1' }] as never,
+        });
+        const before = await store.peekSteers(streamId, job.createdAt);
+        await expect(
+          store.transitionStatus(streamId, {
+            from: 'running',
+            to: 'requires_action',
+            expectCreatedAt: job.createdAt,
+          }),
+        ).resolves.toBe(true);
+
+        await expect(store.armSteer(streamId, 'kept', job.createdAt)).resolves.toBe('missing');
+        await expect(store.peekSteers(streamId, job.createdAt)).resolves.toEqual(before);
+      } finally {
+        await store.destroy();
+      }
+    });
+
+    test('refuses a missing steer, a stale generation, and a closed queue', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `arm-steer-guards-${Date.now()}`;
+
+      try {
+        const job = await store.createJob(streamId, 'user-1', streamId);
+        await store.enqueueSteer(streamId, {
+          steerId: 'kept',
+          text: 'still waiting',
+          userId: 'user-1',
+          createdAt: 1,
+        });
+
+        await expect(store.armSteer(streamId, 'absent', job.createdAt)).resolves.toBe('missing');
+        await expect(store.armSteer(streamId, 'kept', job.createdAt + 999)).resolves.toBe(
+          'missing',
+        );
+        /** Live-capability predicate: the job above carries no preemptCapable,
+         *  so an otherwise-valid arm answers `incapable` and leaves the item. */
+        await expect(store.armSteer(streamId, 'kept', job.createdAt)).resolves.toBe('incapable');
+        expect((await store.peekSteers(streamId))[0].preempt).toBeUndefined();
+
+        /** `enqueueSteer` refuses once closed, so plant a raw item directly to
+         *  exercise the closed guard with something findable in the list. */
+        await store.closeAndDrainSteers(streamId, job.createdAt);
+        await ioredisClient.rpush(
+          `stream:{${streamId}}:steers`,
+          JSON.stringify({
+            steerId: 'kept',
+            text: 'still waiting',
+            userId: 'user-1',
+            createdAt: 1,
+          }),
+        );
+        await expect(store.armSteer(streamId, 'kept', job.createdAt)).resolves.toBe('missing');
+      } finally {
         await store.destroy();
       }
     });
@@ -542,6 +807,217 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('releasing a pause-persistence barrier preserves an explicit long approval TTL', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `long-pause-barrier-ttl-${Date.now()}`;
+      const jobKey = `stream:{${streamId}}:job`;
+      const chunkKey = `stream:{${streamId}}:chunks`;
+      const job = await store.createJob(streamId, 'user-1', streamId);
+      await store.appendChunk(
+        streamId,
+        { event: 'on_message_delta', data: { text: 'before approval' } },
+        job.createdAt,
+      );
+      const action = {
+        ...buildPendingAction(streamId),
+        expiresAt: Date.now() + 3 * 24 * 60 * 60 * 1000,
+      };
+      const barrierId = `pause-persistence:${action.actionId}`;
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'requires_action',
+          expectCreatedAt: job.createdAt,
+          patch: {
+            pendingAction: action,
+            pendingActionId: barrierId,
+            terminalPersistencePending: true,
+            terminalPersistenceStartedAt: Date.now(),
+          },
+        }),
+      ).resolves.toBe(true);
+
+      const jobTtlBefore = await ioredisClient.ttl(jobKey);
+      const chunkTtlBefore = await ioredisClient.ttl(chunkKey);
+      expect(jobTtlBefore).toBeGreaterThan(2 * 24 * 60 * 60);
+      expect(chunkTtlBefore).toBeGreaterThan(2 * 24 * 60 * 60);
+
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'requires_action',
+          to: 'requires_action',
+          expectActionId: barrierId,
+          expectCreatedAt: job.createdAt,
+          patch: {
+            pendingActionId: action.actionId,
+            terminalPersistencePending: false,
+          },
+          clear: ['terminalPersistenceStartedAt'],
+        }),
+      ).resolves.toBe(true);
+
+      expect(await ioredisClient.ttl(jobKey)).toBeGreaterThanOrEqual(jobTtlBefore - 2);
+      expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThanOrEqual(chunkTtlBefore - 2);
+
+      await store.destroy();
+    });
+
+    test('failed pause persistence atomically terminalizes before a waiting Redis resume', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const [{ RedisJobStore }, { InMemoryEventTransport }, { GenerationJobManagerClass }] =
+        await Promise.all([
+          import('../implementations/RedisJobStore'),
+          import('../implementations/InMemoryEventTransport'),
+          import('../GenerationJobManager'),
+        ]);
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore: store,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: true,
+        cleanupOnComplete: false,
+      });
+      manager.initialize();
+
+      try {
+        const streamId = `failed-pause-persistence-race-${Date.now()}`;
+        const job = await manager.createJob(streamId, 'user-1', streamId);
+        const action = buildPendingAction(streamId);
+        const waitingSteer = {
+          steerId: 'redis-steer-waiting-on-failed-pause',
+          text: 'preserve the Redis steer',
+          userId: 'user-1',
+          createdAt: Date.now(),
+        };
+        await expect(manager.steering.enqueue(streamId, waitingSteer, job.createdAt)).resolves.toBe(
+          1,
+        );
+        await expect(
+          manager.approvals.pause(streamId, action, {
+            expectedCreatedAt: job.createdAt,
+            persistencePending: true,
+          }),
+        ).resolves.toBe(true);
+
+        let resumeSettled = false;
+        const resuming = manager.approvals
+          .resolve(streamId, action.actionId, undefined, job.createdAt)
+          .then((result) => {
+            resumeSettled = true;
+            return result;
+          });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(resumeSettled).toBe(false);
+
+        await expect(
+          manager.failPausePersistence(
+            streamId,
+            action.actionId,
+            'Redis paused response was not persisted',
+            job.createdAt,
+          ),
+        ).resolves.toBe(true);
+        await expect(resuming).resolves.toBe(false);
+        await expect(manager.getJob(streamId)).resolves.toMatchObject({
+          status: 'error',
+          error: 'Redis paused response was not persisted',
+        });
+        const failedStoredJob = await store.getJob(streamId);
+        expect(failedStoredJob?.pendingAction).toBeUndefined();
+        expect(failedStoredJob?.pendingActionId).toBeUndefined();
+        expect(failedStoredJob?.terminalPersistencePending).toBeUndefined();
+        expect(failedStoredJob?.terminalPersistenceStartedAt).toBeUndefined();
+        await expect(manager.steering.peek(streamId, job.createdAt)).resolves.toEqual([]);
+        await expect(manager.steering.claim(streamId, { userId: 'user-1' })).resolves.toEqual([
+          expect.objectContaining({
+            steerId: waitingSteer.steerId,
+            text: waitingSteer.text,
+          }),
+        ]);
+      } finally {
+        await manager.destroy();
+      }
+    });
+
+    test('relays a Redis store-only pause timeout into the matching attached runtime once', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+      const [{ RedisJobStore }, { InMemoryEventTransport }, { GenerationJobManagerClass }] =
+        await Promise.all([
+          import('../implementations/RedisJobStore'),
+          import('../implementations/InMemoryEventTransport'),
+          import('../GenerationJobManager'),
+        ]);
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      const transport = new InMemoryEventTransport();
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore: store,
+        eventTransport: transport,
+        isRedis: true,
+        cleanupOnComplete: false,
+      });
+      manager.initialize();
+
+      try {
+        const streamId = 'redis-remote-pause-timeout';
+        const job = await manager.createJob(streamId, 'user-1', streamId);
+        const action = buildPendingAction(streamId);
+        const onError = jest.fn();
+        const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+        await expect(
+          manager.approvals.pause(streamId, action, {
+            expectedCreatedAt: job.createdAt,
+            persistencePending: true,
+          }),
+        ).resolves.toBe(true);
+        const broadcast = jest.spyOn(transport, 'emitError');
+
+        now.mockReturnValue(31_001);
+        // Model cleanup on a different replica: it has the shared store but no
+        // access to this manager's runtime or attached local subscriber.
+        await store.cleanup();
+        await expect(store.getJob(streamId)).resolves.toMatchObject({
+          status: 'error',
+          error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+        });
+        expect(job.abortController.signal.aborted).toBe(false);
+        expect(onError).not.toHaveBeenCalled();
+
+        const managerWithCleanup = manager as unknown as { cleanup(): Promise<void> };
+        await managerWithCleanup.cleanup();
+        expect(job.abortController.signal.aborted).toBe(true);
+        expect(onError).toHaveBeenCalledTimes(1);
+        expect(onError).toHaveBeenCalledWith(PAUSE_PERSISTENCE_TIMEOUT_ERROR);
+        expect(broadcast).toHaveBeenCalledWith(
+          streamId,
+          PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+          job.createdAt,
+        );
+
+        await managerWithCleanup.cleanup();
+        expect(onError).toHaveBeenCalledTimes(1);
+        subscription?.unsubscribe();
+      } finally {
+        await manager.destroy();
+        now.mockRestore();
+      }
+    });
+
     test('saveRunSteps preserves a paused job’s extended TTL (does not reset to running)', async () => {
       if (!ioredisClient) {
         return;
@@ -618,7 +1094,7 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
-    test('appendChunk keeps a normally-running job on the short running TTL (no inflation)', async () => {
+    test('appendChunk keeps a normally-running job on the bounded running storage TTL', async () => {
       if (!ioredisClient) {
         return;
       }
@@ -630,10 +1106,8 @@ describe('RedisJobStore Integration Tests', () => {
       const streamId = `running-no-inflate-${Date.now()}`;
       const chunkKey = `stream:{${streamId}}:chunks`;
 
-      // A normal running job: the job key carries the running TTL (set by createJob),
-      // NOT the long approval window. appendChunk must settle the chunk TTL on the
-      // short running TTL — never max it against the job key — so a live stream is
-      // not inflated to the 24h approval window.
+      // A normal running job uses the configured running TTL plus the five-minute
+      // publication grace window, not the much longer approval window.
       await store.createJob(streamId, 'user-1', streamId);
       await store.appendChunk(streamId, {
         event: 'on_message_delta',
@@ -641,8 +1115,39 @@ describe('RedisJobStore Integration Tests', () => {
       });
 
       const ttl = await ioredisClient.ttl(chunkKey);
-      expect(ttl).toBeGreaterThan(0);
-      expect(ttl).toBeLessThanOrEqual(60);
+      expect(ttl).toBeGreaterThan(300);
+      expect(ttl).toBeLessThanOrEqual(360);
+
+      await store.destroy();
+    });
+
+    test('appendChunk refreshes the retained generation epoch beyond the live job TTL', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `chunk-epoch-refresh-${Date.now()}`;
+      const jobKey = `stream:{${streamId}}:job`;
+      const epochKey = `stream:{${streamId}}:generation-epoch`;
+      const job = await store.createJob(streamId, 'user-1', streamId);
+      await ioredisClient.expire(epochKey, 1);
+
+      await expect(
+        store.appendChunk(
+          streamId,
+          { event: 'on_message_delta', data: { text: 'still alive' } },
+          job.createdAt,
+        ),
+      ).resolves.toBe(true);
+
+      const jobTtl = await ioredisClient.ttl(jobKey);
+      const epochTtl = await ioredisClient.ttl(epochKey);
+      expect(await ioredisClient.get(epochKey)).toBe(String(job.createdAt));
+      expect(epochTtl).toBeGreaterThan(jobTtl + 250);
 
       await store.destroy();
     });
@@ -1297,12 +1802,12 @@ describe('RedisJobStore Integration Tests', () => {
         data: { id: 'step-1', type: 'text', text: 'test' },
       });
 
-      // Check that TTL was set on the stream key
+      // The storage TTL includes the five-minute terminal-publication grace.
       // Note: ioredis client has keyPrefix, so we use the key WITHOUT the prefix
       // Key uses hash tag format: stream:{streamId}:chunks
       const ttl = await ioredisClient.ttl(`stream:{${streamId}}:chunks`);
-      expect(ttl).toBeGreaterThan(0);
-      expect(ttl).toBeLessThanOrEqual(60);
+      expect(ttl).toBeGreaterThan(300);
+      expect(ttl).toBeLessThanOrEqual(360);
 
       await store.destroy();
     });
@@ -1372,7 +1877,7 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
-    test('same-stream replacement transfers active membership to the new owner', async () => {
+    test('same-stream replacement cannot transfer active membership to a different owner', async () => {
       if (!ioredisClient) {
         return;
       }
@@ -1384,11 +1889,17 @@ describe('RedisJobStore Integration Tests', () => {
       const streamId = `owner-replacement-${Date.now()}`;
       const oldUserId = `old-owner-${Date.now()}`;
       const newUserId = `new-owner-${Date.now()}`;
-      await store.createJob(streamId, oldUserId, streamId);
-      await store.createJob(streamId, newUserId, streamId);
+      const original = await store.createJob(streamId, oldUserId, streamId);
+      await expect(store.createJob(streamId, newUserId, streamId)).rejects.toThrow(
+        'Generation job owner mismatch',
+      );
 
-      await expect(store.getActiveJobIdsByUser(oldUserId)).resolves.not.toContain(streamId);
-      await expect(store.getActiveJobIdsByUser(newUserId)).resolves.toContain(streamId);
+      await expect(store.getActiveJobIdsByUser(oldUserId)).resolves.toContain(streamId);
+      await expect(store.getActiveJobIdsByUser(newUserId)).resolves.not.toContain(streamId);
+      await expect(store.getJob(streamId)).resolves.toMatchObject({
+        userId: oldUserId,
+        createdAt: original.createdAt,
+      });
 
       await store.destroy();
     });
@@ -2130,8 +2641,8 @@ describe('RedisJobStore Integration Tests', () => {
 
       const chunkKey = `stream:{${streamId}}:chunks`;
       const ttl = await ioredisClient.ttl(chunkKey);
-      expect(ttl).toBeGreaterThan(0);
-      expect(ttl).toBeLessThanOrEqual(120);
+      expect(ttl).toBeGreaterThan(300);
+      expect(ttl).toBeLessThanOrEqual(420);
 
       await store.destroy();
     });
@@ -2163,16 +2674,17 @@ describe('RedisJobStore Integration Tests', () => {
       const reducedTtl = await ioredisClient.ttl(chunkKey);
       expect(reducedTtl).toBeLessThanOrEqual(30);
 
-      // Append another chunk - TTL should be refreshed back to running TTL
+      // Append another chunk - TTL should be refreshed to the running storage
+      // window (configured running TTL plus publication grace).
       await store.appendChunk(streamId, {
         event: 'on_message_delta',
         data: { id: 'step-1', type: 'text', text: 'second' },
       });
 
       const ttl2 = await ioredisClient.ttl(chunkKey);
-      // Should be refreshed to ~120, not still ~30
+      // Should be refreshed to ~420, not still ~30.
       expect(ttl2).toBeGreaterThan(30);
-      expect(ttl2).toBeLessThanOrEqual(120);
+      expect(ttl2).toBeLessThanOrEqual(420);
 
       await store.destroy();
     });
@@ -2319,6 +2831,55 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('terminal CAS atomically returns and parks claimed plus queued steers', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-terminal-drain-${Date.now()}`;
+      const userId = 'terminal-drain-user';
+      const job = await store.createJob(streamId, userId, streamId);
+      const claimed = buildSteer('claimed-before-abort', 'claimed first');
+      const queued = buildSteer('queued-before-abort', 'queued second');
+      await store.enqueueSteer(streamId, claimed);
+      await expect(store.drainSteers(streamId, job.createdAt)).resolves.toEqual([claimed]);
+      await store.enqueueSteer(streamId, queued);
+
+      await expect(
+        store.transitionStatusAndDrainSteers(streamId, {
+          from: 'running',
+          to: 'aborted',
+          expectCreatedAt: job.createdAt,
+          patch: { completedAt: Date.now() },
+        }),
+      ).resolves.toEqual([claimed, queued]);
+      await expect(store.getJob(streamId)).resolves.toMatchObject({ status: 'aborted' });
+      await expect(store.peekSteers(streamId, job.createdAt)).resolves.toEqual([]);
+      await expect(store.peekClaimedSteers(streamId, job.createdAt)).resolves.toEqual([]);
+      const parked = await store.claimParkedSteers(streamId, userId);
+      expect(JSON.parse(parked as string)).toMatchObject({
+        userId,
+        steers: [
+          { steerId: claimed.steerId, text: claimed.text },
+          { steerId: queued.steerId, text: queued.text },
+        ],
+      });
+
+      await expect(
+        store.transitionStatusAndDrainSteers(streamId, {
+          from: 'running',
+          to: 'aborted',
+          expectCreatedAt: job.createdAt,
+        }),
+      ).resolves.toBeNull();
+
+      await store.destroy();
+    });
+
     test('createJob clears steers inherited from a replaced job', async () => {
       if (!ioredisClient) {
         return;
@@ -2401,7 +2962,7 @@ describe('RedisJobStore Integration Tests', () => {
 
       const ttl = await ioredisClient.ttl(sequenceKey);
       expect(ttl).toBeGreaterThan(24 * 60 * 60);
-      expect(ttl).toBeLessThanOrEqual(approvalWindowSeconds + 60);
+      expect(ttl).toBeLessThanOrEqual(approvalWindowSeconds + 360);
 
       await store.destroy();
     });
@@ -2454,7 +3015,34 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
-    test('parked steers survive deleteJob, claim exactly once, and reset on createJob', async () => {
+    test('removeSteer atomically refuses a generation replaced after authorization', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-remove-replaced-${Date.now()}`;
+      const predecessor = await store.createJob(streamId, 'steer-user', streamId);
+      const reusedId = buildSteer('reused-id', 'predecessor');
+      await store.enqueueSteer(streamId, reusedId, predecessor.createdAt);
+      const replacement = await store.createJob(streamId, 'steer-user', streamId);
+      const replacementItem = buildSteer(reusedId.steerId, 'replacement');
+      await store.enqueueSteer(streamId, replacementItem, replacement.createdAt);
+
+      await expect(
+        store.removeSteer(streamId, reusedId.steerId, predecessor.createdAt),
+      ).resolves.toBe(false);
+      await expect(store.peekSteers(streamId, replacement.createdAt)).resolves.toEqual([
+        replacementItem,
+      ]);
+
+      await store.destroy();
+    });
+
+    test('parked steers survive deleteJob, replay on read, and consume on exact recovery', async () => {
       if (!ioredisClient) {
         return;
       }
@@ -2477,15 +3065,115 @@ describe('RedisJobStore Integration Tests', () => {
       // …under its own bounded TTL, not the job's lifecycle.
       expect(await ioredisClient.ttl(`stream:{${streamId}}:parked`)).toBeGreaterThan(0);
 
-      // Claim-on-read: exactly once.
-      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBe(payload);
-      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBeUndefined();
+      // Owner reads are replayable so a lost status response cannot erase recovery.
+      expect(JSON.parse((await store.claimParkedSteers(streamId, 'steer-user')) as string)).toEqual(
+        { ...JSON.parse(payload), generationProtocolVersion: 2 },
+      );
+      expect(JSON.parse((await store.claimParkedSteers(streamId, 'steer-user')) as string)).toEqual(
+        { ...JSON.parse(payload), generationProtocolVersion: 2 },
+      );
 
-      // A replacement run resets any parked payload atomically with creation.
-      await store.parkSteers(streamId, payload);
-      await store.createJob(streamId, 'steer-user', streamId);
-      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBeUndefined();
+      // Starting the deterministic recovery leases (hides) the source without
+      // deleting it before the ordinary user message is durable.
+      const failedRecovery = await store.createJob(
+        streamId,
+        'steer-user',
+        streamId,
+        undefined,
+        {},
+        'p1',
+        undefined,
+        undefined,
+        undefined,
+        { text: 'kept', fileIds: [] },
+      );
+      expect(await store.claimParkedSteers(streamId, 'steer-user')).toBeUndefined();
+      expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(1);
 
+      // Initialization failure makes the lease visible again.
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'error',
+        expectCreatedAt: failedRecovery.createdAt,
+        patch: { error: 'provider init failed', completedAt: Date.now() },
+      });
+      expect(JSON.parse((await store.claimParkedSteers(streamId, 'steer-user')) as string)).toEqual(
+        { ...JSON.parse(payload), generationProtocolVersion: 2 },
+      );
+
+      // A persisted retry commits and removes the exact source.
+      const persistedRecovery = await store.createJob(
+        streamId,
+        'steer-user',
+        streamId,
+        undefined,
+        {},
+        'p1',
+        undefined,
+        undefined,
+        undefined,
+        { text: 'kept', fileIds: [] },
+      );
+      expect(
+        await store.consumeParkedSteer(
+          streamId,
+          'p1',
+          'steer-user',
+          undefined,
+          persistedRecovery.createdAt,
+        ),
+      ).toBe(true);
+      expect(await store.claimParkedSteers(streamId, 'steer-user')).toBeUndefined();
+      expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(0);
+
+      await store.destroy();
+    });
+
+    test.each([
+      ['changed text', { text: 'forged words', fileIds: ['file-a', 'file-b'] }],
+      ['changed files', { text: 'original words', fileIds: ['file-a', 'file-c'] }],
+    ])('atomically refuses parked recovery with %s', async (_label, proof) => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-recovery-mismatch-${_label.replace(' ', '-')}-${Date.now()}`;
+      const originalJob = await store.createJob(streamId, 'steer-user', streamId);
+      const source = {
+        steerId: `source-${_label.replace(' ', '-')}`,
+        text: 'original words',
+        createdAt: 1,
+        files: [{ file_id: 'file-b' }, { file_id: 'file-a' }],
+      };
+      await store.parkSteers(streamId, JSON.stringify({ userId: 'steer-user', steers: [source] }));
+
+      await expect(
+        store.createJob(
+          streamId,
+          'steer-user',
+          streamId,
+          undefined,
+          {},
+          source.steerId,
+          undefined,
+          undefined,
+          undefined,
+          proof,
+        ),
+      ).rejects.toMatchObject({ code: 'RECOVERY_PAYLOAD_MISMATCH' });
+
+      expect((await store.getJob(streamId))?.createdAt).toBe(originalJob.createdAt);
+      expect(JSON.parse((await store.claimParkedSteers(streamId, 'steer-user')) as string)).toEqual(
+        {
+          userId: 'steer-user',
+          generationProtocolVersion: 2,
+          steers: [source],
+        },
+      );
       await store.destroy();
     });
 
@@ -2499,6 +3187,9 @@ describe('RedisJobStore Integration Tests', () => {
       await store.initialize();
 
       const streamId = `steer-parked-owner-${Date.now()}`;
+      await store.createJob(streamId, 'steer-user', streamId, undefined, {
+        generationProtocolVersion: 2,
+      });
       const payload = JSON.stringify({
         userId: 'steer-user',
         steers: [{ steerId: 'p1', text: 'owner only', createdAt: 1 }],
@@ -2507,12 +3198,19 @@ describe('RedisJobStore Integration Tests', () => {
 
       // The Lua gate rejects WITHOUT deleting: no delete-then-re-park window
       // in which a concurrent owner claim would find nothing.
-      expect(await store.claimParkedSteers(streamId, '"userId":"intruder"')).toBeUndefined();
-      expect(await ioredisClient.get(`stream:{${streamId}}:parked`)).toBe(payload);
+      expect(await store.claimParkedSteers(streamId, 'intruder')).toBeUndefined();
+      expect(
+        JSON.parse((await ioredisClient.get(`stream:{${streamId}}:parked`)) as string),
+      ).toEqual({ ...JSON.parse(payload), generationProtocolVersion: 2 });
 
-      // The owner still claims exactly once.
-      expect(await store.claimParkedSteers(streamId, '"userId":"steer-user"')).toBe(payload);
-      expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(0);
+      // The owner can safely replay the read without deleting the payload.
+      expect(JSON.parse((await store.claimParkedSteers(streamId, 'steer-user')) as string)).toEqual(
+        { ...JSON.parse(payload), generationProtocolVersion: 2 },
+      );
+      expect(JSON.parse((await store.claimParkedSteers(streamId, 'steer-user')) as string)).toEqual(
+        { ...JSON.parse(payload), generationProtocolVersion: 2 },
+      );
+      expect(await ioredisClient.exists(`stream:{${streamId}}:parked`)).toBe(1);
 
       await store.destroy();
     });
@@ -2548,7 +3246,7 @@ describe('RedisJobStore Integration Tests', () => {
       expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
 
       // …but the 202-accepted steer is claimable by its owner.
-      const claimed = await store.claimParkedSteers(streamId, '"userId":"steer-user"');
+      const claimed = await store.claimParkedSteers(streamId, 'steer-user', 'tenant-1');
       expect(claimed).toBeDefined();
       const parsed = JSON.parse(claimed as string) as {
         userId: string;
@@ -2560,6 +3258,65 @@ describe('RedisJobStore Integration Tests', () => {
       expect(parsed.steers.map((s) => s.text)).toEqual(['frozen across the pause']);
 
       await store.destroy();
+    });
+
+    test('expiry cleanup waits for a fresh pause barrier then fails it closed', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      try {
+        const streamId = 'pause-barrier-expiry-cleanup';
+        const job = await store.createJob(streamId, 'steer-user', streamId, 'tenant-1');
+        await store.enqueueSteer(
+          streamId,
+          buildSteer('pause-barrier-steer', 'frozen while pause persists'),
+          job.createdAt,
+        );
+        const expiredAction = { ...buildPendingAction(streamId), expiresAt: 0 };
+        await expect(
+          store.transitionStatus(streamId, {
+            from: 'running',
+            to: 'requires_action',
+            expectCreatedAt: job.createdAt,
+            patch: {
+              pendingAction: expiredAction,
+              pendingActionId: `pause-persistence:${expiredAction.actionId}`,
+              terminalPersistencePending: true,
+              terminalPersistenceStartedAt: 1_000,
+            },
+          }),
+        ).resolves.toBe(true);
+
+        now.mockReturnValue(11_000);
+        await store.cleanup();
+        await expect(store.getJob(streamId)).resolves.toMatchObject({
+          status: 'requires_action',
+          terminalPersistencePending: true,
+        });
+
+        now.mockReturnValue(31_001);
+        await store.cleanup();
+        await expect(store.getJob(streamId)).resolves.toMatchObject({
+          status: 'error',
+          error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+        });
+        const failedJob = await store.getJob(streamId);
+        expect(failedJob?.pendingAction).toBeUndefined();
+        expect(failedJob?.pendingActionId).toBeUndefined();
+        expect(failedJob?.terminalPersistencePending).toBeUndefined();
+        expect(failedJob?.terminalPersistenceStartedAt).toBeUndefined();
+        await expect(store.claimParkedSteers(streamId, 'steer-user', 'tenant-1')).resolves.toEqual(
+          expect.any(String),
+        );
+      } finally {
+        await store.destroy();
+        now.mockRestore();
+      }
     });
 
     test('terminal CAS with zero completed TTL keeps parked steers owner-claimable', async () => {
@@ -2589,7 +3346,7 @@ describe('RedisJobStore Integration Tests', () => {
       expect(await ioredisClient.smembers('stream:running')).not.toContain(streamId);
       expect(await store.getActiveJobIdsByUser(userId, 'tenant-1')).not.toContain(streamId);
 
-      const claimed = await store.claimParkedSteers(streamId, `"userId":"${userId}"`);
+      const claimed = await store.claimParkedSteers(streamId, userId, 'tenant-1');
       expect(claimed).toBeDefined();
       expect(JSON.parse(claimed as string)).toMatchObject({
         userId,
@@ -2600,7 +3357,47 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
-    test('terminal CAS skips malformed steers while parking valid leftovers', async () => {
+    test('terminal persistence survives a zero completed TTL until it is finalized', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { completedTtl: 0 });
+      await store.initialize();
+
+      const streamId = `zero-terminal-persistence-${Date.now()}`;
+      const job = await store.createJob(streamId, 'terminal-user', streamId);
+      const completedAt = Date.now();
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'aborted',
+          expectCreatedAt: job.createdAt,
+          patch: {
+            completedAt,
+            terminalPersistencePending: true,
+            terminalPersistenceStartedAt: completedAt,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      await expect(store.getJob(streamId)).resolves.toMatchObject({
+        status: 'aborted',
+        terminalPersistencePending: true,
+      });
+      await expect(
+        store.finalizeTerminalPersistence(streamId, job.createdAt, '{"event":"final"}'),
+      ).resolves.toBe(true);
+      await expect(store.getJob(streamId)).resolves.toMatchObject({
+        terminalPersistencePending: false,
+        finalEvent: '{"event":"final"}',
+      });
+
+      await store.destroy();
+    });
+
+    test('terminal CAS fails closed without deleting malformed recovery state', async () => {
       if (!ioredisClient) {
         return;
       }
@@ -2622,23 +3419,20 @@ describe('RedisJobStore Integration Tests', () => {
           expectCreatedAt: job.createdAt,
           patch: { error: 'stopped', completedAt: Date.now() },
         }),
-      ).resolves.toBe(true);
+      ).resolves.toBe(false);
 
-      await expect(store.getJob(streamId)).resolves.toMatchObject({ status: 'error' });
-      expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
-
-      const claimed = await store.claimParkedSteers(streamId, `"userId":"${userId}"`);
-      expect(claimed).toBeDefined();
-      expect(JSON.parse(claimed as string)).toMatchObject({
-        userId,
-        tenantId: 'tenant-1',
-        steers: [
-          {
-            steerId: 'valid-steer',
-            text: 'preserve valid input',
-          },
-        ],
+      await expect(store.getJob(streamId)).resolves.toMatchObject({
+        status: 'running',
+        createdAt: job.createdAt,
       });
+      const preserved = await ioredisClient.lrange(`stream:{${streamId}}:steers`, 0, -1);
+      expect(preserved).toHaveLength(2);
+      expect(JSON.parse(preserved[0])).toMatchObject({
+        steerId: 'valid-steer',
+        text: 'preserve valid input',
+      });
+      expect(preserved[1]).toBe('{malformed-json');
+      await expect(store.claimParkedSteers(streamId, userId, 'tenant-1')).resolves.toBeUndefined();
 
       await store.destroy();
     });
@@ -2669,7 +3463,7 @@ describe('RedisJobStore Integration Tests', () => {
       expect(await store.getJob(streamId)).toBeNull();
       expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
 
-      const claimed = await store.claimParkedSteers(streamId, '"userId":"steer-user"');
+      const claimed = await store.claimParkedSteers(streamId, 'steer-user', 'tenant-1');
       expect(claimed).toBeDefined();
       const parsed = JSON.parse(claimed as string) as {
         userId: string;
@@ -2761,9 +3555,12 @@ describe('RedisJobStore Integration Tests', () => {
         expect((await store.peekSteers(streamId)).map((steer) => steer.steerId)).toEqual([
           'replacement-steer',
         ]);
-        await expect(
-          store.claimParkedSteers(streamId, `"userId":"${userId}"`),
-        ).resolves.toBeUndefined();
+        const parked = await store.claimParkedSteers(streamId, userId);
+        expect(parked).toBeDefined();
+        expect(JSON.parse(parked as string)).toMatchObject({
+          userId,
+          steers: [{ steerId: 'old-steer', text: 'old generation' }],
+        });
         expect(await ioredisClient.smembers('stream:running')).toContain(streamId);
       } finally {
         releaseCleanup?.();
@@ -2855,6 +3652,94 @@ describe('RedisJobStore Integration Tests', () => {
 
       await store.destroy();
     });
+
+    test('getContentParts reconstructs the LAST on_activity_label chunk per index', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `activity-recon-${Date.now()}`;
+      await store.createJob(streamId, 'label-user', streamId);
+
+      const chunks = [
+        {
+          event: 'on_run_step',
+          data: {
+            id: 'step-1',
+            index: 0,
+            stepDetails: { type: 'tool_calls', tool_calls: [] },
+          },
+        },
+        /** Claim-time placeholder (counts only) at index 1 … */
+        {
+          event: 'on_activity_label',
+          data: {
+            index: 1,
+            part: {
+              type: 'activity_label',
+              activity_label: '',
+              counts: { searches: 1, reads: 0, writes: 0, commands: 0, other: 0 },
+              status: 'ok',
+              pending: true,
+            },
+          },
+        },
+        /** … then the resolved label for the same slot: last write wins. */
+        {
+          event: 'on_activity_label',
+          data: {
+            index: 1,
+            part: {
+              type: 'activity_label',
+              activity_label: 'Searched runtime release notes',
+              counts: { searches: 1, reads: 0, writes: 0, commands: 0, other: 0 },
+              status: 'ok',
+              pending: false,
+            },
+          },
+        },
+        {
+          event: 'on_run_step',
+          data: {
+            id: 'step-2',
+            // Emitted with the already-shifted index (offset wrapper)
+            index: 2,
+            stepDetails: { type: 'message_creation', message_creation: {} },
+          },
+        },
+        {
+          event: 'on_message_delta',
+          data: { id: 'step-2', delta: { content: { type: 'text', text: 'After batch.' } } },
+        },
+      ];
+      for (const chunk of chunks) {
+        await store.appendChunk(streamId, chunk);
+      }
+
+      const result = await store.getContentParts(streamId);
+      expect(result).not.toBeNull();
+      const parts = result!.content as Array<{
+        type?: string;
+        activity_label?: string;
+        pending?: boolean;
+      }>;
+      /** Position-independent: the placeholder and the filled event share a
+       *  slot, so exactly ONE label part must survive and it must carry the
+       *  resolved text (last write wins). */
+      const labels = parts.filter((part) => part?.type === 'activity_label');
+      expect(labels).toHaveLength(1);
+      expect(labels[0]).toMatchObject({
+        activity_label: 'Searched runtime release notes',
+        pending: false,
+      });
+      expect(parts.some((part) => part?.type === 'text')).toBe(true);
+
+      await store.destroy();
+    });
   });
 
   describe('Idempotency claims (#14339 duplicate-billing guard)', () => {
@@ -2872,7 +3757,10 @@ describe('RedisJobStore Integration Tests', () => {
         { streamId: 's1', conversationId: 'c1' },
         1200,
       );
-      expect(first).toEqual({ claimed: true });
+      expect(first).toEqual({
+        claimed: true,
+        existing: { streamId: 's1', conversationId: 'c1' },
+      });
 
       const second = await store.claimIdempotencyKey(
         key,
@@ -2898,7 +3786,7 @@ describe('RedisJobStore Integration Tests', () => {
       const key = `user-1:req-ttl-${Date.now()}`;
       await store.claimIdempotencyKey(key, { streamId: 's1', conversationId: 'c1' }, 1200);
 
-      const pttl = await ioredisClient.pttl(`stream:idem:{${key}}`);
+      const pttl = await ioredisClient.pttl(`stream:idem:${key}`);
       expect(pttl).toBeGreaterThan(0);
       expect(pttl).toBeLessThanOrEqual(1200 * 1000);
 
@@ -2922,7 +3810,10 @@ describe('RedisJobStore Integration Tests', () => {
         { streamId: 's2', conversationId: 'c2' },
         1200,
       );
-      expect(reclaimed).toEqual({ claimed: true });
+      expect(reclaimed).toEqual({
+        claimed: true,
+        existing: { streamId: 's2', conversationId: 'c2' },
+      });
 
       await store.destroy();
     });
@@ -2953,6 +3844,543 @@ describe('RedisJobStore Integration Tests', () => {
       );
 
       await store.destroy();
+    });
+  });
+
+  describe('Steer receipt integrity', () => {
+    const corruptions = ['missing', 'malformed', 'wrong-state', 'wrong-generation'] as const;
+    type Corruption = (typeof corruptions)[number];
+
+    async function enqueueReceiptSteer(streamId: string, suffix: string) {
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient!);
+      await store.initialize();
+      const job = await store.createJob(streamId, 'receipt-user', streamId);
+      const item: SteerQueueItem = {
+        steerId: `steer-${suffix}`,
+        clientSteerId: `client-${suffix}`,
+        text: `instruction ${suffix}`,
+        userId: 'receipt-user',
+        createdAt: Date.now(),
+      };
+      const result = await store.enqueueSteerWithReceipt(
+        streamId,
+        item,
+        {
+          clientSteerId: item.clientSteerId!,
+          fingerprint: `fingerprint-${suffix}`,
+          userId: item.userId,
+          generationCreatedAt: job.createdAt,
+        },
+        false,
+        job.createdAt,
+      );
+      expect(result).toMatchObject({ state: 'queued', item });
+      return { store, item, createdAt: job.createdAt };
+    }
+
+    async function corruptReceipt(
+      streamId: string,
+      clientSteerId: string,
+      corruption: Corruption,
+    ): Promise<void> {
+      const key = `stream:{${streamId}}:steer-receipts`;
+      if (corruption === 'missing') {
+        await ioredisClient!.hdel(key, clientSteerId);
+        return;
+      }
+      if (corruption === 'malformed') {
+        await ioredisClient!.hset(key, clientSteerId, '{not-json');
+        return;
+      }
+      const raw = await ioredisClient!.hget(key, clientSteerId);
+      expect(raw).not.toBeNull();
+      const receipt = JSON.parse(raw!) as SteerReceipt;
+      if (corruption === 'wrong-state') {
+        receipt.state = receipt.state === 'queued' ? 'claimed' : 'queued';
+      } else {
+        receipt.generationCreatedAt += 1;
+      }
+      await ioredisClient!.hset(key, clientSteerId, JSON.stringify(receipt));
+    }
+
+    test.each(['deleted', 'v1-replaced'] as const)(
+      'replays an existing receipt after its accepting job is %s',
+      async (lifecycle) => {
+        if (!ioredisClient) {
+          return;
+        }
+        const streamId = `redis-receipt-replay-${lifecycle}-${Date.now()}`;
+        const { store, item, createdAt } = await enqueueReceiptSteer(streamId, lifecycle);
+        try {
+          if (lifecycle === 'deleted') {
+            await expect(store.deleteJob(streamId, createdAt)).resolves.toBe(true);
+          } else {
+            const replacement = await store.createJob(streamId, item.userId, streamId, undefined, {
+              generationProtocolVersion: 1,
+            });
+            expect(replacement.createdAt).not.toBe(createdAt);
+            await expect(store.peekSteers(streamId, replacement.createdAt)).resolves.toEqual([]);
+          }
+
+          await expect(store.getSteerReceipt(streamId, item.clientSteerId!)).resolves.toMatchObject(
+            {
+              state: 'leftover',
+              generationCreatedAt: createdAt,
+              item,
+            },
+          );
+          await expect(
+            store.enqueueSteerWithReceipt(
+              streamId,
+              { ...item, steerId: `duplicate-${lifecycle}` },
+              {
+                clientSteerId: item.clientSteerId!,
+                fingerprint: `fingerprint-${lifecycle}`,
+                userId: item.userId,
+                generationCreatedAt: createdAt,
+              },
+              false,
+              createdAt,
+            ),
+          ).resolves.toMatchObject({
+            state: 'leftover',
+            generationCreatedAt: createdAt,
+            item,
+          });
+        } finally {
+          await store.destroy();
+        }
+      },
+    );
+
+    test('keeps an active recovery lease and receipt beyond job expiry, activity, and pause', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const streamId = `receipt-recovery-lease-${Date.now()}`;
+      const { store, item, createdAt } = await enqueueReceiptSteer(streamId, 'recovery-lease');
+      const parkedKey = `stream:{${streamId}}:parked`;
+      const receiptsKey = `stream:{${streamId}}:steer-receipts`;
+      const receiptOrderKey = `stream:{${streamId}}:steer-receipt-order`;
+      try {
+        await expect(store.closeAndDrainSteers(streamId, createdAt)).resolves.toEqual([item]);
+        const recovery = await store.createJob(
+          streamId,
+          item.userId,
+          streamId,
+          undefined,
+          {},
+          item.steerId,
+          undefined,
+          undefined,
+          undefined,
+          {
+            text: item.text,
+            fileIds: (item.files ?? []).flatMap((file) => file.file_id ?? []).sort(),
+          },
+        );
+
+        // The default live-job storage horizon is 25m. A recovery lease gets a
+        // further normal 5m recovery window, rather than expiring with the job.
+        expect(await ioredisClient.ttl(parkedKey)).toBeGreaterThan(1500);
+        expect(await ioredisClient.ttl(receiptsKey)).toBeGreaterThan(1500);
+        expect(await ioredisClient.ttl(receiptOrderKey)).toBeGreaterThan(1500);
+
+        // Adding another steer to the recovery generation must not shorten the
+        // shared receipt/order lease back to the normal running horizon.
+        const followup: SteerQueueItem = {
+          steerId: 'steer-recovery-followup',
+          clientSteerId: 'client-recovery-followup',
+          text: 'follow-up while recovery is active',
+          userId: item.userId,
+          createdAt: Date.now(),
+        };
+        await expect(
+          store.enqueueSteerWithReceipt(
+            streamId,
+            followup,
+            {
+              clientSteerId: followup.clientSteerId!,
+              fingerprint: 'fingerprint-recovery-followup',
+              userId: followup.userId,
+              generationCreatedAt: recovery.createdAt,
+            },
+            false,
+            recovery.createdAt,
+          ),
+        ).resolves.toMatchObject({ state: 'queued', item: followup });
+        expect(await ioredisClient.ttl(parkedKey)).toBeGreaterThan(1500);
+        expect(await ioredisClient.ttl(receiptsKey)).toBeGreaterThan(1500);
+        expect(await ioredisClient.ttl(receiptOrderKey)).toBeGreaterThan(1500);
+
+        // Simulate a long healthy run near the end of the prior lease. Activity
+        // refresh must move both the hidden source and its receipt back out.
+        await ioredisClient.expire(parkedKey, 30);
+        await ioredisClient.expire(receiptsKey, 30);
+        await ioredisClient.expire(receiptOrderKey, 30);
+        await expect(
+          store.appendChunk(
+            streamId,
+            { event: 'on_message_delta', data: { text: 'still healthy' } },
+            recovery.createdAt,
+          ),
+        ).resolves.toBe(true);
+        expect(await ioredisClient.ttl(parkedKey)).toBeGreaterThan(1500);
+        expect(await ioredisClient.ttl(receiptsKey)).toBeGreaterThan(1500);
+        expect(await ioredisClient.ttl(receiptOrderKey)).toBeGreaterThan(1500);
+
+        // A pause can outlive the running window; the same status CAS extends
+        // the uncommitted recovery source past the approval/job TTL as well.
+        await expect(
+          store.transitionStatus(streamId, {
+            from: 'running',
+            to: 'requires_action',
+            expectCreatedAt: recovery.createdAt,
+            patch: { pendingAction: buildPendingAction(streamId) },
+          }),
+        ).resolves.toBe(true);
+        expect(await ioredisClient.ttl(parkedKey)).toBeGreaterThan(24 * 60 * 60);
+        expect(await ioredisClient.ttl(receiptsKey)).toBeGreaterThan(24 * 60 * 60);
+      } finally {
+        await store.destroy();
+      }
+    });
+
+    test('does not let a stale cancel discard a source leased to a live recovery', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const streamId = `receipt-live-recovery-cancel-${Date.now()}`;
+      const { store, item, createdAt } = await enqueueReceiptSteer(streamId, 'live-recovery');
+      try {
+        await expect(store.closeAndDrainSteers(streamId, createdAt)).resolves.toEqual([item]);
+        const recovery = await store.createJob(
+          streamId,
+          item.userId,
+          streamId,
+          undefined,
+          {},
+          item.steerId,
+          undefined,
+          undefined,
+          undefined,
+          {
+            text: item.text,
+            fileIds: (item.files ?? []).flatMap((file) => file.file_id ?? []).sort(),
+          },
+        );
+        await expect(
+          store.discardSteerLeftover(streamId, item.clientSteerId!, item.steerId, item.userId),
+        ).resolves.toBe(false);
+        await expect(
+          store.consumeParkedSteer(
+            streamId,
+            item.steerId,
+            item.userId,
+            undefined,
+            recovery.createdAt,
+          ),
+        ).resolves.toBe(true);
+        await expect(store.getSteerReceipt(streamId, item.clientSteerId!)).resolves.toMatchObject({
+          state: 'recovered',
+        });
+      } finally {
+        await store.destroy();
+      }
+    });
+
+    test.each(['close', 'terminal'] as const)(
+      '%s recovery safely parks words when a receipt is malformed',
+      async (path) => {
+        if (!ioredisClient) {
+          return;
+        }
+        const streamId = `receipt-malformed-${path}-${Date.now()}`;
+        const { store, item, createdAt } = await enqueueReceiptSteer(streamId, `malformed-${path}`);
+        try {
+          await corruptReceipt(streamId, item.clientSteerId!, 'malformed');
+          if (path === 'close') {
+            await expect(store.closeAndDrainSteers(streamId, createdAt)).resolves.toEqual([item]);
+          } else {
+            await expect(
+              store.transitionStatus(streamId, {
+                from: 'running',
+                to: 'error',
+                expectCreatedAt: createdAt,
+                patch: { error: 'terminal failure', completedAt: Date.now() },
+              }),
+            ).resolves.toBe(true);
+          }
+
+          await expect(store.peekSteers(streamId, createdAt)).resolves.toEqual([]);
+          const parked = await store.claimParkedSteers(streamId, item.userId);
+          expect(JSON.parse(parked!)).toMatchObject({
+            userId: item.userId,
+            steers: [{ steerId: item.steerId, clientSteerId: item.clientSteerId }],
+          });
+        } finally {
+          await store.destroy();
+        }
+      },
+    );
+
+    test('atomically settles a claimed receipt with its applied chunk', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const streamId = `receipt-valid-delivery-${Date.now()}`;
+      const { store, item, createdAt } = await enqueueReceiptSteer(streamId, 'valid');
+      try {
+        await expect(store.drainSteers(streamId, createdAt)).resolves.toEqual([item]);
+        await expect(
+          store.appendChunk(
+            streamId,
+            { event: 'on_steer_applied', data: { steerId: item.steerId } },
+            createdAt,
+            item,
+          ),
+        ).resolves.toBe(true);
+
+        await expect(store.peekClaimedSteers(streamId, createdAt)).resolves.toEqual([]);
+        await expect(store.getSteerReceipt(streamId, item.clientSteerId!)).resolves.toMatchObject({
+          state: 'delivered',
+          item,
+        });
+        await expect(ioredisClient.xlen(`stream:{${streamId}}:chunks`)).resolves.toBe(1);
+      } finally {
+        await store.destroy();
+      }
+    });
+
+    test.each(corruptions)(
+      'refuses to drain a queue with a %s receipt before moving any item',
+      async (corruption) => {
+        if (!ioredisClient) {
+          return;
+        }
+        const streamId = `receipt-drain-${corruption}-${Date.now()}`;
+        const { store, item, createdAt } = await enqueueReceiptSteer(
+          streamId,
+          `drain-${corruption}`,
+        );
+        try {
+          await corruptReceipt(streamId, item.clientSteerId!, corruption);
+
+          await expect(store.drainSteers(streamId, createdAt)).rejects.toThrow(/steer receipt/);
+          await expect(store.peekSteers(streamId, createdAt)).resolves.toEqual([item]);
+          await expect(store.peekClaimedSteers(streamId, createdAt)).resolves.toEqual([]);
+          await expect(ioredisClient.xlen(`stream:{${streamId}}:chunks`)).resolves.toBe(0);
+        } finally {
+          await store.destroy();
+        }
+      },
+    );
+
+    test.each(corruptions)(
+      'refuses to cancel with a %s receipt before mutating the queued item',
+      async (corruption) => {
+        if (!ioredisClient) {
+          return;
+        }
+        const streamId = `receipt-cancel-${corruption}-${Date.now()}`;
+        const { store, item, createdAt } = await enqueueReceiptSteer(
+          streamId,
+          `cancel-${corruption}`,
+        );
+        try {
+          await corruptReceipt(streamId, item.clientSteerId!, corruption);
+
+          await expect(store.removeSteer(streamId, item.steerId, createdAt)).rejects.toThrow(
+            /steer receipt/,
+          );
+          await expect(store.peekSteers(streamId, createdAt)).resolves.toEqual([item]);
+        } finally {
+          await store.destroy();
+        }
+      },
+    );
+
+    test.each(corruptions)(
+      'refuses to settle a claimed steer with a %s receipt before mutating durable state',
+      async (corruption) => {
+        if (!ioredisClient) {
+          return;
+        }
+        const streamId = `receipt-append-${corruption}-${Date.now()}`;
+        const { store, item, createdAt } = await enqueueReceiptSteer(
+          streamId,
+          `append-${corruption}`,
+        );
+        try {
+          await expect(store.drainSteers(streamId, createdAt)).resolves.toEqual([item]);
+          await corruptReceipt(streamId, item.clientSteerId!, corruption);
+
+          await expect(
+            store.appendChunk(
+              streamId,
+              { event: 'on_steer_applied', data: { steerId: item.steerId } },
+              createdAt,
+              item,
+            ),
+          ).resolves.toBe(false);
+          await expect(store.peekSteers(streamId, createdAt)).resolves.toEqual([]);
+          await expect(store.peekClaimedSteers(streamId, createdAt)).resolves.toEqual([item]);
+          await expect(ioredisClient.xlen(`stream:{${streamId}}:chunks`)).resolves.toBe(0);
+        } finally {
+          await store.destroy();
+        }
+      },
+    );
+
+    test.each(corruptions)(
+      'refuses to restore a claimed steer with a %s receipt before changing either list',
+      async (corruption) => {
+        if (!ioredisClient) {
+          return;
+        }
+        const streamId = `receipt-restore-${corruption}-${Date.now()}`;
+        const { store, item, createdAt } = await enqueueReceiptSteer(
+          streamId,
+          `restore-${corruption}`,
+        );
+        try {
+          await expect(store.drainSteers(streamId, createdAt)).resolves.toEqual([item]);
+          await corruptReceipt(streamId, item.clientSteerId!, corruption);
+
+          await expect(store.restoreClaimedSteers(streamId, [item], createdAt)).resolves.toBe(
+            false,
+          );
+          await expect(store.peekSteers(streamId, createdAt)).resolves.toEqual([]);
+          await expect(store.peekClaimedSteers(streamId, createdAt)).resolves.toEqual([item]);
+          await expect(ioredisClient.xlen(`stream:{${streamId}}:chunks`)).resolves.toBe(0);
+        } finally {
+          await store.destroy();
+        }
+      },
+    );
+
+    test.each(corruptions)(
+      'refuses to arm with a %s receipt before mutating the queued item',
+      async (corruption) => {
+        if (!ioredisClient) {
+          return;
+        }
+        const streamId = `receipt-arm-${corruption}-${Date.now()}`;
+        const { store, item, createdAt } = await enqueueReceiptSteer(streamId, `arm-${corruption}`);
+        try {
+          await store.updateJob(streamId, { preemptCapable: true }, createdAt);
+          await corruptReceipt(streamId, item.clientSteerId!, corruption);
+
+          await expect(store.armSteerVersioned(streamId, item.steerId, createdAt)).rejects.toThrow(
+            /steer receipt/,
+          );
+          await expect(store.peekSteers(streamId, createdAt)).resolves.toEqual([item]);
+        } finally {
+          await store.destroy();
+        }
+      },
+    );
+
+    test.each(corruptions)(
+      'refuses to downgrade with a %s receipt before mutating any queued item',
+      async (corruption) => {
+        if (!ioredisClient) {
+          return;
+        }
+        const streamId = `receipt-downgrade-${corruption}-${Date.now()}`;
+        const { store, item, createdAt } = await enqueueReceiptSteer(
+          streamId,
+          `downgrade-${corruption}`,
+        );
+        try {
+          await store.updateJob(streamId, { preemptCapable: true }, createdAt);
+          await expect(
+            store.armSteerVersioned(streamId, item.steerId, createdAt),
+          ).resolves.toMatchObject({ outcome: 'armed' });
+          const armed = await store.peekSteers(streamId, createdAt);
+          await store.updateJob(streamId, { preemptCapable: false }, createdAt);
+          await corruptReceipt(streamId, item.clientSteerId!, corruption);
+
+          await expect(store.downgradeSteerPreempts(streamId, createdAt)).rejects.toThrow(
+            /steer receipt/,
+          );
+          await expect(store.peekSteers(streamId, createdAt)).resolves.toEqual(armed);
+        } finally {
+          await store.destroy();
+        }
+      },
+    );
+
+    test('refuses a 101st receipt without evicting replay evidence or queueing the item', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `receipt-cap-${Date.now()}`;
+      try {
+        const job = await store.createJob(streamId, 'receipt-user', streamId);
+        for (let index = 0; index < 100; index++) {
+          const item: SteerQueueItem = {
+            steerId: `steer-cap-${index}`,
+            clientSteerId: `client-cap-${index}`,
+            text: `instruction ${index}`,
+            userId: 'receipt-user',
+            createdAt: Date.now(),
+          };
+          await expect(
+            store.enqueueSteerWithReceipt(
+              streamId,
+              item,
+              {
+                clientSteerId: item.clientSteerId!,
+                fingerprint: `fingerprint-${index}`,
+                userId: item.userId,
+                generationCreatedAt: job.createdAt,
+              },
+              false,
+              job.createdAt,
+            ),
+          ).resolves.toMatchObject({ state: 'queued', item });
+          await expect(store.removeSteer(streamId, item.steerId)).resolves.toBe(true);
+        }
+
+        const overflow: SteerQueueItem = {
+          steerId: 'steer-cap-overflow',
+          clientSteerId: 'client-cap-overflow',
+          text: 'must not queue',
+          userId: 'receipt-user',
+          createdAt: Date.now(),
+        };
+        await expect(
+          store.enqueueSteerWithReceipt(
+            streamId,
+            overflow,
+            {
+              clientSteerId: overflow.clientSteerId!,
+              fingerprint: 'fingerprint-overflow',
+              userId: overflow.userId,
+              generationCreatedAt: job.createdAt,
+            },
+            false,
+            job.createdAt,
+          ),
+        ).resolves.toBe(STEER_ENQUEUE_RECEIPT_FULL);
+
+        await expect(store.peekSteers(streamId, job.createdAt)).resolves.toEqual([]);
+        await expect(store.getSteerReceipt(streamId, 'client-cap-overflow')).resolves.toBeNull();
+        await expect(store.getSteerReceipt(streamId, 'client-cap-0')).resolves.toMatchObject({
+          state: 'cancelled',
+          item: { steerId: 'steer-cap-0' },
+        });
+        await expect(ioredisClient.zcard(`stream:{${streamId}}:steer-receipt-order`)).resolves.toBe(
+          100,
+        );
+      } finally {
+        await store.destroy();
+      }
     });
   });
 });

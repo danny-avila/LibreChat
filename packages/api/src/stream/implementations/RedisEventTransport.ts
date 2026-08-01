@@ -1,6 +1,7 @@
+import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import type { Redis, Cluster } from 'ioredis';
-import type { IEventTransport } from '~/stream/interfaces/IJobStore';
+import type { IEventTransport, PreemptMessage } from '~/stream/interfaces/IJobStore';
 import { registerChunkPublicationCapability } from '~/stream/internal/chunkPublication';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 
@@ -22,6 +23,9 @@ const KEYS = {
   job: (streamId: string) => `stream:{${streamId}}:job`,
   /** Latest generation epoch, retained briefly beyond the live job hash. */
   generationEpoch: (streamId: string) => `stream:{${streamId}}:generation-epoch`,
+  /** Owner-issued proof that this exact generation processed an abort. */
+  abortAck: (streamId: string, generationId: number) =>
+    `stream:{${streamId}}:abort-ack:${generationId}`,
 };
 
 /**
@@ -32,6 +36,8 @@ const EventTypes = {
   DONE: 'done',
   ERROR: 'error',
   ABORT: 'abort',
+  ABORT_ACK: 'abort_ack',
+  PREEMPT: 'preempt',
 } as const;
 
 interface PubSubMessage {
@@ -42,6 +48,10 @@ interface PubSubMessage {
   error?: string;
   /** Immutable identity of the generation that emitted the event. */
   generationId?: number;
+  /** Opaque nonce linking a replacement abort to its owner acknowledgement. */
+  abortRequestId?: string;
+  /** Payload for PREEMPT messages; fenced by its own createdAt. */
+  preempt?: PreemptMessage;
 }
 
 /**
@@ -60,7 +70,17 @@ interface ReorderBuffer {
 }
 
 interface AbortRegistration {
-  callback: (generationId?: number) => void;
+  callback: (generationId?: number) => void | boolean;
+}
+
+interface AbortAckWaiter {
+  generationId: number;
+  resolve: (acknowledged: boolean) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+interface PreemptRegistration {
+  callback: (msg: PreemptMessage) => void;
 }
 
 /**
@@ -88,7 +108,8 @@ interface AbortRegistration {
  *     sequenceTtlSeconds,
  *     expectCreatedAt | "",
  *     allowRetainedEpoch ("0" | "1"),
- *     generationEpochGraceTtl
+ *     generationEpochGraceTtl,
+ *     requireActiveJob ("0" | "1")
  *   ]
  *   RETURNS: the 0-indexed seq assigned to this event, or -1 when the generation guard fails
  *
@@ -111,6 +132,10 @@ const PUBLISH_SEQ_LUA =
   'if retainedEpoch ~= ARGV[5] then return -1 end ' +
   'end ' +
   'end ' +
+  'if ARGV[8] == "1" then ' +
+  'local currentStatus = redis.call("HGET", KEYS[2], "status") ' +
+  'if currentStatus ~= "running" and currentStatus ~= "requires_action" then return -1 end ' +
+  'end ' +
   'local val = redis.call("INCR", KEYS[1]) ' +
   'local ttl = tonumber(ARGV[4]) ' +
   'local seqTtl = redis.call("TTL", KEYS[1]) ' +
@@ -123,12 +148,37 @@ const PUBLISH_SEQ_LUA =
   'redis.call("PUBLISH", ARGV[1], ARGV[2] .. string.format("%d", seq) .. ARGV[3]) ' +
   'return seq';
 
+/** A normal generation guard correctly rejects events from an old epoch once
+ * its replacement exists. Replacement handoff is the one exception: the
+ * current create attempt must still carry the old epoch in its durable receipt
+ * chain. This script verifies that proof, assigns the shared sequence, and
+ * publishes the old-generation DONE in one same-slot decision. */
+const PUBLISH_REPLACED_DONE_LUA =
+  'if redis.call("HGET", KEYS[2], "__creationAttemptId") ~= ARGV[6] then return -1 end ' +
+  'local authorized = false local raw = redis.call("HGET", KEYS[2], "__replacedGenerations") ' +
+  'if raw then local ok, receipts = pcall(cjson.decode, raw) if not ok or type(receipts) ~= "table" then return -1 end ' +
+  'for i = 1, #receipts do local receipt = receipts[i] ' +
+  'if type(receipt) == "table" and tostring(receipt.createdAt or "") == ARGV[5] then authorized = true break end end ' +
+  'else authorized = redis.call("HGET", KEYS[2], "__replacedCreatedAt") == ARGV[5] end ' +
+  'if not authorized then return -1 end ' +
+  'local val = redis.call("INCR", KEYS[1]) local ttl = tonumber(ARGV[4]) ' +
+  'local seqTtl = redis.call("TTL", KEYS[1]) if seqTtl < math.floor(ttl / 2) then ' +
+  'local jobTtl = redis.call("TTL", KEYS[2]) if jobTtl > ttl then ttl = jobTtl end ' +
+  'redis.call("EXPIRE", KEYS[1], ttl) end local seq = val - 1 ' +
+  'redis.call("PUBLISH", ARGV[1], ARGV[2] .. string.format("%d", seq) .. ARGV[3]) return seq';
+
 /** Max time (ms) to wait for out-of-order messages before force-flushing */
 const REORDER_TIMEOUT_MS = 500;
 /** Max messages to buffer before force-flushing (prevents memory issues) */
 const MAX_BUFFER_SIZE = 100;
 /** Rolling-upgrade recovery window after a legacy job hash expires without an epoch marker. */
 const GENERATION_EPOCH_GRACE_TTL_SECONDS = 300;
+/** A replacement remains fail-closed if its exact generation owner cannot
+ * acknowledge promptly. Redis pub/sub is local-network traffic; this budget
+ * tolerates reconnect jitter without holding an HTTP request indefinitely. */
+const ABORT_ACK_TIMEOUT_MS = 3000;
+/** Durable owner proof outlives receipt retries and process-local subscriptions. */
+const ABORT_ACK_TTL_SECONDS = 86400;
 
 /**
  * Subscriber state for a stream
@@ -147,6 +197,9 @@ interface StreamSubscribers {
   allSubscribersLeftCallback?: () => void;
   /** Abort callbacks - called when abort signal is received from any replica */
   abortCallbacks: Set<AbortRegistration>;
+  /** Replacement aborts awaiting the exact generation owner's acknowledgement. */
+  abortAckWaiters: Map<string, AbortAckWaiter>;
+  preemptCallbacks: Set<PreemptRegistration>;
   /** Reorder buffer for handling out-of-order delivery in Redis Cluster */
   reorderBuffer: ReorderBuffer;
 }
@@ -184,6 +237,32 @@ export class RedisEventTransport implements IEventTransport {
   private channelSubscriptions = new Map<string, Promise<void>>();
   /** Counter for generating unique subscriber IDs */
   private subscriberIdCounter = 0;
+
+  private createStreamState(): StreamSubscribers {
+    return {
+      count: 0,
+      handlers: new Map(),
+      abortCallbacks: new Set(),
+      abortAckWaiters: new Map(),
+      preemptCallbacks: new Set(),
+      reorderBuffer: {
+        nextSeq: 0,
+        pending: new Map(),
+        flushTimeout: null,
+        deliveryDeferred: false,
+      },
+    };
+  }
+
+  private getOrCreateStreamState(streamId: string): StreamSubscribers {
+    const existing = this.streams.get(streamId);
+    if (existing) {
+      return existing;
+    }
+    const state = this.createStreamState();
+    this.streams.set(streamId, state);
+    return state;
+  }
 
   /**
    * Create a new Redis event transport.
@@ -233,6 +312,7 @@ export class RedisEventTransport implements IEventTransport {
     message: Omit<PubSubMessage, 'seq'>,
     expectedGenerationId?: number,
     allowRetainedEpoch = false,
+    requireActiveJob = false,
   ): Promise<number> {
     const [prefix, suffix] = RedisEventTransport.buildPayloadParts(message);
     const seq = await this.publisher.eval(
@@ -248,6 +328,7 @@ export class RedisEventTransport implements IEventTransport {
       expectedGenerationId != null ? String(expectedGenerationId) : '',
       allowRetainedEpoch ? '1' : '0',
       String(GENERATION_EPOCH_GRACE_TTL_SECONDS),
+      requireActiveJob ? '1' : '0',
     );
     return seq as number;
   }
@@ -256,7 +337,7 @@ export class RedisEventTransport implements IEventTransport {
     streamId: string,
     event: unknown,
     generationId?: number,
-  ): Promise<number | false> {
+  ): Promise<number | false | void> {
     return this.publishWithSequence(
       streamId,
       {
@@ -265,11 +346,16 @@ export class RedisEventTransport implements IEventTransport {
         ...(generationId != null && { generationId }),
       },
       generationId,
+      false,
+      generationId != null,
     )
       .then((sequence) => (sequence === -1 ? false : sequence))
       .catch((err) => {
         logger.error(`[RedisEventTransport] Failed to publish chunk:`, err);
-        return false;
+        /** `false` is reserved for an authoritative generation/status fence.
+         * An operational publication failure has no such ownership proof and
+         * remains replayable from the durable/local buffer. */
+        return undefined;
       });
   }
 
@@ -419,6 +505,17 @@ export class RedisEventTransport implements IEventTransport {
 
     try {
       const parsed = JSON.parse(message) as PubSubMessage;
+      /** Aborts, preempts, and abort acknowledgements are consumed by
+       *  transport-internal waiters (e.g. pending-ack resolution), not SSE
+       *  subscribers, so they must flow even with zero local subscribers. */
+      if (
+        streamState.count === 0 &&
+        parsed.type !== EventTypes.ABORT &&
+        parsed.type !== EventTypes.ABORT_ACK &&
+        parsed.type !== EventTypes.PREEMPT
+      ) {
+        return;
+      }
       if (parsed.type === EventTypes.CHUNK && parsed.seq != null) {
         this.handleOrderedChunk(streamId, streamState, parsed);
       } else if (
@@ -427,7 +524,7 @@ export class RedisEventTransport implements IEventTransport {
       ) {
         this.handleTerminalEvent(streamId, streamState, parsed);
       } else {
-        this.deliverMessage(streamState, parsed);
+        this.deliverMessage(streamId, streamState, parsed);
       }
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to parse message:`, err);
@@ -459,7 +556,7 @@ export class RedisEventTransport implements IEventTransport {
     }
 
     if (seq === buffer.nextSeq) {
-      this.deliverMessage(streamState, message);
+      this.deliverMessage(streamId, streamState, message);
       buffer.nextSeq++;
       this.flushPendingMessages(streamId, streamState);
     } else {
@@ -486,7 +583,7 @@ export class RedisEventTransport implements IEventTransport {
     }
 
     if (seq === buffer.nextSeq) {
-      this.deliverMessage(streamState, message);
+      this.deliverMessage(streamId, streamState, message);
       buffer.nextSeq++;
 
       this.flushPendingMessages(streamId, streamState);
@@ -513,7 +610,7 @@ export class RedisEventTransport implements IEventTransport {
     while (buffer.pending.has(buffer.nextSeq)) {
       const message = buffer.pending.get(buffer.nextSeq)!;
       buffer.pending.delete(buffer.nextSeq);
-      this.deliverMessage(streamState, message);
+      this.deliverMessage(streamId, streamState, message);
       buffer.nextSeq++;
     }
 
@@ -548,7 +645,7 @@ export class RedisEventTransport implements IEventTransport {
     for (const seq of sortedSeqs) {
       const message = buffer.pending.get(seq)!;
       buffer.pending.delete(seq);
-      this.deliverMessage(streamState, message);
+      this.deliverMessage(streamId, streamState, message);
     }
 
     buffer.nextSeq = sortedSeqs[sortedSeqs.length - 1] + 1;
@@ -574,7 +671,11 @@ export class RedisEventTransport implements IEventTransport {
   }
 
   /** Deliver a message to all handlers */
-  private deliverMessage(streamState: StreamSubscribers, message: PubSubMessage): void {
+  private deliverMessage(
+    streamId: string,
+    streamState: StreamSubscribers,
+    message: PubSubMessage,
+  ): void {
     for (const [, handlers] of streamState.handlers) {
       switch (message.type) {
         case EventTypes.CHUNK:
@@ -599,20 +700,56 @@ export class RedisEventTransport implements IEventTransport {
           }
           break;
         case EventTypes.ABORT:
+        case EventTypes.ABORT_ACK:
+          break;
+        case EventTypes.PREEMPT:
           break;
       }
     }
 
+    if (message.type === EventTypes.ABORT_ACK) {
+      const requestId = message.abortRequestId;
+      const generationId = message.generationId;
+      if (requestId == null || generationId == null) {
+        return;
+      }
+      const waiter = streamState.abortAckWaiters.get(requestId);
+      if (waiter == null || waiter.generationId !== generationId) {
+        return;
+      }
+      this.settleAbortAck(streamId, streamState, requestId, true);
+      return;
+    }
+
     if (message.type === EventTypes.ABORT) {
+      let ownerAcknowledged = false;
       for (const registration of streamState.abortCallbacks) {
         try {
           if (message.generationId == null) {
-            registration.callback();
+            ownerAcknowledged = registration.callback() === true || ownerAcknowledged;
           } else {
-            registration.callback(message.generationId);
+            ownerAcknowledged =
+              registration.callback(message.generationId) === true || ownerAcknowledged;
           }
         } catch (err) {
           logger.error(`[RedisEventTransport] Error in abort callback:`, err);
+        }
+      }
+      if (ownerAcknowledged && message.abortRequestId != null && message.generationId != null) {
+        void this.publishAbortAcknowledgement(
+          streamId,
+          message.generationId,
+          message.abortRequestId,
+        );
+      }
+    }
+
+    if (message.type === EventTypes.PREEMPT && message.preempt != null) {
+      for (const registration of streamState.preemptCallbacks) {
+        try {
+          registration.callback(message.preempt);
+        } catch (err) {
+          logger.error(`[RedisEventTransport] Error in preempt callback:`, err);
         }
       }
     }
@@ -631,7 +768,13 @@ export class RedisEventTransport implements IEventTransport {
   }
 
   private unsubscribeUnusedChannel(streamId: string, state: StreamSubscribers): void {
-    if (this.streams.get(streamId) !== state || state.count > 0 || state.abortCallbacks.size > 0) {
+    if (
+      this.streams.get(streamId) !== state ||
+      state.count > 0 ||
+      state.abortCallbacks.size > 0 ||
+      state.abortAckWaiters.size > 0 ||
+      state.preemptCallbacks.size > 0
+    ) {
       return;
     }
 
@@ -668,21 +811,7 @@ export class RedisEventTransport implements IEventTransport {
     const subscriberId = `sub_${++this.subscriberIdCounter}`;
 
     // Initialize stream state if needed
-    if (!this.streams.has(streamId)) {
-      this.streams.set(streamId, {
-        count: 0,
-        handlers: new Map(),
-        abortCallbacks: new Set(),
-        reorderBuffer: {
-          nextSeq: 0,
-          pending: new Map(),
-          flushTimeout: null,
-          deliveryDeferred: false,
-        },
-      });
-    }
-
-    const streamState = this.streams.get(streamId)!;
+    const streamState = this.getOrCreateStreamState(streamId);
     // Internal listeners (for example cross-replica abort) can leave ordering
     // state behind with no real SSE subscribers. A new subscriber is a fresh
     // attachment and must not inherit that prior generation's expected seq.
@@ -752,7 +881,7 @@ export class RedisEventTransport implements IEventTransport {
    */
   async emitDone(streamId: string, event: unknown, generationId?: number): Promise<void> {
     try {
-      await this.publishWithSequence(
+      const sequence = await this.publishWithSequence(
         streamId,
         {
           type: EventTypes.DONE,
@@ -762,9 +891,40 @@ export class RedisEventTransport implements IEventTransport {
         generationId,
         true,
       );
+      if (sequence === -1) {
+        throw new Error('Generation DONE publication was fenced by a replacement');
+      }
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish done:`, err);
       throw err;
+    }
+  }
+
+  async emitReplacedDoneConfirmed(
+    streamId: string,
+    event: unknown,
+    replacedGenerationId: number,
+    creationAttemptId: string,
+  ): Promise<void> {
+    const [prefix, suffix] = RedisEventTransport.buildPayloadParts({
+      type: EventTypes.DONE,
+      data: event,
+      generationId: replacedGenerationId,
+    });
+    const result = await this.publisher.eval(
+      PUBLISH_REPLACED_DONE_LUA,
+      2,
+      KEYS.sequence(streamId),
+      KEYS.job(streamId),
+      CHANNELS.events(streamId),
+      prefix,
+      suffix,
+      String(RedisEventTransport.SEQUENCE_TTL_SECONDS),
+      String(replacedGenerationId),
+      creationAttemptId,
+    );
+    if (result === -1) {
+      throw new Error('Generation replacement DONE receipt is no longer current');
     }
   }
 
@@ -774,7 +934,7 @@ export class RedisEventTransport implements IEventTransport {
    */
   async emitError(streamId: string, error: string, generationId?: number): Promise<void> {
     try {
-      await this.publishWithSequence(
+      const sequence = await this.publishWithSequence(
         streamId,
         {
           type: EventTypes.ERROR,
@@ -784,6 +944,9 @@ export class RedisEventTransport implements IEventTransport {
         generationId,
         true,
       );
+      if (sequence === -1) {
+        throw new Error('Generation error publication was fenced by a replacement');
+      }
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish error:`, err);
       throw err;
@@ -838,24 +1001,7 @@ export class RedisEventTransport implements IEventTransport {
    * Register callback for when all subscribers leave.
    */
   onAllSubscribersLeft(streamId: string, callback: () => void): void {
-    const state = this.streams.get(streamId);
-    if (state) {
-      state.allSubscribersLeftCallback = callback;
-    } else {
-      // Create state just for the callback
-      this.streams.set(streamId, {
-        count: 0,
-        handlers: new Map(),
-        allSubscribersLeftCallback: callback,
-        abortCallbacks: new Set(),
-        reorderBuffer: {
-          nextSeq: 0,
-          pending: new Map(),
-          flushTimeout: null,
-          deliveryDeferred: false,
-        },
-      });
-    }
+    this.getOrCreateStreamState(streamId).allSubscribersLeftCallback = callback;
   }
 
   /**
@@ -864,15 +1010,118 @@ export class RedisEventTransport implements IEventTransport {
    * the generating Replica A receives the signal and stops.
    */
   emitAbort(streamId: string, generationId?: number): void {
+    void this.publishAbort(streamId, generationId).catch((err) => {
+      logger.error(`[RedisEventTransport] Failed to publish abort:`, err);
+    });
+  }
+
+  private publishAbort(
+    streamId: string,
+    generationId?: number,
+    abortRequestId?: string,
+  ): Promise<number> {
     const channel = CHANNELS.events(streamId);
     const message: PubSubMessage = {
       type: EventTypes.ABORT,
       ...(generationId != null && { generationId }),
+      ...(abortRequestId != null && { abortRequestId }),
     };
+    return this.publisher.publish(channel, JSON.stringify(message));
+  }
 
-    this.publisher.publish(channel, JSON.stringify(message)).catch((err) => {
-      logger.error(`[RedisEventTransport] Failed to publish abort:`, err);
+  private settleAbortAck(
+    streamId: string,
+    state: StreamSubscribers,
+    abortRequestId: string,
+    acknowledged: boolean,
+  ): void {
+    const waiter = state.abortAckWaiters.get(abortRequestId);
+    if (!waiter) {
+      return;
+    }
+    state.abortAckWaiters.delete(abortRequestId);
+    clearTimeout(waiter.timeout);
+    waiter.resolve(acknowledged);
+    this.unsubscribeUnusedChannel(streamId, state);
+  }
+
+  private async hasDurableAbortAck(streamId: string, generationId: number): Promise<boolean> {
+    return (await this.publisher.get(KEYS.abortAck(streamId, generationId))) === '1';
+  }
+
+  private async publishAbortAcknowledgement(
+    streamId: string,
+    generationId: number,
+    abortRequestId: string,
+  ): Promise<void> {
+    try {
+      await this.publisher.set(
+        KEYS.abortAck(streamId, generationId),
+        '1',
+        'EX',
+        ABORT_ACK_TTL_SECONDS,
+      );
+    } catch (error) {
+      logger.error(`[RedisEventTransport] Failed to persist generation abort proof:`, error);
+      // A live acknowledgement is only useful if a racing or inherited receipt
+      // can prove the same owner stop after this subscription disappears. A
+      // SET that committed despite a lost reply is recovered by the requester's
+      // timeout read, so do not publish an ephemeral success here.
+      return;
+    }
+
+    const acknowledgement: PubSubMessage = {
+      type: EventTypes.ABORT_ACK,
+      generationId,
+      abortRequestId,
+    };
+    try {
+      await this.publisher.publish(CHANNELS.events(streamId), JSON.stringify(acknowledgement));
+    } catch (error) {
+      logger.error(`[RedisEventTransport] Failed to acknowledge generation abort:`, error);
+    }
+  }
+
+  /** Awaitable variant for replacement handoff receipts. Success requires an
+   * acknowledgement from the callback that owns this exact generation; Redis
+   * PUBLISH receiver counts are deliberately not treated as proof. */
+  async emitAbortConfirmed(streamId: string, generationId: number): Promise<boolean> {
+    try {
+      if (await this.hasDurableAbortAck(streamId, generationId)) {
+        return true;
+      }
+    } catch (error) {
+      logger.error(`[RedisEventTransport] Failed to inspect generation abort proof:`, error);
+    }
+
+    const channel = CHANNELS.events(streamId);
+    const state = this.getOrCreateStreamState(streamId);
+    await this.ensureChannelSubscription(channel);
+    if (this.streams.get(streamId) !== state) {
+      return false;
+    }
+
+    const abortRequestId = randomUUID();
+    const acknowledgement = new Promise<boolean>((resolve) => {
+      const timeout = setTimeout(() => {
+        void this.hasDurableAbortAck(streamId, generationId).then(
+          (acknowledged) => this.settleAbortAck(streamId, state, abortRequestId, acknowledged),
+          () => this.settleAbortAck(streamId, state, abortRequestId, false),
+        );
+      }, ABORT_ACK_TIMEOUT_MS);
+      state.abortAckWaiters.set(abortRequestId, { generationId, resolve, timeout });
     });
+
+    try {
+      // Redis Cluster may report zero receivers on the publishing node while a
+      // subscriber on another node is still processing the abort. Only the
+      // correlated acknowledgement (or its durable proof) can settle this.
+      await this.publishAbort(streamId, generationId, abortRequestId);
+    } catch (error) {
+      this.settleAbortAck(streamId, state, abortRequestId, false);
+      throw error;
+    }
+    return acknowledgement;
   }
 
   /**
@@ -883,24 +1132,12 @@ export class RedisEventTransport implements IEventTransport {
    * @param streamId - The stream identifier
    * @param callback - Called when abort signal is received
    */
-  async onAbort(streamId: string, callback: (generationId?: number) => void): Promise<() => void> {
+  async onAbort(
+    streamId: string,
+    callback: (generationId?: number) => void | boolean,
+  ): Promise<() => void> {
     const channel = CHANNELS.events(streamId);
-    let state = this.streams.get(streamId);
-
-    if (!state) {
-      state = {
-        count: 0,
-        handlers: new Map(),
-        abortCallbacks: new Set(),
-        reorderBuffer: {
-          nextSeq: 0,
-          pending: new Map(),
-          flushTimeout: null,
-          deliveryDeferred: false,
-        },
-      };
-      this.streams.set(streamId, state);
-    }
+    const state = this.getOrCreateStreamState(streamId);
 
     const registration = { callback };
     state.abortCallbacks.add(registration);
@@ -915,6 +1152,60 @@ export class RedisEventTransport implements IEventTransport {
 
     return () => {
       if (this.streams.get(streamId) !== state || !state.abortCallbacks.delete(registration)) {
+        return;
+      }
+      this.unsubscribeUnusedChannel(streamId, state);
+    };
+  }
+
+  /**
+   * Publish a preempt arm/clear to all replicas. Unlike abort this does NOT
+   * stop the run — the generating replica seals its current model stream at
+   * the next provider-safe boundary. Same channel and subscription as every
+   * other stream event; fenced by `msg.createdAt` on the receiving side.
+   */
+  /**
+   * Resolves to the number of replicas that received the message, so an ARM
+   * can be acknowledged only once it actually reached someone. Unlike abort
+   * (fire-and-forget, because a failed abort is retried by the user hitting
+   * stop again) an unheard arm is invisible: the route would answer
+   * `preempt: true` for a seal that never happens. Rejects on publish
+   * failure; callers decide what to do.
+   */
+  async emitPreempt(streamId: string, msg: PreemptMessage): Promise<number> {
+    const channel = CHANNELS.events(streamId);
+    const message: PubSubMessage = {
+      type: EventTypes.PREEMPT,
+      preempt: msg,
+    };
+
+    return this.publisher.publish(channel, JSON.stringify(message));
+  }
+
+  /**
+   * Register callback for preempt signals from any replica.
+   * Resolves once the Redis channel is active so callers can safely arm.
+   * The returned function removes only this registration, so a terminal
+   * generation releases its channel without touching a same-stream
+   * replacement.
+   */
+  async onPreempt(streamId: string, callback: (msg: PreemptMessage) => void): Promise<() => void> {
+    const channel = CHANNELS.events(streamId);
+    const state = this.getOrCreateStreamState(streamId);
+
+    const registration = { callback };
+    state.preemptCallbacks.add(registration);
+
+    try {
+      await this.ensureChannelSubscription(channel);
+    } catch (error) {
+      state.preemptCallbacks.delete(registration);
+      this.unsubscribeUnusedChannel(streamId, state);
+      throw error;
+    }
+
+    return () => {
+      if (this.streams.get(streamId) !== state || !state.preemptCallbacks.delete(registration)) {
         return;
       }
       this.unsubscribeUnusedChannel(streamId, state);
@@ -946,6 +1237,12 @@ export class RedisEventTransport implements IEventTransport {
       state.handlers.clear();
       state.allSubscribersLeftCallback = undefined;
       state.abortCallbacks.clear();
+      for (const waiter of state.abortAckWaiters.values()) {
+        clearTimeout(waiter.timeout);
+        waiter.resolve(false);
+      }
+      state.abortAckWaiters.clear();
+      state.preemptCallbacks.clear();
     }
 
     this.resetReorderBuffer(streamId);
@@ -974,6 +1271,11 @@ export class RedisEventTransport implements IEventTransport {
         state.reorderBuffer.flushTimeout = null;
       }
       state.reorderBuffer.pending.clear();
+      for (const waiter of state.abortAckWaiters.values()) {
+        clearTimeout(waiter.timeout);
+        waiter.resolve(false);
+      }
+      state.abortAckWaiters.clear();
     }
 
     for (const channel of this.channelSubscriptions.keys()) {

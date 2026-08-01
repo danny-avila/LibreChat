@@ -46,6 +46,7 @@ const {
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
+  stripActivityLabelParts,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -68,7 +69,7 @@ const {
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
-const { resolveConfigServers } = require('~/server/services/MCP');
+const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPManager } = require('~/config');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
@@ -89,6 +90,7 @@ function createToolLoader(signal, definitionsOnly = true) {
     provider,
     tool_options,
     tool_resources,
+    accessibleMcpServerNames,
   }) {
     const agent = { id: agentId, tools, provider, model, tool_options };
     try {
@@ -99,6 +101,7 @@ function createToolLoader(signal, definitionsOnly = true) {
         signal,
         tool_resources,
         definitionsOnly,
+        accessibleMcpServerNames,
         streamId: null,
       });
     } catch (error) {
@@ -379,6 +382,7 @@ const createResponse = async (req, res) => {
       getFiles: db.getFiles,
       getUserKey: db.getUserKey,
       getMessages: db.getMessages,
+      getAccessibleMcpServerNames,
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
       getUserCodeFiles: db.getUserCodeFiles,
@@ -460,6 +464,7 @@ const createResponse = async (req, res) => {
         }),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+        toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
         statefulSessionsAvailable: enabledCapabilities.has(
           AgentCapabilities.stateful_code_sessions,
         ),
@@ -541,6 +546,7 @@ const createResponse = async (req, res) => {
           /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
           codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+          toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
             AgentCapabilities.stateful_code_sessions,
           ),
@@ -629,7 +635,7 @@ const createResponse = async (req, res) => {
     const allMessages = [...previousMessages, ...inputMessages];
 
     const toolSet = buildToolSet(primaryConfig);
-    const formatted = formatAgentMessages(allMessages, {}, toolSet);
+    const formatted = formatAgentMessages(stripActivityLabelParts(allMessages), {}, toolSet);
     const formattedMessages = formatted.messages;
     const initialSummary = formatted.summary;
     let indexTokenCountMap = formatted.indexTokenCountMap;
@@ -723,11 +729,13 @@ const createResponse = async (req, res) => {
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
             backgroundToolNames: ctx.backgroundToolNames,
+            intentToolNames: ctx.intentToolNames,
             mcpAvailableTools: ctx.mcpAvailableTools,
             requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
+            accessibleMcpServerNames: ctx.accessibleMcpServerNames,
           });
           return enrichLoadedToolsWithAgentContext({
             result,
@@ -904,11 +912,13 @@ const createResponse = async (req, res) => {
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
             backgroundToolNames: ctx.backgroundToolNames,
+            intentToolNames: ctx.intentToolNames,
             mcpAvailableTools: ctx.mcpAvailableTools,
             requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
+            accessibleMcpServerNames: ctx.accessibleMcpServerNames,
           });
           return enrichLoadedToolsWithAgentContext({
             result,

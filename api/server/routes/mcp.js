@@ -3,9 +3,9 @@ const { logger, getTenantId, tenantStorage } = require('@librechat/data-schemas'
 const {
   CacheKeys,
   Constants,
+  Permissions,
   PermissionBits,
   PermissionTypes,
-  Permissions,
 } = require('librechat-data-provider');
 const {
   getBasePath,
@@ -14,7 +14,6 @@ const {
   MCPTokenStorage,
   setOAuthSession,
   PENDING_STALE_MS,
-  mcpConfig: mcpSettings,
   getUserMCPAuthMap,
   validateOAuthCsrf,
   OAUTH_CSRF_COOKIE,
@@ -22,6 +21,8 @@ const {
   generateCheckAccess,
   validateOAuthSession,
   OAUTH_SESSION_COOKIE,
+  mcpConfig: mcpSettings,
+  getServerCustomUserVars,
 } = require('@librechat/api');
 const {
   createMCPServerController,
@@ -254,11 +255,21 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
               const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
               const hasSession = !hasCsrf && validateOAuthSession(req, parsed.userId);
               if (hasCsrf || hasSession) {
-                await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
-                logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
-                  flowId,
-                  error: oauthError,
-                });
+                /** A stale mapping can resolve a superseded attempt's state to the
+                 *  current flow (deterministic flow ids); only fail the flow this
+                 *  error callback actually belongs to */
+                const flowMeta = await MCPOAuthHandler.getFlowState(flowId, flowManager);
+                if (flowMeta?.state === state) {
+                  await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
+                  logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
+                    flowId,
+                    error: oauthError,
+                  });
+                } else {
+                  logger.warn('[MCP OAuth] Skipping failFlow for superseded OAuth error callback', {
+                    flowId,
+                  });
+                }
               }
             }
           }
@@ -331,6 +342,17 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
     if (!flowState) {
       logger.error('[MCP OAuth] Flow state not found for flowId:', flowId);
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
+    }
+
+    /**
+     * Flow ids are deterministic (userId:serverName), so a stale state mapping
+     * can resolve to a newer flow for the same server. The stored state is the
+     * only per-attempt nonce; a mismatch means this callback belongs to a
+     * superseded authorization attempt and must not consume the current flow.
+     */
+    if (flowState.state !== state) {
+      logger.error('[MCP OAuth] State mismatch for flow', { flowId, serverName });
       return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
     }
 
@@ -459,11 +481,38 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             );
           }
 
+          /**
+           * Without this, getUserConnection resolves `headers`/`oauth_headers`
+           * customUserVars templates (e.g. `{{MY_VAR}}`) with no substitution
+           * data, so the literal placeholder is sent on this first post-callback
+           * connection attempt even though the user's value is already saved -
+           * surfaces upstream as a generic auth rejection from the MCP server.
+           * The other reconnect path (oauth/reinitialize route below) already
+           * resolves this the same way; this one was missing it.
+           */
+          let userMCPAuthMap;
+          if (serverConfig?.customUserVars && typeof serverConfig.customUserVars === 'object') {
+            try {
+              userMCPAuthMap = await getUserMCPAuthMap({
+                userId: flowState.userId,
+                servers: [serverName],
+                findPluginAuthsByKeys: db.findPluginAuthsByKeys,
+              });
+            } catch (error) {
+              logger.warn(
+                `[MCP OAuth] Could not resolve customUserVars for ${serverName} before reconnecting:`,
+                error,
+              );
+            }
+          }
+          const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
+
           const userConnection = await mcpManager.getUserConnection({
             user,
             serverName,
             flowManager,
             serverConfig,
+            customUserVars,
             tokenMethods: {
               findToken: db.findToken,
               updateToken: db.updateToken,
@@ -718,7 +767,15 @@ router.post(
         return res.status(500).json({ error: 'Failed to reinitialize MCP server for user' });
       }
 
-      const { success, message, oauthRequired, oauthUrl, connectionDeferred } = result;
+      const {
+        success,
+        message,
+        oauthRequired,
+        oauthUrl,
+        failureReason,
+        missingUserVars,
+        connectionDeferred,
+      } = result;
 
       if (oauthRequired) {
         const flowId = getOAuthFlowId(user.id, serverName);
@@ -731,6 +788,8 @@ router.post(
         oauthUrl,
         serverName,
         oauthRequired,
+        failureReason,
+        missingUserVars,
         connectionDeferred,
       });
     } catch (error) {

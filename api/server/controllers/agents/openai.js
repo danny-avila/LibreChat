@@ -35,6 +35,7 @@ const {
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
+  stripActivityLabelParts,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -42,7 +43,11 @@ const {
   createToolEndCallback,
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
-const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+const {
+  loadAgentTools,
+  loadToolsForExecution,
+  getAccessibleMcpServerNames,
+} = require('~/server/services/ToolService');
 const {
   findAccessibleResources,
   getEffectivePermissions,
@@ -75,6 +80,7 @@ function createToolLoader(signal, definitionsOnly = true) {
     provider,
     tool_options,
     tool_resources,
+    accessibleMcpServerNames,
   }) {
     const agent = { id: agentId, tools, provider, model, tool_options };
     try {
@@ -85,6 +91,7 @@ function createToolLoader(signal, definitionsOnly = true) {
         signal,
         tool_resources,
         definitionsOnly,
+        accessibleMcpServerNames,
         streamId: null, // No resumable stream for OpenAI compat
       });
     } catch (error) {
@@ -257,6 +264,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       getFiles: db.getFiles,
       getUserKey: db.getUserKey,
       getMessages: db.getMessages,
+      getAccessibleMcpServerNames,
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
       getUserCodeFiles: db.getUserCodeFiles,
@@ -336,6 +344,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         }),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+        toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
         statefulSessionsAvailable: enabledCapabilities.has(
           AgentCapabilities.stateful_code_sessions,
         ),
@@ -417,6 +426,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
           codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+          toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
             AgentCapabilities.stateful_code_sessions,
           ),
@@ -503,11 +513,13 @@ const OpenAIChatCompletionController = async (req, res) => {
           signal: abortController.signal,
           toolRegistry: ctx.toolRegistry,
           backgroundToolNames: ctx.backgroundToolNames,
+          intentToolNames: ctx.intentToolNames,
           mcpAvailableTools: ctx.mcpAvailableTools,
           requestScopedConnections: ctx.requestScopedConnections,
           userMCPAuthMap: ctx.userMCPAuthMap,
           tool_resources: ctx.tool_resources,
           actionsEnabled: ctx.actionsEnabled,
+          accessibleMcpServerNames: ctx.accessibleMcpServerNames,
         });
         return enrichLoadedToolsWithAgentContext({
           result,
@@ -524,7 +536,7 @@ const OpenAIChatCompletionController = async (req, res) => {
     const openaiMessages = convertMessages(request.messages);
 
     const toolSet = buildToolSet(primaryConfig);
-    const formatted = formatAgentMessages(openaiMessages, {}, toolSet);
+    const formatted = formatAgentMessages(stripActivityLabelParts(openaiMessages), {}, toolSet);
     const formattedMessages = formatted.messages;
     const initialSummary = formatted.summary;
     let indexTokenCountMap = formatted.indexTokenCountMap;

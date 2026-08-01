@@ -1,5 +1,6 @@
 import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import {
+  BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
   PrincipalType,
   PrincipalModel,
@@ -17,8 +18,10 @@ import {
   encryptConfigSecrets,
   getConfigSecretMutationPaths,
   getConfigSecretInputError,
+  getConfigSecretSections,
   isConfigSecretAncestorPath,
   isConfigSecretDescendantPath,
+  isConfigSecretPreservablePatch,
   preserveConfigSecrets,
   redactConfigSecrets,
 } from './secrets';
@@ -27,6 +30,7 @@ const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
 const DEFAULT_PRIORITY = 10;
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
+const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
 
 export function isValidFieldPath(path: string): boolean {
   return (
@@ -35,6 +39,7 @@ export function isValidFieldPath(path: string): boolean {
     !path.startsWith('.') &&
     !path.endsWith('.') &&
     !path.includes('..') &&
+    !path.includes('$') &&
     !UNSAFE_SEGMENTS.test(path)
   );
 }
@@ -319,22 +324,13 @@ function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
   return safeConfig;
 }
 
-function isObjectValuedLangfusePatch(fieldPath: string, value: unknown): boolean {
-  return (
-    isConfigSecretAncestorPath(fieldPath) &&
-    value != null &&
-    typeof value === 'object' &&
-    !Array.isArray(value)
-  );
-}
-
 function preservePatchedConfigSecretFields(
   fields: Record<string, unknown>,
   existingOverrides?: unknown,
 ): Record<string, unknown> {
   const result = { ...fields };
   for (const [fieldPath, value] of Object.entries(result)) {
-    if (isObjectValuedLangfusePatch(fieldPath, value)) {
+    if (isConfigSecretPreservablePatch(fieldPath, value)) {
       result[fieldPath] = preserveConfigSecrets(value, existingOverrides, fieldPath);
     }
   }
@@ -539,6 +535,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           );
         }
       }
+      for (const key of Object.keys(filteredOverrides)) {
+        const section = getTopLevelSection(key);
+        if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+          delete (filteredOverrides as Record<string, unknown>)[key];
+          logger.warn(
+            `[adminConfig] Stripping dedicated tenant-wide config section "${key}" from the generic config API`,
+          );
+        }
+      }
       const iface = (overrides as Record<string, unknown>).interface;
       if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
         const filteredIface: Record<string, unknown> = {};
@@ -595,25 +600,44 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         ? { expectEmpty: false }
         : { expectEmpty: true, preservePriority: true };
 
-      const langfuseInputError = getConfigSecretInputError(
-        'langfuse',
-        (filteredOverrides as Record<string, unknown>).langfuse,
-      );
-      if (langfuseInputError) {
-        return res.status(400).json({ error: langfuseInputError });
+      for (const section of getConfigSecretSections()) {
+        const secretInputError = getConfigSecretInputError(
+          section,
+          (filteredOverrides as Record<string, unknown>)[section],
+        );
+        if (secretInputError) {
+          return res.status(400).json({ error: secretInputError });
+        }
       }
 
       const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
-      const existingForSecrets = isObjectValuedLangfusePatch(
-        'langfuse',
-        (filteredOverrides as Record<string, unknown>).langfuse,
-      )
-        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-        : null;
+      const needsExistingSecrets = getConfigSecretSections().some((section) =>
+        isConfigSecretPreservablePatch(
+          section,
+          (filteredOverrides as Record<string, unknown>)[section],
+        ),
+      );
+      const needsProtectedBaseSections =
+        principalId === BASE_CONFIG_PRINCIPAL_ID &&
+        (overrideSections.length > 0 || priority != null);
+      const existingConfig =
+        needsExistingSecrets || needsProtectedBaseSections
+          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+          : null;
       const preservedOverrides = preserveConfigSecrets(
         encryptedOverrides,
-        existingForSecrets?.overrides,
+        existingConfig?.overrides,
       );
+      if (needsProtectedBaseSections) {
+        for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
+          const storedSection = (
+            existingConfig?.overrides as Record<string, unknown> | undefined
+          )?.[section];
+          if (storedSection !== undefined) {
+            (preservedOverrides as Record<string, unknown>)[section] = storedSection;
+          }
+        }
+      }
       const config = await upsertConfig(
         principalType,
         principalId,
@@ -706,6 +730,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           );
           return false;
         }
+        if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath))) {
+          logger.warn(
+            `[adminConfig] Stripping dedicated tenant-wide config field "${entry.fieldPath}" from the generic config API`,
+          );
+          return false;
+        }
         if (isInterfacePermissionPath(entry.fieldPath)) {
           logger.warn(
             `[adminConfig] Stripping interface permission field "${entry.fieldPath}" — use role permissions instead`,
@@ -754,11 +784,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
-      const hasObjectValuedLangfusePatch = Object.entries(fields).some(([fieldPath, value]) =>
-        isObjectValuedLangfusePatch(fieldPath, value),
+      const hasObjectValuedSecretPatch = Object.entries(fields).some(([fieldPath, value]) =>
+        isConfigSecretPreservablePatch(fieldPath, value),
       );
       const existing =
-        requestedPriority == null || hasObjectValuedLangfusePatch
+        requestedPriority == null || hasObjectValuedSecretPatch
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
       const encryptedFields = encryptConfigSecretFields(fields);
@@ -843,6 +873,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
+      if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+        logger.warn(
+          `[adminConfig] Ignoring dedicated tenant-wide config tombstone "${fieldPath}" in the generic config API`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
 
       if (priority != null && !hasBroadManage) {
         logger.warn(
@@ -923,6 +959,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (isBaseOnlyFieldPath(fieldPath)) {
         logger.warn(
           `[adminConfig] Ignoring delete for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
+
+      if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+        logger.warn(
+          `[adminConfig] Ignoring dedicated tenant-wide config delete "${fieldPath}" in the generic config API`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }

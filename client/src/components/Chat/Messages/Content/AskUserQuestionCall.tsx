@@ -56,7 +56,9 @@ export default function AskUserQuestionCall({
           {localize('com_ui_question_failed')}
         </div>
         {question?.question != null && (
-          <p className="text-sm font-medium text-text-primary">{question.question}</p>
+          <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
+            {question.question}
+          </p>
         )}
         <p className="text-sm text-text-secondary">
           {localize('com_ui_question_failed_description')}
@@ -91,14 +93,16 @@ export default function AskUserQuestionCall({
         <MessageCircleQuestion className="h-4 w-4" aria-hidden="true" />
         {answered ? localize('com_ui_asked') : localize('com_ui_asking')}
       </div>
-      <p className="text-sm font-medium text-text-primary">
+      <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
         {question?.question ?? (answered ? localize('com_ui_asked') : localize('com_ui_asking'))}
       </p>
       {question?.description != null && question.description.length > 0 && (
-        <p className="text-sm text-text-secondary">{question.description}</p>
+        <p className="text-sm text-text-secondary [overflow-wrap:anywhere]">
+          {question.description}
+        </p>
       )}
       {answered ? (
-        <p className="text-sm text-text-primary">
+        <p className="text-sm text-text-primary [overflow-wrap:anywhere]">
           <span className="font-medium text-text-secondary">{localize('com_ui_you_answered')}</span>{' '}
           {answerLabel}
         </p>

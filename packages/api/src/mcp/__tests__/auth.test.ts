@@ -1,7 +1,7 @@
 import type { PluginAuthMethods } from '@librechat/data-schemas';
 import type { GenericTool } from '@librechat/agents';
+import { getUserMCPAuthMap, getServerCustomUserVars } from '../auth';
 import { getPluginAuthMap } from '~/agents/auth';
-import { getUserMCPAuthMap } from '../auth';
 
 jest.mock('~/agents/auth', () => ({
   getPluginAuthMap: jest.fn(),
@@ -97,6 +97,27 @@ describe('getUserMCPAuthMap', () => {
 
       expect(mockGetPluginAuthMap).toHaveBeenCalledWith(
         expect.objectContaining({ pluginKeys: ['mcp_Google_mcp_Workspace'] }),
+      );
+    });
+
+    it('fetches auth under both spellings for normalized keys, raw-only for legacy keys', async () => {
+      /** Plugin auth rows are stored under the raw config name, but a
+       *  normalized match could equally belong to a user-DB server named
+       *  exactly like it — fetch the superset and let consumers read by
+       *  their own server name. Legacy raw keys resolve directly. */
+      mockGetPluginAuthMap.mockResolvedValue({});
+
+      await getUserMCPAuthMap({
+        userId: 'user123',
+        tools: ['search_mcp_Connector__Company', 'lookup_mcp_Connector: Company'],
+        serverNames: ['Connector: Company'],
+        findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
+      });
+
+      expect(mockGetPluginAuthMap).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pluginKeys: expect.arrayContaining(['mcp_Connector__Company', 'mcp_Connector: Company']),
+        }),
       );
     });
   });
@@ -299,5 +320,22 @@ describe('getUserMCPAuthMap', () => {
 
       expect(result).toEqual(mockCustomUserVars);
     });
+  });
+});
+
+describe('getServerCustomUserVars', () => {
+  it('reads a server entry by its mcp_-prefixed key', () => {
+    const authMap = {
+      'mcp_my-server': { API_KEY: 'sk-123' },
+      'mcp_other-server': { TOKEN: 'abc' },
+    };
+    expect(getServerCustomUserVars(authMap, 'my-server')).toEqual({ API_KEY: 'sk-123' });
+  });
+
+  it('returns undefined for a missing server or map', () => {
+    expect(
+      getServerCustomUserVars({ 'mcp_my-server': { API_KEY: 'sk-123' } }, 'absent'),
+    ).toBeUndefined();
+    expect(getServerCustomUserVars(undefined, 'my-server')).toBeUndefined();
   });
 });

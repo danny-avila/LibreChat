@@ -542,6 +542,159 @@ describe('MCP OAuth Race Condition Fixes', () => {
     });
   });
 
+  describe('deleteFlowAndStateMapping (uninstall teardown)', () => {
+    const createFlowManager = () => {
+      const store = new MockKeyv();
+      return new FlowStateManager<MCPOAuthTokens | null>(store as unknown as Keyv, {
+        ttl: 30000,
+        ci: true,
+      });
+    };
+
+    it('deletes both the flow and its state mapping', async () => {
+      const flowManager = createFlowManager();
+      const flowId = 'user1:test-server';
+      const state = 'random-state-abc123';
+
+      await flowManager.initFlow(flowId, 'mcp_oauth', { state });
+      await MCPOAuthHandler.storeStateMapping(state, flowId, flowManager);
+
+      await MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager);
+
+      expect(await MCPOAuthHandler.resolveStateToFlowId(state, flowManager)).toBeNull();
+      expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeFalsy();
+    });
+
+    it('handles tenant-prefixed flow ids', async () => {
+      const flowManager = createFlowManager();
+      const flowId = 'tenant:acme:user1:test-server';
+      const state = 'tenant-state-xyz789';
+
+      await flowManager.initFlow(flowId, 'mcp_oauth', { state });
+      await MCPOAuthHandler.storeStateMapping(state, flowId, flowManager);
+
+      await MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager);
+
+      expect(await MCPOAuthHandler.resolveStateToFlowId(state, flowManager)).toBeNull();
+      expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeFalsy();
+    });
+
+    it('is a no-op when the flow is absent and leaves unrelated mappings intact', async () => {
+      const flowManager = createFlowManager();
+      const otherFlowId = 'user2:other-server';
+      const otherState = 'other-state-def456';
+
+      await flowManager.initFlow(otherFlowId, 'mcp_oauth', { state: otherState });
+      await MCPOAuthHandler.storeStateMapping(otherState, otherFlowId, flowManager);
+
+      await expect(
+        MCPOAuthHandler.deleteFlowAndStateMapping('user1:missing-server', flowManager),
+      ).resolves.toBeUndefined();
+
+      expect(await MCPOAuthHandler.resolveStateToFlowId(otherState, flowManager)).toBe(otherFlowId);
+    });
+
+    it('deletes the flow before the state mapping', async () => {
+      const flowManager = createFlowManager();
+      const flowId = 'user1:test-server';
+      const state = 'ordered-state-ghi789';
+
+      await flowManager.initFlow(flowId, 'mcp_oauth', { state });
+      await MCPOAuthHandler.storeStateMapping(state, flowId, flowManager);
+
+      const calls: string[] = [];
+      const deleteFlowSpy = jest.spyOn(flowManager, 'deleteFlow');
+      deleteFlowSpy.mockImplementation(async (id, type) => {
+        calls.push(`${type}:${id}`);
+        return true;
+      });
+
+      await MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager);
+
+      expect(calls).toEqual([`mcp_oauth:${flowId}`, `mcp_oauth_state:${state}`]);
+    });
+
+    it('still deletes the flow and rejects when the mapping delete hits a storage error', async () => {
+      const flowManager = createFlowManager();
+      const flowId = 'user1:test-server';
+      const state = 'failing-state-jkl012';
+
+      await flowManager.initFlow(flowId, 'mcp_oauth', { state });
+      await MCPOAuthHandler.storeStateMapping(state, flowId, flowManager);
+
+      const realDeleteFlow = flowManager.deleteFlow.bind(flowManager);
+      jest.spyOn(flowManager, 'deleteFlow').mockImplementation(async (id, type) => {
+        if (type === 'mcp_oauth_state') {
+          return false;
+        }
+        return realDeleteFlow(id, type);
+      });
+
+      await expect(MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager)).rejects.toThrow(
+        'Failed to fully delete OAuth flow',
+      );
+
+      /** The callback-capable flow must not survive token deletion */
+      expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeFalsy();
+    });
+
+    it('still deletes the mapping and rejects when the flow delete hits a storage error', async () => {
+      const flowManager = createFlowManager();
+      const flowId = 'user1:test-server';
+      const state = 'restore-state-mno345';
+
+      await flowManager.initFlow(flowId, 'mcp_oauth', { state });
+      await MCPOAuthHandler.storeStateMapping(state, flowId, flowManager);
+
+      const realDeleteFlow = flowManager.deleteFlow.bind(flowManager);
+      jest.spyOn(flowManager, 'deleteFlow').mockImplementation(async (id, type) => {
+        if (type === 'mcp_oauth') {
+          return false;
+        }
+        return realDeleteFlow(id, type);
+      });
+
+      await expect(MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager)).rejects.toThrow(
+        'Failed to fully delete OAuth flow',
+      );
+
+      /** The surviving flow must not stay callback-capable: its state no longer resolves */
+      expect(await MCPOAuthHandler.resolveStateToFlowId(state, flowManager)).toBeNull();
+      expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeTruthy();
+    });
+
+    it('still deletes the flow and rejects when the metadata read hits a storage error', async () => {
+      const flowManager = createFlowManager();
+      const flowId = 'user1:test-server';
+      const state = 'unreadable-state-pqr678';
+
+      await flowManager.initFlow(flowId, 'mcp_oauth', { state });
+      await MCPOAuthHandler.storeStateMapping(state, flowId, flowManager);
+
+      jest
+        .spyOn(flowManager, 'getFlowState')
+        .mockRejectedValueOnce(new Error('read connection lost'));
+
+      await expect(MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager)).rejects.toThrow(
+        'Failed to fully delete OAuth flow',
+      );
+
+      /** The callback-capable flow must not survive token deletion */
+      expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeFalsy();
+    });
+
+    it('still deletes the flow when metadata carries no state', async () => {
+      const flowManager = createFlowManager();
+      const flowId = 'user1:stateless-server';
+
+      await flowManager.initFlow(flowId, 'mcp_oauth', { serverName: 'stateless-server' });
+
+      await MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager);
+
+      expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeFalsy();
+    });
+  });
+
   describe('Fix 4: ReauthenticationRequiredError for no-refresh-token', () => {
     it('should throw ReauthenticationRequiredError when access token expired and no refresh token', async () => {
       const expiredDate = new Date(Date.now() - 60000);

@@ -16,6 +16,22 @@ import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
 
+export function getLangfuseConnection(): Promise<t.TLangfuseConnectionStatus> {
+  return request.get(endpoints.adminLangfuseConnection());
+}
+
+export function updateLangfuseConnection(
+  payload: t.TUpdateLangfuseConnectionRequest,
+): Promise<t.TLangfuseConnectionStatus> {
+  return request.put(endpoints.adminLangfuseConnection(), payload);
+}
+
+export function testLangfuseConnection(
+  payload: t.TLangfuseConnectionTestRequest,
+): Promise<t.TLangfuseConnectionTestResponse> {
+  return request.post(endpoints.adminLangfuseConnectionTest(), payload);
+}
+
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
 }
@@ -205,7 +221,7 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
   return request.post(endpoints.userPlugins(), payload);
 };
 
-export const reinitializeMCPServer = (serverName: string) => {
+export const reinitializeMCPServer = (serverName: string): Promise<mcp.MCPReinitializeResponse> => {
   return request.post(endpoints.mcpReinitialize(serverName));
 };
 

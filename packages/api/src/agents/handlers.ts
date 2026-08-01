@@ -37,6 +37,12 @@ import {
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
+import {
+  hasIntentArg,
+  stripIntentArg,
+  stripIntentLabelsFromToolDefinitions,
+  INTENT_ARG,
+} from './intent';
 import { logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
@@ -2030,6 +2036,37 @@ function toolDeclaresRunInBackgroundParam(tool: StructuredToolInterface): boolea
   );
 }
 
+/**
+ * True when the tool's own schema declares `intent` (zod shape or raw JSON
+ * schema) — SDK-native intent tools do, so they receive the argument
+ * untouched and handle it themselves; host-injected tools do not, so the
+ * arg is stripped before invocation.
+ */
+function toolDeclaresIntentParam(tool: StructuredToolInterface): boolean {
+  const schema = (
+    tool as StructuredToolInterface & {
+      schema?: { shape?: Record<string, unknown>; properties?: Record<string, unknown> };
+    }
+  ).schema;
+  if (schema == null) {
+    return false;
+  }
+  return schema.shape?.[INTENT_ARG] != null || schema.properties?.[INTENT_ARG] != null;
+}
+
+/**
+ * Strips the host-injected `intent` label from invoke args unless the tool's
+ * own schema declares it. The label rides `tool_call.args` to the client
+ * untouched — only the tool body must never see an undeclared parameter
+ * (strict MCP/action schemas would reject it; zod tools would strip-or-throw).
+ */
+function stripIntentForInvoke(args: unknown, tool: StructuredToolInterface): unknown {
+  if (!hasIntentArg(args) || toolDeclaresIntentParam(tool)) {
+    return args;
+  }
+  return stripIntentArg(args);
+}
+
 function mergeToolConfigurables(
   base: Record<string, unknown> | undefined,
   loaded: Record<string, unknown> | undefined,
@@ -3721,7 +3758,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               }
               const { task, isNew } = created;
               if (isNew) {
-                const strippedArgs = stripRunInBackgroundArg(tc.args);
+                const strippedArgs = stripIntentForInvoke(stripRunInBackgroundArg(tc.args), tool);
                 /** Persists the settled result onto the dispatch turn's message
                  *  (patch the tool-call part's output, persist generated files,
                  *  append attachments), so a backgrounded code call reads like a
@@ -4180,10 +4217,16 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         /* PTC-generated calls don't go through the host background
                          * interceptor, so strip the injected `run_in_background`
                          * param from target schemas (the registry entries were
-                         * mutated to include it) — mirrors the self-spawn path. */
-                        const toolDefs = stripBackgroundFromToolDefinitions(
-                          filteredToolDefs,
-                          mergedConfigurable?.backgroundToolNames as string[] | undefined,
+                         * mutated to include it) — mirrors the self-spawn path.
+                         * Intent LABELS are stripped for the same reason —
+                         * host-injected AND SDK-native alike (marker-guarded):
+                         * no card renders for an inner call, so the sandbox
+                         * bridge must not advertise them. */
+                        const toolDefs = stripIntentLabelsFromToolDefinitions(
+                          stripBackgroundFromToolDefinitions(
+                            filteredToolDefs,
+                            mergedConfigurable?.backgroundToolNames as string[] | undefined,
+                          ),
                         );
                         toolCallConfig.toolDefs = toolDefs;
                         toolCallConfig.toolMap = ptcToolMap ?? toolMap;
@@ -4202,7 +4245,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         ? stripRunInBackgroundArg(tc.args)
                         : tc.args;
                     const result = await tool.invoke(
-                      normalizeToolInvokeArgs(foregroundArgs, tool),
+                      normalizeToolInvokeArgs(stripIntentForInvoke(foregroundArgs, tool), tool),
                       {
                         toolCall: toolCallConfig,
                         configurable: mergedConfigurable,

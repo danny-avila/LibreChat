@@ -1,4 +1,5 @@
 const mockCreateRun = jest.fn();
+const mockCaptureAgentCheckpointGeneration = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockIsHITLEnabled = jest.fn().mockReturnValue(false);
 const mockBuildAgentScopedContext = jest.fn((...args) =>
@@ -13,6 +14,7 @@ const mockFormatAgentMessages = jest.fn(() => ({
 
 const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
+const { GenerationJobManager, createStreamServices } = require('@librechat/api');
 const AgentClient = require('./client');
 const { resolveConfigServers } = require('~/server/services/MCP');
 
@@ -41,7 +43,9 @@ jest.mock('@librechat/api', () => ({
   countFormattedMessageTokens: jest.fn(() => 42),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
   createTokenCounter: jest.fn(() => jest.fn(() => 0)),
+  captureAgentCheckpointGeneration: (...args) => mockCaptureAgentCheckpointGeneration(...args),
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
+  decrementPendingRequest: jest.fn(async () => {}),
   initializeAgent: jest.fn(),
   isHITLEnabled: (...args) => mockIsHITLEnabled(...args),
   createMemoryProcessor: jest.fn(),
@@ -54,6 +58,63 @@ jest.mock('@librechat/api', () => ({
   loadAgent: jest.fn(),
   maybePrewarmCodeSandbox: jest.fn(),
 }));
+
+describe('AgentClient - interrupt discovery persistence', () => {
+  beforeEach(async () => {
+    await GenerationJobManager.destroy();
+    GenerationJobManager.configure({ ...createStreamServices(), cleanupOnComplete: false });
+    GenerationJobManager.initialize();
+  });
+
+  afterEach(async () => {
+    await GenerationJobManager.destroy();
+  });
+
+  it('makes the run discovery snapshot durable when the run pauses', async () => {
+    const streamId = 'conversation-discovered-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-discovered-pause';
+    client.jobCreatedAt = job.createdAt;
+
+    await client.handleRunInterrupt(
+      {
+        getInterrupt: () => ({
+          interruptId: 'ask-interrupt',
+          threadId: streamId,
+          payload: {
+            type: 'ask_user_question',
+            question: { question: 'Proceed?' },
+          },
+        }),
+        getDiscoveredTools: () => ['save_issue_mcp_linear'],
+        getRunMessages: () => [],
+      },
+      streamId,
+    );
+
+    const paused = await GenerationJobManager.getJob(streamId);
+    expect(paused?.status).toBe('requires_action');
+    expect(paused?.metadata.discoveredTools).toEqual(['save_issue_mcp_linear']);
+  });
+});
 
 jest.mock('~/server/services/Config', () => ({
   getMCPServerTools: jest.fn(),
@@ -104,6 +165,10 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
 });
 
 describe('AgentClient - startup telemetry', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('overlaps run creation with checkpoint pruning and joins both before stream processing', async () => {
     let releaseCheckpoint;
     let checkpointStarted;
@@ -154,6 +219,7 @@ describe('AgentClient - startup telemetry', () => {
       collectedUsage: [],
       artifactPromises: [],
       startupTelemetry,
+      checkpointNamespace: '1000',
     });
     client.conversationId = 'conversation-123';
     client.responseMessageId = 'response-123';
@@ -164,7 +230,12 @@ describe('AgentClient - startup telemetry', () => {
     await checkpointStartedPromise;
 
     expect(mockCreateRun).toHaveBeenCalledTimes(1);
-    expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith('conversation-123', undefined);
+    expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+      'conversation-123',
+      undefined,
+      undefined,
+      { throwOnError: true, checkpointNamespace: '1000' },
+    );
     expect(startupTelemetry.mark.mock.calls.map(([milestone]) => milestone)).toEqual([
       'run_input_prepared',
     ]);
@@ -188,6 +259,158 @@ describe('AgentClient - startup telemetry', () => {
       'stream_processing_started',
     ]);
     expect(processStream).toHaveBeenCalledTimes(1);
+    expect(processStream.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        configurable: expect.objectContaining({
+          thread_id: 'conversation-123',
+          checkpoint_ns: '',
+          __librechat_checkpoint_ns: '1000',
+        }),
+      }),
+    );
+  });
+
+  it('does not expose or process a fresh graph when strict checkpoint pruning fails', async () => {
+    jest.clearAllMocks();
+    const checkpointGeneration = {
+      threadId: 'conversation-123',
+      checkpointIds: ['legacy-root', 'legacy-child'],
+    };
+    const processStream = jest.fn().mockResolvedValue();
+    const run = {
+      Graph: { id: 'must-not-be-exposed' },
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+    };
+    mockCreateRun.mockResolvedValue(run);
+    mockIsHITLEnabled.mockReturnValue(true);
+    mockCaptureAgentCheckpointGeneration.mockResolvedValue(checkpointGeneration);
+    mockDeleteAgentCheckpoint.mockRejectedValue(new Error('checkpoint prune failed'));
+    jest.spyOn(GenerationJobManager, 'getJobStore').mockReturnValue({
+      getJob: jest.fn().mockResolvedValue({ createdAt: 1000, status: 'running' }),
+    });
+
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: { toolApproval: {} } } },
+        _resumableStreamId: 'conversation-123',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      startupTelemetry: {
+        mark: jest.fn(),
+        setStreamId: jest.fn(),
+        recordGenerationEvent: jest.fn(),
+        end: jest.fn(),
+      },
+    });
+    client.conversationId = 'conversation-123';
+    client.jobCreatedAt = 1000;
+    client.responseMessageId = 'response-123';
+    client.parentMessageId = 'parent-123';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+      'conversation-123',
+      undefined,
+      checkpointGeneration,
+      { throwOnError: true },
+    );
+    expect(processStream).not.toHaveBeenCalled();
+    expect(client.run).not.toBe(run);
+    expect(client.contentParts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          [ContentTypes.ERROR]: expect.stringContaining('checkpoint prune failed'),
+        }),
+      ]),
+    );
+  });
+
+  it('does not let a stale v1 fresh prune delete a paused v2 replacement generation', async () => {
+    jest.clearAllMocks();
+    const checkpointGeneration = {
+      threadId: 'conversation-123',
+      checkpointIds: ['legacy-root', 'legacy-child'],
+    };
+    const processStream = jest.fn().mockResolvedValue();
+    const run = {
+      Graph: { id: 'stale-v1-graph' },
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+    };
+    mockCreateRun.mockResolvedValue(run);
+    mockIsHITLEnabled.mockReturnValue(true);
+    mockCaptureAgentCheckpointGeneration.mockResolvedValue(checkpointGeneration);
+    const getJob = jest.fn().mockResolvedValue({
+      createdAt: 2000,
+      status: 'requires_action',
+      checkpointNamespace: '2000',
+    });
+    jest.spyOn(GenerationJobManager, 'getJobStore').mockReturnValue({ getJob });
+
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: { toolApproval: {} } } },
+        _resumableStreamId: 'conversation-123',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-123';
+    client.jobCreatedAt = 1000;
+    client.responseMessageId = 'response-123';
+    client.parentMessageId = 'parent-123';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(mockCaptureAgentCheckpointGeneration).toHaveBeenCalledWith(
+      'conversation-123',
+      undefined,
+      { throwOnError: true },
+    );
+    expect(getJob).toHaveBeenCalledTimes(1);
+    expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+    expect(processStream).not.toHaveBeenCalled();
+    expect(client.run).not.toBe(run);
+    expect(client.contentParts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          [ContentTypes.ERROR]: expect.stringContaining(
+            'Generation replaced before legacy checkpoint cleanup',
+          ),
+        }),
+      ]),
+    );
   });
 });
 

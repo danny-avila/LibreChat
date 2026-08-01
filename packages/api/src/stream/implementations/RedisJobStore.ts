@@ -5,21 +5,57 @@ import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
 import type {
   SerializableJobData,
+  CreatedJobData,
+  ReplacedGeneration,
   SteerQueueItem,
   UsageMetadata,
-  IJobStore,
+  IJobStoreV2,
   JobStatus,
   JobMetadataPatch,
   JobStatusTransition,
   IdempotencyClaimValue,
   IdempotencyClaimResult,
+  SteerArmOutcome,
+  SteerArmResult,
+  SteerEnqueueReceiptResult,
+  SteerEnqueueVersionedResult,
+  SteerReceipt,
+  SteerReceiptInput,
+  ParkedSteerClaim,
 } from '~/stream/interfaces/IJobStore';
+import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
+  JobCreationSupersededError,
+  JobPredecessorMismatchError,
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_QUEUE_MAX_DEPTH,
+  PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+  PAUSE_PERSISTENCE_TIMEOUT_MS,
   isPendingActionStale,
 } from '~/stream/interfaces/IJobStore';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
+import { RecoveredSteerPayloadMismatchError } from '~/stream/SteerRecovery';
+
+const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
+
+function assertCreateIdempotencyArguments(
+  claimKey?: string,
+  claimToken?: string,
+  clientRequestId?: string,
+): void {
+  const supplied = [claimKey, claimToken, clientRequestId].filter((value) => value != null).length;
+  if (
+    (supplied !== 0 && supplied !== 3) ||
+    (supplied === 3 &&
+      (claimKey!.length === 0 ||
+        claimKey!.length > 1024 ||
+        claimToken!.length === 0 ||
+        claimToken!.length > 128 ||
+        !CLIENT_REQUEST_ID_PATTERN.test(clientRequestId!)))
+  ) {
+    throw new Error('Invalid generation job idempotency arguments');
+  }
+}
 
 /**
  * Atomic compare-and-set on the job hash — the single-winner decision for a
@@ -31,9 +67,11 @@ import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
  * `pendingActionId` and `createdAt` fields — so a stale decision targeting a
  * different action or replacement epoch loses. On success: removes `clear`
  * fields, writes `status`+patch pairs, refreshes the job-hash TTL, and performs
- * terminal cleanup of same-slot stream state. Returns 1 if it fired, 0 otherwise.
+ * terminal cleanup of same-slot stream state. Returns 1 if it fired, 0 otherwise;
+ * the abort-only mode returns the JSON-encoded drained items on success.
  *
- *   KEYS: [job, eventSequence, chunks, runSteps, steers, parkedSteers, generationEpoch]
+ *   KEYS: [job, eventSequence, chunks, runSteps, steers, claimedSteers,
+ *          parkedSteers, generationEpoch, steerReceipts, steerReceiptOrder]
  *   ARGV: [
  *     from,
  *     expectActionId | "",
@@ -44,6 +82,8 @@ import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
  *     runStepsAfterComplete,
  *     parkedSteersTtl,
  *     generationEpochGraceTtl,
+ *     steerReceiptTtl (0 to leave unchanged),
+ *     returnDrainedSteers,
  *     hdelCount,
  *     ...hdelFields,
  *     ...hsetPairs
@@ -60,43 +100,107 @@ const JOB_CAS_LUA =
   'local runStepsTtl = tonumber(ARGV[7]) ' +
   'local parkedTtl = tonumber(ARGV[8]) ' +
   'local generationEpochGraceTtl = tonumber(ARGV[9]) ' +
-  'local hdelCount = tonumber(ARGV[10]) ' +
-  'local idx = 11 ' +
+  'local receiptTtl = tonumber(ARGV[10]) ' +
+  'local ownerUserId = redis.call("HGET", KEYS[1], "userId") ' +
+  'local ownerTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
+  'local generationProtocol = redis.call("HGET", KEYS[1], "generationProtocolVersion") == "2" and 2 or 1 ' +
+  'local parkedProtocol = generationProtocol ' +
+  'local function isDenseArray(value) if type(value) ~= "table" then return false end ' +
+  'local count = 0 for key, _ in pairs(value) do ' +
+  'if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then return false end count = count + 1 end ' +
+  'return count == #value end ' +
+  // A terminal transition is destructive. Validate every recovery source
+  // before changing status, receipts, queues, or parked state.
+  'local validatedPrior = {} ' +
+  'if terminal then ' +
+  'local claimedRows = {} if generationProtocol == 2 then claimedRows = redis.call("LRANGE", KEYS[6], 0, -1) end ' +
+  'local sources = { claimedRows, redis.call("LRANGE", KEYS[5], 0, -1) } ' +
+  'for s = 1, #sources do for i = 1, #sources[s] do local ok, item = pcall(cjson.decode, sources[s][i]) ' +
+  'if not ok or type(item) ~= "table" or type(item.steerId) ~= "string" or item.steerId == "" then return 0 end end end ' +
+  'local parkedRaw = redis.call("GET", KEYS[7]) ' +
+  'if parkedRaw then local ok, parked = pcall(cjson.decode, parkedRaw) ' +
+  'if not ok or type(parked) ~= "table" or type(parked.userId) ~= "string" or parked.userId == "" ' +
+  'or not isDenseArray(parked.steers) or #parked.steers == 0 or parked.userId ~= ownerUserId ' +
+  'or (parked.tenantId and parked.tenantId ~= ownerTenantId) then return 0 end ' +
+  'if parked.generationProtocolVersion and parked.generationProtocolVersion ~= 1 ' +
+  'and parked.generationProtocolVersion ~= 2 then return 0 end ' +
+  'if parked.generationProtocolVersion == 2 then parkedProtocol = 2 end ' +
+  'for i = 1, #parked.steers do local item = parked.steers[i] ' +
+  'if type(item) ~= "table" or type(item.steerId) ~= "string" or item.steerId == "" ' +
+  'or (item.clientSteerId and (type(item.clientSteerId) ~= "string" or item.clientSteerId == "")) ' +
+  'or (item.text and type(item.text) ~= "string") ' +
+  'or (item.createdAt and (type(item.createdAt) ~= "number" or item.createdAt < 0)) ' +
+  'or (item.recoveringCreatedAt and (type(item.recoveringCreatedAt) ~= "number" or item.recoveringCreatedAt < 0)) then return 0 end ' +
+  'validatedPrior[#validatedPrior + 1] = item end end end ' +
+  'local hdelCount = tonumber(ARGV[12]) ' +
+  'local idx = 13 ' +
   'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
   'local hset = {} ' +
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'if #hset > 0 then redis.call("HSET", KEYS[1], unpack(hset)) end ' +
-  'local ownerUserId = redis.call("HGET", KEYS[1], "userId") ' +
-  'local ownerTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
+  'if terminal then redis.call("HSET", KEYS[1], "steersClosed", "1") end ' +
+  // A same-status pause-barrier release does not carry pendingAction again.
+  // Preserve an explicit approval window that is longer than the default
+  // requires_action TTL instead of shortening the live job and its content.
+  'if not terminal and redis.call("HGET", KEYS[1], "status") == "requires_action" then ' +
+  'local currentTtl = redis.call("TTL", KEYS[1]) ' +
+  'if currentTtl > ttl then ttl = currentTtl end end ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
+  'local effectiveReceiptTtl = receiptTtl ' +
+  'if not terminal and ttl > effectiveReceiptTtl then effectiveReceiptTtl = ttl end ' +
+  'if terminal and parkedTtl > effectiveReceiptTtl then effectiveReceiptTtl = parkedTtl end ' +
+  'if not terminal and redis.call("HGET", KEYS[1], "recoveredSteerId") then ' +
+  'local recoveryLeaseTtl = ttl + parkedTtl ' +
+  'if recoveryLeaseTtl > effectiveReceiptTtl then effectiveReceiptTtl = recoveryLeaseTtl end ' +
+  'local pt = redis.call("TTL", KEYS[7]) ' +
+  'if pt >= 0 and pt < recoveryLeaseTtl then redis.call("EXPIRE", KEYS[7], recoveryLeaseTtl) end end ' +
+  'if effectiveReceiptTtl > 0 then ' +
+  'for i = 9, 10 do local rt = redis.call("TTL", KEYS[i]) ' +
+  'if rt >= 0 and rt < effectiveReceiptTtl then redis.call("EXPIRE", KEYS[i], effectiveReceiptTtl) end end ' +
+  'end ' +
   'local seqTtl = redis.call("TTL", KEYS[2]) ' +
   'if seqTtl >= 0 and seqTtl < ttl then redis.call("EXPIRE", KEYS[2], ttl) end ' +
-  'if currentCreatedAt then redis.call("SET", KEYS[7], currentCreatedAt, "EX", ttl + generationEpochGraceTtl) end ' +
+  'if currentCreatedAt then redis.call("SET", KEYS[8], currentCreatedAt, "EX", ttl + generationEpochGraceTtl) end ' +
   'if terminal then ' +
-  'local queued = redis.call("LRANGE", KEYS[5], 0, -1) ' +
-  'if #queued > 0 then ' +
-  'local steers = {} ' +
-  'for i = 1, #queued do ' +
-  'local decoded, item = pcall(cjson.decode, queued[i]) ' +
-  'if decoded and type(item) == "table" then ' +
-  'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
-  'if item.files then projected.files = item.files end ' +
-  'steers[#steers + 1] = projected ' +
+  'local items = {} local projected = {} local seen = {} ' +
+  'local claimedRows = {} if generationProtocol == 2 then claimedRows = redis.call("LRANGE", KEYS[6], 0, -1) end ' +
+  'local sources = { claimedRows, redis.call("LRANGE", KEYS[5], 0, -1) } ' +
+  'for s = 1, #sources do for i = 1, #sources[s] do ' +
+  'local decoded, item = pcall(cjson.decode, sources[s][i]) ' +
+  'if decoded and type(item) == "table" and item.steerId and not seen[item.steerId] then ' +
+  'seen[item.steerId] = true ' +
+  'items[#items + 1] = item ' +
+  'local clientItem = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
+  'if item.clientSteerId then clientItem.clientSteerId = item.clientSteerId end ' +
+  'if item.files then clientItem.files = item.files end ' +
+  'if item.preempt then clientItem.preempt = item.preempt end ' +
+  'if item.preemptRevision then clientItem.preemptRevision = item.preemptRevision end ' +
+  'projected[#projected + 1] = clientItem ' +
+  'if generationProtocol == 2 and item.clientSteerId then local raw = redis.call("HGET", KEYS[9], item.clientSteerId) ' +
+  'if raw then local receiptOk, receipt = pcall(cjson.decode, raw) ' +
+  'if receiptOk and type(receipt) == "table" then receipt.item = item receipt.state = "leftover" ' +
+  'redis.call("HSET", KEYS[9], item.clientSteerId, cjson.encode(receipt)) end end end ' +
   'end ' +
-  'end ' +
-  'if #steers > 0 then ' +
-  'local parked = { userId = ownerUserId, steers = steers } ' +
+  'end end ' +
+  'if #projected > 0 and ownerUserId then ' +
+  'local merged = {} local parkedSeen = {} ' +
+  'for i = 1, #validatedPrior do local item = validatedPrior[i] if not parkedSeen[item.steerId] then ' +
+  'parkedSeen[item.steerId] = true merged[#merged + 1] = item end end ' +
+  'for i = 1, #projected do local item = projected[i] if item.steerId and not parkedSeen[item.steerId] then ' +
+  'parkedSeen[item.steerId] = true merged[#merged + 1] = item end end ' +
+  'local parked = { userId = ownerUserId, generationProtocolVersion = parkedProtocol, steers = merged } ' +
   'if ownerTenantId then parked.tenantId = ownerTenantId end ' +
-  'redis.call("SET", KEYS[6], cjson.encode(parked), "EX", parkedTtl) ' +
+  'redis.call("SET", KEYS[7], cjson.encode(parked), "EX", parkedTtl) ' +
   'end ' +
-  'end ' +
-  'redis.call("DEL", KEYS[5]) ' +
+  'redis.call("DEL", KEYS[5], KEYS[6]) ' +
   'if chunksTtl == 0 then redis.call("DEL", KEYS[3]) else redis.call("EXPIRE", KEYS[3], chunksTtl) end ' +
   'if runStepsTtl == 0 then redis.call("DEL", KEYS[4]) else redis.call("EXPIRE", KEYS[4], runStepsTtl) end ' +
+  'if ARGV[11] == "1" then if #items == 0 then return "[]" end return cjson.encode(items) end ' +
   'else ' +
   'redis.call("EXPIRE", KEYS[3], ttl) ' +
   'redis.call("EXPIRE", KEYS[4], ttl) ' +
   'redis.call("EXPIRE", KEYS[5], ttl) ' +
+  'redis.call("EXPIRE", KEYS[6], ttl) ' +
   'end ' +
   'return 1';
 
@@ -112,42 +216,302 @@ const IDEMPOTENCY_CLAIM_LUA =
   'if redis.call("SET", KEYS[1], ARGV[1], "NX", "PX", tonumber(ARGV[2])) then return false end ' +
   'return redis.call("GET", KEYS[1])';
 
+const IDEMPOTENCY_TAKEOVER_LUA =
+  'local raw = redis.call("GET", KEYS[1]) if not raw then return 0 end ' +
+  'local ok, current = pcall(cjson.decode, raw) ' +
+  'if not ok or current.claimToken ~= ARGV[1] or current.startedAt then return 0 end ' +
+  'redis.call("SET", KEYS[1], ARGV[2], "PX", tonumber(ARGV[3])) return 1';
+
+const IDEMPOTENCY_MARK_STARTED_LUA =
+  'if ARGV[1] == "" then return 0 end ' +
+  'local raw = redis.call("GET", KEYS[1]) if not raw then return 0 end ' +
+  'local ok, current = pcall(cjson.decode, raw) ' +
+  'if not ok or current.claimToken ~= ARGV[1] then return 0 end ' +
+  'if current.startedAt and tostring(current.startedAt) ~= ARGV[2] then return 0 end ' +
+  'current.startedAt = tonumber(ARGV[2]) ' +
+  'redis.call("SET", KEYS[1], cjson.encode(current), "PX", tonumber(ARGV[3])) return 1';
+
+/** Reacquire an expired claim without replacing the live generation it
+ * already started. Both keys carry the stream hash tag, so validation and the
+ * started tombstone are one atomic cluster-safe decision. */
+const IDEMPOTENCY_ADOPT_LIVE_JOB_LUA =
+  'local raw = redis.call("GET", KEYS[1]) if not raw then return 0 end ' +
+  'local ok, claim = pcall(cjson.decode, raw) ' +
+  'if not ok or claim.claimToken ~= ARGV[1] or claim.startedAt then return 0 end ' +
+  'if redis.call("HGET", KEYS[2], "createdAt") ~= ARGV[2] ' +
+  'or redis.call("HGET", KEYS[2], "userId") ~= ARGV[3] then return 0 end ' +
+  'local storedRequestId = redis.call("HGET", KEYS[2], "idempotencyClientRequestId") ' +
+  'if storedRequestId then if storedRequestId ~= ARGV[4] then return 0 end ' +
+  'elseif ARGV[7] ~= "1" then return 0 end ' +
+  'local storedTenantId = redis.call("HGET", KEYS[2], "tenantId") ' +
+  'if storedTenantId and storedTenantId ~= "" and storedTenantId ~= ARGV[5] then return 0 end ' +
+  'local status = redis.call("HGET", KEYS[2], "status") ' +
+  'if status ~= "running" and status ~= "requires_action" then return 0 end ' +
+  'local protocol = redis.call("HGET", KEYS[2], "generationProtocolVersion") ' +
+  'if protocol and protocol ~= "1" and protocol ~= "2" then return 0 end ' +
+  'claim.startedAt = tonumber(ARGV[2]) ' +
+  'claim.generationProtocolVersion = protocol == "2" and 2 or 1 ' +
+  'redis.call("SET", KEYS[1], cjson.encode(claim), "PX", tonumber(ARGV[6])) return 1';
+
+const IDEMPOTENCY_RELEASE_LUA =
+  'if ARGV[1] ~= "" then local raw = redis.call("GET", KEYS[1]) if not raw then return 0 end ' +
+  'local ok, current = pcall(cjson.decode, raw) if not ok or current.claimToken ~= ARGV[1] then return 0 end end ' +
+  'return redis.call("DEL", KEYS[1])';
+
+/** Attempt-fenced acknowledgement of transaction-time predecessor receipts.
+ * A replacement either inherits the untrimmed chain before this script or
+ * changes the attempt id first and makes this late acknowledgement a no-op. */
+const REPLACEMENT_RECEIPT_ACK_LUA =
+  'if redis.call("HGET", KEYS[1], "__creationAttemptId") ~= ARGV[1] then return 0 end ' +
+  'local acknowledged = {} for i = 2, #ARGV do acknowledged[ARGV[i]] = true end ' +
+  'local raw = redis.call("HGET", KEYS[1], "__replacedGenerations") ' +
+  'if raw then local ok, current = pcall(cjson.decode, raw) ' +
+  'if not ok or type(current) ~= "table" then return 0 end ' +
+  'local retained = {} for i = 1, #current do local item = current[i] ' +
+  'if type(item) ~= "table" or type(item.createdAt) ~= "number" then return 0 end ' +
+  'if not acknowledged[tostring(item.createdAt)] then retained[#retained + 1] = item end end ' +
+  'if #retained == 0 then ' +
+  'redis.call("HDEL", KEYS[1], "__replacedGenerations", "__replacedCreatedAt", "__replacedStatus", "__replacedConversationId") ' +
+  'else local latest = retained[#retained] ' +
+  'redis.call("HSET", KEYS[1], "__replacedGenerations", cjson.encode(retained), ' +
+  '"__replacedCreatedAt", tostring(latest.createdAt), "__replacedStatus", latest.status) ' +
+  'if latest.conversationId then redis.call("HSET", KEYS[1], "__replacedConversationId", latest.conversationId) ' +
+  'else redis.call("HDEL", KEYS[1], "__replacedConversationId") end end return 1 end ' +
+  'local immediate = redis.call("HGET", KEYS[1], "__replacedCreatedAt") ' +
+  'if immediate and acknowledged[immediate] then ' +
+  'redis.call("HDEL", KEYS[1], "__replacedCreatedAt", "__replacedStatus", "__replacedConversationId") end ' +
+  'return 1';
+
 /**
  * Atomic job (re)creation for all generation-scoped same-slot keys. The
- * predecessor hash, content, run steps, steer queue, and parked steers are
- * removed in the same script that installs the replacement hash. A reconnect
- * that observes the replacement can therefore never reconstruct predecessor
- * state, even when the predecessor's delayed completion loses its epoch guard.
+ * predecessor hash/content are removed in the same script that installs the
+ * replacement hash. Pending and claimed steers are first merged into the
+ * owner-scoped parked recovery payload, so replacement cannot discard an ACK.
  *
- *   KEYS: [job, chunks, runSteps, steers, parkedSteers, generationEpoch]
- *   ARGV: [ttl, requestedCreatedAt, generationEpochGraceTtl, ...hsetPairs]
- *   Returns: [previousUserId | "", previousTenantId | "", createdAt]
+ *   KEYS: [job, chunks, runSteps, steers, claimedSteers, parkedSteers,
+ *          generationEpoch, steerReceipts, steerReceiptOrder, idempotencyClaim]
+ *   ARGV: [ttl, requestedCreatedAt, generationEpochGraceTtl, parkedTtl,
+ *          recoveredSteerId | "", newOwnerUserId, newOwnerTenantId | "",
+ *          idempotencyClaimToken | "",
+ *          recoveredSteerPayloadJson | "",
+ *          generationProtocolVersion,
+ *          creationAttemptId | "",
+ *          expectedPredecessorCreatedAt | "",
+ *          ...hsetPairs]
+ *   Returns: [previousUserId | "", previousTenantId | "", createdAt, "",
+ *             replacedCreatedAt | "", replacedStatus | "", replacedConversationId | "",
+ *             replacedProviderAbortReady | ""]
+ *   Predecessor mismatch returns the latest retained epoch in the replaced
+ *   position plus an eighth active flag and ninth verified flag ("1" | "0").
+ *   Job-only metadata is empty when that epoch has outlived its hash. When all
+ *   evidence expired, the finite expected epoch is echoed with verified=false.
  */
 const JOB_CREATE_LUA =
+  'if ARGV[8] ~= "" then local claimRaw = redis.call("GET", KEYS[10]) ' +
+  'if not claimRaw then return { "", "", "0", "claim_lost" } end ' +
+  'local ok, claim = pcall(cjson.decode, claimRaw) ' +
+  'if not ok or claim.claimToken ~= ARGV[8] or claim.startedAt then ' +
+  'return { "", "", "0", "claim_lost" } end end ' +
+  'local previousJobExists = redis.call("EXISTS", KEYS[1]) ' +
   'local previousUserId = redis.call("HGET", KEYS[1], "userId") ' +
   'local previousTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
-  'local previousCreatedAt = tonumber(redis.call("HGET", KEYS[1], "createdAt")) ' +
-  'local retainedEpoch = tonumber(redis.call("GET", KEYS[6])) ' +
-  'if retainedEpoch and (not previousCreatedAt or retainedEpoch > previousCreatedAt) then previousCreatedAt = retainedEpoch end ' +
+  'if previousJobExists == 1 and (not previousUserId or previousUserId == "" or previousUserId ~= ARGV[6] ' +
+  'or (previousTenantId and previousTenantId ~= ARGV[7])) then ' +
+  'return { "", "", "0", "owner_mismatch" } end ' +
+  'local replacedCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'local replacedStatus = redis.call("HGET", KEYS[1], "status") ' +
+  'local replacedConversationId = redis.call("HGET", KEYS[1], "conversationId") ' +
+  'local replacedProviderAbortReady = redis.call("HGET", KEYS[1], "providerAbortReady") ' +
+  'local replacedProtocol = redis.call("HGET", KEYS[1], "generationProtocolVersion") ' +
+  'local MAX_SAFE_EPOCH = 9007199254740991 ' +
+  'local function isSafeEpoch(value) return type(value) == "number" and value >= 0 ' +
+  'and value <= MAX_SAFE_EPOCH and value == math.floor(value) end ' +
+  'local function isValidJobStatus(value) return value == "running" or value == "requires_action" ' +
+  'or value == "complete" or value == "error" or value == "aborted" end ' +
+  'local replacedEpoch = tonumber(replacedCreatedAt) local previousCreatedAt = replacedEpoch ' +
+  'if previousJobExists == 1 and (not isSafeEpoch(replacedEpoch) or not isValidJobStatus(replacedStatus)) then ' +
+  'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'local retainedEpochRaw = redis.call("GET", KEYS[7]) local retainedEpoch = tonumber(retainedEpochRaw) ' +
+  'if retainedEpochRaw and not isSafeEpoch(retainedEpoch) then ' +
+  'return { "", "", "0", "generation_epoch_corrupt" } end ' +
+  'local observedCreatedAt = replacedCreatedAt local observedStatus = replacedStatus ' +
+  'local observedConversationId = replacedConversationId ' +
+  'local observedActive = previousJobExists == 1 and ' +
+  '(replacedStatus == "running" or replacedStatus == "requires_action") ' +
+  'if retainedEpoch and (not previousCreatedAt or retainedEpoch > previousCreatedAt) then ' +
+  'previousCreatedAt = retainedEpoch observedCreatedAt = retainedEpochRaw ' +
+  'observedStatus = nil observedConversationId = nil observedActive = false end ' +
+  'if ARGV[12] ~= "" and (not observedCreatedAt or observedCreatedAt ~= ARGV[12]) then ' +
+  'return { previousUserId or "", previousTenantId or "", "0", "predecessor_mismatch", ' +
+  'observedCreatedAt or ARGV[12], observedStatus or "", observedConversationId or "", ' +
+  'observedActive and "1" or "0", observedCreatedAt and "1" or "0" } end ' +
   'local createdAt = tonumber(ARGV[2]) ' +
+  'if not isSafeEpoch(createdAt) then return { "", "", "0", "generation_epoch_corrupt" } end ' +
+  'if previousCreatedAt and previousCreatedAt >= MAX_SAFE_EPOCH then ' +
+  'return { "", "", "0", "generation_epoch_exhausted" } end ' +
   'if previousCreatedAt and previousCreatedAt >= createdAt then createdAt = previousCreatedAt + 1 end ' +
+  'local merged = {} local seen = {} local parkedUserId = previousUserId local parkedTenantId = previousTenantId ' +
+  'local parkedProtocol = replacedProtocol == "2" and 2 or 1 ' +
+  'local function isDenseArray(value) if type(value) ~= "table" then return false end ' +
+  'local count = 0 for key, _ in pairs(value) do ' +
+  'if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then return false end count = count + 1 end ' +
+  'return count == #value end ' +
+  // Carry every still-unacknowledged transaction-time predecessor forward.
+  // A later replacement can then stop providers skipped when an earlier
+  // create reply was lost. Reject before mutation rather than evicting an old
+  // active epoch when the bounded receipt chain is full.
+  'local replacementChain = {} local replacementSeen = {} local lastReplacementEpoch = -1 ' +
+  'local replacementRaw = redis.call("HGET", KEYS[1], "__replacedGenerations") ' +
+  'local inheritedCreatedAtRaw = redis.call("HGET", KEYS[1], "__replacedCreatedAt") ' +
+  'local inheritedStatus = redis.call("HGET", KEYS[1], "__replacedStatus") ' +
+  'local inheritedConversationId = redis.call("HGET", KEYS[1], "__replacedConversationId") ' +
+  'if (inheritedCreatedAtRaw and not inheritedStatus) or (inheritedStatus and not inheritedCreatedAtRaw) then ' +
+  'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'if replacementRaw then local chainOk, inherited = pcall(cjson.decode, replacementRaw) ' +
+  'if not chainOk or not isDenseArray(inherited) or #inherited == 0 or #inherited > 32 then ' +
+  'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'for i = 1, #inherited do local item = inherited[i] ' +
+  'local validStatus = type(item) == "table" and isValidJobStatus(item.status) ' +
+  'if not validStatus or not isSafeEpoch(item.createdAt) ' +
+  'or item.createdAt <= lastReplacementEpoch ' +
+  'or (previousJobExists == 1 and item.createdAt >= replacedEpoch) ' +
+  'or (item.conversationId and type(item.conversationId) ~= "string") ' +
+  'or (item.providerAbortReady ~= nil and type(item.providerAbortReady) ~= "boolean") ' +
+  'or replacementSeen[tostring(item.createdAt)] then ' +
+  'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'lastReplacementEpoch = item.createdAt replacementSeen[tostring(item.createdAt)] = true ' +
+  'replacementChain[#replacementChain + 1] = item end ' +
+  'if not inheritedCreatedAtRaw then return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'local inheritedEpoch = tonumber(inheritedCreatedAtRaw) local latest = replacementChain[#replacementChain] ' +
+  'if not isSafeEpoch(inheritedEpoch) or not isValidJobStatus(inheritedStatus) ' +
+  'or latest.createdAt ~= inheritedEpoch or latest.status ~= inheritedStatus ' +
+  'or (latest.conversationId or false) ~= inheritedConversationId then ' +
+  'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'elseif inheritedCreatedAtRaw then local inheritedEpoch = tonumber(inheritedCreatedAtRaw) ' +
+  'if not isSafeEpoch(inheritedEpoch) or not isValidJobStatus(inheritedStatus) ' +
+  'or previousJobExists ~= 1 or inheritedEpoch >= replacedEpoch then ' +
+  'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'local inherited = { createdAt = inheritedEpoch, status = inheritedStatus } ' +
+  'if inheritedConversationId then inherited.conversationId = inheritedConversationId end ' +
+  'replacementSeen[tostring(inheritedEpoch)] = true replacementChain[1] = inherited end ' +
+  'if previousJobExists == 1 then ' +
+  'if replacementSeen[tostring(replacedEpoch)] then ' +
+  'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'if #replacementChain >= 32 then return { "", "", "0", "replacement_chain_full" } end ' +
+  'local replaced = { createdAt = replacedEpoch, status = replacedStatus } ' +
+  'if replacedConversationId then replaced.conversationId = replacedConversationId end ' +
+  'if replacedProviderAbortReady then replaced.providerAbortReady = replacedProviderAbortReady == "1" end ' +
+  'replacementChain[#replacementChain + 1] = replaced replacementSeen[tostring(replacedEpoch)] = true end ' +
+  'local recoveredSteerId = ARGV[5] local expectedRecovery = nil ' +
+  'if recoveredSteerId ~= "" and ARGV[10] ~= "2" then return { "", "", "0", "recovery_payload_mismatch" } end ' +
+  'if recoveredSteerId ~= "" then local ok, decoded = pcall(cjson.decode, ARGV[9]) ' +
+  'if not ok or type(decoded) ~= "table" or type(decoded.text) ~= "string" ' +
+  'or not isDenseArray(decoded.fileIds) then return { "", "", "0", "recovery_payload_mismatch" } end ' +
+  'local expectedSeen = {} for i = 1, #decoded.fileIds do local fileId = decoded.fileIds[i] ' +
+  'if type(fileId) ~= "string" or fileId == "" or expectedSeen[fileId] then ' +
+  'return { "", "", "0", "recovery_payload_mismatch" } end expectedSeen[fileId] = true end ' +
+  'expectedRecovery = decoded elseif ARGV[9] ~= "" then ' +
+  'return { "", "", "0", "recovery_payload_mismatch" } end ' +
+  'local function recoveryMatches(item, expected) ' +
+  'if not expected or type(item.text) ~= "string" or item.text ~= expected.text then return false end ' +
+  'local actualSeen = {} local actualCount = 0 local files = item.files ' +
+  'if files then if not isDenseArray(files) then return false end ' +
+  'for i = 1, #files do local file = files[i] ' +
+  'if type(file) ~= "table" or type(file.file_id) ~= "string" or file.file_id == "" then return false end ' +
+  'if not actualSeen[file.file_id] then actualSeen[file.file_id] = true actualCount = actualCount + 1 end end end ' +
+  'if actualCount ~= #expected.fileIds then return false end ' +
+  'for i = 1, #expected.fileIds do if not actualSeen[expected.fileIds[i]] then return false end end return true end ' +
+  'local parkedRaw = redis.call("GET", KEYS[6]) ' +
+  'if parkedRaw then local ok, parked = pcall(cjson.decode, parkedRaw) ' +
+  'if not ok or type(parked) ~= "table" or type(parked.userId) ~= "string" ' +
+  'or parked.userId == "" or not isDenseArray(parked.steers) or #parked.steers == 0 then ' +
+  'return { "", "", "0", "recovery_corrupt" } end ' +
+  'if parked.generationProtocolVersion and parked.generationProtocolVersion ~= 1 ' +
+  'and parked.generationProtocolVersion ~= 2 then return { "", "", "0", "recovery_corrupt" } end ' +
+  'if parked.generationProtocolVersion == 2 then parkedProtocol = 2 end ' +
+  'for i = 1, #parked.steers do local item = parked.steers[i] ' +
+  'if type(item) ~= "table" or type(item.steerId) ~= "string" or item.steerId == "" ' +
+  'or (item.clientSteerId and (type(item.clientSteerId) ~= "string" or item.clientSteerId == "")) ' +
+  'or (item.text and type(item.text) ~= "string") ' +
+  'or (item.createdAt and (type(item.createdAt) ~= "number" or item.createdAt < 0)) ' +
+  'or (item.recoveringCreatedAt and (type(item.recoveringCreatedAt) ~= "number" or item.recoveringCreatedAt < 0)) then ' +
+  'return { "", "", "0", "recovery_corrupt" } end end ' +
+  'if recoveredSteerId ~= "" and parked.generationProtocolVersion ~= 2 then ' +
+  'for i = 1, #parked.steers do if parked.steers[i].steerId == recoveredSteerId then ' +
+  'return { "", "", "0", "recovery_payload_mismatch" } end end end ' +
+  'if parked.userId ~= ARGV[6] or (parked.tenantId and parked.tenantId ~= ARGV[7]) then ' +
+  'return { "", "", "0", "owner_mismatch" } end ' +
+  'parkedUserId = parked.userId parkedTenantId = parked.tenantId ' +
+  'for i = 1, #parked.steers do local item = parked.steers[i] ' +
+  'if item.steerId and not seen[item.steerId] then seen[item.steerId] = true merged[#merged + 1] = item end end end ' +
+  'local receiptUpdates = {} local ownerMatches = not parkedUserId or not previousUserId or ' +
+  '(parkedUserId == previousUserId and (not parkedTenantId or parkedTenantId == previousTenantId)) ' +
+  'if ownerMatches then if not parkedUserId then parkedUserId = previousUserId parkedTenantId = previousTenantId end ' +
+  'local claimedRows = {} if replacedProtocol == "2" then claimedRows = redis.call("LRANGE", KEYS[5], 0, -1) end ' +
+  'local sources = { claimedRows, redis.call("LRANGE", KEYS[4], 0, -1) } ' +
+  'for s = 1, #sources do for i = 1, #sources[s] do local ok, item = pcall(cjson.decode, sources[s][i]) ' +
+  'if ok and recoveredSteerId ~= "" and item.steerId == recoveredSteerId and replacedProtocol ~= "2" then ' +
+  'return { "", "", "0", "recovery_payload_mismatch" } end ' +
+  'if ok and item.steerId and not seen[item.steerId] then seen[item.steerId] = true ' +
+  'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
+  'if item.clientSteerId then projected.clientSteerId = item.clientSteerId end ' +
+  'if item.files then projected.files = item.files end if item.preempt then projected.preempt = item.preempt end ' +
+  'if item.preemptRevision then projected.preemptRevision = item.preemptRevision end ' +
+  'merged[#merged + 1] = projected receiptUpdates[#receiptUpdates + 1] = item end end end end ' +
+  'local recoveryOwnerMatches = parkedUserId == ARGV[6] and ' +
+  '(not parkedTenantId or parkedTenantId == ARGV[7]) ' +
+  'local recoveryFound = recoveredSteerId == "" ' +
+  'for i = 1, #merged do local item = merged[i] ' +
+  'item.recoveringCreatedAt = nil ' +
+  'if recoveredSteerId ~= "" and item.steerId == recoveredSteerId then ' +
+  'if not recoveryOwnerMatches or not recoveryMatches(item, expectedRecovery) then ' +
+  'return { "", "", "0", "recovery_payload_mismatch" } end ' +
+  'item.recoveringCreatedAt = createdAt recoveryFound = true end end ' +
+  'if not recoveryFound then return { "", "", "0", "recovery_payload_mismatch" } end ' +
+  'for i = 1, #receiptUpdates do local item = receiptUpdates[i] ' +
+  'if replacedProtocol == "2" and item.clientSteerId then local raw = redis.call("HGET", KEYS[8], item.clientSteerId) ' +
+  'if raw then local receiptOk, receipt = pcall(cjson.decode, raw) ' +
+  'if receiptOk and type(receipt) == "table" then receipt.item = item receipt.state = "leftover" ' +
+  'redis.call("HSET", KEYS[8], item.clientSteerId, cjson.encode(receipt)) end end end end ' +
+  'if #merged > 0 and parkedUserId then local parked = { userId = parkedUserId, generationProtocolVersion = parkedProtocol, steers = merged } ' +
+  'if parkedTenantId then parked.tenantId = parkedTenantId end ' +
+  'redis.call("SET", KEYS[6], cjson.encode(parked), "EX", ARGV[4]) else redis.call("DEL", KEYS[6]) end ' +
+  'if #merged > 0 then for i = 8, 9 do local rt = redis.call("TTL", KEYS[i]) ' +
+  'if rt >= 0 and rt < tonumber(ARGV[4]) then redis.call("EXPIRE", KEYS[i], ARGV[4]) end end end ' +
   'redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5]) ' +
   'local ttl = tonumber(ARGV[1]) ' +
   'local generationEpochGraceTtl = tonumber(ARGV[3]) ' +
   'local hset = {} ' +
-  'for i = 4, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
+  'for i = 13, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'redis.call("HSET", KEYS[1], unpack(hset)) ' +
   'redis.call("HSET", KEYS[1], "createdAt", tostring(createdAt)) ' +
+  'if ARGV[11] ~= "" then redis.call("HSET", KEYS[1], "__creationAttemptId", ARGV[11]) end ' +
+  // Keep the transaction-time predecessor receipt in the replacement hash.
+  // deserializeJob reconstructs it as non-enumerable return metadata, so an
+  // eval reply lost after commit can still stop the exact replaced provider.
+  'if replacedCreatedAt and replacedStatus then ' +
+  'redis.call("HSET", KEYS[1], "__replacedCreatedAt", replacedCreatedAt, "__replacedStatus", replacedStatus) ' +
+  'if replacedConversationId then redis.call("HSET", KEYS[1], "__replacedConversationId", replacedConversationId) end end ' +
+  'if #replacementChain > 0 then redis.call("HSET", KEYS[1], "__replacedGenerations", cjson.encode(replacementChain)) end ' +
+  'if ARGV[10] == "2" then redis.call("HSET", KEYS[1], "checkpointNamespace", tostring(createdAt)) ' +
+  'else redis.call("HDEL", KEYS[1], "checkpointNamespace") end ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
-  'redis.call("SET", KEYS[6], tostring(createdAt), "EX", ttl + generationEpochGraceTtl) ' +
-  'return { previousUserId or "", previousTenantId or "", tostring(createdAt) }';
+  'redis.call("SET", KEYS[7], tostring(createdAt), "EX", ttl + generationEpochGraceTtl) ' +
+  'if ARGV[8] ~= "" then local claimRaw = redis.call("GET", KEYS[10]) ' +
+  'local claimTtl = redis.call("PTTL", KEYS[10]) local ok, claim = pcall(cjson.decode, claimRaw) ' +
+  'if not ok or claim.claimToken ~= ARGV[8] then return { "", "", "0", "claim_lost" } end ' +
+  'claim.startedAt = createdAt redis.call("SET", KEYS[10], cjson.encode(claim)) ' +
+  'if claimTtl > 0 then redis.call("PEXPIRE", KEYS[10], claimTtl) end end ' +
+  'return { previousUserId or "", previousTenantId or "", tostring(createdAt), "", ' +
+  'replacedCreatedAt or "", replacedStatus or "", replacedConversationId or "", ' +
+  'replacedProviderAbortReady or "" }';
 
 /**
  * Epoch-guarded field update. Terminal writes reclaim same-slot content in the
  * same atomic step, so a replacement cannot appear between the guarded write
  * and content cleanup.
  *
- *   KEYS: [job, chunks, runSteps, steers]
+ *   KEYS: [job, chunks, runSteps, steers, claimedSteers]
  *   ARGV: [
  *     expectCreatedAt | "",
  *     terminal ("0" | "1"),
@@ -174,6 +538,15 @@ const JOB_UPDATE_LUA =
   'end ' +
   'return 1';
 
+/** Single-winner promotion from abort-persistence pending to a consumable
+ * terminal payload. Owner success/failure and stale-owner recovery share this
+ * CAS, so a timeout cannot overwrite a normal FINAL (or vice versa). */
+const TERMINAL_PERSISTENCE_FINALIZE_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "terminalPersistencePending") ~= "1" then return 0 end ' +
+  'redis.call("HSET", KEYS[1], "terminalPersistencePending", "0", "finalEvent", ARGV[2]) ' +
+  'return 1';
+
 /**
  * Epoch-guarded hard deletion. `expectMissing` makes an unguarded cleanup of
  * already-absent state safe against a replacement appearing after the read.
@@ -186,7 +559,7 @@ const JOB_DELETE_LUA =
   'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
   'local existed = redis.call("EXISTS", KEYS[1]) ' +
   'if ARGV[2] == "1" and existed == 1 then return 0 end ' +
-  'redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4]) ' +
+  'redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5]) ' +
   'return existed';
 
 /**
@@ -195,7 +568,8 @@ const JOB_DELETE_LUA =
  * lands before the script and fails the guard, or lands afterward and clears
  * the predecessor's parked payload in {@link JOB_CREATE_LUA}.
  *
- *   KEYS: [job, chunks, runSteps, steers, parkedSteers, generationEpoch]
+ *   KEYS: [job, chunks, runSteps, steers, claimedSteers, parkedSteers,
+ *          generationEpoch, steerReceipts, steerReceiptOrder]
  *   ARGV: [expectCreatedAt, nowMs, staleAfterMs, parkedSteersTtl, generationEpochGraceTtl]
  */
 const STALE_JOB_DELETE_LUA =
@@ -206,25 +580,63 @@ const STALE_JOB_DELETE_LUA =
   'if not liveSince or tonumber(ARGV[2]) - liveSince <= tonumber(ARGV[3]) then return 0 end ' +
   'local ownerUserId = redis.call("HGET", KEYS[1], "userId") ' +
   'local ownerTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
-  'local queued = redis.call("LRANGE", KEYS[4], 0, -1) ' +
-  'if #queued > 0 and ownerUserId then ' +
-  'local steers = {} ' +
-  'for i = 1, #queued do ' +
-  'local decoded, item = pcall(cjson.decode, queued[i]) ' +
+  'local generationProtocol = redis.call("HGET", KEYS[1], "generationProtocolVersion") == "2" and 2 or 1 ' +
+  'local parkedProtocol = generationProtocol ' +
+  'local function isDenseArray(value) if type(value) ~= "table" then return false end ' +
+  'local count = 0 for key, _ in pairs(value) do ' +
+  'if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then return false end count = count + 1 end ' +
+  'return count == #value end ' +
+  'local prior = {} local parkedRaw = redis.call("GET", KEYS[6]) ' +
+  'if parkedRaw then local ok, parked = pcall(cjson.decode, parkedRaw) ' +
+  'if not ok or type(parked) ~= "table" or type(parked.userId) ~= "string" or parked.userId == "" ' +
+  'or not isDenseArray(parked.steers) or #parked.steers == 0 or parked.userId ~= ownerUserId ' +
+  'or (parked.tenantId and parked.tenantId ~= ownerTenantId) then return 0 end ' +
+  'if parked.generationProtocolVersion and parked.generationProtocolVersion ~= 1 ' +
+  'and parked.generationProtocolVersion ~= 2 then return 0 end ' +
+  'if parked.generationProtocolVersion == 2 then parkedProtocol = 2 end ' +
+  'for i = 1, #parked.steers do local item = parked.steers[i] ' +
+  'if type(item) ~= "table" or type(item.steerId) ~= "string" or item.steerId == "" ' +
+  'or (item.clientSteerId and (type(item.clientSteerId) ~= "string" or item.clientSteerId == "")) ' +
+  'or (item.text and type(item.text) ~= "string") ' +
+  'or (item.createdAt and (type(item.createdAt) ~= "number" or item.createdAt < 0)) ' +
+  'or (item.recoveringCreatedAt and (type(item.recoveringCreatedAt) ~= "number" or item.recoveringCreatedAt < 0)) then return 0 end ' +
+  'prior[#prior + 1] = item end end ' +
+  'local claimedRows = {} if generationProtocol == 2 then claimedRows = redis.call("LRANGE", KEYS[5], 0, -1) end ' +
+  'local sourceRows = { claimedRows, redis.call("LRANGE", KEYS[4], 0, -1) } ' +
+  'for s = 1, #sourceRows do for i = 1, #sourceRows[s] do local ok, item = pcall(cjson.decode, sourceRows[s][i]) ' +
+  'if not ok or type(item) ~= "table" or type(item.steerId) ~= "string" or item.steerId == "" then return 0 end end end ' +
+  'if (#sourceRows[1] > 0 or #sourceRows[2] > 0) and (not ownerUserId or ownerUserId == "") then return 0 end ' +
+  'local fullItems = {} local projected = {} local seen = {} ' +
+  'local sources = sourceRows ' +
+  'for s = 1, #sources do for i = 1, #sources[s] do ' +
+  'local decoded, item = pcall(cjson.decode, sources[s][i]) ' +
   'if decoded and type(item) == "table" then ' +
-  'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
-  'if item.files then projected.files = item.files end ' +
-  'steers[#steers + 1] = projected ' +
+  'if item.steerId and not seen[item.steerId] then seen[item.steerId] = true fullItems[#fullItems + 1] = item ' +
+  'local clientItem = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
+  'if item.clientSteerId then clientItem.clientSteerId = item.clientSteerId end ' +
+  'if item.files then clientItem.files = item.files end if item.preempt then clientItem.preempt = item.preempt end ' +
+  'if item.preemptRevision then clientItem.preemptRevision = item.preemptRevision end ' +
+  'projected[#projected + 1] = clientItem end ' +
+  'if generationProtocol == 2 and item.clientSteerId then local raw = redis.call("HGET", KEYS[8], item.clientSteerId) ' +
+  'if raw then local receiptOk, receipt = pcall(cjson.decode, raw) ' +
+  'if receiptOk and type(receipt) == "table" then receipt.item = item receipt.state = "leftover" ' +
+  'redis.call("HSET", KEYS[8], item.clientSteerId, cjson.encode(receipt)) end end end ' +
   'end ' +
-  'end ' +
-  'if #steers > 0 then ' +
-  'local parked = { userId = ownerUserId, steers = steers } ' +
+  'end end ' +
+  'if #projected > 0 and ownerUserId then ' +
+  'local merged = {} local parkedSeen = {} ' +
+  'for i = 1, #prior do local item = prior[i] if not parkedSeen[item.steerId] then ' +
+  'parkedSeen[item.steerId] = true merged[#merged + 1] = item end end ' +
+  'for i = 1, #projected do local item = projected[i] if item.steerId and not parkedSeen[item.steerId] then ' +
+  'parkedSeen[item.steerId] = true merged[#merged + 1] = item end end ' +
+  'local parked = { userId = ownerUserId, generationProtocolVersion = parkedProtocol, steers = merged } ' +
   'if ownerTenantId then parked.tenantId = ownerTenantId end ' +
-  'redis.call("SET", KEYS[5], cjson.encode(parked), "EX", tonumber(ARGV[4])) ' +
+  'redis.call("SET", KEYS[6], cjson.encode(parked), "EX", tonumber(ARGV[4])) ' +
   'end ' +
-  'end ' +
-  'redis.call("SET", KEYS[6], ARGV[1], "EX", tonumber(ARGV[5])) ' +
-  'redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4]) ' +
+  'for i = 8, 9 do local ttl = redis.call("TTL", KEYS[i]) ' +
+  'if ttl >= 0 and ttl < tonumber(ARGV[4]) then redis.call("EXPIRE", KEYS[i], ARGV[4]) end end ' +
+  'redis.call("SET", KEYS[7], ARGV[1], "EX", tonumber(ARGV[5])) ' +
+  'redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5]) ' +
   'return 1';
 
 /**
@@ -253,20 +665,77 @@ const STALE_JOB_DELETE_LUA =
  * window while paused; for a running job the job key carries the running TTL, so target
  * stays `run`.
  *
- *   KEYS: [chunks, job]
- *   ARGV: [eventJson, runningTtl, expectCreatedAt | ""]
+ *   KEYS: [chunks, job, steerReceipts, steerReceiptOrder, claimedSteers, steers,
+ *          parkedSteers, generationEpoch]
+ *   ARGV: [eventJson, runningTtl, expectCreatedAt | "",
+ *          deliveredClientSteerId | "", deliveredItemJson | "", nowMs,
+ *          parkedSteersTtl, generationEpochGraceTtl]
  */
 const CHUNK_APPEND_LUA =
-  'if ARGV[3] ~= "" and redis.call("HGET", KEYS[2], "createdAt") ~= ARGV[3] then return 0 end ' +
-  'redis.call("XADD", KEYS[1], "*", "event", ARGV[1]) ' +
+  'local currentCreatedAt = redis.call("HGET", KEYS[2], "createdAt") ' +
+  'if not currentCreatedAt then return 0 end ' +
+  'if ARGV[3] ~= "" and currentCreatedAt ~= ARGV[3] then return 0 end ' +
+  'local currentStatus = redis.call("HGET", KEYS[2], "status") ' +
+  'if currentStatus ~= "running" and currentStatus ~= "requires_action" then return 0 end ' +
+  'local retainedEpoch = redis.call("GET", KEYS[8]) ' +
+  'if retainedEpoch and retainedEpoch ~= currentCreatedAt then return 0 end ' +
+  'local protocolV2 = redis.call("HGET", KEYS[2], "generationProtocolVersion") == "2" ' +
+  'local delivered = nil local kept = nil local receipt = nil ' +
+  'if ARGV[5] ~= "" then ' +
+  'if currentStatus ~= "running" ' +
+  'or redis.call("HGET", KEYS[2], "steersClosed") == "1" then return 0 end ' +
+  'local deliveredOk, deliveredValue = pcall(cjson.decode, ARGV[5]) ' +
+  'if not deliveredOk or type(deliveredValue) ~= "table" or not deliveredValue.steerId then return 0 end ' +
+  'delivered = deliveredValue ' +
+  'if protocolV2 and delivered.clientSteerId then ' +
+  'if ARGV[4] == "" or delivered.clientSteerId ~= ARGV[4] then return 0 end ' +
+  'local raw = redis.call("HGET", KEYS[3], ARGV[4]) if not raw then return 0 end ' +
+  'local receiptOk, receiptValue = pcall(cjson.decode, raw) ' +
+  'if not receiptOk or type(receiptValue) ~= "table" ' +
+  'or receiptValue.clientSteerId ~= ARGV[4] ' +
+  'or tostring(receiptValue.generationCreatedAt or "") ~= currentCreatedAt ' +
+  'or receiptValue.state ~= "claimed" or not receiptValue.item ' +
+  'or receiptValue.item.steerId ~= delivered.steerId ' +
+  'or receiptValue.item.clientSteerId ~= ARGV[4] then return 0 end ' +
+  'receipt = receiptValue ' +
+  'elseif protocolV2 and ARGV[4] ~= "" then return 0 end ' +
+  'if protocolV2 then ' +
+  'local claims = redis.call("LRANGE", KEYS[5], 0, -1) ' +
+  'kept = {} local found = false ' +
+  'for i = 1, #claims do local ok, item = pcall(cjson.decode, claims[i]) ' +
+  'local sameClient = ok and item.clientSteerId == delivered.clientSteerId ' +
+  'if not found and ok and item.steerId == delivered.steerId and sameClient then found = true ' +
+  'else kept[#kept + 1] = claims[i] end end ' +
+  'if not found then return 0 end end ' +
+  'end ' +
   'local run = tonumber(ARGV[2]) ' +
   'local target = run ' +
-  'if redis.call("HGET", KEYS[2], "status") == "requires_action" then ' +
-  'local jt = redis.call("TTL", KEYS[2]) ' +
-  'if jt > target then target = jt end ' +
-  'end ' +
+  'local jobTtl = redis.call("TTL", KEYS[2]) ' +
+  'if jobTtl < target then redis.call("EXPIRE", KEYS[2], target) ' +
+  'elseif jobTtl > target then target = jobTtl end ' +
+  'local recoveryTarget = target ' +
+  'if redis.call("HGET", KEYS[2], "recoveredSteerId") then ' +
+  'recoveryTarget = target + tonumber(ARGV[7]) ' +
+  'local pt = redis.call("TTL", KEYS[7]) ' +
+  'if pt >= 0 and pt < recoveryTarget then redis.call("EXPIRE", KEYS[7], recoveryTarget) end end ' +
+  'local epochTarget = target + tonumber(ARGV[8]) ' +
+  'if retainedEpoch then local epochTtl = redis.call("TTL", KEYS[8]) ' +
+  'if epochTtl >= 0 and epochTtl < epochTarget then redis.call("EXPIRE", KEYS[8], epochTarget) end ' +
+  'else redis.call("SET", KEYS[8], currentCreatedAt, "EX", epochTarget) end ' +
+  'if delivered and protocolV2 then local claimTtl = redis.call("PTTL", KEYS[5]) redis.call("DEL", KEYS[5]) ' +
+  'if #kept > 0 then redis.call("RPUSH", KEYS[5], unpack(kept)) ' +
+  'if claimTtl > 0 then redis.call("PEXPIRE", KEYS[5], claimTtl) end end end ' +
+  'redis.call("XADD", KEYS[1], "*", "event", ARGV[1]) ' +
+  'if currentStatus == "running" then ' +
+  'redis.call("HSET", KEYS[2], "lastActiveAt", ARGV[6]) end ' +
   'local cur = redis.call("TTL", KEYS[1]) ' +
   'if cur < target then redis.call("EXPIRE", KEYS[1], target) end ' +
+  'for i = 3, 4 do local rt = redis.call("TTL", KEYS[i]) ' +
+  'if rt >= 0 and rt < recoveryTarget then redis.call("EXPIRE", KEYS[i], recoveryTarget) end end ' +
+  'for i = 5, 6 do local qt = redis.call("TTL", KEYS[i]) ' +
+  'if qt >= 0 and qt < target then redis.call("EXPIRE", KEYS[i], target) end end ' +
+  'if receipt then receipt.item = delivered receipt.state = "delivered" ' +
+  'redis.call("HSET", KEYS[3], ARGV[4], cjson.encode(receipt)) end ' +
   'return 1';
 
 /**
@@ -277,13 +746,19 @@ const CHUNK_APPEND_LUA =
  * lands at/after a fast pause resets the key to the short running TTL, and a reload of a
  * still-live approval after that window loses the tool/run-step timeline even though the
  * approval remains resumable. Reads the paused window from the job key (which
- * `transitionStatus` set); a normally-running job keeps the short running TTL.
+ * `transitionStatus` set); a normally-running job keeps the short running TTL. The write
+ * also requires an active status so a late provider event cannot recreate run steps after
+ * a same-epoch terminal transition deleted or retained the final timeline.
  *
  *   KEYS: [runSteps, job]
  *   ARGV: [runStepsJson, runningTtl, expectCreatedAt | ""]
  */
 const RUNSTEPS_SAVE_LUA =
-  'if ARGV[3] ~= "" and redis.call("HGET", KEYS[2], "createdAt") ~= ARGV[3] then return 0 end ' +
+  'local currentCreatedAt = redis.call("HGET", KEYS[2], "createdAt") ' +
+  'if not currentCreatedAt then return 0 end ' +
+  'if ARGV[3] ~= "" and currentCreatedAt ~= ARGV[3] then return 0 end ' +
+  'local currentStatus = redis.call("HGET", KEYS[2], "status") ' +
+  'if currentStatus ~= "running" and currentStatus ~= "requires_action" then return 0 end ' +
   'redis.call("SET", KEYS[1], ARGV[1]) ' +
   'local run = tonumber(ARGV[2]) ' +
   'local target = run ' +
@@ -323,17 +798,117 @@ const RUNSTEPS_READ_LUA =
  * too — a steer can never land on a completed/aborted/finalizing job, and the
  * depth cap can't be raced past by concurrent enqueues.
  *
- *   KEYS: [job, steers]
+ *   KEYS: [job, steers, receipts]
  *   ARGV: [itemJson, ttl, maxDepth]
  *   Returns: new depth, -1 (not running / closed), or -2 (queue full)
  */
 const STEER_ENQUEUE_LUA =
+  'if ARGV[4] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[4] then return -1 end ' +
   'if redis.call("HGET", KEYS[1], "status") ~= "running" then return -1 end ' +
   'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
   'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
   'redis.call("RPUSH", KEYS[2], ARGV[1]) ' +
   'redis.call("EXPIRE", KEYS[2], tonumber(ARGV[2])) ' +
   'return redis.call("LLEN", KEYS[2])';
+
+/** Atomic capability-normalized enqueue for callers without a receipt id.
+ * The persisted item and its queue position are returned from the same Lua
+ * step, eliminating the legacy enqueue→arm failure window. */
+const STEER_ENQUEUE_VERSIONED_LUA =
+  'if ARGV[4] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[4] then return -1 end ' +
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" then return -1 end ' +
+  'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
+  'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
+  'local item = cjson.decode(ARGV[1]) ' +
+  'if ARGV[5] == "1" then item.preemptRevision = 1 ' +
+  'if redis.call("HGET", KEYS[1], "preemptCapable") == "1" then item.preempt = true end end ' +
+  'local itemJson = cjson.encode(item) ' +
+  'redis.call("RPUSH", KEYS[2], itemJson) ' +
+  'redis.call("EXPIRE", KEYS[2], tonumber(ARGV[2])) ' +
+  'return cjson.encode({ item = item, position = redis.call("LLEN", KEYS[2]) })';
+
+/** Lost-ACK-safe enqueue. The receipt hash deliberately outlives both the
+ * queue and job hash; all three keys share the stream hash slot. Existing
+ * receipts win before live-job guards, so retry after drain/terminal/replace
+ * returns the original ACK instead of re-injecting. */
+const STEER_ENQUEUE_RECEIPT_LUA =
+  'local existing = redis.call("HGET", KEYS[3], ARGV[5]) ' +
+  'if existing then ' +
+  'local receipt = cjson.decode(existing) ' +
+  'local epoch = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'local status = redis.call("HGET", KEYS[1], "status") ' +
+  'local sameActive = redis.call("HGET", KEYS[1], "generationProtocolVersion") == "2" ' +
+  'and epoch and tostring(receipt.generationCreatedAt or "") == epoch ' +
+  'and (status == "running" or status == "requires_action") ' +
+  'if receipt.state == "queued" then ' +
+  'if not sameActive then receipt.state = "leftover" existing = cjson.encode(receipt) ' +
+  'redis.call("HSET", KEYS[3], ARGV[5], existing) else ' +
+  'local found = false local queued = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'for i = 1, #queued do local ok, candidate = pcall(cjson.decode, queued[i]) ' +
+  'if ok and candidate.clientSteerId == ARGV[5] then found = true break end end ' +
+  'if not found then receipt.state = "leftover" existing = cjson.encode(receipt) ' +
+  'redis.call("HSET", KEYS[3], ARGV[5], existing) end end ' +
+  'elseif receipt.state == "claimed" and not sameActive then ' +
+  'receipt.state = "leftover" existing = cjson.encode(receipt) ' +
+  'redis.call("HSET", KEYS[3], ARGV[5], existing) end ' +
+  'return existing end ' +
+  'if redis.call("HGET", KEYS[1], "generationProtocolVersion") ~= "2" then ' +
+  'if ARGV[4] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[4] then return -1 end ' +
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" then return -1 end ' +
+  'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
+  'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
+  'local legacyItem = cjson.decode(ARGV[1]) if ARGV[7] == "1" then legacyItem.preemptRevision = 1 ' +
+  'if redis.call("HGET", KEYS[1], "preemptCapable") == "1" then legacyItem.preempt = true end end ' +
+  'redis.call("RPUSH", KEYS[2], cjson.encode(legacyItem)) ' +
+  'redis.call("EXPIRE", KEYS[2], tonumber(ARGV[2])) ' +
+  'return cjson.encode({ item = legacyItem, position = redis.call("LLEN", KEYS[2]) }) end ' +
+  'if ARGV[4] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[4] then return -1 end ' +
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" then return -1 end ' +
+  'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
+  'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
+  'if redis.call("ZCARD", KEYS[4]) >= tonumber(ARGV[9]) then return -3 end ' +
+  'local item = cjson.decode(ARGV[1]) ' +
+  'if ARGV[7] == "1" then ' +
+  'item.preemptRevision = 1 ' +
+  'if redis.call("HGET", KEYS[1], "preemptCapable") == "1" then item.preempt = true end ' +
+  'end ' +
+  'local itemJson = cjson.encode(item) ' +
+  'redis.call("RPUSH", KEYS[2], itemJson) ' +
+  'redis.call("EXPIRE", KEYS[2], tonumber(ARGV[2])) ' +
+  'local receipt = cjson.decode(ARGV[6]) ' +
+  'receipt.item = item receipt.position = redis.call("LLEN", KEYS[2]) receipt.state = "queued" ' +
+  'local receiptJson = cjson.encode(receipt) ' +
+  'redis.call("HSET", KEYS[3], ARGV[5], receiptJson) ' +
+  'redis.call("ZADD", KEYS[4], item.createdAt, ARGV[5]) ' +
+  'local receiptTtl = tonumber(ARGV[8]) ' +
+  'for i = 3, 4 do local existingTtl = redis.call("TTL", KEYS[i]) ' +
+  'if existingTtl == -1 or (existingTtl >= 0 and existingTtl < receiptTtl) then ' +
+  'redis.call("EXPIRE", KEYS[i], receiptTtl) end end ' +
+  'return receiptJson';
+
+/** Receipt read with lazy repair for terminal/reaper/replacement scripts that
+ * delete the queue directly. Generation identity distinguishes a same-run
+ * older drain from a replacement that discarded an undrained predecessor. */
+const STEER_RECEIPT_GET_LUA =
+  'local raw = redis.call("HGET", KEYS[1], ARGV[1]) ' +
+  'if not raw then return false end ' +
+  'local receipt = cjson.decode(raw) ' +
+  'local epoch = redis.call("HGET", KEYS[2], "createdAt") ' +
+  'local status = redis.call("HGET", KEYS[2], "status") ' +
+  'local sameActive = redis.call("HGET", KEYS[2], "generationProtocolVersion") == "2" ' +
+  'and epoch and tostring(receipt.generationCreatedAt or "") == epoch ' +
+  'and (status == "running" or status == "requires_action") ' +
+  'if receipt.state == "claimed" then ' +
+  'if not sameActive then receipt.state = "leftover" raw = cjson.encode(receipt) ' +
+  'redis.call("HSET", KEYS[1], ARGV[1], raw) end return raw end ' +
+  'if receipt.state ~= "queued" then return raw end ' +
+  'if not sameActive then receipt.state = "leftover" raw = cjson.encode(receipt) ' +
+  'redis.call("HSET", KEYS[1], ARGV[1], raw) return raw end ' +
+  'local items = redis.call("LRANGE", KEYS[3], 0, -1) ' +
+  'for i = 1, #items do local ok, item = pcall(cjson.decode, items[i]) ' +
+  'if ok and item.clientSteerId == ARGV[1] then return raw end end ' +
+  'receipt.state = "leftover" ' +
+  'raw = cjson.encode(receipt) redis.call("HSET", KEYS[1], ARGV[1], raw) return raw';
 
 /**
  * Atomic take-all: read the whole queue FIFO and delete the key in one step,
@@ -343,82 +918,382 @@ const STEER_ENQUEUE_LUA =
  * replacement job's queue (the check-then-drain would otherwise race
  * `createJob`).
  *
- *   KEYS: [job, steers]
- *   ARGV: [expectedCreatedAt or ""]
+ *   KEYS: [job, steers, claimedSteers, receipts, receiptOrder]
+ *   ARGV: [expectedCreatedAt or "", runningTtl]
  *   Returns: array of item JSON strings (possibly empty)
  */
 const STEER_DRAIN_LUA =
   'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" ' +
+  'or redis.call("HGET", KEYS[1], "steersClosed") == "1" then return {} end ' +
+  'local currentCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
   'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'if redis.call("HGET", KEYS[1], "generationProtocolVersion") ~= "2" then ' +
+  'redis.call("DEL", KEYS[2]) return items end ' +
+  'local decodedItems = {} local decodedReceipts = {} ' +
+  'for i = 1, #items do ' +
+  'local ok, item = pcall(cjson.decode, items[i]) ' +
+  'if not ok or type(item) ~= "table" or not item.steerId then ' +
+  'return redis.error_reply("invalid steer queue item") end ' +
+  'decodedItems[i] = item ' +
+  'if item.clientSteerId then ' +
+  'local raw = redis.call("HGET", KEYS[4], item.clientSteerId) ' +
+  'if not raw then return redis.error_reply("missing steer receipt") end ' +
+  'local receiptOk, receipt = pcall(cjson.decode, raw) ' +
+  'if not receiptOk or type(receipt) ~= "table" ' +
+  'or receipt.clientSteerId ~= item.clientSteerId ' +
+  'or tostring(receipt.generationCreatedAt or "") ~= currentCreatedAt ' +
+  'or receipt.state ~= "queued" or not receipt.item ' +
+  'or receipt.item.steerId ~= item.steerId ' +
+  'or receipt.item.clientSteerId ~= item.clientSteerId then ' +
+  'return redis.error_reply("invalid steer receipt") end ' +
+  'decodedReceipts[i] = receipt ' +
+  'end end ' +
+  'if #items > 0 then redis.call("RPUSH", KEYS[3], unpack(items)) redis.call("EXPIRE", KEYS[3], ARGV[2]) end ' +
+  'for i = 1, #items do local item = decodedItems[i] local receipt = decodedReceipts[i] ' +
+  'if receipt then receipt.item = item receipt.state = "claimed" ' +
+  'redis.call("HSET", KEYS[4], item.clientSteerId, cjson.encode(receipt)) end end ' +
+  'for i = 4, 5 do local ttl = redis.call("TTL", KEYS[i]) ' +
+  'if ttl >= 0 and ttl < tonumber(ARGV[2]) then redis.call("EXPIRE", KEYS[i], ARGV[2]) end end ' +
   'redis.call("DEL", KEYS[2]) ' +
   'return items';
+
+/** Roll back claimed items whose durable applied-part write failed. New
+ * enqueues may have landed after the drain, so the failed accepted batch is
+ * prepended in its original order rather than replacing the live queue. */
+const STEER_RESTORE_CLAIMED_LUA =
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return 0 end ' +
+  'local currentCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'local incoming = cjson.decode(ARGV[2]) local incomingIds = {} ' +
+  'for i = 1, #incoming do if incoming[i].steerId then incomingIds[incoming[i].steerId] = true end end ' +
+  'if redis.call("HGET", KEYS[1], "generationProtocolVersion") ~= "2" then ' +
+  'local present = {} local current = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'for i = 1, #current do local ok, item = pcall(cjson.decode, current[i]) ' +
+  'if not ok or type(item) ~= "table" or not item.steerId then return 0 end present[item.steerId] = true end ' +
+  'for i = #incoming, 1, -1 do local item = incoming[i] if item.steerId and not present[item.steerId] then ' +
+  'redis.call("LPUSH", KEYS[2], cjson.encode(item)) end end ' +
+  'if redis.call("EXISTS", KEYS[2]) == 1 then redis.call("EXPIRE", KEYS[2], ARGV[3]) end return 1 end ' +
+  'local claims = redis.call("LRANGE", KEYS[3], 0, -1) local keptClaims = {} local matched = 0 ' +
+  'for i = 1, #claims do local ok, item = pcall(cjson.decode, claims[i]) ' +
+  'if ok and item.steerId and incomingIds[item.steerId] then matched = matched + 1 ' +
+  'else keptClaims[#keptClaims + 1] = claims[i] end end ' +
+  'if matched ~= #incoming then return 0 end ' +
+  'local receiptByClient = {} ' +
+  'for i = 1, #incoming do local item = incoming[i] if item.clientSteerId then ' +
+  'local raw = redis.call("HGET", KEYS[4], item.clientSteerId) if not raw then return 0 end ' +
+  'local ok, receipt = pcall(cjson.decode, raw) ' +
+  'if not ok or type(receipt) ~= "table" ' +
+  'or receipt.clientSteerId ~= item.clientSteerId ' +
+  'or tostring(receipt.generationCreatedAt or "") ~= currentCreatedAt ' +
+  'or receipt.state ~= "claimed" or not receipt.item ' +
+  'or receipt.item.steerId ~= item.steerId ' +
+  'or receipt.item.clientSteerId ~= item.clientSteerId then return 0 end ' +
+  'receiptByClient[item.clientSteerId] = receipt end end ' +
+  'local present = {} local current = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'for i = 1, #current do local ok, item = pcall(cjson.decode, current[i]) ' +
+  'if not ok or type(item) ~= "table" or not item.steerId then return 0 end ' +
+  'present[item.steerId] = true end ' +
+  'local claimsTtl = redis.call("PTTL", KEYS[3]) redis.call("DEL", KEYS[3]) ' +
+  'if #keptClaims > 0 then redis.call("RPUSH", KEYS[3], unpack(keptClaims)) ' +
+  'if claimsTtl > 0 then redis.call("PEXPIRE", KEYS[3], claimsTtl) end end ' +
+  'for i = #incoming, 1, -1 do local item = incoming[i] ' +
+  'if item.steerId and not present[item.steerId] then ' +
+  'local itemJson = cjson.encode(item) redis.call("LPUSH", KEYS[2], itemJson) ' +
+  'if item.clientSteerId then local receipt = receiptByClient[item.clientSteerId] ' +
+  'receipt.item = item receipt.state = "queued" ' +
+  'redis.call("HSET", KEYS[4], item.clientSteerId, cjson.encode(receipt)) end end end ' +
+  'if redis.call("EXISTS", KEYS[2]) == 1 then redis.call("EXPIRE", KEYS[2], ARGV[3]) end ' +
+  'return 1';
 
 const STEER_PEEK_LUA =
   'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
   'return redis.call("LRANGE", KEYS[2], 0, -1)';
 
+const STEER_PEEK_CLAIMED_LUA =
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
+  'if redis.call("HGET", KEYS[1], "generationProtocolVersion") ~= "2" then return {} end ' +
+  'return redis.call("LRANGE", KEYS[2], 0, -1)';
+
 /**
  * Remove ONE queued steer by id without disturbing the rest: the list is
  * rebuilt atomically, so a concurrent drain either delivers the steer or the
- * cancel wins — never a torn queue. ARGV[1] is the JSON fragment
- * `"steerId":"<id>"` matched as a plain substring against each serialized
- * item (ids are server-generated UUIDs, no escaping ambiguity). The list TTL
- * survives the rebuild.
+ * cancel wins — never a torn queue. The generation fence and receipt
+ * validation happen before either the queue or receipt is changed. The list
+ * TTL survives the rebuild.
  *
- *   KEYS: [steers]
- *   ARGV: [steerIdFragment]
+ *   KEYS: [job, steers, receipts]
+ *   ARGV: [steerId, expectedCreatedAt or ""]
  *   Returns: 1 when removed, 0 when not found
  */
 const STEER_REMOVE_LUA =
-  'local items = redis.call("LRANGE", KEYS[1], 0, -1) ' +
+  'if ARGV[2] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[2] then return 0 end ' +
+  'local currentCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'local protocolV2 = redis.call("HGET", KEYS[1], "generationProtocolVersion") == "2" ' +
+  'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
   'if #items == 0 then return 0 end ' +
-  'local kept = {} ' +
-  'local removed = 0 ' +
+  'local target = 0 local targetItem = nil local targetReceipt = nil ' +
   'for i = 1, #items do ' +
-  'if removed == 0 and string.find(items[i], ARGV[1], 1, true) then removed = 1 ' +
-  'else kept[#kept + 1] = items[i] end ' +
+  'local ok, item = pcall(cjson.decode, items[i]) ' +
+  'if not ok or type(item) ~= "table" or type(item.steerId) ~= "string" or item.steerId == "" then ' +
+  'return redis.error_reply("invalid steer queue item") end ' +
+  'if item.steerId == ARGV[1] then ' +
+  'if target ~= 0 then return redis.error_reply("duplicate steer id") end ' +
+  'target = i targetItem = item ' +
+  'if protocolV2 and item.clientSteerId then ' +
+  'if type(item.clientSteerId) ~= "string" or item.clientSteerId == "" or not currentCreatedAt then ' +
+  'return redis.error_reply("invalid steer receipt") end ' +
+  'local raw = redis.call("HGET", KEYS[3], item.clientSteerId) ' +
+  'if not raw then return redis.error_reply("missing steer receipt") end ' +
+  'local receiptOk, receipt = pcall(cjson.decode, raw) ' +
+  'if not receiptOk or type(receipt) ~= "table" ' +
+  'or receipt.clientSteerId ~= item.clientSteerId ' +
+  'or tostring(receipt.generationCreatedAt or "") ~= currentCreatedAt ' +
+  'or receipt.state ~= "queued" or type(receipt.item) ~= "table" ' +
+  'or receipt.item.steerId ~= item.steerId ' +
+  'or receipt.item.clientSteerId ~= item.clientSteerId then ' +
+  'return redis.error_reply("invalid steer receipt") end targetReceipt = receipt end end ' +
   'end ' +
-  'if removed == 0 then return 0 end ' +
-  'local ttl = redis.call("PTTL", KEYS[1]) ' +
-  'redis.call("DEL", KEYS[1]) ' +
+  'if target == 0 then return 0 end ' +
+  'local ttl = redis.call("PTTL", KEYS[2]) ' +
+  'redis.call("DEL", KEYS[2]) ' +
+  'local kept = {} for i = 1, #items do if i ~= target then kept[#kept + 1] = items[i] end end ' +
   'if #kept > 0 then ' +
-  'redis.call("RPUSH", KEYS[1], unpack(kept)) ' +
-  'if ttl > 0 then redis.call("PEXPIRE", KEYS[1], ttl) end ' +
+  'redis.call("RPUSH", KEYS[2], unpack(kept)) ' +
+  'if ttl > 0 then redis.call("PEXPIRE", KEYS[2], ttl) end ' +
   'end ' +
+  'if targetReceipt then targetReceipt.item = targetItem targetReceipt.state = "cancelled" ' +
+  'redis.call("HSET", KEYS[3], targetItem.clientSteerId, cjson.encode(targetReceipt)) end ' +
   'return 1';
 
 /**
- * Claim-on-read for parked steers: return AND delete in one atomic step so a
- * second reload cannot re-mint chips the user already dismissed. The owner
- * gate runs INSIDE the same step — a payload not containing the requester's
- * `"userId":"…"` fragment (ARGV[1], plain-substring match) returns the empty
- * sentinel WITHOUT deleting, so a non-owner probe can never destroy the
- * owner's recovery, even transiently. Single key (cluster-safe); GETDEL is
- * avoided only for older-Redis compatibility.
+ * Escalate ONE queued steer to an interrupt IN PLACE: decode the whole item,
+ * set `preempt`, and LSET it back at its index, so its FIFO position is
+ * untouched (the entire queue drains at the seal, in order). Guarded like
+ * {@link STEER_ENQUEUE_LUA}: a non-running job, closed queue, or generation
+ * mismatch refuses, so an arm racing a pause cannot leak into the resumed
+ * segment and a stale request can never arm a replacement run's steer. The
+ * owner's LIVE `preemptCapable` is part of the same atomic predicate — a HITL
+ * resume on a rolling deploy rewrites it for the SAME generation, so a value
+ * the caller read earlier is not trustworthy.
  *
- *   KEYS: [parkedSteers]
- *   ARGV: [ownerFragment]
- *   Returns: the parked payload JSON, '' when not the owner, or nil
+ *   KEYS: [job, steers, receipts]
+ *   ARGV: [steerId, expectedCreatedAt or ""]
+ *   Returns: the updated item JSON, 0 not found / non-running / closed / fenced,
+ *   or -1 when the owner cannot seal.
+ */
+const STEER_ARM_LUA =
+  'if ARGV[2] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[2] then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return 0 end ' +
+  'local protocolV2 = redis.call("HGET", KEYS[1], "generationProtocolVersion") == "2" ' +
+  'local currentCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'local target = 0 local item = nil ' +
+  'for i = 1, #items do ' +
+  'local decoded, candidate = pcall(cjson.decode, items[i]) ' +
+  'if not decoded or type(candidate) ~= "table" or type(candidate.steerId) ~= "string" ' +
+  'or candidate.steerId == "" then return redis.error_reply("invalid steer queue item") end ' +
+  'if candidate.steerId == ARGV[1] then ' +
+  'if target ~= 0 then return redis.error_reply("duplicate steer id") end ' +
+  'target = i item = candidate end ' +
+  'end ' +
+  'if target == 0 then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "preemptCapable") ~= "1" then return -1 end ' +
+  'local receipt = nil ' +
+  'if protocolV2 and item.clientSteerId then ' +
+  'if type(item.clientSteerId) ~= "string" or item.clientSteerId == "" or not currentCreatedAt then ' +
+  'return redis.error_reply("invalid steer receipt") end ' +
+  'local receiptJson = redis.call("HGET", KEYS[3], item.clientSteerId) ' +
+  'if not receiptJson then return redis.error_reply("missing steer receipt") end ' +
+  'local receiptOk, receiptValue = pcall(cjson.decode, receiptJson) ' +
+  'if not receiptOk or type(receiptValue) ~= "table" ' +
+  'or receiptValue.clientSteerId ~= item.clientSteerId ' +
+  'or tostring(receiptValue.generationCreatedAt or "") ~= currentCreatedAt ' +
+  'or receiptValue.state ~= "queued" or not receiptValue.item ' +
+  'or receiptValue.item.steerId ~= item.steerId ' +
+  'or receiptValue.item.clientSteerId ~= item.clientSteerId then ' +
+  'return redis.error_reply("invalid steer receipt") end receipt = receiptValue end ' +
+  'item.preemptRevision = tonumber(item.preemptRevision or 0) + 1 ' +
+  'item.preempt = true ' +
+  'redis.call("LSET", KEYS[2], target - 1, cjson.encode(item)) ' +
+  'if receipt then receipt.item = item ' +
+  'redis.call("HSET", KEYS[3], item.clientSteerId, cjson.encode(receipt)) end ' +
+  'return cjson.encode(item)';
+
+/** Downgrade durable interrupt labels during a capable→incapable owner
+ * handover. Capability and queue edits share one Lua transaction, so a later
+ * capable resume cannot race a stale cleanup from the previous owner. */
+const STEER_DOWNGRADE_PREEMPTS_LUA =
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return -1 end ' +
+  'if redis.call("EXISTS", KEYS[1]) == 0 then return -1 end ' +
+  'if redis.call("HGET", KEYS[1], "preemptCapable") == "1" then return -1 end ' +
+  'local protocolV2 = redis.call("HGET", KEYS[1], "generationProtocolVersion") == "2" ' +
+  'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'local decodedItems = {} local decodedReceipts = {} ' +
+  'for i = 1, #items do ' +
+  'local decoded, item = pcall(cjson.decode, items[i]) ' +
+  'if decoded and item.preempt == true then ' +
+  'decodedItems[i] = item ' +
+  'if protocolV2 and item.clientSteerId then local receiptJson = redis.call("HGET", KEYS[3], item.clientSteerId) ' +
+  'if not receiptJson then return redis.error_reply("missing steer receipt") end ' +
+  'local receiptOk, receipt = pcall(cjson.decode, receiptJson) ' +
+  'local epoch = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'if not receiptOk or type(receipt) ~= "table" ' +
+  'or receipt.clientSteerId ~= item.clientSteerId ' +
+  'or tostring(receipt.generationCreatedAt or "") ~= epoch ' +
+  'or receipt.state ~= "queued" or not receipt.item ' +
+  'or receipt.item.steerId ~= item.steerId ' +
+  'or receipt.item.clientSteerId ~= item.clientSteerId then ' +
+  'return redis.error_reply("invalid steer receipt") end decodedReceipts[i] = receipt end end end ' +
+  'local changed = {} ' +
+  'for i = 1, #items do local item = decodedItems[i] ' +
+  'if item then ' +
+  'item.preempt = nil ' +
+  'item.preemptRevision = tonumber(item.preemptRevision or 0) + 1 ' +
+  'redis.call("LSET", KEYS[2], i - 1, cjson.encode(item)) ' +
+  'local receipt = decodedReceipts[i] if receipt then receipt.item = item ' +
+  'redis.call("HSET", KEYS[3], item.clientSteerId, cjson.encode(receipt)) end ' +
+  'changed[#changed + 1] = cjson.encode(item) ' +
+  'end ' +
+  'end ' +
+  'return changed';
+
+/**
+ * Owner-gated replay read for parked steers. It intentionally does not delete:
+ * createJob only leases the exact recovered item while its deterministic next
+ * turn is active. Durable user-message persistence commits the removal, so a
+ * failed startup or lost status response cannot erase the only recovery copy.
+ *
+ *   KEYS: [parkedSteers, job]
+ *   ARGV: [ownerUserId, ownerTenantId | "", requestedProtocolVersion]
+ *   Returns: [parked payload JSON, protocol], '' when not the owner, or nil
  */
 const CLAIM_PARKED_LUA =
   'local v = redis.call("GET", KEYS[1]) ' +
   'if not v then return v end ' +
-  'if not string.find(v, ARGV[1], 1, true) then return "" end ' +
-  'redis.call("DEL", KEYS[1]) ' +
-  'return v';
+  'local function isDenseArray(value) if type(value) ~= "table" then return false end ' +
+  'local count = 0 for key, _ in pairs(value) do ' +
+  'if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then return false end count = count + 1 end ' +
+  'return count == #value end ' +
+  'local ok, parked = pcall(cjson.decode, v) ' +
+  'if not ok or type(parked) ~= "table" or type(parked.userId) ~= "string" or parked.userId == "" ' +
+  'or not isDenseArray(parked.steers) or #parked.steers == 0 then return "" end ' +
+  'if parked.generationProtocolVersion and parked.generationProtocolVersion ~= 1 ' +
+  'and parked.generationProtocolVersion ~= 2 then return "" end ' +
+  'for i = 1, #parked.steers do local item = parked.steers[i] ' +
+  'if type(item) ~= "table" or type(item.steerId) ~= "string" or item.steerId == "" ' +
+  'or (item.clientSteerId and (type(item.clientSteerId) ~= "string" or item.clientSteerId == "")) ' +
+  'or (item.text and type(item.text) ~= "string") ' +
+  'or (item.createdAt and (type(item.createdAt) ~= "number" or item.createdAt < 0)) ' +
+  'or (item.recoveringCreatedAt and (type(item.recoveringCreatedAt) ~= "number" or item.recoveringCreatedAt < 0)) then return "" end end ' +
+  'if parked.userId ~= ARGV[1] then return "" end ' +
+  'if parked.tenantId and parked.tenantId ~= ARGV[2] then return "" end ' +
+  'local createdAt = redis.call("HGET", KEYS[2], "createdAt") ' +
+  'local status = redis.call("HGET", KEYS[2], "status") ' +
+  'local recoveredSteerId = redis.call("HGET", KEYS[2], "recoveredSteerId") ' +
+  'local jobTenantId = redis.call("HGET", KEYS[2], "tenantId") ' +
+  'local activeRecovery = createdAt and (status == "running" or status == "requires_action") ' +
+  'and redis.call("HGET", KEYS[2], "generationProtocolVersion") == "2" ' +
+  'and recoveredSteerId and recoveredSteerId ~= "" ' +
+  'and redis.call("HGET", KEYS[2], "userId") == ARGV[1] ' +
+  'and (not jobTenantId or jobTenantId == ARGV[2]) ' +
+  'local visible = {} local leased = {} for i = 1, #parked.steers do local item = parked.steers[i] ' +
+  'if activeRecovery and item.steerId == recoveredSteerId ' +
+  'and tostring(item.recoveringCreatedAt or "") == createdAt then leased[#leased + 1] = item ' +
+  'else item.recoveringCreatedAt = nil visible[#visible + 1] = item end end ' +
+  'local protocol = parked.generationProtocolVersion == 2 and ARGV[3] == "2" and 2 or 1 ' +
+  'if protocol == 1 and #leased == 0 then parked.generationProtocolVersion = 1 ' +
+  'parked.steers = visible redis.call("DEL", KEYS[1]) ' +
+  'return { cjson.encode(parked), "1" } end ' +
+  'if #visible == 0 then return "" end parked.steers = visible ' +
+  'if protocol == 1 then local ttl = redis.call("PTTL", KEYS[1]) ' +
+  'local retained = { userId = parked.userId, generationProtocolVersion = 2, steers = leased } ' +
+  'if parked.tenantId then retained.tenantId = parked.tenantId end ' +
+  'redis.call("SET", KEYS[1], cjson.encode(retained)) ' +
+  'if ttl > 0 then redis.call("PEXPIRE", KEYS[1], ttl) end ' +
+  'parked.generationProtocolVersion = 1 end ' +
+  'return { cjson.encode(parked), tostring(protocol) }';
+
+/** Commit a leased recovery only after its ordinary user message is durable. */
+const CONSUME_PARKED_STEER_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] ' +
+  'or redis.call("HGET", KEYS[1], "userId") ~= ARGV[3] ' +
+  'or redis.call("HGET", KEYS[1], "recoveredSteerId") ~= ARGV[2] then return 0 end ' +
+  'local jobTenant = redis.call("HGET", KEYS[1], "tenantId") ' +
+  'if jobTenant and jobTenant ~= ARGV[4] then return 0 end ' +
+  'local raw = redis.call("GET", KEYS[2]) if not raw then return 1 end ' +
+  'local ok, parked = pcall(cjson.decode, raw) ' +
+  'if not ok or type(parked) ~= "table" or type(parked.steers) ~= "table" then return 0 end ' +
+  'local count = 0 for key, _ in pairs(parked.steers) do ' +
+  'if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then return 0 end count = count + 1 end ' +
+  'if count == 0 or count ~= #parked.steers then return 0 end ' +
+  'if parked.userId ~= ARGV[3] or (parked.tenantId and parked.tenantId ~= ARGV[4]) then return 0 end ' +
+  'local consumed = nil local kept = {} for i = 1, #parked.steers do local item = parked.steers[i] ' +
+  'if type(item) ~= "table" or type(item.steerId) ~= "string" or item.steerId == "" then return 0 end ' +
+  'if not consumed and item.steerId == ARGV[2] ' +
+  'and tostring(item.recoveringCreatedAt or "") == ARGV[1] then consumed = item ' +
+  'else kept[#kept + 1] = item end end if not consumed then return 0 end ' +
+  'local receipt = nil if consumed.clientSteerId then ' +
+  'local receiptRaw = redis.call("HGET", KEYS[3], consumed.clientSteerId) if not receiptRaw then return 0 end ' +
+  'local receiptOk, decoded = pcall(cjson.decode, receiptRaw) ' +
+  'if not receiptOk or decoded.state ~= "leftover" or decoded.userId ~= ARGV[3] ' +
+  'or (decoded.tenantId and decoded.tenantId ~= ARGV[4]) or not decoded.item ' +
+  'or decoded.item.steerId ~= ARGV[2] then return 0 end receipt = decoded end ' +
+  'local ttl = redis.call("PTTL", KEYS[2]) if #kept == 0 then redis.call("DEL", KEYS[2]) ' +
+  'else parked.steers = kept redis.call("SET", KEYS[2], cjson.encode(parked)) ' +
+  'if ttl > 0 then redis.call("PEXPIRE", KEYS[2], ttl) end end ' +
+  'if receipt then receipt.state = "recovered" ' +
+  'redis.call("HSET", KEYS[3], consumed.clientSteerId, cjson.encode(receipt)) end return 1';
+
+/** Idempotent terminal reclaim for Edit/Queue/dismiss. */
+const DISCARD_STEER_LEFTOVER_LUA =
+  'local raw = redis.call("HGET", KEYS[1], ARGV[1]) if not raw then return 0 end ' +
+  'local ok, receipt = pcall(cjson.decode, raw) if not ok or type(receipt) ~= "table" then return 0 end ' +
+  'if ARGV[5] ~= "" and tostring(receipt.generationCreatedAt or "") ~= ARGV[5] then return 0 end ' +
+  'local tenantMatches = not receipt.tenantId or receipt.tenantId == ARGV[4] ' +
+  'if receipt.state ~= "leftover" or receipt.userId ~= ARGV[3] or not tenantMatches ' +
+  'or not receipt.item or receipt.item.steerId ~= ARGV[2] then return 0 end ' +
+  'local status = redis.call("HGET", KEYS[3], "status") ' +
+  'local activeRecovery = (status == "running" or status == "requires_action") ' +
+  'and redis.call("HGET", KEYS[3], "recoveredSteerId") == ARGV[2] ' +
+  'and redis.call("HGET", KEYS[3], "userId") == ARGV[3] ' +
+  'local jobTenant = redis.call("HGET", KEYS[3], "tenantId") ' +
+  'if activeRecovery and (not jobTenant or jobTenant == ARGV[4]) then return 0 end ' +
+  'local parkedRaw = redis.call("GET", KEYS[2]) ' +
+  'if parkedRaw then local parsed, parked = pcall(cjson.decode, parkedRaw) ' +
+  'if not parsed or type(parked) ~= "table" or type(parked.steers) ~= "table" then return 0 end ' +
+  'local count = 0 for key, _ in pairs(parked.steers) do ' +
+  'if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then return 0 end count = count + 1 end ' +
+  'if count == 0 or count ~= #parked.steers then return 0 end ' +
+  'local parkedTenantMatches = not parked.tenantId or parked.tenantId == ARGV[4] ' +
+  'if parked.userId ~= ARGV[3] or not parkedTenantMatches then return 0 end ' +
+  'local kept = {} for i = 1, #parked.steers do local item = parked.steers[i] ' +
+  'if type(item) ~= "table" or type(item.steerId) ~= "string" or item.steerId == "" then return 0 end ' +
+  'if item.steerId ~= ARGV[2] then kept[#kept + 1] = item end end ' +
+  'if #kept == 0 then redis.call("DEL", KEYS[2]) else parked.steers = kept ' +
+  'local ttl = redis.call("PTTL", KEYS[2]) redis.call("SET", KEYS[2], cjson.encode(parked)) ' +
+  'if ttl > 0 then redis.call("PEXPIRE", KEYS[2], ttl) end end end ' +
+  'receipt.state = "cancelled" redis.call("HSET", KEYS[1], ARGV[1], cjson.encode(receipt)) ' +
+  'return 1';
 
 /**
  * Park leftovers only while the generation that drained them still owns the
  * stream ID. If a replacement already exists, writing its parked key would
  * leak predecessor state into the new run. A replacement created afterward
- * atomically clears this key in {@link JOB_CREATE_LUA}.
+ * retains the owner-gated payload and leases only an explicitly selected item.
  *
  *   KEYS: [job, parkedSteers]
  *   ARGV: [expectedCreatedAt | "", payload, ttl]
  */
 const PARK_STEERS_LUA =
   'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
-  'redis.call("SET", KEYS[2], ARGV[2], "EX", ARGV[3]) ' +
+  'local ok, parked = pcall(cjson.decode, ARGV[2]) if not ok or type(parked) ~= "table" then return 0 end ' +
+  'local protocol = redis.call("HGET", KEYS[1], "generationProtocolVersion") ' +
+  'if protocol == "2" then parked.generationProtocolVersion = 2 ' +
+  'else parked.generationProtocolVersion = 1 end ' +
+  'redis.call("SET", KEYS[2], cjson.encode(parked), "EX", ARGV[3]) ' +
   'return 1';
 
 /**
@@ -430,16 +1305,77 @@ const PARK_STEERS_LUA =
  * expected-`createdAt` guard as {@link STEER_DRAIN_LUA} keeps a stale run's
  * finalization from closing (and stealing) a replacement job's queue.
  *
- *   KEYS: [job, steers]
- *   ARGV: [expectedCreatedAt or ""]
- *   Returns: array of item JSON strings (possibly empty)
+ *   KEYS: [job, steers, claimedSteers, receipts, receiptOrder, parkedSteers]
+ *   ARGV: [expectedCreatedAt or "", parkedTtl]
+ *   Returns: array of item JSON strings (possibly empty), or the
+ *   `recovery_corrupt` sentinel when destructive recovery is unsafe.
  */
 const STEER_CLOSE_DRAIN_LUA =
   'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
+  'if redis.call("EXISTS", KEYS[1]) == 0 then return {} end ' +
+  'local ownerUserId = redis.call("HGET", KEYS[1], "userId") ' +
+  'local ownerTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
+  'local generationProtocol = redis.call("HGET", KEYS[1], "generationProtocolVersion") == "2" and 2 or 1 ' +
+  'local parkedProtocol = generationProtocol ' +
+  'local function isDenseArray(value) if type(value) ~= "table" then return false end ' +
+  'local count = 0 for key, _ in pairs(value) do ' +
+  'if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then return false end count = count + 1 end ' +
+  'return count == #value end ' +
+  'local claimedRows = {} if generationProtocol == 2 then claimedRows = redis.call("LRANGE", KEYS[3], 0, -1) end ' +
+  'local sources = { claimedRows, redis.call("LRANGE", KEYS[2], 0, -1) } ' +
+  'for s = 1, #sources do for i = 1, #sources[s] do local ok, item = pcall(cjson.decode, sources[s][i]) ' +
+  'if not ok or type(item) ~= "table" or type(item.steerId) ~= "string" or item.steerId == "" then return "recovery_corrupt" end end end ' +
+  'if (#sources[1] > 0 or #sources[2] > 0) and (not ownerUserId or ownerUserId == "") then return "recovery_corrupt" end ' +
+  'local parkedSteers = {} local parkedRaw = redis.call("GET", KEYS[6]) ' +
+  'if parkedRaw then local parsed, parked = pcall(cjson.decode, parkedRaw) ' +
+  'if not parsed or type(parked) ~= "table" or type(parked.userId) ~= "string" or parked.userId == "" ' +
+  'or not isDenseArray(parked.steers) or #parked.steers == 0 or parked.userId ~= ownerUserId ' +
+  'or (parked.tenantId and parked.tenantId ~= ownerTenantId) then return "recovery_corrupt" end ' +
+  'if parked.generationProtocolVersion and parked.generationProtocolVersion ~= 1 ' +
+  'and parked.generationProtocolVersion ~= 2 then return "recovery_corrupt" end ' +
+  'if parked.generationProtocolVersion == 2 then parkedProtocol = 2 end ' +
+  'for i = 1, #parked.steers do local prior = parked.steers[i] ' +
+  'if type(prior) ~= "table" or type(prior.steerId) ~= "string" or prior.steerId == "" ' +
+  'or (prior.clientSteerId and (type(prior.clientSteerId) ~= "string" or prior.clientSteerId == "")) ' +
+  'or (prior.text and type(prior.text) ~= "string") ' +
+  'or (prior.createdAt and (type(prior.createdAt) ~= "number" or prior.createdAt < 0)) ' +
+  'or (prior.recoveringCreatedAt and (type(prior.recoveringCreatedAt) ~= "number" or prior.recoveringCreatedAt < 0)) then return "recovery_corrupt" end ' +
+  'parkedSteers[#parkedSteers + 1] = prior end end ' +
   'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HSET", KEYS[1], "steersClosed", "1") end ' +
-  'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
-  'redis.call("DEL", KEYS[2]) ' +
-  'return items';
+  'local combined = {} local seen = {} ' +
+  'for s = 1, #sources do for i = 1, #sources[s] do ' +
+  'local ok, item = pcall(cjson.decode, sources[s][i]) ' +
+  'if ok and item.steerId and not seen[item.steerId] then ' +
+  'seen[item.steerId] = true combined[#combined + 1] = item end ' +
+  'if generationProtocol == 2 and ok and item.clientSteerId then ' +
+  'local raw = redis.call("HGET", KEYS[4], item.clientSteerId) ' +
+  'if raw then local receiptOk, receipt = pcall(cjson.decode, raw) ' +
+  'if receiptOk and type(receipt) == "table" then receipt.item = item receipt.state = "leftover" ' +
+  'redis.call("HSET", KEYS[4], item.clientSteerId, cjson.encode(receipt)) end end ' +
+  'end end end ' +
+  'if #combined > 0 and ownerUserId then ' +
+  'local filteredParkedSteers = {} ' +
+  'for i = 1, #parkedSteers do local prior = parkedSteers[i] ' +
+  'if not seen[prior.steerId] then seen[prior.steerId] = true ' +
+  'filteredParkedSteers[#filteredParkedSteers + 1] = prior end end ' +
+  'local currentProjected = {} ' +
+  'for i = 1, #combined do local item = combined[i] ' +
+  'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
+  'if item.clientSteerId then projected.clientSteerId = item.clientSteerId end ' +
+  'if item.files then projected.files = item.files end ' +
+  'if item.preempt then projected.preempt = item.preempt end ' +
+  'if item.preemptRevision then projected.preemptRevision = item.preemptRevision end ' +
+  'currentProjected[#currentProjected + 1] = projected end ' +
+  'local merged = {} for i = 1, #filteredParkedSteers do merged[#merged + 1] = filteredParkedSteers[i] end ' +
+  'for i = 1, #currentProjected do merged[#merged + 1] = currentProjected[i] end ' +
+  'local parked = { userId = ownerUserId, generationProtocolVersion = parkedProtocol, steers = merged } ' +
+  'if ownerTenantId then parked.tenantId = ownerTenantId end ' +
+  'redis.call("SET", KEYS[6], cjson.encode(parked), "EX", ARGV[2]) end ' +
+  'for i = 4, 5 do local ttl = redis.call("TTL", KEYS[i]) ' +
+  'if ttl >= 0 and ttl < tonumber(ARGV[2]) then redis.call("EXPIRE", KEYS[i], ARGV[2]) end end ' +
+  'redis.call("DEL", KEYS[2], KEYS[3]) ' +
+  'local encoded = {} for i = 1, #combined do encoded[i] = cjson.encode(combined[i]) end ' +
+  'return encoded';
 
 /** Decision kinds the SDK can emit, used to sanity-check persisted records. */
 const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
@@ -448,8 +1384,12 @@ const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
  *  configured to 0 — Redis rejects `EX 0`, which would silently kill
  *  park-based recovery. */
 const PARKED_RECOVERY_TTL_S: number = 300;
+const STEER_RECEIPT_MAX_PER_STREAM: number = 100;
 /** Grace window for publishing terminal/reaper events after the live job hash expires. */
 const GENERATION_EPOCH_GRACE_TTL_S: number = 300;
+/** A terminal record carrying an uncommitted final event must survive the
+ * persistence-owner timeout even when completedTtl is configured to zero. */
+const TERMINAL_PERSISTENCE_RETENTION_TTL_S: number = 300;
 
 /** Bound pathological replacement churn without leaving the request unbounded. */
 const MEMBERSHIP_RECONCILE_MAX_ATTEMPTS: number = 8;
@@ -475,9 +1415,14 @@ const KEYS = {
   runSteps: (streamId: string) => `stream:{${streamId}}:runsteps`,
   /** Pending steer messages (FIFO list): stream:{streamId}:steers */
   steers: (streamId: string) => `stream:{${streamId}}:steers`,
+  /** Drained steers awaiting an atomic durable applied-chunk commit. */
+  claimedSteers: (streamId: string) => `stream:{${streamId}}:steers-claimed`,
   /** Parked terminally-drained steers (own TTL — must outlive the job hash,
    *  which the default completeJob path deletes immediately) */
   parkedSteers: (streamId: string) => `stream:{${streamId}}:parked`,
+  /** Lost-ACK steer receipts (hash fields are clientSteerIds). */
+  steerReceipts: (streamId: string) => `stream:{${streamId}}:steer-receipts`,
+  steerReceiptOrder: (streamId: string) => `stream:{${streamId}}:steer-receipt-order`,
   /** Latest generation epoch, retained briefly beyond the live job hash. */
   generationEpoch: (streamId: string) => `stream:{${streamId}}:generation-epoch`,
   /** Running jobs set for cleanup (global set - single slot) */
@@ -488,7 +1433,7 @@ const KEYS = {
   userJobs: (userId: string, tenantId?: string) =>
     tenantId ? `stream:user:{${tenantId}:${userId}}:jobs` : `stream:user:{${userId}}:jobs`,
   /** Idempotency claim for a start-generation request: stream:idem:{userId:clientRequestId} */
-  idempotency: (key: string) => `stream:idem:{${key}}`,
+  idempotency: (key: string) => `stream:idem:${key}`,
 };
 
 /**
@@ -517,7 +1462,7 @@ const DEFAULT_TTL = {
 };
 
 /**
- * Redis implementation of IJobStore.
+ * Redis implementation of IJobStoreV2.
  * Enables horizontal scaling with multi-instance deployments.
  *
  * Storage strategy:
@@ -557,7 +1502,7 @@ interface LocalCacheEntry<T> {
   value: T;
 }
 
-export class RedisJobStore implements IJobStore {
+export class RedisJobStore implements IJobStoreV2 {
   private redis: Redis | Cluster;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private ttl: typeof DEFAULT_TTL;
@@ -693,17 +1638,64 @@ export class RedisJobStore implements IJobStore {
     conversationId?: string,
     tenantId?: string,
     initialMetadata: JobMetadataPatch = {},
-  ): Promise<SerializableJobData> {
-    const job: SerializableJobData = {
+    recoveredSteerId?: string,
+    idempotencyClaimKey?: string,
+    idempotencyClaimToken?: string,
+    idempotencyClientRequestId?: string,
+    recoveredSteerPayload?: RecoveredSteerPayload,
+    creationAttemptId?: string,
+    expectedPredecessorCreatedAt?: number,
+  ): Promise<CreatedJobData> {
+    if (typeof userId !== 'string' || userId.length === 0) {
+      throw new Error('Generation job requires a non-empty user id');
+    }
+    assertCreateIdempotencyArguments(
+      idempotencyClaimKey,
+      idempotencyClaimToken,
+      idempotencyClientRequestId,
+    );
+    if (
+      creationAttemptId != null &&
+      (creationAttemptId.length === 0 || creationAttemptId.length > 128)
+    ) {
+      throw new Error('Invalid generation creation attempt id');
+    }
+    if (
+      expectedPredecessorCreatedAt != null &&
+      (!Number.isSafeInteger(expectedPredecessorCreatedAt) || expectedPredecessorCreatedAt < 0)
+    ) {
+      throw new Error('Invalid expected generation predecessor');
+    }
+    let generationProtocolVersion: 1 | 2 = 1;
+    if (
+      initialMetadata.generationProtocolVersion === 1 ||
+      initialMetadata.generationProtocolVersion === 2
+    ) {
+      generationProtocolVersion = initialMetadata.generationProtocolVersion;
+    } else if (process.env.GENERATION_PROTOCOL_VERSION === '2') {
+      generationProtocolVersion = 2;
+    }
+    const job: CreatedJobData = {
       ...initialMetadata,
       streamId,
       userId,
       ...(tenantId && { tenantId }),
       status: 'running',
       createdAt: Date.now(),
+      generationProtocolVersion,
       ...(conversationId !== undefined && { conversationId }),
+      ...(idempotencyClientRequestId !== undefined && { idempotencyClientRequestId }),
+      ...(recoveredSteerId !== undefined && { recoveredSteerId }),
+      providerAbortReady: false,
       syncSent: false,
     };
+    if (creationAttemptId != null) {
+      Object.defineProperty(job, 'creationAttemptId', {
+        value: creationAttemptId,
+        enumerable: false,
+        configurable: true,
+      });
+    }
 
     const key = KEYS.job(streamId);
 
@@ -711,20 +1703,84 @@ export class RedisJobStore implements IJobStore {
     // The job key uses hash tag {streamId}, runningJobs and userJobs are on different slots
     // Generation-state reset + job-hash write happen ATOMICALLY (same-slot Lua).
     const hsetPairs = Object.entries(this.serializeJob(job)).flat();
+    const parkedTtl = this.parkedRecoveryTtlSeconds();
+    /** A leased source is hidden while this job is active. Keep it for one
+     * normal recovery window beyond the live job's storage horizon so delayed
+     * cleanup or natural job expiry cannot make both keys disappear together. */
+    const createParkedTtl =
+      recoveredSteerId != null ? this.runningStorageTtlSeconds() + parkedTtl : parkedTtl;
     const previousOwner = await this.redis.eval(
       JOB_CREATE_LUA,
-      6,
+      10,
       key,
       KEYS.chunks(streamId),
       KEYS.runSteps(streamId),
       KEYS.steers(streamId),
+      KEYS.claimedSteers(streamId),
       KEYS.parkedSteers(streamId),
       KEYS.generationEpoch(streamId),
-      String(this.ttl.running),
+      KEYS.steerReceipts(streamId),
+      KEYS.steerReceiptOrder(streamId),
+      idempotencyClaimKey != null ? KEYS.idempotency(idempotencyClaimKey) : key,
+      String(this.runningStorageTtlSeconds()),
       String(job.createdAt),
       String(GENERATION_EPOCH_GRACE_TTL_S),
+      String(createParkedTtl),
+      recoveredSteerId ?? '',
+      userId,
+      tenantId ?? '',
+      idempotencyClaimToken ?? '',
+      recoveredSteerPayload == null ? '' : JSON.stringify(recoveredSteerPayload),
+      String(job.generationProtocolVersion),
+      creationAttemptId ?? '',
+      expectedPredecessorCreatedAt == null ? '' : String(expectedPredecessorCreatedAt),
       ...hsetPairs,
     );
+    if (Array.isArray(previousOwner) && previousOwner[3] === 'claim_lost') {
+      throw new Error('Generation idempotency claim was taken over before job creation');
+    }
+    if (Array.isArray(previousOwner) && previousOwner[3] === 'owner_mismatch') {
+      throw new Error('Generation job owner mismatch');
+    }
+    if (Array.isArray(previousOwner) && previousOwner[3] === 'recovery_corrupt') {
+      throw new Error('Generation recovery state is corrupt');
+    }
+    if (Array.isArray(previousOwner) && previousOwner[3] === 'recovery_payload_mismatch') {
+      throw new RecoveredSteerPayloadMismatchError();
+    }
+    if (Array.isArray(previousOwner) && previousOwner[3] === 'replacement_receipt_corrupt') {
+      throw new Error('Generation replacement receipt is corrupt');
+    }
+    if (Array.isArray(previousOwner) && previousOwner[3] === 'generation_epoch_corrupt') {
+      throw new Error('Generation epoch is corrupt');
+    }
+    if (Array.isArray(previousOwner) && previousOwner[3] === 'generation_epoch_exhausted') {
+      throw new Error('Generation epoch is exhausted');
+    }
+    if (Array.isArray(previousOwner) && previousOwner[3] === 'replacement_chain_full') {
+      throw new Error('Generation replacement receipt chain is full');
+    }
+    if (Array.isArray(previousOwner) && previousOwner[3] === 'predecessor_mismatch') {
+      const currentCreatedAt = Number(previousOwner[4]);
+      const currentStatus =
+        typeof previousOwner[5] === 'string' && previousOwner[5] !== ''
+          ? (previousOwner[5] as JobStatus)
+          : undefined;
+      const currentConversationId =
+        typeof previousOwner[6] === 'string' && previousOwner[6] !== ''
+          ? previousOwner[6]
+          : undefined;
+      throw new JobPredecessorMismatchError({
+        createdAt: currentCreatedAt,
+        active:
+          previousOwner[7] === '1' ||
+          currentStatus === 'running' ||
+          currentStatus === 'requires_action',
+        verified: previousOwner[8] !== '0',
+        ...(currentStatus !== undefined && { status: currentStatus }),
+        ...(currentConversationId !== undefined && { conversationId: currentConversationId }),
+      });
+    }
     const previousUserId =
       Array.isArray(previousOwner) && typeof previousOwner[0] === 'string' ? previousOwner[0] : '';
     const previousTenantId =
@@ -735,6 +1791,49 @@ export class RedisJobStore implements IJobStore {
         ? Number(previousOwner[2])
         : job.createdAt;
     job.createdAt = Number.isFinite(createdAt) ? createdAt : job.createdAt;
+    if (job.generationProtocolVersion === 2) {
+      job.checkpointNamespace = String(job.createdAt);
+    } else {
+      delete job.checkpointNamespace;
+    }
+    const replacedCreatedAt =
+      Array.isArray(previousOwner) &&
+      (typeof previousOwner[4] === 'string' || typeof previousOwner[4] === 'number') &&
+      String(previousOwner[4]) !== ''
+        ? Number(previousOwner[4])
+        : undefined;
+    const replacedStatus =
+      Array.isArray(previousOwner) && typeof previousOwner[5] === 'string'
+        ? (previousOwner[5] as JobStatus)
+        : undefined;
+    const replacedConversationId =
+      Array.isArray(previousOwner) &&
+      typeof previousOwner[6] === 'string' &&
+      previousOwner[6] !== ''
+        ? previousOwner[6]
+        : undefined;
+    const replacedProviderAbortReady =
+      Array.isArray(previousOwner) &&
+      typeof previousOwner[7] === 'string' &&
+      previousOwner[7] !== ''
+        ? previousOwner[7] === '1'
+        : undefined;
+    const replacedJob =
+      replacedCreatedAt != null && Number.isFinite(replacedCreatedAt) && replacedStatus != null
+        ? {
+            createdAt: replacedCreatedAt,
+            status: replacedStatus,
+            ...(replacedConversationId !== undefined && {
+              conversationId: replacedConversationId,
+            }),
+          }
+        : undefined;
+    if (replacedJob != null && replacedProviderAbortReady != null) {
+      Object.defineProperty(replacedJob, 'providerAbortReady', {
+        value: replacedProviderAbortReady,
+        enumerable: false,
+      });
+    }
     const previousUserKeys =
       previousUserId !== ''
         ? [KEYS.userJobs(previousUserId, previousTenantId || undefined)]
@@ -750,13 +1849,36 @@ export class RedisJobStore implements IJobStore {
       currentJob !== undefined &&
       (!currentJob || currentJob.createdAt !== job.createdAt || currentJob.status !== 'running')
     ) {
-      throw new Error('Generation job was replaced during creation');
+      if (replacedJob != null) {
+        Object.defineProperty(job, 'replacedJob', {
+          value: replacedJob,
+          enumerable: false,
+        });
+      }
+      throw new JobCreationSupersededError(job);
     }
     if (currentJob === undefined) {
-      logger.warn(`[RedisJobStore] Created job without verified membership: ${streamId}`);
-      return job;
+      if (replacedJob != null) {
+        Object.defineProperty(job, 'replacedJob', {
+          value: replacedJob,
+          enumerable: false,
+        });
+      }
+      // The same-slot create may already be durable, but exposing a provider
+      // before cross-slot running/user membership is verified would strand an
+      // untracked generation. The manager's attempt-id recovery probes the
+      // durable job, repairs membership, and reconstructs the full predecessor
+      // chain before deciding whether it is safe to proceed.
+      throw new Error('Created job membership could not be verified');
     }
     this.clearPredecessorLocalState(streamId, currentJob.createdAt);
+
+    if (replacedJob != null) {
+      Object.defineProperty(currentJob, 'replacedJob', {
+        value: replacedJob,
+        enumerable: false,
+      });
+    }
 
     logger.debug(`[RedisJobStore] Created job: ${streamId}`);
     return currentJob;
@@ -770,12 +1892,49 @@ export class RedisJobStore implements IJobStore {
     return this.deserializeJob(data);
   }
 
+  async acknowledgeReplacedJobs(
+    streamId: string,
+    creationAttemptId: string,
+    replacedCreatedAts: readonly number[],
+  ): Promise<boolean> {
+    if (creationAttemptId.length === 0 || replacedCreatedAts.length === 0) {
+      return false;
+    }
+    const acknowledged = await this.redis.eval(
+      REPLACEMENT_RECEIPT_ACK_LUA,
+      1,
+      KEYS.job(streamId),
+      creationAttemptId,
+      ...replacedCreatedAts.map(String),
+    );
+    return acknowledged === 1;
+  }
+
   async updateJob(
     streamId: string,
     updates: Partial<SerializableJobData>,
     expectedCreatedAt?: number,
   ): Promise<void> {
     const key = KEYS.job(streamId);
+    const requestedTerminal =
+      updates.status != null && ['complete', 'error', 'aborted'].includes(updates.status);
+    if (requestedTerminal) {
+      const observed = await this.getJob(streamId);
+      if (
+        observed != null &&
+        (expectedCreatedAt == null || observed.createdAt === expectedCreatedAt) &&
+        (observed.status === 'running' || observed.status === 'requires_action')
+      ) {
+        const { status, ...patch } = updates;
+        await this.transitionStatus(streamId, {
+          from: observed.status,
+          to: status!,
+          patch,
+          expectCreatedAt: expectedCreatedAt ?? observed.createdAt,
+        });
+        return;
+      }
+    }
 
     // Plain field writer. The membership-aware status transitions
     // (running ⇄ requires_action — sets, TTLs, the actionId guard) go solely
@@ -786,9 +1945,13 @@ export class RedisJobStore implements IJobStore {
       return;
     }
 
-    const terminal =
-      updates.status != null && ['complete', 'error', 'aborted'].includes(updates.status);
+    const terminal = requestedTerminal;
     const observedJob = terminal ? await this.getJob(streamId) : null;
+    const completedTtl =
+      updates.terminalPersistencePending === true ||
+      observedJob?.terminalPersistencePending === true
+        ? Math.max(this.ttl.completed, TERMINAL_PERSISTENCE_RETENTION_TTL_S)
+        : this.ttl.completed;
     const fields = Object.entries(serialized).flat();
     const updated = await this.redis.eval(
       JOB_UPDATE_LUA,
@@ -799,7 +1962,7 @@ export class RedisJobStore implements IJobStore {
       KEYS.steers(streamId),
       expectedCreatedAt != null ? String(expectedCreatedAt) : '',
       terminal ? '1' : '0',
-      String(this.ttl.completed),
+      String(completedTtl),
       String(this.ttl.chunksAfterComplete),
       String(this.ttl.runStepsAfterComplete),
       ...fields,
@@ -818,6 +1981,24 @@ export class RedisJobStore implements IJobStore {
         expectedCreatedAt ?? observedJob?.createdAt,
       );
     }
+  }
+
+  async finalizeTerminalPersistence(
+    streamId: string,
+    expectedCreatedAt: number,
+    finalEvent: string,
+  ): Promise<boolean> {
+    return (
+      Number(
+        await this.redis.eval(
+          TERMINAL_PERSISTENCE_FINALIZE_LUA,
+          1,
+          KEYS.job(streamId),
+          String(expectedCreatedAt),
+          finalEvent,
+        ),
+      ) === 1
+    );
   }
 
   private sameMembershipSource(
@@ -987,10 +2168,20 @@ export class RedisJobStore implements IJobStore {
   private pauseTtlSeconds(pendingAction?: Agents.PendingAction): number {
     const exp = pendingAction?.expiresAt;
     if (exp == null) {
-      return this.ttl.requiresAction;
+      return this.ttl.requiresAction + GENERATION_EPOCH_GRACE_TTL_S;
     }
     const secondsUntilExpiry = Math.ceil((exp - Date.now()) / 1000) + 60;
-    return Math.max(this.ttl.requiresAction, secondsUntilExpiry);
+    return Math.max(this.ttl.requiresAction, secondsUntilExpiry) + GENERATION_EPOCH_GRACE_TTL_S;
+  }
+
+  /** Same grace lets cleanup park accepted words before Redis expires the
+   * live hash/list keys at the semantic stale cutoff. */
+  private runningStorageTtlSeconds(): number {
+    return this.ttl.running + GENERATION_EPOCH_GRACE_TTL_S;
+  }
+
+  private parkedRecoveryTtlSeconds(): number {
+    return this.ttl.completed > 0 ? this.ttl.completed : PARKED_RECOVERY_TTL_S;
   }
 
   /** The membership set a status belongs to; terminal statuses have none. */
@@ -1005,6 +2196,25 @@ export class RedisJobStore implements IJobStore {
   }
 
   async transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean> {
+    return (await this.transitionStatusInternal(streamId, args, false)) === true;
+  }
+
+  async transitionStatusAndDrainSteers(
+    streamId: string,
+    args: JobStatusTransition,
+  ): Promise<SteerQueueItem[] | null> {
+    if (this.statusSetKey(args.to) !== null) {
+      throw new Error('Steer-draining status transitions must be terminal');
+    }
+    const result = await this.transitionStatusInternal(streamId, args, true);
+    return Array.isArray(result) ? result : null;
+  }
+
+  private async transitionStatusInternal(
+    streamId: string,
+    args: JobStatusTransition,
+    returnDrainedSteers: boolean,
+  ): Promise<true | SteerQueueItem[] | null> {
     const { from, to, patch, clear, expectActionId, expectCreatedAt } = args;
     const key = KEYS.job(streamId);
 
@@ -1016,7 +2226,10 @@ export class RedisJobStore implements IJobStore {
     const clearFields = (clear ?? []).map(String);
 
     const terminal = this.statusSetKey(to) === null;
-    let ttl = terminal ? this.ttl.completed : this.ttl.running;
+    let ttl = terminal ? this.ttl.completed : this.runningStorageTtlSeconds();
+    if (terminal && patch?.terminalPersistencePending === true) {
+      ttl = Math.max(ttl, TERMINAL_PERSISTENCE_RETENTION_TTL_S);
+    }
     if (to === 'requires_action') {
       // A paused job must outlive its approval window, even when that window is
       // longer than the running TTL — otherwise Redis evicts it before a
@@ -1028,16 +2241,19 @@ export class RedisJobStore implements IJobStore {
     // 1) Single-winner decision: an atomic CAS on the single-slot job hash.
     //    Works identically on cluster and single-node, so two concurrent
     //    resolves can never both win (and drive the run twice).
-    const won = await this.redis.eval(
+    const result = await this.redis.eval(
       JOB_CAS_LUA,
-      7,
+      10,
       key,
       KEYS.sequence(streamId),
       KEYS.chunks(streamId),
       KEYS.runSteps(streamId),
       KEYS.steers(streamId),
+      KEYS.claimedSteers(streamId),
       KEYS.parkedSteers(streamId),
       KEYS.generationEpoch(streamId),
+      KEYS.steerReceipts(streamId),
+      KEYS.steerReceiptOrder(streamId),
       from,
       expectActionId ?? '',
       expectCreatedAt != null ? String(expectCreatedAt) : '',
@@ -1045,14 +2261,16 @@ export class RedisJobStore implements IJobStore {
       terminal ? '1' : '0',
       String(this.ttl.chunksAfterComplete),
       String(this.ttl.runStepsAfterComplete),
-      String(this.ttl.completed > 0 ? this.ttl.completed : PARKED_RECOVERY_TTL_S),
+      String(this.parkedRecoveryTtlSeconds()),
       String(GENERATION_EPOCH_GRACE_TTL_S),
+      String(args.steerReceiptTtlSeconds ?? 0),
+      returnDrainedSteers ? '1' : '0',
       String(clearFields.length),
       ...clearFields,
       ...fields,
     );
-    if (won !== 1) {
-      return false;
+    if (returnDrainedSteers ? typeof result !== 'string' : result !== 1) {
+      return null;
     }
 
     // 2) Same-slot TTL/content changes happened atomically in the CAS. Cross-slot
@@ -1067,7 +2285,14 @@ export class RedisJobStore implements IJobStore {
         expectCreatedAt ?? terminalJob?.createdAt,
       );
     }
-    return true;
+    if (!returnDrainedSteers) {
+      return true;
+    }
+    const drained = JSON.parse(result as string) as unknown;
+    if (!Array.isArray(drained)) {
+      throw new Error('Invalid terminal steer drain response');
+    }
+    return drained as SteerQueueItem[];
   }
 
   async claimIdempotencyKey(
@@ -1083,18 +2308,85 @@ export class RedisJobStore implements IJobStore {
       String(ttlSeconds * 1000),
     );
     if (result == null) {
-      return { claimed: true };
+      return { claimed: true, existing: value };
     }
     try {
       return { claimed: false, existing: JSON.parse(result as string) as IdempotencyClaimValue };
     } catch {
-      // Unreachable in practice (we wrote the JSON); proceed rather than dedup to a broken target.
-      return { claimed: false };
+      // An unreadable existing owner is outcome-ambiguous. Never turn store
+      // corruption into a duplicate generation by pretending the key is free.
+      throw new Error('Invalid generation idempotency claim');
     }
   }
 
-  async releaseIdempotencyKey(key: string): Promise<void> {
-    await this.redis.del(KEYS.idempotency(key));
+  async takeoverIdempotencyKey(
+    key: string,
+    expected: IdempotencyClaimValue,
+    value: IdempotencyClaimValue,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    const taken = await this.redis.eval(
+      IDEMPOTENCY_TAKEOVER_LUA,
+      1,
+      KEYS.idempotency(key),
+      expected.claimToken ?? '',
+      JSON.stringify(value),
+      String(ttlSeconds * 1000),
+    );
+    return taken === 1;
+  }
+
+  async markIdempotencyKeyStarted(
+    key: string,
+    claimToken: string,
+    startedAt: number,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    const marked = await this.redis.eval(
+      IDEMPOTENCY_MARK_STARTED_LUA,
+      1,
+      KEYS.idempotency(key),
+      claimToken,
+      String(startedAt),
+      String(ttlSeconds * 1000),
+    );
+    return marked === 1;
+  }
+
+  async adoptIdempotencyKeyForJob(
+    key: string,
+    expected: IdempotencyClaimValue,
+    streamId: string,
+    userId: string,
+    clientRequestId: string,
+    tenantId: string | undefined,
+    expectedCreatedAt: number,
+    ttlSeconds: number,
+    allowMissingClientRequestId = false,
+  ): Promise<boolean> {
+    const adopted = await this.redis.eval(
+      IDEMPOTENCY_ADOPT_LIVE_JOB_LUA,
+      2,
+      KEYS.idempotency(key),
+      KEYS.job(streamId),
+      expected.claimToken ?? '',
+      String(expectedCreatedAt),
+      userId,
+      clientRequestId,
+      tenantId ?? '',
+      String(ttlSeconds * 1000),
+      allowMissingClientRequestId ? '1' : '0',
+    );
+    return adopted === 1;
+  }
+
+  async releaseIdempotencyKey(key: string, expected?: IdempotencyClaimValue): Promise<void> {
+    await this.redis.eval(
+      IDEMPOTENCY_RELEASE_LUA,
+      1,
+      KEYS.idempotency(key),
+      expected?.claimToken ?? '',
+    );
   }
 
   async deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean> {
@@ -1103,11 +2395,12 @@ export class RedisJobStore implements IJobStore {
     const expectMissing = expectedCreatedAt == null && observedJob == null;
     const deleted = await this.redis.eval(
       JOB_DELETE_LUA,
-      4,
+      5,
       KEYS.job(streamId),
       KEYS.chunks(streamId),
       KEYS.runSteps(streamId),
       KEYS.steers(streamId),
+      KEYS.claimedSteers(streamId),
       targetCreatedAt != null ? String(targetCreatedAt) : '',
       expectMissing ? '1' : '0',
     );
@@ -1131,13 +2424,16 @@ export class RedisJobStore implements IJobStore {
   ): Promise<boolean> {
     const deleted = await this.redis.eval(
       STALE_JOB_DELETE_LUA,
-      6,
+      9,
       KEYS.job(streamId),
       KEYS.chunks(streamId),
       KEYS.runSteps(streamId),
       KEYS.steers(streamId),
+      KEYS.claimedSteers(streamId),
       KEYS.parkedSteers(streamId),
       KEYS.generationEpoch(streamId),
+      KEYS.steerReceipts(streamId),
+      KEYS.steerReceiptOrder(streamId),
       String(observedJob.createdAt),
       String(now),
       String(this.ttl.running * 1000),
@@ -1268,6 +2564,7 @@ export class RedisJobStore implements IJobStore {
   private async cleanupRequiresActionIndex(): Promise<number> {
     const streamIds = await this.redis.smembers(KEYS.requiresActionJobs);
     let cleaned = 0;
+    const now = Date.now();
 
     const BATCH_SIZE = 50;
     for (let i = 0; i < streamIds.length; i += BATCH_SIZE) {
@@ -1290,13 +2587,52 @@ export class RedisJobStore implements IJobStore {
             return 1;
           }
 
+          if (job.terminalPersistencePending === true) {
+            const startedAt = job.terminalPersistenceStartedAt ?? job.createdAt;
+            if (now - startedAt < PAUSE_PERSISTENCE_TIMEOUT_MS) {
+              // The pause owner is still within its response-write lease.
+              return 0;
+            }
+
+            if (job.pendingActionId == null) {
+              logger.error(
+                `[RedisJobStore] Refusing stale pause-persistence cleanup without an action fence: ${streamId}`,
+              );
+              return 0;
+            }
+            const failed = await this.transitionStatusAndDrainSteers(streamId, {
+              from: 'requires_action',
+              to: 'error',
+              expectActionId: job.pendingActionId,
+              expectCreatedAt: job.createdAt,
+              patch: {
+                completedAt: now,
+                error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+              },
+              clear: [
+                'pendingAction',
+                'pendingActionId',
+                'terminalPersistencePending',
+                'terminalPersistenceStartedAt',
+              ],
+            });
+            if (failed == null) {
+              return 0;
+            }
+            logger.error(`[RedisJobStore] Pause persistence timed out: ${streamId}`);
+            return 1;
+          }
+
           // Stale approval (expired, or missing/malformed pendingAction):
           // finalize it (aborted) so it stops occupying the slot and its stream
           // contents are reclaimed, mirroring ApprovalLifecycle.expire().
           // transitionStatus atomically applies the terminal state and same-slot
           // content cleanup. Cross-slot membership indexes self-heal on read or
           // during the next cleanup pass.
-          if (isPendingActionStale(job)) {
+          const exceededNoExpiryBackstop =
+            job.pendingAction?.expiresAt == null &&
+            now - (job.lastActiveAt ?? job.createdAt) > this.ttl.requiresAction * 1000;
+          if (isPendingActionStale(job) || exceededNoExpiryBackstop) {
             const expired = await this.transitionStatus(streamId, {
               from: 'requires_action',
               to: 'aborted',
@@ -1472,9 +2808,12 @@ export class RedisJobStore implements IJobStore {
     });
   }
 
-  /** Splice-inserts host-authored steer parts (from `on_steer_applied`
-   *  chunks) into an SDK-graph content view, ascending by recorded index so
-   *  each host-view position lands exactly where live clients saw it. */
+  /** Splice-inserts host-authored parts (steers from `on_steer_applied`,
+   *  activity labels from `on_activity_label` chunks) into an SDK-graph
+   *  content view, ascending by recorded index so each host-view position
+   *  lands exactly where live clients saw it. Label events fire twice per
+   *  slot (placeholder, then filled); chronological last-wins keeps the
+   *  resolved label. */
   private async overlayHostSteerParts(
     streamId: string,
     parts: Agents.MessageContentComplex[],
@@ -1485,23 +2824,34 @@ export class RedisJobStore implements IJobStore {
       return parts;
     }
     const steers: Array<{ index: number; part: Agents.MessageContentComplex }> = [];
+    const labelsByIndex = new Map<number, Agents.MessageContentComplex>();
     for (const chunk of chunks) {
       const event = chunk as { event?: string; data?: unknown };
-      if (event.event !== 'on_steer_applied') {
+      if (event.event === 'on_steer_applied') {
+        const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        if (typeof steerData.index === 'number' && steerData.part != null) {
+          steers.push({ index: steerData.index, part: steerData.part });
+        }
         continue;
       }
-      const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
-      if (typeof steerData.index === 'number' && steerData.part != null) {
-        steers.push({ index: steerData.index, part: steerData.part });
+      if (event.event === 'on_activity_label') {
+        const labelData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        if (typeof labelData.index === 'number' && labelData.part != null) {
+          labelsByIndex.set(labelData.index, labelData.part);
+        }
       }
     }
-    if (steers.length === 0) {
+    if (steers.length === 0 && labelsByIndex.size === 0) {
       return parts;
     }
-    steers.sort((a, b) => a.index - b.index);
+    const inserts = [
+      ...steers,
+      ...[...labelsByIndex.entries()].map(([index, part]) => ({ index, part })),
+    ];
+    inserts.sort((a, b) => a.index - b.index);
     const merged = [...parts];
-    for (const steer of steers) {
-      merged.splice(Math.min(steer.index, merged.length), 0, steer.part);
+    for (const insert of inserts) {
+      merged.splice(Math.min(insert.index, merged.length), 0, insert.part);
     }
     return merged;
   }
@@ -1667,6 +3017,17 @@ export class RedisJobStore implements IJobStore {
         continue;
       }
 
+      // Activity-label parts are host-authored like steers and claimed at a
+      // fixed index. The event fires twice per slot (counts placeholder,
+      // then resolved label); chronological replay makes the last write win.
+      if (event.event === 'on_activity_label') {
+        const labelData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        if (typeof labelData.index === 'number' && labelData.part != null) {
+          contentParts[labelData.index] = labelData.part;
+        }
+        continue;
+      }
+
       if (!validEvents.has(event.event)) {
         continue;
       }
@@ -1777,15 +3138,20 @@ export class RedisJobStore implements IJobStore {
 
   // ===== Steering Queue Methods =====
 
-  async enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number> {
+  async enqueueSteer(
+    streamId: string,
+    item: SteerQueueItem,
+    expectedCreatedAt?: number,
+  ): Promise<number> {
     const result = await this.redis.eval(
       STEER_ENQUEUE_LUA,
       2,
       KEYS.job(streamId),
       KEYS.steers(streamId),
       JSON.stringify(item),
-      String(this.ttl.running),
+      String(this.runningStorageTtlSeconds()),
       String(STEER_QUEUE_MAX_DEPTH),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
     );
     if (typeof result !== 'number') {
       return STEER_ENQUEUE_NOT_RUNNING;
@@ -1793,15 +3159,131 @@ export class RedisJobStore implements IJobStore {
     return result;
   }
 
-  async drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
-    const raw = await this.redis.eval(
-      STEER_DRAIN_LUA,
+  async enqueueSteerVersioned(
+    streamId: string,
+    item: SteerQueueItem,
+    wantsPreempt: boolean,
+    expectedCreatedAt?: number,
+  ): Promise<SteerEnqueueVersionedResult> {
+    const result = await this.redis.eval(
+      STEER_ENQUEUE_VERSIONED_LUA,
       2,
       KEYS.job(streamId),
       KEYS.steers(streamId),
+      JSON.stringify(item),
+      String(this.runningStorageTtlSeconds()),
+      String(STEER_QUEUE_MAX_DEPTH),
       expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      wantsPreempt ? '1' : '0',
+    );
+    if (typeof result === 'number') {
+      return result;
+    }
+    if (typeof result !== 'string') {
+      return STEER_ENQUEUE_NOT_RUNNING;
+    }
+    try {
+      return JSON.parse(result) as Exclude<SteerEnqueueVersionedResult, number>;
+    } catch {
+      logger.warn(`[RedisJobStore] Malformed atomic steer enqueue result for ${streamId}`);
+      return STEER_ENQUEUE_NOT_RUNNING;
+    }
+  }
+
+  async getSteerReceipt(streamId: string, clientSteerId: string): Promise<SteerReceipt | null> {
+    const raw = await this.redis.eval(
+      STEER_RECEIPT_GET_LUA,
+      3,
+      KEYS.steerReceipts(streamId),
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      clientSteerId,
+    );
+    if (typeof raw !== 'string') {
+      return null;
+    }
+    try {
+      return JSON.parse(raw) as SteerReceipt;
+    } catch {
+      logger.warn(`[RedisJobStore] Dropping malformed steer receipt for ${streamId}`);
+      await this.redis.hdel(KEYS.steerReceipts(streamId), clientSteerId);
+      return null;
+    }
+  }
+
+  async enqueueSteerWithReceipt(
+    streamId: string,
+    item: SteerQueueItem,
+    receipt: SteerReceiptInput,
+    wantsPreempt: boolean,
+    expectedCreatedAt?: number,
+  ): Promise<SteerEnqueueReceiptResult> {
+    const result = await this.redis.eval(
+      STEER_ENQUEUE_RECEIPT_LUA,
+      4,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      KEYS.steerReceipts(streamId),
+      KEYS.steerReceiptOrder(streamId),
+      JSON.stringify(item),
+      String(this.runningStorageTtlSeconds()),
+      String(STEER_QUEUE_MAX_DEPTH),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      receipt.clientSteerId,
+      JSON.stringify(receipt),
+      wantsPreempt ? '1' : '0',
+      String(this.runningStorageTtlSeconds()),
+      String(STEER_RECEIPT_MAX_PER_STREAM),
+    );
+    if (typeof result === 'number') {
+      return result;
+    }
+    if (typeof result !== 'string') {
+      return STEER_ENQUEUE_NOT_RUNNING;
+    }
+    try {
+      return JSON.parse(result) as Exclude<SteerEnqueueReceiptResult, number>;
+    } catch {
+      logger.warn(`[RedisJobStore] Malformed atomic steer receipt for ${streamId}`);
+      return STEER_ENQUEUE_NOT_RUNNING;
+    }
+  }
+
+  async drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    const raw = await this.redis.eval(
+      STEER_DRAIN_LUA,
+      5,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      KEYS.claimedSteers(streamId),
+      KEYS.steerReceipts(streamId),
+      KEYS.steerReceiptOrder(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      String(this.runningStorageTtlSeconds()),
     );
     return this.parseSteerItems(raw);
+  }
+
+  async restoreClaimedSteers(
+    streamId: string,
+    items: SteerQueueItem[],
+    expectedCreatedAt?: number,
+  ): Promise<boolean> {
+    if (items.length === 0) {
+      return true;
+    }
+    const restored = await this.redis.eval(
+      STEER_RESTORE_CLAIMED_LUA,
+      4,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      KEYS.claimedSteers(streamId),
+      KEYS.steerReceipts(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      JSON.stringify(items),
+      String(this.runningStorageTtlSeconds()),
+    );
+    return restored === 1;
   }
 
   async closeAndDrainSteers(
@@ -1810,11 +3292,19 @@ export class RedisJobStore implements IJobStore {
   ): Promise<SteerQueueItem[]> {
     const raw = await this.redis.eval(
       STEER_CLOSE_DRAIN_LUA,
-      2,
+      6,
       KEYS.job(streamId),
       KEYS.steers(streamId),
+      KEYS.claimedSteers(streamId),
+      KEYS.steerReceipts(streamId),
+      KEYS.steerReceiptOrder(streamId),
+      KEYS.parkedSteers(streamId),
       expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      String(this.ttl.completed > 0 ? this.ttl.completed : PARKED_RECOVERY_TTL_S),
     );
+    if (raw === 'recovery_corrupt') {
+      throw new Error('Generation recovery state is corrupt or belongs to another owner');
+    }
     return this.parseSteerItems(raw);
   }
 
@@ -1832,18 +3322,87 @@ export class RedisJobStore implements IJobStore {
     return this.parseSteerItems(raw);
   }
 
-  async clearSteers(streamId: string): Promise<void> {
-    await this.redis.del(KEYS.steers(streamId));
+  async peekClaimedSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    const raw = await this.redis.eval(
+      STEER_PEEK_CLAIMED_LUA,
+      2,
+      KEYS.job(streamId),
+      KEYS.claimedSteers(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+    );
+    return this.parseSteerItems(raw);
   }
 
-  async removeSteer(streamId: string, steerId: string): Promise<boolean> {
+  async clearSteers(streamId: string): Promise<void> {
+    await this.redis.del(KEYS.steers(streamId), KEYS.claimedSteers(streamId));
+  }
+
+  async removeSteer(
+    streamId: string,
+    steerId: string,
+    expectedCreatedAt?: number,
+  ): Promise<boolean> {
     const removed = (await this.redis.eval(
       STEER_REMOVE_LUA,
-      1,
+      3,
+      KEYS.job(streamId),
       KEYS.steers(streamId),
-      `"steerId":"${steerId}"`,
+      KEYS.steerReceipts(streamId),
+      steerId,
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
     )) as number;
     return removed === 1;
+  }
+
+  async armSteer(
+    streamId: string,
+    steerId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerArmOutcome> {
+    return (await this.armSteerVersioned(streamId, steerId, expectedCreatedAt)).outcome;
+  }
+
+  async armSteerVersioned(
+    streamId: string,
+    steerId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerArmResult> {
+    const result = await this.redis.eval(
+      STEER_ARM_LUA,
+      3,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      KEYS.steerReceipts(streamId),
+      steerId,
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+    );
+    if (typeof result === 'string') {
+      try {
+        const item = JSON.parse(result) as SteerQueueItem;
+        return { outcome: 'armed', revision: item.preemptRevision, item };
+      } catch {
+        return { outcome: 'missing' };
+      }
+    }
+    return { outcome: result === -1 ? 'incapable' : 'missing' };
+  }
+
+  async downgradeSteerPreempts(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerQueueItem[] | null> {
+    const changed = await this.redis.eval(
+      STEER_DOWNGRADE_PREEMPTS_LUA,
+      3,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      KEYS.steerReceipts(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+    );
+    if (changed === -1) {
+      return null;
+    }
+    return this.parseSteerItems(changed);
   }
 
   async parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void> {
@@ -1859,15 +3418,85 @@ export class RedisJobStore implements IJobStore {
     );
   }
 
-  async claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined> {
-    const claimed = (await this.redis.eval(
+  async claimParkedSteers(
+    streamId: string,
+    ownerUserId: string,
+    ownerTenantId?: string,
+  ): Promise<string | undefined> {
+    return (await this.claimParkedSteersDetailed(streamId, ownerUserId, ownerTenantId, 2))?.payload;
+  }
+
+  async claimParkedSteersDetailed(
+    streamId: string,
+    ownerUserId: string,
+    ownerTenantId?: string,
+    requestedProtocolVersion: 1 | 2 = 1,
+  ): Promise<ParkedSteerClaim | undefined> {
+    const claimed = await this.redis.eval(
       CLAIM_PARKED_LUA,
-      1,
+      2,
       KEYS.parkedSteers(streamId),
-      ownerFragment,
-    )) as string | null;
-    // '' is the non-owner sentinel (payload left in place) — reads as "nothing".
-    return claimed ? claimed : undefined;
+      KEYS.job(streamId),
+      ownerUserId,
+      ownerTenantId ?? '',
+      String(requestedProtocolVersion),
+    );
+    if (
+      !Array.isArray(claimed) ||
+      typeof claimed[0] !== 'string' ||
+      (String(claimed[1]) !== '1' && String(claimed[1]) !== '2')
+    ) {
+      // '' is the non-owner/malformed sentinel (payload left in place).
+      return undefined;
+    }
+    return {
+      payload: claimed[0],
+      generationProtocolVersion: String(claimed[1]) === '2' ? 2 : 1,
+    };
+  }
+
+  async consumeParkedSteer(
+    streamId: string,
+    steerId: string,
+    ownerUserId: string,
+    ownerTenantId: string | undefined,
+    expectedCreatedAt: number,
+  ): Promise<boolean> {
+    const consumed = await this.redis.eval(
+      CONSUME_PARKED_STEER_LUA,
+      3,
+      KEYS.job(streamId),
+      KEYS.parkedSteers(streamId),
+      KEYS.steerReceipts(streamId),
+      String(expectedCreatedAt),
+      steerId,
+      ownerUserId,
+      ownerTenantId ?? '',
+    );
+    return consumed === 1;
+  }
+
+  async discardSteerLeftover(
+    streamId: string,
+    clientSteerId: string,
+    steerId: string,
+    ownerUserId: string,
+    ownerTenantId?: string,
+    expectedGenerationCreatedAt?: number,
+  ): Promise<boolean> {
+    const discarded = await this.redis.eval(
+      DISCARD_STEER_LEFTOVER_LUA,
+      3,
+      KEYS.steerReceipts(streamId),
+      KEYS.parkedSteers(streamId),
+      KEYS.job(streamId),
+      clientSteerId,
+      steerId,
+      ownerUserId,
+      ownerTenantId ?? '',
+      expectedGenerationCreatedAt != null ? String(expectedGenerationCreatedAt) : '',
+    );
+    return discarded === 1;
   }
 
   /** A malformed entry is dropped (logged) rather than poisoning the drain. */
@@ -1894,7 +3523,12 @@ export class RedisJobStore implements IJobStore {
    * Uses XADD for efficient append-only storage.
    * Sets TTL on first chunk to ensure cleanup if job crashes.
    */
-  async appendChunk(streamId: string, event: unknown, expectedCreatedAt?: number): Promise<void> {
+  async appendChunk(
+    streamId: string,
+    event: unknown,
+    expectedCreatedAt?: number,
+    deliveredSteer?: SteerQueueItem,
+  ): Promise<boolean> {
     const key = KEYS.chunks(streamId);
     const jobKey = KEYS.job(streamId);
     // XADD + derive-and-extend-only EXPIRE in a single atomic eval. Refreshing the TTL on
@@ -1905,16 +3539,28 @@ export class RedisJobStore implements IJobStore {
     // The script reads the paused window from the job key, so it bumps to the approval TTL
     // even when the pause's own EXPIRE no-op'd because this key didn't exist yet, while a
     // normally-running run still settles on the short running TTL. Both keys share the
-    // {streamId} hash tag, so the 2-key eval stays on one slot under Redis Cluster.
-    await this.redis.eval(
+    // {streamId} hash tag, so the multi-key eval stays on one slot under Redis Cluster.
+    const appended = await this.redis.eval(
       CHUNK_APPEND_LUA,
-      2,
+      8,
       key,
       jobKey,
+      KEYS.steerReceipts(streamId),
+      KEYS.steerReceiptOrder(streamId),
+      KEYS.claimedSteers(streamId),
+      KEYS.steers(streamId),
+      KEYS.parkedSteers(streamId),
+      KEYS.generationEpoch(streamId),
       JSON.stringify(event),
-      String(this.ttl.running),
+      String(this.runningStorageTtlSeconds()),
       expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      deliveredSteer?.clientSteerId ?? '',
+      deliveredSteer != null ? JSON.stringify(deliveredSteer) : '',
+      String(Date.now()),
+      String(this.parkedRecoveryTtlSeconds()),
+      String(GENERATION_EPOCH_GRACE_TTL_S),
     );
+    return appended === 1;
   }
 
   /**
@@ -1965,7 +3611,7 @@ export class RedisJobStore implements IJobStore {
       KEYS.runSteps(streamId),
       KEYS.job(streamId),
       JSON.stringify(runSteps),
-      String(this.ttl.running),
+      String(this.runningStorageTtlSeconds()),
       expectedCreatedAt != null ? String(expectedCreatedAt) : '',
     );
   }
@@ -2189,21 +3835,32 @@ export class RedisJobStore implements IJobStore {
    * Deserialize job data from Redis hash.
    */
   private deserializeJob(data: Record<string, string>): SerializableJobData {
-    return {
+    const job: CreatedJobData = {
       streamId: data.streamId,
       userId: data.userId,
       tenantId: data.tenantId || undefined,
       status: data.status as JobStatus,
       createdAt: parseInt(data.createdAt, 10),
+      generationProtocolVersion: data.generationProtocolVersion === '2' ? 2 : 1,
+      checkpointNamespace: data.checkpointNamespace || undefined,
       completedAt: data.completedAt ? parseInt(data.completedAt, 10) : undefined,
       conversationId: data.conversationId || undefined,
       error: data.error || undefined,
+      idempotencyClientRequestId: data.idempotencyClientRequestId || undefined,
+      recoveredSteerId: data.recoveredSteerId || undefined,
       userMessage: data.userMessage ? JSON.parse(data.userMessage) : undefined,
       responseMessageId: data.responseMessageId || undefined,
       createdEventEmitted: data.createdEventEmitted === '1',
       sender: data.sender || undefined,
       syncSent: data.syncSent === '1',
       finalEvent: data.finalEvent || undefined,
+      terminalPersistencePending:
+        data.terminalPersistencePending != null
+          ? data.terminalPersistencePending === '1'
+          : undefined,
+      terminalPersistenceStartedAt: data.terminalPersistenceStartedAt
+        ? parseInt(data.terminalPersistenceStartedAt, 10)
+        : undefined,
       endpoint: data.endpoint || undefined,
       iconURL: data.iconURL || undefined,
       model: data.model || undefined,
@@ -2212,6 +3869,14 @@ export class RedisJobStore implements IJobStore {
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
+      /** The owning replica's seal capability. `serializeJob` writes every
+       *  boolean generically, but this mapper is explicit — omitting it here
+       *  drops the flag on every read, so the steer route would compute
+       *  `preemptArmed: false` and silently degrade interrupt-steer to
+       *  tool-boundary steering in EVERY Redis deployment. */
+      preemptCapable: data.preemptCapable != null ? data.preemptCapable === '1' : undefined,
+      providerAbortReady:
+        data.providerAbortReady != null ? data.providerAbortReady === '1' : undefined,
       titleEvent: data.titleEvent || undefined,
       replayEvents: data.replayEvents || undefined,
       contextUsage: data.contextUsage || undefined,
@@ -2219,7 +3884,129 @@ export class RedisJobStore implements IJobStore {
       pendingAction: this.parsePendingAction(data.pendingAction),
       pendingActionId: data.pendingActionId || undefined,
       lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
+      /** `markActivityLabels` persists this, so it has to be read back:
+       *  without it every Redis reload leaves the flag undefined and resume
+       *  skips activity-label gap reconciliation, silently dropping a label
+       *  that resolved between the snapshot and subscriber attach. */
+      activityLabels: data.activityLabels != null ? data.activityLabels === '1' : undefined,
     };
+
+    if (data.__creationAttemptId) {
+      Object.defineProperty(job, 'creationAttemptId', {
+        value: data.__creationAttemptId,
+        enumerable: false,
+        configurable: true,
+      });
+    }
+
+    let replacedJobs: ReplacedGeneration[] = [];
+    const validReplacementStatuses = new Set([
+      'running',
+      'requires_action',
+      'complete',
+      'error',
+      'aborted',
+    ]);
+    const scalarEpochRaw = data.__replacedCreatedAt;
+    const scalarStatus = data.__replacedStatus;
+    if ((scalarEpochRaw != null) !== (scalarStatus != null)) {
+      throw new Error('Invalid generation replacement receipt');
+    }
+    if (data.__replacedGenerations) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(data.__replacedGenerations);
+      } catch {
+        throw new Error('Invalid generation replacement receipt');
+      }
+      if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 32) {
+        throw new Error('Invalid generation replacement receipt');
+      }
+      const seen = new Set<number>();
+      let previousEpoch = -1;
+      for (const value of parsed) {
+        if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+          throw new Error('Invalid generation replacement receipt');
+        }
+        const candidate = value as Record<string, unknown>;
+        if (
+          !Number.isSafeInteger(candidate.createdAt) ||
+          (candidate.createdAt as number) < 0 ||
+          (candidate.createdAt as number) <= previousEpoch ||
+          (candidate.createdAt as number) >= job.createdAt ||
+          !validReplacementStatuses.has(candidate.status as string) ||
+          (candidate.conversationId != null && typeof candidate.conversationId !== 'string') ||
+          (candidate.providerAbortReady != null &&
+            typeof candidate.providerAbortReady !== 'boolean') ||
+          seen.has(candidate.createdAt as number)
+        ) {
+          throw new Error('Invalid generation replacement receipt');
+        }
+        seen.add(candidate.createdAt as number);
+        previousEpoch = candidate.createdAt as number;
+        const receipt: ReplacedGeneration = {
+          createdAt: candidate.createdAt as number,
+          status: candidate.status as JobStatus,
+          ...(candidate.conversationId != null && {
+            conversationId: candidate.conversationId as string,
+          }),
+        };
+        if (candidate.providerAbortReady != null) {
+          Object.defineProperty(receipt, 'providerAbortReady', {
+            value: candidate.providerAbortReady,
+            enumerable: false,
+          });
+        }
+        replacedJobs.push(receipt);
+      }
+      const scalarEpoch = scalarEpochRaw != null ? Number(scalarEpochRaw) : undefined;
+      const latest = replacedJobs[replacedJobs.length - 1];
+      if (
+        !Number.isSafeInteger(scalarEpoch) ||
+        scalarEpoch !== latest.createdAt ||
+        scalarStatus !== latest.status ||
+        (data.__replacedConversationId || undefined) !== latest.conversationId
+      ) {
+        throw new Error('Invalid generation replacement receipt');
+      }
+    } else {
+      const replacedCreatedAt = scalarEpochRaw != null ? Number(scalarEpochRaw) : undefined;
+      const replacedStatus = scalarStatus as JobStatus | undefined;
+      if (replacedCreatedAt != null || replacedStatus != null) {
+        if (
+          replacedCreatedAt == null ||
+          replacedStatus == null ||
+          !Number.isSafeInteger(replacedCreatedAt) ||
+          replacedCreatedAt < 0 ||
+          replacedCreatedAt >= job.createdAt ||
+          !validReplacementStatuses.has(replacedStatus)
+        ) {
+          throw new Error('Invalid generation replacement receipt');
+        }
+        replacedJobs = [
+          {
+            createdAt: replacedCreatedAt,
+            status: replacedStatus,
+            ...(data.__replacedConversationId && {
+              conversationId: data.__replacedConversationId,
+            }),
+          },
+        ];
+      }
+    }
+    if (replacedJobs.length > 0) {
+      Object.defineProperty(job, 'replacedJobs', {
+        value: replacedJobs,
+        enumerable: false,
+        configurable: true,
+      });
+      Object.defineProperty(job, 'replacedJob', {
+        value: replacedJobs[replacedJobs.length - 1],
+        enumerable: false,
+        configurable: true,
+      });
+    }
+    return job;
   }
 
   /**

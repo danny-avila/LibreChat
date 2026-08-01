@@ -1,4 +1,10 @@
-const { checkAccess, handleSteerRequest, handleSteerCancel } = require('@librechat/api');
+const {
+  checkAccess,
+  GenerationJobManager,
+  handleSteerRequest,
+  handleSteerCancel,
+  handleSteerArm,
+} = require('@librechat/api');
 const { logger, ResourceCapabilityMap } = require('@librechat/data-schemas');
 const {
   Permissions,
@@ -10,7 +16,29 @@ const {
 } = require('librechat-data-provider');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const {
+  GENERATION_PROTOCOL_HEADER,
+  getRequestedGenerationProtocol,
+  getServerGenerationProtocol,
+} = require('~/server/controllers/agents/protocol');
 const db = require('~/models');
+
+/** Upper bound before the package reads the immutable live-job marker. */
+const getHostGenerationProtocol = (req) =>
+  Math.min(getRequestedGenerationProtocol(req), getServerGenerationProtocol(GenerationJobManager));
+
+/** The package returns its job-capped effective marker in every body. Keep the
+ * header and JSON inseparable at this final serialization boundary. */
+const sendProtocolResult = (res, status, body) => {
+  const generationProtocolVersion = body?.generationProtocolVersion === 2 ? 2 : 1;
+  res.set(GENERATION_PROTOCOL_HEADER, String(generationProtocolVersion));
+  return res.status(status).json({ ...body, generationProtocolVersion });
+};
+
+const sendProtocolFailure = (res, status, code) => {
+  res.set(GENERATION_PROTOCOL_HEADER, '1');
+  return res.status(status).json({ code, generationProtocolVersion: 1 });
+};
 
 /**
  * Steer-time agent authorization, mirroring the chat route's middlewares
@@ -77,15 +105,17 @@ const createAgentAccessCheck =
  */
 const SteerController = async (req, res) => {
   try {
+    const generationProtocolVersion = getHostGenerationProtocol(req);
     const { status, body } = await handleSteerRequest(req.user ?? {}, req.body ?? {}, {
+      generationProtocolVersion,
       getFiles: db.getFiles,
       updateFilesUsage: db.updateFilesUsage,
       checkAgentAccess: createAgentAccessCheck(req),
     });
-    return res.status(status).json(body);
+    return sendProtocolResult(res, status, body);
   } catch (error) {
     logger.error('[SteerController] Failed to queue steer', error);
-    return res.status(500).json({ code: 'STEER_FAILED' });
+    return sendProtocolFailure(res, 500, 'STEER_FAILED');
   }
 };
 
@@ -99,13 +129,39 @@ const SteerController = async (req, res) => {
  */
 const SteerCancelController = async (req, res) => {
   try {
-    const { status, body } = await handleSteerCancel(req.user ?? {}, req.body ?? {});
-    return res.status(status).json(body);
+    const generationProtocolVersion = getHostGenerationProtocol(req);
+    const { status, body } = await handleSteerCancel(req.user ?? {}, req.body ?? {}, {
+      generationProtocolVersion,
+    });
+    return sendProtocolResult(res, status, body);
   } catch (error) {
     logger.error('[SteerCancelController] Failed to cancel steer', error);
-    return res.status(500).json({ code: 'STEER_CANCEL_FAILED' });
+    return sendProtocolFailure(res, 500, 'STEER_CANCEL_FAILED');
+  }
+};
+
+/**
+ * POST /api/agents/chat/steer/arm
+ *
+ * Escalates a still-queued steer to an interrupt in place (the durable item
+ * keeps its FIFO position). `armed: false` is not an error — the steer
+ * already injected, was cancelled, or the deployment cannot seal mid-stream.
+ * No agent-access check: arming injects nothing model-bound, so ownership
+ * checks suffice, exactly like cancel.
+ */
+const SteerArmController = async (req, res) => {
+  try {
+    const generationProtocolVersion = getHostGenerationProtocol(req);
+    const { status, body } = await handleSteerArm(req.user ?? {}, req.body ?? {}, {
+      generationProtocolVersion,
+    });
+    return sendProtocolResult(res, status, body);
+  } catch (error) {
+    logger.error('[SteerArmController] Failed to arm steer', error);
+    return sendProtocolFailure(res, 500, 'STEER_ARM_FAILED');
   }
 };
 
 module.exports = SteerController;
 module.exports.SteerCancelController = SteerCancelController;
+module.exports.SteerArmController = SteerArmController;

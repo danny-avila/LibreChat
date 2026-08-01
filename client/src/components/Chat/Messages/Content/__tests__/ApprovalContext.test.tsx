@@ -1,8 +1,10 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { act, renderHook } from '@testing-library/react';
+import type { MutableSnapshot } from 'recoil';
 import ApprovalProvider, { useApprovalContext, useResumeSubmit } from '../ApprovalContext';
 import { ChatContext } from '~/Providers/ChatContext';
+import store from '~/store';
 
 const mockApprovalMutate = jest.fn();
 const mockAskMutate = jest.fn();
@@ -24,15 +26,26 @@ const chatContextValue = {
   },
 } as unknown as React.ContextType<typeof ChatContext>;
 
-function wrapper({ children }: { children: React.ReactNode }) {
-  return (
-    <RecoilRoot>
-      <ChatContext.Provider value={chatContextValue}>
-        <ApprovalProvider>{children}</ApprovalProvider>
-      </ChatContext.Provider>
-    </RecoilRoot>
-  );
-}
+const createWrapper = (generationCreatedAt: number | null) =>
+  function ResumeWrapper({ children }: { children: React.ReactNode }) {
+    const initializeState = (snapshot: MutableSnapshot) => {
+      if (generationCreatedAt != null) {
+        snapshot.set(
+          store.activeGenerationCreatedAtByConvoId('conversation-1'),
+          generationCreatedAt,
+        );
+      }
+    };
+    return (
+      <RecoilRoot initializeState={initializeState}>
+        <ChatContext.Provider value={chatContextValue}>
+          <ApprovalProvider>{children}</ApprovalProvider>
+        </ChatContext.Provider>
+      </RecoilRoot>
+    );
+  };
+
+const wrapper = createWrapper(1000);
 
 describe('useResumeSubmit', () => {
   beforeEach(() => {
@@ -61,6 +74,14 @@ describe('useResumeSubmit', () => {
       result.current.resume.submitToolApproval('action-1');
     });
     expect(mockApprovalMutate).toHaveBeenCalledTimes(1);
+    expect(mockApprovalMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conversation-1',
+        generationCreatedAt: 1000,
+        actionId: 'action-1',
+      }),
+      expect.any(Object),
+    );
 
     const firstOptions = mockApprovalMutate.mock.calls[0][1] as {
       onError: (error: unknown) => void;
@@ -72,5 +93,58 @@ describe('useResumeSubmit', () => {
       result.current.resume.submitToolApproval('action-1');
     });
     expect(mockApprovalMutate).toHaveBeenCalledTimes(2);
+  });
+
+  test('keeps approval and ask-answer resume controls inert before the generation epoch exists', () => {
+    const { result } = renderHook(
+      () => ({
+        approval: useApprovalContext(),
+        resume: useResumeSubmit(),
+      }),
+      { wrapper: createWrapper(null) },
+    );
+
+    act(() => {
+      result.current.approval.registerToolCall('action-1', 'call-1');
+      result.current.approval.setDecision('action-1', 'call-1', {
+        tool_call_id: 'call-1',
+        decision: 'approve',
+      });
+      result.current.resume.submitToolApproval('action-1');
+      result.current.resume.submitAskAnswer('ask-1', 'answer');
+    });
+
+    expect(mockApprovalMutate).not.toHaveBeenCalled();
+    expect(mockAskMutate).not.toHaveBeenCalled();
+  });
+
+  test('synchronously deduplicates ask answers and unlocks a retryable error', () => {
+    const { result } = renderHook(() => useResumeSubmit(), { wrapper });
+
+    act(() => {
+      result.current.submitAskAnswer('ask-1', 'answer');
+      result.current.submitAskAnswer('ask-1', 'answer');
+    });
+    expect(mockAskMutate).toHaveBeenCalledTimes(1);
+    expect(mockAskMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conversation-1',
+        generationCreatedAt: 1000,
+        actionId: 'ask-1',
+        answer: 'answer',
+      }),
+      expect.any(Object),
+    );
+
+    const firstOptions = mockAskMutate.mock.calls[0][1] as {
+      onError: (error: unknown) => void;
+    };
+    act(() => firstOptions.onError(new Error('temporary failure')));
+
+    act(() => {
+      result.current.submitAskAnswer('ask-1', 'answer');
+      result.current.submitAskAnswer('ask-1', 'answer');
+    });
+    expect(mockAskMutate).toHaveBeenCalledTimes(2);
   });
 });

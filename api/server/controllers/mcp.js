@@ -11,6 +11,8 @@ const {
   isUserSourced,
   MCPErrorCodes,
   splitMCPToolKey,
+  normalizeServerName,
+  findShadowedServerNames,
   redactServerSecrets,
   redactAllServerSecrets,
   isMCPDomainNotAllowedError,
@@ -87,7 +89,21 @@ const getMCPTools = async (req, res) => {
     }
 
     const mcpConfig = await resolveAllMcpConfigs(userId, req.user);
-    const configuredServers = Object.keys(mcpConfig);
+    /**
+     * A server whose normalized name is claimed by an earlier server produces
+     * IDENTICAL model-facing tool keys — selecting its tools would silently
+     * execute against the first server's config (alias resolution is
+     * first-wins). Fail closed: never publish a shadowed server's tools.
+     */
+    const shadowedServers = findShadowedServerNames(Object.keys(mcpConfig));
+    for (const shadowedName of shadowedServers) {
+      logger.warn(
+        `[getMCPTools] Skipping MCP server "${shadowedName}": its normalized name collides with an earlier configured server, making tool keys ambiguous. Rename one server to expose both.`,
+      );
+    }
+    const configuredServers = Object.keys(mcpConfig).filter(
+      (serverName) => !shadowedServers.has(serverName),
+    );
 
     if (!configuredServers.length) {
       return res.status(200).json({ servers: {} });
@@ -178,7 +194,10 @@ const getMCPTools = async (req, res) => {
               continue;
             }
 
-            const [toolName] = splitMCPToolKey(toolKey, [serverName]);
+            const [toolName] = splitMCPToolKey(toolKey, [
+              serverName,
+              normalizeServerName(serverName),
+            ]);
             server.tools.push({
               name: toolName,
               pluginKey: toolKey,
@@ -362,7 +381,13 @@ const createMCPServerController = async (req, res) => {
         .status(403)
         .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
     }
-    const reservedServerNames = await resolveMcpConfigNames(req);
+    /** Reserve both spellings: a generated slug must not collide with a raw
+     *  config name OR the normalized form its tool keys actually carry
+     *  (deduped — the spellings coincide for safe names). */
+    const configNames = await resolveMcpConfigNames(req);
+    const reservedServerNames = [
+      ...new Set([...configNames, ...configNames.map(normalizeServerName)]),
+    ];
     const result = await getMCPServersRegistry().addServer(
       'temp_server_name',
       validation.data,

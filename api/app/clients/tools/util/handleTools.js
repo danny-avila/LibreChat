@@ -7,6 +7,9 @@ const {
   mcpToolPattern,
   loadWebSearchAuth,
   splitMCPToolKey,
+  buildServerNameAliases,
+  findShadowedServerNames,
+  isNormalizationSensitiveName,
   buildInlineMemoryTool,
   getCodeApiAuthHeaders,
   buildImageToolContext,
@@ -47,6 +50,7 @@ const {
   createMCPTools,
   createMCPPermissionContext,
   resolveMcpServerContext,
+  resolveCollisionAuditNames,
 } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -288,12 +292,40 @@ const loadTools = async ({
   let configServers;
   /** All configured names, in the normalized form tool keys carry */
   let mcpServerNames = [];
+  /** All configured names in raw config form, for normalized→raw resolution */
+  let mcpRawServerNames = [];
   if (hasMCPTools && canUseMCP) {
     /** Reuse the caller's context when it already resolved one, so the chat
      *  startup path reads the request app config once. */
-    ({ configServers, serverNames: mcpServerNames } =
-      options.mcpServerContext ?? (await resolveMcpServerContext(options.req)));
+    ({
+      configServers,
+      serverNames: mcpServerNames,
+      rawServerNames: mcpRawServerNames = [],
+    } = options.mcpServerContext ?? (await resolveMcpServerContext(options.req)));
   }
+  /**
+   * Collision guards need the FULL accessible set (operator + user DB): a
+   * cross-tier collision (DB `foo` vs operator `foo!`) is invisible to the
+   * operator-config names alone. The caller's heal may have already fetched
+   * it (threaded via `mcpServerContext.accessibleServerNames`); otherwise it
+   * is fetched ONLY when a configured name actually needs normalizing. When
+   * the full set was needed but unavailable, normalization-sensitive
+   * references FAIL CLOSED below rather than auditing operator names alone.
+   */
+  const collisionAudit = hasMCPTools
+    ? await resolveCollisionAuditNames({
+        rawServerNames: mcpRawServerNames,
+        /** Load-time callers thread the audit inside `mcpServerContext`;
+         *  deferred execution threads initialization's snapshot as a bare
+         *  `accessibleMcpServerNames` (it resolves no server context). */
+        accessibleServerNames:
+          options.mcpServerContext?.accessibleServerNames ?? options.accessibleMcpServerNames,
+        userId: user,
+        role: options.req?.user?.role,
+      })
+    : { names: [], complete: true };
+  const serverNameAliases = buildServerNameAliases(collisionAudit.names);
+  const shadowedServers = findShadowedServerNames(collisionAudit.names);
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
@@ -402,14 +434,54 @@ const loadTools = async ({
         continue;
       }
 
-      const [toolName, serverName] = splitMCPToolKey(tool, mcpServerNames);
+      /** Keys carry the normalized server name (raw in pre-normalization data),
+       *  so both spellings resolve the boundary; everything downstream — the
+       *  registry, config maps, cache, and auth rows — is keyed by the RAW name. */
+      const [toolName, parsedServerName] = splitMCPToolKey(tool, [
+        ...mcpServerNames,
+        ...serverNameAliases.values(),
+      ]);
       if (toolName === Constants.mcp_server) {
         /** Placeholder used for UI purposes */
         continue;
       }
-      const serverConfig = serverName
+      /** DIRECT-FIRST: a server resolving under the parsed name as-is wins
+       *  (a user-DB server may be named exactly like an operator server's
+       *  normalized form); only when nothing resolves is the parsed name
+       *  treated as a normalized spelling of a raw config name. */
+      let serverName = parsedServerName;
+      let serverConfig = serverName
         ? await getMCPServersRegistry().getServerConfig(serverName, user, configServers)
         : null;
+      if (!serverConfig && serverName != null) {
+        const aliasedName = serverNameAliases.get(serverName);
+        if (aliasedName != null && aliasedName !== serverName) {
+          serverConfig = await getMCPServersRegistry().getServerConfig(
+            aliasedName,
+            user,
+            configServers,
+          );
+          if (serverConfig) {
+            serverName = aliasedName;
+          }
+        }
+      }
+      /** A shadowed server's instances (wildcard-expanded or single) get the
+       *  SAME normalized names as the winning server's — in-run dispatch
+       *  could execute either. Fail closed at execution too, since legacy
+       *  raw keys and `mcp_all` tokens bypass catalog filtering. Under an
+       *  incomplete audit, any normalization-sensitive reference is
+       *  potentially shadowed and fails closed the same way. */
+      if (
+        serverName != null &&
+        (shadowedServers.has(serverName) ||
+          (!collisionAudit.complete && isNormalizationSensitiveName(serverName, mcpRawServerNames)))
+      ) {
+        logger.warn(
+          `[handleTools] Skipping MCP tool "${tool}": server "${serverName}" is shadowed by a name collision (or the collision audit is unavailable); rename one server or retry.`,
+        );
+        continue;
+      }
       if (!serverConfig) {
         logger.warn(
           `MCP server "${serverName}" for "${toolName}" tool is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,
