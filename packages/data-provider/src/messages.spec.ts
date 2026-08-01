@@ -98,7 +98,7 @@ describe('buildTree', () => {
     expect(siblings.map((c) => c.depth)).toEqual([5, 5, 5]);
   });
 
-  it('surfaces nodes on a corrupt parent cycle as roots instead of dropping them', () => {
+  it('surfaces a corrupt parent cycle as a root and severs the back-edge', () => {
     const tree = buildTree({
       messages: [msg('u1', '00000000-0000-0000-0000-000000000000'), msg('x', 'y'), msg('y', 'x')],
     });
@@ -107,8 +107,12 @@ describe('buildTree', () => {
     expect(rootIds).toContain('u1');
     expect(rootIds).toContain('x');
     const cycleRoot = asParent(tree?.find((node) => node.messageId === 'x'));
-    expect(asParent(cycleRoot.children[0]).messageId).toBe('y');
-    expect(asParent(cycleRoot.children[0]).depth).toBe(1);
+    const y = asParent(cycleRoot.children[0]);
+    expect(y.messageId).toBe('y');
+    expect(y.depth).toBe(1);
+    /** The returned structure must be acyclic: recursive consumers
+     *  (MultiMessage, branch utilities) walk `children` unguarded. */
+    expect(y.children).toEqual([]);
   });
 
   it('treats a self-parented message as a root', () => {
