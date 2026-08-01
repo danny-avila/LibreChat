@@ -114,11 +114,12 @@ describe('useMissingConversationRecovery', () => {
     });
   });
 
-  it('restores the route when messages become visible on recheck', async () => {
+  it('restores the route and rechecks status when messages become visible', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const onConfirmedMissing = jest.fn();
     const messages = [{ messageId: 'persisted-message' }] as TMessage[];
     mockGetMessages.mockResolvedValue(messages);
+    mockFetchStreamStatus.mockResolvedValue({ active: false });
 
     renderHook(
       () =>
@@ -132,7 +133,61 @@ describe('useMissingConversationRecovery', () => {
     await advanceRecoveryDelay();
 
     expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(messages);
-    expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID);
+    expect(onConfirmedMissing).not.toHaveBeenCalled();
+  });
+
+  it('hands off a generation that starts while messages become visible', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onConfirmedMissing = jest.fn();
+    const messages = [{ messageId: 'persisted-message' }] as TMessage[];
+    mockGetMessages.mockResolvedValue(messages);
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      generationProtocolVersion: 1,
+      streamId: CONVERSATION_ID,
+    });
+
+    renderHook(
+      () =>
+        useMissingConversationRecovery({
+          conversationId: CONVERSATION_ID,
+          enabled: true,
+          onConfirmedMissing,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    await advanceRecoveryDelay();
+
+    expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(messages);
+    expect(queryClient.getQueryData(['streamStatus', CONVERSATION_ID])).toEqual({
+      active: true,
+      generationHandoff: true,
+      generationProtocolVersion: 1,
+      streamId: CONVERSATION_ID,
+    });
+    expect(onConfirmedMissing).not.toHaveBeenCalled();
+  });
+
+  it('restores visible messages when the status recheck fails', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onConfirmedMissing = jest.fn();
+    const messages = [{ messageId: 'persisted-message' }] as TMessage[];
+    mockGetMessages.mockResolvedValue(messages);
+    mockFetchStreamStatus.mockRejectedValue(new Error('status unavailable'));
+
+    renderHook(
+      () =>
+        useMissingConversationRecovery({
+          conversationId: CONVERSATION_ID,
+          enabled: true,
+          onConfirmedMissing,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    await advanceRecoveryDelay();
+
+    expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(messages);
     expect(onConfirmedMissing).not.toHaveBeenCalled();
   });
 

@@ -48,12 +48,9 @@ export default function useMissingConversationRecovery({
     let cancelled = false;
     const timeout = setTimeout(() => {
       void (async () => {
+        let recoveredMessages: TMessage[] | null = null;
         try {
-          const messages = await dataService.getMessagesByConvoId(conversationId);
-          if (!cancelled) {
-            queryClient.setQueryData<TMessage[]>([QueryKeys.messages, conversationId], messages);
-          }
-          return;
+          recoveredMessages = await dataService.getMessagesByConvoId(conversationId);
         } catch (error) {
           if (cancelled || !isNotFoundError(error)) {
             return;
@@ -64,12 +61,24 @@ export default function useMissingConversationRecovery({
         try {
           verifiedStatus = await fetchStreamStatus(conversationId);
         } catch {
+          if (!cancelled && recoveredMessages != null) {
+            queryClient.setQueryData<TMessage[]>(
+              [QueryKeys.messages, conversationId],
+              recoveredMessages,
+            );
+          }
           return;
         }
         if (cancelled) {
           return;
         }
 
+        if (recoveredMessages != null) {
+          queryClient.setQueryData<TMessage[]>(
+            [QueryKeys.messages, conversationId],
+            recoveredMessages,
+          );
+        }
         queryClient.setQueryData(
           streamStatusQueryKey(conversationId),
           verifiedStatus.active
@@ -91,6 +100,10 @@ export default function useMissingConversationRecovery({
           convertSteersToQueued(conversationId, leftoverSteers, {
             generationProtocolVersion: getGenerationProtocolVersion(verifiedStatus),
           });
+          return;
+        }
+
+        if (recoveredMessages != null) {
           return;
         }
 

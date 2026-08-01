@@ -427,6 +427,68 @@ describe('useResumeOnLoad', () => {
     ).toHaveLength(1);
   });
 
+  it('reprocesses a route when verification discovers an active protocol-v1 generation', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    let status: StreamStatusResponse = { active: false };
+    mockUseStreamStatus.mockImplementation(() => ({
+      isSuccess: true,
+      isFetching: false,
+      data: status,
+    }));
+    const rendered = renderUseResumeOnLoad({
+      messages: [buildUserMessage(CONVERSATION_ID)],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    status = {
+      active: true,
+      generationHandoff: true,
+      generationProtocolVersion: 1,
+      status: 'running',
+      streamId: CONVERSATION_ID,
+      resumeState: {
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'legacy generation' }],
+        responseMessageId: RESPONSE_MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        userMessage: {
+          messageId: USER_MESSAGE_ID,
+          parentMessageId: String(Constants.NO_PARENT),
+          conversationId: CONVERSATION_ID,
+          text: 'Hello',
+        },
+      },
+    };
+    rendered.rerender();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const resumed = observedSubmissions[observedSubmissions.length - 1] as TSubmission & {
+      resumeStreamId?: string;
+      resumeGenerationProtocolVersion?: number;
+    };
+    expect(resumed.resumeStreamId).toBe(CONVERSATION_ID);
+    expect(resumed.resumeGenerationProtocolVersion).toBe(1);
+
+    await act(async () => {
+      rendered.setSubmission(null);
+      await Promise.resolve();
+    });
+    expect(
+      observedSubmissions.filter(
+        (candidate) =>
+          (candidate as (TSubmission & { resumeGenerationProtocolVersion?: number }) | null)
+            ?.resumeGenerationProtocolVersion === 1,
+      ),
+    ).toHaveLength(1);
+  });
+
   it('strips the paused user/assistant rows from submission.messages (no duplicate on resume)', async () => {
     const observedSubmissions: Array<TSubmission | null> = [];
     mockUseStreamStatus.mockReturnValue({
