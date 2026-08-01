@@ -761,6 +761,35 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('retains 404 recovery and retries when persisted messages cannot be fetched', async () => {
+    jest.useFakeTimers();
+    mockFetchQuery.mockRejectedValueOnce(new Error('message refetch failed'));
+    mockFetchStreamStatus.mockResolvedValue({ active: false, status: 'complete' });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    const countBefore404 = mockSSEInstances.length;
+
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 404 });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetSubmission).not.toHaveBeenCalledWith(null);
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(true);
+    expect(mockSetShowStopButton).toHaveBeenLastCalledWith(false);
+    expect(mockSSEInstances).toHaveLength(countBefore404);
+    expect(jest.getTimerCount()).toBe(1);
+
+    unmount();
+    await advanceRetryTimer(30_000);
+    expect(mockSSEInstances).toHaveLength(countBefore404);
+  });
+
   it('seeds sidebar and message caches for a new conversation once the stream id is known', async () => {
     const submission = buildSubmission({
       conversation: {},
@@ -3581,7 +3610,7 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('does not complete a terminal retry-ceiling status when persisted messages cannot be fetched', async () => {
+  it('retains terminal recovery and retries when persisted messages cannot be fetched', async () => {
     jest.useFakeTimers();
     mockFetchStreamStatus.mockResolvedValue({
       active: false,
@@ -3614,13 +3643,16 @@ describe('useResumableSSE', () => {
     });
     await flushMicrotasks();
 
-    expect(mockSetRunEnd).toHaveBeenCalledWith(
-      expect.objectContaining({ conversationId: CONV_ID, outcome: 'error' }),
-    );
-    expect(mockSetRunEnd).not.toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: 'completed' }),
-    );
+    const countAtCeiling = mockSSEInstances.length;
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetSubmission).not.toHaveBeenCalledWith(null);
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(true);
+    expect(mockSetShowStopButton).toHaveBeenLastCalledWith(false);
     expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
+
+    await advanceRetryTimer(30_000);
+    expect(mockSSEInstances).toHaveLength(countAtCeiling + 1);
+    expect(getLastSSE().stream).toHaveBeenCalledTimes(1);
     unmount();
   });
 

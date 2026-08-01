@@ -1389,6 +1389,23 @@ export default function useResumableSSE(
         lifecycleSignal?.aborted !== true &&
         sseRef.current === sse &&
         submissionRef.current === currentSubmission;
+      const retryPersistedMessageReconciliation = () => {
+        reconnectAttemptRef.current = 0;
+        setIsSubmitting(true);
+        setShowStopButton(false);
+        reconnectTimeoutRef.current = setTimeout(() => {
+          if (isCurrentSubscription() && submissionRef.current) {
+            subscribeToStream(
+              currentStreamId,
+              submissionRef.current,
+              true,
+              generationCreatedAt,
+              generationProtocolVersion,
+              lifecycleSignal,
+            );
+          }
+        }, 30_000);
+      };
 
       sse.addEventListener('open', () => {
         if (!isCurrentSubscription()) {
@@ -2582,6 +2599,14 @@ export default function useResumableSSE(
             });
           }
 
+          if (convoId && persistedMessages == null) {
+            // A missing stream only proves that the transport job is gone. If
+            // durable history is temporarily unavailable, keep this
+            // submission as the recovery owner and reconcile again later.
+            retryPersistedMessageReconciliation();
+            return;
+          }
+
           removeActiveJob(currentStreamId);
           clearAttachedGenerationCreatedAt();
           if (
@@ -2974,8 +2999,16 @@ export default function useResumableSSE(
             });
           }
 
+          if (persistedMessages == null) {
+            // Terminal status is authoritative for the job, but not for its
+            // durable messages. A transient history failure must not clear the
+            // submission and strand the completed response until reload.
+            retryPersistedMessageReconciliation();
+            return;
+          }
+
           const authoritativeValues = [
-            ...(persistedMessages ?? []),
+            ...persistedMessages,
             ...(status.resumeState?.aggregatedContent ?? status.aggregatedContent ?? []),
           ];
           const confirmedV2Terminal =
