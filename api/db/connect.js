@@ -97,6 +97,18 @@ mongoose.connection.on('error', (err) => {
   logger.error('[connectDb] MongoDB connection error:', err);
 });
 
+mongoose.connection.on('disconnected', () => {
+  logger.warn('[connectDb] MongoDB connection lost (disconnected)');
+});
+
+mongoose.connection.on('reconnected', () => {
+  logger.info('[connectDb] MongoDB connection restored (reconnected)');
+});
+
+mongoose.connection.on('close', () => {
+  logger.warn('[connectDb] MongoDB connection closed');
+});
+
 async function connectDb() {
   if (cached.conn && cached.conn?._readyState === 1) {
     return cached.conn;
@@ -109,7 +121,7 @@ async function connectDb() {
     logger.info(JSON.stringify(opts, null, 2));
     mongoose.set('strictQuery', true);
     cached.promise = mongoose.connect(MONGO_URI, opts).then((mongoose) => {
-      return mongoose;
+      return mongoose.connection;
     });
   }
   cached.conn = await cached.promise;

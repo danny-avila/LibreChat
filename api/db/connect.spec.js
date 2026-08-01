@@ -1,3 +1,4 @@
+const { MongoMemoryServer } = require('mongodb-memory-server');
 const { buildMongoConnectionOptions } = require('./connect');
 
 describe('buildMongoConnectionOptions', () => {
@@ -64,5 +65,64 @@ describe('buildMongoConnectionOptions', () => {
 
     expect(options.maxPoolSize).toBe(10);
     expect(options.autoIndex).toBe(false);
+  });
+});
+
+describe('connectDb connection event listeners', () => {
+  let mongoServer;
+  let mongoose;
+  let logger;
+  let connectDb;
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    process.env.MONGO_URI = mongoServer.getUri();
+
+    jest.resetModules();
+
+    jest.doMock('@librechat/data-schemas', () => ({
+      logger: {
+        warn: jest.fn(),
+        info: jest.fn(),
+        error: jest.fn(),
+      },
+    }));
+
+    mongoose = require('mongoose');
+    ({ logger } = require('@librechat/data-schemas'));
+    ({ connectDb } = require('./connect'));
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('connectDb establishes a real connection using the tuned options', async () => {
+    const conn = await connectDb();
+    expect(conn.readyState).toBe(1);
+  });
+
+  test('logs a warning when the connection emits "disconnected"', () => {
+    mongoose.connection.emit('disconnected');
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[connectDb] MongoDB connection lost (disconnected)',
+    );
+  });
+
+  test('logs info when the connection emits "reconnected"', () => {
+    mongoose.connection.emit('reconnected');
+    expect(logger.info).toHaveBeenCalledWith(
+      '[connectDb] MongoDB connection restored (reconnected)',
+    );
+  });
+
+  test('logs a warning when the connection emits "close"', () => {
+    mongoose.connection.emit('close');
+    expect(logger.warn).toHaveBeenCalledWith('[connectDb] MongoDB connection closed');
   });
 });
