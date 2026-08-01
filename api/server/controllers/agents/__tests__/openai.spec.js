@@ -11,6 +11,12 @@ const mockRecordCollectedUsage = jest
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
+class MockAgentRunEnvelopeError extends TypeError {
+  constructor(message) {
+    super(message);
+    this.name = 'AgentRunEnvelopeError';
+  }
+}
 const mockCreateAgentRunEnvelope = jest.fn(
   ({ protocol, requestId, receivedAt, principal, payload }) => ({
     version: 1,
@@ -102,6 +108,7 @@ jest.mock('@librechat/api', () => ({
   }),
   createChunk: jest.fn().mockReturnValue({}),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
+  AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
   scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
   resolveAgentScopedSkillIds: jest
@@ -383,6 +390,20 @@ describe('OpenAIChatCompletionController', () => {
       expect(JSON.stringify(mockCreateAgentRunEnvelope.mock.results[0].value)).not.toContain(
         'secret',
       );
+    });
+
+    it('returns a protocol 400 when the envelope rejects a non-JSON payload', async () => {
+      const message = 'payload.max_tokens must contain only finite numbers';
+      const { createErrorResponse, initializeAgent } = require('@librechat/api');
+      mockCreateAgentRunEnvelope.mockImplementationOnce(() => {
+        throw new MockAgentRunEnvelopeError(message);
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(createErrorResponse).toHaveBeenCalledWith(message, 'invalid_request_error', null);
+      expect(initializeAgent).not.toHaveBeenCalled();
     });
   });
 

@@ -13,6 +13,7 @@ const {
   createRun,
   createChunk,
   buildToolSet,
+  AgentRunEnvelopeError,
   createAgentRunEnvelope,
   loadSkillStates,
   sendFinalChunk,
@@ -901,13 +902,21 @@ const OpenAIChatCompletionController = async (req, res) => {
     return sendErrorResponse(res, 400, validation.error);
   }
 
-  const envelope = createAgentRunEnvelope({
-    protocol: 'chat.completions',
-    requestId: req.requestId ?? req.id ?? `agent-run-${nanoid()}`,
-    receivedAt,
-    principal: req.user,
-    payload: validation.request,
-  });
+  let envelope;
+  try {
+    envelope = createAgentRunEnvelope({
+      protocol: 'chat.completions',
+      requestId: req.requestId ?? req.id ?? `agent-run-${nanoid()}`,
+      receivedAt,
+      principal: req.user,
+      payload: validation.request,
+    });
+  } catch (error) {
+    if (error instanceof AgentRunEnvelopeError) {
+      return sendErrorResponse(res, 400, error.message, 'invalid_request_error');
+    }
+    throw error;
+  }
 
   return executeOpenAIChatCompletion(envelope, { req, res });
 };

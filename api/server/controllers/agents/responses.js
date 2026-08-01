@@ -13,6 +13,7 @@ const {
   createRun,
   applyContextToAgent,
   buildToolSet,
+  AgentRunEnvelopeError,
   createAgentRunEnvelope,
   buildAgentScopedContext,
   buildAgentContextAttachmentsByAgentId,
@@ -1102,13 +1103,21 @@ const createResponse = async (req, res) => {
     return sendResponsesErrorResponse(res, 400, validation.error);
   }
 
-  const envelope = createAgentRunEnvelope({
-    protocol: 'responses',
-    requestId: req.requestId ?? req.id ?? `agent-run-${nanoid()}`,
-    receivedAt,
-    principal: req.user,
-    payload: validation.request,
-  });
+  let envelope;
+  try {
+    envelope = createAgentRunEnvelope({
+      protocol: 'responses',
+      requestId: req.requestId ?? req.id ?? `agent-run-${nanoid()}`,
+      receivedAt,
+      principal: req.user,
+      payload: validation.request,
+    });
+  } catch (error) {
+    if (error instanceof AgentRunEnvelopeError) {
+      return sendResponsesErrorResponse(res, 400, error.message, 'invalid_request');
+    }
+    throw error;
+  }
 
   return executeResponse(envelope, { req, res });
 };

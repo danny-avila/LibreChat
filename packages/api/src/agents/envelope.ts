@@ -90,7 +90,8 @@ function assertNonEmptyString(value: string | undefined, path: string): string {
   return value;
 }
 
-function cloneJsonValue(value: unknown, path: string, ancestors: WeakSet<object>): JsonValue {
+function cloneJsonValue<T>(value: T, path: string, ancestors: WeakSet<object>): T;
+function cloneJsonValue(value: unknown, path: string, ancestors: WeakSet<object>): unknown {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') {
     return value;
   }
@@ -135,7 +136,7 @@ function cloneJsonValue(value: unknown, path: string, ancestors: WeakSet<object>
         throw new AgentRunEnvelopeError(`${path} contains non-index array properties`);
       }
 
-      const cloned: JsonValue[] = [];
+      const cloned: unknown[] = [];
       for (let index = 0; index < value.length; index++) {
         if (!Object.prototype.hasOwnProperty.call(value, index)) {
           throw new AgentRunEnvelopeError(
@@ -158,7 +159,7 @@ function cloneJsonValue(value: unknown, path: string, ancestors: WeakSet<object>
       throw new AgentRunEnvelopeError(`${path} contains a non-plain ${typeName} value`);
     }
 
-    const cloned: { [key: string]: JsonValue } = {};
+    const cloned: { [key: string]: unknown } = {};
     for (const key of Object.getOwnPropertyNames(value)) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (descriptor?.enumerable !== true) {
@@ -213,7 +214,6 @@ export function createAgentRunEnvelope(input: CreateAgentRunEnvelopeInput): Agen
     throw new AgentRunEnvelopeError('receivedAt must be a non-negative integer timestamp');
   }
 
-  const payload = cloneJsonValue(input.payload, 'payload', new WeakSet());
   const base = {
     version: AGENT_RUN_ENVELOPE_VERSION,
     requestId,
@@ -225,7 +225,7 @@ export function createAgentRunEnvelope(input: CreateAgentRunEnvelopeInput): Agen
     return {
       ...base,
       protocol: input.protocol,
-      payload: payload as unknown as ChatCompletionRunPayload,
+      payload: cloneJsonValue(input.payload, 'payload', new WeakSet()),
     };
   }
 
@@ -233,7 +233,7 @@ export function createAgentRunEnvelope(input: CreateAgentRunEnvelopeInput): Agen
     return {
       ...base,
       protocol: input.protocol,
-      payload: payload as unknown as ResponsesRunPayload,
+      payload: cloneJsonValue(input.payload, 'payload', new WeakSet()),
     };
   }
 

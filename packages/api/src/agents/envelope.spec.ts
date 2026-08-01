@@ -67,6 +67,7 @@ describe('createAgentRunEnvelope', () => {
     ['bigint', BigInt(1)],
     ['symbol', Symbol('value')],
     ['non-finite number', Number.NaN],
+    ['positive infinity', Number.POSITIVE_INFINITY],
     ['class instance', new Date()],
   ])('rejects a %s in the payload', (_label, value) => {
     expect(() =>
