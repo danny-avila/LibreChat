@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { VisuallyHidden } from '@ariakit/react';
 import { Spinner, TooltipAnchor } from '@librechat/client';
 import { CheckCircle2, MousePointerClick, SettingsIcon } from 'lucide-react';
@@ -6,12 +6,13 @@ import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librecha
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem, CustomMenuSeparator } from '../CustomMenu';
+import { renderEndpointModels, VIRTUALIZE_THRESHOLD } from './EndpointModelItem';
 import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
 import { filterModels, shouldRenderEndpointOption } from '../utils';
 import { useModelSelectorContext } from '../ModelSelectorContext';
-import { renderEndpointModels } from './EndpointModelItem';
+import VirtualizedModelList from './VirtualizedModelList';
+import { useFavorites, useLocalize } from '~/hooks';
 import { ModelSpecItem } from './ModelSpecItem';
-import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface EndpointItemProps {
@@ -140,12 +141,77 @@ function EndpointMenuContent({
       {endpointSpecs.map((spec: TModelSpec) => (
         <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
       ))}
-      {filteredModels
-        ? renderEndpointModels(endpoint, endpoint.models || [], filteredModels, endpointIndex)
-        : endpoint.models &&
-          renderEndpointModels(endpoint, endpoint.models, undefined, endpointIndex)}
+      <EndpointModels
+        endpoint={endpoint}
+        renderedModels={renderedModels}
+        endpointIndex={endpointIndex}
+      />
     </>
   );
+}
+
+/**
+ * Owns the model rows for one endpoint. `useFavorites` is called once here rather
+ * than inside each row: it opens a jotai subscription, a React Query subscription
+ * and a mutation per call site, which at agent-list scale was thousands of live
+ * subscriptions for one dropdown.
+ */
+function EndpointModels({
+  endpoint,
+  renderedModels,
+  endpointIndex,
+}: {
+  endpoint: Endpoint;
+  renderedModels: string[];
+  endpointIndex: number;
+}) {
+  const { isFavoriteModel, toggleFavoriteModel, isFavoriteAgent, toggleFavoriteAgent } =
+    useFavorites();
+  const isAgent = isAgentsEndpoint(endpoint.value);
+
+  const isFavorite = useCallback(
+    (modelId: string) =>
+      isAgent ? isFavoriteAgent(modelId) : isFavoriteModel(modelId, endpoint.value),
+    [isAgent, isFavoriteAgent, isFavoriteModel, endpoint.value],
+  );
+  const onToggleFavorite = useCallback(
+    (modelId: string) => {
+      if (isAgent) {
+        toggleFavoriteAgent(modelId);
+      } else {
+        toggleFavoriteModel({ model: modelId, endpoint: endpoint.value });
+      }
+    },
+    [isAgent, toggleFavoriteAgent, toggleFavoriteModel, endpoint.value],
+  );
+
+  const models = useMemo(() => endpoint.models ?? [], [endpoint.models]);
+  const globalByName = useMemo(
+    () => new Map(models.map((model) => [model.name, model.isGlobal ?? false])),
+    [models],
+  );
+
+  if (!renderedModels.length) {
+    return null;
+  }
+
+  if (renderedModels.length > VIRTUALIZE_THRESHOLD) {
+    return (
+      <VirtualizedModelList
+        endpoint={endpoint}
+        modelIds={renderedModels}
+        globalByName={globalByName}
+        isFavorite={isFavorite}
+        onToggleFavorite={onToggleFavorite}
+        endpointIndex={endpointIndex}
+      />
+    );
+  }
+
+  return renderEndpointModels(endpoint, models, renderedModels, endpointIndex, {
+    isFavorite,
+    onToggleFavorite,
+  });
 }
 
 export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
