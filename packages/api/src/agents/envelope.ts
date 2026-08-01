@@ -3,6 +3,7 @@ import type { ChatCompletionRequest } from './openai';
 import type { ResponseRequest } from './responses';
 
 export const AGENT_RUN_ENVELOPE_VERSION = 1 as const;
+export const AGENT_RUN_ENVELOPE_MAX_NESTING_DEPTH = 64;
 
 export type AgentRunProtocol = 'chat.completions' | 'responses';
 
@@ -90,8 +91,19 @@ function assertNonEmptyString(value: string | undefined, path: string): string {
   return value;
 }
 
-function cloneJsonValue<T>(value: T, path: string, ancestors: WeakSet<object>): T;
-function cloneJsonValue(value: unknown, path: string, ancestors: WeakSet<object>): unknown {
+function cloneJsonValue<T>(value: T, path: string, ancestors: WeakSet<object>, depth: number): T;
+function cloneJsonValue(
+  value: unknown,
+  path: string,
+  ancestors: WeakSet<object>,
+  depth: number,
+): unknown {
+  if (depth > AGENT_RUN_ENVELOPE_MAX_NESTING_DEPTH) {
+    throw new AgentRunEnvelopeError(
+      `${path} exceeds the maximum nesting depth of ${AGENT_RUN_ENVELOPE_MAX_NESTING_DEPTH}`,
+    );
+  }
+
   if (value === null || typeof value === 'string' || typeof value === 'boolean') {
     return value;
   }
@@ -120,35 +132,31 @@ function cloneJsonValue(value: unknown, path: string, ancestors: WeakSet<object>
     }
 
     if (Array.isArray(value)) {
-      const extraKeys = Object.getOwnPropertyNames(value).filter((key) => {
+      const cloned: unknown[] = new Array(value.length);
+      let clonedItemCount = 0;
+      for (const key of Object.getOwnPropertyNames(value)) {
         if (key === 'length') {
-          return false;
+          continue;
         }
         const index = Number(key);
-        return (
+        if (
           !Number.isSafeInteger(index) ||
           index < 0 ||
           index >= value.length ||
           String(index) !== key
-        );
-      });
-      if (extraKeys.length > 0) {
-        throw new AgentRunEnvelopeError(`${path} contains non-index array properties`);
-      }
-
-      const cloned: unknown[] = [];
-      for (let index = 0; index < value.length; index++) {
-        if (!Object.prototype.hasOwnProperty.call(value, index)) {
-          throw new AgentRunEnvelopeError(
-            `${path} contains a sparse array entry at index ${index}`,
-          );
+        ) {
+          throw new AgentRunEnvelopeError(`${path} contains non-index array properties`);
         }
-        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
         if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
           throw new AgentRunEnvelopeError(`${path}[${index}] must not be an accessor property`);
         }
         const itemValue: unknown = descriptor.value;
-        cloned.push(cloneJsonValue(itemValue, `${path}[${index}]`, ancestors));
+        cloned[index] = cloneJsonValue(itemValue, `${path}[${index}]`, ancestors, depth + 1);
+        clonedItemCount++;
+      }
+      if (clonedItemCount !== value.length) {
+        throw new AgentRunEnvelopeError(`${path} contains sparse array entries`);
       }
       return cloned;
     }
@@ -173,7 +181,7 @@ function cloneJsonValue(value: unknown, path: string, ancestors: WeakSet<object>
         configurable: true,
         enumerable: true,
         writable: true,
-        value: cloneJsonValue(propertyValue, `${path}.${key}`, ancestors),
+        value: cloneJsonValue(propertyValue, `${path}.${key}`, ancestors, depth + 1),
       });
     }
     return cloned;
@@ -225,7 +233,7 @@ export function createAgentRunEnvelope(input: CreateAgentRunEnvelopeInput): Agen
     return {
       ...base,
       protocol: input.protocol,
-      payload: cloneJsonValue(input.payload, 'payload', new WeakSet()),
+      payload: cloneJsonValue(input.payload, 'payload', new WeakSet(), 0),
     };
   }
 
@@ -233,7 +241,7 @@ export function createAgentRunEnvelope(input: CreateAgentRunEnvelopeInput): Agen
     return {
       ...base,
       protocol: input.protocol,
-      payload: cloneJsonValue(input.payload, 'payload', new WeakSet()),
+      payload: cloneJsonValue(input.payload, 'payload', new WeakSet(), 0),
     };
   }
 

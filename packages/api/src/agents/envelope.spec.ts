@@ -1,4 +1,5 @@
 import {
+  AGENT_RUN_ENVELOPE_MAX_NESTING_DEPTH,
   AGENT_RUN_ENVELOPE_VERSION,
   AgentRunEnvelopeError,
   createAgentRunEnvelope,
@@ -90,6 +91,20 @@ describe('createAgentRunEnvelope', () => {
     ).toThrow('payload.circular contains a circular reference');
   });
 
+  it('rejects payloads that exceed the bounded nesting depth', () => {
+    let nested: unknown = 'value';
+    for (let depth = 0; depth <= AGENT_RUN_ENVELOPE_MAX_NESTING_DEPTH; depth++) {
+      nested = [nested];
+    }
+
+    expect(() =>
+      createAgentRunEnvelope({
+        ...createBaseInput(),
+        payload: { ...createBaseInput().payload, nested },
+      } as unknown as Parameters<typeof createAgentRunEnvelope>[0]),
+    ).toThrow(`exceeds the maximum nesting depth of ${AGENT_RUN_ENVELOPE_MAX_NESTING_DEPTH}`);
+  });
+
   it('rejects sparse arrays and hidden object state', () => {
     const sparse = Array<string>(1);
     expect(() =>
@@ -97,7 +112,7 @@ describe('createAgentRunEnvelope', () => {
         ...createBaseInput(),
         payload: { ...createBaseInput().payload, sparse },
       } as unknown as Parameters<typeof createAgentRunEnvelope>[0]),
-    ).toThrow('payload.sparse contains a sparse array entry at index 0');
+    ).toThrow('payload.sparse contains sparse array entries');
 
     const payload = { ...createBaseInput().payload };
     Object.defineProperty(payload, 'hidden', { enumerable: false, value: 'state' });
