@@ -11,6 +11,20 @@ const mockRecordCollectedUsage = jest
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
+const mockCreateAgentRunEnvelope = jest.fn(
+  ({ protocol, requestId, receivedAt, principal, payload }) => ({
+    version: 1,
+    protocol,
+    requestId,
+    receivedAt,
+    principal: {
+      userId: principal.id,
+      ...(principal.role != null && { role: principal.role }),
+      ...(principal.tenantId != null && { tenantId: principal.tenantId }),
+    },
+    payload: JSON.parse(JSON.stringify(payload)),
+  }),
+);
 const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
   const primed = {};
   for (const skill of alwaysApplySkillPrimes ?? []) {
@@ -88,6 +102,7 @@ jest.mock('@librechat/api', () => ({
   }),
   createChunk: jest.fn().mockReturnValue({}),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
+  createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
   scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
   resolveAgentScopedSkillIds: jest
     .fn()
@@ -328,6 +343,46 @@ describe('OpenAIChatCompletionController', () => {
 
       await OpenAIChatCompletionController(req, res);
       expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  describe('execution envelope', () => {
+    it('creates the portable run input before agent initialization', async () => {
+      req.user = {
+        id: 'user-123',
+        role: 'USER',
+        tenantId: 'tenant-123',
+        federatedTokens: { access_token: 'secret' },
+      };
+      const requestBody = {
+        ...req.body,
+        ephemeralAgent: { skills: true },
+        manualSkills: ['review-code'],
+        timezone: 'America/New_York',
+      };
+      req.body = requestBody;
+      const { validateRequest, initializeAgent } = require('@librechat/api');
+      validateRequest.mockReturnValueOnce({ request: requestBody });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(mockCreateAgentRunEnvelope).toHaveBeenCalledWith(
+        expect.objectContaining({
+          protocol: 'chat.completions',
+          principal: req.user,
+          payload: requestBody,
+          requestId: expect.any(String),
+          receivedAt: expect.any(Number),
+        }),
+      );
+      expect(mockCreateAgentRunEnvelope.mock.invocationCallOrder[0]).toBeLessThan(
+        initializeAgent.mock.invocationCallOrder[0],
+      );
+      expect(req.body).not.toBe(requestBody);
+      expect(req.body).toEqual(requestBody);
+      expect(JSON.stringify(mockCreateAgentRunEnvelope.mock.results[0].value)).not.toContain(
+        'secret',
+      );
     });
   });
 
