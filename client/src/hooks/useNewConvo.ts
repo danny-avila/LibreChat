@@ -88,6 +88,7 @@ const useNewConvo = (index = 0) => {
         keepAddedConvos?: boolean,
         disableFocus?: boolean,
         _disableParams?: boolean,
+        replaceHistory?: boolean,
       ) => {
         const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
@@ -268,7 +269,11 @@ const useNewConvo = (index = 0) => {
           if (!disableFocus) {
             requestChatFocus();
           }
-          navigate(path);
+          if (replaceHistory) {
+            navigate(path, { replace: true });
+          } else {
+            navigate(path);
+          }
           return;
         }
 
@@ -297,6 +302,7 @@ const useNewConvo = (index = 0) => {
       buildDefault = true,
       keepAddedConvos = false,
       disableParams,
+      replace = false,
     }: {
       template?: Partial<TConversation>;
       preset?: Partial<TPreset>;
@@ -305,6 +311,7 @@ const useNewConvo = (index = 0) => {
       disableFocus?: boolean;
       keepAddedConvos?: boolean;
       disableParams?: boolean;
+      replace?: boolean;
     } = {}) {
       pauseGlobalAudio();
       if (!saveBadgesState) {
@@ -385,6 +392,7 @@ const useNewConvo = (index = 0) => {
         keepAddedConvos,
         disableFocus,
         disableParams,
+        replace,
       );
     },
     [
