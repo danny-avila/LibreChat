@@ -430,7 +430,7 @@ class TTSService {
 
                 const response = await this.ttsRequest(provider, ttsSchema, {
                   voice,
-                  input: textChunks[i],
+                  input: textChunks[i].text,
                   stream: true,
                 });
 
