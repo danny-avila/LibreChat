@@ -30,7 +30,12 @@ export function buildTree({
     if (!message) {
       continue;
     }
-    const parentId = message.parentMessageId ?? '';
+    /** A self-parented row can never link under itself (it becomes a root),
+     *  so count it with the parentless group — charging its own id would
+     *  inflate the sibling indices of its real children past
+     *  `children.length`. */
+    const parentId =
+      message.parentMessageId === message.messageId ? '' : (message.parentMessageId ?? '');
     childrenCount[parentId] = (childrenCount[parentId] || 0) + 1;
 
     const extendedMessage: ParentMessage = {

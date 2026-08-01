@@ -116,13 +116,17 @@ describe('buildTree', () => {
     expect(y.children).toEqual([]);
   });
 
-  it('treats a self-parented message as a root', () => {
-    const tree = buildTree({ messages: [msg('loop', 'loop'), msg('a', 'loop')] });
+  it('treats a self-parented message as a root without inflating child sibling indices', () => {
+    const tree = buildTree({ messages: [msg('loop', 'loop'), msg('a', 'loop'), msg('b', 'loop')] });
 
     expect(tree).toHaveLength(1);
     const root = asParent(tree?.[0]);
     expect(root.messageId).toBe('loop');
-    expect(asParent(root.children[0]).messageId).toBe('a');
+    /** The rejected self-edge must not be charged to `loop`'s child count:
+     *  sibling indices stay within `children.length`. */
+    const children = root.children.map((c) => asParent(c));
+    expect(children.map((c) => c.messageId)).toEqual(['a', 'b']);
+    expect(children.map((c) => c.siblingIndex)).toEqual([0, 1]);
   });
 
   it('maps files through fileMap and skips undefined entries', () => {
