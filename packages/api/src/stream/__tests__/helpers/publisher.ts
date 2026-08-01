@@ -4,6 +4,7 @@ export interface MockPublisher {
   expire: jest.Mock;
   ttl: jest.Mock;
   get: jest.Mock;
+  set: jest.Mock;
   del: jest.Mock;
   eval: jest.Mock;
 }
@@ -11,6 +12,7 @@ export interface MockPublisher {
 /** Mock publisher with Redis command simulation for atomic sequence counters */
 export function createMockPublisher(): MockPublisher {
   const counters = new Map<string, number>();
+  const values = new Map<string, string>();
   const ttls = new Map<string, number>();
   const publisher: MockPublisher = {
     publish: jest.fn().mockResolvedValue(1),
@@ -33,12 +35,21 @@ export function createMockPublisher(): MockPublisher {
       return Promise.resolve(ttls.get(key) ?? -1);
     }),
     get: jest.fn().mockImplementation((key: string) => {
+      const stored = values.get(key);
+      if (stored != null) {
+        return Promise.resolve(stored);
+      }
       const val = counters.get(key);
       return Promise.resolve(val != null ? String(val) : null);
+    }),
+    set: jest.fn().mockImplementation((key: string, value: string) => {
+      values.set(key, value);
+      return Promise.resolve('OK');
     }),
     del: jest.fn().mockImplementation((...keys: string[]) => {
       for (const key of keys) {
         counters.delete(key);
+        values.delete(key);
         ttls.delete(key);
       }
       return Promise.resolve(keys.length);

@@ -1,11 +1,11 @@
 import type { IMongoFile } from '@librechat/data-schemas';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
+import { handleSteerRequest, handleSteerCancel, handleSteerArm } from '../request';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { isSteeringSupported, isSteerPreemptSupported } from '../runtime';
 import { STEER_QUEUE_MAX_DEPTH } from '~/stream/interfaces/IJobStore';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
-import { handleSteerRequest, handleSteerCancel } from '../request';
 
 jest.mock('../runtime', () => ({
   ...jest.requireActual('../runtime'),
@@ -18,6 +18,12 @@ jest.spyOn(console, 'log').mockImplementation();
 const mockIsSupported = isSteeringSupported as jest.Mock;
 const mockIsPreemptSupported = isSteerPreemptSupported as jest.Mock;
 const user = { id: 'user-1' };
+
+async function removeStoredJobOwner(streamId: string): Promise<void> {
+  const stored = await GenerationJobManager.getJobStore().getJob(streamId);
+  expect(stored).not.toBeNull();
+  delete (stored as { userId?: string }).userId;
+}
 
 describe('handleSteerRequest (real in-memory job manager)', () => {
   beforeEach(() => {
@@ -48,6 +54,42 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     const result = await handleSteerRequest(user, { conversationId: 'c1', text: '   ' });
     expect(result.status).toBe(400);
     expect(result.body.code).toBe('EMPTY_TEXT');
+  });
+
+  it('400s an invalid client correlation id', async () => {
+    const result = await handleSteerRequest(user, {
+      conversationId: 'c1',
+      text: 'valid text',
+      clientSteerId: 'not valid whitespace',
+    });
+    expect(result.status).toBe(400);
+    expect(result.body.code).toBe('INVALID_CLIENT_STEER_ID');
+  });
+
+  it('400s an invalid generation identity', async () => {
+    const result = await handleSteerRequest(user, {
+      conversationId: 'c1',
+      generationCreatedAt: '1000',
+      text: 'valid text',
+    });
+    expect(result).toEqual({
+      status: 400,
+      body: { code: 'INVALID_GENERATION_IDENTITY' },
+    });
+  });
+
+  it('409s a steer targeting a replaced generation without touching the live queue', async () => {
+    const streamId = 'steer-stale-generation';
+    const job = await GenerationJobManager.createJob(streamId, user.id);
+
+    const result = await handleSteerRequest(user, {
+      conversationId: streamId,
+      generationCreatedAt: job.createdAt - 1,
+      text: 'belongs to the previous turn',
+    });
+
+    expect(result).toEqual({ status: 409, body: { code: 'RUN_REPLACED' } });
+    await expect(GenerationJobManager.steering.peek(streamId)).resolves.toEqual([]);
   });
 
   it('413s past the length cap', async () => {
@@ -115,6 +157,17 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     expect(result.body.code).toBe('UNAUTHORIZED');
   });
 
+  it('fails closed when the stored job owner is missing', async () => {
+    const streamId = 'steer-req-missing-owner';
+    await GenerationJobManager.createJob(streamId, user.id);
+    await removeStoredJobOwner(streamId);
+
+    const result = await handleSteerRequest(user, { conversationId: streamId, text: 'x' });
+
+    expect(result).toEqual({ status: 403, body: { code: 'UNAUTHORIZED' } });
+    await expect(GenerationJobManager.steering.peek(streamId)).resolves.toEqual([]);
+  });
+
   it('409s while the run is paused for human review', async () => {
     const streamId = 'steer-req-paused';
     await GenerationJobManager.createJob(streamId, user.id);
@@ -149,12 +202,45 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     expect(overflow.body.code).toBe('STEER_QUEUE_FULL');
   });
 
+  it('429s a new receipt at the history cap while existing ids remain replayable', async () => {
+    const streamId = 'steer-req-receipt-full';
+    await GenerationJobManager.createJob(streamId, user.id);
+    for (let index = 0; index < 100; index++) {
+      const accepted = await handleSteerRequest(user, {
+        conversationId: streamId,
+        clientSteerId: `receipt-cap-${index}`,
+        text: `steer ${index}`,
+      });
+      expect(accepted.status).toBe(202);
+      await expect(
+        GenerationJobManager.steering.cancel(streamId, accepted.body.steerId as string),
+      ).resolves.toBe(true);
+    }
+
+    const overflow = await handleSteerRequest(user, {
+      conversationId: streamId,
+      clientSteerId: 'receipt-cap-overflow',
+      text: 'must not queue',
+    });
+    expect(overflow).toEqual({ status: 429, body: { code: 'STEER_RECEIPT_LIMIT' } });
+    await expect(GenerationJobManager.steering.peek(streamId)).resolves.toEqual([]);
+
+    const replay = await handleSteerRequest(user, {
+      conversationId: streamId,
+      clientSteerId: 'receipt-cap-0',
+      text: 'steer 0',
+    });
+    expect(replay.status).toBe(202);
+    expect(replay.body).toMatchObject({ replayed: true, settled: true });
+  });
+
   it('202s, sanitizes the text, and enqueues sanitized attachment refs', async () => {
     const streamId = 'steer-req-accept';
     await GenerationJobManager.createJob(streamId, user.id);
 
     const result = await handleSteerRequest(user, {
       conversationId: streamId,
+      clientSteerId: 'local-correlation-123',
       text: '  focus on tests\0  ',
       files: [
         {
@@ -182,6 +268,7 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     const queued = await GenerationJobManager.steering.peek(streamId);
     expect(queued).toHaveLength(1);
     expect(queued[0].text).toBe('focus on tests');
+    expect(queued[0].clientSteerId).toBe('local-correlation-123');
     expect(queued[0].userId).toBe(user.id);
     expect(queued[0].files).toEqual([
       {
@@ -285,6 +372,55 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
       expect(result.status).toBe(202);
       expect(getFiles).not.toHaveBeenCalled();
     });
+
+    it('409s when attachment resolution races the same generation into a pause', async () => {
+      const streamId = 'steer-req-file-pause-race';
+      const job = await GenerationJobManager.createJob(streamId, user.id);
+      let signalResolveStarted: (() => void) | undefined;
+      const resolveStarted = new Promise<void>((resolve) => {
+        signalResolveStarted = resolve;
+      });
+      let releaseResolve: ((files: IMongoFile[]) => void) | undefined;
+      const getFiles = jest.fn(
+        () =>
+          new Promise<IMongoFile[]>((resolve) => {
+            releaseResolve = resolve;
+            signalResolveStarted?.();
+          }),
+      );
+
+      const requesting = handleSteerRequest(
+        user,
+        {
+          conversationId: streamId,
+          text: 'queue while approval is open',
+          files: [{ file_id: 'f1' }],
+        },
+        { getFiles },
+      );
+      await resolveStarted;
+      const action = buildPendingAction(
+        buildToolApprovalPayload([
+          { name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_pause_race' },
+        ]),
+        {
+          streamId,
+          conversationId: streamId,
+          runId: 'run-pause-race',
+          responseMessageId: 'msg-pause-race',
+        },
+      );
+      await expect(GenerationJobManager.approvals.pause(streamId, action)).resolves.toBe(true);
+      releaseResolve?.([dbDoc]);
+
+      await expect(requesting).resolves.toEqual({
+        status: 409,
+        body: { code: 'RUN_PAUSED' },
+      });
+      await expect(GenerationJobManager.steering.peek(streamId, job.createdAt)).resolves.toEqual(
+        [],
+      );
+    });
   });
 
   describe('injected updateFilesUsage (upload-window TTL parity)', () => {
@@ -294,7 +430,7 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
       const streamId = 'steer-req-usage-ok';
       await GenerationJobManager.createJob(streamId, user.id);
       const getFiles = jest.fn(async () => [dbDoc]);
-      const updateFilesUsage = jest.fn(async () => []);
+      const updateFilesUsage = jest.fn(async () => [dbDoc]);
 
       const result = await handleSteerRequest(
         user,
@@ -309,7 +445,7 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
       });
     });
 
-    it('does not mark usage on a rejected steer and never fails the 202', async () => {
+    it('does not enqueue when resolved upload retention fails', async () => {
       const streamId = 'steer-req-usage-deny';
       await GenerationJobManager.createJob(streamId, user.id);
       const getFiles = jest.fn(async () => [dbDoc]);
@@ -331,9 +467,62 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
         { conversationId: streamId, text: 'x', files: [{ file_id: 'f1' }] },
         { getFiles, updateFilesUsage: failing },
       );
-      expect(accepted.status).toBe(202);
-      await new Promise(setImmediate);
+      expect(accepted).toEqual({
+        status: 503,
+        body: { code: 'STEER_FILE_RETENTION_FAILED' },
+      });
       expect(failing).toHaveBeenCalledTimes(1);
+      await expect(GenerationJobManager.steering.peek(streamId)).resolves.toEqual([]);
+
+      const missing = await handleSteerRequest(
+        user,
+        { conversationId: streamId, text: 'x', files: [{ file_id: 'f1' }] },
+        { getFiles, updateFilesUsage: jest.fn(async () => []) },
+      );
+      expect(missing).toEqual({
+        status: 503,
+        body: { code: 'STEER_FILE_RETENTION_FAILED' },
+      });
+      await expect(GenerationJobManager.steering.peek(streamId)).resolves.toEqual([]);
+    });
+
+    it('withholds a receipt replay until an older accepted steer file is retained', async () => {
+      const streamId = 'steer-req-usage-replay';
+      const clientSteerId = 'steer-usage-replay-client';
+      await GenerationJobManager.createJob(streamId, user.id);
+      const getFiles = jest.fn(async () => [dbDoc]);
+      const retained = jest.fn(async () => [dbDoc]);
+      const body = {
+        conversationId: streamId,
+        clientSteerId,
+        text: 'x',
+        files: [{ file_id: 'f1' }],
+      };
+
+      const accepted = await handleSteerRequest(user, body, {
+        getFiles,
+        updateFilesUsage: retained,
+      });
+      expect(accepted.status).toBe(202);
+
+      const failedReplay = await handleSteerRequest(user, body, {
+        getFiles,
+        updateFilesUsage: jest.fn(async () => []),
+      });
+      expect(failedReplay).toEqual({
+        status: 503,
+        body: { code: 'STEER_FILE_RETENTION_FAILED' },
+      });
+      await expect(GenerationJobManager.steering.peek(streamId)).resolves.toHaveLength(1);
+
+      const healedReplay = await handleSteerRequest(user, body, {
+        getFiles,
+        updateFilesUsage: retained,
+      });
+      expect(healedReplay).toEqual({
+        status: 202,
+        body: expect.objectContaining({ replayed: true, steerId: accepted.body.steerId }),
+      });
     });
   });
 
@@ -379,6 +568,351 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
       expect(checkAgentAccess).toHaveBeenCalledWith({ agentId: undefined, endpoint: undefined });
       expect(await GenerationJobManager.steering.peek(streamId)).toHaveLength(1);
     });
+
+    it('409s when the run is replaced while the agent access check is in flight', async () => {
+      const streamId = 'steer-req-agent-replacement-race';
+      const original = await GenerationJobManager.createJob(streamId, user.id);
+      let signalAccessStarted: (() => void) | undefined;
+      const accessStarted = new Promise<void>((resolve) => {
+        signalAccessStarted = resolve;
+      });
+      let releaseAccess: ((allowed: boolean) => void) | undefined;
+      const checkAgentAccess = jest.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            releaseAccess = resolve;
+            signalAccessStarted?.();
+          }),
+      );
+
+      const requesting = handleSteerRequest(
+        user,
+        { conversationId: streamId, text: 'belongs after the newer run' },
+        { checkAgentAccess },
+      );
+      await accessStarted;
+      const replacement = await GenerationJobManager.createJob(streamId, user.id);
+      expect(replacement.createdAt).not.toBe(original.createdAt);
+      releaseAccess?.(true);
+
+      await expect(requesting).resolves.toEqual({
+        status: 409,
+        body: { code: 'RUN_REPLACED' },
+      });
+      await expect(
+        GenerationJobManager.steering.peek(streamId, replacement.createdAt),
+      ).resolves.toEqual([]);
+    });
+  });
+});
+
+describe('generation protocol bridge for steering mutations', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIsSupported.mockReturnValue(true);
+    GenerationJobManager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    GenerationJobManager.initialize();
+  });
+
+  afterEach(async () => {
+    await GenerationJobManager.destroy();
+  });
+
+  it('caps a v2 request to a v1 job and uses only legacy queue/update surfaces', async () => {
+    const streamId = 'steer-protocol-v1-job';
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: {
+        generationProtocolVersion: 1,
+        preemptCapable: true,
+      },
+    });
+    const receiptRead = jest.spyOn(GenerationJobManager.steering, 'getReceipt');
+    const receiptEnqueue = jest.spyOn(GenerationJobManager.steering, 'enqueueWithReceipt');
+    const legacyEnqueue = jest.spyOn(GenerationJobManager.steering, 'enqueueVersioned');
+    const publishUpdate = jest.spyOn(GenerationJobManager, 'emitChunkFromAnyReplica');
+
+    const result = await handleSteerRequest(
+      user,
+      {
+        conversationId: streamId,
+        clientSteerId: 'client-v1-steer',
+        text: 'legacy-safe instruction',
+        preempt: true,
+      },
+      { generationProtocolVersion: 2 },
+    );
+
+    expect(result).toEqual({
+      status: 202,
+      body: {
+        status: 'queued',
+        steerId: expect.any(String),
+        position: 1,
+        conversationId: streamId,
+        preempt: true,
+        generationProtocolVersion: 1,
+      },
+    });
+    /** Host-v2 performs a read-only lookup before the current v1 marker can
+     * cap the request, because an older v2 receipt may outlive this job. */
+    expect(receiptRead).toHaveBeenCalledTimes(1);
+    expect(receiptEnqueue).not.toHaveBeenCalled();
+    expect(legacyEnqueue).toHaveBeenCalledTimes(1);
+    expect(publishUpdate).not.toHaveBeenCalled();
+    await expect(GenerationJobManager.steering.peek(streamId)).resolves.toEqual([
+      expect.not.objectContaining({ clientSteerId: expect.anything() }),
+    ]);
+  });
+
+  it('keeps v2 receipt replay and correlation broadcasts behind an exact v2 job marker', async () => {
+    const streamId = 'steer-protocol-v2-job';
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+    const receiptEnqueue = jest.spyOn(GenerationJobManager.steering, 'enqueueWithReceipt');
+    const publishUpdate = jest
+      .spyOn(GenerationJobManager, 'emitChunkFromAnyReplica')
+      .mockResolvedValue(true);
+    const requestBody = {
+      conversationId: streamId,
+      clientSteerId: 'client-v2-steer',
+      text: 'receipt-safe instruction',
+    };
+
+    const accepted = await handleSteerRequest(user, requestBody, {
+      generationProtocolVersion: 2,
+    });
+    const replayed = await handleSteerRequest(user, requestBody, {
+      generationProtocolVersion: 2,
+    });
+
+    expect(accepted.body).toMatchObject({
+      status: 'queued',
+      generationProtocolVersion: 2,
+    });
+    expect(replayed.body).toMatchObject({
+      steerId: accepted.body.steerId,
+      replayed: true,
+      generationProtocolVersion: 2,
+    });
+    expect(receiptEnqueue).toHaveBeenCalledTimes(1);
+    expect(publishUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays a v2 receipt after terminal cleanup deletes the accepting job', async () => {
+    const streamId = 'steer-protocol-v2-replay-after-delete';
+    const job = await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+    const requestBody = {
+      conversationId: streamId,
+      generationCreatedAt: job.createdAt,
+      clientSteerId: 'client-v2-after-delete',
+      text: 'accept exactly once',
+    };
+    const receiptEnqueue = jest.spyOn(GenerationJobManager.steering, 'enqueueWithReceipt');
+
+    const accepted = await handleSteerRequest(user, requestBody, {
+      generationProtocolVersion: 2,
+    });
+    await GenerationJobManager.getJobStore().deleteJob(streamId, job.createdAt);
+    const replayed = await handleSteerRequest(user, requestBody, {
+      generationProtocolVersion: 2,
+    });
+
+    expect(replayed).toEqual({
+      status: 202,
+      body: {
+        status: 'queued',
+        steerId: accepted.body.steerId,
+        position: 1,
+        conversationId: streamId,
+        preempt: false,
+        settled: true,
+        leftover: true,
+        replayed: true,
+        generationProtocolVersion: 2,
+      },
+    });
+    expect(receiptEnqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a later v1 job hide an earlier v2 receipt', async () => {
+    const streamId = 'steer-protocol-v2-replay-over-v1';
+    const original = await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+    const requestBody = {
+      conversationId: streamId,
+      generationCreatedAt: original.createdAt,
+      clientSteerId: 'client-v2-before-v1',
+      text: 'keep the original acceptance',
+    };
+    const receiptEnqueue = jest.spyOn(GenerationJobManager.steering, 'enqueueWithReceipt');
+    const accepted = await handleSteerRequest(user, requestBody, {
+      generationProtocolVersion: 2,
+    });
+
+    const replacement = await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 1 },
+    });
+    expect(replacement.createdAt).not.toBe(original.createdAt);
+    const replayed = await handleSteerRequest(user, requestBody, {
+      generationProtocolVersion: 2,
+    });
+
+    expect(replayed.body).toMatchObject({
+      steerId: accepted.body.steerId,
+      replayed: true,
+      settled: true,
+      leftover: true,
+      generationProtocolVersion: 2,
+    });
+    expect(receiptEnqueue).toHaveBeenCalledTimes(1);
+    await expect(
+      GenerationJobManager.steering.peek(streamId, replacement.createdAt),
+    ).resolves.toEqual([]);
+  });
+
+  it('rejects receipt replay for a different explicit generation', async () => {
+    const streamId = 'steer-protocol-v2-replay-generation-fence';
+    const job = await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+    const requestBody = {
+      conversationId: streamId,
+      generationCreatedAt: job.createdAt,
+      clientSteerId: 'client-v2-generation-fence',
+      text: 'generation-bound acceptance',
+    };
+    await handleSteerRequest(user, requestBody, { generationProtocolVersion: 2 });
+    await GenerationJobManager.getJobStore().deleteJob(streamId, job.createdAt);
+
+    const stale = await handleSteerRequest(
+      user,
+      { ...requestBody, generationCreatedAt: job.createdAt + 1 },
+      { generationProtocolVersion: 2 },
+    );
+
+    expect(stale).toEqual({
+      status: 409,
+      body: { code: 'RUN_REPLACED', generationProtocolVersion: 2 },
+    });
+  });
+
+  it('replays a committed receipt even if mutable agent access is later revoked', async () => {
+    const streamId = 'steer-protocol-v2-replay-after-revocation';
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: {
+        generationProtocolVersion: 2,
+        agent_id: 'agent-replay',
+        endpoint: 'agents',
+      },
+    });
+    const requestBody = {
+      conversationId: streamId,
+      clientSteerId: 'client-v2-after-revocation',
+      text: 'already accepted instruction',
+    };
+    const checkAgentAccess = jest.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
+
+    const accepted = await handleSteerRequest(user, requestBody, {
+      generationProtocolVersion: 2,
+      checkAgentAccess,
+    });
+    const replayed = await handleSteerRequest(user, requestBody, {
+      generationProtocolVersion: 2,
+      checkAgentAccess,
+    });
+
+    expect(replayed).toEqual({
+      status: 202,
+      body: expect.objectContaining({
+        steerId: accepted.body.steerId,
+        replayed: true,
+        generationProtocolVersion: 2,
+      }),
+    });
+    expect(checkAgentAccess).toHaveBeenCalledTimes(1);
+    await expect(GenerationJobManager.steering.peek(streamId)).resolves.toHaveLength(1);
+  });
+
+  it('treats a missing job marker and an explicitly malformed package cap as v1', async () => {
+    const streamId = 'steer-protocol-missing-marker';
+    await GenerationJobManager.createJob(streamId, user.id);
+    const stored = await GenerationJobManager.getJobStore().getJob(streamId);
+    expect(stored).not.toBeNull();
+    delete (stored as { generationProtocolVersion?: number }).generationProtocolVersion;
+    const receiptRead = jest.spyOn(GenerationJobManager.steering, 'getReceipt');
+
+    const missingMarker = await handleSteerRequest(
+      user,
+      { conversationId: streamId, clientSteerId: 'missing-marker-id', text: 'safe fallback' },
+      { generationProtocolVersion: 2 },
+    );
+    const malformedCap = await handleSteerRequest(
+      user,
+      { conversationId: 'invalid-cap-target', text: 'no live job' },
+      { generationProtocolVersion: 9 } as unknown as { generationProtocolVersion: 2 },
+    );
+
+    expect(missingMarker.body.generationProtocolVersion).toBe(1);
+    expect(malformedCap.body.generationProtocolVersion).toBe(1);
+    expect(receiptRead).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps v1 cancel and arm off receipt mutations and versioned updates', async () => {
+    const streamId = 'steer-protocol-v1-mutations';
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 1, preemptCapable: true },
+    });
+    const queued = await handleSteerRequest(
+      user,
+      { conversationId: streamId, clientSteerId: 'v1-mutation-id', text: 'queue then arm' },
+      { generationProtocolVersion: 2 },
+    );
+    const steerId = queued.body.steerId as string;
+    const receiptRead = jest.spyOn(GenerationJobManager.steering, 'getReceipt');
+    const discardLeftover = jest.spyOn(GenerationJobManager.steering, 'discardLeftover');
+    const legacyArm = jest.spyOn(GenerationJobManager.steering, 'arm');
+    const versionedArm = jest.spyOn(GenerationJobManager.steering, 'armVersioned');
+    const publishUpdate = jest.spyOn(GenerationJobManager, 'emitChunkFromAnyReplica');
+    const requestPreempt = jest.spyOn(GenerationJobManager, 'requestPreempt');
+
+    const armed = await handleSteerArm(
+      user,
+      { conversationId: streamId, steerId },
+      { generationProtocolVersion: 2 },
+    );
+    const cancelled = await handleSteerCancel(
+      user,
+      { conversationId: streamId, steerId, clientSteerId: 'v1-mutation-id' },
+      { generationProtocolVersion: 2 },
+    );
+
+    expect(armed).toEqual({
+      status: 200,
+      body: { armed: true, generationProtocolVersion: 1 },
+    });
+    expect(cancelled).toEqual({
+      status: 200,
+      body: { removed: true, generationProtocolVersion: 1 },
+    });
+    /** The v2 host probes once for an older v2 receipt before the current
+     * v1 job caps mutation semantics. This v1 enqueue created no receipt, so
+     * the probe cannot mutate or replay anything. */
+    expect(receiptRead).toHaveBeenCalledTimes(1);
+    expect(receiptRead).toHaveBeenCalledWith(streamId, 'v1-mutation-id');
+    expect(discardLeftover).not.toHaveBeenCalled();
+    expect(legacyArm).not.toHaveBeenCalled();
+    expect(versionedArm).toHaveBeenCalledTimes(1);
+    expect(requestPreempt).toHaveBeenCalledWith(streamId, steerId, expect.any(Number), 1);
+    expect(publishUpdate).not.toHaveBeenCalled();
   });
 });
 
@@ -413,6 +947,21 @@ describe('handleSteerCancel (real in-memory job manager)', () => {
     expect(badId.body.code).toBe('INVALID_STEER_ID');
   });
 
+  it('409s a cancel targeting a replaced generation and leaves the live queue intact', async () => {
+    const streamId = 'cancel-stale-generation';
+    const steerId = await queueSteer(streamId);
+    const live = await GenerationJobManager.getJob(streamId);
+
+    const result = await handleSteerCancel(user, {
+      conversationId: streamId,
+      generationCreatedAt: (live?.createdAt as number) - 1,
+      steerId,
+    });
+
+    expect(result).toEqual({ status: 409, body: { code: 'RUN_REPLACED' } });
+    await expect(GenerationJobManager.steering.peek(streamId)).resolves.toHaveLength(1);
+  });
+
   it('removes a queued steer and reports a lost race as removed:false', async () => {
     const steerId = await queueSteer('cancel-ok');
     const cancelled = await handleSteerCancel(user, { conversationId: 'cancel-ok', steerId });
@@ -421,6 +970,160 @@ describe('handleSteerCancel (real in-memory job manager)', () => {
 
     const again = await handleSteerCancel(user, { conversationId: 'cancel-ok', steerId });
     expect(again).toEqual({ status: 200, body: { removed: false } });
+  });
+
+  it('replays a successful receipt-backed cancel when the first response was lost', async () => {
+    const streamId = 'cancel-replay';
+    const clientSteerId = 'cancel-replay-client';
+    await GenerationJobManager.createJob(streamId, 'user-1');
+    const queued = await handleSteerRequest(user, {
+      conversationId: streamId,
+      clientSteerId,
+      text: 'cancel exactly once',
+    });
+    const steerId = queued.body.steerId as string;
+
+    const first = await handleSteerCancel(user, {
+      conversationId: streamId,
+      steerId,
+      clientSteerId,
+    });
+    expect(first).toEqual({ status: 200, body: { removed: true } });
+
+    const replay = await handleSteerCancel(user, {
+      conversationId: streamId,
+      steerId,
+      clientSteerId,
+    });
+    expect(replay).toEqual({ status: 200, body: { removed: true, replayed: true } });
+    await expect(
+      GenerationJobManager.steering.getReceipt(streamId, clientSteerId),
+    ).resolves.toMatchObject({
+      state: 'cancelled',
+    });
+  });
+
+  it('reclaims a queued receipt that becomes leftover before the job lookup', async () => {
+    const streamId = 'cancel-terminal-race';
+    const clientSteerId = 'cancel-terminal-race-client';
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const queued = await handleSteerRequest(user, {
+      conversationId: streamId,
+      clientSteerId,
+      text: 'do not revive me',
+    });
+    const steerId = queued.body.steerId as string;
+    const jobStore = GenerationJobManager.getJobStore();
+    const getJobSpy = jest
+      .spyOn(GenerationJobManager, 'getJob')
+      .mockImplementationOnce(async () => {
+        await jobStore.closeAndDrainSteers(streamId, job.createdAt);
+        await jobStore.deleteJob(streamId, job.createdAt);
+        return undefined;
+      });
+
+    try {
+      const cancelled = await handleSteerCancel(user, {
+        conversationId: streamId,
+        steerId,
+        clientSteerId,
+      });
+
+      expect(cancelled).toEqual({ status: 200, body: { removed: true, replayed: true } });
+      await expect(
+        GenerationJobManager.steering.getReceipt(streamId, clientSteerId),
+      ).resolves.toMatchObject({
+        state: 'cancelled',
+      });
+      await expect(
+        GenerationJobManager.steering.claim(streamId, { userId: 'user-1' }),
+      ).resolves.toEqual([]);
+    } finally {
+      getJobSpy.mockRestore();
+    }
+  });
+
+  it('does not settle a terminal receipt from a different explicit generation', async () => {
+    const streamId = 'cancel-terminal-replaced-receipt';
+    const clientSteerId = 'cancel-terminal-replaced-receipt-client';
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const queued = await handleSteerRequest(user, {
+      conversationId: streamId,
+      generationCreatedAt: job.createdAt,
+      clientSteerId,
+      text: 'belongs to the newer generation',
+    });
+    const steerId = queued.body.steerId as string;
+    const jobStore = GenerationJobManager.getJobStore();
+    await jobStore.closeAndDrainSteers(streamId, job.createdAt);
+    await jobStore.deleteJob(streamId, job.createdAt);
+
+    const result = await handleSteerCancel(user, {
+      conversationId: streamId,
+      generationCreatedAt: job.createdAt - 1,
+      steerId,
+      clientSteerId,
+    });
+
+    expect(result).toEqual({ status: 409, body: { code: 'RUN_REPLACED' } });
+    await expect(
+      GenerationJobManager.steering.getReceipt(streamId, clientSteerId),
+    ).resolves.toMatchObject({ state: 'leftover', generationCreatedAt: job.createdAt });
+    await expect(
+      GenerationJobManager.steering.claim(streamId, { userId: 'user-1' }),
+    ).resolves.toEqual([expect.objectContaining({ steerId })]);
+  });
+
+  it('discards an older v2 leftover even when the current replacement job is v1', async () => {
+    const streamId = 'cancel-v2-leftover-after-v1-replacement';
+    const clientSteerId = 'cancel-v2-leftover-client';
+    const predecessor = await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+    const queued = await handleSteerRequest(
+      user,
+      {
+        conversationId: streamId,
+        generationCreatedAt: predecessor.createdAt,
+        clientSteerId,
+        text: 'do not recover this',
+      },
+      { generationProtocolVersion: 2 },
+    );
+    const steerId = queued.body.steerId as string;
+    await expect(
+      GenerationJobManager.completeJob(streamId, undefined, predecessor.createdAt),
+    ).resolves.toBe(true);
+    const replacement = await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 1 },
+    });
+
+    const result = await handleSteerCancel(
+      user,
+      {
+        conversationId: streamId,
+        generationCreatedAt: predecessor.createdAt,
+        steerId,
+        clientSteerId,
+      },
+      { generationProtocolVersion: 2 },
+    );
+
+    expect(result).toEqual({
+      status: 200,
+      body: { removed: true, replayed: true, generationProtocolVersion: 2 },
+    });
+    await expect(
+      GenerationJobManager.steering.getReceipt(streamId, clientSteerId),
+    ).resolves.toMatchObject({
+      state: 'cancelled',
+      generationCreatedAt: predecessor.createdAt,
+    });
+    await expect(GenerationJobManager.getJob(streamId)).resolves.toMatchObject({
+      status: 'running',
+      createdAt: replacement.createdAt,
+      metadata: { generationProtocolVersion: 1 },
+    });
   });
 
   it('treats a missing job as a lost race, not an error', async () => {
@@ -468,6 +1171,17 @@ describe('handleSteerCancel (real in-memory job manager)', () => {
     );
     expect(result.status).toBe(403);
     expect((await GenerationJobManager.steering.peek('cancel-foreign')).length).toBe(1);
+  });
+
+  it('fails closed when the stored job owner is missing', async () => {
+    const streamId = 'cancel-missing-owner';
+    const steerId = await queueSteer(streamId);
+    await removeStoredJobOwner(streamId);
+
+    const result = await handleSteerCancel(user, { conversationId: streamId, steerId });
+
+    expect(result).toEqual({ status: 403, body: { code: 'UNAUTHORIZED' } });
+    await expect(GenerationJobManager.steering.peek(streamId)).resolves.toHaveLength(1);
   });
 });
 
@@ -561,8 +1275,8 @@ describe('preempt flag on the steer request', () => {
         preempt: true,
       });
 
-      expect(result.status).toBe(404);
-      expect(result.body.code).toBe('NO_ACTIVE_RUN');
+      expect(result.status).toBe(409);
+      expect(result.body.code).toBe('RUN_REPLACED');
       /** Nothing reached the replacement's queue. */
       expect(await GenerationJobManager.steering.peek(streamId)).toEqual([]);
     } finally {
@@ -596,7 +1310,7 @@ describe('preempt flag on the steer request', () => {
 
       expect(result.status).toBe(202);
       expect(result.body.preempt).toBe(true);
-      expect(spy).toHaveBeenCalledWith(streamId, expect.any(String), expect.any(Number));
+      expect(spy).toHaveBeenCalledWith(streamId, expect.any(String), expect.any(Number), 1);
       /** Still durable, so the boundary drain will find it either way. */
       expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBe(true);
     } finally {
@@ -731,5 +1445,252 @@ describe('preempt flag on the steer request', () => {
 
     expect(cancelled.body.removed).toBe(false);
     expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
+  });
+});
+
+/**
+ * Escalation of a waiting steer is ONE atomic in-place flag flip — the item
+ * keeps its FIFO position, id, and timestamp, so the whole queue still drains
+ * in the user's instruction order at the seal, and no reclaim window exists.
+ */
+describe('handleSteerArm (real in-memory job manager)', () => {
+  function createCapableJob(streamId: string) {
+    return GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { preemptCapable: true },
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIsSupported.mockReturnValue(true);
+    mockIsPreemptSupported.mockReturnValue(true);
+    GenerationJobManager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    GenerationJobManager.initialize();
+  });
+
+  afterEach(async () => {
+    await GenerationJobManager.destroy();
+  });
+
+  it('400s on invalid input', async () => {
+    expect((await handleSteerArm(user, { steerId: 's1' })).status).toBe(400);
+    const badId = await handleSteerArm(user, { conversationId: 'c1', steerId: '' });
+    expect(badId.status).toBe(400);
+    expect(badId.body.code).toBe('INVALID_STEER_ID');
+  });
+
+  it('409s an arm targeting a replaced generation without relabelling the live steer', async () => {
+    const streamId = 'arm-stale-client-generation';
+    const job = await createCapableJob(streamId);
+    const posted = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'still an ordinary steer',
+    });
+
+    const result = await handleSteerArm(user, {
+      conversationId: streamId,
+      generationCreatedAt: job.createdAt - 1,
+      steerId: posted.body.steerId as string,
+    });
+
+    expect(result).toEqual({ status: 409, body: { code: 'RUN_REPLACED' } });
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBeUndefined();
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  it('arms a queued steer in place: same item, same position, now preempting', async () => {
+    const streamId = 'arm-in-place';
+    await createCapableJob(streamId);
+    const first = await handleSteerRequest(user, { conversationId: streamId, text: 'first' });
+    const second = await handleSteerRequest(user, { conversationId: streamId, text: 'second' });
+    const firstId = first.body.steerId as string;
+
+    const armed = await handleSteerArm(user, { conversationId: streamId, steerId: firstId });
+    expect(armed).toEqual({ status: 200, body: { armed: true, preemptRevision: 1 } });
+
+    /** FIFO preserved: the escalated steer still drains FIRST at the seal. */
+    const queue = await GenerationJobManager.steering.peek(streamId);
+    expect(queue.map((item) => item.steerId)).toEqual([firstId, second.body.steerId]);
+    expect(queue[0].preempt).toBe(true);
+    expect(queue[1].preempt).toBeUndefined();
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
+  });
+
+  it('is idempotent when a client retries after losing the first response', async () => {
+    const streamId = 'arm-idempotent-retry';
+    await createCapableJob(streamId);
+    const posted = await handleSteerRequest(user, { conversationId: streamId, text: 'once only' });
+    const steerId = posted.body.steerId as string;
+
+    await expect(handleSteerArm(user, { conversationId: streamId, steerId })).resolves.toEqual({
+      status: 200,
+      body: { armed: true, preemptRevision: 1 },
+    });
+    await expect(handleSteerArm(user, { conversationId: streamId, steerId })).resolves.toEqual({
+      status: 200,
+      body: { armed: true, preemptRevision: 2 },
+    });
+
+    const queue = await GenerationJobManager.steering.peek(streamId);
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({ steerId, text: 'once only', preempt: true });
+  });
+
+  it('uses the durable arm revision internally when a v1 job regains capability', async () => {
+    const streamId = 'arm-v1-revision-after-capability-handover';
+    const job = await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 1, preemptCapable: true },
+    });
+    const posted = await handleSteerRequest(
+      user,
+      { conversationId: streamId, text: 'interrupt after handover' },
+      { generationProtocolVersion: 2 },
+    );
+    const steerId = posted.body.steerId as string;
+
+    const firstArm = await GenerationJobManager.steering.armVersioned(
+      streamId,
+      steerId,
+      job.createdAt,
+    );
+    expect(firstArm).toMatchObject({ outcome: 'armed', revision: 1 });
+    await GenerationJobManager.requestPreempt(streamId, steerId, job.createdAt, 1);
+
+    await GenerationJobManager.updateMetadata(streamId, { preemptCapable: false });
+    await expect(GenerationJobManager.rearmQueuedPreempts(streamId, job.createdAt)).resolves.toBe(
+      0,
+    );
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
+    await GenerationJobManager.updateMetadata(streamId, { preemptCapable: true });
+
+    const rearmed = await handleSteerArm(
+      user,
+      { conversationId: streamId, generationCreatedAt: job.createdAt, steerId },
+      { generationProtocolVersion: 2 },
+    );
+
+    expect(rearmed).toEqual({
+      status: 200,
+      body: { armed: true, generationProtocolVersion: 1 },
+    });
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
+    await expect(GenerationJobManager.steering.peek(streamId, job.createdAt)).resolves.toEqual([
+      expect.objectContaining({ steerId, preempt: true, preemptRevision: 3 }),
+    ]);
+  });
+
+  it('refuses to relabel when the owner cannot seal', async () => {
+    const streamId = 'arm-incapable';
+    await GenerationJobManager.createJob(streamId, user.id);
+    const posted = await handleSteerRequest(user, { conversationId: streamId, text: 'plain' });
+    const steerId = posted.body.steerId as string;
+
+    const result = await handleSteerArm(user, { conversationId: streamId, steerId });
+    expect(result).toEqual({ status: 200, body: { armed: false, code: 'PREEMPT_UNSUPPORTED' } });
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBeUndefined();
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  it('refuses to arm a queued steer after the run pauses', async () => {
+    const streamId = 'arm-paused';
+    await createCapableJob(streamId);
+    const posted = await handleSteerRequest(user, { conversationId: streamId, text: 'waiting' });
+    const payload = buildToolApprovalPayload([
+      { name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_arm_paused' },
+    ]);
+    const action = buildPendingAction(payload, {
+      streamId,
+      conversationId: streamId,
+      runId: 'run-arm-paused',
+      responseMessageId: 'msg-arm-paused',
+    });
+    expect(await GenerationJobManager.approvals.pause(streamId, action)).toBe(true);
+
+    const result = await handleSteerArm(user, {
+      conversationId: streamId,
+      steerId: posted.body.steerId as string,
+    });
+
+    expect(result).toEqual({ status: 200, body: { armed: false } });
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBeUndefined();
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  it('reports armed:false when the steer already left the queue', async () => {
+    const streamId = 'arm-too-late';
+    await createCapableJob(streamId);
+    const posted = await handleSteerRequest(user, { conversationId: streamId, text: 'gone soon' });
+    const steerId = posted.body.steerId as string;
+    await GenerationJobManager.steering.cancel(streamId, steerId);
+
+    const result = await handleSteerArm(user, { conversationId: streamId, steerId });
+    expect(result).toEqual({ status: 200, body: { armed: false } });
+  });
+
+  it('treats a missing job as a lost race, not an error', async () => {
+    const result = await handleSteerArm(user, { conversationId: 'gone', steerId: 's1' });
+    expect(result).toEqual({ status: 200, body: { armed: false } });
+  });
+
+  it("403s another user's run", async () => {
+    const streamId = 'arm-foreign';
+    await GenerationJobManager.createJob(streamId, 'someone-else');
+    const result = await handleSteerArm(user, { conversationId: streamId, steerId: 'x' });
+    expect(result.status).toBe(403);
+  });
+
+  it('fails closed when the stored job owner is missing', async () => {
+    const streamId = 'arm-missing-owner';
+    await createCapableJob(streamId);
+    const posted = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'do not arm from malformed state',
+    });
+    await removeStoredJobOwner(streamId);
+
+    const result = await handleSteerArm(user, {
+      conversationId: streamId,
+      steerId: posted.body.steerId as string,
+    });
+
+    expect(result).toEqual({ status: 403, body: { code: 'UNAUTHORIZED' } });
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBeUndefined();
+  });
+
+  it('refuses when capability was rewritten for the same generation mid-flight', async () => {
+    /** A HITL resume on a rolling deploy rewrites `preemptCapable` for the
+     *  SAME createdAt, so the capability must live inside the atomic store
+     *  predicate — a value read before the arm is not trustworthy. */
+    const streamId = 'arm-capability-rewritten';
+    await createCapableJob(streamId);
+    const posted = await handleSteerRequest(user, { conversationId: streamId, text: 'waiting' });
+    await GenerationJobManager.updateMetadata(streamId, { preemptCapable: false });
+
+    const result = await handleSteerArm(user, {
+      conversationId: streamId,
+      steerId: posted.body.steerId as string,
+    });
+    expect(result).toEqual({ status: 200, body: { armed: false, code: 'PREEMPT_UNSUPPORTED' } });
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBeUndefined();
+  });
+
+  it("never arms another generation's steer", async () => {
+    const streamId = 'arm-stale-generation';
+    await createCapableJob(streamId);
+    const posted = await handleSteerRequest(user, { conversationId: streamId, text: 'target' });
+    const live = await GenerationJobManager.getJob(streamId);
+
+    const armed = await GenerationJobManager.steering.arm(
+      streamId,
+      posted.body.steerId as string,
+      (live?.createdAt as number) + 999,
+    );
+    expect(armed).toBe('missing');
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBeUndefined();
   });
 });

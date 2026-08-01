@@ -1,12 +1,12 @@
-import type { Redis, Cluster } from 'ioredis';
 import { logger } from '@librechat/data-schemas';
-import type { IJobStore, IEventTransport } from './interfaces/IJobStore';
-import { InMemoryJobStore } from './implementations/InMemoryJobStore';
+import type { Redis, Cluster } from 'ioredis';
+import type { IJobStoreV2, IEventTransport } from './interfaces/IJobStore';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
-import { RedisJobStore } from './implementations/RedisJobStore';
 import { RedisEventTransport } from './implementations/RedisEventTransport';
-import { cacheConfig } from '~/cache/cacheConfig';
+import { InMemoryJobStore } from './implementations/InMemoryJobStore';
+import { RedisJobStore } from './implementations/RedisJobStore';
 import { ioredisClient } from '~/cache/redisClients';
+import { cacheConfig } from '~/cache/cacheConfig';
 
 /**
  * Configuration for stream services (optional overrides)
@@ -42,7 +42,7 @@ export interface StreamServicesConfig {
  * Stream services result
  */
 export interface StreamServices {
-  jobStore: IJobStore;
+  jobStore: IJobStoreV2;
   eventTransport: IEventTransport;
   isRedis: boolean;
 }

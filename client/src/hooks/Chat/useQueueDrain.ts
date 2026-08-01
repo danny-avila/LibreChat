@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
-import type { QueuedMessage } from '~/store/families';
+import type { DrainAfterAbort, QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
 import type { TAskFunction } from '~/common';
 import { useMarkFilesUsageMutation } from '~/data-provider';
 import store from '~/store';
@@ -34,6 +34,23 @@ const batchFileIds = (fileIds: string[]): string[][] => {
     batches.push(fileIds.slice(i, i + QUEUE_USAGE_MAX_FILES));
   }
   return batches;
+};
+
+const compareQueuedMessages = (a: QueuedMessage, b: QueuedMessage): number =>
+  Number(b.priority ?? false) - Number(a.priority ?? false) || a.createdAt - b.createdAt;
+
+/** Interrupt intent belongs to one generation, never to whichever terminal
+ * event happens to occupy the shared pane slot next. The NEW_CONVO alias is
+ * the one exception: after its first successful start, the terminal event
+ * carries the resolved conversation id while migrating the NEW_CONVO queue. */
+const matchesInterruptArm = (armed: DrainAfterAbort | false, end: RunEnd): boolean => {
+  if (armed === false || end.generationCreatedAt == null) {
+    return false;
+  }
+  const sameConversation =
+    armed.conversationId === end.conversationId ||
+    (end.startedAsNewConvo === true && armed.conversationId === String(Constants.NEW_CONVO));
+  return sameConversation && armed.generationCreatedAt === end.generationCreatedAt;
 };
 
 /**
@@ -106,12 +123,48 @@ export default function useQueueDrain(
     return () => clearInterval(timer);
   }, [queuedFileIds, markFilesUsage]);
 
+  /** Move a foreign pane signal to its conversation before the submission
+   * gate. A different conversation can already be submitting on this pane;
+   * waiting for it to become idle lets its own terminal signal replace the
+   * first one. Matching interrupt intent travels with the exact terminal
+   * epoch, while unrelated intent remains armed for its owner. */
+  const parkForeignRunEnd = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (): boolean => {
+        const end = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
+        if (
+          end == null ||
+          end.conversationId == null ||
+          end.conversationId === activeConversationId
+        ) {
+          return false;
+        }
+        const armed = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
+        const interruptArmed = matchesInterruptArm(armed, end);
+        if (interruptArmed) {
+          set(store.drainAfterAbortByIndex(index), false);
+        }
+        set(store.pendingRunEndByConvoId(end.conversationId), {
+          ...end,
+          ...((end.interruptArmed === true || interruptArmed) && { interruptArmed: true }),
+        });
+        set(store.runEndByIndex(index), null);
+        return true;
+      },
+    [index, activeConversationId],
+  );
+
   // Fully synchronous reads (getLoadable): a useRecoilCallback snapshot is
   // only guaranteed valid for the callback's synchronous execution, so no
   // awaits may interleave with the reads.
   const drainNext = useRecoilCallback(
     ({ snapshot, set }) =>
-      (): { next: QueuedMessage; conversationId: string } | null => {
+      (): {
+        next: QueuedMessage;
+        conversationId: string;
+        queuedMessageOrigin: QueuedMessageOrigin;
+        expectedPredecessorCreatedAt?: number;
+      } | null => {
         let end = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
         let fromParked = false;
         if (
@@ -129,15 +182,16 @@ export default function useQueueDrain(
            * this pane consume it (or drain the wrong conversation).
            */
           const armedNow = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
-          if (armedNow) {
+          const interruptArmed = matchesInterruptArm(armedNow, end);
+          if (interruptArmed) {
             set(store.drainAfterAbortByIndex(index), false);
           }
           set(store.pendingRunEndByConvoId(end.conversationId), {
             ...end,
-            ...(armedNow && { interruptArmed: true }),
+            ...((end.interruptArmed === true || interruptArmed) && { interruptArmed: true }),
           });
           set(store.runEndByIndex(index), null);
-          end = null;
+          return null;
         }
         if (end == null && activeConversationId) {
           const parked = snapshot
@@ -160,10 +214,11 @@ export default function useQueueDrain(
         }
 
         const indexArmed = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
-        if (indexArmed) {
+        const matchingIndexArm = matchesInterruptArm(indexArmed, end);
+        if (matchingIndexArm) {
           set(store.drainAfterAbortByIndex(index), false);
         }
-        const interruptArmed = indexArmed || end.interruptArmed === true;
+        const interruptArmed = matchingIndexArm || end.interruptArmed === true;
 
         const conversationId = end.conversationId;
         if (!conversationId) {
@@ -178,7 +233,12 @@ export default function useQueueDrain(
         const ownQueue = snapshot
           .getLoadable(store.queuedMessagesByConvoId(conversationId))
           .getValue();
-        const merged = [...newConvoQueue, ...ownQueue];
+        /** Both queues are ordered independently, but migration crosses the
+         * key boundary: an interrupt queued under the resolved conversation
+         * must still outrank an ordinary follow-up captured under NEW_CONVO. */
+        const merged = shouldMigrate
+          ? [...newConvoQueue, ...ownQueue].sort(compareQueuedMessages)
+          : ownQueue;
 
         const shouldDrain = end.outcome === 'completed' || interruptArmed;
         const next = shouldDrain ? (merged[0] ?? null) : null;
@@ -190,7 +250,19 @@ export default function useQueueDrain(
         if (remainder.length !== ownQueue.length || shouldMigrate || next != null) {
           set(store.queuedMessagesByConvoId(conversationId), remainder);
         }
-        return next ? { next, conversationId } : null;
+        return next
+          ? {
+              next,
+              conversationId,
+              queuedMessageOrigin: {
+                item: next,
+                beforeIds: [],
+                afterIds: remainder.map((item) => item.id),
+              },
+              expectedPredecessorCreatedAt:
+                end.generationCreatedAt ?? next.expectedPredecessorCreatedAt,
+            }
+          : null;
       },
     [index, activeConversationId],
   );
@@ -206,6 +278,14 @@ export default function useQueueDrain(
   );
 
   useEffect(() => {
+    if (
+      runEnd != null &&
+      runEnd.conversationId != null &&
+      runEnd.conversationId !== activeConversationId
+    ) {
+      parkForeignRunEnd();
+      return;
+    }
     if ((runEnd == null && parkedRunEnd == null) || isSubmitting) {
       return;
     }
@@ -213,16 +293,28 @@ export default function useQueueDrain(
     if (drained == null) {
       return;
     }
-    const { next, conversationId } = drained;
+    const { next, conversationId, queuedMessageOrigin, expectedPredecessorCreatedAt } = drained;
     // The queued item is the FULL submission context: explicit (possibly
     // empty) overrides stop `ask` from vacuuming up files, quotes, or skill
     // picks the user has staged in the composer for their NEXT message.
     const accepted = ask(
-      { text: next.text },
+      {
+        text: next.text,
+        // Recovery can fail after the user-row save but before the parked
+        // source commit. Every attempt upserts the same source-derived row
+        // while its generation idempotency key rotates independently.
+        ...(next.recoverySteerId != null && {
+          overrideUserMessageId: next.recoverySteerId,
+        }),
+      },
       {
         overrideFiles: next.files ?? [],
         overrideQuotes: next.quotes ?? [],
         overrideManualSkills: next.manualSkills ?? [],
+        overrideClientRequestId: next.clientRequestId,
+        overrideRecoverySteerId: next.recoverySteerId,
+        overrideExpectedPredecessorCreatedAt: expectedPredecessorCreatedAt,
+        overrideQueuedMessageOrigin: queuedMessageOrigin,
       },
     );
     if (accepted === false) {
@@ -244,6 +336,7 @@ export default function useQueueDrain(
     parkedRunEnd,
     isSubmitting,
     activeConversationId,
+    parkForeignRunEnd,
     drainNext,
     restoreQueued,
     markFilesUsage,

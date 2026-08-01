@@ -152,6 +152,14 @@ export type TPayload = Partial<TMessage> &
      * cannot trigger a second billed generation.
      */
     clientRequestId?: string;
+    /** Parked steer source consumed only after this new turn's user message is
+     * durably saved. Separate from `clientRequestId`, which identifies one
+     * generation attempt and must rotate after a failed recovery. */
+    recoverySteerId?: string;
+    /** Optional optimistic-serialization fence for a queued follow-up. The
+     * server may create only if this observed predecessor is still current or
+     * the conversation is still idle after its cleanup. */
+    expectedPredecessorCreatedAt?: number;
   };
 
 export type TEditedContent =
@@ -211,6 +219,12 @@ export type TSubmission = {
   manualSkills?: string[];
   /** Stable per-submission idempotency key (uuid) forwarded to the server to dedup retried start-generation requests. */
   clientRequestId?: string;
+  /** Client-only carry-through for a receipt-bound queued recovery. */
+  recoverySteerId?: string;
+  expectedPredecessorCreatedAt?: number;
+  /** Opaque client-only queue restoration metadata; intentionally omitted by
+   * `createPayload`. */
+  queuedMessageOrigin?: unknown;
 };
 
 export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };

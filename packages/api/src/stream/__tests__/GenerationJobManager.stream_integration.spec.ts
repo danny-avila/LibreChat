@@ -2431,12 +2431,18 @@ describe('GenerationJobManager Integration Tests', () => {
    * duplicates a dedicated subscriber connection per call. Separate OS
    * processes would exercise the same objects over the same Redis.
    */
-  describeRedis('Cross-Replica Preempt (Redis, two manager instances)', () => {
+  describeRedis('Cross-Replica Runtime Signals (Redis, multiple manager instances)', () => {
     const replicas: GenerationJobManagerClass[] = [];
 
-    function createReplica(): GenerationJobManagerClass {
+    function createReplica(redisSubscriber?: Redis | Cluster): GenerationJobManagerClass {
       const manager = new GenerationJobManagerClass();
-      manager.configure(createStreamServices({ useRedis: true, redisClient: ioredisClient! }));
+      manager.configure(
+        createStreamServices({
+          useRedis: true,
+          redisClient: ioredisClient!,
+          redisSubscriber,
+        }),
+      );
       manager.initialize();
       replicas.push(manager);
       return manager;
@@ -2479,6 +2485,61 @@ describe('GenerationJobManager Integration Tests', () => {
       throw new Error(`Timed out waiting for ${what}`);
     }
 
+    test('a replacement waits for the exact generation owner to acknowledge abort', async () => {
+      const owner = createReplica();
+      const router = createReplica();
+      const streamId = `${testPrefix}-replacement-owner-ack-${Date.now()}`;
+
+      const predecessor = await owner.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { generationProtocolVersion: 2 },
+      });
+      const replacement = await router.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { generationProtocolVersion: 2 },
+      });
+
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(await router.getJobStore().getJob(streamId)).toMatchObject({
+        createdAt: replacement.createdAt,
+        status: 'running',
+      });
+    }, 40000);
+
+    test('a bystander subscriber cannot acknowledge for a disconnected generation owner', async () => {
+      const ownerSubscriber = (ioredisClient as Redis).duplicate();
+      const owner = createReplica(ownerSubscriber);
+      const bystander = createReplica();
+      const router = createReplica();
+      const streamId = `${testPrefix}-replacement-bystander-ack-${Date.now()}`;
+
+      const predecessor = await owner.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { generationProtocolVersion: 2 },
+      });
+      const bystanderJob = await bystander.getJob(streamId);
+      const bystanderSubscription = await bystander.subscribe(streamId, () => undefined);
+      expect(bystanderJob?.createdAt).toBe(predecessor.createdAt);
+      expect(bystanderSubscription).not.toBeNull();
+
+      ownerSubscriber.disconnect();
+
+      await expect(
+        router.createJob(streamId, 'user-1', streamId, {
+          initialMetadata: { generationProtocolVersion: 2 },
+        }),
+      ).rejects.toThrow('predecessor handoff could not be confirmed');
+
+      expect(predecessor.abortController.signal.aborted).toBe(false);
+      expect(bystanderJob?.abortController.signal.aborted).toBe(true);
+      expect(await router.getJobStore().getJob(streamId)).toMatchObject({
+        status: 'error',
+        error: 'Generation predecessor handoff could not be confirmed',
+        replacedJobs: [
+          expect.objectContaining({ createdAt: predecessor.createdAt, status: 'running' }),
+        ],
+      });
+      bystanderSubscription?.unsubscribe();
+    }, 40000);
+
     test('a steer routed to a non-owning replica arms the owner and flips its poll', async () => {
       const owner = createReplica();
       const router = createReplica();
@@ -2504,15 +2565,37 @@ describe('GenerationJobManager Integration Tests', () => {
        */
       expect(seenByRouter?.metadata?.preemptCapable).toBe(true);
 
+      const enqueued = await router.steering.enqueueVersioned(
+        streamId,
+        {
+          steerId: 'steer-x',
+          text: 'interrupt me',
+          userId: 'user-1',
+          createdAt: Date.now(),
+        },
+        true,
+        job.createdAt,
+      );
+      if (typeof enqueued === 'number') {
+        throw new Error(`Unexpected enqueue rejection: ${enqueued}`);
+      }
+
       /** The whole point: the owner's level-triggered poll flips from a
        *  request that was accepted on a different replica. */
       await publishUntil(
-        () => router.requestPreempt(streamId, 'steer-x', job.createdAt),
+        () =>
+          router.requestPreempt(
+            streamId,
+            enqueued.item.steerId,
+            job.createdAt,
+            enqueued.item.preemptRevision ?? 0,
+          ),
         () => owner.isPreemptRequested(streamId),
         'the owner to arm',
       );
       expect(owner.getArmedPreemptIds(streamId)).toContain('steer-x');
 
+      expect(await router.steering.cancel(streamId, 'steer-x', job.createdAt)).toBe(true);
       await publishUntil(
         () => router.noteSteersRemoved(streamId, ['steer-x'], job.createdAt),
         () => !owner.isPreemptRequested(streamId),
@@ -2603,7 +2686,30 @@ describe('GenerationJobManager Integration Tests', () => {
       const router = createReplica();
       const streamId = `${testPrefix}-preempt-xreplica-stale-${Date.now()}`;
 
-      const job = await owner.createJob(streamId, 'user-1');
+      const job = await owner.createJob(streamId, 'user-1', undefined, {
+        initialMetadata: { preemptCapable: true },
+      });
+
+      const enqueuePreempt = async (steerId: string) => {
+        const enqueued = await router.steering.enqueueVersioned(
+          streamId,
+          {
+            steerId,
+            text: steerId,
+            userId: 'user-1',
+            createdAt: Date.now(),
+          },
+          true,
+          job.createdAt,
+        );
+        if (typeof enqueued === 'number') {
+          throw new Error(`Unexpected enqueue rejection for ${steerId}: ${enqueued}`);
+        }
+        return enqueued.item;
+      };
+      const controlBefore = await enqueuePreempt('control-before');
+      const stale = await enqueuePreempt('steer-stale');
+      const controlAfter = await enqueuePreempt('control-after');
 
       /**
        * A negative assertion cannot be established by waiting: an undelivered
@@ -2614,15 +2720,32 @@ describe('GenerationJobManager Integration Tests', () => {
        * behind — proves the stale arm has already had its chance to land.
        */
       await publishUntil(
-        () => router.requestPreempt(streamId, 'control-before', job.createdAt),
+        () =>
+          router.requestPreempt(
+            streamId,
+            controlBefore.steerId,
+            job.createdAt,
+            controlBefore.preemptRevision ?? 0,
+          ),
         () => owner.getArmedPreemptIds(streamId).includes('control-before'),
         'the first control arm',
       );
 
-      await router.requestPreempt(streamId, 'steer-stale', job.createdAt - 1);
+      await router.requestPreempt(
+        streamId,
+        stale.steerId,
+        job.createdAt - 1,
+        stale.preemptRevision ?? 0,
+      );
 
       await publishUntil(
-        () => router.requestPreempt(streamId, 'control-after', job.createdAt),
+        () =>
+          router.requestPreempt(
+            streamId,
+            controlAfter.steerId,
+            job.createdAt,
+            controlAfter.preemptRevision ?? 0,
+          ),
         () => owner.getArmedPreemptIds(streamId).includes('control-after'),
         'the second control arm',
       );

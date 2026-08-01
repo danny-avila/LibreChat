@@ -603,6 +603,8 @@ export type SteerContentPart = {
   type: ContentTypes.STEER;
   steer: string;
   steerId?: string;
+  /** Stable optimistic-client id used to settle a POST whose response was lost. */
+  clientSteerId?: string;
   createdAt?: number;
   /** Attachments steered with the message; re-encoded per turn on replay
    *  like any other user-message media (refs only, never encoded data). */

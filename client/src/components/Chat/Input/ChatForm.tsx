@@ -199,6 +199,10 @@ const ChatForm = memo(function ChatForm({
         overrideFiles,
         overrideQuotes: context?.quotes ?? [],
         overrideManualSkills: context?.manualSkills ?? [],
+        overrideClientRequestId: context?.clientRequestId,
+        overrideRecoverySteerId: context?.recoverySteerId,
+        overrideExpectedPredecessorCreatedAt: context?.expectedPredecessorCreatedAt,
+        overrideQueuedMessageOrigin: context?.queuedMessageOrigin,
       }),
     [submitMessage],
   );
@@ -436,19 +440,24 @@ const ChatForm = memo(function ChatForm({
   /** One button slot while a run is generating: with composer text the send
    *  button takes over (Enter steers/queues; hover reveals all actions);
    *  clearing the text restores Stop. */
-  const duringRunSlot =
-    steering.duringRunActive && (textValue?.trim() ?? '') !== '' ? (
-      <DuringRunSendButton
-        ref={submitButtonRef}
-        control={methods.control}
-        steering={steering}
-        getText={() => methods.getValues('text')}
-        onConsumed={() => methods.reset()}
-        disabled={filesLoading}
-      />
-    ) : (
-      <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
-    );
+  const duringRunSlot = (() => {
+    if (steering.duringRunActive && (textValue?.trim() ?? '') !== '') {
+      return (
+        <DuringRunSendButton
+          ref={submitButtonRef}
+          control={methods.control}
+          steering={steering}
+          getText={() => methods.getValues('text')}
+          onConsumed={() => methods.reset()}
+          disabled={filesLoading}
+        />
+      );
+    }
+    if (showStopButton) {
+      return <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />;
+    }
+    return null;
+  })();
 
   const baseClasses = useMemo(
     () =>
@@ -665,18 +674,22 @@ const ChatForm = memo(function ChatForm({
                     isSubmitting={isSubmitting}
                   />
                 )}
-                {steering.duringRunActive && (textValue?.trim() ?? '') !== '' && (
-                  <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                    <InterruptSteerButton
-                      steering={steering}
-                      getText={() => methods.getValues('text')}
-                      onConsumed={() => methods.reset()}
-                      disabled={filesLoading}
-                    />
-                  </div>
-                )}
+                {steering.duringRunActive &&
+                  steering.canControlGeneration &&
+                  (textValue?.trim() ?? '') !== '' && (
+                    <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
+                      <InterruptSteerButton
+                        steering={steering}
+                        getText={() => methods.getValues('text')}
+                        onConsumed={() => methods.reset()}
+                        disabled={filesLoading}
+                      />
+                    </div>
+                  )}
                 <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                  {isSubmitting && showStopButton && !answerMode.active
+                  {isSubmitting &&
+                  (showStopButton || steering.duringRunActive) &&
+                  !answerMode.active
                     ? duringRunSlot
                     : endpoint && (
                         <SendButton

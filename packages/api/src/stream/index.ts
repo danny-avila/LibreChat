@@ -3,6 +3,8 @@ export {
   GenerationJobManagerClass,
   type CreateGenerationJobOptions,
   type GenerationJobManagerOptions,
+  type TerminalJobClaim,
+  TERMINAL_PUBLICATION_RECONNECT_ERROR,
 } from './GenerationJobManager';
 
 export type {
@@ -13,17 +15,38 @@ export type {
   AbortResult,
   JobStatus,
   JobMetadataPatch,
+  GenerationProtocolVersion,
+  GenerationPredecessorState,
+  ParkedSteerClaim,
   IJobStore,
+  IJobStoreV2,
 } from './interfaces/IJobStore';
 // Canonical "is this approval live?" predicate — one definition shared by the
 // stores, the approval lifecycle, and the status route / message middleware.
-export { isPendingActionExpired, isPendingActionStale } from './interfaces/IJobStore';
+export {
+  JobPredecessorMismatchError,
+  isPendingActionExpired,
+  isPendingActionStale,
+} from './interfaces/IJobStore';
 export {
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,
+  STEER_ENQUEUE_RECEIPT_FULL,
   STEER_QUEUE_MAX_DEPTH,
 } from './interfaces/IJobStore';
 export { SteeringLifecycle, toPendingSteer } from './SteeringLifecycle';
+export {
+  assertJobStoreV2,
+  getMissingJobStoreV2Methods,
+  JOB_STORE_V2_REQUIRED_METHODS,
+} from './jobStoreCapabilities';
+export type { JobStoreV2RequiredMethod } from './jobStoreCapabilities';
+export {
+  buildRecoveredSteerPayload,
+  canonicalRecoveryFileIds,
+  RecoveredSteerPayloadMismatchError,
+} from './SteerRecovery';
+export type { RecoveredSteerPayload } from './SteerRecovery';
 
 export { createStreamServices } from './createStreamServices';
 export type { StreamServicesConfig, StreamServices } from './createStreamServices';

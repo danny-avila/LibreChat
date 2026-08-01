@@ -115,6 +115,14 @@ export const shortcutDefinitions = {
     ariaMac: 'Meta+Shift+X',
     ariaOther: 'Control+Shift+X',
   },
+  escalateSteer: {
+    labelKey: 'com_ui_interrupt_steer_now',
+    groupKey: 'com_shortcut_group_chat',
+    displayMac: '⌘ ⇧ .',
+    displayOther: 'Ctrl+Shift+.',
+    ariaMac: 'Meta+Shift+.',
+    ariaOther: 'Control+Shift+.',
+  },
   regenerateResponse: {
     labelKey: 'com_shortcut_regenerate_response',
     groupKey: 'com_shortcut_group_chat',
@@ -289,6 +297,7 @@ export const EDITING_ALLOWED_SHORTCUTS: ReadonlySet<ShortcutActionId> = new Set(
   'focusSearch',
   'showShortcuts',
   'submitMessage',
+  'escalateSteer',
 ]);
 
 export type ShortcutAction = ShortcutDefinition & {
@@ -367,6 +376,70 @@ function defaultAria(actionId: ShortcutActionId): string {
   return isMac ? def.ariaMac : def.ariaOther;
 }
 
+/**
+ * Resolves one owner per chord, with persisted user choices ahead of defaults.
+ *
+ * This ordering matters when a release adds a new default chord that was
+ * previously free: an existing custom binding must keep working instead of
+ * being silently shadowed by the new action. Losers resolve to `null`, so the
+ * dispatcher, shortcut dialog, tooltips, and `aria-keyshortcuts` all describe
+ * the same effective ownership.
+ */
+export function resolveShortcutBindings(
+  overrides: Record<string, ShortcutOverride>,
+): Map<ShortcutActionId, ShortcutBinding | null> {
+  const resolved = new Map<ShortcutActionId, ShortcutBinding | null>();
+  const claimed = new Set<string>();
+  const explicit = new Set<ShortcutActionId>();
+
+  for (const id of shortcutActionIds) {
+    const override = overrides[id];
+    let platformValue: string | null | undefined;
+    if (override != null) {
+      platformValue = isMac ? override.mac : override.other;
+    }
+    /** Editing the other platform stores this platform's default alongside it.
+     *  That copied default is not a user claim here and must still yield to a
+     *  genuinely custom binding on the current platform. */
+    if (platformValue === undefined || platformValue === defaultAria(id)) {
+      continue;
+    }
+    explicit.add(id);
+    const binding = parseBinding(platformValue);
+    if (binding == null) {
+      resolved.set(id, null);
+      continue;
+    }
+    const hash = bindingHash(binding);
+    if (claimed.has(hash)) {
+      resolved.set(id, null);
+      continue;
+    }
+    claimed.add(hash);
+    resolved.set(id, binding);
+  }
+
+  for (const id of shortcutActionIds) {
+    if (explicit.has(id)) {
+      continue;
+    }
+    const binding = parseBinding(defaultAria(id));
+    if (binding == null) {
+      resolved.set(id, null);
+      continue;
+    }
+    const hash = bindingHash(binding);
+    if (claimed.has(hash)) {
+      resolved.set(id, null);
+      continue;
+    }
+    claimed.add(hash);
+    resolved.set(id, binding);
+  }
+
+  return resolved;
+}
+
 function readOverridesFromStorage(): Record<string, ShortcutOverride> {
   if (typeof window === 'undefined') {
     return {};
@@ -381,29 +454,12 @@ function readOverridesFromStorage(): Record<string, ShortcutOverride> {
   }
 }
 
-function effectiveBindingString(
-  actionId: ShortcutActionId,
-  overrides: Record<string, ShortcutOverride>,
-): string | null {
-  const override = overrides[actionId];
-  if (override) {
-    const platformValue = isMac ? override.mac : override.other;
-    if (platformValue === null) {
-      return null;
-    }
-    if (typeof platformValue === 'string') {
-      return platformValue;
-    }
-  }
-  return defaultAria(actionId);
-}
-
 export function effectiveBinding(
   actionId: ShortcutActionId,
   overrides?: Record<string, ShortcutOverride>,
 ): ShortcutBinding | null {
   const map = overrides ?? readOverridesFromStorage();
-  return parseBinding(effectiveBindingString(actionId, map));
+  return resolveShortcutBindings(map).get(actionId) ?? null;
 }
 
 export function getShortcutDisplay(actionId: ShortcutActionId): string {
@@ -550,6 +606,30 @@ export function useShortcutActions(): ShortcutAction[] {
     () => clickElement('[data-testid="regenerate-generation-button"]'),
     [],
   );
+
+  /** Escalate the newest waiting message to an interrupt by pressing its own
+   *  visible arrow control, so the shortcut can never diverge from the
+   *  button's semantics. A waiting steer bubble beats a queued follow-up (it
+   *  is closer to the run); newest-last matches how both stacks append. */
+  const handleEscalateSteer = useCallback(() => {
+    const active = document.querySelector<HTMLButtonElement>('[data-escalate-steer-active="true"]');
+    if (clickTarget(active)) {
+      return true;
+    }
+
+    const pick = (surface: string) => {
+      const list = document.querySelectorAll<HTMLButtonElement>(
+        `[data-escalate-steer="${surface}"]`,
+      );
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (!isUnavailableElement(list[i])) {
+          return list[i];
+        }
+      }
+      return null;
+    };
+    return clickTarget(pick('bubble') ?? pick('queued'));
+  }, []);
 
   const handleEditLastMessage = useCallback(() => {
     const userTurns = document.querySelectorAll('.user-turn');
@@ -750,6 +830,7 @@ export function useShortcutActions(): ShortcutAction[] {
       focusSearch: handleFocusSearch,
       openSettings: handleOpenSettings,
       stopGenerating: handleStopGenerating,
+      escalateSteer: handleEscalateSteer,
       regenerateResponse: handleRegenerateResponse,
       editLastMessage: handleEditLastMessage,
       copyLastCode: handleCopyLastCode,
@@ -779,6 +860,7 @@ export function useShortcutActions(): ShortcutAction[] {
       handleUploadFile,
       handleToggleSidebar,
       handleOpenModelSelector,
+      handleEscalateSteer,
       handleFocusSearch,
       handleOpenSettings,
       handleStopGenerating,
@@ -820,7 +902,7 @@ export function useShortcutDisplay(actionId?: ShortcutActionId): string {
   const overrides = useRecoilValue(store.customShortcuts);
   return useMemo(() => {
     if (!actionId) return '';
-    const binding = parseBinding(effectiveBindingString(actionId, overrides));
+    const binding = resolveShortcutBindings(overrides).get(actionId) ?? null;
     return binding ? bindingDisplayString(binding, isMac) : '';
   }, [actionId, overrides]);
 }
@@ -829,7 +911,7 @@ export function useShortcutAriaKey(actionId?: ShortcutActionId): string | undefi
   const overrides = useRecoilValue(store.customShortcuts);
   return useMemo(() => {
     if (!actionId) return undefined;
-    const binding = parseBinding(effectiveBindingString(actionId, overrides));
+    const binding = resolveShortcutBindings(overrides).get(actionId) ?? null;
     return binding ? (bindingToString(binding) ?? undefined) : undefined;
   }, [actionId, overrides]);
 }
@@ -856,12 +938,14 @@ export function useShortcutBindings(): {
 } {
   const [overrides, setOverrides] = useRecoilState(store.customShortcuts);
 
+  const resolvedBindings = useMemo(() => resolveShortcutBindings(overrides), [overrides]);
+
   const bindings = useMemo<ShortcutBindingInfo[]>(
     () =>
       shortcutActionIds.map((id) => {
         const def = shortcutDefinitions[id];
         const override = overrides[id];
-        const binding = parseBinding(effectiveBindingString(id, overrides));
+        const binding = resolvedBindings.get(id) ?? null;
         return {
           id,
           binding,
@@ -870,7 +954,7 @@ export function useShortcutBindings(): {
           labelKey: def.labelKey,
         };
       }),
-    [overrides],
+    [overrides, resolvedBindings],
   );
 
   const bindingMap = useMemo<Map<string, ShortcutActionId>>(() => {
@@ -912,18 +996,6 @@ export function useShortcutBindings(): {
         if (!prev[id]) return prev;
         const next = { ...prev };
         delete next[id];
-
-        const restored = parseBinding(effectiveBindingString(id, next));
-        if (restored) {
-          const restoredHash = bindingHash(restored);
-          const platformKey: keyof ShortcutOverride = isMac ? 'mac' : 'other';
-          for (const otherId of Object.keys(next) as ShortcutActionId[]) {
-            const otherBinding = parseBinding(effectiveBindingString(otherId, next));
-            if (otherBinding && bindingHash(otherBinding) === restoredHash) {
-              next[otherId] = { ...next[otherId], [platformKey]: null };
-            }
-          }
-        }
         return next;
       });
     },
@@ -944,16 +1016,18 @@ export default function useKeyboardShortcuts() {
 
   const actionMap = useMemo(() => new Map(actions.map((action) => [action.id, action])), [actions]);
 
+  const resolvedBindings = useMemo(() => resolveShortcutBindings(overrides), [overrides]);
+
   const bindingMap = useMemo<Map<string, ShortcutActionId>>(() => {
     const map = new Map<string, ShortcutActionId>();
     for (const id of shortcutActionIds) {
-      const binding = parseBinding(effectiveBindingString(id, overrides));
+      const binding = resolvedBindings.get(id) ?? null;
       if (binding) {
         map.set(bindingHash(binding), id);
       }
     }
     return map;
-  }, [overrides]);
+  }, [resolvedBindings]);
 
   const handler = useCallback(
     (e: KeyboardEvent) => {

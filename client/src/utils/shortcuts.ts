@@ -70,18 +70,42 @@ export function isModifierKey(key: string): boolean {
 export type KeyChordSource = Pick<
   KeyboardEvent,
   'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'
->;
+> &
+  Partial<Pick<KeyboardEvent, 'code'>>;
+
+/**
+ * Punctuation shortcuts should follow the physical key advertised by the UI.
+ * `KeyboardEvent.key` reports the character produced by the active layout, so
+ * the physical Period key can report `:` (or another character) on a non-US
+ * layout even though the displayed/ARIA shortcut is still `.`. `code` is
+ * layout-independent and keeps those bindings usable without changing how
+ * letter shortcuts follow the user's chosen layout.
+ */
+const PUNCTUATION_KEY_BY_CODE: Readonly<Record<string, string>> = {
+  Backquote: '`',
+  Minus: '-',
+  Equal: '=',
+  BracketLeft: '[',
+  BracketRight: ']',
+  Backslash: '\\',
+  Semicolon: ';',
+  Quote: "'",
+  Comma: ',',
+  Period: '.',
+  Slash: '/',
+};
 
 export function bindingFromEvent(e: KeyChordSource): ShortcutBinding | null {
   if (isModifierKey(e.key)) {
     return null;
   }
+  const key = (e.code && PUNCTUATION_KEY_BY_CODE[e.code]) || e.key;
   return {
     meta: e.metaKey,
     ctrl: e.ctrlKey,
     alt: e.altKey,
     shift: e.shiftKey,
-    key: normalizeKey(e.key, e.shiftKey),
+    key: normalizeKey(key, e.shiftKey),
   };
 }
 

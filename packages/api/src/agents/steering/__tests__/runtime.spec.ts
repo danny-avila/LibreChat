@@ -143,7 +143,7 @@ describe('createSteerDrainHook', () => {
     ]);
   });
 
-  it('still injects when applySteer throws', async () => {
+  it('restores the claimed steer and does not inject when durable apply fails', async () => {
     const streamId = `drain-apply-error-${Date.now()}`;
     const job = await GenerationJobManager.createJob(streamId, 'user-1');
     await GenerationJobManager.steering.enqueue(streamId, buildSteer('s1', 'survives'));
@@ -157,8 +157,9 @@ describe('createSteerDrainHook', () => {
     });
 
     const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
-    expect(output.injectedMessages).toEqual([
-      { role: 'user', content: 'survives', source: 'steer' },
+    expect(output).toEqual({});
+    expect((await GenerationJobManager.steering.peek(streamId)).map((item) => item.text)).toEqual([
+      'survives',
     ]);
   });
 
@@ -196,7 +197,7 @@ describe('createSteerDrainHook', () => {
     const output: SteerDrainOutput = await hook(batchInput(), abortSignal);
     // buildMedia is consulted only for items that carry files.
     expect(buildMedia).toHaveBeenCalledTimes(1);
-    expect(calls).toEqual(['apply:s1', 'media:s1', 'apply:s2']);
+    expect(calls).toEqual(['apply:s1', 'apply:s2', 'media:s1']);
     expect(output.injectedMessages).toEqual([
       { role: 'user', content: media.content, source: 'steer' },
       { role: 'user', content: 'text only', source: 'steer' },
@@ -467,7 +468,7 @@ describe('createSteerPreemptBoundaryHook', () => {
     ]);
   });
 
-  it('clears the request even when applySteer throws mid-drain', async () => {
+  it('restores the item and keeps its preempt request armed when durable apply fails', async () => {
     const streamId = `preempt-clears-on-error-${Date.now()}`;
     const job = await GenerationJobManager.createJob(streamId, 'user-1');
     await GenerationJobManager.steering.enqueue(streamId, {
@@ -485,10 +486,11 @@ describe('createSteerPreemptBoundaryHook', () => {
     });
 
     const output: SteerDrainOutput = await hook(boundaryInput(), abortSignal);
-    expect(output.injectedMessages).toEqual([
-      { role: 'user', content: 'still injected', source: 'steer' },
+    expect(output).toEqual({});
+    expect((await GenerationJobManager.steering.peek(streamId)).map((item) => item.text)).toEqual([
+      'still injected',
     ]);
-    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
   });
 });
 

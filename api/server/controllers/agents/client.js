@@ -41,7 +41,9 @@ const {
   pickResumeContext,
   getApprovalTtlMs,
   isHITLEnabled,
+  captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
+  LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   agentRequestsAskUserQuestion,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
@@ -138,6 +140,9 @@ class AgentClient extends BaseClient {
     this.isChatCompletion = true;
     /** @type {number | undefined} */
     this.jobCreatedAt = options.jobCreatedAt;
+    /** Generation-scoped LangGraph checkpoint namespace. Legacy paused jobs
+     * intentionally use the historical empty namespace. @type {string} */
+    this.checkpointNamespace = options.checkpointNamespace ?? '';
 
     /** @type {AgentRun} */
     this.run;
@@ -300,6 +305,7 @@ class AgentClient extends BaseClient {
       type: ContentTypes.STEER,
       [ContentTypes.STEER]: item.text,
       steerId: item.steerId,
+      ...(item.clientSteerId && { clientSteerId: item.clientSteerId }),
       createdAt: item.createdAt,
       ...(item.files?.length && { files: item.files }),
     };
@@ -308,20 +314,36 @@ class AgentClient extends BaseClient {
     // durable: the chunk-log XADD is this event's recovery record — it must
     // commit before the publish or a cross-replica reconnect that missed the
     // pub/sub delivery reconstructs content without the steer part.
-    await GenerationJobManager.emitChunk(
-      streamId,
-      {
-        event: SteerEvents.ON_STEER_APPLIED,
-        data: {
-          steerId: item.steerId,
-          index,
-          part,
-          responseMessageId: this.responseMessageId,
-          conversationId: this.conversationId,
+    try {
+      await GenerationJobManager.emitChunk(
+        streamId,
+        {
+          event: SteerEvents.ON_STEER_APPLIED,
+          data: {
+            steerId: item.steerId,
+            ...(item.clientSteerId && { clientSteerId: item.clientSteerId }),
+            index,
+            part,
+            responseMessageId: this.responseMessageId,
+            conversationId: this.conversationId,
+          },
         },
-      },
-      { durable: true, expectedCreatedAt: this.jobCreatedAt },
-    );
+        {
+          durable: true,
+          expectedCreatedAt: this.jobCreatedAt,
+          deliveredSteer: item,
+        },
+      );
+    } catch (error) {
+      /** The part and its receipt commit as one durable unit. Roll the local
+       * projection back when that commit fails so the drain can restore the
+       * claimed item instead of injecting an instruction absent from replay. */
+      if (this.contentParts[index] === part) {
+        this.contentParts.splice(index, 1);
+        this.steerOffsetState.offset -= 1;
+      }
+      throw error;
+    }
   }
 
   /**
@@ -799,8 +821,11 @@ class AgentClient extends BaseClient {
      *  emit, whose ordering against shifted SDK indices is load-bearing.
      *  The chain settles on failure (warned retry), so a lost write can
      *  never wedge run startup. */
-    this.activityLabelsMarkedPromise = GenerationJobManager.markActivityLabels(streamId).catch(() =>
-      GenerationJobManager.markActivityLabels(streamId).catch(() => {
+    this.activityLabelsMarkedPromise = GenerationJobManager.markActivityLabels(
+      streamId,
+      this.jobCreatedAt,
+    ).catch(() =>
+      GenerationJobManager.markActivityLabels(streamId, this.jobCreatedAt).catch(() => {
         logger.warn(
           `[AgentClient] Could not flag activity labels for ${streamId}; a label resolving during a resume gap may not be reconciled.`,
         );
@@ -2139,6 +2164,7 @@ class AgentClient extends BaseClient {
     const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction, {
       expectedCreatedAt: this.jobCreatedAt,
       ...(discoveredTools.length > 0 ? { discoveredTools } : {}),
+      persistencePending: true,
     });
     if (!paused) {
       logger.debug(
@@ -2214,6 +2240,11 @@ class AgentClient extends BaseClient {
         runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
+          // LangGraph owns `checkpoint_ns` and resets it to '' at every root
+          // invocation. The saver maps this private immutable generation key
+          // into its physical namespace while tools keep the conversation id.
+          checkpoint_ns: '',
+          [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
@@ -2430,27 +2461,61 @@ class AgentClient extends BaseClient {
         }
 
         const streamId = this.options.req?._resumableStreamId;
-        // HITL: clear any checkpoint orphaned by a prior paused turn in this
-        // conversation (one that expired or was aborted while paused) so this fresh
-        // turn starts clean instead of rehydrating a stale interrupt — thread_id is
-        // the stable conversationId. No-op when HITL is off or nothing is orphaned.
-        // Deliberately UNCONDITIONAL per HITL turn: any cheaper gate (job metadata,
-        // a Redis flag) can go stale across replicas/restarts and skip the prune
-        // exactly when an orphan exists, while these are two indexed, usually-empty
-        // deleteMany ops — correctness over a micro-optimization.
+        // HITL: establish an empty checkpoint barrier for THIS immutable generation
+        // before exposing its graph. A retried/recovered initialization may have left
+        // partial state in the same saver scope; a predecessor uses a different scope,
+        // so even a late remote write cannot be rehydrated or deleted here. No-op when
+        // HITL is off or the generation has no remnants. Deliberately unconditional
+        // per HITL turn: any cheaper Redis flag can go stale across replicas/restarts,
+        // while these are two indexed, usually-empty deleteMany operations.
         // The gate mirrors createRun's checkpointer condition: the approval policy
         // OR an ask_user_question-capable agent (which attaches a checkpointer
-        // WITHOUT the approval policy) — an ask pause abandoned via job replacement
-        // or Stop would otherwise rehydrate here and silently duplicate context.
+        // WITHOUT the approval policy).
         //
         // Start the prune alongside graph construction. The all-settled barrier
         // below still guarantees it completes before the graph is exposed or run.
         const shouldPruneCheckpoint =
           streamId &&
           (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion));
-        const checkpointPrunePromise = shouldPruneCheckpoint
-          ? deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer)
-          : Promise.resolve();
+        let checkpointPrunePromise = Promise.resolve();
+        if (shouldPruneCheckpoint && this.checkpointNamespace !== '') {
+          checkpointPrunePromise = deleteAgentCheckpoint(
+            this.conversationId,
+            agentsEConfig?.checkpointer,
+            undefined,
+            {
+              throwOnError: true,
+              checkpointNamespace: this.checkpointNamespace,
+            },
+          );
+        } else if (shouldPruneCheckpoint) {
+          checkpointPrunePromise = captureAgentCheckpointGeneration(
+            this.conversationId,
+            agentsEConfig?.checkpointer,
+            { throwOnError: true },
+          ).then(async (checkpointGeneration) => {
+            /** Legacy jobs share LangGraph's root/nested namespaces. Capture
+             * their immutable ids first, then prove this client still owns
+             * the exact job epoch before deleting that set. If a replacement
+             * arrived before/during capture the check fails; if it arrives
+             * after the check, its newly-written checkpoint ids are outside
+             * the snapshot and therefore cannot be deleted. */
+            const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
+            if (
+              !liveJob ||
+              liveJob.createdAt !== this.jobCreatedAt ||
+              liveJob.status !== 'running'
+            ) {
+              throw new Error('Generation replaced before legacy checkpoint cleanup');
+            }
+            await deleteAgentCheckpoint(
+              this.conversationId,
+              agentsEConfig?.checkpointer,
+              checkpointGeneration,
+              { throwOnError: true },
+            );
+          });
+        }
 
         const createRunPromise = createRun({
           agents,
@@ -2685,9 +2750,9 @@ class AgentClient extends BaseClient {
 
       // HITL: a non-paused turn deliberately prunes nothing here. The lazy checkpointer
       // (LazyMongoSaver) never persists a clean-exit checkpoint, so there is
-      // nothing this turn left to delete. A checkpoint orphaned by a PRIOR abandoned pause
-      // is cleared by the pre-run prune (before processStream) on the next turn, with the
-      // Mongo TTL as the backstop. Dropping this post-completion prune also removes its
+      // nothing this turn left to delete. Terminal HITL owners eagerly delete their exact
+      // saver scope, with the Mongo TTL as the backstop for a crashed owner. Dropping a
+      // generic post-completion prune also removes its
       // job-replacement race: an older run's late finally can no longer delete a newer
       // paused run's checkpoint, because there is no longer a clean-path prune to race.
 
@@ -2702,11 +2767,11 @@ class AgentClient extends BaseClient {
    *
    * The original run lives in a detached background task that exits when the run
    * pauses, so resume REBUILDS the run on a fresh graph bound to the same
-   * `thread_id` (= conversationId) and the durable checkpointer. LangGraph rehydrates
-   * the paused graph state from the checkpoint; `run.resume(value)` re-enters the
-   * interrupted node with the user's decision. State comes from the checkpoint, so
-   * no message history is rebuilt here — `createRun` only needs the agent(s) to
-   * reconstruct the graph structure.
+   * `thread_id` (= conversationId), immutable saver scope, and durable checkpointer.
+   * LangGraph rehydrates the paused graph state from that scoped checkpoint;
+   * `run.resume(value)` re-enters the interrupted node with the user's decision.
+   * State comes from the checkpoint, so no message history is rebuilt here —
+   * `createRun` only needs the agent(s) to reconstruct the graph structure.
    *
    * `seedContent` is the content streamed before the pause (the assistant message +
    * its tool call). In Redis mode the job store's append log already spans the pause,
@@ -2753,6 +2818,8 @@ class AgentClient extends BaseClient {
         runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
+          checkpoint_ns: '',
+          [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,

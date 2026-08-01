@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page, Response } from '@playwright/test';
+import type { CancelSteerParams } from '../../../client/src/data-provider/SSE/mutations';
 import {
   MOCK_ENDPOINTS,
   MOCK_REPLY_TEXT,
@@ -7,6 +8,8 @@ import {
   messagesView,
   replyPrompt,
   replyText,
+  getAccessToken,
+  requestJson,
   selectMockEndpoint,
   sendMessage,
 } from './helpers';
@@ -17,6 +20,7 @@ const PROVIDER_C = { label: 'Mock Provider C', model: 'mock-model-c' };
 const MCP_SERVER_TITLE = 'E2E Memory';
 /** Last chunk streamed by the fake model's slow replies (160 chunks, 0-indexed). */
 const SLOW_REPLY_LAST_CHUNK = 'chunk-159';
+const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
 
 const uniqueLabel = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
@@ -28,6 +32,19 @@ const messageTurns = (page: Page) => messagesView(page).locator('.message-render
 /** In-flight steers are anchored above the composer, not in the thread. */
 const inFlightSteers = (page: Page) => page.getByTestId('in-flight-steer');
 const appliedSteerParts = (page: Page) => messagesView(page).getByTestId('steer-part');
+
+type PersistedMessage = {
+  messageId: string;
+  parentMessageId?: string;
+  text?: string;
+  content?: unknown[];
+  unfinished?: boolean;
+  isCreatedByUser?: boolean;
+};
+
+type CancelSteerWirePayload = CancelSteerParams & {
+  generationProtocolVersion: 2;
+};
 
 function isSteerRequest(response: Response) {
   return (
@@ -205,13 +222,13 @@ test.describe('mid-run steering and queuing', () => {
 
   /**
    * Human-cadence variant: the second steer is submitted while the FIRST
-   * steer's 202 is still pending, so the two POSTs (and their chip upserts)
-   * genuinely overlap in flight. The overlap is enforced, not raced: a route
-   * intercept forwards the first POST to the server (the enqueue happens in
-   * submission order) but holds its 202 from the client until the second POST
-   * has been observed. Both must still inject.
+   * steer's 202 is still pending. The client must keep its second POST parked
+   * until that ACK settles so asynchronous route validation cannot reverse
+   * server admission order. Both optimistic submissions must still inject.
    */
-  test('steers twice rapidly (second sent before the first ACK): both inject', async ({ page }) => {
+  test('steers twice rapidly: second POST waits for the first ACK and both inject', async ({
+    page,
+  }) => {
     test.setTimeout(150000);
     const label = uniqueLabel('steerrapid');
     const firstSteer = `Rapid first steer ${label}`;
@@ -226,25 +243,23 @@ test.describe('mid-run steering and queuing', () => {
     expect(run.ok()).toBeTruthy();
 
     let releaseFirstAck!: () => void;
-    const secondPosted = new Promise<void>((resolve) => (releaseFirstAck = resolve));
+    const firstAckGate = new Promise<void>((resolve) => (releaseFirstAck = resolve));
+    let markFirstForwarded!: () => void;
+    const firstForwarded = new Promise<void>((resolve) => (markFirstForwarded = resolve));
+    let markSecondPosted!: () => void;
+    const secondPosted = new Promise<void>((resolve) => (markSecondPosted = resolve));
     let steersSeen = 0;
-    let overlapProven = false;
     await page.route('**/api/agents/chat/steer', async (route) => {
       const ordinal = ++steersSeen;
       if (ordinal === 2) {
-        releaseFirstAck();
+        markSecondPosted();
       }
-      // Forward to the real server first: the enqueue lands in submission
-      // order; only the CLIENT-side 202 delivery is held back.
       const response = await route.fetch();
       if (ordinal === 1) {
-        // Bounded so a broken second submit fails on assertions, not a hang.
-        await Promise.race([
-          secondPosted.then(() => {
-            overlapProven = true;
-          }),
-          new Promise<void>((resolve) => setTimeout(resolve, 10000)),
-        ]);
+        // The server has accepted the first steer; only client-side delivery
+        // of its 202 remains held while the user submits the second.
+        markFirstForwarded();
+        await firstAckGate;
       }
       await route.fulfill({ response });
     });
@@ -258,17 +273,28 @@ test.describe('mid-run steering and queuing', () => {
     const responses: Promise<Response>[] = [steerResponseFor(firstSteer)];
     await typeDuringRun(page, firstSteer);
     await messageInput(page).press('Enter');
+    await firstForwarded;
     responses.push(steerResponseFor(secondSteer));
     await typeDuringRun(page, secondSteer);
     await messageInput(page).press('Enter');
 
+    let secondPostedBeforeFirstAck = false;
+    try {
+      secondPostedBeforeFirstAck = await Promise.race([
+        secondPosted.then(() => true),
+        page.waitForTimeout(500).then(() => false),
+      ]);
+      expect(secondPostedBeforeFirstAck).toBe(false);
+      expect(steersSeen).toBe(1);
+    } finally {
+      releaseFirstAck();
+    }
+
     const [firstResponse, secondResponse] = await Promise.all(responses);
     expect(firstResponse.status()).toBe(202);
     expect(secondResponse.status()).toBe(202);
-    // The hold proves the overlap actually happened: the second POST was
-    // observed while the first 202 was still parked in the intercept.
+    await secondPosted;
     expect(steersSeen).toBe(2);
-    expect(overlapProven).toBe(true);
     await page.unroute('**/api/agents/chat/steer');
 
     await expect(appliedSteerParts(page).filter({ hasText: firstSteer })).toHaveCount(1, {
@@ -413,6 +439,70 @@ test.describe('mid-run steering and queuing', () => {
     await expect(queuedRows(page)).toHaveCount(0);
   });
 
+  test('recovered queued follow-up exposes Edit and Remove and discards its parked source before editing', async ({
+    page,
+  }) => {
+    test.setTimeout(60000);
+    const label = uniqueLabel('recovered-controls');
+    const recoveredText = `Recovered follow-up ${label}`;
+    const serverSteerId = `server-${label}`;
+    const clientSteerId = `client-${label}`;
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    await establishConversation(page, `recovered-controls-setup-${label}`);
+
+    const conversationId = new URL(page.url()).pathname.split('/').pop();
+    expect(conversationId).toBeTruthy();
+    await page.route(`**/api/agents/chat/status/${conversationId}**`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          active: false,
+          generationProtocolVersion: 2,
+          unrecoveredSteers: [
+            {
+              steerId: serverSteerId,
+              clientSteerId,
+              text: recoveredText,
+              createdAt: Date.now(),
+            },
+          ],
+        }),
+      }),
+    );
+
+    let cancelBody: CancelSteerWirePayload | undefined;
+    await page.route('**/api/agents/chat/steer/cancel**', async (route) => {
+      cancelBody = route.request().postDataJSON() as CancelSteerWirePayload;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ removed: true, generationProtocolVersion: 2 }),
+      });
+    });
+
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
+    const row = queuedRows(page).filter({ hasText: recoveredText });
+    await expect(row).toBeVisible({ timeout: 15000 });
+    await expect(row.getByRole('button', { name: 'Remove message', exact: true })).toBeVisible();
+
+    await row.getByRole('button', { name: 'More options', exact: true }).click();
+    const edit = page.getByRole('menuitem', { name: 'Edit message', exact: true });
+    await expect(edit).toBeVisible();
+    await edit.click();
+
+    await expect(row).toHaveCount(0, { timeout: 10000 });
+    await expect(messageInput(page)).toHaveValue(recoveredText);
+    expect(cancelBody).toEqual({
+      conversationId,
+      steerId: serverSteerId,
+      clientSteerId,
+      generationProtocolVersion: 2,
+    });
+  });
+
   test('queues with Cmd/Ctrl+Enter during a run and auto-sends after clean completion', async ({
     page,
   }) => {
@@ -482,6 +572,88 @@ test.describe('mid-run steering and queuing', () => {
     await expect(messagesView(page).getByText(SLOW_REPLY_LAST_CHUNK)).toHaveCount(0);
   });
 
+  test('interrupt & send drains after a created response with no persistable content', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    const label = uniqueLabel('interrupt-empty');
+    const emptyRunPrompt = `E2E_EMPTY_SLOW_REPLY:${label}`;
+    const interruptText = `Interrupt empty follow-up ${label}`;
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    await establishConversation(page, `interrupt-empty-setup-${label}`);
+
+    const conversationId = new URL(page.url()).pathname.split('/').pop();
+    expect(conversationId).toBeTruthy();
+    const accessToken = await getAccessToken(page);
+    const messagesPath = `/api/messages/${encodeURIComponent(conversationId as string)}`;
+
+    const run = await sendMessage(page, emptyRunPrompt);
+    expect(run.ok()).toBeTruthy();
+
+    /** BaseClient starts its user-row write only after `onStart` emitted
+     * `created`. Waiting for that row proves the server is in the exact
+     * created-but-still-whitespace state, without relying on a sleep. */
+    await expect
+      .poll(
+        async () => {
+          const persisted = await requestJson<PersistedMessage[]>(page, {
+            path: messagesPath,
+            token: accessToken,
+          });
+          return persisted.some(
+            (message) => message.isCreatedByUser === true && message.text === emptyRunPrompt,
+          );
+        },
+        { timeout: 30000 },
+      )
+      .toBe(true);
+
+    await typeDuringRun(page, interruptText);
+    const [abortResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === '/api/agents/chat/abort',
+        { timeout: 30000 },
+      ),
+      messageInput(page).press('Alt+Enter'),
+    ]);
+    expect(abortResponse.ok()).toBeTruthy();
+
+    // The abort FINAL releases the queued follow-up, which completes live.
+    await expect(messageTurns(page)).toHaveCount(6, { timeout: 60000 });
+    const followupTurn = messageTurns(page).nth(4);
+    await expect(followupTurn).toContainText(interruptText);
+    await expect(followupTurn.locator('.user-turn')).toBeVisible();
+    await expect(messageTurns(page).nth(5)).toContainText(MOCK_REPLY_TEXT, { timeout: 30000 });
+
+    /** The empty assistant is a durable parent, not merely the optimistic
+     * row that the created handler rendered. Without that row an underscore
+     * preliminary id can reject this same queued submission. */
+    const persisted = await requestJson<PersistedMessage[]>(page, {
+      path: messagesPath,
+      token: accessToken,
+    });
+    const interruptedUser = persisted.find(
+      (message) => message.isCreatedByUser === true && message.text === emptyRunPrompt,
+    );
+    expect(interruptedUser).toBeTruthy();
+    expect(
+      persisted.find(
+        (message) =>
+          message.isCreatedByUser === false &&
+          message.parentMessageId === interruptedUser?.messageId,
+      ),
+    ).toMatchObject({
+      content: [],
+      unfinished: true,
+      isCreatedByUser: false,
+    });
+    await expect(queuedRows(page)).toHaveCount(0);
+  });
+
   /**
    * Interrupt & steer is the only path that can inject with NO tool boundary
    * ahead of it: the server asks the generating replica to seal the model
@@ -529,13 +701,15 @@ test.describe('mid-run steering and queuing', () => {
     await expect(messagesView(page).getByText(SLOW_REPLY_LAST_CHUNK)).toHaveCount(0);
     await expect(messagesView(page).getByText('chunk-010')).toBeVisible();
 
-    // NOTE: an assertion that the run visibly RESUMES after the seal (the
-    // continuation's reply appearing) fails here deterministically. Every
-    // other assertion passes, so the seal and the injection are working; what
-    // is unresolved is whether the mock harness surfaces the continuation at
-    // all in a no-tool scenario, or whether generation genuinely stops. That
-    // distinction matters and is tracked separately rather than asserted
-    // loosely here — see the PR discussion.
+    // The fake model's second invocation is unique and echoes only messages
+    // stamped as steer injections. This proves the graph resumed after the
+    // seal and that the continuation actually received the instruction.
+    await expect(messagesView(page).getByText(`[steers-seen=1] ${steerText}`)).toBeVisible({
+      timeout: 30000,
+    });
+    await expect(
+      messagesView(page).getByText(`${SLOW_REPLY_CONTINUATION_TEXT} ${label}`),
+    ).toBeVisible({ timeout: 30000 });
 
     // Stayed INSIDE the response: the setup pair plus this pair, with no
     // auto-sent follow-up pair (which both degradation paths produce).

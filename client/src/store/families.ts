@@ -18,6 +18,7 @@ import type {
   TMessage,
   TPreset,
 } from 'librechat-data-provider';
+import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import {
   clearModelForNonEphemeralAgent,
@@ -316,8 +317,16 @@ const pendingQuotesByConvoId = atomFamily<string[], string>({
  */
 export type PendingSteer = {
   steerId: string;
+  /** Optimistic id echoed by server state when SYNC beats the POST callback. */
+  clientSteerId?: string;
   text: string;
   status: 'sending' | 'pending' | 'failed';
+  /** The transport failed without a definitive server rejection. The durable
+   * enqueue may have committed. Same-id Retry is safe only under protocol v2;
+   * edit/queue/remove stay hidden until ownership is resolved. */
+  deliveryUncertain?: boolean;
+  /** Protocol selected for the generation that owns this attempt. */
+  generationProtocolVersion?: GenerationProtocolVersion;
   createdAt: number;
   /** Attachments steered with the message (refs; already uploaded). */
   files?: TMessage['files'];
@@ -330,6 +339,15 @@ export type PendingSteer = {
    *  wait for a tool step. Labelling only — the server owns the behaviour and
    *  echoes what it actually armed. */
   preempt?: boolean;
+  /** Monotonic server revision; delayed ACKs cannot undo SSE corrections. */
+  preemptRevision?: number;
+  /** Exact server generation this steer belongs to. Conversation ids are
+   * reused by later turns, so retries/arm/cancel must retain this epoch rather
+   * than mutating whatever generation currently occupies the conversation. */
+  generationCreatedAt?: number;
+  /** Exact client queue identity/order to restore if this accepted steer is
+   *  returned as a terminal leftover before injection. */
+  queuedOrigin?: QueuedMessageOrigin;
 };
 
 /**
@@ -351,6 +369,14 @@ export type QueuedMessage = {
   id: string;
   text: string;
   createdAt: number;
+  /** Stable only for this queued recovery attempt and its transport retries.
+   * A failed generation re-converts the durable source with a fresh key. */
+  clientRequestId?: string;
+  /** Correlation used only to durably dismiss/reclaim the parked source. */
+  recoveryClientSteerId?: string;
+  recoverySteerId?: string;
+  /** Generation observed before this queued follow-up became eligible. */
+  expectedPredecessorCreatedAt?: number;
   files?: TMessage['files'];
   /** Quote chips consumed from the composer at enqueue time; passed to `ask`
    *  as `overrideQuotes` on drain so they pair with THIS message. */
@@ -363,6 +389,15 @@ export type QueuedMessage = {
   priority?: boolean;
 };
 
+/** Snapshot of a queued item's logical position while it is temporarily sent
+ * into a live run. Neighbour ids make restoration resilient to concurrent
+ * drains and sends without minting a replacement item. */
+export type QueuedMessageOrigin = {
+  item: QueuedMessage;
+  beforeIds: string[];
+  afterIds: string[];
+};
+
 /**
  * Per-conversation client-side queue of follow-up messages. Drained one per
  * run completion by `useQueueDrain` (each dequeued message starts a normal
@@ -371,17 +406,6 @@ export type QueuedMessage = {
 const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
   key: 'queuedMessagesByConvoId',
   default: [],
-});
-
-/**
- * Run-end signals whose conversation was NOT active when they arrived —
- * parked here (keyed by conversation) so a later run finishing on the same
- * chat index cannot overwrite them; `useQueueDrain` consumes the parked
- * signal when the user returns to that conversation.
- */
-const pendingRunEndByConvoId = atomFamily<RunEnd | null, string>({
-  key: 'pendingRunEndByConvoId',
-  default: null,
 });
 
 /**
@@ -396,22 +420,86 @@ export type RunEnd = {
   outcome: 'completed' | 'aborted' | 'error';
   startedAsNewConvo?: boolean;
   endedAt: number;
+  /** Exact terminal epoch whose idle transition may release one queued start. */
+  generationCreatedAt?: number;
   /** Armed "Interrupt & send" flag traveling with a PARKED signal, so
    *  another run on the same pane can neither consume nor clear it. */
   interruptArmed?: boolean;
 };
 
-const runEndByIndex = atomFamily<RunEnd | null, string | number>({
-  key: 'runEndByIndex',
-  default: null,
+/** A pane can receive A's terminal frame after the user has navigated to and
+ * started B. Keep each terminal epoch until the queue drain has either parked
+ * or consumed it; a single replaceable slot loses A when B finishes first. */
+const runEndsByIndex = atomFamily<RunEnd[], string | number>({
+  key: 'runEndsByIndex',
+  default: [],
 });
+
+/** Preserve the original nullable one-shot API for stream writers while the
+ * backing state retains every not-yet-consumed terminal epoch. Writing null
+ * consumes only the visible (oldest) signal. */
+const runEndByIndex = selectorFamily<RunEnd | null, string | number>({
+  key: 'runEndByIndex',
+  get:
+    (index) =>
+    ({ get }) =>
+      get(runEndsByIndex(index))[0] ?? null,
+  set:
+    (index) =>
+    ({ set }, value) => {
+      if (value instanceof DefaultValue) {
+        set(runEndsByIndex(index), []);
+        return;
+      }
+      if (value == null) {
+        set(runEndsByIndex(index), (prev) => prev.slice(1));
+        return;
+      }
+      set(runEndsByIndex(index), (prev) => [...prev, value]);
+    },
+});
+
+/** Foreign terminal epochs are moved off the shared pane immediately. This
+ * per-conversation carrier is queued for the same reason as the pane carrier:
+ * successive epochs cannot overwrite one another while the chat is hidden. */
+const pendingRunEndsByConvoId = atomFamily<RunEnd[], string>({
+  key: 'pendingRunEndsByConvoId',
+  default: [],
+});
+
+const pendingRunEndByConvoId = selectorFamily<RunEnd | null, string>({
+  key: 'pendingRunEndByConvoId',
+  get:
+    (conversationId) =>
+    ({ get }) =>
+      get(pendingRunEndsByConvoId(conversationId))[0] ?? null,
+  set:
+    (conversationId) =>
+    ({ set }, value) => {
+      if (value instanceof DefaultValue) {
+        set(pendingRunEndsByConvoId(conversationId), []);
+        return;
+      }
+      if (value == null) {
+        set(pendingRunEndsByConvoId(conversationId), (prev) => prev.slice(1));
+        return;
+      }
+      set(pendingRunEndsByConvoId(conversationId), (prev) => [...prev, value]);
+    },
+});
+
+export type DrainAfterAbort = {
+  conversationId: string;
+  generationCreatedAt: number;
+};
 
 /**
  * One-shot override armed by "interrupt & send": the next `aborted` run-end
- * drains the queue exactly once (a plain Stop press leaves queued chips for
- * manual send).
+ * for the exact conversation generation drains the queue exactly once (a
+ * plain Stop press leaves queued chips for manual send). `false` remains the
+ * clear value used by stream reconciliation paths.
  */
-const drainAfterAbortByIndex = atomFamily<boolean, string | number>({
+const drainAfterAbortByIndex = atomFamily<DrainAfterAbort | false, string | number>({
   key: 'drainAfterAbortByIndex',
   default: false,
 });
@@ -427,6 +515,30 @@ const drainAfterAbortByIndex = atomFamily<boolean, string | number>({
 const appliedSteerIdsByConvoId = atomFamily<string[], string>({
   key: 'appliedSteerIdsByConvoId',
   default: [],
+});
+
+/** Optimistic ids the server has proven accepted via ACK or SYNC. Separate
+ * from `appliedSteerIdsByConvoId`: accepted-but-still-queued steers must not
+ * be suppressed by terminal conversion, but a late POST error must not
+ * resurrect them after Cancel/Edit/Convert removes the visible chip. */
+const acceptedSteerClientIdsByConvoId = atomFamily<string[], string>({
+  key: 'acceptedSteerClientIdsByConvoId',
+  default: [],
+});
+
+/** Server generation epoch currently attached for each conversation. Stream
+ * ids are conversation-scoped and reused by later turns; every mutation that
+ * can affect a live run carries this value as an optimistic concurrency fence. */
+const activeGenerationCreatedAtByConvoId = atomFamily<number | null, string>({
+  key: 'activeGenerationCreatedAtByConvoId',
+  default: null,
+});
+
+/** Negotiated behavior contract for the active generation. Missing echoes are
+ * legacy by definition, so the safe default is always v1. */
+const activeGenerationProtocolVersionByConvoId = atomFamily<GenerationProtocolVersion, string>({
+  key: 'activeGenerationProtocolVersionByConvoId',
+  default: 1,
 });
 
 const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
@@ -606,5 +718,8 @@ export default {
   pendingRunEndByConvoId,
   drainAfterAbortByIndex,
   appliedSteerIdsByConvoId,
+  acceptedSteerClientIdsByConvoId,
+  activeGenerationCreatedAtByConvoId,
+  activeGenerationProtocolVersionByConvoId,
   updateConversationSelector,
 };

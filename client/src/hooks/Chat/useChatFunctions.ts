@@ -285,13 +285,15 @@ export default function useChatFunctions({
       overrideManualSkills,
       overrideQuotes,
       addedConvo,
+      overrideClientRequestId,
+      overrideRecoverySteerId,
+      overrideExpectedPredecessorCreatedAt,
+      overrideQueuedMessageOrigin,
     } = {},
   ) => {
-    setShowStopButton(false);
-
     text = text.trim();
     if (!!isSubmitting || text === '') {
-      return;
+      return false;
     }
 
     const conversation = cloneDeep(immutableConversation);
@@ -299,13 +301,13 @@ export default function useChatFunctions({
     const endpoint = conversation?.endpoint;
     if (endpoint === null) {
       console.error('No endpoint available');
-      return;
+      return false;
     }
 
     conversationId = conversationId ?? conversation?.conversationId ?? null;
     if (conversationId == 'search') {
       console.error('cannot send any message under search view!');
-      return;
+      return false;
     }
 
     const cachedMessages = getMessages(conversationId);
@@ -340,7 +342,7 @@ export default function useChatFunctions({
 
     if (isContinued && !latestMessage) {
       console.error('cannot continue AI message without latestMessage!');
-      return;
+      return false;
     }
 
     if (parentMessageId == null && hasPendingAssistantParent(latestMessage)) {
@@ -350,6 +352,8 @@ export default function useChatFunctions({
       );
       return false;
     }
+
+    setShowStopButton(false);
 
     const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
     /**
@@ -415,7 +419,7 @@ export default function useChatFunctions({
     /** Stable idempotency key for this submission: fresh per `ask()` (so regenerate differs)
      *  but reused across the client's start-generation network retries, letting the server
      *  dedup a retried request instead of starting a second billed generation. */
-    const clientRequestId = v4();
+    const clientRequestId = overrideClientRequestId ?? v4();
     if (parentMessageId == null) {
       parentMessageId = getAppendParentMessageId({ latestMessage, currentMessages });
     }
@@ -677,6 +681,9 @@ export default function useChatFunctions({
       addedConvo,
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
       clientRequestId,
+      recoverySteerId: overrideRecoverySteerId,
+      expectedPredecessorCreatedAt: overrideExpectedPredecessorCreatedAt,
+      queuedMessageOrigin: overrideQueuedMessageOrigin,
     };
 
     if (isRegenerate) {

@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
+import type { ShortcutActionId } from '~/hooks/useKeyboardShortcuts';
 import type { ShortcutBinding } from '~/utils/shortcuts';
-import { parseBinding, bindingHash, isMacPlatform } from '~/utils/shortcuts';
-import { EDITING_ALLOWED_SHORTCUTS } from '~/hooks/useKeyboardShortcuts';
+import { EDITING_ALLOWED_SHORTCUTS, resolveShortcutBindings } from '~/hooks/useKeyboardShortcuts';
+import { bindingHash } from '~/utils/shortcuts';
 import store from '~/store';
 
 export type ComposerBindings = {
@@ -28,29 +29,33 @@ export type ComposerBindings = {
  * composer keydown handler and the during-run hovercard hints. */
 export default function useComposerBindings(): ComposerBindings {
   const customShortcuts = useRecoilValue(store.customShortcuts);
+  const resolvedBindings = useMemo(
+    () => resolveShortcutBindings(customShortcuts),
+    [customShortcuts],
+  );
 
   const submitOverride = useMemo(() => {
     const override = customShortcuts['submitMessage'];
     if (!override) {
-      return undefined;
+      return resolvedBindings.get('submitMessage') == null ? null : undefined;
     }
-    return parseBinding(isMacPlatform ? override.mac : override.other);
-  }, [customShortcuts]);
+    return resolvedBindings.get('submitMessage') ?? null;
+  }, [customShortcuts, resolvedBindings]);
 
   const yieldedChords = useMemo(() => {
     const editingAllowed: ReadonlySet<string> = EDITING_ALLOWED_SHORTCUTS;
     const hashes = new Set<string>();
-    for (const [actionId, override] of Object.entries(customShortcuts ?? {})) {
-      if (actionId === 'submitMessage' || !editingAllowed.has(actionId)) {
+    for (const actionId of editingAllowed) {
+      if (actionId === 'submitMessage') {
         continue;
       }
-      const binding = parseBinding(isMacPlatform ? override?.mac : override?.other);
+      const binding = resolvedBindings.get(actionId as ShortcutActionId);
       if (binding) {
         hashes.add(bindingHash(binding));
       }
     }
     return hashes;
-  }, [customShortcuts]);
+  }, [resolvedBindings]);
 
   return useMemo(() => ({ submitOverride, yieldedChords }), [submitOverride, yieldedChords]);
 }

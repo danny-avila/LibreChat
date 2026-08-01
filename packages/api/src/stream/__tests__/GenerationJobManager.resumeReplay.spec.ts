@@ -308,6 +308,37 @@ describe('GenerationJobManager resume replay events', () => {
     expect(store.getCollectedUsage(streamId)).toEqual([]);
   });
 
+  test('returns null when the generation is replaced during the resume snapshot', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    manager = createManagerWithStore(store);
+    const streamId = `resume-snapshot-replacement-${Date.now()}`;
+    const predecessor = await manager.createJob(streamId, 'user-1', streamId);
+    let releasePeek: (() => void) | undefined;
+    const peekGate = new Promise<void>((resolve) => {
+      releasePeek = resolve;
+    });
+    let signalPeekStarted: (() => void) | undefined;
+    const peekStarted = new Promise<void>((resolve) => {
+      signalPeekStarted = resolve;
+    });
+    const originalPeek = store.peekSteers.bind(store);
+    jest.spyOn(store, 'peekSteers').mockImplementationOnce(async (...args) => {
+      signalPeekStarted?.();
+      await peekGate;
+      return originalPeek(...args);
+    });
+
+    const reading = manager.getResumeState(streamId, predecessor.createdAt);
+    await peekStarted;
+    const replacement = await manager.createJob(streamId, 'user-1', streamId);
+    releasePeek?.();
+
+    await expect(reading).resolves.toBeNull();
+    await expect(manager.getJob(streamId)).resolves.toMatchObject({
+      createdAt: replacement.createdAt,
+    });
+  });
+
   test('rejects a delayed predecessor run step after the stream id is replaced', async () => {
     manager = createInMemoryManager();
     const streamId = `run-step-delayed-predecessor-${Date.now()}`;

@@ -115,8 +115,16 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
  * @param {AbortSignal} params.signal
  * @param {Object} params.endpointOption
  * @param {number} [params.jobCreatedAt]
+ * @param {string} [params.checkpointNamespace] Immutable saver-level generation scope
  */
-const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt }) => {
+const initializeClient = async ({
+  req,
+  res,
+  signal,
+  endpointOption,
+  jobCreatedAt,
+  checkpointNamespace,
+}) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
   }
@@ -1057,6 +1065,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
     startupTelemetry,
     toolInputValidationErrors,
     jobCreatedAt,
+    checkpointNamespace,
   });
 
   if (streamId) {

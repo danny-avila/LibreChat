@@ -32,13 +32,18 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 
 function jobHashFromCreationCall(call: unknown[]): Record<string, string> {
   const keyCount = Number(call[1]);
-  const fields = call.slice(5 + keyCount);
-  return Object.fromEntries(
+  // JOB_CREATE_LUA receives twelve scalar arguments before its HSET pairs.
+  const fields = call.slice(14 + keyCount);
+  const hash = Object.fromEntries(
     Array.from({ length: fields.length / 2 }, (_, index) => [
       String(fields[index * 2]),
       String(fields[index * 2 + 1]),
     ]),
   );
+  if (hash.generationProtocolVersion === '2') {
+    hash.checkpointNamespace = hash.createdAt;
+  }
+  return hash;
 }
 
 describe('RedisJobStore', () => {
@@ -67,21 +72,25 @@ describe('RedisJobStore', () => {
       chunksKey,
       runStepsKey,
       steersKey,
+      claimedSteersKey,
       parkedSteersKey,
       generationEpochKey,
+      receiptsKey,
+      receiptOrderKey,
       from,
       actionId,
       createdAt,
     ] = evalTransition.mock.calls[0];
     expect(script).toContain('HGET", KEYS[1], "createdAt"');
-    expect(script).toContain('redis.call("DEL", KEYS[5])');
-    expect(script).toContain('redis.call("SET", KEYS[6]');
+    expect(script).toContain('redis.call("DEL", KEYS[5], KEYS[6])');
+    expect(script).toContain('redis.call("SET", KEYS[7]');
     expect(script).toContain(
-      'redis.call("SET", KEYS[7], currentCreatedAt, "EX", ttl + generationEpochGraceTtl)',
+      'redis.call("SET", KEYS[8], currentCreatedAt, "EX", ttl + generationEpochGraceTtl)',
     );
     expect(script.indexOf('local ownerUserId')).toBeLessThan(
       script.indexOf('redis.call("EXPIRE", KEYS[1], ttl)'),
     );
+    expect(script).toContain('if currentTtl > ttl then ttl = currentTtl');
     expect([
       keyCount,
       jobKey,
@@ -89,24 +98,63 @@ describe('RedisJobStore', () => {
       chunksKey,
       runStepsKey,
       steersKey,
+      claimedSteersKey,
       parkedSteersKey,
       generationEpochKey,
+      receiptsKey,
+      receiptOrderKey,
       from,
       actionId,
       createdAt,
     ]).toEqual([
-      7,
+      10,
       'stream:{stream-epoch}:job',
       'stream:{stream-epoch}:seq',
       'stream:{stream-epoch}:chunks',
       'stream:{stream-epoch}:runsteps',
       'stream:{stream-epoch}:steers',
+      'stream:{stream-epoch}:steers-claimed',
       'stream:{stream-epoch}:parked',
       'stream:{stream-epoch}:generation-epoch',
+      'stream:{stream-epoch}:steer-receipts',
+      'stream:{stream-epoch}:steer-receipt-order',
       'running',
       '',
       '123456',
     ]);
+  });
+
+  test('retains a terminal persistence barrier when completed TTL is zero', async () => {
+    const evalTransition = jest.fn().mockResolvedValue(0);
+    const redis = {
+      isCluster: true,
+      eval: evalTransition,
+      hgetall: jest.fn().mockResolvedValue({
+        streamId: 'stream-terminal-barrier',
+        userId: 'user-1',
+        status: 'running',
+        createdAt: '100',
+        syncSent: '0',
+      }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis, { completedTtl: 0 });
+
+    await expect(
+      store.transitionStatus('stream-terminal-barrier', {
+        from: 'running',
+        to: 'aborted',
+        expectCreatedAt: 100,
+        patch: {
+          completedAt: 200,
+          terminalPersistencePending: true,
+          terminalPersistenceStartedAt: 200,
+        },
+      }),
+    ).resolves.toBe(false);
+
+    // ARGV[4] is the terminal job TTL. The persistence owner/recovery path
+    // gets five minutes even when ordinary completed records are immediate.
+    expect(evalTransition.mock.calls[0][15]).toBe('300');
   });
 
   test('retains the generation epoch beyond the paused job TTL', async () => {
@@ -125,11 +173,11 @@ describe('RedisJobStore', () => {
 
     const transitionCall = evalTransition.mock.calls[0];
     expect(transitionCall[0]).toContain(
-      'redis.call("SET", KEYS[7], currentCreatedAt, "EX", ttl + generationEpochGraceTtl)',
+      'redis.call("SET", KEYS[8], currentCreatedAt, "EX", ttl + generationEpochGraceTtl)',
     );
-    expect(transitionCall[12]).toBe('4321');
-    expect(transitionCall[13]).toBe('0');
-    expect(transitionCall[17]).toBe('300');
+    expect(transitionCall[15]).toBe('4621');
+    expect(transitionCall[16]).toBe('0');
+    expect(transitionCall[20]).toBe('300');
   });
 
   test('seeds the guarded epoch when reaping a legacy job without a marker', async () => {
@@ -160,15 +208,18 @@ describe('RedisJobStore', () => {
     }
 
     const reapCall = evalCommand.mock.calls[0];
-    expect(reapCall[0]).toContain('redis.call("SET", KEYS[6], ARGV[1], "EX", tonumber(ARGV[5]))');
+    expect(reapCall[0]).toContain('redis.call("SET", KEYS[7], ARGV[1], "EX", tonumber(ARGV[5]))');
     expect(reapCall.slice(1)).toEqual([
-      6,
+      9,
       'stream:{legacy-reap}:job',
       'stream:{legacy-reap}:chunks',
       'stream:{legacy-reap}:runsteps',
       'stream:{legacy-reap}:steers',
+      'stream:{legacy-reap}:steers-claimed',
       'stream:{legacy-reap}:parked',
       'stream:{legacy-reap}:generation-epoch',
+      'stream:{legacy-reap}:steer-receipts',
+      'stream:{legacy-reap}:steer-receipt-order',
       '1',
       '100000',
       '60000',
@@ -237,6 +288,7 @@ describe('RedisJobStore', () => {
       promptTokens: 0,
       discoveredTools: [],
       preemptCapable: true,
+      generationProtocolVersion: 2,
     });
 
     /**
@@ -246,6 +298,8 @@ describe('RedisJobStore', () => {
      * degrading to ordinary steering in every Redis deployment.
      */
     expect(job.preemptCapable).toBe(true);
+    expect(job.generationProtocolVersion).toBe(2);
+    expect(job.checkpointNamespace).toBe(String(job.createdAt));
 
     expect(job).toMatchObject({
       streamId: 'stream-metadata',
@@ -296,24 +350,33 @@ describe('RedisJobStore', () => {
     await store.createJob('stream-replacement', 'user-1');
 
     const [script, keyCount, ...args] = evalJobCreation.mock.calls[0];
-    expect(script).toContain('local retainedEpoch = tonumber(redis.call("GET", KEYS[6]))');
+    expect(script).toContain(
+      'local retainedEpochRaw = redis.call("GET", KEYS[7]) local retainedEpoch = tonumber(retainedEpochRaw)',
+    );
+    expect(script).toContain('if retainedEpochRaw and not isSafeEpoch(retainedEpoch) then');
     expect(script).toContain(
       'if previousCreatedAt and previousCreatedAt >= createdAt then createdAt = previousCreatedAt + 1 end',
     );
+    expect(script).toContain('"checkpointNamespace", tostring(createdAt)');
     expect(script).toContain('redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5])');
     expect(script).toContain(
-      'redis.call("SET", KEYS[6], tostring(createdAt), "EX", ttl + generationEpochGraceTtl)',
+      'redis.call("SET", KEYS[7], tostring(createdAt), "EX", ttl + generationEpochGraceTtl)',
     );
-    expect([keyCount, ...args.slice(0, 6)]).toEqual([
-      6,
+    expect([keyCount, ...args.slice(0, 10)]).toEqual([
+      10,
       'stream:{stream-replacement}:job',
       'stream:{stream-replacement}:chunks',
       'stream:{stream-replacement}:runsteps',
       'stream:{stream-replacement}:steers',
+      'stream:{stream-replacement}:steers-claimed',
       'stream:{stream-replacement}:parked',
       'stream:{stream-replacement}:generation-epoch',
+      'stream:{stream-replacement}:steer-receipts',
+      'stream:{stream-replacement}:steer-receipt-order',
+      'stream:{stream-replacement}:job',
     ]);
-    expect(args[8]).toBe('300');
+    expect(args[12]).toBe('300');
+    expect(args[13]).toBe('300');
     expect(store.getCollectedUsage('stream-replacement')).toEqual([]);
   });
 
@@ -605,11 +668,12 @@ describe('RedisJobStore', () => {
     const deleteCall = evalCommand.mock.calls[1];
     expect(deleteCall[0]).toContain('HGET", KEYS[1], "createdAt"');
     expect(deleteCall.slice(1)).toEqual([
-      4,
+      5,
       'stream:{stream-guarded}:job',
       'stream:{stream-guarded}:chunks',
       'stream:{stream-guarded}:runsteps',
       'stream:{stream-guarded}:steers',
+      'stream:{stream-guarded}:steers-claimed',
       '100',
       '0',
     ]);
@@ -627,18 +691,33 @@ describe('RedisJobStore', () => {
     await store.appendChunk('stream-chunk-guarded', event, 100);
 
     const appendCall = evalCommand.mock.calls[0];
-    expect(appendCall[0]).toContain('redis.call("HGET", KEYS[2], "createdAt") ~= ARGV[3]');
+    expect(appendCall[0]).toContain('currentCreatedAt ~= ARGV[3]');
+    expect(appendCall[0]).toContain('currentStatus ~= "running"');
+    expect(appendCall[0]).toContain('currentStatus ~= "requires_action"');
+    expect(appendCall[0]).toContain('retainedEpoch ~= currentCreatedAt');
+    expect(appendCall[0]).toContain('redis.call("EXPIRE", KEYS[8], epochTarget)');
     expect(appendCall.slice(1)).toEqual([
-      2,
+      8,
       'stream:{stream-chunk-guarded}:chunks',
       'stream:{stream-chunk-guarded}:job',
+      'stream:{stream-chunk-guarded}:steer-receipts',
+      'stream:{stream-chunk-guarded}:steer-receipt-order',
+      'stream:{stream-chunk-guarded}:steers-claimed',
+      'stream:{stream-chunk-guarded}:steers',
+      'stream:{stream-chunk-guarded}:parked',
+      'stream:{stream-chunk-guarded}:generation-epoch',
       JSON.stringify(event),
-      '1200',
+      '1500',
       '100',
+      '',
+      '',
+      expect.any(String),
+      '300',
+      '300',
     ]);
   });
 
-  test('guards run-step saves with the expected creation epoch inside Redis Lua', async () => {
+  test('guards run-step saves with the expected epoch and active status inside Redis Lua', async () => {
     const evalCommand = jest.fn().mockResolvedValue(0);
     const redis = {
       isCluster: true,
@@ -650,13 +729,15 @@ describe('RedisJobStore', () => {
     await store.saveRunSteps?.('stream-runstep-guarded', runSteps as never, 100);
 
     const saveCall = evalCommand.mock.calls[0];
-    expect(saveCall[0]).toContain('redis.call("HGET", KEYS[2], "createdAt") ~= ARGV[3]');
+    expect(saveCall[0]).toContain('currentCreatedAt ~= ARGV[3]');
+    expect(saveCall[0]).toContain('currentStatus ~= "running"');
+    expect(saveCall[0]).toContain('currentStatus ~= "requires_action"');
     expect(saveCall.slice(1)).toEqual([
       2,
       'stream:{stream-runstep-guarded}:runsteps',
       'stream:{stream-runstep-guarded}:job',
       JSON.stringify(runSteps),
-      '1200',
+      '1500',
       '100',
     ]);
   });
