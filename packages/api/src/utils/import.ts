@@ -19,6 +19,33 @@ export function resolveImportMaxFileSize(): number {
   return parsed;
 }
 
+/** Default number of import stages one node will run at once. */
+export const DEFAULT_IMPORT_MAX_CONCURRENCY = 3;
+
+/**
+ * Resolves the node-wide ceiling on concurrent import stages.
+ *
+ * Per-user limits bound what one account can start and say nothing about the
+ * aggregate: each stage buffers, decodes and `JSON.parse`s a shard at roughly
+ * 3.2x its size in heap, so enough accounts each inside their own limit will
+ * still exhaust the process. This is the ceiling on all of them together, and
+ * the env var is how a deployment with more headroom raises it.
+ */
+export function resolveImportMaxConcurrency(): number {
+  const raw = process.env.CONVERSATION_IMPORT_MAX_CONCURRENT;
+  if (!raw) {
+    return DEFAULT_IMPORT_MAX_CONCURRENCY;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    logger.warn(
+      `[imports] Invalid CONVERSATION_IMPORT_MAX_CONCURRENT="${raw}"; using default ${DEFAULT_IMPORT_MAX_CONCURRENCY}`,
+    );
+    return DEFAULT_IMPORT_MAX_CONCURRENCY;
+  }
+  return parsed;
+}
+
 /** 256 MiB — default cap on a single decompressed archive entry. */
 export const DEFAULT_IMPORT_MAX_SHARD_SIZE = 268435456;
 

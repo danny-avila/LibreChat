@@ -14,6 +14,7 @@ const {
   deleteAgentCheckpoints,
   sanitizeImportError,
   resolveImportMaxFileSize,
+  resolveImportMaxConcurrency,
   restoreTenantContextFromReq,
   deleteAllSharedLinksWithCleanup,
   deleteConvoSharedLinksWithCleanup,
@@ -321,6 +322,16 @@ const importJobs = new ImportJobStore(getLogStores(CacheKeys.IMPORT_JOBS));
  */
 const activeImports = new Map();
 const MAX_CONCURRENT_IMPORTS_PER_USER = 1;
+/**
+ * Heavy import stages in flight across every user on this node. The per-user
+ * map bounds what one account can start; it says nothing about aggregate work,
+ * so twenty accounts each inside their own limit are still twenty concurrent
+ * shard parses on one process. Inspection is counted with the runs because it
+ * is the same cost in the same heap — it decompresses and JSON-parses the
+ * whole export in the upload request to build the summary.
+ */
+const MAX_CONCURRENT_IMPORT_STAGES = resolveImportMaxConcurrency();
+let activeImportStages = 0;
 /** Minimum gap between job-store progress writes. The client polls every two
  * seconds, so anything below that is written for nobody to read. */
 const PROGRESS_WRITE_INTERVAL_MS = 500;
@@ -331,15 +342,33 @@ function activeImportCount(userId) {
 
 function trackImportStart(userId) {
   activeImports.set(userId, activeImportCount(userId) + 1);
+  activeImportStages += 1;
 }
 
 function trackImportEnd(userId) {
+  activeImportStages = Math.max(activeImportStages - 1, 0);
   const remaining = activeImportCount(userId) - 1;
   if (remaining > 0) {
     activeImports.set(userId, remaining);
     return;
   }
   activeImports.delete(userId);
+}
+
+function atImportCapacity() {
+  return activeImportStages >= MAX_CONCURRENT_IMPORT_STAGES;
+}
+
+/** Runs the archive inspection under the process-wide ceiling, so a burst of
+ * uploads queues behind the ceiling as 429s instead of parsing every archive
+ * at once. */
+async function inspectUnderCapacity(filepath) {
+  activeImportStages += 1;
+  try {
+    return await inspectExport(filepath);
+  } finally {
+    activeImportStages = Math.max(activeImportStages - 1, 0);
+  }
 }
 
 function handleUpload(req, res, next) {
@@ -454,8 +483,24 @@ async function runImportJob(context, job) {
      */
     const imageSource = getFileStrategy(appConfig, { isImage: true });
     const documentSource = getFileStrategy(appConfig, { isImage: false });
-    const imageBackend = { source: imageSource, fns: getStrategyFunctions(imageSource) };
-    const documentBackend = { source: documentSource, fns: getStrategyFunctions(documentSource) };
+    /**
+     * `basePath` travels with the backend because the strategies default it to
+     * `images`, and on the local strategy that base is `client/public/images`,
+     * which is served statically with no auth unless `secureImageLinks` is on.
+     * A PDF or audio attachment written there is anonymously retrievable by
+     * URL, so non-images take the same `uploads` base every other document
+     * upload in the app uses, reachable only through the file download route.
+     */
+    const imageBackend = {
+      source: imageSource,
+      fns: getStrategyFunctions(imageSource),
+      basePath: 'images',
+    };
+    const documentBackend = {
+      source: documentSource,
+      fns: getStrategyFunctions(documentSource),
+      basePath: 'uploads',
+    };
     const backendFor = (type) =>
       (type ?? '').startsWith('image/') ? imageBackend : documentBackend;
 
@@ -465,6 +510,7 @@ async function runImportJob(context, job) {
         userId: owner,
         buffer,
         fileName,
+        basePath: backend.basePath,
         tenantId: tenant,
       });
       return { filepath, source: backend.source };
@@ -619,11 +665,20 @@ router.post(
       return;
     }
 
+    /** Rejected before the archive is opened rather than queued: the upload is
+     * already on disk and the client polls anyway, so asking it to retry costs
+     * a request, while admitting it costs another whole export in heap. */
+    if (atImportCapacity()) {
+      await fs.promises.unlink(req.file.path).catch(() => undefined);
+      res.status(429).json({ message: 'Too many imports are running, try again shortly' });
+      return;
+    }
+
     const isZip = path.extname(req.file.originalname).toLowerCase() === '.zip';
 
     let inspected;
     try {
-      inspected = await inspectExport(req.file.path);
+      inspected = await inspectUnderCapacity(req.file.path);
     } catch (error) {
       if (!isZip && error instanceof Error && error.message === 'Unsupported import type') {
         await importLegacyConversation(req, res);
@@ -696,6 +751,15 @@ router.post(
     if (activeImportCount(req.user.id) >= MAX_CONCURRENT_IMPORTS_PER_USER) {
       await importJobs.patch(req.user.id, result.job.jobId, { phase: 'awaiting_confirmation' });
       res.status(429).json({ message: 'Another import is already running' });
+      return;
+    }
+
+    /** Same handling for the node-wide ceiling: this user is within their own
+     * limit, but the process is not, so the job waits where it was rather than
+     * failing. */
+    if (atImportCapacity()) {
+      await importJobs.patch(req.user.id, result.job.jobId, { phase: 'awaiting_confirmation' });
+      res.status(429).json({ message: 'Too many imports are running, try again shortly' });
       return;
     }
 

@@ -6,7 +6,11 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const multer = require('multer');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { buildChatGptExportZip, cleanupChatGptExportZips } = require('~/test/chatgptExport');
+const {
+  buildChatGptExportZip,
+  buildMixedAssetExportZip,
+  cleanupChatGptExportZips,
+} = require('~/test/chatgptExport');
 const {
   bareClaudeExport,
   buildClaudeExportZip,
@@ -32,6 +36,9 @@ jest.mock('~/server/middleware', () => ({
 jest.mock('~/server/utils/import/defaults', () => ({
   resolveImportDefaultModel: jest.fn().mockResolvedValue('gpt-4o-mini'),
 }));
+/** Every `saveBuffer` the job pipeline issued, so a test can assert which
+ * storage base path each asset type was written under. */
+const mockSavedAssets = [];
 /**
  * The real local storage strategy writes under the repo's `client/public`
  * tree. This route test only cares that the job pipeline calls `saveBuffer`
@@ -40,7 +47,8 @@ jest.mock('~/server/utils/import/defaults', () => ({
  */
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
-    saveBuffer: async ({ buffer, fileName }) => {
+    saveBuffer: async ({ buffer, fileName, basePath }) => {
+      mockSavedAssets.push({ fileName, basePath });
       const nodeFs = require('fs');
       const nodePath = require('path');
       const nodeOs = require('os');
@@ -304,6 +312,30 @@ describe('conversation import job API (real router, real Mongo)', () => {
 
     const savedConvos = await Conversation.countDocuments({ user: userId });
     expect(savedConvos).toBe(2);
+  });
+
+  /** `client/public/images` is served statically, and authentication over it
+   * is off unless `secureImageLinks` is enabled — so an imported PDF or audio
+   * file written to the strategy's default base would be anonymously
+   * retrievable by URL. Only images, which already render from that tree,
+   * belong there. */
+  it('writes non-image assets under uploads and images under images', async () => {
+    mockSavedAssets.length = 0;
+    const filepath = await buildMixedAssetExportZip();
+
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', filepath)
+      .expect(202);
+    await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+
+    const completed = await waitForTerminal(app, uploaded.body.jobId);
+    expect(completed.body.phase).toBe('completed');
+
+    const basePathFor = (suffix) =>
+      mockSavedAssets.find((call) => call.fileName.endsWith(suffix))?.basePath;
+    expect(basePathFor('photo.jpg')).toBe('images');
+    expect(basePathFor('voice.wav')).toBe('uploads');
   });
 
   it('rejects a file that is neither json nor zip', async () => {

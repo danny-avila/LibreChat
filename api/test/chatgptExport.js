@@ -100,6 +100,56 @@ async function buildChatGptExportZip() {
   return filepath;
 }
 
+/**
+ * Export archive whose single conversation references one image and one audio
+ * attachment, for tests that care about how each asset type is stored rather
+ * than about sharding or manifests.
+ * @returns {Promise<string>} path to the written zip
+ */
+async function buildMixedAssetExportZip() {
+  const zip = new JSZip();
+
+  zip.file(
+    'conversations.json',
+    JSON.stringify([
+      conversation('ext-mixed', 'Trip notes', 1700002000, {
+        a1: {
+          id: 'a1',
+          parent: 'u1',
+          children: [],
+          message: {
+            id: 'a1',
+            author: { role: 'assistant', name: null },
+            create_time: 1700002002,
+            content: {
+              content_type: 'multimodal_text',
+              parts: [
+                'Here you go.',
+                { content_type: 'image_asset_pointer', asset_pointer: 'file-service://asset-img' },
+                { content_type: 'audio_asset_pointer', asset_pointer: 'file-service://asset-aud' },
+              ],
+            },
+            metadata: { model_slug: 'gpt-4o' },
+          },
+        },
+      }),
+    ]),
+  );
+  zip.file(
+    'conversation_asset_file_names.json',
+    JSON.stringify({ 'asset-img.dat': 'photo.jpg', 'asset-aud.dat': 'voice.wav' }),
+  );
+  zip.file('asset-img.dat', Buffer.from([1, 2, 3, 4]));
+  zip.file('asset-aud.dat', Buffer.from([5, 6, 7, 8]));
+
+  const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-route-fixture-'));
+  createdDirs.push(dir);
+  const filepath = path.join(dir, 'chatgpt-mixed-assets.zip');
+  fs.writeFileSync(filepath, buffer);
+  return filepath;
+}
+
 function cleanupChatGptExportZips() {
   while (createdDirs.length > 0) {
     const dir = createdDirs.pop();
@@ -107,4 +157,8 @@ function cleanupChatGptExportZips() {
   }
 }
 
-module.exports = { buildChatGptExportZip, cleanupChatGptExportZips };
+module.exports = {
+  buildChatGptExportZip,
+  buildMixedAssetExportZip,
+  cleanupChatGptExportZips,
+};

@@ -5,8 +5,10 @@ jest.mock('@librechat/data-schemas', () => ({
 import {
   DEFAULT_IMPORT_MAX_FILE_SIZE,
   DEFAULT_IMPORT_MAX_SHARD_SIZE,
+  DEFAULT_IMPORT_MAX_CONCURRENCY,
   resolveImportMaxFileSize,
   resolveImportMaxShardSize,
+  resolveImportMaxConcurrency,
 } from '../import';
 import { logger } from '@librechat/data-schemas';
 
@@ -105,5 +107,36 @@ describe('resolveImportMaxShardSize', () => {
   it.each(['0', '-1', 'not-a-number'])('falls back to the default for %s', (raw) => {
     process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES = raw;
     expect(resolveImportMaxShardSize()).toBe(DEFAULT_IMPORT_MAX_SHARD_SIZE);
+  });
+});
+
+describe('resolveImportMaxConcurrency', () => {
+  const original = process.env.CONVERSATION_IMPORT_MAX_CONCURRENT;
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.CONVERSATION_IMPORT_MAX_CONCURRENT;
+      return;
+    }
+    process.env.CONVERSATION_IMPORT_MAX_CONCURRENT = original;
+  });
+
+  it('defaults to three stages', () => {
+    delete process.env.CONVERSATION_IMPORT_MAX_CONCURRENT;
+    expect(resolveImportMaxConcurrency()).toBe(DEFAULT_IMPORT_MAX_CONCURRENCY);
+    expect(DEFAULT_IMPORT_MAX_CONCURRENCY).toBe(3);
+  });
+
+  it('honours a configured override', () => {
+    process.env.CONVERSATION_IMPORT_MAX_CONCURRENT = '8';
+    expect(resolveImportMaxConcurrency()).toBe(8);
+  });
+
+  /** A fractional ceiling would admit a stage the operator never allowed for:
+   * `2.5` reads as "two and a half imports", and the comparison rounds it up
+   * to three. */
+  it.each(['0', '-1', '2.5', 'not-a-number'])('falls back to the default for %s', (raw) => {
+    process.env.CONVERSATION_IMPORT_MAX_CONCURRENT = raw;
+    expect(resolveImportMaxConcurrency()).toBe(DEFAULT_IMPORT_MAX_CONCURRENCY);
   });
 });
