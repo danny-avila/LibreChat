@@ -47,3 +47,20 @@ export function isExodeEmbedLocation(pathname: string, search: string): boolean 
   }
   return new URLSearchParams(search).get('embed') === 'exode';
 }
+
+/** Which provisioned agent the host wants this frame to open */
+export type ExodeAgentKind = 'knowledge' | 'assistant';
+
+/**
+ * Reads the requested agent from the embed URL.
+ *
+ * Carried in the URL rather than in a postMessage: the host already controls the iframe `src`,
+ * and the value has to survive the bridge's own navigation to the conversation. Anything other
+ * than the two known kinds falls back to `assistant` — the host must never be able to name an
+ * arbitrary agent, since exode decides which ids this principal may actually open.
+ */
+export function getExodeAgentKind(search: string): ExodeAgentKind {
+  return new URLSearchParams(search).get('agent') === 'knowledge'
+    ? 'knowledge'
+    : 'assistant';
+}

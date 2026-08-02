@@ -1,9 +1,15 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import type { TExodeExchangeResponse } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useExodeExchangeMutation, useExodeEmbedConfigQuery } from '~/data-provider/Auth';
-import { EXODE_EMBED_PROTOCOL, exodeHostMessageSchema, type ExodeBridgeMessage } from './protocol';
+import {
+  EXODE_EMBED_PROTOCOL,
+  exodeHostMessageSchema,
+  getExodeAgentKind,
+  type ExodeBridgeMessage,
+} from './protocol';
 
 interface ExodeBridgeProps {
   children: ReactNode;
@@ -12,6 +18,8 @@ interface ExodeBridgeProps {
 interface Handshake {
   handshakeId: string;
   requestId: string;
+  /** False for a token refresh, which must not navigate away from the open conversation */
+  initial: boolean;
 }
 
 interface BrowserSafeError {
@@ -48,6 +56,7 @@ function getRefreshDelay(session: TExodeExchangeResponse): number {
 }
 
 export default function ExodeBridge({ children }: ExodeBridgeProps) {
+  const navigate = useNavigate();
   const { data: config } = useExodeEmbedConfigQuery();
   const { mutateAsync: exchange } = useExodeExchangeMutation();
   const { acceptExternalSession, clearExternalSession } = useAuthContext();
@@ -74,6 +83,7 @@ export default function ExodeBridge({ children }: ExodeBridgeProps) {
       currentHandshake = {
         handshakeId: crypto.randomUUID(),
         requestId: crypto.randomUUID(),
+        initial: type === 'exode-ai-chat:ready',
       };
       post(
         {
@@ -142,6 +152,23 @@ export default function ExodeBridge({ children }: ExodeBridgeProps) {
         currentHandshake = undefined;
         acceptExternalSession(session);
         scheduleRefresh(session);
+
+        /**
+         * Open the agent exode provisioned for this principal.
+         *
+         * Only done on the initial handshake: a refresh renews the token mid-conversation, and
+         * navigating then would throw the user back to an empty chat.
+         */
+        const agentId = session.agents?.[getExodeAgentKind(window.location.search)];
+
+        if (agentId != null && agentId !== '' && handshake.initial) {
+          const params = new URLSearchParams(window.location.search);
+
+          if (params.get('agent_id') !== agentId) {
+            params.set('agent_id', agentId);
+            navigate(`/c/new?${params.toString()}`, { replace: true });
+          }
+        }
         post(
           {
             protocol: EXODE_EMBED_PROTOCOL,
@@ -180,7 +207,7 @@ export default function ExodeBridge({ children }: ExodeBridgeProps) {
       }
       clearExternalSession();
     };
-  }, [acceptExternalSession, clearExternalSession, config, exchange]);
+  }, [acceptExternalSession, clearExternalSession, config, exchange, navigate]);
 
   return children;
 }

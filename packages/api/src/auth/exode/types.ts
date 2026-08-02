@@ -17,10 +17,23 @@ export interface ExodeIdentity {
   sellerId?: number;
 }
 
+/**
+ * Agents exode provisioned for this principal.
+ *
+ * The chat cannot pick these itself: which agent answers depends on what the user may read,
+ * which only exode knows. `knowledge` is the router over the user's spaces; `assistant` is the
+ * MCP-enabled general chat. Either may be absent when that side is not configured.
+ */
+export interface ExodeAgents {
+  knowledge?: string;
+  assistant?: string;
+}
+
 export interface ExodeMainExchange {
   identity: ExodeIdentity;
   token: string;
   expiresAt: string;
+  agents?: ExodeAgents;
 }
 
 export const exodeExchangeInputSchema: z.ZodType<ExodeExchangeInput> = z
@@ -44,6 +57,12 @@ export const exodeMainResponseSchema: z.ZodType<{ payload: ExodeMainExchange }> 
     }),
     token: z.string().min(16).max(16_384),
     expiresAt: z.string().datetime(),
+    agents: z
+      .object({
+        knowledge: z.string().min(1).max(256).optional(),
+        assistant: z.string().min(1).max(256).optional(),
+      })
+      .optional(),
   }),
 });
 
@@ -68,6 +87,7 @@ export interface ExodeExchangeResponse {
   tokenExpiresAt: string;
   mcpExpiresAt: string;
   user: ExodeExchangeUser;
+  agents?: ExodeAgents;
 }
 
 export class ExodeExchangeError extends Error {

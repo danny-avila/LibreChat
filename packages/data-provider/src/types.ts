@@ -551,6 +551,14 @@ export type TExodeExchangeResponse = {
   tokenExpiresAt: string;
   mcpExpiresAt: string;
   user: TUser;
+  /**
+   * Agents exode provisioned for this principal: `knowledge` routes over the spaces the user
+   * may read, `assistant` is the MCP-enabled general chat. Absent when not configured.
+   */
+  agents?: {
+    knowledge?: string;
+    assistant?: string;
+  };
 };
 
 /** Shared payload for any operation that requires OTP or backup-code verification. */

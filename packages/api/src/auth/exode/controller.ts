@@ -110,6 +110,8 @@ export function createExodeExchangeController(deps: ExodeExchangeDeps): RequestH
         tokenExpiresAt: new Date(now + config.embedJwtTtlMs).toISOString(),
         mcpExpiresAt: exchange.expiresAt,
         user: serializeExodeUser(user),
+        /** Forwarded verbatim — only exode knows which agents this principal may open */
+        agents: exchange.agents,
       };
       return res.status(200).json(response);
     } catch (error) {
