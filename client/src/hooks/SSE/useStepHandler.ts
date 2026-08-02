@@ -605,15 +605,28 @@ export default function useStepHandler({
           return candidateMessages;
         }
 
-        const responseIndex = candidateMessages.findIndex(
-          (message) => message.messageId === responseMessageId,
-        );
-        if (responseIndex < 0) {
+        /** Insert before the row's first CHILD as well as before the response
+         *  row: abandoned responses from preempted attempts are children of
+         *  this user message and may already sit in the list. Landing the
+         *  parent after them orders children before their parent, which the
+         *  message tree renders as phantom root branches (a folded thread). */
+        let insertIndex = candidateMessages.length;
+        for (let i = 0; i < candidateMessages.length; i++) {
+          const message = candidateMessages[i];
+          if (
+            message.messageId === responseMessageId ||
+            message.parentMessageId === userMessage.messageId
+          ) {
+            insertIndex = i;
+            break;
+          }
+        }
+        if (insertIndex >= candidateMessages.length) {
           return [...candidateMessages, userMessage as TMessage];
         }
 
         const nextMessages = [...candidateMessages];
-        nextMessages.splice(responseIndex, 0, userMessage as TMessage);
+        nextMessages.splice(insertIndex, 0, userMessage as TMessage);
         return nextMessages;
       };
       const getResponseBaseMessages = (
@@ -790,12 +803,9 @@ export default function useStepHandler({
           // Ensure userMessage is present (multi-tab: Tab 2 may not have it yet).
           // Regenerate reuses an existing user turn; its submission userMessage is only
           // a transport placeholder and must not become a new visible branch.
-          if (
-            !submission.isRegenerate &&
-            !updatedMessages.some((m) => m.messageId === userMessage.messageId)
-          ) {
-            updatedMessages = [...updatedMessages, userMessage as TMessage];
-          }
+          // (`ensureUserMessagePresent` no-ops for regenerate and inserts in
+          // parent-before-children order otherwise.)
+          updatedMessages = ensureUserMessagePresent(updatedMessages, responseMessageId);
 
           setMessages([...updatedMessages, response]);
         }
