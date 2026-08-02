@@ -337,9 +337,15 @@ export type UploadOptionContext = {
   codeAllowedByAgent: boolean;
   fileConfig: FileConfig | null;
   endpointSupportedMimeTypes?: RegExp[];
+  /** When the active model is confidently non-image-capable, images are not offerable to the provider. */
+  confidentlyNonVision?: boolean;
 };
 
 const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean => {
+  /** A confidently non-vision model can't take images; the backend strips them, so don't offer them. */
+  if (ctx.confidentlyNonVision === true && type.startsWith('image/')) {
+    return false;
+  }
   let currentProvider = (ctx.provider || ctx.endpoint) ?? '';
   if (currentProvider.toLowerCase() === Providers.OPENROUTER) {
     currentProvider = Providers.OPENROUTER;

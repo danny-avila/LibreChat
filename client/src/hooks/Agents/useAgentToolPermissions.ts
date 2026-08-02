@@ -10,6 +10,7 @@ interface AgentToolPermissionsResult {
   codeAllowedByAgent: boolean;
   tools: string[] | undefined;
   provider?: string;
+  model?: string;
 }
 
 /**
@@ -42,6 +43,26 @@ export default function useAgentToolPermissions(
     [agentData?.provider, selectedAgent?.provider],
   );
 
+  /**
+   * The agent's underlying model. For saved agents `conversation.model` is
+   * cleared, so callers gating on model capability (e.g. image support) must
+   * read it from here rather than the conversation.
+   */
+  const model = useMemo(
+    () =>
+      agentData?.model_parameters?.model ||
+      agentData?.model ||
+      selectedAgent?.model_parameters?.model ||
+      selectedAgent?.model ||
+      undefined,
+    [
+      agentData?.model_parameters?.model,
+      agentData?.model,
+      selectedAgent?.model_parameters?.model,
+      selectedAgent?.model,
+    ],
+  );
+
   const fileSearchAllowedByAgent = useMemo(() => {
     // Check ephemeral agent settings
     if (isEphemeralAgent(agentId)) {
@@ -68,6 +89,7 @@ export default function useAgentToolPermissions(
     fileSearchAllowedByAgent,
     codeAllowedByAgent,
     provider,
+    model,
     tools,
   };
 }
