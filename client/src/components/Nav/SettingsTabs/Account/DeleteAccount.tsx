@@ -183,10 +183,10 @@ const renderDeleteButton = (
   <Button
     variant="destructive"
     className={cn(
-      'mt-4 w-full gap-0 bg-surface-tertiary text-text-primary transition-all duration-200 hover:bg-surface-tertiary disabled:opacity-100',
+      'mt-4 w-full gap-0 bg-surface-tertiary text-text-primary transition-all duration-200 hover:bg-surface-tertiary',
       isLocked
-        ? 'cursor-not-allowed opacity-30'
-        : 'bg-surface-destructive text-white hover:bg-surface-destructive-hover',
+        ? 'cursor-not-allowed opacity-30 disabled:opacity-30'
+        : 'bg-surface-destructive text-white hover:bg-surface-destructive-hover disabled:opacity-100',
     )}
     onClick={handleDeleteUser}
     disabled={isDeleting || isLocked}
