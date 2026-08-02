@@ -3,12 +3,15 @@ const request = require('supertest');
 
 const mockVerifyEmailSubmissionLimiter = jest.fn((req, res, next) => next());
 const mockVerifyEmailController = jest.fn((req, res) => res.status(204).end());
+const mockConfirmEmailChangeController = jest.fn((req, res) => res.status(204).end());
 
 jest.mock('~/server/controllers/UserController', () => ({
   getUserController: jest.fn((req, res) => res.status(204).end()),
   deleteUserController: jest.fn((req, res) => res.status(204).end()),
   acceptTermsController: jest.fn((req, res) => res.status(204).end()),
   verifyEmailController: (...args) => mockVerifyEmailController(...args),
+  requestEmailChangeController: jest.fn((req, res) => res.status(204).end()),
+  confirmEmailChangeController: (...args) => mockConfirmEmailChangeController(...args),
   getTermsStatusController: jest.fn((req, res) => res.status(204).end()),
   updateUserPluginsController: jest.fn((req, res) => res.status(204).end()),
   resendVerificationController: jest.fn((req, res) => res.status(204).end()),
@@ -39,6 +42,7 @@ describe('POST /api/user/verify rate limiting', () => {
     jest.clearAllMocks();
     mockVerifyEmailSubmissionLimiter.mockImplementation((req, res, next) => next());
     mockVerifyEmailController.mockImplementation((req, res) => res.status(204).end());
+    mockConfirmEmailChangeController.mockImplementation((req, res) => res.status(204).end());
 
     app = express();
     app.use(express.json());
@@ -67,5 +71,15 @@ describe('POST /api/user/verify rate limiting', () => {
 
     expect(response.body).toEqual({ message: 'Too many verification attempts' });
     expect(mockVerifyEmailController).not.toHaveBeenCalled();
+  });
+
+  it('limits email change confirmation before checking the token', async () => {
+    await request(app).post('/api/user/email/verify').send({ token: 'token' }).expect(204);
+
+    expect(mockVerifyEmailSubmissionLimiter).toHaveBeenCalledTimes(1);
+    expect(mockConfirmEmailChangeController).toHaveBeenCalledTimes(1);
+    expect(mockVerifyEmailSubmissionLimiter.mock.invocationCallOrder[0]).toBeLessThan(
+      mockConfirmEmailChangeController.mock.invocationCallOrder[0],
+    );
   });
 });

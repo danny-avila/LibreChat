@@ -1,8 +1,13 @@
+const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const {
   getNewS3URL,
   needsRefresh,
+  comparePassword,
+  checkEmailConfig,
+  isEmailChangeAllowed,
+  createEmailChangeService,
   GenerationJobManager,
   getAppConfigOptionsFromUser,
   normalizeHttpError,
@@ -40,7 +45,32 @@ const {
   quiesceUserSchedules,
   restoreUserSchedulesFromDeletion,
 } = require('~/server/services/Schedules');
+const { sendEmail } = require('~/server/utils');
+const { getLogStores } = require('~/cache');
 const db = require('~/models');
+
+const withTenant = (tenantId, operation) =>
+  tenantId ? tenantStorage.run({ tenantId }, operation) : runAsSystem(operation);
+
+const emailChangeService = createEmailChangeService({
+  findUserByEmail: (email, tenantId) =>
+    withTenant(tenantId, () => db.findUser({ email }, 'email _id tenantId')),
+  getUserById: (userId, tenantId) =>
+    withTenant(tenantId, () =>
+      db.getUserById(userId, 'email _id name username provider tenantId +password'),
+    ),
+  updateUser: (userId, update, expectedState, tenantId) =>
+    withTenant(tenantId, () => db.updateUser(userId, update, expectedState)),
+  findToken: (query, tenantId) =>
+    withTenant(tenantId, () => db.findToken(query, { sort: { createdAt: -1 } })),
+  upsertToken: (scope, data, tenantId) => withTenant(tenantId, () => db.upsertToken(scope, data)),
+  deleteTokens: (query, tenantId) => withTenant(tenantId, () => db.deleteTokens(query)),
+  verifyPassword: (user, password) => comparePassword(user, password, { compare: bcrypt.compare }),
+  sendEmail,
+  isEmailChangeAllowed,
+  clientDomain: process.env.DOMAIN_CLIENT ?? 'http://localhost:3080',
+  appName: process.env.APP_TITLE || 'LibreChat',
+});
 
 const PUBLIC_USER_RESPONSE_FIELDS = [
   '_id',
@@ -630,12 +660,45 @@ const resendVerificationController = async (req, res) => {
   }
 };
 
+const requestEmailChangeController = async (req, res) => {
+  try {
+    const userId = req.user?._id?.toString?.() ?? req.user?.id?.toString?.();
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    const result = await emailChangeService.requestEmailChange({
+      body: req.body,
+      userId,
+      tenantId: req.user?.tenantId,
+      allowedDomains: req.config?.registration?.allowedDomains,
+      emailEnabled: checkEmailConfig(),
+      ip: req.ip,
+    });
+    return res.status(result.status).json({ message: result.message, code: result.code });
+  } catch (error) {
+    logger.error('[requestEmailChangeController]', error);
+    return res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
+const confirmEmailChangeController = async (req, res) => {
+  try {
+    const result = await emailChangeService.confirmEmailChange({ body: req.body, ip: req.ip });
+    return res.status(result.status).json({ message: result.message, code: result.code });
+  } catch (error) {
+    logger.error('[confirmEmailChangeController]', error);
+    return res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
 module.exports = {
   getUserController,
   getTermsStatusController,
   acceptTermsController,
   deleteUserController,
   verifyEmailController,
+  requestEmailChangeController,
+  confirmEmailChangeController,
   updateUserPluginsController,
   resendVerificationController,
   deleteUserMcpServers,

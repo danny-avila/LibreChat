@@ -949,6 +949,7 @@ describe('requestPasswordReset', () => {
     expect(createToken).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: user._id,
+        email: user.email,
         type: 'password_reset',
       }),
     );
@@ -1002,8 +1003,10 @@ describe('resetPassword', () => {
     findToken.mockResolvedValue({
       token: resetHash,
       userId: 'user-reset',
+      email: 'user@example.com',
       type: 'password_reset',
     });
+    getUserById.mockResolvedValue({ _id: 'user-reset', email: 'user@example.com' });
     updateUser.mockResolvedValue({ email: 'user@example.com' });
 
     const result = await resetPassword('user-reset', 'reset-token', 'new-password');
@@ -1022,6 +1025,43 @@ describe('resetPassword', () => {
     });
   });
 
+  it('rejects a typed reset token issued to a previous email address', async () => {
+    const resetHash = bcrypt.hashSync('reset-token', 10);
+    findToken.mockResolvedValue({
+      token: resetHash,
+      userId: 'user-reset',
+      email: 'old@example.com',
+      type: 'password_reset',
+    });
+    getUserById.mockResolvedValue({ _id: 'user-reset', email: 'new@example.com' });
+
+    const result = await resetPassword('user-reset', 'reset-token', 'new-password');
+
+    expect(result).toBeInstanceOf(Error);
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(deleteTokens).not.toHaveBeenCalled();
+  });
+
+  it('invalidates pending email changes after a successful password reset', async () => {
+    const resetHash = bcrypt.hashSync('reset-token', 10);
+    findToken.mockResolvedValue({
+      token: resetHash,
+      userId: 'user-reset',
+      email: 'user@example.com',
+      type: 'password_reset',
+    });
+    getUserById.mockResolvedValue({ _id: 'user-reset', email: 'user@example.com' });
+    updateUser.mockResolvedValue({ email: 'user@example.com' });
+
+    const result = await resetPassword('user-reset', 'reset-token', 'new-password');
+
+    expect(result).toEqual({ message: 'Password reset was successful' });
+    expect(deleteTokens).toHaveBeenCalledWith({
+      userId: 'user-reset',
+      type: 'email_change',
+    });
+  });
+
   it('should accept legacy reset tokens without affecting verification-shaped tokens', async () => {
     const legacyResetHash = bcrypt.hashSync('legacy-reset-token', 10);
     findToken.mockImplementation(async (query) => {
@@ -1036,6 +1076,7 @@ describe('resetPassword', () => {
       }
       return null;
     });
+    getUserById.mockResolvedValue({ _id: 'user-reset', email: 'user@example.com' });
     updateUser.mockResolvedValue({ email: 'user@example.com' });
 
     const result = await resetPassword('user-reset', 'legacy-reset-token', 'new-password');
