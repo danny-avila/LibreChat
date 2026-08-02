@@ -363,6 +363,13 @@ describe('Queue', () => {
       expect(screen.getByTestId('queued-interrupt-now')).toBeDisabled();
     });
 
+    /* The drain starts the next run before its epoch lands, so a control that
+       hid itself here would appear and vanish between queued sends. */
+    it('stays visible but disabled before the generation epoch lands', () => {
+      renderQueue([queued()], steeringWith({ canSteer: false }));
+      expect(screen.getByTestId('queued-interrupt-now')).toBeDisabled();
+    });
+
     it('offers nothing once the run is over', () => {
       renderQueue([queued()], steeringWith({ duringRunActive: false, canSteer: false }));
       expect(screen.queryByTestId('queued-interrupt-now')).not.toBeInTheDocument();
