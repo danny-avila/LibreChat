@@ -114,6 +114,7 @@ export default function useMissingConversationRecovery({
         generationProtocolVersion: 1,
       });
     }
+    let readinessRetryTimeout: ReturnType<typeof setTimeout> | undefined;
     const timeout = setTimeout(() => {
       void (async () => {
         let recoveredMessages: TMessage[] | null = null;
@@ -124,7 +125,8 @@ export default function useMissingConversationRecovery({
             return;
           }
         }
-        const hasRecoveredMessages = recoveredMessages != null && recoveredMessages.length > 0;
+        const recoveredMessageList = recoveredMessages ?? [];
+        const hasRecoveredMessages = recoveredMessageList.length > 0;
         if (cancelled) {
           return;
         }
@@ -132,12 +134,19 @@ export default function useMissingConversationRecovery({
         let verifiedStatus;
         try {
           verifiedStatus = await fetchStreamStatus(conversationId);
-        } catch {
+        } catch (error) {
           if (!cancelled && hasRecoveredMessages) {
             queryClient.setQueryData<TMessage[]>(
               [QueryKeys.messages, conversationId],
-              recoveredMessages,
+              recoveredMessageList,
             );
+          }
+          if (!cancelled && isServerNotReadyError(error)) {
+            readinessRetryTimeout = setTimeout(() => {
+              if (!cancelled) {
+                void refetchStreamStatus();
+              }
+            }, MESSAGE_RECHECK_DELAY_MS);
           }
           return;
         }
@@ -158,7 +167,7 @@ export default function useMissingConversationRecovery({
         if (hasRecoveredMessages) {
           queryClient.setQueryData<TMessage[]>(
             [QueryKeys.messages, conversationId],
-            recoveredMessages,
+            recoveredMessageList,
           );
         }
         queryClient.setQueryData(
@@ -213,6 +222,7 @@ export default function useMissingConversationRecovery({
     return () => {
       cancelled = true;
       clearTimeout(timeout);
+      clearTimeout(readinessRetryTimeout);
     };
   }, [
     conversationId,
