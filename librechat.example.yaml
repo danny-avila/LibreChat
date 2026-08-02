@@ -268,6 +268,9 @@ registration:
 # closes. Prefer a private IP literal over a hostname when exempting a private target. Entries
 # must include a port (`host:port`, `private.ip:port`, or `[ipv6]:port`); do not use URLs, paths,
 # CIDR ranges, bare hosts/IPs, or public IP literals.
+# When a forward proxy is configured (PROXY / HTTP(S)_PROXY), it performs DNS and egress in its
+# own network context, so these requests are delegated to it and it must be SSRF-enforcing; the
+# connect-time guard only covers direct, non-proxied connections.
 # speech:
 #   tts:
 #     openai:

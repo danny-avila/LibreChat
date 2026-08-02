@@ -139,6 +139,18 @@ describe('MistralOCR Service', () => {
       (jest.mocked(fs).createReadStream as jest.Mock).mockReturnValue(mockReadStream);
     });
 
+    it('destroys the upload stream when the request fails (async SSRF block)', async () => {
+      const err = Object.assign(new Error('SSRF protection'), { code: 'ESSRF' });
+      mockAxios.post!.mockRejectedValueOnce(err);
+
+      await expect(
+        uploadDocumentToMistral({ filePath: '/path/to/test.pdf', apiKey: 'k' }),
+      ).rejects.toBe(err);
+
+      const stream = (jest.mocked(fs).createReadStream as jest.Mock).mock.results[0].value;
+      expect(stream.destroy).toHaveBeenCalled();
+    });
+
     it('should upload a document to Mistral API using file streaming', async () => {
       const mockResponse: { data: MistralFileUploadResponse } = {
         data: {

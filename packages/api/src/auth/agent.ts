@@ -167,12 +167,10 @@ export function applySSRFSafeAgentIfDirect(
   }
 
   config.maxRedirects = 0;
-  if (config.httpsAgent || config.httpAgent || config.proxy) {
-    return config;
-  }
 
-  // Node skips the agent's custom DNS lookup for IP-literal hosts, so the connect-time
-  // private-IP check never runs for e.g. http://127.0.0.1; block literal private IPs here.
+  // Node skips the agent's custom DNS lookup for IP-literal hosts, and a configured proxy
+  // connects on our behalf without running that check, so a literal private IP (e.g.
+  // http://169.254.169.254) must be rejected before any proxy or agent early return.
   const literalHost = hostname.replace(/^\[|\]$/g, '');
   if (isIP(literalHost)) {
     const exemptSet = normalizeAllowedAddressesSet(allowedAddresses);
@@ -187,6 +185,10 @@ export function applySSRFSafeAgentIfDirect(
     if (blockedAddress) {
       throw createSSRFLookupError(literalHost, blockedAddress);
     }
+  }
+
+  if (config.httpsAgent || config.httpAgent || config.proxy) {
+    return config;
   }
 
   const { httpAgent, httpsAgent } = createSSRFSafeAgents(allowedAddresses);

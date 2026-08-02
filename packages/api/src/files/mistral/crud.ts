@@ -96,12 +96,12 @@ export async function uploadDocumentToMistral({
   const fileStream = fs.createReadStream(filePath);
   form.append('file', fileStream, { filename: actualFileName });
 
-  return axios
-    .post(`${baseURL}/files`, form, config)
-    .then((res) => res.data)
-    .catch((error) => {
-      throw error;
-    });
+  try {
+    const response = await axios.post(`${baseURL}/files`, form, config);
+    return response.data;
+  } finally {
+    fileStream.destroy();
+  }
 }
 
 export async function getSignedUrl({

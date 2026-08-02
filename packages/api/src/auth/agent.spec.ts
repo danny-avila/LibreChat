@@ -465,4 +465,33 @@ describe('applySSRFSafeAgentIfDirect', () => {
     applySSRFSafeAgentIfDirect(config, 'https://127.0.0.1', ['127.0.0.1:443']);
     expect(config.httpsAgent).toBeDefined();
   });
+
+  it('blocks a literal private IP even when a proxy is already configured', () => {
+    let code: string | undefined;
+    try {
+      applySSRFSafeAgentIfDirect(
+        { proxy: { host: '127.0.0.1', port: 8080 } },
+        'http://169.254.169.254',
+      );
+    } catch (err) {
+      code = (err as NodeJS.ErrnoException).code;
+    }
+    expect(code).toBe('ESSRF');
+  });
+
+  it('exempts an IPv4-mapped IPv6 literal listed in allowedAddresses', () => {
+    const config: AxiosRequestConfig = {};
+    applySSRFSafeAgentIfDirect(config, 'http://[::ffff:127.0.0.1]:8080', [
+      '[::ffff:127.0.0.1]:8080',
+    ]);
+    expect(config.httpAgent).toBeDefined();
+  });
+
+  it('exempts a fully expanded ULA literal listed in allowedAddresses', () => {
+    const config: AxiosRequestConfig = {};
+    applySSRFSafeAgentIfDirect(config, 'http://[fd00:0:0:0:0:0:0:1]:8080', [
+      '[fd00:0:0:0:0:0:0:1]:8080',
+    ]);
+    expect(config.httpAgent).toBeDefined();
+  });
 });
