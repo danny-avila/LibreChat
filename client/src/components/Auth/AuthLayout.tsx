@@ -113,7 +113,9 @@ function AuthLayout({
             </h1>
           )}
           {children}
-          {showsSocialLogin && <SocialLoginRender startupConfig={startupConfig} />}
+          {showsSocialLogin && (
+            <SocialLoginRender startupConfig={startupConfig} showPasskey={isLogin} />
+          )}
           {statesConsentBelowProviders && <LegalConsent startupConfig={startupConfig} />}
         </div>
       </main>

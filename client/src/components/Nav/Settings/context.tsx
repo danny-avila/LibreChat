@@ -33,6 +33,7 @@ export function useSettingsContext(): SettingsContextValue {
   const isLocalProvider = user?.provider === 'local';
   const emailEnabled = startupConfig?.emailEnabled === true;
   const allowEmailChange = startupConfig?.allowEmailChange === true;
+  const passkeyLoginEnabled = startupConfig?.passkeyLoginEnabled === true;
   const twoFactorEnabled = user?.twoFactorEnabled === true;
   const allowAccountDeletion = startupConfig?.allowAccountDeletion !== false;
   const aboutEnabled = startupConfig?.interface?.buildInfo !== false;
@@ -67,6 +68,7 @@ export function useSettingsContext(): SettingsContextValue {
       isLocalProvider,
       emailEnabled,
       allowEmailChange,
+      passkeyLoginEnabled,
       twoFactorEnabled,
       allowAccountDeletion,
       aboutEnabled,
@@ -89,6 +91,7 @@ export function useSettingsContext(): SettingsContextValue {
       isLocalProvider,
       emailEnabled,
       allowEmailChange,
+      passkeyLoginEnabled,
       twoFactorEnabled,
       allowAccountDeletion,
       aboutEnabled,
