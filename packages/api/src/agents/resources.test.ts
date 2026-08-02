@@ -120,6 +120,65 @@ describe('primeResources', () => {
     });
   });
 
+  describe('when persisted image-edit file IDs are provided', () => {
+    it('should rehydrate only accessible image records for tool initialization', async () => {
+      const accessibleImage: TFile = {
+        user: 'user1',
+        file_id: 'accessible-image',
+        filename: 'accessible.png',
+        filepath: '/uploads/accessible.png',
+        object: 'file',
+        type: 'image/png',
+        bytes: 2048,
+        embedded: false,
+        usage: 0,
+        height: 800,
+        width: 600,
+      };
+      const inaccessibleImage: TFile = {
+        ...accessibleImage,
+        user: 'other-user',
+        file_id: 'inaccessible-image',
+        filename: 'inaccessible.png',
+        filepath: '/uploads/inaccessible.png',
+      };
+
+      mockGetFiles.mockResolvedValue([accessibleImage, inaccessibleImage]);
+      mockFilterFiles.mockResolvedValue([accessibleImage]);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources: {
+          [EToolResources.image_edit]: {
+            file_ids: ['accessible-image', 'inaccessible-image'],
+          },
+        },
+        agentId: 'agent_shared',
+      });
+
+      expect(mockGetFiles).toHaveBeenCalledWith(
+        { file_id: { $in: ['accessible-image', 'inaccessible-image'] } },
+        {},
+        {},
+      );
+      expect(mockFilterFiles).toHaveBeenCalledWith({
+        files: [accessibleImage, inaccessibleImage],
+        userId: 'user1',
+        role: 'USER',
+        agentId: 'agent_shared',
+      });
+      expect(result.tool_resources?.[EToolResources.image_edit]).toEqual({
+        file_ids: ['accessible-image', 'inaccessible-image'],
+        files: [accessibleImage],
+      });
+    });
+  });
+
   describe('when attachments are provided', () => {
     it('should process files with fileIdentifier as execute_code resources', async () => {
       const mockFiles: TFile[] = [

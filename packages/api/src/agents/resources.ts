@@ -306,6 +306,38 @@ export const primeResources = async ({
       }
     }
 
+    const imageEditFileIds = tool_resources[EToolResources.image_edit]?.file_ids ?? [];
+    if (imageEditFileIds.length > 0) {
+      let imageFiles = await getFiles(
+        {
+          file_id: { $in: imageEditFileIds },
+        },
+        {},
+        {},
+      );
+
+      if (filterFiles && req.user?.id && agentId) {
+        imageFiles = await filterFiles({
+          files: imageFiles,
+          userId: req.user.id,
+          role: req.user.role,
+          agentId,
+        });
+      }
+
+      for (const file of imageFiles) {
+        addFileToResource({
+          file,
+          resourceType: EToolResources.image_edit,
+          tool_resources,
+          processedResourceFiles,
+        });
+        if (file.file_id) {
+          attachmentFileIds.add(file.file_id);
+        }
+      }
+    }
+
     if (!_attachments) {
       return {
         attachments: attachments.length > 0 ? attachments : undefined,
