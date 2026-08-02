@@ -2,7 +2,12 @@ import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import { logger, encryptV2, decryptV2, getTenantId } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
-import type { TokenMethods, IToken } from '@librechat/data-schemas';
+import type {
+  TokenMethods,
+  IToken,
+  TokenCreateData,
+  TokenUpdateData,
+} from '@librechat/data-schemas';
 import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthStoredClientMetadata } from './types';
 import { isInvalidClientMessage } from '~/mcp/utils';
 import { isSystemUserId } from '~/mcp/enum';
@@ -28,6 +33,7 @@ interface StoreTokensParams {
   tokens: OAuthTokens | ExtendedOAuthTokens | MCPOAuthTokens;
   createToken: TokenMethods['createToken'];
   updateToken?: TokenMethods['updateToken'];
+  deleteTokens?: TokenMethods['deleteTokens'];
   findToken?: TokenMethods['findToken'];
   clientInfo?: OAuthClientInformation;
   metadata?: Partial<OAuthStoredClientMetadata>;
@@ -114,6 +120,16 @@ function getTokenMetadata(tokenData: IToken | null | undefined): Record<string, 
 function getCredentialSetId(tokenData: IToken | null | undefined): string | undefined {
   const value = getTokenMetadata(tokenData).credential_set_id;
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function cloneTokenMetadata(tokenData: IToken): Record<string, unknown> | Map<string, unknown> {
+  if (tokenData.metadata instanceof Map) {
+    return new Map(tokenData.metadata);
+  }
+  if (tokenData.metadata) {
+    return { ...(tokenData.metadata as unknown as Record<string, unknown>) };
+  }
+  return {};
 }
 
 export class MCPTokenStorage {
@@ -214,6 +230,7 @@ export class MCPTokenStorage {
     tokens,
     createToken,
     updateToken,
+    deleteTokens,
     findToken,
     clientInfo,
     existingTokens,
@@ -221,6 +238,7 @@ export class MCPTokenStorage {
     expectedCredentialSetId,
   }: StoreTokensParams): Promise<MCPOAuthTokens> {
     const logPrefix = this.getLogPrefix(userId, serverName);
+    const rollbackWrites: Array<() => Promise<void>> = [];
 
     try {
       const identifier = `mcp:${serverName}`;
@@ -242,7 +260,8 @@ export class MCPTokenStorage {
         ) {
           throw new ReauthenticationRequiredError(serverName, 'binding');
         }
-        credentialSetId = expectedCredentialSetId;
+        /** Every successful refresh becomes a distinct credential generation. */
+        credentialSetId = randomUUID();
       } else {
         /**
          * Only the token exchange result carries an internally generated flow ID. OAuth
@@ -262,39 +281,26 @@ export class MCPTokenStorage {
       let existingRefreshToken: IToken | null | undefined;
       let existingClientInfo: IToken | null | undefined;
       if (findToken && updateToken) {
-        let accessLookup: Promise<IToken | null | undefined>;
-        let refreshLookup: Promise<IToken | null | undefined>;
-        let clientLookup: Promise<IToken | null | undefined>;
-
-        if (!expectedCredentialSetId && existingTokens?.accessToken !== undefined) {
-          accessLookup = Promise.resolve(existingTokens.accessToken);
-        } else {
-          accessLookup = findToken({ userId, type: 'mcp_oauth', identifier });
-        }
-
-        if (!expectedCredentialSetId && !tokens.refresh_token) {
-          refreshLookup = Promise.resolve(undefined);
-        } else if (!expectedCredentialSetId && existingTokens?.refreshToken !== undefined) {
-          refreshLookup = Promise.resolve(existingTokens.refreshToken);
-        } else {
-          refreshLookup = findToken({
-            userId,
-            type: 'mcp_oauth_refresh',
-            identifier: `${identifier}:refresh`,
-          });
-        }
-
-        if (!expectedCredentialSetId && !clientInfo) {
-          clientLookup = Promise.resolve(undefined);
-        } else if (!expectedCredentialSetId && existingTokens?.clientInfoToken !== undefined) {
-          clientLookup = Promise.resolve(existingTokens.clientInfoToken);
-        } else {
-          clientLookup = findToken({
-            userId,
-            type: 'mcp_oauth_client',
-            identifier: `${identifier}:client`,
-          });
-        }
+        const accessLookup =
+          existingTokens?.accessToken !== undefined
+            ? Promise.resolve(existingTokens.accessToken)
+            : findToken({ userId, type: 'mcp_oauth', identifier });
+        const refreshLookup =
+          existingTokens?.refreshToken !== undefined
+            ? Promise.resolve(existingTokens.refreshToken)
+            : findToken({
+                userId,
+                type: 'mcp_oauth_refresh',
+                identifier: `${identifier}:refresh`,
+              });
+        const clientLookup =
+          existingTokens?.clientInfoToken !== undefined
+            ? Promise.resolve(existingTokens.clientInfoToken)
+            : findToken({
+                userId,
+                type: 'mcp_oauth_client',
+                identifier: `${identifier}:client`,
+              });
 
         [existingAccessToken, existingRefreshToken, existingClientInfo] = await Promise.all([
           accessLookup,
@@ -316,13 +322,24 @@ export class MCPTokenStorage {
             throw new ReauthenticationRequiredError(serverName, 'binding');
           }
         }
+      } else if (
+        existingAccessToken &&
+        existingClientInfo &&
+        getCredentialSetId(existingAccessToken) !== getCredentialSetId(existingClientInfo)
+      ) {
+        /**
+         * A fresh authorization may replace a coherent generation, but it must not build on a
+         * crash-left mixed anchor. Allowing that would let three concurrent writers chain their
+         * access-token CAS operations and make a later rollback resurrect a failed generation.
+         */
+        throw new ReauthenticationRequiredError(serverName, 'binding');
       }
 
       const updateIfCurrent = async (
         existingToken: IToken,
         type: string,
         recordIdentifier: string,
-        tokenData: Parameters<TokenMethods['updateToken']>[1],
+        tokenData: TokenUpdateData,
       ): Promise<void> => {
         const existingCredentialSetId = getCredentialSetId(existingToken);
         const updated = await updateToken!(
@@ -331,16 +348,73 @@ export class MCPTokenStorage {
             type,
             identifier: recordIdentifier,
             token: existingToken.token,
-            ...(existingCredentialSetId && {
-              metadataCredentialSetId: existingCredentialSetId,
-            }),
+            metadataCredentialSetId: existingCredentialSetId ?? null,
           },
           tokenData,
         );
         if (!updated) {
           throw new ReauthenticationRequiredError(serverName, 'binding');
         }
+        const postWriteToken = tokenData.token ?? existingToken.token;
+        const previousMetadata = cloneTokenMetadata(existingToken);
+        rollbackWrites.push(async () => {
+          const restored = await updateToken!(
+            {
+              userId,
+              type,
+              identifier: recordIdentifier,
+              token: postWriteToken,
+              metadataCredentialSetId: credentialSetId,
+            },
+            {
+              token: existingToken.token,
+              expiresAt: existingToken.expiresAt,
+              metadata: previousMetadata,
+            },
+          );
+          if (!restored) {
+            logger.warn(
+              `${logPrefix} Skipped OAuth rollback for ${type}; the record was superseded`,
+            );
+          }
+        });
       };
+
+      const createWithRollback = async (
+        type: string,
+        recordIdentifier: string,
+        tokenData: TokenCreateData,
+      ): Promise<void> => {
+        await createToken(tokenData);
+        if (!deleteTokens) {
+          return;
+        }
+        rollbackWrites.push(async () => {
+          const result = await deleteTokens({
+            userId,
+            type,
+            identifier: recordIdentifier,
+            token: tokenData.token,
+            metadataCredentialSetId: credentialSetId,
+          });
+          if (result.deletedCount === 0) {
+            logger.warn(
+              `${logPrefix} Skipped OAuth create rollback for ${type}; the record was superseded`,
+            );
+          }
+        });
+      };
+
+      interface PlannedTokenWrite {
+        type: string;
+        identifier: string;
+        existingToken?: IToken | null;
+        createData?: TokenCreateData;
+        updateData: TokenUpdateData;
+        description: string;
+      }
+
+      const plannedWrites: PlannedTokenWrite[] = [];
 
       // Encrypt and store access token
       const encryptedAccessToken = await encryptV2(tokens.access_token);
@@ -400,20 +474,14 @@ export class MCPTokenStorage {
         metadata: tokenMetadata,
       };
 
-      // Check if token already exists and update if it does
-      if (findToken && updateToken) {
-        if (existingAccessToken) {
-          await updateIfCurrent(existingAccessToken, 'mcp_oauth', identifier, accessTokenData);
-          logger.debug(`${logPrefix} Updated existing access token`);
-        } else {
-          await createToken(accessTokenData);
-          logger.debug(`${logPrefix} Created new access token`);
-        }
-      } else {
-        // Create new token if it's initial store or update methods not provided
-        await createToken(accessTokenData);
-        logger.debug(`${logPrefix} Created access token (no update methods available)`);
-      }
+      plannedWrites.push({
+        type: 'mcp_oauth',
+        identifier,
+        existingToken: existingAccessToken,
+        createData: accessTokenData,
+        updateData: accessTokenData,
+        description: 'access token',
+      });
 
       // Store refresh token if available
       if (tokens.refresh_token) {
@@ -438,35 +506,26 @@ export class MCPTokenStorage {
           metadata: tokenMetadata,
         };
 
-        // Check if refresh token already exists and update if it does
-        if (findToken && updateToken) {
-          if (existingRefreshToken) {
-            await updateIfCurrent(
-              existingRefreshToken,
-              'mcp_oauth_refresh',
-              `${identifier}:refresh`,
-              refreshTokenData,
-            );
-            logger.debug(`${logPrefix} Updated existing refresh token`);
-          } else {
-            await createToken(refreshTokenData);
-            logger.debug(`${logPrefix} Created new refresh token`);
-          }
-        } else {
-          await createToken(refreshTokenData);
-          logger.debug(`${logPrefix} Created refresh token (no update methods available)`);
-        }
+        plannedWrites.push({
+          type: 'mcp_oauth_refresh',
+          identifier: `${identifier}:refresh`,
+          existingToken: existingRefreshToken,
+          createData: refreshTokenData,
+          updateData: refreshTokenData,
+          description: 'refresh token',
+        });
       } else {
         logger.debug(
           `${logPrefix} No refresh token in response - OAuth server did not rotate refresh token (this is normal for some providers)`,
         );
         if (expectedCredentialSetId && existingRefreshToken && updateToken) {
-          await updateIfCurrent(
-            existingRefreshToken,
-            'mcp_oauth_refresh',
-            `${identifier}:refresh`,
-            { metadata: tokenMetadata },
-          );
+          plannedWrites.push({
+            type: 'mcp_oauth_refresh',
+            identifier: `${identifier}:refresh`,
+            existingToken: existingRefreshToken,
+            updateData: { metadata: tokenMetadata },
+            description: 'refresh token binding',
+          });
         }
       }
 
@@ -487,23 +546,78 @@ export class MCPTokenStorage {
           metadata: { ...metadata, credential_set_id: credentialSetId },
         };
 
-        // Check if client info already exists and update if it does
-        if (findToken && updateToken) {
-          if (existingClientInfo) {
-            await updateIfCurrent(
-              existingClientInfo,
-              'mcp_oauth_client',
-              `${identifier}:client`,
-              clientInfoData,
-            );
-            logger.debug(`${logPrefix} Updated existing client info`);
-          } else {
-            await createToken(clientInfoData);
-            logger.debug(`${logPrefix} Created new client info`);
-          }
+        plannedWrites.push({
+          type: 'mcp_oauth_client',
+          identifier: `${identifier}:client`,
+          existingToken: existingClientInfo,
+          createData: clientInfoData,
+          updateData: clientInfoData,
+          description: 'client info',
+        });
+      }
+
+      /**
+       * Claim an existing access record first (then refresh/client as fallbacks). Once the
+       * anchor moves to the target generation, a competing writer can only continue from the
+       * exact record versions it observed. Remaining writes are journaled so a later failure
+       * restores the exact snapshot without clobbering a still-newer writer. The preflight gate
+       * above rejects mixed access/client snapshots before they can extend this CAS chain.
+       */
+      const anchorIndex = plannedWrites.findIndex((write) => write.existingToken != null);
+      const orderedWrites =
+        anchorIndex > 0
+          ? [
+              plannedWrites[anchorIndex],
+              ...plannedWrites.slice(0, anchorIndex),
+              ...plannedWrites.slice(anchorIndex + 1),
+            ]
+          : plannedWrites;
+
+      for (const write of orderedWrites) {
+        if (findToken && updateToken && write.existingToken) {
+          await updateIfCurrent(
+            write.existingToken,
+            write.type,
+            write.identifier,
+            write.updateData,
+          );
+          logger.debug(`${logPrefix} Updated existing ${write.description}`);
+        } else if (write.createData) {
+          await createWithRollback(write.type, write.identifier, write.createData);
+          logger.debug(`${logPrefix} Created ${write.description}`);
         } else {
-          await createToken(clientInfoData);
-          logger.debug(`${logPrefix} Created client info (no update methods available)`);
+          throw new ReauthenticationRequiredError(serverName, 'binding');
+        }
+      }
+
+      /**
+       * An interactive response without a refresh token must never bind an older refresh
+       * secret to the new client. Remove that stale record after the committed writes. This
+       * cleanup is best-effort and fully scoped; reads already omit it if a crash or transient
+       * database error leaves it behind.
+       */
+      if (
+        !expectedCredentialSetId &&
+        !tokens.refresh_token &&
+        existingRefreshToken &&
+        getCredentialSetId(existingRefreshToken) !== credentialSetId &&
+        deleteTokens
+      ) {
+        try {
+          const result = await deleteTokens({
+            userId,
+            type: 'mcp_oauth_refresh',
+            identifier: `${identifier}:refresh`,
+            token: existingRefreshToken.token,
+            metadataCredentialSetId: getCredentialSetId(existingRefreshToken) ?? null,
+          });
+          if (result.deletedCount === 0) {
+            logger.debug(`${logPrefix} Stale refresh token was already superseded`);
+          }
+        } catch (cleanupError) {
+          logger.warn(`${logPrefix} Failed to remove stale refresh token after OAuth callback`, {
+            error: cleanupError,
+          });
         }
       }
 
@@ -522,7 +636,15 @@ export class MCPTokenStorage {
         expires_at: accessTokenExpiry.getTime(),
       };
     } catch (error) {
-      const logPrefix = this.getLogPrefix(userId, serverName);
+      for (const rollback of rollbackWrites.reverse()) {
+        try {
+          await rollback();
+        } catch (rollbackError) {
+          logger.warn(`${logPrefix} Failed to roll back a partial OAuth credential write`, {
+            error: rollbackError,
+          });
+        }
+      }
       logger.error(`${logPrefix} Failed to store tokens`, error);
       throw error;
     }
@@ -790,6 +912,7 @@ export class MCPTokenStorage {
         tokens: newTokens,
         createToken,
         updateToken,
+        deleteTokens,
         findToken,
         clientInfo,
         existingTokens: {

@@ -585,25 +585,25 @@ export class MCPConnectionFactory {
       );
 
       if (tokens) {
-        const isCurrentAccessToken = await this.runWithCapturedTenant(() =>
-          MCPTokenStorage.isCurrentAccessToken({
-            userId: this.userId!,
-            serverName: this.serverName,
-            accessToken: tokens.access_token,
-            credentialSetId: tokens.credential_set_id,
-            findToken: this.tokenMethods!.findToken!,
-          }),
+        const [isCurrentAccessToken, storedClient] = await this.runWithCapturedTenant(() =>
+          Promise.all([
+            MCPTokenStorage.isCurrentAccessToken({
+              userId: this.userId!,
+              serverName: this.serverName,
+              accessToken: tokens.access_token,
+              credentialSetId: tokens.credential_set_id,
+              findToken: this.tokenMethods!.findToken!,
+            }),
+            MCPTokenStorage.getClientInfoAndMetadata({
+              userId: this.userId!,
+              serverName: this.serverName,
+              findToken: this.tokenMethods!.findToken!,
+            }),
+          ]),
         );
         if (!isCurrentAccessToken) {
           throw new Error(`${this.logPrefix} Cached OAuth access token is stale`);
         }
-        const storedClient = await this.runWithCapturedTenant(() =>
-          MCPTokenStorage.getClientInfoAndMetadata({
-            userId: this.userId!,
-            serverName: this.serverName,
-            findToken: this.tokenMethods!.findToken!,
-          }),
-        );
         MCPTokenStorage.assertCredentialSetBinding(
           this.serverName,
           tokens.credential_set_id,
@@ -1111,35 +1111,63 @@ export class MCPConnectionFactory {
       // Normal OAuth handling - wait for completion
       const result = await this.handleOAuthRequired();
 
-      if (result?.tokens && this.tokenMethods?.createToken) {
+      if (result?.tokens) {
         const { tokens } = result;
         try {
-          connection.setOAuthTokens(tokens);
-          const storedTokens = await this.runWithCapturedTenant(() =>
-            MCPTokenStorage.storeTokens({
-              userId: this.userId!,
-              serverName: this.serverName,
-              tokens,
-              createToken: this.tokenMethods!.createToken,
-              updateToken: this.tokenMethods!.updateToken,
-              findToken: this.tokenMethods!.findToken,
-              clientInfo: result.clientInfo,
-              metadata: MCPOAuthHandler.buildStoredClientMetadata(
-                result.metadata,
-                result.resourceMetadata,
-                (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url,
-                result.clientSource,
-              ),
-            }),
+          if (
+            !this.tokenMethods?.findToken ||
+            typeof tokens.credential_set_id !== 'string' ||
+            tokens.credential_set_id.length === 0
+          ) {
+            throw new ReauthenticationRequiredError(this.serverName, 'binding');
+          }
+
+          const [isCurrentAccessToken, storedClient] = await this.runWithCapturedTenant(() =>
+            Promise.all([
+              MCPTokenStorage.isCurrentAccessToken({
+                userId: this.userId!,
+                serverName: this.serverName,
+                accessToken: tokens.access_token,
+                credentialSetId: tokens.credential_set_id,
+                findToken: this.tokenMethods!.findToken!,
+              }),
+              MCPTokenStorage.getClientInfoAndMetadata({
+                userId: this.userId!,
+                serverName: this.serverName,
+                findToken: this.tokenMethods!.findToken!,
+              }),
+            ]),
           );
+          if (!isCurrentAccessToken || !storedClient) {
+            throw new ReauthenticationRequiredError(this.serverName, 'binding');
+          }
+          MCPTokenStorage.assertCredentialSetBinding(
+            this.serverName,
+            tokens.credential_set_id,
+            storedClient.clientMetadata,
+          );
+          MCPOAuthHandler.assertStoredClientBinding(
+            this.serverName,
+            (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url,
+            storedClient.clientInfo,
+            storedClient.clientMetadata as Partial<OAuthStoredClientMetadata> | undefined,
+            this.serverConfig.oauth,
+          );
+
+          connection.setOAuthTokens(tokens);
           // Same rationale as the silent-refresh success path: invalidate the
           // `mcp_get_tokens` cache so the next `getOAuthTokens` reads the
           // freshly stored tokens rather than the just-rejected ones the
           // interactive flow replaced.
-          await this.invalidateGetTokensFlow(storedTokens);
-          logger.info(`${this.logPrefix} OAuth tokens saved to storage`);
+          await this.invalidateGetTokensFlow(tokens);
+          logger.info(`${this.logPrefix} Verified OAuth callback tokens in storage`);
         } catch (error) {
-          logger.error(`${this.logPrefix} Failed to save OAuth tokens to storage`, error);
+          logger.error(`${this.logPrefix} Failed to verify OAuth callback tokens`, error);
+          connection.emit(
+            'oauthFailed',
+            error instanceof Error ? error : new Error('OAuth token verification failed'),
+          );
+          return;
         }
       }
 

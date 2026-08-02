@@ -551,7 +551,7 @@ export class InMemoryTokenStore {
     type?: string;
     identifier?: string;
     token?: string;
-    metadataCredentialSetId?: string;
+    metadataCredentialSetId?: string | null;
   }): Promise<InMemoryToken | null> => {
     for (const token of this.tokens.values()) {
       const matchUserId = !filter.userId || token.userId === filter.userId;
@@ -559,8 +559,10 @@ export class InMemoryTokenStore {
       const matchIdentifier = !filter.identifier || token.identifier === filter.identifier;
       const matchToken = !filter.token || token.token === filter.token;
       const matchCredentialSet =
-        !filter.metadataCredentialSetId ||
-        this.getCredentialSetId(token) === filter.metadataCredentialSetId;
+        filter.metadataCredentialSetId === undefined ||
+        (filter.metadataCredentialSetId === null
+          ? this.getCredentialSetId(token) == null
+          : this.getCredentialSetId(token) === filter.metadataCredentialSetId);
       if (matchUserId && matchType && matchIdentifier && matchToken && matchCredentialSet) {
         return token;
       }
@@ -596,13 +598,14 @@ export class InMemoryTokenStore {
       type?: string;
       identifier?: string;
       token?: string;
-      metadataCredentialSetId?: string;
+      metadataCredentialSetId?: string | null;
     },
     data: {
       userId?: string;
       type?: string;
       identifier?: string;
       token?: string;
+      expiresAt?: Date;
       expiresIn?: number;
       metadata?: Record<string, unknown>;
     },
@@ -617,7 +620,9 @@ export class InMemoryTokenStore {
     const updated: InMemoryToken = {
       ...existing,
       token: data.token ?? existing.token,
-      expiresAt: data.expiresIn ? new Date(Date.now() + expiresIn * 1000) : existing.expiresAt,
+      expiresAt:
+        data.expiresAt ??
+        (data.expiresIn ? new Date(Date.now() + expiresIn * 1000) : existing.expiresAt),
       metadata: data.metadata ?? existing.metadata,
     };
     this.tokens.set(existingKey, updated);
@@ -636,7 +641,8 @@ export class InMemoryTokenStore {
     userId?: string;
     type?: string;
     identifier?: string;
-    metadataCredentialSetId?: string;
+    token?: string;
+    metadataCredentialSetId?: string | null;
   }): Promise<{ acknowledged: boolean; deletedCount: number }> => {
     let deletedCount = 0;
     for (const [key, token] of this.tokens.entries()) {
@@ -644,8 +650,11 @@ export class InMemoryTokenStore {
         (!query.userId || token.userId === query.userId) &&
         (!query.type || token.type === query.type) &&
         (!query.identifier || token.identifier === query.identifier) &&
-        (!query.metadataCredentialSetId ||
-          this.getCredentialSetId(token) === query.metadataCredentialSetId);
+        (!query.token || token.token === query.token) &&
+        (query.metadataCredentialSetId === undefined ||
+          (query.metadataCredentialSetId === null
+            ? this.getCredentialSetId(token) == null
+            : this.getCredentialSetId(token) === query.metadataCredentialSetId));
       if (match) {
         this.tokens.delete(key);
         deletedCount++;

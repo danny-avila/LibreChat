@@ -473,6 +473,30 @@ describe('Token Methods - Detailed Tests', () => {
       expect(currentUpdate?.email).toBe('current@example.com');
     });
 
+    test('should condition legacy OAuth updates on a missing credential-set selector', async () => {
+      const legacyUpdate = await methods.updateToken(
+        {
+          token: 'update-token',
+          metadataCredentialSetId: null,
+        },
+        { email: 'claimed@example.com' },
+      );
+      expect(legacyUpdate?.email).toBe('claimed@example.com');
+
+      await Token.updateOne(
+        { token: 'update-token' },
+        { $set: { metadata: { credential_set_id: 'generation-a' } } },
+      );
+      const staleLegacyUpdate = await methods.updateToken(
+        {
+          token: 'update-token',
+          metadataCredentialSetId: null,
+        },
+        { email: 'stale@example.com' },
+      );
+      expect(staleLegacyUpdate).toBeNull();
+    });
+
     test('should update expiresAt when expiresIn is provided', async () => {
       const beforeUpdate = Date.now();
       const newExpiresIn = 7200;
@@ -634,6 +658,41 @@ describe('Token Methods - Detailed Tests', () => {
       });
       expect(currentDelete.deletedCount).toBe(1);
       expect(await Token.exists({ token: 'encrypted-client-registration' })).toBeNull();
+    });
+
+    test('should delete only a legacy OAuth token with a missing credential-set selector', async () => {
+      const identifier = 'mcp:test-server:refresh';
+      await Token.create([
+        {
+          token: 'legacy-refresh-token',
+          userId: oauthUserId,
+          type: 'mcp_oauth_refresh',
+          identifier,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'tagged-refresh-token',
+          userId: oauthUserId,
+          type: 'mcp_oauth_refresh',
+          identifier,
+          metadata: { credential_set_id: 'generation-b' },
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const result = await methods.deleteTokens({
+        userId: oauthUserId.toString(),
+        type: 'mcp_oauth_refresh',
+        identifier,
+        token: 'legacy-refresh-token',
+        metadataCredentialSetId: null,
+      });
+
+      expect(result.deletedCount).toBe(1);
+      expect(await Token.exists({ token: 'legacy-refresh-token' })).toBeNull();
+      expect(await Token.exists({ token: 'tagged-refresh-token' })).not.toBeNull();
     });
 
     test('should delete tokens matching an identifier pattern', async () => {

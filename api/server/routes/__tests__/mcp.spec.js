@@ -168,6 +168,17 @@ jest.mock('~/server/services/Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
 }));
 
+const mockOAuthCompletion = (tokens) => {
+  const { MCPOAuthHandler } = require('@librechat/api');
+  MCPOAuthHandler.completeOAuthFlow.mockImplementation(
+    async (flowId, _code, flowManager, _headers, persistBeforeComplete) => {
+      const storedTokens = await persistBeforeComplete(tokens);
+      await flowManager.completeFlow(flowId, 'mcp_oauth', storedTokens);
+      return storedTokens;
+    },
+  );
+};
+
 describe('MCP Routes', () => {
   let app;
   let mongoServer;
@@ -823,7 +834,7 @@ describe('MCP Routes', () => {
         clientInfo: {},
         codeVerifier: 'current-verifier',
       });
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({ access_token: 'test-token' });
+      mockOAuthCompletion({ access_token: 'test-token' });
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
 
@@ -883,7 +894,7 @@ describe('MCP Routes', () => {
         getLogStores.mockReturnValue({});
         require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
         MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-        MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({
+        mockOAuthCompletion({
           access_token: 'test-token',
         });
         MCPTokenStorage.storeTokens.mockResolvedValue();
@@ -937,7 +948,7 @@ describe('MCP Routes', () => {
         getLogStores.mockReturnValue({});
         require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
         MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-        MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({
+        mockOAuthCompletion({
           access_token: 'test-token',
         });
         MCPTokenStorage.storeTokens.mockResolvedValue();
@@ -1004,7 +1015,7 @@ describe('MCP Routes', () => {
         getLogStores.mockReturnValue({});
         require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
         MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-        MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({
+        mockOAuthCompletion({
           access_token: 'test-token',
         });
         MCPTokenStorage.storeTokens.mockResolvedValue();
@@ -1069,7 +1080,7 @@ describe('MCP Routes', () => {
         getLogStores.mockReturnValue({});
         require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
         MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-        MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({
+        mockOAuthCompletion({
           access_token: 'test-token',
         });
         MCPTokenStorage.storeTokens.mockResolvedValue();
@@ -1188,7 +1199,7 @@ describe('MCP Routes', () => {
       };
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
@@ -1235,6 +1246,7 @@ describe('MCP Routes', () => {
         'test-auth-code',
         mockFlowManager,
         {},
+        expect.any(Function),
       );
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1246,7 +1258,9 @@ describe('MCP Routes', () => {
         }),
       );
       const storeInvocation = MCPTokenStorage.storeTokens.mock.invocationCallOrder[0];
+      const flowCompletionInvocation = mockFlowManager.completeFlow.mock.invocationCallOrder[0];
       const connectInvocation = mockMcpManager.getUserConnection.mock.invocationCallOrder[0];
+      expect(storeInvocation).toBeLessThan(flowCompletionInvocation);
       expect(storeInvocation).toBeLessThan(connectInvocation);
       expect(mockFlowManager.completeFlow).toHaveBeenCalledWith(
         'tool-flow-123',
@@ -1284,7 +1298,7 @@ describe('MCP Routes', () => {
       };
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
@@ -1359,7 +1373,7 @@ describe('MCP Routes', () => {
       };
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue(storedTokens);
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
@@ -1417,7 +1431,7 @@ describe('MCP Routes', () => {
       const mockTokens = { access_token: 'tok', refresh_token: 'ref' };
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
@@ -1446,6 +1460,7 @@ describe('MCP Routes', () => {
         'auth-code',
         mockFlowManager,
         { 'X-Custom-Auth': 'header-value' },
+        expect.any(Function),
       );
       expect(mockRegistryInstance.getServerConfig).not.toHaveBeenCalled();
     });
@@ -1467,7 +1482,7 @@ describe('MCP Routes', () => {
       const mockTokens = { access_token: 'tok', refresh_token: 'ref' };
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({
         oauth_headers: { 'X-Registry-Header': 'from-registry' },
@@ -1499,6 +1514,7 @@ describe('MCP Routes', () => {
         'auth-code',
         mockFlowManager,
         { 'X-Registry-Header': 'from-registry' },
+        expect.any(Function),
       );
       expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
         'test-server',
@@ -1546,7 +1562,7 @@ describe('MCP Routes', () => {
       };
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
@@ -1590,7 +1606,7 @@ describe('MCP Routes', () => {
       };
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
@@ -1643,7 +1659,7 @@ describe('MCP Routes', () => {
       };
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockRejectedValue(new Error('store failed'));
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
@@ -1668,6 +1684,7 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe(`${basePath}/oauth/error?error=callback_failed`);
+      expect(mockFlowManager.completeFlow).not.toHaveBeenCalled();
       expect(mockMcpManager.getUserConnection).not.toHaveBeenCalled();
     });
 
@@ -1703,7 +1720,7 @@ describe('MCP Routes', () => {
         .mockResolvedValueOnce(flowState);
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(flowState);
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
@@ -2634,7 +2651,8 @@ describe('MCP Routes', () => {
         clientInfo: {},
         codeVerifier: 'test-verifier',
       });
-      MCPOAuthHandler.completeOAuthFlow = jest.fn().mockResolvedValue(mockTokens);
+      MCPOAuthHandler.completeOAuthFlow = jest.fn();
+      mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
 
@@ -2662,7 +2680,7 @@ describe('MCP Routes', () => {
 
       const basePath = getBasePath();
 
-      expect(mockFlowManager.completeFlow).not.toHaveBeenCalled();
+      expect(mockFlowManager.completeFlow).toHaveBeenCalledWith(flowId, 'mcp_oauth', mockTokens);
       expect(response.headers.location).toContain(`${basePath}/oauth/success`);
     });
 
@@ -2694,7 +2712,7 @@ describe('MCP Routes', () => {
         clientInfo: {},
         codeVerifier: 'test-verifier',
       });
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
+      mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
 
@@ -2752,7 +2770,7 @@ describe('MCP Routes', () => {
         clientInfo: {},
         codeVerifier: 'test-verifier',
       });
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({
+      mockOAuthCompletion({
         access_token: 'token',
         token_type: 'bearer',
       });
@@ -2789,7 +2807,7 @@ describe('MCP Routes', () => {
         clientInfo: {},
         codeVerifier: 'test-verifier',
       });
-      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({
+      mockOAuthCompletion({
         access_token: 'token',
         token_type: 'bearer',
       });

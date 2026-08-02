@@ -1156,6 +1156,7 @@ export class MCPOAuthHandler {
     authorizationCode: string,
     flowManager: FlowStateManager<MCPOAuthTokens>,
     oauthHeaders: Record<string, string>,
+    persistBeforeComplete?: (tokens: MCPOAuthTokens) => Promise<MCPOAuthTokens>,
   ): Promise<MCPOAuthTokens> {
     try {
       /** Flow state which contains our metadata */
@@ -1214,14 +1215,22 @@ export class MCPOAuthHandler {
         scope: tokens.scope,
       });
 
-      const mcpTokens: MCPOAuthTokens = {
+      let mcpTokens: MCPOAuthTokens = {
         ...tokens,
         credential_set_id: randomBytes(16).toString('hex'),
         obtained_at: Date.now(),
         expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
       };
 
-      /** Now complete the flow with the tokens */
+      /**
+       * Persist before completing the flow so waiting connection factories cannot race the
+       * callback route to write the same credential generation.
+       */
+      if (persistBeforeComplete) {
+        mcpTokens = await persistBeforeComplete(mcpTokens);
+      }
+
+      /** Now wake flow waiters with the persisted token snapshot. */
       await flowManager.completeFlow(flowId, this.FLOW_TYPE, mcpTokens);
 
       return mcpTokens;

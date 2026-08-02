@@ -276,6 +276,311 @@ describe('MCPTokenStorage', () => {
       );
     });
 
+    it('rolls back callback access when an interleaved refresh wins the next CAS', async () => {
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'generation-a-refreshed-access',
+          refresh_token: 'generation-a-refresh',
+          token_type: 'Bearer',
+          credential_set_id: credentialSetId,
+        },
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        deleteTokens: store.deleteTokens,
+        findToken: store.findToken,
+        clientInfo: { client_id: 'client-a', client_secret: 'secret-a' },
+        metadata: storedBindingMetadata,
+      });
+
+      let injectedRefresh = false;
+      const interleavedUpdate = jest.fn(async (...args: Parameters<typeof store.updateToken>) => {
+        const updated = await store.updateToken(...args);
+        const [query] = args;
+        if (updated && !injectedRefresh && query.type === 'mcp_oauth') {
+          injectedRefresh = true;
+          await store.updateToken(
+            {
+              userId: 'u1',
+              type: 'mcp_oauth_refresh',
+              identifier: 'mcp:srv1:refresh',
+              token: 'enc:generation-a-refresh',
+              metadataCredentialSetId: credentialSetId,
+            },
+            {
+              token: 'enc:generation-a-rotated-refresh',
+              metadata: storedTokenMetadata,
+            },
+          );
+          await store.updateToken(
+            {
+              userId: 'u1',
+              type: 'mcp_oauth_client',
+              identifier: 'mcp:srv1:client',
+              metadataCredentialSetId: credentialSetId,
+            },
+            {
+              token: 'enc:{"client_id":"client-a-rotated","client_secret":"secret-a"}',
+              metadata: storedBindingMetadata,
+            },
+          );
+        }
+        return updated;
+      }) as typeof store.updateToken;
+
+      await expect(
+        MCPTokenStorage.storeTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          tokens: {
+            access_token: 'generation-b-access',
+            refresh_token: 'generation-b-refresh',
+            token_type: 'Bearer',
+            credential_set_id: 'credential-set-b',
+          },
+          createToken: store.createToken,
+          updateToken: interleavedUpdate,
+          deleteTokens: store.deleteTokens,
+          findToken: store.findToken,
+          clientInfo: { client_id: 'client-b', client_secret: 'secret-b' },
+          metadata: storedBindingMetadata,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+
+      expect(store.getAll()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'mcp_oauth',
+            token: 'enc:generation-a-refreshed-access',
+            metadata: expect.objectContaining({ credential_set_id: credentialSetId }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_refresh',
+            token: 'enc:generation-a-rotated-refresh',
+            metadata: expect.objectContaining({ credential_set_id: credentialSetId }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_client',
+            token: expect.stringContaining('client-a-rotated'),
+            metadata: expect.objectContaining({ credential_set_id: credentialSetId }),
+          }),
+        ]),
+      );
+    });
+
+    it('does not roll back over a newer writer that supersedes the callback anchor', async () => {
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'generation-a-access',
+          refresh_token: 'generation-a-refresh',
+          token_type: 'Bearer',
+          credential_set_id: credentialSetId,
+        },
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        deleteTokens: store.deleteTokens,
+        findToken: store.findToken,
+        clientInfo: { client_id: 'client-a', client_secret: 'secret-a' },
+        metadata: storedBindingMetadata,
+      });
+
+      let injectedNewerWriter = false;
+      const interleavedUpdate = jest.fn(async (...args: Parameters<typeof store.updateToken>) => {
+        const updated = await store.updateToken(...args);
+        const [query] = args;
+        if (updated && !injectedNewerWriter && query.type === 'mcp_oauth') {
+          injectedNewerWriter = true;
+          const generationCMetadata = { credential_set_id: 'credential-set-c' };
+          await store.updateToken(
+            {
+              userId: 'u1',
+              type: 'mcp_oauth',
+              identifier: 'mcp:srv1',
+              token: 'enc:generation-b-access',
+              metadataCredentialSetId: 'credential-set-b',
+            },
+            { token: 'enc:generation-c-access', metadata: generationCMetadata },
+          );
+          await store.updateToken(
+            {
+              userId: 'u1',
+              type: 'mcp_oauth_refresh',
+              identifier: 'mcp:srv1:refresh',
+              metadataCredentialSetId: credentialSetId,
+            },
+            { token: 'enc:generation-c-refresh', metadata: generationCMetadata },
+          );
+          await store.updateToken(
+            {
+              userId: 'u1',
+              type: 'mcp_oauth_client',
+              identifier: 'mcp:srv1:client',
+              metadataCredentialSetId: credentialSetId,
+            },
+            {
+              token: 'enc:{"client_id":"client-c","client_secret":"secret-c"}',
+              metadata: { ...storedBindingMetadata, ...generationCMetadata },
+            },
+          );
+        }
+        return updated;
+      }) as typeof store.updateToken;
+
+      await expect(
+        MCPTokenStorage.storeTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          tokens: {
+            access_token: 'generation-b-access',
+            refresh_token: 'generation-b-refresh',
+            token_type: 'Bearer',
+            credential_set_id: 'credential-set-b',
+          },
+          createToken: store.createToken,
+          updateToken: interleavedUpdate,
+          deleteTokens: store.deleteTokens,
+          findToken: store.findToken,
+          clientInfo: { client_id: 'client-b', client_secret: 'secret-b' },
+          metadata: storedBindingMetadata,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+
+      expect(store.getAll()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'mcp_oauth',
+            token: 'enc:generation-c-access',
+            metadata: expect.objectContaining({ credential_set_id: 'credential-set-c' }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_refresh',
+            token: 'enc:generation-c-refresh',
+            metadata: expect.objectContaining({ credential_set_id: 'credential-set-c' }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_client',
+            token: expect.stringContaining('client-c'),
+            metadata: expect.objectContaining({ credential_set_id: 'credential-set-c' }),
+          }),
+        ]),
+      );
+    });
+
+    it('fails closed without writes when access and client generations are already mixed', async () => {
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'generation-a-access',
+          refresh_token: 'generation-a-refresh',
+          token_type: 'Bearer',
+          credential_set_id: credentialSetId,
+        },
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        deleteTokens: store.deleteTokens,
+        findToken: store.findToken,
+        clientInfo: { client_id: 'client-a', client_secret: 'secret-a' },
+        metadata: storedBindingMetadata,
+      });
+      await store.updateToken(
+        {
+          userId: 'u1',
+          type: 'mcp_oauth',
+          identifier: 'mcp:srv1',
+          token: 'enc:generation-a-access',
+          metadataCredentialSetId: credentialSetId,
+        },
+        {
+          token: 'enc:crash-left-generation-b-access',
+          metadata: { credential_set_id: 'credential-set-b' },
+        },
+      );
+
+      const createToken = jest.fn(store.createToken);
+      const updateToken = jest.fn(store.updateToken);
+      const deleteTokens = jest.fn(store.deleteTokens);
+
+      await expect(
+        MCPTokenStorage.storeTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          tokens: {
+            access_token: 'generation-c-access',
+            refresh_token: 'generation-c-refresh',
+            token_type: 'Bearer',
+            credential_set_id: 'credential-set-c',
+          },
+          createToken,
+          updateToken,
+          deleteTokens,
+          findToken: store.findToken,
+          clientInfo: { client_id: 'client-c', client_secret: 'secret-c' },
+          metadata: storedBindingMetadata,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+
+      expect(createToken).not.toHaveBeenCalled();
+      expect(updateToken).not.toHaveBeenCalled();
+      expect(deleteTokens).not.toHaveBeenCalled();
+      expect(store.getAll()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'mcp_oauth',
+            token: 'enc:crash-left-generation-b-access',
+            metadata: expect.objectContaining({ credential_set_id: 'credential-set-b' }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_refresh',
+            token: 'enc:generation-a-refresh',
+            metadata: expect.objectContaining({ credential_set_id: credentialSetId }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_client',
+            token: expect.stringContaining('client-a'),
+            metadata: expect.objectContaining({ credential_set_id: credentialSetId }),
+          }),
+        ]),
+      );
+    });
+
+    it('deletes its own created records when a later create fails', async () => {
+      const createToken = jest.fn(async (data) => {
+        if (data.type === 'mcp_oauth_refresh') {
+          throw new Error('refresh create failed');
+        }
+        return await store.createToken(data);
+      }) as typeof store.createToken;
+      const deleteTokens = jest.fn(store.deleteTokens);
+
+      await expect(
+        MCPTokenStorage.storeTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          tokens: {
+            access_token: 'new-access',
+            refresh_token: 'new-refresh',
+            token_type: 'Bearer',
+            credential_set_id: 'credential-set-new',
+          },
+          createToken,
+          deleteTokens,
+        }),
+      ).rejects.toThrow('refresh create failed');
+
+      expect(store.getAll()).toHaveLength(0);
+      expect(deleteTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'mcp_oauth',
+          token: 'enc:new-access',
+          metadataCredentialSetId: 'credential-set-new',
+        }),
+      );
+    });
+
     it('should create new access token with expires_in', async () => {
       await MCPTokenStorage.storeTokens({
         userId: 'u1',
@@ -1348,6 +1653,8 @@ describe('MCPTokenStorage', () => {
 
       expect(result).not.toBeNull();
       expect(result!.access_token).toBe('new-access-token');
+      expect(result!.credential_set_id).toEqual(expect.any(String));
+      expect(result!.credential_set_id).not.toBe(credentialSetId);
       expect(refreshTokens).toHaveBeenCalledWith(
         'rt',
         expect.objectContaining({
@@ -1365,6 +1672,28 @@ describe('MCPTokenStorage', () => {
         identifier: 'mcp:srv1',
       });
       expect(saved!.token).toBe('enc:new-access-token');
+      expect(store.getAll()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'mcp_oauth',
+            metadata: expect.objectContaining({
+              credential_set_id: result!.credential_set_id,
+            }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_refresh',
+            metadata: expect.objectContaining({
+              credential_set_id: result!.credential_set_id,
+            }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_client',
+            metadata: expect.objectContaining({
+              credential_set_id: result!.credential_set_id,
+            }),
+          }),
+        ]),
+      );
     });
 
     it('should return null when no refresh token is stored', async () => {
@@ -1962,6 +2291,78 @@ describe('MCPTokenStorage', () => {
       expect(result!.refresh_token).toBeUndefined();
       expect(result!.credential_set_id).not.toBe(credentialSetId);
       expect(refreshRecord?.metadata).toMatchObject({ credential_set_id: credentialSetId });
+    });
+
+    it('removes the stale refresh generation after an interactive callback commits', async () => {
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'old-access',
+          refresh_token: 'old-refresh',
+          token_type: 'Bearer',
+          credential_set_id: credentialSetId,
+        },
+        createToken: store.createToken,
+        clientInfo: { client_id: 'old-client', client_secret: 'old-secret' },
+        metadata: storedBindingMetadata,
+      });
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'intermediate-access',
+          token_type: 'Bearer',
+          credential_set_id: 'credential-set-b',
+        },
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        findToken: store.findToken,
+        clientInfo: { client_id: 'intermediate-client', client_secret: 'intermediate-secret' },
+        metadata: storedBindingMetadata,
+      });
+      const deleteTokens = jest.fn(store.deleteTokens);
+
+      const result = await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'new-access',
+          token_type: 'Bearer',
+          credential_set_id: 'credential-set-c',
+        },
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        deleteTokens,
+        findToken: store.findToken,
+        clientInfo: { client_id: 'new-client', client_secret: 'new-secret' },
+        metadata: storedBindingMetadata,
+      });
+
+      expect(deleteTokens).toHaveBeenCalledWith({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:old-refresh',
+        metadataCredentialSetId: credentialSetId,
+      });
+      await expect(
+        store.findToken({
+          userId: 'u1',
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:srv1:refresh',
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+        }),
+      ).resolves.toMatchObject({
+        access_token: 'new-access',
+        credential_set_id: result.credential_set_id,
+      });
     });
   });
 });
