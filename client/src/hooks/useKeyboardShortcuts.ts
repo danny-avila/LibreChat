@@ -288,9 +288,10 @@ export const shortcutDefinitions = {
 export type ShortcutActionId = keyof typeof shortcutDefinitions;
 
 /**
- * Shortcuts the document-level handler still runs while an input, textarea, or
- * contenteditable has focus. The composer yields chords bound to these so only
- * one handler acts on a keypress.
+ * Shortcuts the window-level handler still runs while an input, textarea, or
+ * contenteditable has focus. The composer yields chords bound to these by
+ * leaving the keypress unclaimed (no `preventDefault`), so only one handler
+ * acts on it.
  */
 export const EDITING_ALLOWED_SHORTCUTS: ReadonlySet<ShortcutActionId> = new Set([
   'focusChat',
