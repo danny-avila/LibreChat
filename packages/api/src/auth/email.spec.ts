@@ -223,9 +223,9 @@ describe('email change service', () => {
         identifier: 'old@example.com',
         token: await hashToken('raw-token'),
         expiresAt: new Date(Date.now() + 60_000),
-        metadata: { passwordFingerprint: await hashToken(user.password!) },
+        metadata: new Map([['passwordFingerprint', await hashToken(user.password!)]]),
         tenantId: 'tenant-1',
-      } as EmailChangeToken;
+      };
     }
 
     it('rejects pending confirmations when email changes are disabled', async () => {
