@@ -121,7 +121,7 @@ const TooltipPopup = memo(function TooltipPopup({
 export const TooltipAnchor: ForwardRefExoticComponent<
   Omit<TooltipAnchorProps, 'ref'> & RefAttributes<HTMLDivElement>
 > = forwardRef<HTMLDivElement, TooltipAnchorProps>(function TooltipAnchor(
-  { description, side = 'top', className, role, enableHTML = false, onKeyDown, ...props },
+  { description, side = 'top', className, role, enableHTML = false, onKeyDown, tabIndex, ...props },
   ref,
 ) {
   const tooltip = Ariakit.useTooltipStore({ placement: side });
@@ -131,7 +131,12 @@ export const TooltipAnchor: ForwardRefExoticComponent<
    * Space must both be handled to match a real button (WCAG 2.1.1). Space is always
    * preventDefault'd (including key-repeat) to suppress page scroll. Activation
    * ignores event.repeat so a held Space does not fire click() repeatedly.
+   *
+   * Default tabIndex to 0 for role="button" so keyboard users can reach consumers
+   * that forget an explicit tabIndex (e.g. MCP card actions). Explicit values win.
    */
+  const resolvedTabIndex = role === 'button' ? (tabIndex ?? 0) : tabIndex;
+
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       onKeyDown?.(event);
@@ -156,6 +161,7 @@ export const TooltipAnchor: ForwardRefExoticComponent<
         {...props}
         ref={ref}
         role={role}
+        tabIndex={resolvedTabIndex}
         onKeyDown={handleKeyDown}
         className={cn('cursor-pointer', className)}
       />

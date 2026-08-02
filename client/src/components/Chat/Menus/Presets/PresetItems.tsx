@@ -186,11 +186,11 @@ const PresetItems: FC<{
                                 e.stopPropagation();
                                 onSetDefaultPreset(preset, defaultPreset?.presetId === presetId);
                               }}
+                              // Native <button> already activates once on Enter/Space; only
+                              // stop propagation so the parent MenuItem does not also fire.
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
                                   e.stopPropagation();
-                                  onSetDefaultPreset(preset, defaultPreset?.presetId === presetId);
                                 }
                               }}
                             >
@@ -211,9 +211,7 @@ const PresetItems: FC<{
                               }}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
                                   e.stopPropagation();
-                                  onChangePreset(preset);
                                 }
                               }}
                             >
@@ -234,9 +232,7 @@ const PresetItems: FC<{
                               }}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
                                   e.stopPropagation();
-                                  onDeletePreset(preset);
                                 }
                               }}
                             >

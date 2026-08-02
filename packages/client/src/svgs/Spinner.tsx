@@ -1,5 +1,6 @@
 import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils/';
+import './Spinner.css';
 
 interface SpinnerProps {
   className?: string;
@@ -12,9 +13,9 @@ interface SpinnerProps {
 /**
  * Accessible loading spinner.
  *
- * Animation uses the host `animate-spin` utility with an inline duration override,
- * never an embedded `<style>` tag: stylesheet text inside the SVG becomes part of
- * the ancestor's `textContent`, leaking raw CSS into label readouts of any control
+ * Animation is defined in Spinner.css (extracted into the package style bundle),
+ * never an embedded <style> tag: stylesheet text inside the SVG becomes part of
+ * the ancestor's textContent, leaking raw CSS into label readouts of any control
  * that wraps a spinner.
  */
 export default function Spinner({
@@ -24,14 +25,18 @@ export default function Spinner({
   bgOpacity = 0.1,
   speed = 0.75,
 }: SpinnerProps): JSX.Element {
+  const cssVars = {
+    '--spinner-speed': `${speed}s`,
+  } as React.CSSProperties;
+
   return (
     <svg
-      className={cn(className, 'spinner', 'animate-spin')}
+      className={cn(className, 'spinner')}
       width={size}
       height={size}
       viewBox="0 0 40 40"
       xmlns="http://www.w3.org/2000/svg"
-      style={{ animationDuration: `${speed}s` }}
+      style={cssVars}
       aria-hidden="true"
       focusable="false"
       role="presentation"

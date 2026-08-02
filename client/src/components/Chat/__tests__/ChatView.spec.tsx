@@ -1,36 +1,31 @@
 import React from 'react';
-import 'test/matchMedia.mock';
 import '@testing-library/jest-dom';
-import { RecoilRoot } from 'recoil';
-import { MemoryRouter } from 'react-router-dom';
-import { render as rtlRender, screen } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen } from 'test/layout-test-utils';
 import ChatView from '../ChatView';
 
 const mockParams = jest.fn();
 const mockConversation = jest.fn();
-
-/** ChatView needs Recoil and a router; auth is deliberately out of scope here. */
-const render = (ui: React.ReactElement) =>
-  rtlRender(ui, {
-    wrapper: ({ children }) => (
-      <QueryClientProvider client={new QueryClient()}>
-        <RecoilRoot>
-          <MemoryRouter>{children}</MemoryRouter>
-        </RecoilRoot>
-      </QueryClientProvider>
-    ),
-  });
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
   useParams: () => mockParams(),
 }));
 
+/** Auth is out of scope for heading selection; keep the shared harness wrappers. */
+jest.mock('~/hooks/AuthContext', () => ({
+  AuthContextProvider: ({ children }: { children: React.ReactNode }) => children,
+  useAuthContext: () => ({ isAuthenticated: false, user: null, roles: {} }),
+}));
+
 jest.mock('~/data-provider', () => ({
   useGetMessagesByConvoId: () => ({ data: null, isLoading: false, isFetching: false }),
 }));
 
+/**
+ * Heading selection only needs route params + conversation state. Stub the chat
+ * helper surface so the suite can inject matching vs stale IDs without standing
+ * up SSE, message trees, or full ChatRoute synchronization.
+ */
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => (key === 'com_ui_new_chat' ? 'New chat' : key),
   useChatHelpers: () => ({ conversation: mockConversation() }),
@@ -110,6 +105,8 @@ describe('ChatView page heading', () => {
     render(<ChatView />);
 
     expect(screen.getByRole('heading', { level: 1, name: 'New chat' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { level: 1, name: 'Previous chat' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { level: 1, name: 'Previous chat' }),
+    ).not.toBeInTheDocument();
   });
 });

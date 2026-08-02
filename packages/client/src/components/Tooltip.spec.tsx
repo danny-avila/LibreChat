@@ -107,6 +107,26 @@ describe('TooltipAnchor', () => {
 
       expect(onClick).not.toHaveBeenCalled();
     });
+
+    test('defaults tabIndex to 0 when role is button', () => {
+      render(
+        <TooltipAnchor role="button" description="Focusable" aria-label="Focusable">
+          <span>icon</span>
+        </TooltipAnchor>,
+      );
+
+      expect(screen.getByLabelText('Focusable')).toHaveAttribute('tabindex', '0');
+    });
+
+    test('preserves an explicit tabIndex for role-button anchors', () => {
+      render(
+        <TooltipAnchor role="button" tabIndex={-1} description="Deferred" aria-label="Deferred">
+          <span>icon</span>
+        </TooltipAnchor>,
+      );
+
+      expect(screen.getByLabelText('Deferred')).toHaveAttribute('tabindex', '-1');
+    });
   });
 
   describe('consumer onKeyDown', () => {
