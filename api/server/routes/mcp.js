@@ -403,62 +403,71 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         code,
         flowManager,
         oauthHeaders,
-      );
-      logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
+        async (exchangedTokens) => {
+          if (!flowState?.userId) {
+            return exchangedTokens;
+          }
 
-      /** Persist tokens immediately so reconnection uses fresh credentials */
-      if (flowState?.userId && tokens) {
-        try {
-          await MCPTokenStorage.storeTokens({
-            userId: flowState.userId,
-            serverName,
-            tokens,
-            createToken: db.createToken,
-            updateToken: db.updateToken,
-            findToken: db.findToken,
-            clientInfo: flowState.clientInfo,
-            metadata: MCPOAuthHandler.buildStoredClientMetadata(
-              flowState.metadata,
-              flowState.resourceMetadata,
-            ),
-          });
-          logger.debug('[MCP OAuth] Stored OAuth tokens prior to reconnection', {
-            serverName,
-            userId: flowState.userId,
-          });
-        } catch (error) {
-          logger.error('[MCP OAuth] Failed to store OAuth tokens after callback', error);
-          throw error;
-        }
-
-        /**
-         * Clear any cached `mcp_get_tokens` flow result so subsequent lookups
-         * re-fetch the freshly stored credentials instead of returning stale nulls.
-         */
-        if (typeof flowManager?.deleteFlow === 'function') {
+          let storedTokens;
           try {
-            const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(
-              flowState.userId,
+            storedTokens =
+              (await MCPTokenStorage.storeTokens({
+                userId: flowState.userId,
+                serverName,
+                tokens: exchangedTokens,
+                createToken: db.createToken,
+                updateToken: db.updateToken,
+                deleteTokens: db.deleteTokens,
+                findToken: db.findToken,
+                clientInfo: flowState.clientInfo,
+                metadata: MCPOAuthHandler.buildStoredClientMetadata(
+                  flowState.metadata,
+                  flowState.resourceMetadata,
+                  flowState.serverUrl,
+                  flowState.clientSource,
+                ),
+              })) ?? exchangedTokens;
+            logger.debug('[MCP OAuth] Stored OAuth tokens before completing callback flow', {
               serverName,
-              flowState.tenantId,
-            );
-            await clearGetTokensFlow({
-              flowManager,
-              flowId: tokenFlowId,
-              tokens,
+              userId: flowState.userId,
             });
-            if (tokenFlowId !== flowId) {
+          } catch (error) {
+            logger.error('[MCP OAuth] Failed to store OAuth tokens before flow completion', error);
+            throw error;
+          }
+
+          /**
+           * Clear any cached `mcp_get_tokens` flow result before the OAuth flow wakes its
+           * waiters, so they cannot observe stale credentials after completion.
+           */
+          if (typeof flowManager?.deleteFlow === 'function') {
+            try {
+              const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(
+                flowState.userId,
+                serverName,
+                flowState.tenantId,
+              );
               await clearGetTokensFlow({
                 flowManager,
-                flowId,
-                tokens,
+                flowId: tokenFlowId,
+                tokens: storedTokens,
               });
+              if (tokenFlowId !== flowId) {
+                await clearGetTokensFlow({
+                  flowManager,
+                  flowId,
+                  tokens: storedTokens,
+                });
+              }
+            } catch (error) {
+              logger.warn('[MCP OAuth] Failed to clear cached token flow state', error);
             }
-          } catch (error) {
-            logger.warn('[MCP OAuth] Failed to clear cached token flow state', error);
           }
-        }
-      }
+
+          return storedTokens;
+        },
+      );
+      logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
       try {
         const mcpManager = getMCPManager(flowState.userId);

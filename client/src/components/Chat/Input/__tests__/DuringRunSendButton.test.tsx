@@ -201,8 +201,8 @@ describe('DuringRunSendButton — Enter hint follows the interrupt preference', 
  * Hints come from the same decision table the composer executes
  * (`resolveComposerKeyDown`), so a chord that no longer triggers a row is
  * never advertised on it. Covers codex round 3: a chord rebound to an
- * editing-allowed global shortcut is yielded to the document handler, and a
- * submit rebound to Alt+Enter submits instead of interrupting.
+ * editing-allowed global shortcut is yielded to the window-level handler,
+ * and a submit rebound to Alt+Enter submits instead of interrupting.
  */
 describe('DuringRunSendButton — hints follow the effective bindings', () => {
   const kbdFor = (label: string) =>

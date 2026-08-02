@@ -12,6 +12,8 @@ export default defineConfig({
   dts: { oxc: true },
   outDir: 'dist',
   sourcemap: true,
+  // Warn on module cycles at build time; CI enforces via config/circular-deps.mjs.
+  checks: { circularDependency: true },
   // Externalize every third-party dependency (consumers provide the peers) and bundle
   // only first-party code: relative imports and the `~/*` tsconfig alias (-> src).
   // `neverBundle` is the 0.22 replacement for the deprecated `external` option.

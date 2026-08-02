@@ -255,7 +255,7 @@ export default defineConfig(({ command }) => ({
                   if (normalizedId.includes('react-hook-form')) {
                     return 'forms';
                   }
-                  if (normalizedId.includes('react-router-dom')) {
+                  if (normalizedId.includes('react-router')) {
                     return 'routing';
                   }
                   if (

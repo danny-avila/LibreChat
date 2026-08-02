@@ -14,10 +14,11 @@ export type ComposerBindings = {
   submitOverride: ShortcutBinding | null | undefined;
   /**
    * Chords the user has bound to global shortcuts that still run while typing
-   * (`EDITING_ALLOWED_SHORTCUTS`). The document-level handler in
-   * `useKeyboardShortcuts` runs AFTER the composer's and does not check
-   * `defaultPrevented`, so the composer must leave these chords entirely to it
-   * — acting on them too would fire both. `submitMessage` is excluded: its
+   * (`EDITING_ALLOWED_SHORTCUTS`). The window-level handler in
+   * `useKeyboardShortcuts` runs AFTER the composer's and yields any keypress
+   * a closer handler claimed via `preventDefault`, so the composer must leave
+   * these chords entirely untouched — acting on them would claim the event
+   * and silently swallow the global action. `submitMessage` is excluded: its
    * rebinding is resolved through `submitOverride` instead. No default binding
    * uses an Enter chord besides submit, so this only ever yields to a
    * deliberate rebinding.

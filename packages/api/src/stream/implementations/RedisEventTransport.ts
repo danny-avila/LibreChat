@@ -505,6 +505,17 @@ export class RedisEventTransport implements IEventTransport {
 
     try {
       const parsed = JSON.parse(message) as PubSubMessage;
+      /** Aborts, preempts, and abort acknowledgements are consumed by
+       *  transport-internal waiters (e.g. pending-ack resolution), not SSE
+       *  subscribers, so they must flow even with zero local subscribers. */
+      if (
+        streamState.count === 0 &&
+        parsed.type !== EventTypes.ABORT &&
+        parsed.type !== EventTypes.ABORT_ACK &&
+        parsed.type !== EventTypes.PREEMPT
+      ) {
+        return;
+      }
       if (parsed.type === EventTypes.CHUNK && parsed.seq != null) {
         this.handleOrderedChunk(streamId, streamState, parsed);
       } else if (

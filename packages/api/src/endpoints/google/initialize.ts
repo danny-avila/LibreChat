@@ -100,7 +100,12 @@ export async function initializeGoogle({
    */
   const mergedHeaders = mergeHeaders(allConfig?.headers, googleConfig?.headers);
   const headers = mergedHeaders
-    ? resolveHeaders({ headers: mergedHeaders, user: req.user, body: req.body })
+    ? resolveHeaders({
+        headers: mergedHeaders,
+        user: req.user,
+        body: req.body,
+        stripUnresolved: true,
+      })
     : undefined;
 
   clientOptions = {

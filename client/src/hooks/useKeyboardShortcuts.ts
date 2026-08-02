@@ -288,9 +288,10 @@ export const shortcutDefinitions = {
 export type ShortcutActionId = keyof typeof shortcutDefinitions;
 
 /**
- * Shortcuts the document-level handler still runs while an input, textarea, or
- * contenteditable has focus. The composer yields chords bound to these so only
- * one handler acts on a keypress.
+ * Shortcuts the window-level handler still runs while an input, textarea, or
+ * contenteditable has focus. The composer yields chords bound to these by
+ * leaving the keypress unclaimed (no `preventDefault`), so only one handler
+ * acts on it.
  */
 export const EDITING_ALLOWED_SHORTCUTS: ReadonlySet<ShortcutActionId> = new Set([
   'focusChat',
@@ -1035,6 +1036,10 @@ export default function useKeyboardShortcuts() {
         return;
       }
 
+      if (e.defaultPrevented) {
+        return;
+      }
+
       const binding = bindingFromEvent(e);
       if (!binding) {
         return;
@@ -1082,8 +1087,11 @@ export default function useKeyboardShortcuts() {
   );
 
   useEffect(() => {
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    /** window, not document: every element- and document-level owner sits
+     *  earlier in the bubble path, so their `preventDefault` claims are
+     *  visible here regardless of mount or registration order. */
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, [handler]);
 }
 

@@ -119,7 +119,7 @@ const {
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
-const { resolveConfigServers } = require('~/server/services/MCP');
+const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
@@ -1558,6 +1558,7 @@ class AgentClient extends BaseClient {
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getConvoFiles: db.getConvoFiles,
+        getAccessibleMcpServerNames,
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
@@ -3231,11 +3232,13 @@ class AgentClient extends BaseClient {
 
     /** Resolve request-based headers across provider-specific header locations:
      *  OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`
-     *  (preserved above), and Google `customHeaders`.
+     *  (preserved above), and Google `customHeaders`. Uses the `req` captured at
+     *  entry — `disposeClient` nulls `this.options.req` and can race this async
+     *  title flow, which would blank the user context mid-generation.
      */
     resolveConfigHeaders({
       llmConfig: clientOptions,
-      user: createSafeUser(this.options.req?.user),
+      user: createSafeUser(req?.user),
       body: {
         messageId: this.responseMessageId,
         conversationId: this.conversationId,
