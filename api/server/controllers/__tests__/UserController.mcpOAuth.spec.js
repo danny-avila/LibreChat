@@ -37,6 +37,7 @@ jest.mock('@librechat/api', () => ({
   MCPTokenStorage: {
     getClientInfoAndMetadata: jest.fn(),
     getTokens: jest.fn(),
+    assertCredentialSetBinding: jest.fn(),
     deleteUserTokens: jest.fn().mockResolvedValue(undefined),
   },
   normalizeHttpError: jest.fn((error) => error),
@@ -158,11 +159,13 @@ function setupMCPMocks() {
   return { flowManager, mcpManager, registry };
 }
 
+const credentialSetId = 'credential-set-a';
 const storedOAuthBinding = {
   server_url: 'https://example.com/mcp',
   token_endpoint: 'https://example.com/token',
   revocation_endpoint: 'https://example.com/revoke',
   client_source: 'dynamic',
+  credential_set_id: credentialSetId,
 };
 
 beforeEach(() => {
@@ -386,6 +389,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     MCPTokenStorage.getTokens.mockResolvedValue({
       access_token: 'access-token',
       refresh_token: 'refresh-token',
+      credential_set_id: credentialSetId,
     });
     MCPOAuthHandler.revokeOAuthToken.mockResolvedValue();
 
@@ -398,6 +402,11 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
       serverName: 'test-server',
       findToken: mockFindToken,
     });
+    expect(MCPTokenStorage.assertCredentialSetBinding).toHaveBeenCalledWith(
+      'test-server',
+      credentialSetId,
+      expect.objectContaining({ credential_set_id: credentialSetId }),
+    );
     expect(MCPOAuthHandler.revokeOAuthToken).toHaveBeenCalledWith(
       'test-server',
       'access-token',
@@ -443,6 +452,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     });
     MCPTokenStorage.getTokens.mockResolvedValue({
       access_token: 'access-token',
+      credential_set_id: credentialSetId,
     });
     MCPOAuthHandler.revokeOAuthToken.mockResolvedValue();
 
@@ -475,6 +485,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     });
     MCPTokenStorage.getTokens.mockResolvedValue({
       refresh_token: 'refresh-token',
+      credential_set_id: credentialSetId,
     });
     MCPOAuthHandler.revokeOAuthToken.mockResolvedValue();
 
