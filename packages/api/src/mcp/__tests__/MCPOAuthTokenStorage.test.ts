@@ -351,6 +351,7 @@ describe('MCPTokenStorage', () => {
       expect(refreshTokens).toHaveBeenCalledWith(
         'rt',
         expect.objectContaining({ userId: 'u1', serverName: 'srv1' }),
+        expect.any(AbortSignal),
       );
     });
 
@@ -478,6 +479,7 @@ describe('MCPTokenStorage', () => {
         expect.objectContaining({
           clientInfo: expect.objectContaining({ client_id: 'cid' }),
         }),
+        expect.any(AbortSignal),
       );
     });
 
@@ -766,6 +768,7 @@ describe('MCPTokenStorage', () => {
           serverName: 'srv1',
           identifier: 'mcp:srv1',
         }),
+        expect.any(AbortSignal),
       );
 
       // The new access token is persisted, replacing the stale one.
@@ -1107,14 +1110,21 @@ describe('MCPTokenStorage', () => {
       expect(refreshTokens).toHaveBeenCalledTimes(2);
     });
 
-    it('evicts a stalled redemption so later refreshes are not wedged until restart', async () => {
+    it('aborts a stalled redemption and frees the slot only after it settles', async () => {
       jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
       try {
         await seedRefreshableTokens('stall-srv');
 
         const refreshTokens = jest
           .fn()
-          .mockImplementationOnce(() => new Promise<MCPOAuthTokens>(() => {}))
+          .mockImplementationOnce(
+            (_refreshToken: string, _metadata: unknown, signal: AbortSignal) =>
+              new Promise<MCPOAuthTokens>((_, reject) => {
+                signal.addEventListener('abort', () => reject(new Error('aborted')), {
+                  once: true,
+                });
+              }),
+          )
           .mockResolvedValueOnce(rotatedTokens(2));
 
         const params = refreshParams(refreshTokens, 'stall-srv');
@@ -1122,15 +1132,81 @@ describe('MCPTokenStorage', () => {
         await waitFor(() => refreshTokens.mock.calls.length === 1);
 
         jest.advanceTimersByTime(MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS + 1);
+        /** The stale abort settles the stalled execution, which frees the slot. */
+        await expect(stalled).resolves.toBeNull();
 
         const fresh = await MCPTokenStorage.forceRefreshTokens(params);
         expect(fresh!.access_token).toBe('at-2');
         expect(refreshTokens).toHaveBeenCalledTimes(2);
-        /** The stalled promise never settles by design; it must not be awaited. */
-        void stalled;
       } finally {
         jest.useRealTimers();
       }
+    });
+
+    it('never reaches the token endpoint when a stalled execution wakes after abort', async () => {
+      jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+      try {
+        await seedRefreshableTokens('wake-srv');
+
+        let releaseRead!: () => void;
+        const readGate = new Promise<void>((resolve) => {
+          releaseRead = resolve;
+        });
+        let refreshReadStarted = false;
+        const findToken = (async (filter: { type?: string }) => {
+          if (filter.type === 'mcp_oauth_refresh') {
+            refreshReadStarted = true;
+            await readGate;
+          }
+          return store.findToken(filter as Parameters<InMemoryTokenStore['findToken']>[0]);
+        }) as TokenMethods['findToken'];
+
+        const refreshTokens = jest.fn();
+        const stalled = MCPTokenStorage.forceRefreshTokens({
+          ...refreshParams(refreshTokens, 'wake-srv'),
+          findToken,
+        });
+        await waitFor(() => refreshReadStarted);
+
+        jest.advanceTimersByTime(MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS + 1);
+        releaseRead();
+
+        await expect(stalled).resolves.toBeNull();
+        expect(refreshTokens).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('runs onRefreshSuccess on the shared redemption even after the initiating waiter aborted', async () => {
+      await seedRefreshableTokens('hook-srv');
+
+      let resolveRefresh!: (tokens: MCPOAuthTokens) => void;
+      const refreshTokens = jest.fn(
+        () =>
+          new Promise<MCPOAuthTokens>((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      );
+      const onRefreshSuccess = jest.fn().mockResolvedValue(undefined);
+
+      const controller = new AbortController();
+      const initiator = MCPTokenStorage.forceRefreshTokens({
+        ...refreshParams(refreshTokens, 'hook-srv'),
+        signal: controller.signal,
+        onRefreshSuccess,
+      });
+      await waitFor(() => refreshTokens.mock.calls.length === 1);
+
+      controller.abort();
+      await expect(initiator).resolves.toBeNull();
+      expect(onRefreshSuccess).not.toHaveBeenCalled();
+
+      resolveRefresh(rotatedTokens(2));
+      await waitFor(() => onRefreshSuccess.mock.calls.length === 1);
+      expect(onRefreshSuccess).toHaveBeenCalledWith(
+        expect.objectContaining({ access_token: 'at-2' }),
+      );
     });
 
     it("an initiator's abort resolves only its own wait, not the shared redemption", async () => {

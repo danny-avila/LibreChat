@@ -57,6 +57,12 @@ interface GetTokensParams {
   deleteTokens?: TokenMethods['deleteTokens'];
   /** Waiter-specific: aborting resolves this caller's wait with `null` without cancelling the shared redemption. */
   signal?: AbortSignal;
+  /**
+   * Invoked inside the shared redemption after rotated tokens are persisted.
+   * Runs even when the initiating waiter has already aborted its wait, so
+   * cache invalidation tied to the fresh tokens cannot be skipped by a timeout.
+   */
+  onRefreshSuccess?: (tokens: MCPOAuthTokens) => Promise<void>;
 }
 
 /**
@@ -102,10 +108,11 @@ export class MCPTokenStorage {
   private static inflightRefreshes = new Map<string, Promise<MCPOAuthTokens | null>>();
 
   /**
-   * How long an in-flight redemption may occupy its single-flight slot before
-   * new callers stop joining it. Generous relative to a healthy refresh round
-   * trip (well under a minute) so eviction only fires for genuinely wedged
-   * executions, keeping the concurrent-replay window closed in normal operation.
+   * How long an in-flight redemption may run before it is aborted. Generous
+   * relative to a healthy refresh round trip (well under a minute) so the
+   * abort only fires for genuinely wedged executions. The single-flight slot
+   * is freed when the aborted execution settles — never while it might still
+   * reach the token endpoint with the old refresh token.
    */
   static readonly INFLIGHT_REFRESH_STALE_MS = 60_000;
 
@@ -363,13 +370,14 @@ export class MCPTokenStorage {
      * threaded into the execution, so an impatient waiter (e.g. the silent
      * refresh path's short timeout) cannot cancel the wire call for everyone
      * who joined. Cancellation is waiter-specific via `raceWithAbort`; the
-     * execution itself is bounded by transport timeouts plus the stale-entry
-     * eviction below.
+     * execution itself is bounded by the internal stale-abort controller below.
      */
+    const executionController = new AbortController();
     const refreshPromise = this.executeTokenRefresh({
       ...params,
       refreshTokens,
       createToken,
+      signal: executionController.signal,
     }).finally(() => {
       clearTimeout(staleTimer);
       if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
@@ -377,17 +385,20 @@ export class MCPTokenStorage {
       }
     });
     /**
-     * Safety valve: if the execution never settles (hung token read/persist or
-     * an unbounded transport stall), evict the map entry so later refreshes
-     * start fresh instead of joining a wedged promise until process restart.
-     * Existing waiters keep their promise; only new callers are decoupled.
+     * Safety valve for wedged executions: after the stale window the execution
+     * is aborted so it can never reach the token endpoint with a refresh token
+     * that a successor is about to redeem. The slot itself is freed only by the
+     * `.finally` above — that is, once the aborted execution has actually
+     * settled. Deleting the entry while the redemption might still consume the
+     * stored refresh token would re-open the concurrent-replay window this
+     * single-flight exists to close.
      */
     const staleTimer = setTimeout(() => {
       if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
-        this.inflightRefreshes.delete(refreshKey);
         logger.warn(
-          `${logPrefix} Evicted stalled in-flight token refresh after ${MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS}ms`,
+          `${logPrefix} Aborting stalled in-flight token refresh after ${MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS}ms`,
         );
+        executionController.abort();
       }
     }, MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS);
     staleTimer.unref?.();
@@ -443,10 +454,14 @@ export class MCPTokenStorage {
     deleteTokens,
     refreshTokens,
     existingAccessToken,
+    onRefreshSuccess,
+    signal,
   }: GetTokensParams & {
     existingAccessToken?: IToken | null;
     refreshTokens: NonNullable<GetTokensParams['refreshTokens']>;
     createToken: NonNullable<GetTokensParams['createToken']>;
+    /** Internal stale-abort signal owned by `forceRefreshTokens` — never a caller's. */
+    signal: AbortSignal;
   }): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
     const identifier = `mcp:${serverName}`;
@@ -517,7 +532,16 @@ export class MCPTokenStorage {
         resource,
       };
 
-      const newTokens = await refreshTokens(decryptedRefreshToken, metadata);
+      /**
+       * A stalled execution may wake here after the stale-abort fired and a
+       * successor already redeemed (and rotated) the refresh token — reaching
+       * the endpoint with the old token would trip RFC 9700 reuse detection.
+       */
+      if (signal.aborted) {
+        throw new Error('Token refresh aborted before reaching the token endpoint');
+      }
+
+      const newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
 
       logger.debug(`${logPrefix} Refresh completed`, {
         has_new_access_token: !!newTokens.access_token,
@@ -543,6 +567,14 @@ export class MCPTokenStorage {
         },
         metadata: storedClientMetadata,
       });
+
+      if (onRefreshSuccess) {
+        try {
+          await onRefreshSuccess(newTokens);
+        } catch (hookError) {
+          logger.warn(`${logPrefix} onRefreshSuccess callback failed`, hookError);
+        }
+      }
 
       logger.info(`${logPrefix} Successfully refreshed and stored OAuth tokens`);
       return newTokens;

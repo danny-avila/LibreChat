@@ -718,15 +718,18 @@ export class MCPConnectionFactory {
           deleteTokens: this.tokenMethods!.deleteTokens,
           refreshTokens: this.createRefreshTokensFunction(),
           signal,
+          /**
+           * Drop any previously cached `mcp_get_tokens` result so the next
+           * `getOAuthTokens` reads the freshly persisted tokens rather than the
+           * now-stale flow-cached value. Attached to the shared redemption
+           * (not this waiter) so a refresh that completes after this caller's
+           * timeout still invalidates the cache.
+           */
+          onRefreshSuccess: async (refreshed) => {
+            await this.invalidateGetTokensFlow(refreshed);
+          },
         }),
       );
-
-      if (tokens) {
-        // Drop any previously cached `mcp_get_tokens` result so the next call
-        // to `getOAuthTokens` reads the freshly persisted tokens from the
-        // token store rather than the now-stale flow-cached value.
-        await this.invalidateGetTokensFlow(tokens);
-      }
 
       if (tokens) {
         logger.info(`${this.logPrefix} Silent token refresh succeeded`);
