@@ -92,6 +92,29 @@ export const useDeleteUserMutation = (
   });
 };
 
+export const useRequestEmailChangeMutation = (
+  options?: t.MutationOptions<t.TEmailChangeResponse, t.TRequestEmailChange>,
+): UseMutationResult<t.TEmailChangeResponse, unknown, t.TRequestEmailChange, unknown> => {
+  return useMutation({
+    mutationFn: (payload: t.TRequestEmailChange) => dataService.requestEmailChange(payload),
+    ...(options ?? {}),
+  });
+};
+
+export const useConfirmEmailChangeMutation = (
+  options?: t.MutationOptions<t.TEmailChangeResponse, t.TConfirmEmailChange>,
+): UseMutationResult<t.TEmailChangeResponse, unknown, t.TConfirmEmailChange, unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: t.TConfirmEmailChange) => dataService.confirmEmailChange(payload),
+    ...(options ?? {}),
+    onSuccess: (...args) => {
+      queryClient.invalidateQueries([QueryKeys.user]);
+      options?.onSuccess?.(...args);
+    },
+  });
+};
+
 export const useEnableTwoFactorMutation = (): UseMutationResult<
   t.TEnable2FAResponse,
   unknown,

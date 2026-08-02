@@ -213,6 +213,18 @@ export const verifyEmail = (payload: t.TVerifyEmail): Promise<t.VerifyEmailRespo
   return request.post(endpoints.verifyEmail(), payload);
 };
 
+export const requestEmailChange = (
+  payload: t.TRequestEmailChange,
+): Promise<t.TEmailChangeResponse> => {
+  return request.post(endpoints.requestEmailChange(), payload);
+};
+
+export const confirmEmailChange = (
+  payload: t.TConfirmEmailChange,
+): Promise<t.TEmailChangeResponse> => {
+  return request.post(endpoints.confirmEmailChange(), payload);
+};
+
 export const resendVerificationEmail = (
   payload: t.TResendVerificationEmail,
 ): Promise<t.VerifyEmailResponse> => {

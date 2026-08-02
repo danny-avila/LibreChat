@@ -662,6 +662,34 @@ export type TVerifyEmail = {
 
 export type TResendVerificationEmail = Omit<TVerifyEmail, 'token'>;
 
+export type EmailChangeErrorCode =
+  | 'current_password_invalid'
+  | 'email_change_disabled'
+  | 'email_delivery_failed'
+  | 'email_domain_not_allowed'
+  | 'email_in_use'
+  | 'email_service_unavailable'
+  | 'invalid_request'
+  | 'invalid_token'
+  | 'local_account_required'
+  | 'same_email';
+
+export type TRequestEmailChange = {
+  currentPassword: string;
+  newEmail: string;
+};
+
+export type TConfirmEmailChange = {
+  email: string;
+  token: string;
+  userId: string;
+};
+
+export type TEmailChangeResponse = {
+  message: string;
+  code?: EmailChangeErrorCode;
+};
+
 export type TRefreshTokenResponse = {
   token: string;
   user: TUser;

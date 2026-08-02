@@ -6,9 +6,22 @@ import logger from '~/config/winston';
 export function createTokenMethods(mongoose: typeof import('mongoose')): {
   findToken: (query: TokenQuery, options?: QueryOptions) => Promise<IToken | null>;
   createToken: (tokenData: TokenCreateData) => Promise<IToken>;
+  upsertToken: (scope: string, tokenData: TokenCreateData) => Promise<IToken>;
   updateToken: (query: TokenQuery, updateData: TokenUpdateData) => Promise<IToken | null>;
   deleteTokens: (query: TokenQuery) => Promise<TokenDeleteResult>;
 } {
+  let indexPromise: Promise<unknown> | null = null;
+
+  function ensureIndexes(): Promise<unknown> {
+    if (!indexPromise) {
+      indexPromise = mongoose.models.Token.createIndexes().catch((error: unknown) => {
+        indexPromise = null;
+        throw error;
+      });
+    }
+    return indexPromise;
+  }
+
   /**
    * Creates a new Token instance.
    */
@@ -27,6 +40,52 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
       return await Token.create(newTokenData);
     } catch (error) {
       logger.debug('An error occurred while creating token:', error);
+      throw error;
+    }
+  }
+
+  /** Atomically creates or replaces a token at a caller-defined unique scope. */
+  async function upsertToken(scope: string, tokenData: TokenCreateData): Promise<IToken> {
+    try {
+      const Token = mongoose.models.Token;
+      await ensureIndexes();
+      const currentTime = new Date();
+      const { expiresIn, ...storedTokenData } = tokenData;
+      const replacement = {
+        ...storedTokenData,
+        scope,
+        createdAt: currentTime,
+        expiresAt: new Date(currentTime.getTime() + expiresIn * 1000),
+      };
+      const options = { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true };
+
+      try {
+        const upsertedToken = await Token.findOneAndUpdate({ scope }, replacement, options);
+        if (!upsertedToken) {
+          throw new Error('Token upsert failed');
+        }
+        return upsertedToken as IToken;
+      } catch (error) {
+        if (
+          typeof error !== 'object' ||
+          error === null ||
+          !('code' in error) ||
+          (error as { code?: number }).code !== 11000
+        ) {
+          throw error;
+        }
+
+        const retriedToken = await Token.findOneAndUpdate({ scope }, replacement, {
+          ...options,
+          upsert: false,
+        });
+        if (!retriedToken) {
+          throw new Error('Token upsert retry failed');
+        }
+        return retriedToken as IToken;
+      }
+    } catch (error) {
+      logger.debug('An error occurred while upserting token:', error);
       throw error;
     }
   }
@@ -77,6 +136,9 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
       if (query.type !== undefined) {
         conditions.push({ type: query.type });
       }
+      if (query.scope !== undefined) {
+        conditions.push({ scope: query.scope });
+      }
       if (query.identifier !== undefined) {
         conditions.push({ identifier: query.identifier });
       }
@@ -119,6 +181,9 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
       if (query.type !== undefined) {
         conditions.push({ type: query.type });
       }
+      if (query.scope !== undefined) {
+        conditions.push({ scope: query.scope });
+      }
       if (query.identifier !== undefined) {
         conditions.push({ identifier: query.identifier });
       }
@@ -139,6 +204,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
   return {
     findToken,
     createToken,
+    upsertToken,
     updateToken,
     deleteTokens,
   };

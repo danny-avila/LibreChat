@@ -176,6 +176,19 @@ jobs:
         env:
           CI: 'true'
 
+      - name: Run registered-email change e2e
+        if: matrix.stream_store == 'memory' && matrix.shard == 1
+        run: npx playwright test --config=e2e/playwright.config.email.ts
+        env:
+          CI: 'true'
+
+      - name: Run disabled registered-email change e2e
+        if: matrix.stream_store == 'memory' && matrix.shard == 1
+        run: npx playwright test --config=e2e/playwright.config.email.ts
+        env:
+          CI: 'true'
+          E2E_ALLOW_EMAIL_CHANGE: 'false'
+
       - name: Upload Playwright HTML report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6

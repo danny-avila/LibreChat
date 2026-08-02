@@ -41,7 +41,11 @@ export function createUserMethods(
     disableTTL?: boolean,
     returnUser?: boolean,
   ) => Promise<mongoose.Types.ObjectId | Partial<IUser>>;
-  updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  updateUser: (
+    userId: string,
+    updateData: Partial<IUser>,
+    expectedState?: FilterQuery<IUser>,
+  ) => Promise<IUser | null>;
   acceptTerms: (userId: string) => Promise<IUser | null>;
   searchUsers: ({
     searchPattern,
@@ -258,16 +262,24 @@ export function createUserMethods(
   /**
    * Update a user with new data without overwriting existing properties.
    */
-  async function updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null> {
+  async function updateUser(
+    userId: string,
+    updateData: Partial<IUser>,
+    expectedState: FilterQuery<IUser> = {},
+  ): Promise<IUser | null> {
     const User = mongoose.models.User;
     const updateOperation = {
       $set: updateData,
       $unset: { expiresAt: '' }, // Remove the expiresAt field to prevent TTL
     };
-    const updated = await User.findByIdAndUpdate(userId, updateOperation, {
-      new: true,
-      runValidators: true,
-    }).lean<IUser>();
+    const updated = await User.findOneAndUpdate(
+      { ...expectedState, _id: userId },
+      updateOperation,
+      {
+        new: true,
+        runValidators: true,
+      },
+    ).lean<IUser>();
     await invalidateAuthUserDocCache(userId);
     return updated;
   }

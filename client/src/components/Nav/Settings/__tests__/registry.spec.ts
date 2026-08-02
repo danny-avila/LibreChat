@@ -16,6 +16,8 @@ const settingsContext: SettingsContextValue = {
   hasMultiConvo: false,
   hasPrompts: false,
   isLocalProvider: true,
+  emailEnabled: true,
+  allowEmailChange: true,
   twoFactorEnabled: false,
   allowAccountDeletion: true,
   aboutEnabled: false,
@@ -85,6 +87,33 @@ describe('settings registry', () => {
           langfuseConnectionAccess: true,
         }),
       ).toBe(true);
+    });
+  });
+
+  describe('email change visibility', () => {
+    const emailChangeEntry = registry.find((entry) => entry.id === 'changeEmail');
+
+    it('places email changes in the Account profile section', () => {
+      expect(emailChangeEntry).toMatchObject({
+        tab: SettingsTabValues.ACCOUNT,
+        section: 'profile',
+      });
+    });
+
+    it('shows email changes for local accounts when email delivery is configured', () => {
+      expect(emailChangeEntry?.show?.(settingsContext)).toBe(true);
+    });
+
+    it('hides email changes for federated accounts', () => {
+      expect(emailChangeEntry?.show?.({ ...settingsContext, isLocalProvider: false })).toBe(false);
+    });
+
+    it('hides email changes when email delivery is unavailable', () => {
+      expect(emailChangeEntry?.show?.({ ...settingsContext, emailEnabled: false })).toBe(false);
+    });
+
+    it('hides email changes when administrators disable them', () => {
+      expect(emailChangeEntry?.show?.({ ...settingsContext, allowEmailChange: false })).toBe(false);
     });
   });
 });

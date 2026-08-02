@@ -533,6 +533,60 @@ describe('Token Methods - Detailed Tests', () => {
     });
   });
 
+  describe('upsertToken', () => {
+    test('atomically keeps one pending email change token under concurrent replacement', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const scope = `email_change:${userId.toString()}`;
+      const results = await Promise.all([
+        methods.upsertToken(scope, {
+          userId,
+          type: 'email_change',
+          scope,
+          email: 'first@example.com',
+          token: 'first-token',
+          expiresIn: 900,
+        }),
+        methods.upsertToken(scope, {
+          userId,
+          type: 'email_change',
+          scope,
+          email: 'second@example.com',
+          token: 'second-token',
+          expiresIn: 900,
+        }),
+      ]);
+
+      expect(results).toHaveLength(2);
+      expect(await Token.countDocuments({ userId, type: 'email_change' })).toBe(1);
+      const pending = await Token.findOne({ userId, type: 'email_change' }).lean();
+      expect(['first-token', 'second-token']).toContain(pending?.token);
+      expect(await Token.collection.indexExists('unique_token_scope')).toBe(true);
+    });
+
+    test('does not collapse tokens outside the email change scope', async () => {
+      const userId = new mongoose.Types.ObjectId();
+
+      await Promise.all([
+        methods.createToken({
+          userId,
+          type: 'mcp_oauth',
+          identifier: 'first',
+          token: 'first-token',
+          expiresIn: 900,
+        }),
+        methods.createToken({
+          userId,
+          type: 'mcp_oauth',
+          identifier: 'second',
+          token: 'second-token',
+          expiresIn: 900,
+        }),
+      ]);
+
+      expect(await Token.countDocuments({ userId, type: 'mcp_oauth' })).toBe(2);
+    });
+  });
+
   describe('deleteTokens', () => {
     let user1Id: mongoose.Types.ObjectId;
     let user2Id: mongoose.Types.ObjectId;

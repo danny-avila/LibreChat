@@ -47,6 +47,7 @@ const domains = {
 
 const AuthTokenTypes = Object.freeze({
   EMAIL_VERIFICATION: 'email_verification',
+  EMAIL_CHANGE: 'email_change',
   PASSWORD_RESET: 'password_reset',
 });
 
@@ -479,6 +480,7 @@ const requestPasswordReset = async (req) => {
 
   await createToken({
     userId: user._id,
+    email: user.email.toLowerCase(),
     type: AuthTokenTypes.PASSWORD_RESET,
     token: hash,
     createdAt: Date.now(),
@@ -535,8 +537,21 @@ const resetPassword = async (userId, token, password) => {
     return new Error('Invalid or expired password reset token');
   }
 
+  const currentUser = await getUserById(userId, 'email _id');
+  if (
+    !currentUser ||
+    (passwordResetToken.type === AuthTokenTypes.PASSWORD_RESET &&
+      (!passwordResetToken.email ||
+        passwordResetToken.email.toLowerCase() !== currentUser.email.toLowerCase()))
+  ) {
+    return new Error('Invalid or expired password reset token');
+  }
+
   const hash = bcrypt.hashSync(password, 10);
-  const user = await updateUser(userId, { password: hash });
+  const user = await updateUser(userId, { password: hash }, { email: currentUser.email });
+  if (!user) {
+    return new Error('Invalid or expired password reset token');
+  }
 
   if (checkEmailConfig()) {
     await sendEmail({
@@ -552,6 +567,11 @@ const resetPassword = async (userId, token, password) => {
   }
 
   await deleteTokens(getPasswordResetTokenDeleteQuery(passwordResetToken));
+  try {
+    await deleteTokens({ userId, type: AuthTokenTypes.EMAIL_CHANGE });
+  } catch (error) {
+    logger.error('[resetPassword] Failed to clean up pending email changes', error);
+  }
   logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };

@@ -1644,6 +1644,7 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   passwordResetEnabled: boolean;
   emailEnabled: boolean;
+  allowEmailChange: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   /** Admin panel link, only present for users with admin access */
