@@ -244,24 +244,22 @@ Every `IThemeRGB` key is configurable this way: drop the `rgb-` prefix and
 upper-snake-case the rest, so `rgb-status-error-border` becomes
 `REACT_APP_THEME_STATUS_ERROR_BORDER`.
 
+The prefix must be listed in the bundler's `envPrefix` (Vite) or equivalent, and
+values are inlined at build time, so the client has to be rebuilt after changing
+them.
+
 ### 2. Create a Theme Loader
 
 ```tsx
-function getThemeFromEnv(): IThemeRGB | undefined {
-  // Check if any theme environment variables are set
-  const hasThemeEnvVars = Object.keys(process.env).some((key) =>
-    key.startsWith('REACT_APP_THEME_'),
-  );
-
-  if (!hasThemeEnvVars) {
-    return undefined; // Use default themes
-  }
-
-  return {
-    'rgb-text-primary': process.env.REACT_APP_THEME_TEXT_PRIMARY || '33 33 33',
-    'rgb-brand-purple': process.env.REACT_APP_THEME_BRAND_PURPLE || '171 104 255',
+function getThemeFromEnv(env = import.meta.env): IThemeRGB | undefined {
+  const theme = {
+    'rgb-text-primary': env.REACT_APP_THEME_TEXT_PRIMARY,
+    'rgb-brand-purple': env.REACT_APP_THEME_BRAND_PURPLE,
     // ... other colors
   };
+
+  const set = Object.fromEntries(Object.entries(theme).filter(([, value]) => value));
+  return Object.keys(set).length > 0 ? set : undefined; // Fall back to default themes
 }
 ```
 

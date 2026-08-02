@@ -1,31 +1,16 @@
 import { getThemeFromEnv } from './getThemeFromEnv';
 
-const originalThemeEnv = Object.fromEntries(
-  Object.entries(process.env).filter(([key]) => key.startsWith('REACT_APP_THEME_')),
-);
-
-const clearThemeEnv = () => {
-  Object.keys(process.env)
-    .filter((key) => key.startsWith('REACT_APP_THEME_'))
-    .forEach((key) => delete process.env[key]);
-};
-
-beforeEach(clearThemeEnv);
-
-afterAll(() => {
-  clearThemeEnv();
-  Object.assign(process.env, originalThemeEnv);
-});
-
 describe('getThemeFromEnv', () => {
   it('loads link and accent colors', () => {
-    process.env.REACT_APP_THEME_LINK = '1 2 3';
-    process.env.REACT_APP_THEME_LINK_HOVER = '4 5 6';
-    process.env.REACT_APP_THEME_LINK_VISITED = '7 8 9';
-    process.env.REACT_APP_THEME_ACCENT_PRIMARY = '10 11 12';
-    process.env.REACT_APP_THEME_ACCENT_PRIMARY_HOVER = '13 14 15';
-
-    expect(getThemeFromEnv()).toEqual({
+    expect(
+      getThemeFromEnv({
+        REACT_APP_THEME_LINK: '1 2 3',
+        REACT_APP_THEME_LINK_HOVER: '4 5 6',
+        REACT_APP_THEME_LINK_VISITED: '7 8 9',
+        REACT_APP_THEME_ACCENT_PRIMARY: '10 11 12',
+        REACT_APP_THEME_ACCENT_PRIMARY_HOVER: '13 14 15',
+      }),
+    ).toEqual({
       'rgb-link': '1 2 3',
       'rgb-link-hover': '4 5 6',
       'rgb-link-visited': '7 8 9',
@@ -35,17 +20,19 @@ describe('getThemeFromEnv', () => {
   });
 
   it('loads status, inverted, fixed and destructive colors', () => {
-    process.env.REACT_APP_THEME_STATUS_ERROR = '1 2 3';
-    process.env.REACT_APP_THEME_STATUS_SUCCESS_SUBTLE = '4 5 6';
-    process.env.REACT_APP_THEME_STATUS_NEUTRAL_BORDER = '7 8 9';
-    process.env.REACT_APP_THEME_TEXT_DESTRUCTIVE = '10 11 12';
-    process.env.REACT_APP_THEME_BORDER_DESTRUCTIVE = '13 14 15';
-    process.env.REACT_APP_THEME_SURFACE_INVERTED = '16 17 18';
-    process.env.REACT_APP_THEME_TEXT_INVERTED = '19 20 21';
-    process.env.REACT_APP_THEME_SURFACE_FIXED_HOVER = '22 23 24';
-    process.env.REACT_APP_THEME_TEXT_FIXED = '25 26 27';
-
-    expect(getThemeFromEnv()).toEqual({
+    expect(
+      getThemeFromEnv({
+        REACT_APP_THEME_STATUS_ERROR: '1 2 3',
+        REACT_APP_THEME_STATUS_SUCCESS_SUBTLE: '4 5 6',
+        REACT_APP_THEME_STATUS_NEUTRAL_BORDER: '7 8 9',
+        REACT_APP_THEME_TEXT_DESTRUCTIVE: '10 11 12',
+        REACT_APP_THEME_BORDER_DESTRUCTIVE: '13 14 15',
+        REACT_APP_THEME_SURFACE_INVERTED: '16 17 18',
+        REACT_APP_THEME_TEXT_INVERTED: '19 20 21',
+        REACT_APP_THEME_SURFACE_FIXED_HOVER: '22 23 24',
+        REACT_APP_THEME_TEXT_FIXED: '25 26 27',
+      }),
+    ).toEqual({
       'rgb-status-error': '1 2 3',
       'rgb-status-success-subtle': '4 5 6',
       'rgb-status-neutral-border': '7 8 9',
@@ -58,7 +45,22 @@ describe('getThemeFromEnv', () => {
     });
   });
 
+  it('ignores unrelated and empty values', () => {
+    expect(
+      getThemeFromEnv({
+        MODE: 'test',
+        REACT_APP_THEME_TEXT_PRIMARY: '',
+        REACT_APP_THEME_UNKNOWN_TOKEN: '1 2 3',
+        REACT_APP_THEME_SURFACE_PRIMARY: '4 5 6',
+      }),
+    ).toEqual({ 'rgb-surface-primary': '4 5 6' });
+  });
+
   it('returns undefined when no theme variables are set', () => {
+    expect(getThemeFromEnv({})).toBeUndefined();
+  });
+
+  it('reads the build-time environment when no source is given', () => {
     expect(getThemeFromEnv()).toBeUndefined();
   });
 });

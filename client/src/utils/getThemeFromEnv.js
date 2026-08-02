@@ -79,12 +79,15 @@ const THEME_TOKENS = [
 const toEnvName = (token) => `REACT_APP_THEME_${token.toUpperCase().replace(/-/g, '_')}`;
 
 /**
- * Loads theme configuration from environment variables
+ * Loads theme configuration from build-time environment variables. Values are
+ * inlined by Vite, so `REACT_APP_THEME_*` must be present when the client is
+ * built; changing them afterwards has no effect until the next build.
+ * @param {Record<string, string | undefined>} [env] Environment source, defaults to the build-time env
  * @returns {import('@librechat/client').IThemeRGB | undefined}
  */
-export function getThemeFromEnv() {
+export function getThemeFromEnv(env = import.meta.env) {
   const theme = THEME_TOKENS.reduce((acc, token) => {
-    const value = process.env[toEnvName(token)];
+    const value = env[toEnvName(token)];
     if (value) {
       acc[`rgb-${token}`] = value;
     }
