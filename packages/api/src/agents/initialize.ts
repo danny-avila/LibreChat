@@ -25,13 +25,18 @@ import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/ag
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
 import type { Response as ServerResponse } from 'express';
 import type {
+  ResolvedManualSkill,
+  ResolvedAlwaysApplySkill,
+  TListSkillsByAccess,
+  TGetSkillByName,
+} from './skills';
+import type {
   ServerRequest,
   EndpointDbMethods,
   EndpointTokenConfig,
   InitializeResultBase,
 } from '~/types';
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
-import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
 import {
   injectSkillCatalog,
@@ -40,6 +45,12 @@ import {
   unionPrimeAllowedTools,
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
+import {
+  normalizeServerName,
+  requiresEphemeralUserConnection,
+  splitMCPToolKey,
+  normalizeAgentToolKeys,
+} from '~/mcp/utils';
 import {
   optionalChainWithEmptyCheck,
   extractLibreChatParams,
@@ -51,7 +62,6 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
-import { normalizeServerName, requiresEphemeralUserConnection, splitMCPToolKey } from '~/mcp/utils';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { applyBackgroundToolCalls } from './background';
@@ -284,6 +294,14 @@ export type InitializedAgent = Agent & {
   memoryToolsRegistered?: boolean;
   /** Whether the actions capability is enabled (resolved during tool loading) */
   actionsEnabled?: boolean;
+  /**
+   * The COMPLETE accessible-server audit this initialization resolved (via
+   * the agent-key or skill-prime heal). Retained so deferred/event-driven
+   * execution reuses the same snapshot instead of repeating the merged
+   * registry read — a transient failure there would fail-closed a tool the
+   * turn already advertised from the successful first audit.
+   */
+  accessibleMcpServerNames?: readonly string[];
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
@@ -391,6 +409,10 @@ export interface InitializeAgentParams {
     model: string | null;
     tool_options: AgentToolOptions | undefined;
     tool_resources: AgentToolResources | undefined;
+    /** Full accessible MCP server names (operator + user DB) when the heal
+     *  already fetched them — lets execution-side collision guards see
+     *  cross-tier shadowing without another registry round-trip. */
+    accessibleMcpServerNames?: readonly string[];
   }) => Promise<{
     /** Full tool instances (only present when definitionsOnly=false) */
     tools?: GenericTool[];
@@ -465,6 +487,15 @@ export interface InitializeAgentParams {
  * getConvoFiles not yet in data-schemas but included here for consistency
  */
 export interface InitializeAgentDbMethods extends EndpointDbMethods {
+  /**
+   * Names of every MCP server the user can reach (operator config + user DB).
+   * Consulted by the legacy-key heal ONLY when a configured name needs
+   * normalization: collision detection must see user-DB servers, or healing a
+   * raw key could produce a key that direct-first resolution routes to a
+   * different (DB) server. Optional — without it the heal falls back to the
+   * operator-config names.
+   */
+  getAccessibleMcpServerNames?: (userId?: string, role?: string) => Promise<string[]>;
   /** Update usage tracking for multiple files */
   updateFilesUsage: (
     files: Array<{ file_id: string }>,
@@ -503,77 +534,9 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     files?: Array<{ file_id: string }>;
   }> | null>;
   /** List skill summaries for catalog injection (paginated, omits body/frontmatter) */
-  listSkillsByAccess?: (params: {
-    accessibleIds: import('mongoose').Types.ObjectId[];
-    limit: number;
-    cursor?: string | null;
-  }) => Promise<{
-    skills: Array<{
-      _id: import('mongoose').Types.ObjectId;
-      name: string;
-      description: string;
-      author: import('mongoose').Types.ObjectId;
-      /**
-       * When `true`, the skill is excluded from the catalog injected into
-       * the agent's additional_instructions and the model cannot invoke it
-       * via the `skill` tool. Manual `$` invocation is unaffected.
-       */
-      disableModelInvocation?: boolean;
-      /**
-       * When `false`, the skill is hidden from the `$` popover and rejected
-       * by the manual-invocation resolver. Defaults to `true`.
-       */
-      userInvocable?: boolean;
-      /** True for deployment-directory skills that are loaded in memory. */
-      deployment?: boolean;
-    }>;
-    has_more?: boolean;
-    after?: string | null;
-  }>;
-  /**
-   * Load a single skill by name, constrained to an ACL-accessible ID set.
-   * Returns the full document (including `body`) so manual invocation can
-   * prime SKILL.md without a second DB round-trip.
-   *
-   * `preferUserInvocable` (manual paths): on a same-name collision,
-   * prefer the newest doc with `userInvocable !== false`.
-   * `preferModelInvocable` (model paths — `skill` / `read_file`): on a
-   * same-name collision, prefer the newest doc with
-   * `disableModelInvocation !== true`. Both fall back to the newest match
-   * so the explicit-rejection error paths still fire when only the
-   * non-preferred variant exists.
-   */
-  getSkillByName?: (
-    name: string,
-    accessibleIds: import('mongoose').Types.ObjectId[],
-    options?: { preferUserInvocable?: boolean; preferModelInvocable?: boolean },
-  ) => Promise<{
-    _id: import('mongoose').Types.ObjectId;
-    name: string;
-    body: string;
-    author: import('mongoose').Types.ObjectId;
-    /**
-     * Skill-declared tool allowlist, forwarded verbatim from the skill doc.
-     * Surfaced so the resolver can carry it onto `ResolvedManualSkill` for
-     * future runtime enforcement without a second round-trip.
-     */
-    allowedTools?: string[];
-    /**
-     * Set when the skill was authored with `disable-model-invocation: true`.
-     * The skill tool handler short-circuits on this so a model that names
-     * such a skill (e.g. via hallucination or stale catalog) gets a clear
-     * rejection instead of silently executing.
-     */
-    disableModelInvocation?: boolean;
-    /**
-     * Set when the skill was authored with `user-invocable: false`. The
-     * manual-invocation resolver skips with a warn log so an API-direct
-     * caller can't bypass the popover-side filter.
-     */
-    userInvocable?: boolean;
-    /** True for deployment-directory skills that are loaded in memory. */
-    deployment?: boolean;
-  } | null>;
+  listSkillsByAccess?: TListSkillsByAccess;
+  /** Load a single skill by name, constrained to an ACL-accessible ID set. */
+  getSkillByName?: TGetSkillByName;
   /**
    * Load accessible skills with `alwaysApply: true`, eagerly including
    * `body` so the priming pipeline can splice at turn start without a
@@ -635,6 +598,78 @@ export async function initializeAgent(
 
   if (!db) {
     throw new Error('initializeAgent requires db methods to be passed');
+  }
+
+  /**
+   * Heal legacy MCP tool keys ONCE, before anything reads them: model-facing
+   * keys embed the normalized server name (cache keys, definition names,
+   * runtime instance names), so an agent document persisted with raw-named
+   * keys would neither load those tools nor have any of its per-tool
+   * `tool_options` honored. Every downstream consumer — the tool loader, the
+   * defer/programmatic classification, the background and intent passes —
+   * reads `agent.tools` / `agent.tool_options` after this point.
+   */
+  const configRawServerNames = Object.keys(req.config?.mcpConfig ?? {});
+  const configNeedsNormalization = configRawServerNames.some(
+    (name) => normalizeServerName(name) !== name,
+  );
+  /**
+   * Rewriting legacy keys requires a COMPLETE collision audit: the normalized
+   * form of an operator name may belong to a user-DB server, and healing into
+   * that key would route the tool to the wrong server. The audit therefore
+   * uses the full accessible set — fetched lazily, once, and ONLY when a
+   * configured name actually needs normalization AND the caller has
+   * delimiter-bearing keys to heal (a non-MCP agent never pays the lookup).
+   * When the audit cannot complete (no dep, or a transient failure), healing
+   * is SKIPPED entirely: un-healed raw keys still resolve through the
+   * direct-first candidates, so skipping is safe while rewriting is not.
+   */
+  let healNamesPromise: Promise<readonly string[] | null> | undefined;
+  const resolveHealNames = (): Promise<readonly string[] | null> => {
+    if (!configNeedsNormalization) {
+      return Promise.resolve(configRawServerNames);
+    }
+    if (db.getAccessibleMcpServerNames == null) {
+      return Promise.resolve(null);
+    }
+    healNamesPromise ??= db
+      .getAccessibleMcpServerNames(req.user?.id, req.user?.role)
+      /** The merged registry read tolerates config-server init failures and
+       *  can silently omit config-only servers; the snapshot-derived config
+       *  names restore them so the audit stays genuinely complete. */
+      .then((names): readonly string[] => [...new Set([...names, ...configRawServerNames])])
+      .catch((error): null => {
+        logger.warn(
+          '[initializeAgent] Failed to resolve accessible MCP server names; skipping legacy-key healing (collision audit unavailable):',
+          error,
+        );
+        return null;
+      });
+    return healNamesPromise;
+  };
+  const hasMCPKeyCandidates =
+    (agent.tools ?? []).some(
+      (tool) => typeof tool === 'string' && tool.includes(Constants.mcp_delimiter),
+    ) || Object.keys(agent.tool_options ?? {}).some((key) => key.includes(Constants.mcp_delimiter));
+  /**
+   * The COMPLETE audit set actually resolved this initialization — from the
+   * agent-key heal or the skill-prime heal — threaded to the tool loader so
+   * its collision guards neither repeat the lookup nor mistake the
+   * operator-only list for a complete audit.
+   */
+  let resolvedAuditNames: readonly string[] | undefined;
+  if (hasMCPKeyCandidates) {
+    const mcpHealNames = await resolveHealNames();
+    if (mcpHealNames != null) {
+      resolvedAuditNames = mcpHealNames;
+      const healedKeys = normalizeAgentToolKeys({
+        tools: agent.tools ?? undefined,
+        toolOptions: agent.tool_options,
+        rawServerNames: mcpHealNames,
+      });
+      agent.tools = healedKeys.tools;
+      agent.tool_options = healedKeys.toolOptions;
+    }
   }
 
   if (
@@ -910,7 +945,34 @@ export async function initializeAgent(
       alwaysApplySkillPrimes = alwaysApplySkillPrimes.slice(0, budgetForAlwaysApply);
     }
 
-    const primesForUnion = [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])];
+    /** Skill `allowed-tools` are legacy-heal candidates too: a raw MCP key
+     *  declared before the normalized-key convention would neither dedupe
+     *  against the healed agent tools nor match the normalized-keyed tool
+     *  map, silently dropping the skill-contributed tool. Same lazy audit
+     *  and skip-on-unavailable semantics as the agent-key heal. */
+    const combinedPrimes = [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])];
+    const primesNeedHeal = combinedPrimes.some((prime) =>
+      prime.allowedTools?.some((name) => name.includes(Constants.mcp_delimiter)),
+    );
+    const primeHealNames = primesNeedHeal ? await resolveHealNames() : null;
+    if (primeHealNames != null) {
+      resolvedAuditNames = primeHealNames;
+    }
+    const primesForUnion =
+      primeHealNames != null
+        ? combinedPrimes.map((prime) =>
+            prime.allowedTools?.length
+              ? {
+                  ...prime,
+                  allowedTools: normalizeAgentToolKeys({
+                    tools: prime.allowedTools,
+                    toolOptions: undefined,
+                    rawServerNames: primeHealNames,
+                  }).tools,
+                }
+              : prime,
+          )
+        : combinedPrimes;
     if (primesForUnion.length > 0) {
       const union = unionPrimeAllowedTools({
         primes: primesForUnion,
@@ -952,6 +1014,7 @@ export async function initializeAgent(
       model: agent.model,
       tool_options: agent.tool_options,
       tool_resources,
+      accessibleMcpServerNames: resolvedAuditNames,
     });
 
   let loadToolsResult;
@@ -1453,6 +1516,7 @@ export async function initializeAgent(
     backgroundToolNames,
     intentToolNames,
     actionsEnabled,
+    accessibleMcpServerNames: resolvedAuditNames,
     baseContextTokens,
     memoryToolsRegistered: inlineMemoryRegistered,
     codeEnvAvailable: effectiveCodeEnvAvailable,

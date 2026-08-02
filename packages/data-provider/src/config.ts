@@ -2872,6 +2872,71 @@ export function normalizeServerName(serverName: string): string {
  * is the deterministic tiebreak; resolving it properly needs the tool/server
  * mapping carried alongside the key rather than re-derived from the string.
  */
+/**
+ * Maps each configured server name's normalized form back to the raw config
+ * name. Model-facing tool keys embed `normalizeServerName(server)`, while the
+ * registry, config maps, tool cache, and plugin-auth rows are keyed by the raw
+ * name — any consumer that parses a server out of a tool key must resolve it
+ * through this map before those lookups. Identity entries are included so
+ * `aliases.get(name) ?? name` works uniformly.
+ *
+ * When two configured names normalize to the same value their tool keys are
+ * inherently ambiguous; the FIRST configured name wins deterministically here,
+ * and `resolveMCPServerContext` warns about the collision so the operator can
+ * rename one server.
+ */
+export function buildServerNameAliases(rawServerNames: readonly string[]): Map<string, string> {
+  const aliases = new Map<string, string>();
+  /** Identity entries claim their slot FIRST regardless of configuration
+   *  order: a server literally named `foo` must never have its keys rerouted
+   *  to a `foo!` whose normalized form collides with it. */
+  for (const raw of rawServerNames) {
+    if (raw && normalizeServerName(raw) === raw) {
+      aliases.set(raw, raw);
+    }
+  }
+  for (const raw of rawServerNames) {
+    if (!raw) {
+      continue;
+    }
+    const normalized = normalizeServerName(raw);
+    if (!aliases.has(normalized)) {
+      aliases.set(normalized, raw);
+    }
+  }
+  return aliases;
+}
+
+/**
+ * Rewrites a tool key's server segment into the normalized form model-facing
+ * keys carry, resolving the boundary against the configured raw names (longest
+ * suffix wins, mirroring {@link splitMCPToolKey}). Returns the key unchanged
+ * when no configured raw name matches — already-normalized keys, placeholder
+ * tokens, and keys for servers that are no longer configured all pass through.
+ * Idempotent: a normalized segment never matches a raw candidate that needs
+ * rewriting.
+ */
+export function normalizeMCPToolKey(toolKey: string, rawServerNames: readonly string[]): string {
+  let matched: string | undefined;
+  for (let i = 0; i < rawServerNames.length; i++) {
+    const raw = rawServerNames[i];
+    if (!raw || raw.length <= (matched?.length ?? 0)) {
+      continue;
+    }
+    if (toolKey.endsWith(`${Constants.mcp_delimiter}${raw}`)) {
+      matched = raw;
+    }
+  }
+  if (matched == null) {
+    return toolKey;
+  }
+  const normalized = normalizeServerName(matched);
+  if (normalized === matched) {
+    return toolKey;
+  }
+  return `${toolKey.slice(0, toolKey.length - matched.length)}${normalized}`;
+}
+
 export function splitMCPToolKey(
   toolKey: string,
   knownServerNames?: readonly string[],

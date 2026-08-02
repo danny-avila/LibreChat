@@ -2,6 +2,7 @@ const { Constants: AgentConstants } = require('@librechat/agents');
 const {
   Tools,
   Constants,
+  ResourceType,
   EModelEndpoint,
   isActionTool,
   actionDelimiter,
@@ -90,8 +91,15 @@ jest.mock('~/server/services/MCP', () => ({
   resolveMcpServerNames: (...args) => mockResolveMcpServerNames(...args),
   resolveMcpServerContext: async (...args) => {
     const configServers = (await mockResolveConfigServers(...args)) ?? {};
-    return { configServers, serverNames: Object.keys(configServers) };
+    const serverNames = Object.keys(configServers);
+    return { configServers, serverNames, rawServerNames: serverNames };
   },
+  /** Mirrors the real resolver's shape; these fixtures use safe names, so the
+   *  raw set is always the complete audit. */
+  resolveCollisionAuditNames: jest.fn(async ({ rawServerNames, accessibleServerNames }) => ({
+    names: accessibleServerNames?.length ? accessibleServerNames : rawServerNames,
+    complete: true,
+  })),
   createMCPPermissionContext: jest.fn((req) => ({
     canUseServers: (user) => mockUserCanUseMCPServers(user, req),
   })),
@@ -223,6 +231,40 @@ describe('ToolService - Action Capability Gating', () => {
   describe('loadAgentTools (definitionsOnly=true) — action tool filtering', () => {
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = 'calculator';
+
+    it('should preserve the remote-agent permission boundary while priming files', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.file_search,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const tool_resources = {
+        file_search: { file_ids: ['search-file'] },
+        execute_code: { file_ids: ['code-file'] },
+      };
+      const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
+      const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.file_search, Tools.execute_code] },
+        tool_resources,
+        agentResourceType: ResourceType.REMOTE_AGENT,
+        definitionsOnly: true,
+      });
+
+      const expectedParams = {
+        req,
+        tool_resources,
+        agentId: 'agent_123',
+        agentResourceType: ResourceType.REMOTE_AGENT,
+      };
+      expect(primeSearchFiles).toHaveBeenCalledWith(expectedParams);
+      expect(primeCodeFiles).toHaveBeenCalledWith(expectedParams);
+    });
 
     it('should exclude action tools from definitions when actions capability is disabled', async () => {
       const capabilities = [AgentCapabilities.tools, AgentCapabilities.web_search];
@@ -1089,6 +1131,29 @@ describe('ToolService - Action Capability Gating', () => {
   });
 
   describe('loadToolsForExecution — action tool gating', () => {
+    it('should preserve the remote-agent permission boundary for deferred tool loading', async () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.file_search];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.file_search] },
+        toolNames: [Tools.file_search],
+        agentResourceType: ResourceType.REMOTE_AGENT,
+        actionsEnabled: false,
+      });
+
+      expect(mockLoadToolsUtil).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            agentResourceType: ResourceType.REMOTE_AGENT,
+          }),
+        }),
+      );
+    });
+
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = Tools.web_search;
 

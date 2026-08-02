@@ -1,6 +1,9 @@
 import { MessageCircleQuestion, TriangleAlert } from 'lucide-react';
 import { getSubmittedAskAnswer, parseAskUserQuestionArgs } from '~/utils/approval';
+import AskUserQuestionProgress from './AskUserQuestionProgress';
+import EmptyText from './Parts/EmptyText';
 import { useLocalize } from '~/hooks';
+import Container from './Container';
 
 /**
  * Static rendering of a COMPLETED (or abandoned) `ask_user_question` tool call —
@@ -15,12 +18,14 @@ export default function AskUserQuestionCall({
   toolCallId,
   isSubmitting = false,
   failed = false,
+  showCursor = false,
 }: {
   args: string | Record<string, unknown> | undefined;
   output: string;
   toolCallId?: string;
   isSubmitting?: boolean;
   failed?: boolean;
+  showCursor?: boolean;
 }) {
   const localize = useLocalize();
   const question = parseAskUserQuestionArgs(args);
@@ -37,33 +42,51 @@ export default function AskUserQuestionCall({
    * While the turn is live and unanswered, the INTERACTIVE card (rendered from
    * the pendingAction's synthetic part) owns the question UI — rendering the
    * durable record too would duplicate it with a misleading "no answer" line.
-   * Once the user answers, the submit handler stamps `output` onto this part,
-   * so the record takes over immediately; an abandoned pause only shows its
-   * "no answer" state after the turn is no longer submitting.
+   * Until that pause actually starts (args still streaming, interrupt not yet
+   * delivered) the progress card fills the gap. Once the user answers, the
+   * submit handler stamps `output` onto this part, so the record takes over
+   * immediately; an abandoned pause only shows its "no answer" state after
+   * the turn is no longer submitting.
    */
   if (!answered && !failed && isSubmitting) {
-    return null;
+    return <AskUserQuestionProgress args={args} toolCallId={toolCallId} />;
   }
+
+  /**
+   * The run resumes the moment the pause resolves (an answer submits, or a
+   * schema-rejected call auto-retries), but its first token takes a beat to
+   * arrive — hold the streaming cursor under the settled card so the turn
+   * never looks stalled between the answer and the resumed text.
+   */
+  const resumingCursor =
+    isSubmitting && showCursor ? (
+      <Container>
+        <EmptyText />
+      </Container>
+    ) : null;
 
   if (failed) {
     return (
-      <div
-        className="my-2 flex w-full flex-col gap-1.5 rounded-lg border border-border-light bg-surface-secondary p-3"
-        role="status"
-      >
-        <div className="flex items-center gap-2 text-xs font-medium text-text-warning">
-          <TriangleAlert className="h-4 w-4" aria-hidden="true" />
-          {localize('com_ui_question_failed')}
-        </div>
-        {question?.question != null && (
-          <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
-            {question.question}
+      <>
+        <div
+          className="my-2 flex w-full flex-col gap-1.5 rounded-lg border border-border-light bg-surface-secondary p-3"
+          role="status"
+        >
+          <div className="flex items-center gap-2 text-xs font-medium text-text-warning">
+            <TriangleAlert className="h-4 w-4" aria-hidden="true" />
+            {localize('com_ui_question_failed')}
+          </div>
+          {question?.question != null && (
+            <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
+              {question.question}
+            </p>
+          )}
+          <p className="text-sm text-text-secondary">
+            {localize('com_ui_question_failed_description')}
           </p>
-        )}
-        <p className="text-sm text-text-secondary">
-          {localize('com_ui_question_failed_description')}
-        </p>
-      </div>
+        </div>
+        {resumingCursor}
+      </>
     );
   }
 
@@ -88,29 +111,34 @@ export default function AskUserQuestionCall({
   const answerLabel = exactLabel ?? mappedMultiLabel ?? effectiveOutput;
 
   return (
-    <div className="my-2 flex w-full flex-col gap-1.5 rounded-lg border border-border-light bg-surface-secondary p-3">
-      <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
-        <MessageCircleQuestion className="h-4 w-4" aria-hidden="true" />
-        {answered ? localize('com_ui_asked') : localize('com_ui_asking')}
+    <>
+      <div className="my-2 flex w-full flex-col gap-1.5 rounded-lg border border-border-light bg-surface-secondary p-3">
+        <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
+          <MessageCircleQuestion className="h-4 w-4" aria-hidden="true" />
+          {answered ? localize('com_ui_asked') : localize('com_ui_asking')}
+        </div>
+        <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
+          {question?.question ?? (answered ? localize('com_ui_asked') : localize('com_ui_asking'))}
+        </p>
+        {question?.description != null && question.description.length > 0 && (
+          <p className="text-sm text-text-secondary [overflow-wrap:anywhere]">
+            {question.description}
+          </p>
+        )}
+        {answered ? (
+          <p className="text-sm text-text-primary [overflow-wrap:anywhere]">
+            <span className="font-medium text-text-secondary">
+              {localize('com_ui_you_answered')}
+            </span>{' '}
+            {answerLabel}
+          </p>
+        ) : (
+          <p className="text-sm italic text-text-secondary">
+            {localize('com_ui_question_unanswered')}
+          </p>
+        )}
       </div>
-      <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
-        {question?.question ?? (answered ? localize('com_ui_asked') : localize('com_ui_asking'))}
-      </p>
-      {question?.description != null && question.description.length > 0 && (
-        <p className="text-sm text-text-secondary [overflow-wrap:anywhere]">
-          {question.description}
-        </p>
-      )}
-      {answered ? (
-        <p className="text-sm text-text-primary [overflow-wrap:anywhere]">
-          <span className="font-medium text-text-secondary">{localize('com_ui_you_answered')}</span>{' '}
-          {answerLabel}
-        </p>
-      ) : (
-        <p className="text-sm italic text-text-secondary">
-          {localize('com_ui_question_unanswered')}
-        </p>
-      )}
-    </div>
+      {resumingCursor}
+    </>
   );
 }

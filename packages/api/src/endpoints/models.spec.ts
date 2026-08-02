@@ -199,6 +199,7 @@ describe('fetchModels', () => {
     expect(resolveHeaders).toHaveBeenCalledWith({
       headers: customHeaders,
       user: userObject,
+      stripUnresolved: true,
     });
     expect(mockedAxios.get).toHaveBeenCalledWith(
       expect.stringContaining('https://api.test.com/models'),
@@ -658,6 +659,7 @@ describe('fetchModels with Ollama specific logic', () => {
     expect(resolveHeaders).toHaveBeenCalledWith({
       headers: customHeaders,
       user: userObject,
+      stripUnresolved: true,
     });
     expect(mockedAxios.get).toHaveBeenCalledWith('https://api.ollama.test.com/api/tags', {
       headers: customHeaders,

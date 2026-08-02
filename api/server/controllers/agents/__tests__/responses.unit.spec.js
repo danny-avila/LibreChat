@@ -3,6 +3,8 @@
  * Tests that recordCollectedUsage is called correctly for token spending
  */
 
+const { ResourceType } = require('librechat-data-provider');
+
 const mockSpendTokens = jest.fn().mockResolvedValue({});
 const mockSpendStructuredTokens = jest.fn().mockResolvedValue({});
 const mockRecordCollectedUsage = jest
@@ -10,6 +12,26 @@ const mockRecordCollectedUsage = jest
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
+class MockAgentRunEnvelopeError extends TypeError {
+  constructor(message) {
+    super(message);
+    this.name = 'AgentRunEnvelopeError';
+  }
+}
+const mockCreateAgentRunEnvelope = jest.fn(
+  ({ protocol, requestId, receivedAt, principal, payload }) => ({
+    version: 1,
+    protocol,
+    requestId,
+    receivedAt,
+    principal: {
+      userId: principal.id,
+      ...(principal.role != null && { role: principal.role }),
+      ...(principal.tenantId != null && { tenantId: principal.tenantId }),
+    },
+    payload: JSON.parse(JSON.stringify(payload)),
+  }),
+);
 const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
   const primed = {};
   for (const skill of alwaysApplySkillPrimes ?? []) {
@@ -93,6 +115,8 @@ jest.mock('@librechat/api', () => ({
   }),
   applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
+  AgentRunEnvelopeError: MockAgentRunEnvelopeError,
+  createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
   buildAgentScopedContext: (...args) => mockBuildAgentScopedContext(...args),
   buildAgentContextAttachmentsByAgentId: (...args) =>
     mockBuildAgentContextAttachmentsByAgentId(...args),
@@ -319,6 +343,60 @@ describe('createResponse controller', () => {
     };
   });
 
+  describe('execution envelope', () => {
+    it('creates the portable run input before agent initialization', async () => {
+      req.user = {
+        id: 'user-123',
+        role: 'USER',
+        tenantId: 'tenant-123',
+        federatedTokens: { access_token: 'secret' },
+      };
+      const requestBody = {
+        ...req.body,
+        ephemeralAgent: { skills: true },
+        manualSkills: ['review-code'],
+        timezone: 'America/New_York',
+        isTemporary: true,
+      };
+      req.body = requestBody;
+      const { validateResponseRequest, initializeAgent } = require('@librechat/api');
+      validateResponseRequest.mockReturnValueOnce({ request: requestBody });
+
+      await createResponse(req, res);
+
+      expect(mockCreateAgentRunEnvelope).toHaveBeenCalledWith(
+        expect.objectContaining({
+          protocol: 'responses',
+          principal: req.user,
+          payload: requestBody,
+          requestId: expect.any(String),
+          receivedAt: expect.any(Number),
+        }),
+      );
+      expect(mockCreateAgentRunEnvelope.mock.invocationCallOrder[0]).toBeLessThan(
+        initializeAgent.mock.invocationCallOrder[0],
+      );
+      expect(req.body).not.toBe(requestBody);
+      expect(req.body).toEqual(requestBody);
+      expect(JSON.stringify(mockCreateAgentRunEnvelope.mock.results[0].value)).not.toContain(
+        'secret',
+      );
+    });
+
+    it('returns a protocol 400 when the envelope rejects a non-JSON payload', async () => {
+      const message = 'payload.max_output_tokens must contain only finite numbers';
+      const { sendResponsesErrorResponse, initializeAgent } = require('@librechat/api');
+      mockCreateAgentRunEnvelope.mockImplementationOnce(() => {
+        throw new MockAgentRunEnvelopeError(message);
+      });
+
+      await createResponse(req, res);
+
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(res, 400, message, 'invalid_request');
+      expect(initializeAgent).not.toHaveBeenCalled();
+    });
+  });
+
   describe('conversation ownership validation', () => {
     it('should skip ownership check when previous_response_id is not provided', async () => {
       const { getConvo } = require('~/models');
@@ -411,6 +489,46 @@ describe('createResponse controller', () => {
         500,
         expect.any(String),
         expect.any(String),
+      );
+    });
+  });
+
+  describe('remote-agent file authorization', () => {
+    it('threads the remote-agent permission boundary through initialization and tool loading', async () => {
+      const { initializeAgent, createToolExecuteHandler } = require('@librechat/api');
+      const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+      const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+
+      await createResponse(req, res);
+
+      const [initializeParams, dbMethods] = initializeAgent.mock.calls.at(-1);
+      const filterParams = {
+        files: [{ file_id: 'owner-file', user: 'agent-owner' }],
+        userId: 'user-123',
+        role: 'USER',
+        agentId: 'agent-123',
+      };
+      await dbMethods.filterFilesByAgentAccess(filterParams);
+      expect(filterFilesByAgentAccess).toHaveBeenLastCalledWith({
+        ...filterParams,
+        resourceType: ResourceType.REMOTE_AGENT,
+      });
+
+      await initializeParams.loadTools({
+        agentId: 'agent-123',
+        tools: ['file_search'],
+        provider: 'anthropic',
+        model: 'claude-3',
+        tool_resources: { file_search: { file_ids: ['owner-file'] } },
+      });
+      expect(loadAgentTools).toHaveBeenLastCalledWith(
+        expect.objectContaining({ agentResourceType: ResourceType.REMOTE_AGENT }),
+      );
+
+      const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
+      await toolExecuteOptions.loadTools(['file_search'], 'agent-123');
+      expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+        expect.objectContaining({ agentResourceType: ResourceType.REMOTE_AGENT }),
       );
     });
   });

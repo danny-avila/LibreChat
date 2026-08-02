@@ -256,9 +256,10 @@ export interface ComposerKeyContext {
  * The composer's entire Enter decision table. Every verdict is terminal — no
  * interpretation falls through into another, which is what previously let a
  * chord that one branch declined reach a branch it never should have.
- * `yieldedChords` belong to the document-level handler in
- * `useKeyboardShortcuts`, which runs after the composer and does not check
- * `defaultPrevented`, so the composer must not act on them at all. `block`
+ * `yieldedChords` belong to the window-level handler in
+ * `useKeyboardShortcuts`, which runs after the composer and yields any
+ * keypress already claimed via `preventDefault` — so the composer must not
+ * act on them at all, or the global action is silently swallowed. `block`
  * means preventDefault with no action.
  */
 export function resolveComposerKeyDown(
