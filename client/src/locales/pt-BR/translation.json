@@ -1,6 +1,6 @@
 {
-  "chat_direction_left_to_right": "algo precisa ir aqui. Está vazio",
-  "chat_direction_right_to_left": "algo precisa ir aqui. esta vazio",
+  "chat_direction_left_to_right": "Esquerda para Direita",
+  "chat_direction_right_to_left": "Da direita para a esquerda",
   "com_a11y_ai_composing": "A IA ainda está compondo.",
   "com_a11y_chats_date_section": "Chats de {{date}}",
   "com_a11y_end": "A IA terminou de responder.",
