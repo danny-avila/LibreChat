@@ -1375,6 +1375,7 @@ export const interfaceSchema = z
           create: z.boolean().optional(),
           share: z.boolean().optional(),
           public: z.boolean().optional(),
+          preventSwitching: z.boolean().optional(),
         }),
       ])
       .optional(),
@@ -1460,6 +1461,7 @@ export const interfaceSchema = z
       create: true,
       share: false,
       public: false,
+      preventSwitching: false,
     },
     temporaryChat: true,
     autoSubmitFromUrl: true,

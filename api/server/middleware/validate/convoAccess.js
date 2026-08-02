@@ -1,5 +1,5 @@
 const { isEnabled } = require('@librechat/api');
-const { Constants, ViolationTypes, Time } = require('librechat-data-provider');
+const { Constants, ViolationTypes, Time, isEphemeralAgentId } = require('librechat-data-provider');
 const denyRequest = require('~/server/middleware/denyRequest');
 const { logViolation, getLogStores } = require('~/cache');
 const { searchConversation } = require('~/models');
@@ -67,6 +67,26 @@ const validateConvoAccess = async (req, res, next) => {
         await logViolation(req, res, type, errorMessage, score);
       }
       return await denyRequest(req, res, errorMessage);
+    }
+
+    const preventSwitching = req.config?.interfaceConfig?.agents?.preventSwitching === true;
+    if (preventSwitching && req.body && (req.body.agent_id !== undefined || req.body.endpoint !== undefined)) {
+      const getCleanAgentId = (id) => {
+        if (!id || isEphemeralAgentId(id)) {
+          return '';
+        }
+        return id;
+      };
+
+      const currentAgent = getCleanAgentId(conversation.agent_id);
+      const targetAgent = getCleanAgentId(req.body.agent_id);
+
+      if (currentAgent !== targetAgent) {
+        return res.status(400).json({
+          error: 'Agent Switching Prohibited',
+          message: 'Switching agents during an existing chat is not allowed due to compliance policy.',
+        });
+      }
     }
 
     if (cache) {

@@ -8,6 +8,7 @@ import {
   PermissionTypes,
   isAgentsEndpoint,
   getConfigDefaults,
+  isEphemeralAgentId,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { TAssistantsMap, TEndpointsConfig } from 'librechat-data-provider';
@@ -23,6 +24,8 @@ import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import { mapEndpoints, getPresetTitle } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
 import { filterMentionEndpoints } from './mentions';
 
 const defaultInterface = getConfigDefaults().interface;
@@ -83,6 +86,19 @@ export default function useMentions({
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig?.interface],
   );
+  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const isExisting = !!(conversation?.conversationId && conversation?.conversationId !== 'new');
+  const preventSwitching = interfaceConfig?.agents?.preventSwitching === true;
+  const isAgentDisabled = useMemo(() => {
+    const hasAgent = conversation && conversation.agent_id && !isEphemeralAgentId(conversation.agent_id);
+    return preventSwitching && isExisting && !hasAgent;
+  }, [conversation, preventSwitching, isExisting]);
+
+  const isLocked = useMemo(() => {
+    const hasAgent = conversation && conversation.agent_id && !isEphemeralAgentId(conversation.agent_id);
+    return preventSwitching && isExisting && hasAgent;
+  }, [conversation, preventSwitching, isExisting]);
+
   const includedEndpoints = useMemo(
     () => new Set(startupConfig?.modelSpecs?.addedEndpoints ?? []),
     [startupConfig?.modelSpecs?.addedEndpoints],
@@ -99,6 +115,7 @@ export default function useMentions({
   );
   const validEndpointSet = useMemo(() => new Set(validEndpoints), [validEndpoints]);
   const agentQueryEnabled =
+    !isAgentDisabled &&
     hasAgentAccess &&
     interfaceConfig.modelSelect === true &&
     (includedEndpoints.size === 0 || includedEndpoints.has(EModelEndpoint.agents));
@@ -152,7 +169,10 @@ export default function useMentions({
   );
 
   const modelSpecs = useMemo(() => {
-    const specs = startupConfig?.modelSpecs?.list ?? [];
+    let specs = startupConfig?.modelSpecs?.list ?? [];
+    if (isAgentDisabled) {
+      specs = specs.filter((spec) => spec.preset?.endpoint !== EModelEndpoint.agents);
+    }
     if (!agentsMap) {
       return specs;
     }
@@ -168,9 +188,12 @@ export default function useMentions({
       /** Keep non-agent modelSpecs */
       return true;
     });
-  }, [startupConfig, agentsMap]);
+  }, [startupConfig, agentsMap, isAgentDisabled]);
 
   const options: MentionOption[] = useMemo(() => {
+    if (isLocked) {
+      return [];
+    }
     const modelOptions = validEndpoints.flatMap((endpoint) => {
       if (isAssistantsEndpoint(endpoint) || isAgentsEndpoint(endpoint)) {
         return [];
@@ -270,6 +293,7 @@ export default function useMentions({
     includeAssistants,
     interfaceConfig.presets,
     interfaceConfig.modelSelect,
+    isLocked,
   ]);
 
   const isLoading =
