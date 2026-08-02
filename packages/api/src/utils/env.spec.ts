@@ -2189,3 +2189,107 @@ describe('createSafeUser', () => {
     expect(createSafeUser(user).id).toBeUndefined();
   });
 });
+
+describe('resolveHeaders stripUnresolved', () => {
+  const templateHeaders = {
+    'X-OpenID-Id': '{{LIBRECHAT_USER_OPENIDID}}',
+    'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+    'Content-Type': 'application/json',
+  };
+
+  it('strips user placeholders when user context is missing entirely', () => {
+    const result = resolveHeaders({ headers: { ...templateHeaders }, stripUnresolved: true });
+
+    expect(result).toEqual({
+      'X-OpenID-Id': '',
+      'X-User-Id': '',
+      'Content-Type': 'application/json',
+    });
+  });
+
+  it('strips user placeholders when the safe user is an empty object (issue #14580)', () => {
+    const result = resolveHeaders({
+      headers: { ...templateHeaders },
+      user: createSafeUser(undefined),
+      stripUnresolved: true,
+    });
+
+    expect(result).toEqual({
+      'X-OpenID-Id': '',
+      'X-User-Id': '',
+      'Content-Type': 'application/json',
+    });
+  });
+
+  it('strips placeholders for fields the user lacks while substituting present fields', () => {
+    const localUser = createSafeUser({ id: 'user-123', email: 'me@example.com' } as IUser);
+
+    const result = resolveHeaders({
+      headers: { ...templateHeaders, 'X-Email': '{{LIBRECHAT_USER_EMAIL}}' },
+      user: localUser,
+      stripUnresolved: true,
+    });
+
+    expect(result).toEqual({
+      'X-OpenID-Id': '',
+      'X-User-Id': 'user-123',
+      'X-Email': 'me@example.com',
+      'Content-Type': 'application/json',
+    });
+  });
+
+  it('strips only the placeholder within a composite header value', () => {
+    const result = resolveHeaders({
+      headers: { Authorization: 'Bearer {{LIBRECHAT_USER_OPENIDID}}' },
+      stripUnresolved: true,
+    });
+
+    expect(result.Authorization).toBe('Bearer ');
+  });
+
+  it('strips body placeholders when no body context is available', () => {
+    const result = resolveHeaders({
+      headers: { 'X-Convo': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+      user: { id: 'user-123' },
+      stripUnresolved: true,
+    });
+
+    expect(result['X-Convo']).toBe('');
+  });
+
+  it('strips OpenID token placeholders when no valid token is available', () => {
+    const result = resolveHeaders({
+      headers: {
+        'X-Access': '{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        'X-Token': '{{LIBRECHAT_OPENID_TOKEN}}',
+      },
+      user: { id: 'user-123' },
+      stripUnresolved: true,
+    });
+
+    expect(result['X-Access']).toBe('');
+    expect(result['X-Token']).toBe('');
+  });
+
+  it('leaves unknown and non-resolvable placeholders untouched', () => {
+    const result = resolveHeaders({
+      headers: {
+        'X-Typo': '{{LIBRECHAT_USER_NONEXISTENT}}',
+        'X-Graph': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        'X-Custom': '{{MY_CUSTOM_VAR}}',
+      },
+      stripUnresolved: true,
+    });
+
+    expect(result['X-Typo']).toBe('{{LIBRECHAT_USER_NONEXISTENT}}');
+    expect(result['X-Graph']).toBe('{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}');
+    expect(result['X-Custom']).toBe('{{MY_CUSTOM_VAR}}');
+  });
+
+  it('preserves unresolved placeholders by default (staged flows resolve later)', () => {
+    const result = resolveHeaders({ headers: { ...templateHeaders } });
+
+    expect(result['X-OpenID-Id']).toBe('{{LIBRECHAT_USER_OPENIDID}}');
+    expect(result['X-User-Id']).toBe('{{LIBRECHAT_USER_ID}}');
+  });
+});

@@ -321,6 +321,35 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.tool_resources.invalid_resource).toBeUndefined();
     });
 
+    test('should strip runtime file records before persisting an agent', async () => {
+      mockReq.body = {
+        provider: 'openai',
+        model: 'gpt-4',
+        name: 'Agent with forged runtime file',
+        tool_resources: {
+          execute_code: {
+            files: [
+              {
+                file_id: 'forged-file',
+                filepath: '/etc/passwd',
+                source: FileSources.local,
+              },
+            ],
+          },
+        },
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const createdAgent = mockRes.json.mock.calls[0][0];
+      expect(createdAgent.tool_resources?.execute_code?.files).toBeUndefined();
+
+      const agentInDb = await Agent.findOne({ id: createdAgent.id }).lean();
+      expect(agentInDb.tool_resources?.execute_code?.files).toBeUndefined();
+      expect(agentInDb.versions[0].tool_resources?.execute_code?.files).toBeUndefined();
+    });
+
     test('should strip file_ids not owned by the creator from tool_resources', async () => {
       const File = mongoose.models.File;
 
@@ -938,6 +967,32 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(updatedAgent.tool_resources.context).toBeDefined();
       expect(updatedAgent.tool_resources.execute_code).toBeDefined();
       expect(updatedAgent.tool_resources.invalid_tool).toBeUndefined();
+    });
+
+    test('should strip runtime file records before persisting an update', async () => {
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        tool_resources: {
+          execute_code: {
+            files: [
+              {
+                file_id: 'forged-file',
+                filepath: '/etc/passwd',
+                source: FileSources.local,
+              },
+            ],
+          },
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.tool_resources.execute_code.files).toBeUndefined();
+      const latestVersion = agentInDb.versions[agentInDb.versions.length - 1];
+      expect(latestVersion.tool_resources.execute_code.files).toBeUndefined();
     });
 
     test('should remove empty strings from model_parameters during update (Issue Fix)', async () => {

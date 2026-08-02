@@ -9,6 +9,7 @@ export * from './context';
 export * from './conversation';
 export * from './discovery';
 export * from './edges';
+export * from './envelope';
 export * from './handlers';
 export * from './harvest';
 export * from './initialize';

@@ -238,6 +238,7 @@ const Part = memo(function Part({
               output={typeof toolCall.output === 'string' ? toolCall.output : ''}
               toolCallId={toolCall.id}
               isSubmitting={isSubmitting}
+              showCursor={showCursor}
               failed={'inputValidationError' in toolCall && toolCall.inputValidationError === true}
             />
           );

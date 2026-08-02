@@ -3091,4 +3091,112 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
     expect(mockGenerationJobManager.releaseGeneration).not.toHaveBeenCalled();
   });
+
+  describe('preempt-incomplete title gating', () => {
+    const { Constants } = require('librechat-data-provider');
+    const { resolveTitleTiming } = require('@librechat/api');
+
+    /** An empty preempt boundary ends the turn truncated — the response is
+     *  persisted `unfinished`, so it must follow the abort title contract. */
+    const preemptIncompleteRun = {
+      getPreemptStats: () => ({ emptyBoundaries: 1 }),
+      getHaltReason: () => 'preempt_incomplete',
+    };
+
+    const runFirstTurn = async ({ run } = {}) => {
+      let signalFinished;
+      const finished = new Promise((resolve) => {
+        signalFinished = resolve;
+      });
+      mockGenerationJobManager.finishTerminalJob.mockImplementation(async () => signalFinished());
+
+      let titleSignal;
+      const addTitle = jest.fn(async (_req, options) => {
+        titleSignal = options?.signal;
+      });
+
+      const client = {
+        options: {},
+        savedMessageIds: new Set(),
+        skipSaveUserMessage: false,
+        ...(run && { run }),
+        sendMessage: jest.fn(async (_text, options) => {
+          const userMessage = {
+            messageId: 'user-msg',
+            parentMessageId: Constants.NO_PARENT,
+            conversationId: options.conversationId,
+            text: 'First message',
+          };
+          options.onStart(userMessage, 'response-msg');
+          return {
+            messageId: 'response-msg',
+            parentMessageId: 'user-msg',
+            conversationId: options.conversationId,
+            content: [{ type: 'text', text: 'Truncated answer' }],
+            databasePromise: Promise.resolve({
+              conversation: { conversationId: options.conversationId, title: null },
+            }),
+          };
+        }),
+      };
+      const req = {
+        user: { id: 'user-123' },
+        body: {
+          text: 'First message',
+          messageId: 'user-msg',
+          parentMessageId: Constants.NO_PARENT,
+          conversationId: 'new',
+          endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        },
+        config: {},
+      };
+
+      await AgentController(
+        req,
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockResolvedValue({ client }),
+        addTitle,
+      );
+      await finished;
+      await nextTick();
+      await nextTick();
+
+      return { addTitle, getTitleSignal: () => titleSignal };
+    };
+
+    it('skips deferred title generation when an empty preempt boundary truncates the first turn', async () => {
+      resolveTitleTiming.mockReturnValueOnce('final');
+
+      const { addTitle } = await runFirstTurn({ run: preemptIncompleteRun });
+
+      expect(addTitle).not.toHaveBeenCalled();
+    });
+
+    it('still generates a deferred title for a completed first turn', async () => {
+      resolveTitleTiming.mockReturnValueOnce('final');
+
+      const { addTitle } = await runFirstTurn();
+
+      expect(addTitle).toHaveBeenCalledTimes(1);
+      expect(addTitle).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ response: expect.anything() }),
+      );
+    });
+
+    it('cancels an in-flight immediate title when the turn ends preempt-incomplete', async () => {
+      const { addTitle, getTitleSignal } = await runFirstTurn({ run: preemptIncompleteRun });
+
+      expect(addTitle).toHaveBeenCalledTimes(1);
+      expect(getTitleSignal().aborted).toBe(true);
+    });
+
+    it('lets an immediate title proceed for a completed first turn', async () => {
+      const { addTitle, getTitleSignal } = await runFirstTurn();
+
+      expect(addTitle).toHaveBeenCalledTimes(1);
+      expect(getTitleSignal().aborted).toBe(false);
+    });
+  });
 });

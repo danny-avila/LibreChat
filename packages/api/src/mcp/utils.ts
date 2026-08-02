@@ -1,4 +1,10 @@
-import { Constants, normalizeServerName } from 'librechat-data-provider';
+import {
+  Constants,
+  normalizeServerName,
+  normalizeMCPToolKey,
+  buildServerNameAliases,
+} from 'librechat-data-provider';
+import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
 
@@ -19,6 +25,144 @@ export const MCP_ALL_PLACEHOLDER_PREFIX: string = `${Constants.mcp_all}${Constan
 /** Whether a tool entry is the lazily-expanded `mcp_all` placeholder. */
 export function isMCPAllPlaceholder(toolName: string): boolean {
   return toolName.startsWith(MCP_ALL_PLACEHOLDER_PREFIX);
+}
+
+/** Server-pin token (`sys__server__sys<delim><server>`) that keeps a server
+ *  attached to an agent independent of its tool selection. */
+const MCP_SERVER_TOKEN_PREFIX: string = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
+
+/**
+ * Later-configured server names whose normalized form is already claimed by an
+ * earlier different name. Such a pair produces IDENTICAL model-facing tool
+ * keys, so tool selection and execution cannot tell the servers apart —
+ * `buildServerNameAliases` deterministically routes to the first name, and
+ * the shadowed later server must be EXCLUDED from tool exposure entirely:
+ * offering its tools would let a user select a tool that silently executes
+ * against the first server's configuration.
+ */
+/**
+ * Whether a resolved server name is normalization-sensitive — its own name
+ * needs normalizing, or it EQUALS the normalized form of some configured
+ * special-character name. Under an incomplete collision audit these are the
+ * references whose routing cannot be proven unambiguous, so they fail closed.
+ */
+export function isNormalizationSensitiveName(
+  serverName: string,
+  rawServerNames: readonly string[],
+): boolean {
+  if (normalizeServerName(serverName) !== serverName) {
+    return true;
+  }
+  return rawServerNames.some(
+    (raw) => raw !== serverName && normalizeServerName(raw) === serverName,
+  );
+}
+
+export function findShadowedServerNames(rawServerNames: readonly string[]): Set<string> {
+  /** Derived from `buildServerNameAliases` so shadow detection can never
+   *  diverge from the tie-break routing actually uses (identity entries
+   *  first, then configuration order). */
+  const aliases = buildServerNameAliases(rawServerNames);
+  const shadowed = new Set<string>();
+  for (const raw of rawServerNames) {
+    if (raw && aliases.get(normalizeServerName(raw)) !== raw) {
+      shadowed.add(raw);
+    }
+  }
+  return shadowed;
+}
+
+/**
+ * Heals legacy persisted agent data whose MCP tool keys embed a RAW server
+ * name: model-facing keys carry `normalizeServerName(server)` (matching cache
+ * keys, definition names, and runtime instance names), so an agent document
+ * saved before that convention — or through the old raw-keyed cache — would
+ * neither load its tools nor have its `tool_options` (defer / programmatic /
+ * background / intent) honored for a server whose name needs normalizing.
+ *
+ * Placeholder and server-pin tokens are left untouched: they are
+ * config-identity references consumed against raw config names (the client's
+ * selectors, the definitions loader's expansion), never model-facing names.
+ * Returns the same references when nothing needs rewriting, so the common
+ * path (every server name already normalized) allocates nothing.
+ */
+export function normalizeAgentToolKeys(params: {
+  tools: string[] | undefined;
+  toolOptions: AgentToolOptions | undefined;
+  rawServerNames: readonly string[];
+}): { tools: string[] | undefined; toolOptions: AgentToolOptions | undefined } {
+  const { tools, toolOptions, rawServerNames } = params;
+  /**
+   * A SHADOWED server (its normalized form claimed by an earlier different
+   * name) must NOT be healed: rewriting its raw key would produce the first
+   * server's key exactly, silently executing the wrong server's action. Left
+   * raw, the key fails to match the (normalized-keyed) tool map and the tool
+   * errors visibly — broken beats misrouted.
+   */
+  const shadowed = findShadowedServerNames(rawServerNames);
+  const rewritableNames = rawServerNames.filter(
+    (name) => normalizeServerName(name) !== name && !shadowed.has(name),
+  );
+  if (rewritableNames.length === 0) {
+    return { tools, toolOptions };
+  }
+
+  const rewriteKey = (key: string): string => {
+    if (
+      !key.includes(Constants.mcp_delimiter) ||
+      isMCPAllPlaceholder(key) ||
+      key.startsWith(MCP_SERVER_TOKEN_PREFIX)
+    ) {
+      return key;
+    }
+    return normalizeMCPToolKey(key, rewritableNames);
+  };
+
+  let toolsChanged = false;
+  let nextTools = tools?.map((key) => {
+    const rewritten = rewriteKey(key);
+    if (rewritten !== key) {
+      toolsChanged = true;
+    }
+    return rewritten;
+  });
+  /** A document carrying BOTH spellings converges on one key after healing —
+   *  collapse duplicates (order-preserving) so the loaders never build two
+   *  instances with the same function name. */
+  if (toolsChanged && nextTools) {
+    const seen = new Set<string>();
+    nextTools = nextTools.filter((key) => {
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  }
+
+  let optionsChanged = false;
+  let nextOptions: AgentToolOptions | undefined;
+  if (toolOptions) {
+    nextOptions = {};
+    for (const [key, options] of Object.entries(toolOptions)) {
+      const rewritten = rewriteKey(key);
+      if (rewritten !== key) {
+        optionsChanged = true;
+      }
+      /** When both spellings carry options, the CURRENT (normalized) entry
+       *  wins regardless of object insertion order — a legacy entry must not
+       *  clobber settings a client already wrote under the new spelling. */
+      nextOptions[rewritten] =
+        rewritten !== key
+          ? { ...options, ...nextOptions[rewritten] }
+          : { ...nextOptions[key], ...options };
+    }
+  }
+
+  return {
+    tools: toolsChanged ? nextTools : tools,
+    toolOptions: optionsChanged ? nextOptions : toolOptions,
+  };
 }
 
 const RUNTIME_CONTEXT_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:USER|OPENID|GRAPH|BODY)_[^}]+\}\}/;
@@ -426,4 +570,9 @@ export function generateServerNameFromTitle(title: string): string {
   return slug || 'mcp-server'; // Fallback if empty
 }
 
-export { splitMCPToolKey, normalizeServerName } from 'librechat-data-provider';
+export {
+  splitMCPToolKey,
+  normalizeServerName,
+  normalizeMCPToolKey,
+  buildServerNameAliases,
+} from 'librechat-data-provider';

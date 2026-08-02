@@ -9,6 +9,7 @@ import {
   useDeleteMCPServerMutation,
 } from '~/data-provider/MCP';
 import { extractServerNameFromUrl, isValidUrl, normalizeUrl } from '../utils/urlUtils';
+import { getMCPServerErrorMessage } from '../utils/error';
 import { getOAuthConfig } from '../utils/oauth';
 import { useLocalize } from '~/hooks';
 
@@ -238,12 +239,9 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
 
       if (error && typeof error === 'object' && 'response' in error) {
         const axiosError = error as { response?: { data?: { error?: string } } };
-        if (axiosError.response?.data?.error === 'MCP_INSPECTION_FAILED') {
-          errorMessage = localize('com_ui_mcp_server_connection_failed');
-        } else if (axiosError.response?.data?.error === 'MCP_DOMAIN_NOT_ALLOWED') {
-          errorMessage = localize('com_ui_mcp_domain_not_allowed');
-        } else if (axiosError.response?.data?.error) {
-          errorMessage = axiosError.response.data.error;
+        const errorCode = axiosError.response?.data?.error;
+        if (errorCode) {
+          errorMessage = getMCPServerErrorMessage(errorCode, localize);
         }
       } else if (error instanceof Error) {
         errorMessage = error.message;

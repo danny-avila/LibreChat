@@ -1,10 +1,10 @@
-import reactRouter from 'react-router-dom';
+import * as reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
-import { render, waitFor, screen } from 'test/layout-test-utils';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
-import * as miscDataProvider from '~/data-provider/Misc/queries';
 import * as endpointQueries from '~/data-provider/Endpoints/queries';
+import { render, waitFor, screen } from 'test/layout-test-utils';
+import * as miscDataProvider from '~/data-provider/Misc/queries';
 import * as authMutations from '~/data-provider/Auth/mutations';
 import * as authQueries from '~/data-provider/Auth/queries';
 import Registration from '~/components/Auth/Registration';
@@ -83,7 +83,7 @@ const setup = ({
   const mockUseOutletContext = jest.spyOn(reactRouter, 'useOutletContext').mockReturnValue({
     startupConfig: useGetStartupConfigReturnValue.data,
   });
-  const mockUseGetBannerQuery = jest
+  jest
     .spyOn(miscDataProvider, 'useGetBannerQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetBannerQueryReturnValue);
@@ -112,6 +112,7 @@ const setup = ({
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
+  __esModule: true,
   useOutletContext: () => ({
     startupConfig: mockStartupConfig,
   }),

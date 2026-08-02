@@ -286,6 +286,7 @@ function buildAgentToolContext({ agent, config }) {
     userMCPAuthMap: config.userMCPAuthMap,
     tool_resources: config.tool_resources,
     actionsEnabled: config.actionsEnabled,
+    accessibleMcpServerNames: config.accessibleMcpServerNames,
     accessibleSkillIds: config.accessibleSkillIds,
     activeSkillNames: config.activeSkillNames,
     codeEnvAvailable: config.codeEnvAvailable,

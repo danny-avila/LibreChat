@@ -489,6 +489,63 @@ describe('useStepHandler', () => {
       );
     });
 
+    /**
+     * Regression: the preempt-fold incident. When the missing user message is
+     * restored while its abandoned (preempt-incomplete) sibling responses are
+     * already in the list, appending it at the tail orders those children
+     * BEFORE their parent — buildTree then hoists them into phantom root
+     * branches and the thread folds to the latest branch until a refetch.
+     */
+    it('inserts a missing user message before its abandoned sibling responses', () => {
+      const rootUser = createUserMessage({ messageId: 'user-1' });
+      const assist1 = createResponseMessage({ messageId: 'assist-1', parentMessageId: 'user-1' });
+      const user2 = createUserMessage({ messageId: 'user-2', parentMessageId: 'assist-1' });
+      const assist2 = createResponseMessage({ messageId: 'assist-2', parentMessageId: 'user-2' });
+      const abandoned1 = createResponseMessage({
+        messageId: 'abandoned-1',
+        parentMessageId: 'user-3',
+        unfinished: true,
+      });
+      const abandoned2 = createResponseMessage({
+        messageId: 'abandoned-2',
+        parentMessageId: 'user-3',
+        unfinished: true,
+      });
+      const user3 = createUserMessage({ messageId: 'user-3', parentMessageId: 'assist-2' });
+
+      const cachedMessages = [rootUser, assist1, user2, assist2, abandoned1, abandoned2];
+      mockGetMessages.mockReturnValue(cachedMessages);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep({ runId: 'assist-3' });
+      const submission = createSubmission({
+        userMessage: user3,
+        messages: cachedMessages,
+        initialResponse: createResponseMessage({
+          messageId: 'user-3_',
+          parentMessageId: 'user-3',
+        }),
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      expect(mockSetMessages).toHaveBeenCalled();
+      const written = mockSetMessages.mock.calls[0][0] as TMessage[];
+      expect(written.map((message) => message.messageId)).toEqual([
+        'user-1',
+        'assist-1',
+        'user-2',
+        'assist-2',
+        'user-3',
+        'abandoned-1',
+        'abandoned-2',
+        'assist-3',
+      ]);
+    });
+
     it('keeps the pending user message when replayed OAuth tool calls merge immediately', () => {
       const rootUser = createUserMessage({ messageId: 'root-user' });
       const selectedResponse = createResponseMessage({

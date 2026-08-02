@@ -99,6 +99,27 @@ describe('getUserMCPAuthMap', () => {
         expect.objectContaining({ pluginKeys: ['mcp_Google_mcp_Workspace'] }),
       );
     });
+
+    it('fetches auth under both spellings for normalized keys, raw-only for legacy keys', async () => {
+      /** Plugin auth rows are stored under the raw config name, but a
+       *  normalized match could equally belong to a user-DB server named
+       *  exactly like it — fetch the superset and let consumers read by
+       *  their own server name. Legacy raw keys resolve directly. */
+      mockGetPluginAuthMap.mockResolvedValue({});
+
+      await getUserMCPAuthMap({
+        userId: 'user123',
+        tools: ['search_mcp_Connector__Company', 'lookup_mcp_Connector: Company'],
+        serverNames: ['Connector: Company'],
+        findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
+      });
+
+      expect(mockGetPluginAuthMap).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pluginKeys: expect.arrayContaining(['mcp_Connector__Company', 'mcp_Connector: Company']),
+        }),
+      );
+    });
   });
 
   describe('Edge Cases', () => {

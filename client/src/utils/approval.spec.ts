@@ -11,6 +11,7 @@ import {
   resolveAskUserQuestionPart,
   getSubmittedAskAnswer,
   findLiveAskUserQuestion,
+  collectLiveAskToolCallIds,
   isAnsweredAskUserQuestionPart,
   splitOtherOption,
 } from './approval';
@@ -474,6 +475,47 @@ describe('findLiveAskUserQuestion', () => {
     resolveAskUserQuestionPart(newer, 'a-done', 'Ada');
 
     expect(findLiveAskUserQuestion([older, newer])?.actionId).toBe('a-live');
+  });
+});
+
+describe('collectLiveAskToolCallIds', () => {
+  const attributedAsk = (actionId: string, toolCallId: string) =>
+    askAction({
+      actionId,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Q?' },
+        tool_call_id: toolCallId,
+      },
+    });
+
+  it('collects every live pause id, not just the newest, and drops answered ones', () => {
+    const first = applyPendingAction(msg({ content: [] }), attributedAsk('a-first', 'call_1'));
+    const both = applyPendingAction(first, attributedAsk('a-second', 'call_2'));
+
+    expect(collectLiveAskToolCallIds([both])).toEqual({
+      ids: ['call_1', 'call_2'],
+      hasUnattributed: false,
+    });
+
+    resolveAskUserQuestionPart(both, 'a-first', 'Ada');
+
+    // `both` is the pre-answer copy — the answered pause must still drop out.
+    expect(collectLiveAskToolCallIds([both])).toEqual({
+      ids: ['call_2'],
+      hasUnattributed: false,
+    });
+  });
+
+  it('flags unattributed pauses and handles non-array input', () => {
+    const unattributed = applyPendingAction(
+      msg({ content: [] }),
+      askAction({ actionId: 'a-unattributed' }),
+    );
+
+    expect(collectLiveAskToolCallIds([unattributed])).toEqual({ ids: [], hasUnattributed: true });
+    expect(collectLiveAskToolCallIds(null)).toEqual({ ids: [], hasUnattributed: false });
+    expect(collectLiveAskToolCallIds(undefined)).toEqual({ ids: [], hasUnattributed: false });
   });
 });
 

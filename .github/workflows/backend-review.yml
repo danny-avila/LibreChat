@@ -4,6 +4,8 @@ on:
     paths:
       - 'api/**'
       - 'packages/**'
+      - 'config/circular-deps.mjs'
+      - '.github/workflows/backend-review.yml'
       - '!**.md'
 
 permissions:
@@ -157,7 +159,6 @@ jobs:
 
   circular-deps:
     name: Circular dependency checks
-    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -184,36 +185,8 @@ jobs:
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Download data-provider build
-        uses: actions/download-artifact@v4
-        with:
-          name: build-data-provider
-          path: packages/data-provider/dist
-
-      - name: Download data-schemas build
-        uses: actions/download-artifact@v4
-        with:
-          name: build-data-schemas
-          path: packages/data-schemas/dist
-
-      - name: Rebuild @librechat/api and check for circular dependencies
-        run: |
-          output=$(npm run build:api 2>&1)
-          echo "$output"
-          if echo "$output" | grep -q "Circular depend"; then
-            echo "Error: Circular dependency detected in @librechat/api!"
-            exit 1
-          fi
-
-      - name: Detect circular dependencies in rollup
-        working-directory: ./packages/data-provider
-        run: |
-          output=$(npm run rollup:api)
-          echo "$output"
-          if echo "$output" | grep -q "Circular dependency"; then
-            echo "Error: Circular dependency detected!"
-            exit 1
-          fi
+      - name: Detect circular dependencies
+        run: node config/circular-deps.mjs
 
   test-api:
     name: 'Tests: api (shard ${{ matrix.shard }}/3)'

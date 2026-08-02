@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants } from 'librechat-data-provider';
+import { Constants, buildServerNameAliases } from 'librechat-data-provider';
 import type { PluginAuthMethods } from '@librechat/data-schemas';
 import type { GenericTool } from '@librechat/agents';
 import { getPluginAuthMap } from '~/agents/auth';
@@ -25,7 +25,12 @@ export async function getUserMCPAuthMap({
   tools?: (string | undefined)[];
   servers?: (string | undefined)[];
   toolInstances?: (GenericTool | null)[];
-  /** Configured server names, used to resolve the tool-key boundary exactly */
+  /**
+   * Configured server names in their RAW config form. Tool keys embed the
+   * normalized form, so the boundary is resolved against both spellings and
+   * the auth-map key is always built from the raw name — the form plugin-auth
+   * rows are stored under and every reader passes.
+   */
   serverNames?: readonly string[];
   findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
 }): Promise<Record<string, Record<string, string>>> {
@@ -42,13 +47,24 @@ export async function getUserMCPAuthMap({
         uniqueMcpServers.add(`${Constants.mcp_prefix}${serverName}`);
       }
     } else if (tools != null && tools.length) {
+      const aliases = buildServerNameAliases(serverNames ?? []);
+      /** Keys may carry either spelling (normalized going forward, raw in
+       *  legacy agent documents), so both forms resolve the boundary. */
+      const candidates = [...(serverNames ?? []), ...aliases.keys()];
       for (const toolName of tools) {
         if (!toolName) {
           continue;
         }
-        const [, mcpServer] = splitMCPToolKey(toolName, serverNames);
+        const [, mcpServer] = splitMCPToolKey(toolName, candidates);
         if (!mcpServer) continue;
         uniqueMcpServers.add(`${Constants.mcp_prefix}${mcpServer}`);
+        /** A normalized match could equally belong to a user-DB server named
+         *  exactly like it, so fetch auth under BOTH spellings — consumers
+         *  read by their own server name and pick theirs. */
+        const aliasedRaw = aliases.get(mcpServer);
+        if (aliasedRaw != null && aliasedRaw !== mcpServer) {
+          uniqueMcpServers.add(`${Constants.mcp_prefix}${aliasedRaw}`);
+        }
       }
     } else if (toolInstances != null && toolInstances.length) {
       for (const tool of toolInstances) {

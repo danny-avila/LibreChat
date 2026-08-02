@@ -1,4 +1,4 @@
-import type { ExtendedJsonSchema } from '../registry/definitions';
+import type { ExtendedJsonSchema } from '../registry/schema';
 
 /** Default descriptions for image generation tool  */
 const DEFAULT_IMAGE_GEN_DESCRIPTION =
