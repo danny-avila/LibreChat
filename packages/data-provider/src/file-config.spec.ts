@@ -1637,4 +1637,14 @@ describe('setFileConfigRegexCompiler (MIME pattern compiler seam)', () => {
     expect(seen).toEqual(['application/pdf', 'text/*']);
     expect(compiled.every((matcher) => matcher.test('anything') === false)).toBe(true);
   });
+
+  it('returns a single reject-all matcher when every pattern fails to compile', () => {
+    setFileConfigRegexCompiler(() => {
+      throw new Error('unsupported pattern');
+    });
+    const compiled = convertStringsToRegex(['application/pdf', 'text/*']);
+    expect(compiled).toHaveLength(1);
+    expect(compiled[0].test('application/pdf')).toBe(false);
+    expect(compiled[0].test('anything')).toBe(false);
+  });
 });

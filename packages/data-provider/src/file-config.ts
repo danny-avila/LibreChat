@@ -556,6 +556,10 @@ export const setFileConfigRegexCompiler = (compile: (pattern: string) => RegexLi
   compileMimeRegex = compile;
 };
 
+/** Returned when every configured pattern fails to compile, so consumers that read an empty
+ *  allowlist as "no restriction" fail closed instead of allowing every file. */
+const rejectAllMimeMatcher: RegexLike = { test: () => false };
+
 /** Helper function to safely convert string patterns to matcher objects */
 export const convertStringsToRegex = (patterns: string[]): RegexLike[] => {
   const compiled = patterns.reduce((acc: RegexLike[], pattern) => {
@@ -566,12 +570,13 @@ export const convertStringsToRegex = (patterns: string[]): RegexLike[] => {
     }
     return acc;
   }, [] as RegexLike[]);
-  // Surface the dangerous case: every configured pattern was dropped, so the allowlist is now
-  // empty and this file type gate will reject all files rather than silently degrading unnoticed.
+  // Every configured pattern was dropped. Return an explicit reject-all matcher so consumers that
+  // read an empty allowlist as "no restriction" fail closed instead of allowing every file.
   if (patterns.length > 0 && compiled.length === 0) {
     console.error(
-      `All ${patterns.length} MIME type pattern(s) were invalid and skipped; the resulting allowlist is empty and will reject every file.`,
+      `All ${patterns.length} MIME type pattern(s) were invalid and skipped; the resulting allowlist rejects every file.`,
     );
+    return [rejectAllMimeMatcher];
   }
   return compiled;
 };
