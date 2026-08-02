@@ -539,6 +539,7 @@ function resolveSummarizationProvider(
             headers: customEndpointConfig.headers as Record<string, string>,
             user: createSafeUser(headerContext.user),
             body: headerContext.requestBody,
+            stripUnresolved: true,
           })
         : undefined;
     /**

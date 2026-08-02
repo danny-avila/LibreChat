@@ -3232,11 +3232,13 @@ class AgentClient extends BaseClient {
 
     /** Resolve request-based headers across provider-specific header locations:
      *  OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`
-     *  (preserved above), and Google `customHeaders`.
+     *  (preserved above), and Google `customHeaders`. Uses the `req` captured at
+     *  entry — `disposeClient` nulls `this.options.req` and can race this async
+     *  title flow, which would blank the user context mid-generation.
      */
     resolveConfigHeaders({
       llmConfig: clientOptions,
-      user: createSafeUser(this.options.req?.user),
+      user: createSafeUser(req?.user),
       body: {
         messageId: this.responseMessageId,
         conversationId: this.conversationId,
