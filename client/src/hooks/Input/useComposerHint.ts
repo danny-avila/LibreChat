@@ -8,6 +8,11 @@ export interface ComposerHintState {
   isSubmitting: boolean;
   /** Enter steers or queues instead of starting a turn. */
   duringRunActive: boolean;
+  /** Whether the run can be reached yet. `isSubmitting` flips as soon as the
+   *  user sends, but the start POST installs the generation epoch a moment
+   *  later, and until it lands every chord that touches the live run refuses.
+   *  Queueing is local, so it works throughout. */
+  canControlGeneration: boolean;
   /** Which action Enter takes during a run, per the effective setting. */
   duringRunAction: 'steer' | 'queue';
   /** The composer is the answer box for a paused `ask_user_question`. */
@@ -72,16 +77,25 @@ export function composeHint(
     /* With plain Enter bound to a newline, the chord IS the default action and
        there is no second chord left to reach the alternate one, so the hint
        names only what the composer will actually do. */
-    const defaultParts = isSteer
-      ? [localize('com_ui_composer_hint_steer'), `${mod} ${localize('com_ui_composer_hint_queue')}`]
-      : [
-          localize('com_ui_composer_hint_queue_default'),
-          `${mod} ${localize('com_ui_composer_hint_send_now')}`,
-        ];
+    const defaultAction = isSteer
+      ? localize('com_ui_composer_hint_steer')
+      : localize('com_ui_composer_hint_queue_default');
+    const alternateAction = isSteer
+      ? `${mod} ${localize('com_ui_composer_hint_queue')}`
+      : `${mod} ${localize('com_ui_composer_hint_send_now')}`;
     const chordVerb = isSteer
       ? 'com_ui_composer_hint_steer_verb'
       : 'com_ui_composer_hint_queue_verb';
-    const parts = state.enterToSend ? defaultParts : [`${mod} ${localize(chordVerb)}`];
+    const parts = state.enterToSend
+      ? [defaultAction, alternateAction]
+      : [`${mod} ${localize(chordVerb)}`];
+    /* Until the start POST installs the generation epoch, every chord that
+       reaches the live run refuses — only the default action survives, because
+       queueing is local. Naming the others through that window advertises keys
+       that do nothing, the same failure as pointing at an unbound shortcut. */
+    if (!state.canControlGeneration) {
+      return { text: parts[0], kind: 'state' };
+    }
     return {
       text: [...parts, `${alt} ${localize('com_ui_composer_hint_interrupt')}`].join(SEPARATOR),
       kind: 'state',

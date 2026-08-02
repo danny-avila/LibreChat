@@ -150,11 +150,13 @@ function QueueRow({
   /* A recovered item is consumed atomically only when it starts a normal
      generation. Escalating it would leave or duplicate the parked source. */
   const isRecovered = message.recoverySteerId != null;
-  /** `canSteer` is false while paused on approval, but the escalation control
-   *  stays visible-and-disabled there: hiding it during the pause is exactly
-   *  the discoverability gap this button closes. */
-  const showEscalate =
-    !isRecovered && (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
+  /** Shown for the whole run, disabled whenever steering cannot reach it —
+   *  an approval pause, or the window before the start POST installs the
+   *  generation epoch. Both are states the control must sit out, and hiding it
+   *  through them is the discoverability gap this button closes: the pause is
+   *  exactly when cutting the reply short is wanted, and the epoch window is
+   *  short enough that appearing and vanishing again just reads as a flicker. */
+  const showEscalate = !isRecovered && (steering.pausedOnApproval || steering.duringRunActive);
 
   return (
     <div
@@ -232,7 +234,7 @@ function QueueRow({
         <EscalateNowButton
           surface="queued"
           messageText={message.text}
-          disabled={steering.pausedOnApproval || interruptPending}
+          disabled={!steering.canSteer || interruptPending}
           onClick={() => steering.sendQueuedNow(message, { preempt: true })}
         />
       )}

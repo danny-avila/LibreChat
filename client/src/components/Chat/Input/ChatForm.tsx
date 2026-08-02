@@ -365,9 +365,14 @@ const ChatForm = memo(function ChatForm({
 
   /* Memoized for `memo(Bar)`: an inline element is a new identity every render,
      and this component re-renders on every keystroke. */
+  /* Gated on the slot having something to show rather than on `showStopButton`:
+     that flag only flips once the start POST installs the generation epoch, and
+     until then Enter already queues while this slot still offered the ordinary
+     send button, disabled. The slot decides for itself between the during-run
+     control, Stop, and nothing, so an empty one falls through to send. */
   const actionSlot = useMemo(
     () =>
-      isSubmitting && showStopButton && !answerMode.active
+      isSubmitting && !answerMode.active && duringRunSlot != null
         ? duringRunSlot
         : endpoint && (
             <SendButton
@@ -388,7 +393,6 @@ const ChatForm = memo(function ChatForm({
       disableInputs,
       isNotAppendable,
       isSubmitting,
-      showStopButton,
       answerMode.active,
       methods.control,
     ],
@@ -624,6 +628,7 @@ const ChatForm = memo(function ChatForm({
             hasText={(textValue?.trim() ?? '') !== ''}
             isSubmitting={isSubmitting}
             duringRunActive={steering.duringRunActive}
+            canControlGeneration={steering.canControlGeneration}
             duringRunAction={steering.effectiveAction}
             answerModeActive={answerMode.active}
             uploadingCount={uploadingCount}
