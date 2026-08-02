@@ -544,6 +544,8 @@ export type TExodeExchangeRequest = {
   token: string;
   handshakeId: string;
   parentOrigin: string;
+  /** Which chat is opening — exode answers with that agent only */
+  kind?: 'Knowledge' | 'Assistant';
 };
 
 export type TExodeExchangeResponse = {

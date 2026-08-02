@@ -1,3 +1,5 @@
+import { logger } from '@librechat/data-schemas';
+
 import { exodeMainResponseSchema } from './types';
 import type { ExodeAuthConfig } from './config';
 import type { ExodeExchangeInput, ExodeMainExchange } from './types';
@@ -54,6 +56,15 @@ export async function exchangeExodeBootstrap(
 
   const parsed = exodeMainResponseSchema.safeParse(body);
   if (!parsed.success) {
+    /**
+     * Log the mismatch. The two services deploy separately, so a contract drift is a realistic
+     * failure — and without this it surfaces only as a generic "chat unavailable", which is
+     * indistinguishable from exode being down and hides the actual cause.
+     */
+    logger.error('[exodeExchange] Exode response did not match the expected contract', {
+      issues: parsed.error.issues.map(({ path, message }) => `${path.join('.')}: ${message}`),
+    });
+
     throw new ExodeExchangeError('EXODE_UNAVAILABLE', 502, 'Invalid Exode response');
   }
 

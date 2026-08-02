@@ -5,6 +5,11 @@ export interface ExodeExchangeInput {
   token: string;
   handshakeId: string;
   parentOrigin: string;
+  /**
+   * Which chat is opening. Exode answers with that agent only — returning both would let the
+   * knowledge frame open the MCP-enabled assistant, which the knowledge base must not reach.
+   */
+  kind?: 'Knowledge' | 'Assistant';
 }
 
 export interface ExodeIdentity {
@@ -41,6 +46,7 @@ export const exodeExchangeInputSchema: z.ZodType<ExodeExchangeInput> = z
     token: z.string().min(16).max(16_384),
     handshakeId: z.string().uuid(),
     parentOrigin: z.string().min(1).max(2_048),
+    kind: z.enum([ 'Knowledge', 'Assistant' ]).optional(),
   })
   .strict();
 

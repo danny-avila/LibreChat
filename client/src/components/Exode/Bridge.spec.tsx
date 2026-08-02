@@ -152,6 +152,8 @@ describe('ExodeBridge', () => {
         token: 'bootstrap-token-long-enough',
         handshakeId,
         parentOrigin: allowedOrigin,
+        /** No `agent` in the URL — the assistant is the default */
+        kind: 'Assistant',
       });
       expect(acceptExternalSession).toHaveBeenCalledWith(session);
       expect(postMessageSpy).toHaveBeenCalledWith(
@@ -162,6 +164,30 @@ describe('ExodeBridge', () => {
         allowedOrigin,
       );
     });
+  });
+
+  it('asks exode for the knowledge agent when the frame requests it', async () => {
+    window.history.replaceState({}, '', '/c/new?embed=exode&agent=knowledge');
+    exchange.mockResolvedValue({ ...session, agents: { knowledge: 'agent-router' } });
+    renderBridge();
+
+    act(() =>
+      dispatchHostMessage({
+        protocol: 1,
+        source: 'exode-host',
+        type: 'exode-ai-chat:authenticate',
+        requestId,
+        payload: { handshakeId, token: 'bootstrap-token-long-enough' },
+      }),
+    );
+
+    /**
+     * The kind travels with the exchange so exode returns one agent id. Were both returned,
+     * flipping the URL would turn the knowledge chat into the MCP-enabled assistant.
+     */
+    await waitFor(() =>
+      expect(exchange).toHaveBeenCalledWith(expect.objectContaining({ kind: 'Knowledge' })),
+    );
   });
 
   it('opens the agent exode provisioned for the requested kind', async () => {

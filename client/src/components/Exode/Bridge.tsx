@@ -141,7 +141,16 @@ export default function ExodeBridge({ children }: ExodeBridgeProps) {
       exchangeInFlight = true;
       activeOrigin = event.origin;
       try {
+        /**
+         * The requested kind goes with the exchange, so exode returns exactly one agent id.
+         * Asking for both and choosing here would let the knowledge frame open the assistant.
+         */
+        const kind = getExodeAgentKind(window.location.search) === 'knowledge'
+          ? 'Knowledge'
+          : 'Assistant';
+
         const session = await exchange({
+          kind,
           token: message.payload.token,
           handshakeId: handshake.handshakeId,
           parentOrigin: event.origin,
@@ -160,6 +169,7 @@ export default function ExodeBridge({ children }: ExodeBridgeProps) {
          * navigating then would throw the user back to an empty chat.
          */
         const agentId = session.agents?.[getExodeAgentKind(window.location.search)];
+
 
         if (agentId != null && agentId !== '' && handshake.initial) {
           const params = new URLSearchParams(window.location.search);
