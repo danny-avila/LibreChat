@@ -27,6 +27,7 @@ export default function Artifacts() {
   const isMobile = useMediaQuery('(max-width: 868px)');
   const previewRef = useRef<SandpackPreviewRef>();
   const artifactContainerRef = useRef<HTMLDivElement>(null);
+  const fullscreenPortalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -369,7 +370,7 @@ export default function Artifacts() {
                 <ArtifactVersion
                   currentIndex={currentIndex}
                   totalVersions={orderedArtifactIds.length}
-                  portal={!isFullscreen}
+                  portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
                   onVersionChange={(index) => {
                     const target = orderedArtifactIds[index];
                     if (target) {
@@ -432,6 +433,7 @@ export default function Artifacts() {
             </div>
           )}
         </div>
+        <div ref={fullscreenPortalRef} data-testid="artifact-fullscreen-portal" />
       </div>
     </Tabs.Root>
   );

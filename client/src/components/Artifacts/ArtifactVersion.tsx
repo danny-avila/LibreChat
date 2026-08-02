@@ -7,14 +7,14 @@ import { useLocalize } from '~/hooks';
 interface ArtifactVersionProps {
   currentIndex: number;
   totalVersions: number;
-  portal?: boolean;
+  portalElement?: HTMLElement | null;
   onVersionChange: (index: number) => void;
 }
 
 export default function ArtifactVersion({
   currentIndex,
   totalVersions,
-  portal = true,
+  portalElement,
   onVersionChange,
 }: ArtifactVersionProps) {
   const localize = useLocalize();
@@ -52,7 +52,8 @@ export default function ArtifactVersion({
   return (
     <DropdownPopup
       menuId={menuId}
-      portal={portal}
+      portal
+      portalElement={portalElement}
       focusLoop
       unmountOnHide
       isOpen={isPopoverActive}

@@ -243,8 +243,10 @@ describe('Artifacts fullscreen preview', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Change Version' }));
     const versionMenu = await screen.findByRole('menu');
+    const fullscreenPortal = screen.getByTestId('artifact-fullscreen-portal');
 
     expect(document.fullscreenElement).toContainElement(versionMenu);
+    expect(fullscreenPortal).toContainElement(versionMenu);
   });
 
   it('hides the fullscreen control when the browser does not support it', async () => {
