@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ChevronRight, Users } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useRecoilCallback, useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { SubagentRun } from '~/store/subagents';
 import {
@@ -60,6 +60,7 @@ export default function SubagentCall({
 
   const runOverride: SubagentRun = {
     toolCallId,
+    isSubmitting,
     args,
     output,
     attachments,
@@ -78,6 +79,7 @@ export default function SubagentCall({
     if (!toolCallId) return;
     const signature = [
       initialProgress,
+      isSubmitting,
       typeof args === 'string' ? args : JSON.stringify(args ?? null),
       output ?? '',
       persistedContent?.length ?? -1,
@@ -91,23 +93,31 @@ export default function SubagentCall({
     lastWrittenRef.current = signature;
     setRuns((prev) => ({
       ...(prev ?? {}),
-      [toolCallId]: { toolCallId, args, output, attachments, persistedContent, initialProgress },
+      [toolCallId]: {
+        toolCallId,
+        isSubmitting,
+        args,
+        output,
+        attachments,
+        persistedContent,
+        initialProgress,
+      },
     }));
-  }, [toolCallId, args, output, attachments, persistedContent, initialProgress, setRuns]);
+  }, [
+    toolCallId,
+    isSubmitting,
+    args,
+    output,
+    attachments,
+    persistedContent,
+    initialProgress,
+    setRuns,
+  ]);
 
   /** Auto-open the panel when a run first streams in — mirrors
    *  `ToolArtifactCard`. `isSubmitting` is captured once at first render so a
    *  history mount (page load, back-navigation) never steals focus. */
-  const readInitialIsSubmitting = useRecoilCallback(
-    ({ snapshot }) =>
-      () =>
-        snapshot.getLoadable(store.isSubmittingFamily(0)).valueMaybe() ?? false,
-    [],
-  );
-  const mountedDuringStreamRef = useRef<boolean | null>(null);
-  if (mountedDuringStreamRef.current === null) {
-    mountedDuringStreamRef.current = readInitialIsSubmitting();
-  }
+  const mountedDuringStreamRef = useRef(isSubmitting);
   const autoFocusedRef = useRef(false);
   useEffect(() => {
     if (!toolCallId || autoFocusedRef.current || !mountedDuringStreamRef.current) return;

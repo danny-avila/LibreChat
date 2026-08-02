@@ -62,6 +62,14 @@ export default function AskUserQuestion({
   /** Live pause: share the hook's checked set so the composer's Enter and
    *  this card submit exactly what the card displays. */
   const checkedIndices = isLivePause ? answerMode.checked : localChecked;
+  const answerValue = isLivePause ? answerMode.answerText : answer;
+  const setAnswerValue = (value: string) => {
+    if (isLivePause) {
+      answerMode.setAnswerText(value);
+      return;
+    }
+    setAnswer(value);
+  };
   const toggleIndex = (index: number) => {
     if (isLivePause) {
       answerMode.toggleChecked(index);
@@ -72,7 +80,7 @@ export default function AskUserQuestion({
     );
   };
 
-  const trimmed = answer.trim();
+  const trimmed = answerValue.trim();
   const canSubmit = multiSelect
     ? checkedIndices.length > 0 || trimmed.length > 0
     : trimmed.length > 0;
@@ -177,13 +185,13 @@ export default function AskUserQuestion({
       )}
 
       <TextareaAutosize
-        value={answer}
+        value={answerValue}
         disabled={locked}
-        onChange={(e) => setAnswer(e.target.value)}
+        onChange={(e) => setAnswerValue(e.target.value)}
         minRows={2}
         maxRows={12}
         placeholder={otherLabel ?? localize('com_ui_your_answer')}
-        className="w-full resize-none rounded-lg border border-border-light bg-surface-chat px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none"
+        className="w-full resize-none rounded-lg border border-border-light bg-surface-chat px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
         aria-label={localize('com_ui_your_answer')}
       />
 

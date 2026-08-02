@@ -40,6 +40,12 @@ const askAnswerCheckedAtom = atom<number[]>({
   default: [],
 });
 
+/** Free-form answer handed between the composer and the in-message card. */
+const askAnswerTextAtom = atom<{ actionId: string | null; text: string }>({
+  key: 'askAnswerModeText',
+  default: { actionId: null, text: '' },
+});
+
 /**
  * First-class "answer mode" for a live `ask_user_question` pause. Clicking an
  * option submits it immediately (multi-select clicks toggle instead, confirmed
@@ -73,6 +79,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
   const [collapsedIds, setCollapsedIds] = useRecoilState(collapsedAskActionsAtom);
   const [selected, setSelected] = useRecoilState(askAnswerSelectionAtom);
   const [checked, setChecked] = useRecoilState(askAnswerCheckedAtom);
+  const [answerDraft, setAnswerDraft] = useRecoilState(askAnswerTextAtom);
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
   const { submitAskAnswer } = useResumeSubmit();
   /** Recoil-backed so the lock/status works from the composer, which renders
@@ -143,6 +150,15 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     () => splitOtherOption(liveAsk?.question.options),
     [liveAsk],
   );
+  const answerText = answerDraft.actionId === liveAsk?.actionId ? answerDraft.text : '';
+  const setAnswerText = useCallback(
+    (text: string) => {
+      if (liveAsk) {
+        setAnswerDraft({ actionId: liveAsk.actionId, text });
+      }
+    },
+    [liveAsk, setAnswerDraft],
+  );
 
   /** Selection state is per-question: a new pause must never inherit a stale
    *  highlight (or checks) whose Enter would submit the previous question's
@@ -158,13 +174,15 @@ export default function useAskAnswerMode(conversationId?: string | null) {
    *  which morphTransition's synchronous flush requires. */
   const collapse = useCallback(() => {
     if (liveAsk) {
-      morphTransition(() =>
+      const composerAnswer = formContext?.getValues('text') ?? answerText;
+      morphTransition(() => {
+        setAnswerDraft({ actionId: liveAsk.actionId, text: composerAnswer });
         setCollapsedIds((prev) =>
           prev.includes(liveAsk.actionId) ? prev : [...prev, liveAsk.actionId],
-        ),
-      );
+        );
+      });
     }
-  }, [liveAsk, setCollapsedIds]);
+  }, [liveAsk, formContext, answerText, setAnswerDraft, setCollapsedIds]);
 
   const expand = useCallback(() => {
     if (liveAsk) {
@@ -227,6 +245,11 @@ export default function useAskAnswerMode(conversationId?: string | null) {
           }
           setSelected(null);
           setChecked([]);
+          setAnswerDraft((current) =>
+            current.actionId === submittedActionId
+              ? { actionId: submittedActionId, text: '' }
+              : current,
+          );
           if (
             (consumedComposerText || (wasActive && saveDrafts)) &&
             currentScope.formContext?.getValues('text') === submittedComposerText
@@ -247,6 +270,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       submitAskAnswer,
       setSelected,
       setChecked,
+      setAnswerDraft,
     ],
   );
 
@@ -464,6 +488,8 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     setSelected,
     checked,
     toggleChecked,
+    answerText,
+    setAnswerText,
     canSubmit,
     submit,
     submitOption,

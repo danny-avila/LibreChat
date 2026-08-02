@@ -62,6 +62,9 @@ export const subagentProgressByToolCallId = atomFamily<SubagentProgress | null, 
  */
 export interface SubagentRun {
   toolCallId: string;
+  /** Whether this run's parent message is actively streaming. Kept with the
+   *  run so detached consumers never infer status from an unrelated stream. */
+  isSubmitting?: boolean;
   args?: string | Record<string, unknown>;
   output?: string | null;
   attachments?: TAttachment[];

@@ -3,6 +3,7 @@ const mockResetComposer = jest.fn();
 const mockGetComposerText = jest.fn(() => 'answer from A');
 const mockSetSelected = jest.fn();
 const mockSetChecked = jest.fn();
+const mockSetAnswerDraft = jest.fn();
 let mockSaveDrafts = false;
 
 jest.mock('~/data-provider', () => ({ useGetMessagesByConvoId: jest.fn() }));
@@ -16,7 +17,10 @@ jest.mock('~/Providers', () => ({
     getValues: mockGetComposerText,
   }),
 }));
-jest.mock('~/utils', () => ({ getAskAnswerDraftId: (id: string) => `draft-${id}` }));
+jest.mock('~/utils', () => ({
+  getAskAnswerDraftId: (id: string) => `draft-${id}`,
+  morphTransition: (update: () => void) => update(),
+}));
 jest.mock('recoil', () => ({
   atom: (cfg: unknown) => cfg,
   useRecoilState: (state: { key?: string }) => {
@@ -26,13 +30,16 @@ jest.mock('recoil', () => ({
     if (state.key === 'askAnswerModeChecked') {
       return [[], mockSetChecked];
     }
+    if (state.key === 'askAnswerModeText') {
+      return [{ actionId: null, text: '' }, mockSetAnswerDraft];
+    }
     return [[], jest.fn()];
   },
   useRecoilValue: () => mockSaveDrafts,
 }));
 jest.mock('~/store', () => ({ __esModule: true, default: { saveDrafts: 'saveDrafts' } }));
 
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { findLiveAskUserQuestion } from '~/utils/approval';
 import useAskAnswerMode from './useAskAnswerMode';
@@ -94,6 +101,18 @@ describe('useAskAnswerMode', () => {
     const { result } = renderHook(() => useAskAnswerMode(null));
 
     expect(result.current.liveAsk).toBeNull();
+  });
+
+  it('carries the composer answer into shared card state when collapsed', () => {
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => result.current.collapse());
+
+    expect(mockSetAnswerDraft).toHaveBeenCalledWith({
+      actionId: 'a1',
+      text: 'answer from A',
+    });
   });
 
   it('does not let a delayed answer success clear the composer or selection after navigation', () => {

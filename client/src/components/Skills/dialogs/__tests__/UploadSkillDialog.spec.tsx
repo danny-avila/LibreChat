@@ -18,23 +18,25 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => {
-    const React = jest.requireActual<typeof import('react')>('react');
-    return {
-      OGDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
-        open ? React.createElement('div', null, children) : null,
-      OGDialogContent: ({ children }: { children: ReactNode }) =>
-        React.createElement('div', null, children),
-      Spinner: () => React.createElement('div', { 'data-testid': 'spinner' }),
-      useToastContext: () => ({
-        showToast: mockShowToast,
-      }),
-    };
-  },
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const ReactDOM = jest.requireActual<typeof import('react-dom')>('react-dom');
+  return {
+    OGDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
+      open
+        ? ReactDOM.createPortal(
+            React.createElement('div', null, children),
+            globalThis.document.body,
+          )
+        : null,
+    OGDialogContent: ({ children }: { children: ReactNode }) =>
+      React.createElement('div', { role: 'dialog', 'data-state': 'open' }, children),
+    Spinner: () => React.createElement('div', { 'data-testid': 'spinner' }),
+    useToastContext: () => ({
+      showToast: mockShowToast,
+    }),
+  };
+});
 
 jest.mock('~/data-provider', () => ({
   useGetFileConfig: ({ select }: { select?: (data: FileConfigInput | undefined) => unknown }) => ({
@@ -71,7 +73,13 @@ jest.mock('~/utils', () => ({
 }));
 
 function getFileInput(container: HTMLElement): HTMLInputElement {
-  const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+  /** Prefer the local render container used by the lightweight dialog mock,
+   *  then the active portal. Exiting Headless UI portals can leave older file
+   *  inputs in `document.body`; a document-wide first/last match is unstable. */
+  const selector = 'input[type="file"][accept=".zip,.skill,.md"]';
+  const input =
+    container.querySelector<HTMLInputElement>(selector) ??
+    document.querySelector<HTMLInputElement>(`[role="dialog"][data-state="open"] ${selector}`);
   if (input == null) {
     throw new Error('Upload input was not rendered');
   }
@@ -104,6 +112,18 @@ describe('UploadSkillDialog', () => {
     render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
 
     expect(screen.getByText('File size must not exceed 1.06 MB')).toBeInTheDocument();
+  });
+
+  it('targets the current upload input when an exiting portal still has one', () => {
+    const staleInput = document.createElement('input');
+    staleInput.type = 'file';
+    staleInput.accept = '.zip,.skill,.md';
+    document.body.appendChild(staleInput);
+
+    const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+
+    expect(getFileInput(container)).not.toBe(staleInput);
+    staleInput.remove();
   });
 
   it('rejects files above the configured skill import limit before upload', () => {

@@ -284,9 +284,9 @@ export default function ToolCallGroup({
   /** For a single-tool group, lead with the tool's own (capitalized) label
    *  instead of the generic "Used 1 tool — name", which reads awkwardly. */
   const singleToolLabel = useMemo(() => {
-    const raw = getToolDisplayLabel(toolMetadata[0]?.name ?? '', localize);
+    const raw = getToolDisplayLabel(toolMetadata[0]?.name ?? '', localize, mcpServerNames);
     return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : '';
-  }, [toolMetadata, localize]);
+  }, [toolMetadata, localize, mcpServerNames]);
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   /** A labeled activity block is summarized by its header, so it collapses

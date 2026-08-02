@@ -7,6 +7,8 @@ import { scheduleMessageContentLayoutReconcile } from '~/hooks';
 import ToolCallGroup from '../ToolCallGroup';
 import { ToolAuthWarning } from '../auth';
 
+const mockMCPServerNames: string[] = [];
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string | number, string>) => {
     if (key === 'com_ui_ran_n_actions') {
@@ -79,10 +81,9 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('~/hooks/MCP', () => {
-  const mcpServerNames: string[] = [];
   return {
     useMCPIconMap: () => new Map(),
-    useMCPServerNames: () => mcpServerNames,
+    useMCPServerNames: () => mockMCPServerNames,
   };
 });
 
@@ -111,7 +112,14 @@ jest.mock('~/utils/approval', () => ({
 
 jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
-  getToolDisplayLabel: (name: string) => {
+  getToolDisplayLabel: (name: string, _localize: unknown, knownServerNames?: readonly string[]) => {
+    const configuredServer = knownServerNames?.find((server) => name.endsWith(`_mcp_${server}`));
+    if (configuredServer) {
+      return configuredServer;
+    }
+    if (name.includes('_mcp_')) {
+      return name.slice(name.lastIndexOf('_mcp_') + '_mcp_'.length);
+    }
     if (
       ['execute_code', 'bash_tool', 'run_tools_with_code', 'run_tools_with_bash'].includes(name)
     ) {
@@ -254,6 +262,7 @@ describe('ToolCallGroup image hoisting', () => {
 
   beforeEach(() => {
     mockScheduleMessageContentLayoutReconcile.mockClear();
+    mockMCPServerNames.length = 0;
   });
 
   it('renders an AttachmentGroup outside the collapsible container with all attachments', () => {
@@ -651,6 +660,22 @@ describe('ToolCallGroup image hoisting', () => {
       'data-tool-names',
       'bash_tool,bash_tool',
     );
+  });
+
+  it('preserves a configured MCP server boundary in a single-tool label', () => {
+    mockMCPServerNames.push('Google_mcp_Workspace');
+    renderGroup({
+      ...baseProps,
+      parts: [
+        {
+          part: makePart('mcp-1', 'result', 'search_documents_mcp_Google_mcp_Workspace'),
+          idx: 0,
+        },
+      ],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: /^Google_mcp_Workspace$/ })).toBeInTheDocument();
   });
 
   it('summarizes repeated completed web searches as an outcome and count', () => {

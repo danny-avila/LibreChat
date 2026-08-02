@@ -6,6 +6,7 @@ import type { SubagentUpdatePhase } from 'librechat-data-provider';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
 import type { SubagentRun } from '~/store/subagents';
 import { useAgentsMapContext } from '~/Providers';
+import { useMCPServerNames } from '~/hooks/MCP';
 import { parseToolName } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -150,11 +151,10 @@ export function useSubagentRunView(
   const registered = useRecoilValue(store.subagentRunByIdSelector(toolCallId));
   const run = runOverride ?? registered;
   const progress = useRecoilValue(store.subagentProgressByToolCallId(toolCallId));
-  /** The inline card passes its own `isSubmitting` prop (the message's stream
-   *  state); the panel, rendered outside the message tree, omits it and falls
-   *  back to the conversation's global submit atom. */
-  const familyIsSubmitting = useRecoilValue(store.isSubmittingFamily(0));
-  const isSubmitting = isSubmittingOverride ?? familyIsSubmitting;
+  /** Submission state belongs to this run. The detached panel cannot use the
+   *  conversation-wide atom: another response may be streaming while a
+   *  historical stopped run is selected. */
+  const isSubmitting = isSubmittingOverride ?? run?.isSubmitting ?? false;
   const agentsMap = useAgentsMapContext();
 
   const initialProgress = run?.initialProgress ?? 0;
@@ -263,11 +263,13 @@ function ToolNameBadge({ name }: { name: string }): JSX.Element {
 function ToolIdentifier({
   rawName,
   localize,
+  mcpServerNames,
 }: {
   rawName: string;
   localize: ReturnType<typeof useLocalize>;
+  mcpServerNames: readonly string[];
 }): JSX.Element {
-  const parsed = parseToolName(rawName);
+  const parsed = parseToolName(rawName, mcpServerNames);
   if (parsed.mcpServer) {
     return (
       <span className="inline-flex min-w-0 shrink items-baseline gap-1">
@@ -291,6 +293,7 @@ function ToolIdentifier({
  */
 export function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
   const localize = useLocalize();
+  const mcpServerNames = useMCPServerNames();
   if (line.kind === 'writing' || line.kind === 'reasoning') {
     const prefix =
       line.kind === 'writing'
@@ -312,7 +315,7 @@ export function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Elem
           {line.toolNames.map((name, i) => (
             <span key={`${i}-${name}`} className="flex min-w-0 items-baseline gap-1">
               {i > 0 && <span className="shrink-0 text-text-tertiary">,</span>}
-              <ToolIdentifier rawName={name} localize={localize} />
+              <ToolIdentifier rawName={name} localize={localize} mcpServerNames={mcpServerNames} />
             </span>
           ))}
           {line.argsSnippet && (
@@ -325,7 +328,11 @@ export function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Elem
   if (line.kind === 'tool_complete') {
     return (
       <span className="flex w-full items-baseline gap-1 overflow-hidden whitespace-nowrap text-text-secondary">
-        <ToolIdentifier rawName={line.toolName} localize={localize} />
+        <ToolIdentifier
+          rawName={line.toolName}
+          localize={localize}
+          mcpServerNames={mcpServerNames}
+        />
         <span className="shrink-0 text-text-tertiary">→</span>
         <span className="min-w-0 flex-1 truncate">
           {line.outputSnippet ?? localize('com_ui_subagent_ticker_tool_done')}

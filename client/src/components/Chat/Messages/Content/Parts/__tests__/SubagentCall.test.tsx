@@ -18,6 +18,8 @@ import { SUBAGENT_TICKER_THROTTLE_MS } from '../subagentShared';
 import SubagentCall from '../SubagentCall';
 import store from '~/store';
 
+const mockMCPServerNames: string[] = [];
+
 jest.mock('~/hooks', () => ({
   useLocalize:
     () =>
@@ -66,8 +68,7 @@ jest.mock('~/components/Share/MessageIcon', () => ({
 }));
 
 jest.mock('~/hooks/MCP', () => {
-  const mcpServerNames: string[] = [];
-  return { useMCPServerNames: () => mcpServerNames };
+  return { useMCPServerNames: () => mockMCPServerNames };
 });
 
 jest.mock('~/utils', () => ({
@@ -78,6 +79,7 @@ jest.mock('~/utils', () => ({
 
 afterEach(() => {
   jest.useRealTimers();
+  mockMCPServerNames.length = 0;
 });
 
 function foldEvents(events: SubagentUpdateEvent[]): {
@@ -273,6 +275,42 @@ describe('SubagentCall — inline preview', () => {
     expect(screen.getAllByText('Writing:')).toHaveLength(1);
   });
 
+  it('preserves a configured MCP server boundary in the live ticker', () => {
+    mockMCPServerNames.push('Google_mcp_Workspace');
+    renderWithState({
+      toolCallId: 'call_mcp_ticker',
+      initialProgress: 0.3,
+      isSubmitting: true,
+      progress: progressFromEvents({
+        subagentRunId: 'run_a',
+        subagentType: 'self',
+        status: 'run_step',
+        events: [
+          {
+            runId: 'p',
+            subagentRunId: 'run_a',
+            subagentType: 'self',
+            phase: 'run_step',
+            data: {
+              stepDetails: {
+                type: 'tool_calls',
+                tool_calls: [
+                  {
+                    id: 'c1',
+                    name: 'search_documents_mcp_Google_mcp_Workspace',
+                  },
+                ],
+              },
+            },
+            timestamp: '',
+          } as SubagentUpdateEvent,
+        ],
+      }),
+    });
+
+    expect(screen.getByText('Google_mcp_Workspace')).toBeInTheDocument();
+  });
+
   it('shows a one-line result summary from the final text once finished', () => {
     renderWithState({
       toolCallId: 'call_summary',
@@ -410,6 +448,18 @@ describe('SubagentCall — panel open contract', () => {
       isSubmitting: false,
       progress: null,
     });
+    expect(screen.getByTestId('current-run-id')).toHaveTextContent('');
+  });
+
+  it('does NOT auto-focus a historical run during an unrelated stream', () => {
+    renderWithState({
+      toolCallId: 'call_unrelated_stream',
+      initialProgress: 0.3,
+      isSubmitting: false,
+      initializeStreaming: true,
+      progress: null,
+    });
+
     expect(screen.getByTestId('current-run-id')).toHaveTextContent('');
   });
 });

@@ -86,12 +86,13 @@ function RunIdProbe() {
   return <div data-testid="run-id">{runId ?? ''}</div>;
 }
 
-function renderPanel(run: SubagentRun) {
+function renderPanel(run: SubagentRun, conversationSubmitting = false) {
   return render(
     <RecoilRoot
       initializeState={({ set }) => {
         set(store.subagentRunsState, { [run.toolCallId]: run });
         set(store.currentSubagentRunId, run.toolCallId);
+        set(store.isSubmittingFamily(0), conversationSubmitting);
       }}
     >
       <RunIdProbe />
@@ -158,5 +159,23 @@ describe('SubagentPanel', () => {
     expect(screen.queryByTestId('subagent-prompt')).not.toBeInTheDocument();
     // self-spawn with no agent name → the localized "Agent" title
     expect(screen.getByText('Agent')).toBeInTheDocument();
+  });
+
+  it('keeps a historical stopped run stopped during an unrelated stream', async () => {
+    renderPanel(
+      {
+        toolCallId: 'panel_stopped',
+        args: { subagent_type: 'self' },
+        output: '',
+        initialProgress: 0.4,
+        isSubmitting: false,
+      },
+      true,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Stopped')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Running')).not.toBeInTheDocument();
   });
 });
