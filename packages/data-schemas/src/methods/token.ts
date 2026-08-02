@@ -60,7 +60,11 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
       const options = { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true };
 
       try {
-        const upsertedToken = await Token.findOneAndUpdate({ scope }, replacement, options);
+        const upsertedToken = await Token.findOneAndUpdate(
+          { scope },
+          { $set: replacement },
+          options,
+        );
         if (!upsertedToken) {
           throw new Error('Token upsert failed');
         }
@@ -75,10 +79,14 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
           throw error;
         }
 
-        const retriedToken = await Token.findOneAndUpdate({ scope }, replacement, {
-          ...options,
-          upsert: false,
-        });
+        const retriedToken = await Token.findOneAndUpdate(
+          { scope },
+          { $set: replacement },
+          {
+            ...options,
+            upsert: false,
+          },
+        );
         if (!retriedToken) {
           throw new Error('Token upsert retry failed');
         }
