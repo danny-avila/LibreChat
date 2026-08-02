@@ -214,6 +214,21 @@ describe('global shortcut dispatch', () => {
     expect(getByTestId('sidebar').textContent).not.toBe(before);
   });
 
+  it('yields to a document-level owner that registered after the dispatcher', () => {
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+    const claim = (e: KeyboardEvent) => e.preventDefault();
+    document.addEventListener('keydown', claim);
+
+    try {
+      dispatchKey({ key: 's', ctrlKey: true, shiftKey: true });
+    } finally {
+      document.removeEventListener('keydown', claim);
+    }
+
+    expect(getByTestId('sidebar').textContent).toBe(before);
+  });
+
   it('yields an editing-allowed chord that the focused input claimed', () => {
     renderHarness();
     const escalation = appendEscalationButton('bubble');

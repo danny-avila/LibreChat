@@ -1035,9 +1035,6 @@ export default function useKeyboardShortcuts() {
         return;
       }
 
-      /** A handler closer to the target already consumed this keypress
-       *  (composer verdicts, menus, editors), so the global action must
-       *  not double-fire on it. */
       if (e.defaultPrevented) {
         return;
       }
@@ -1089,8 +1086,11 @@ export default function useKeyboardShortcuts() {
   );
 
   useEffect(() => {
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    /** window, not document: every element- and document-level owner sits
+     *  earlier in the bubble path, so their `preventDefault` claims are
+     *  visible here regardless of mount or registration order. */
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, [handler]);
 }
 
