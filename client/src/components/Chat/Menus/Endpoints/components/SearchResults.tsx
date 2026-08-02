@@ -7,7 +7,7 @@ import type { Endpoint } from '~/common';
 import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
-import { shouldRenderEndpointOption } from '../utils';
+import { getSpecModelIds, shouldRenderEndpointOption } from '../utils';
 import SpecDescription from './SpecDescription';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
@@ -25,6 +25,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
     handleSelectModel,
     handleSelectEndpoint,
     endpointsConfig,
+    modelSpecs,
   } = useModelSelectorContext();
 
   const {
@@ -113,7 +114,12 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
             const showMarketplace =
               endpoint.showMarketplace === true &&
               (endpointMatches || marketplaceSearchMatches(searchValue, localize));
-            const models = endpoint.models ?? [];
+            const specModelIds = getSpecModelIds(
+              (modelSpecs ?? []).filter((spec) => spec.group === endpoint.value),
+            );
+            const models = specModelIds.size
+              ? (endpoint.models ?? []).filter((model) => !specModelIds.has(model.name))
+              : endpoint.models ?? [];
             const filteredModels = endpointMatches
               ? models
               : models.filter((model) => {

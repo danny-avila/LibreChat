@@ -1,6 +1,15 @@
+import type { TModelSpec } from 'librechat-data-provider';
 import type { useLocalize } from '~/hooks';
 import type { Endpoint } from '~/common';
-import { filterItems } from '../utils';
+import { filterItems, getSpecModelIds } from '../utils';
+
+const makeSpec = (overrides: Partial<TModelSpec>): TModelSpec =>
+  ({
+    name: 'spec',
+    label: 'Spec',
+    preset: { endpoint: 'openAI', model: 'gpt-4o' },
+    ...overrides,
+  }) as TModelSpec;
 
 const agentsEndpoint: Endpoint = {
   value: 'agents',
@@ -42,5 +51,24 @@ describe('model selector utilities', () => {
   it('does not match agents when there are no selectable agent options', () => {
     const results = filterItems([disabledAgentsEndpoint], 'my agents', undefined, undefined);
     expect(results).toEqual([]);
+  });
+});
+
+describe('getSpecModelIds', () => {
+  it('returns the underlying model ids referenced by the specs', () => {
+    const specs = [
+      makeSpec({ name: 'a', preset: { endpoint: 'openAI', model: 'gpt-4o' } }),
+      makeSpec({ name: 'b', preset: { endpoint: 'openAI', model: 'gpt-4o-mini' } }),
+    ];
+    expect(getSpecModelIds(specs)).toEqual(new Set(['gpt-4o', 'gpt-4o-mini']));
+  });
+
+  it('ignores specs whose preset has no model', () => {
+    const specs = [makeSpec({ name: 'agent', preset: { endpoint: 'agents', agent_id: 'a_1' } })];
+    expect(getSpecModelIds(specs).size).toBe(0);
+  });
+
+  it('returns an empty set for no specs', () => {
+    expect(getSpecModelIds([]).size).toBe(0);
   });
 });
