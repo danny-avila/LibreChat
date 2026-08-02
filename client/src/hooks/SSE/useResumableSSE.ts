@@ -1440,18 +1440,28 @@ export default function useResumableSSE(
           }
         }, 30_000);
       };
-      const reconcileRefreshedTerminalStatus = (
-        previousStatus: StreamStatusResponse | undefined,
+      const retainCompletionReceipt = (
+        previousCompletion: StreamStatusResponse | undefined,
         refreshedStatus: StreamStatusResponse,
-      ): StreamStatusResponse =>
-        // Jobless responses are epoch-less: a replacement may have started
-        // and finished during the delay, so only an exact epoch can carry completion.
-        previousStatus?.status === 'complete' &&
-        refreshedStatus.status == null &&
-        previousStatus.createdAt != null &&
-        refreshedStatus.createdAt === previousStatus.createdAt
-          ? { ...previousStatus, ...refreshedStatus, status: 'complete' }
-          : refreshedStatus;
+      ): StreamStatusResponse | undefined => {
+        if (refreshedStatus.status === 'complete') {
+          return refreshedStatus;
+        }
+        if (
+          previousCompletion?.status !== 'complete' ||
+          previousCompletion.createdAt == null ||
+          refreshedStatus.active !== false ||
+          refreshedStatus.status != null ||
+          (refreshedStatus.createdAt != null &&
+            refreshedStatus.createdAt !== previousCompletion.createdAt)
+        ) {
+          return undefined;
+        }
+        // A jobless response has no epoch. Keep the fenced completion only as
+        // a receipt for retrying durable history; never merge it into the
+        // current status or attribute current parked steers to the old epoch.
+        return previousCompletion;
+      };
       const belongsToReplacementGeneration = (status: StreamStatusResponse): boolean =>
         status.createdAt != null &&
         (generationCreatedAt == null || status.createdAt !== generationCreatedAt);
@@ -2538,6 +2548,8 @@ export default function useResumableSSE(
           // authoritative leftovers over guessing from local chips.
           let confirmedV2Terminal = false;
           let terminalStatus = terminalReconciliationStatusRef.current ?? undefined;
+          let completionReceipt =
+            terminalStatus?.status === 'complete' ? terminalStatus : undefined;
           try {
             const status = await fetchStreamStatus(recoveryConvoId);
             if (!isCurrentSubscription()) {
@@ -2640,7 +2652,8 @@ export default function useResumableSSE(
             confirmedV2Terminal =
               generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
               supportsGenerationProtocolV2(status);
-            terminalStatus = reconcileRefreshedTerminalStatus(terminalStatus, status);
+            completionReceipt = retainCompletionReceipt(completionReceipt, status);
+            terminalStatus = status;
             const canRecoverTerminalSteers = generationProtocolVersion === 1 || confirmedV2Terminal;
             const unrecovered = canRecoverTerminalSteers ? (status.unrecoveredSteers ?? []) : [];
             if (unrecovered.length > 0) {
@@ -2669,6 +2682,7 @@ export default function useResumableSSE(
             // Without a fresh status read it cannot prove that no replacement
             // currently owns this conversation.
             terminalStatus = undefined;
+            completionReceipt = undefined;
             logger.warn('ResumableSSE', 'Could not recover parked steers after 404', {
               conversationId: recoveryConvoId,
               error,
@@ -2696,7 +2710,7 @@ export default function useResumableSSE(
             // A missing stream only proves that the transport job is gone. If
             // durable history is temporarily unavailable, keep this
             // submission as the recovery owner and reconcile again later.
-            if (retryPersistedMessageReconciliation(terminalStatus)) {
+            if (retryPersistedMessageReconciliation(completionReceipt ?? terminalStatus)) {
               return;
             }
           }
@@ -2735,7 +2749,7 @@ export default function useResumableSSE(
             });
           }
           let recoveryOutcome: 'completed' | 'aborted' | 'error' = 'aborted';
-          if (terminalStatus?.status === 'complete' && persistedMessages != null) {
+          if (completionReceipt?.status === 'complete' && persistedMessages != null) {
             recoveryOutcome = 'completed';
           } else if (terminalStatus?.status === 'error') {
             recoveryOutcome = 'error';
@@ -2745,7 +2759,8 @@ export default function useResumableSSE(
             outcome: recoveryOutcome,
             startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
             endedAt: Date.now(),
-            generationCreatedAt: terminalStatus?.createdAt ?? generationCreatedAt,
+            generationCreatedAt:
+              completionReceipt?.createdAt ?? terminalStatus?.createdAt ?? generationCreatedAt,
           });
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
@@ -2954,12 +2969,14 @@ export default function useResumableSSE(
           flushPendingDeltas();
           const recoveryConvoId = currentSubmission.conversation?.conversationId ?? currentStreamId;
           let status = terminalReconciliationStatusRef.current ?? undefined;
+          let completionReceipt = status?.status === 'complete' ? status : undefined;
           try {
             const refreshedStatus = await fetchStreamStatus(recoveryConvoId);
             if (!isCurrentSubscription()) {
               return;
             }
-            status = reconcileRefreshedTerminalStatus(status, refreshedStatus);
+            completionReceipt = retainCompletionReceipt(completionReceipt, refreshedStatus);
+            status = refreshedStatus;
           } catch (error) {
             if (!isCurrentSubscription()) {
               return;
@@ -2967,6 +2984,7 @@ export default function useResumableSSE(
             // Never adjudicate current conversation ownership from a terminal
             // snapshot retained across an unsuccessful status refresh.
             status = undefined;
+            completionReceipt = undefined;
             logger.warn('ResumableSSE', 'Could not determine job state after reconnect limit', {
               conversationId: recoveryConvoId,
               error,
@@ -3096,7 +3114,8 @@ export default function useResumableSSE(
               if (!isCurrentSubscription()) {
                 return;
               }
-              status = reconcileRefreshedTerminalStatus(status, refreshedStatus);
+              completionReceipt = retainCompletionReceipt(completionReceipt, refreshedStatus);
+              status = refreshedStatus;
             } catch (error) {
               if (!isCurrentSubscription()) {
                 return;
@@ -3110,6 +3129,7 @@ export default function useResumableSSE(
                 },
               );
               status = undefined;
+              completionReceipt = undefined;
             }
 
             if (status?.active === true && belongsToReplacementGeneration(status)) {
@@ -3128,11 +3148,11 @@ export default function useResumableSSE(
             }
           }
 
-          if (status.status === 'complete' && persistedMessages == null) {
+          if (completionReceipt?.status === 'complete' && persistedMessages == null) {
             // Terminal status is authoritative for the job, but not for its
             // durable messages. A transient history failure must not clear the
             // submission and strand the completed response until reload.
-            if (retryPersistedMessageReconciliation(status)) {
+            if (retryPersistedMessageReconciliation(completionReceipt)) {
               return;
             }
           }
@@ -3197,7 +3217,7 @@ export default function useResumableSSE(
           persistedMessageReconciliationAttemptsRef.current = 0;
           terminalReconciliationStatusRef.current = null;
           let recoveryOutcome: 'completed' | 'aborted' | 'error' = 'aborted';
-          if (status.status === 'complete' && persistedMessages != null) {
+          if (completionReceipt?.status === 'complete' && persistedMessages != null) {
             recoveryOutcome = 'completed';
           } else if (status.status === 'error') {
             recoveryOutcome = 'error';
@@ -3206,7 +3226,8 @@ export default function useResumableSSE(
             conversationId: recoveryConvoId,
             outcome: recoveryOutcome,
             endedAt: Date.now(),
-            generationCreatedAt: status.createdAt ?? generationCreatedAt,
+            generationCreatedAt:
+              completionReceipt?.createdAt ?? status.createdAt ?? generationCreatedAt,
           });
           setSubmission(null);
           setStreamId(null);

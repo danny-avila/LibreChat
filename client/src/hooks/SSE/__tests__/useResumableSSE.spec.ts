@@ -3740,7 +3740,7 @@ describe('useResumableSSE', () => {
 
     mockFetchStreamStatus.mockResolvedValueOnce({
       active: false,
-      createdAt: 1000,
+      generationProtocolVersion: 2,
     });
     await act(async () => {
       getLastSSE()._emit('error', { responseCode: 404 });
@@ -3756,21 +3756,7 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it.each([
-    {
-      refreshKind: 'an epoch-less',
-      arrangeRefresh: () =>
-        mockFetchStreamStatus.mockResolvedValueOnce({
-          active: false,
-          generationProtocolVersion: 2,
-        }),
-    },
-    {
-      refreshKind: 'a failed',
-      arrangeRefresh: () =>
-        mockFetchStreamStatus.mockRejectedValueOnce(new Error('status unavailable')),
-    },
-  ])('does not reuse completion after a $refreshKind delayed status refresh', async (scenario) => {
+  it('does not reuse completion after a failed delayed status refresh', async () => {
     jest.useFakeTimers();
     mockFetchStreamStatus.mockResolvedValue({
       active: false,
@@ -3811,7 +3797,7 @@ describe('useResumableSSE', () => {
 
     expect(mockSetRunEnd).not.toHaveBeenCalled();
     await advanceRetryTimer(30_000);
-    scenario.arrangeRefresh();
+    mockFetchStreamStatus.mockRejectedValueOnce(new Error('status unavailable'));
 
     await act(async () => {
       getLastSSE()._emit('error', { responseCode: 404 });
