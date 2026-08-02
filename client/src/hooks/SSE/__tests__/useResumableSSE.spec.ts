@@ -827,7 +827,8 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('does not finalize a terminal replacement epoch after a 404', async () => {
+  it('releases a terminal replacement after a 404 even when history is unavailable', async () => {
+    jest.useFakeTimers();
     const replacementStatus = {
       active: false,
       status: 'complete',
@@ -836,6 +837,7 @@ describe('useResumableSSE', () => {
       generationProtocolVersion: 2,
       resumeState: { pendingSteers: [], aggregatedContent: [{ type: 'text', text: 'new epoch' }] },
     } as const;
+    mockFetchQuery.mockRejectedValueOnce(new Error('message refetch failed'));
     mockFetchStreamStatus.mockResolvedValue(replacementStatus);
     const submission = {
       ...buildSubmission(),
@@ -868,6 +870,7 @@ describe('useResumableSSE', () => {
     ).toHaveLength(0);
     expect(mockSetSubmission).toHaveBeenCalledWith(null);
     expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
+    expect(jest.getTimerCount()).toBe(0);
     unmount();
   });
 
@@ -3861,6 +3864,72 @@ describe('useResumableSSE', () => {
     ).toHaveLength(0);
     expect(mockSetSubmission).toHaveBeenCalledWith(null);
     expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
+    expect(jest.getTimerCount()).toBe(0);
+    unmount();
+  });
+
+  it('hands off a replacement that starts while terminal history is fetched', async () => {
+    jest.useFakeTimers();
+    const terminalReplacement = {
+      active: false,
+      status: 'complete',
+      streamId: CONV_ID,
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+      resumeState: { pendingSteers: [], aggregatedContent: [{ type: 'text', text: 'old epoch' }] },
+    } as const;
+    const activeReplacement = {
+      active: true,
+      status: 'running',
+      streamId: 'replacement-stream',
+      createdAt: 3000,
+      generationProtocolVersion: 2,
+      resumeState: { pendingSteers: [], aggregatedContent: [{ type: 'text', text: 'new epoch' }] },
+    } as const;
+    mockFetchStreamStatus
+      .mockResolvedValueOnce(terminalReplacement)
+      .mockResolvedValueOnce(activeReplacement);
+    const submission = {
+      ...buildSubmission(),
+      resumeStreamId: CONV_ID,
+      resumeGenerationCreatedAt: 1000,
+      resumeGenerationProtocolVersion: 2,
+    } as TSubmission & {
+      resumeStreamId: string;
+      resumeGenerationCreatedAt: number;
+      resumeGenerationProtocolVersion: 2;
+    };
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+      await act(async () => {
+        getLastSSE()._emit('error');
+        await Promise.resolve();
+      });
+      await advanceRetryTimer(delay);
+    }
+    await act(async () => {
+      getLastSSE()._emit('error');
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockFetchStreamStatus).toHaveBeenCalledTimes(2);
+    expect(mockSetQueryData).toHaveBeenCalledWith(['streamStatus', CONV_ID], {
+      ...activeReplacement,
+      generationHandoff: true,
+    });
+    expect(mockSetQueryData).not.toHaveBeenCalledWith(
+      ['streamStatus', CONV_ID],
+      terminalReplacement,
+    );
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(true);
+    expect(mockSetShowStopButton).toHaveBeenLastCalledWith(true);
     expect(jest.getTimerCount()).toBe(0);
     unmount();
   });

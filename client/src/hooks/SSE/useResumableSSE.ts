@@ -1422,6 +1422,24 @@ export default function useResumableSSE(
         }, 30_000);
         return true;
       };
+      const retryInconclusiveStatusReconciliation = (conversationId: string): void => {
+        queryClient.invalidateQueries({ queryKey: streamStatusQueryKey(conversationId) });
+        setIsSubmitting(true);
+        setShowStopButton(generationCreatedAt != null);
+        reconnectAttemptRef.current = 0;
+        reconnectTimeoutRef.current = setTimeout(() => {
+          if (isCurrentSubscription() && submissionRef.current) {
+            subscribeToStream(
+              currentStreamId,
+              submissionRef.current,
+              true,
+              generationCreatedAt,
+              generationProtocolVersion,
+              lifecycleSignal,
+            );
+          }
+        }, 30_000);
+      };
       const reconcileRefreshedTerminalStatus = (
         previousStatus: StreamStatusResponse | undefined,
         refreshedStatus: StreamStatusResponse,
@@ -2655,15 +2673,6 @@ export default function useResumableSSE(
 
           const hasAuthoritativeFailure =
             terminalStatus?.status === 'error' || terminalStatus?.status === 'aborted';
-          if (convoId && persistedMessages == null && !hasAuthoritativeFailure) {
-            // A missing stream only proves that the transport job is gone. If
-            // durable history is temporarily unavailable, keep this
-            // submission as the recovery owner and reconcile again later.
-            if (retryPersistedMessageReconciliation(terminalStatus)) {
-              return;
-            }
-          }
-
           if (
             terminalStatus?.active === false &&
             generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
@@ -2677,6 +2686,15 @@ export default function useResumableSSE(
                 []),
             ]);
             return;
+          }
+
+          if (convoId && persistedMessages == null && !hasAuthoritativeFailure) {
+            // A missing stream only proves that the transport job is gone. If
+            // durable history is temporarily unavailable, keep this
+            // submission as the recovery owner and reconcile again later.
+            if (retryPersistedMessageReconciliation(terminalStatus)) {
+              return;
+            }
           }
 
           persistedMessageReconciliationAttemptsRef.current = 0;
@@ -3025,22 +3043,7 @@ export default function useResumableSSE(
             // An inconclusive status read is still not proof of termination.
             // Preserve server/client ownership and let the normal resume-on-load
             // status query retry rather than duplicating accepted words.
-            queryClient.invalidateQueries({ queryKey: streamStatusQueryKey(recoveryConvoId) });
-            setIsSubmitting(true);
-            setShowStopButton(generationCreatedAt != null);
-            reconnectAttemptRef.current = 0;
-            reconnectTimeoutRef.current = setTimeout(() => {
-              if (isCurrentSubscription() && submissionRef.current) {
-                subscribeToStream(
-                  currentStreamId,
-                  submissionRef.current,
-                  true,
-                  generationCreatedAt,
-                  generationProtocolVersion,
-                  lifecycleSignal,
-                );
-              }
-            }, 30_000);
+            retryInconclusiveStatusReconciliation(recoveryConvoId);
             return;
           }
 
@@ -3074,6 +3077,49 @@ export default function useResumableSSE(
               conversationId: recoveryConvoId,
               error,
             });
+          }
+
+          if (
+            status.active === false &&
+            generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
+            supportsGenerationProtocolV2(status) &&
+            belongsToReplacementGeneration(status)
+          ) {
+            try {
+              const refreshedStatus = await fetchStreamStatus(recoveryConvoId);
+              if (!isCurrentSubscription()) {
+                return;
+              }
+              status = reconcileRefreshedTerminalStatus(status, refreshedStatus);
+            } catch (error) {
+              if (!isCurrentSubscription()) {
+                return;
+              }
+              logger.warn(
+                'ResumableSSE',
+                'Could not revalidate replacement generation after message reconciliation',
+                {
+                  conversationId: recoveryConvoId,
+                  error,
+                },
+              );
+              status = undefined;
+            }
+
+            if (status?.active === true && belongsToReplacementGeneration(status)) {
+              const handedOff = await handoffToReplacement(recoveryConvoId, status);
+              if (!isCurrentSubscription()) {
+                return;
+              }
+              if (handedOff) {
+                return;
+              }
+            }
+
+            if (status == null || status.active === true) {
+              retryInconclusiveStatusReconciliation(recoveryConvoId);
+              return;
+            }
           }
 
           if (status.status === 'complete' && persistedMessages == null) {
