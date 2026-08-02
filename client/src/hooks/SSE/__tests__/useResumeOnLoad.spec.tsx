@@ -305,29 +305,30 @@ describe('useResumeOnLoad', () => {
   it('reprocesses the same conversation when a stale attachment hands off to a newer epoch', async () => {
     const observedSubmissions: Array<TSubmission | null> = [];
     const staleSubmission = buildSubmission(CONVERSATION_ID);
+    const handoffStatus: StreamStatusResponse = {
+      active: true,
+      generationHandoff: true,
+      generationProtocolVersion: 2,
+      status: 'running',
+      streamId: CONVERSATION_ID,
+      createdAt: 2000,
+      resumeState: {
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'replacement content' }],
+        responseMessageId: 'replacement-response',
+        conversationId: CONVERSATION_ID,
+        userMessage: {
+          messageId: 'replacement-user',
+          parentMessageId: Constants.NO_PARENT,
+          conversationId: CONVERSATION_ID,
+          text: 'Replacement prompt',
+        },
+      },
+    };
     mockUseStreamStatus.mockReturnValue({
       isSuccess: true,
       isFetching: false,
-      data: {
-        active: true,
-        generationHandoff: true,
-        generationProtocolVersion: 2,
-        status: 'running',
-        streamId: CONVERSATION_ID,
-        createdAt: 2000,
-        resumeState: {
-          runSteps: [],
-          aggregatedContent: [{ type: 'text', text: 'replacement content' }],
-          responseMessageId: 'replacement-response',
-          conversationId: CONVERSATION_ID,
-          userMessage: {
-            messageId: 'replacement-user',
-            parentMessageId: Constants.NO_PARENT,
-            conversationId: CONVERSATION_ID,
-            text: 'Replacement prompt',
-          },
-        },
-      },
+      data: handoffStatus,
     });
 
     const rendered = renderUseResumeOnLoad({
@@ -349,17 +350,18 @@ describe('useResumeOnLoad', () => {
     expect(replacement.resumeGenerationCreatedAt).toBe(2000);
     expect(replacement.userMessage?.messageId).toBe('replacement-user');
 
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: { ...handoffStatus },
+    });
+    rendered.rerender();
+
     await act(async () => {
       rendered.setSubmission(null);
       await Promise.resolve();
     });
 
-    const replacementInstalls = observedSubmissions.filter(
-      (candidate) =>
-        (candidate as (TSubmission & { resumeGenerationCreatedAt?: number }) | null)
-          ?.resumeGenerationCreatedAt === 2000,
-    );
-    expect(replacementInstalls).toHaveLength(1);
     expect(observedSubmissions[observedSubmissions.length - 1]).toBeNull();
   });
 

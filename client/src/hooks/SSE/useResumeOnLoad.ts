@@ -230,10 +230,10 @@ export default function useResumeOnLoad(
   // Track conversations we've already processed (either resumed or skipped)
   const processedConvoRef = useRef<string | null>(null);
   /** `generationHandoff` lives in the React Query snapshot until a later
-   * status refetch. Remember the exact snapshot already consumed so clearing
-   * the replacement submission on FINAL cannot re-install it. Object identity
-   * also supports protocol v1, which has no generation timestamp. */
-  const consumedHandoffStatusRef = useRef<StreamStatusResponse | null>(null);
+   * status refetch. Remember the exact handoff already consumed so clearing
+   * the replacement submission on FINAL cannot re-install it. Protocol v2 has
+   * a stable epoch key; protocol v1 falls back to snapshot identity. */
+  const consumedHandoffRef = useRef<string | StreamStatusResponse | null>(null);
   const restoreResumeBranch = useRecoilCallback(
     ({ set }) =>
       (resumeState: Agents.ResumeState, messages: TMessage[], activeConversationId: string) => {
@@ -440,8 +440,12 @@ export default function useResumeOnLoad(
      * cached the replacement snapshot; allow the same conversation to be
      * processed again so this epoch becomes the active resume submission. */
     const generationProtocolVersion = getGenerationProtocolVersion(streamStatus);
+    const handoffIdentity =
+      generationProtocolVersion === 2 && streamStatus.createdAt != null
+        ? `${conversationId}:${streamStatus.createdAt}`
+        : streamStatus;
     const isUnconsumedHandoff =
-      streamStatus.generationHandoff === true && consumedHandoffStatusRef.current !== streamStatus;
+      streamStatus.generationHandoff === true && consumedHandoffRef.current !== handoffIdentity;
     if (
       !hasCurrentSubmission &&
       isUnconsumedHandoff &&
@@ -500,7 +504,7 @@ export default function useResumeOnLoad(
 
     processedConvoRef.current = conversationId;
     if (isUnconsumedHandoff) {
-      consumedHandoffStatusRef.current = streamStatus;
+      consumedHandoffRef.current = handoffIdentity;
     }
     if (streamStatus.createdAt != null) {
       setActiveGenerationCreatedAt(
@@ -603,7 +607,7 @@ export default function useResumeOnLoad(
         new: conversationId,
       });
       processedConvoRef.current = null;
-      consumedHandoffStatusRef.current = null;
+      consumedHandoffRef.current = null;
     }
   }, [conversationId]);
 }

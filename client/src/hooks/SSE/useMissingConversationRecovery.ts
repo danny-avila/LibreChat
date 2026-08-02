@@ -97,6 +97,23 @@ export default function useMissingConversationRecovery({
     recoveringConversationRef.current = conversationId;
     let cancelled = false;
     const initialStatus = streamStatusRef.current;
+    const initialLegacyClaimedSteers =
+      initialStatus != null && getGenerationProtocolVersion(initialStatus) === 1
+        ? dedupeSteersById(initialStatus.unrecoveredSteers)
+        : [];
+    const initialLegacyClaimedIds = new Set(
+      initialLegacyClaimedSteers.flatMap((steer) =>
+        steer.clientSteerId ? [steer.steerId, steer.clientSteerId] : [steer.steerId],
+      ),
+    );
+    const wasInitiallyClaimed = (steer: { steerId: string; clientSteerId?: string }) =>
+      initialLegacyClaimedIds.has(steer.steerId) ||
+      (steer.clientSteerId != null && initialLegacyClaimedIds.has(steer.clientSteerId));
+    if (initialLegacyClaimedSteers.length > 0) {
+      convertSteersToQueued(conversationId, initialLegacyClaimedSteers, {
+        generationProtocolVersion: 1,
+      });
+    }
     const timeout = setTimeout(() => {
       void (async () => {
         let recoveredMessages: TMessage[] | null = null;
@@ -107,12 +124,16 @@ export default function useMissingConversationRecovery({
             return;
           }
         }
+        const hasRecoveredMessages = recoveredMessages != null && recoveredMessages.length > 0;
+        if (cancelled) {
+          return;
+        }
 
         let verifiedStatus;
         try {
           verifiedStatus = await fetchStreamStatus(conversationId);
         } catch {
-          if (!cancelled && recoveredMessages != null) {
+          if (!cancelled && hasRecoveredMessages) {
             queryClient.setQueryData<TMessage[]>(
               [QueryKeys.messages, conversationId],
               recoveredMessages,
@@ -123,7 +144,9 @@ export default function useMissingConversationRecovery({
         if (cancelled) {
           // A legacy status read destructively claims these steers. Preserve
           // their words even though the abandoned view must receive no updates.
-          const claimedSteers = dedupeSteersById(verifiedStatus.unrecoveredSteers);
+          const claimedSteers = dedupeSteersById(verifiedStatus.unrecoveredSteers).filter(
+            (steer) => !wasInitiallyClaimed(steer),
+          );
           if (claimedSteers.length > 0) {
             convertSteersToQueued(conversationId, claimedSteers, {
               generationProtocolVersion: getGenerationProtocolVersion(verifiedStatus),
@@ -132,7 +155,7 @@ export default function useMissingConversationRecovery({
           return;
         }
 
-        if (recoveredMessages != null) {
+        if (hasRecoveredMessages) {
           queryClient.setQueryData<TMessage[]>(
             [QueryKeys.messages, conversationId],
             recoveredMessages,
@@ -157,7 +180,7 @@ export default function useMissingConversationRecovery({
           initialStatus?.resumeState?.pendingSteers,
           verifiedStatus.unrecoveredSteers,
           verifiedStatus.resumeState?.pendingSteers,
-        );
+        ).filter((steer) => !wasInitiallyClaimed(steer));
         if (leftoverSteers.length > 0) {
           const generationStatus =
             verifiedStatus.generationProtocolVersion == null ? initialStatus : verifiedStatus;
@@ -168,7 +191,12 @@ export default function useMissingConversationRecovery({
           return;
         }
 
-        if (recoveredMessages != null) {
+        if (initialLegacyClaimedSteers.length > 0) {
+          recoveringConversationRef.current = null;
+          return;
+        }
+
+        if (hasRecoveredMessages) {
           recoveringConversationRef.current = null;
           return;
         }

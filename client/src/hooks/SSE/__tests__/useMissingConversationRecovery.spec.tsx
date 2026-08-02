@@ -68,10 +68,19 @@ describe('useMissingConversationRecovery', () => {
     jest.useRealTimers();
   });
 
-  it('removes a conversation only after messages and status are both reverified', async () => {
+  it.each([
+    {
+      missingKind: 'a repeated 404',
+      arrangeMessages: () => mockGetMessages.mockRejectedValue({ status: 404 }),
+    },
+    {
+      missingKind: 'an empty message list',
+      arrangeMessages: () => mockGetMessages.mockResolvedValue([]),
+    },
+  ])('removes a conversation after $missingKind and inactive status', async (scenario) => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const onConfirmedMissing = jest.fn();
-    mockGetMessages.mockRejectedValue({ status: 404 });
+    scenario.arrangeMessages();
     mockFetchStreamStatus.mockResolvedValue({ active: false });
     queryClient.setQueryData([QueryKeys.allConversations], {
       pages: [
@@ -289,6 +298,16 @@ describe('useMissingConversationRecovery', () => {
   it('preserves a conversation when a generation starts during verification', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const onConfirmedMissing = jest.fn();
+    const claimedSteer = { steerId: 'initial-legacy-claim', text: 'retain me', createdAt: 1 };
+    mockUseStreamStatus.mockReturnValue({
+      data: {
+        active: false,
+        generationProtocolVersion: 1,
+        unrecoveredSteers: [claimedSteer],
+      },
+      isFetching: false,
+      isSuccess: true,
+    });
     mockGetMessages.mockRejectedValue({ status: 404 });
     mockFetchStreamStatus.mockResolvedValue({
       active: true,
@@ -314,6 +333,9 @@ describe('useMissingConversationRecovery', () => {
       generationProtocolVersion: 2,
       streamId: CONVERSATION_ID,
       createdAt: 2000,
+    });
+    expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONVERSATION_ID, [claimedSteer], {
+      generationProtocolVersion: 1,
     });
     expect(onConfirmedMissing).not.toHaveBeenCalled();
   });
@@ -402,11 +424,12 @@ describe('useMissingConversationRecovery', () => {
         }),
       { wrapper: createWrapper(queryClient) },
     );
-    await advanceRecoveryDelay();
-
     expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONVERSATION_ID, [claimedSteer], {
       generationProtocolVersion: 1,
     });
+    await advanceRecoveryDelay();
+
+    expect(mockConvertSteersToQueued).toHaveBeenCalledTimes(1);
     expect(onConfirmedMissing).not.toHaveBeenCalled();
     expect(queryClient.getQueryData([QueryKeys.allConversations])).toEqual({
       pages: [
