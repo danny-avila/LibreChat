@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
+import { logger, encryptV2, decryptV2, getTenantId } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods, IToken } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthStoredClientMetadata } from './types';
@@ -86,6 +86,20 @@ function getJwtAccessTokenExpiry(accessToken?: string): number | null {
 }
 
 export class MCPTokenStorage {
+  /**
+   * Process-local in-flight refresh-token redemptions, keyed by
+   * `tenantId:userId:serverName`. Every code path that redeems a refresh token
+   * (expired-token refresh via `getTokens`, silent refresh on 401, reconnect
+   * retries) converges on `forceRefreshTokens`, so coalescing here guarantees
+   * at most one wire call to the token endpoint per user/server at a time.
+   * RFC 9700 servers treat a replayed (already-consumed) refresh token as
+   * theft and revoke the entire grant family, so concurrent redemptions are
+   * not merely wasteful — they destroy the freshly issued tokens. Only
+   * in-flight promises are held (no result caching): each new refresh request
+   * after settlement triggers a fresh redemption.
+   */
+  private static inflightRefreshes = new Map<string, Promise<MCPOAuthTokens | null>>();
+
   static getLogPrefix(userId: string, serverName: string): string {
     return isSystemUserId(userId)
       ? `[MCP][${serverName}]`
@@ -301,11 +315,62 @@ export class MCPTokenStorage {
    * server has signaled token invalidity (e.g. a 401 mid-session) — the 401 is
    * the authoritative signal, not the local `expires_at`.
    *
+   * Single-flighted per `(tenantId, userId, serverName)`: concurrent callers
+   * (tool-call 401s, pings, reconnect retries, expired-token reads) share one
+   * redemption and receive the same rotated result instead of each replaying
+   * the refresh token at the token endpoint.
+   *
    * Returns the new tokens, or `null` when refresh is not possible (no refresh
    * token stored, no refresh callback, etc.). Throws `ReauthenticationRequiredError`
    * when the refresh server response indicates the client registration is stale.
    */
-  static async forceRefreshTokens({
+  static async forceRefreshTokens(
+    params: GetTokensParams & {
+      existingAccessToken?: IToken | null;
+    },
+  ): Promise<MCPOAuthTokens | null> {
+    const { userId, serverName, refreshTokens, createToken } = params;
+    const logPrefix = this.getLogPrefix(userId, serverName);
+
+    const refreshKey = `${getTenantId() ?? ''}:${userId}:${serverName}`;
+    const inflight = this.inflightRefreshes.get(refreshKey);
+    if (inflight) {
+      logger.debug(`${logPrefix} Joining in-flight token refresh`);
+      return inflight;
+    }
+
+    if (!refreshTokens) {
+      logger.warn(`${logPrefix} Cannot refresh tokens: no \`refreshTokens\` callback provided`);
+      return null;
+    }
+
+    if (!createToken) {
+      logger.warn(`${logPrefix} Cannot refresh tokens: no \`createToken\` function provided`);
+      return null;
+    }
+
+    const refreshPromise = this.executeTokenRefresh({
+      ...params,
+      refreshTokens,
+      createToken,
+    }).finally(() => {
+      if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
+        this.inflightRefreshes.delete(refreshKey);
+      }
+    });
+    this.inflightRefreshes.set(refreshKey, refreshPromise);
+    return refreshPromise;
+  }
+
+  /**
+   * Runs a single refresh-token redemption under the `inflightRefreshes`
+   * single-flight lock. The refresh token is read from storage at execution
+   * time — never from a caller-provided snapshot — so a redemption that starts
+   * after another refresh completed uses the rotated token instead of
+   * replaying the consumed one (which RFC 9700 reuse detection punishes by
+   * revoking the whole grant family).
+   */
+  private static async executeTokenRefresh({
     userId,
     serverName,
     findToken,
@@ -314,36 +379,23 @@ export class MCPTokenStorage {
     deleteTokens,
     refreshTokens,
     existingAccessToken,
-    existingRefreshToken,
     signal,
   }: GetTokensParams & {
     existingAccessToken?: IToken | null;
-    existingRefreshToken?: IToken | null;
+    refreshTokens: NonNullable<GetTokensParams['refreshTokens']>;
+    createToken: NonNullable<GetTokensParams['createToken']>;
   }): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
     const identifier = `mcp:${serverName}`;
 
-    const refreshTokenData =
-      existingRefreshToken !== undefined
-        ? existingRefreshToken
-        : await findToken({
-            userId,
-            type: 'mcp_oauth_refresh',
-            identifier: `${identifier}:refresh`,
-          });
+    const refreshTokenData = await findToken({
+      userId,
+      type: 'mcp_oauth_refresh',
+      identifier: `${identifier}:refresh`,
+    });
 
     if (!refreshTokenData) {
       logger.debug(`${logPrefix} No refresh token in storage`);
-      return null;
-    }
-
-    if (!refreshTokens) {
-      logger.warn(`${logPrefix} Refresh token available but no \`refreshTokens\` provided`);
-      return null;
-    }
-
-    if (!createToken) {
-      logger.warn(`${logPrefix} Refresh token available but no \`createToken\` function provided`);
       return null;
     }
 
@@ -504,7 +556,10 @@ export class MCPTokenStorage {
         logger.info(`${logPrefix} Access token ${isMissing ? 'missing' : 'expired'}`);
 
         /** Probe for a refresh token first so we can throw `ReauthenticationRequiredError`
-         *  when none exists, matching the prior contract. */
+         *  when none exists, matching the prior contract. The probe result is
+         *  intentionally not passed to `forceRefreshTokens` — the redemption
+         *  re-reads storage under its single-flight lock so it never replays a
+         *  refresh token that a concurrent refresh already consumed. */
         const refreshTokenData = await findToken({
           userId,
           type: 'mcp_oauth_refresh',
@@ -528,7 +583,6 @@ export class MCPTokenStorage {
           deleteTokens,
           refreshTokens,
           existingAccessToken: accessTokenData,
-          existingRefreshToken: refreshTokenData,
         });
       }
 
