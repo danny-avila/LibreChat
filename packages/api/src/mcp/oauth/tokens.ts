@@ -388,10 +388,20 @@ export class MCPTokenStorage {
      * Safety valve for wedged executions: after the stale window the execution
      * is aborted so it can never reach the token endpoint with a refresh token
      * that a successor is about to redeem. The slot itself is freed only by the
-     * `.finally` above — that is, once the aborted execution has actually
+     * `.finally` above, that is, once the aborted execution has actually
      * settled. Deleting the entry while the redemption might still consume the
      * stored refresh token would re-open the concurrent-replay window this
      * single-flight exists to close.
+     *
+     * If the abort lands after the endpoint already processed the request
+     * (response lost in transit), the rotated tokens are unrecoverable and the
+     * stored refresh token is deliberately left in place rather than deleted.
+     * A later redemption then either succeeds (request never actually
+     * processed, or the server grants rotation leeway) or trips reuse
+     * detection on a family whose fresh tokens were never received and whose
+     * access token was already expired or rejected. That failure ends in the
+     * same re-authentication the proactive deletion would force on every
+     * stall, while deletion would also foreclose the silent recovery paths.
      */
     const staleTimer = setTimeout(() => {
       if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
