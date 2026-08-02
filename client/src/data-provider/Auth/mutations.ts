@@ -180,3 +180,59 @@ export const useVerifyTwoFactorTempMutation = (
     },
   );
 };
+
+/* passkeys */
+export const useRegisterPasskeyMutation = (): UseMutationResult<
+  t.TPasskeyResponse,
+  unknown,
+  t.TVerifyPasskeyRegistrationRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    [MutationKeys.registerPasskey],
+    (payload: t.TVerifyPasskeyRegistrationRequest) =>
+      dataService.verifyPasskeyRegistration(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.passkeys]);
+      },
+    },
+  );
+};
+
+export const useRenamePasskeyMutation = (): UseMutationResult<
+  t.TPasskeyResponse,
+  unknown,
+  t.TRenamePasskeyRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    [MutationKeys.renamePasskey],
+    (payload: t.TRenamePasskeyRequest) => dataService.renamePasskey(payload),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.passkeys]);
+      },
+    },
+  );
+};
+
+export const useDeletePasskeyMutation = (): UseMutationResult<
+  { message: string },
+  unknown,
+  string,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    [MutationKeys.deletePasskey],
+    (passkeyId: string) => dataService.deletePasskey(passkeyId),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries([QueryKeys.passkeys]);
+      },
+    },
+  );
+};

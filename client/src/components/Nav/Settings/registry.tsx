@@ -22,6 +22,7 @@ import LangfuseConnection from '../SettingsTabs/Integrations/LangfuseConnection'
 import ImportConversations from '../SettingsTabs/Data/ImportConversations';
 import { toggleControl, ThemeSetting, LangSetting } from './controls';
 import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
+import Passkeys from '../SettingsTabs/Account/Passkeys';
 import { EngineSTTSetting, EngineTTSSetting } from './SpeechControls';
 import FontSizeSelector from '../SettingsTabs/Chat/FontSizeSelector';
 import AdvancedPrompts from '../SettingsTabs/Chat/AdvancedPrompts';
@@ -589,6 +590,15 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_ui_settings_label_backup_codes',
     show: (ctx) => ctx.isLocalProvider && ctx.twoFactorEnabled,
     Component: BackupCodesItem,
+  },
+  {
+    id: 'passkeys',
+    tab: ACCOUNT,
+    section: 'security',
+    labelKey: 'com_ui_passkeys',
+    keywords: ['passkey', 'webauthn', 'fido', 'security key', 'passwordless'],
+    show: (ctx) => ctx.isLocalProvider && ctx.passkeyLoginEnabled,
+    Component: Passkeys,
   },
   // Account · Billing
   {

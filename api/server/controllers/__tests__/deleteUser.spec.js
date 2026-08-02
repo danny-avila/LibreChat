@@ -44,6 +44,7 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/models', () => ({
   deleteAllUserSessions: (...args) => mockDeleteAllUserSessions(...args),
+  deletePasskeysByUser: jest.fn().mockResolvedValue(undefined),
   deleteAllSharedLinks: (...args) => mockDeleteAllSharedLinks(...args),
   updateUserPlugins: (...args) => mockUpdateUserPlugins(...args),
   deleteUserById: (...args) => mockDeleteUserById(...args),

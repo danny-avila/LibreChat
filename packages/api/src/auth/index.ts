@@ -6,6 +6,7 @@ export * from './refresh';
 export * from './googleRefresh';
 export * from './agent';
 export * from './password';
+export * from './passkey';
 export * from './invite';
 export * from './codeapi';
 export * from './openidRoleSync';

@@ -496,6 +496,14 @@ export const disableTwoFactor = () => `${BASE_URL}/api/auth/2fa/disable`;
 export const regenerateBackupCodes = () => `${BASE_URL}/api/auth/2fa/backup/regenerate`;
 export const verifyTwoFactorTemp = () => `${BASE_URL}/api/auth/2fa/verify-temp`;
 
+// Passkey (WebAuthn) Endpoints
+export const passkeys = () => `${BASE_URL}/api/auth/passkey`;
+export const passkey = (passkeyId: string) => `${passkeys()}/${encodeURIComponent(passkeyId)}`;
+export const passkeyRegistrationOptions = () => `${passkeys()}/register/options`;
+export const passkeyRegistrationVerify = () => `${passkeys()}/register/verify`;
+export const passkeyLoginOptions = () => `${passkeys()}/login/options`;
+export const passkeyLoginVerify = () => `${passkeys()}/login/verify`;
+
 /* Memories */
 export const memories = () => `${BASE_URL}/api/memories`;
 export const memory = (key: string, agentId?: string) =>

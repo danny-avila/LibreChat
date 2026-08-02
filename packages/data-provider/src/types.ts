@@ -626,6 +626,132 @@ export type TVerify2FATempResponse = {
   message?: string;
 };
 
+/* Passkeys (WebAuthn) */
+
+/**
+ * WebAuthn ceremony payloads, mirroring the W3C `*JSON` dictionaries that the
+ * browser's `PublicKeyCredential` serializes to. They are declared here rather
+ * than imported so `librechat-data-provider` stays dependency-free; the client
+ * hands them straight to `@simplewebauthn/browser`, which validates the shape.
+ */
+export type TPasskeyTransport =
+  | 'ble'
+  | 'cable'
+  | 'hybrid'
+  | 'internal'
+  | 'nfc'
+  | 'smart-card'
+  | 'usb';
+
+export type TPasskeyCredentialDescriptor = {
+  id: string;
+  type: 'public-key';
+  transports?: TPasskeyTransport[];
+};
+
+/** https://w3c.github.io/webauthn/#dictdef-publickeycredentialcreationoptionsjson */
+export type TPasskeyCreationOptions = {
+  rp: { id?: string; name: string };
+  user: { id: string; name: string; displayName: string };
+  challenge: string;
+  pubKeyCredParams: Array<{ alg: number; type: 'public-key' }>;
+  timeout?: number;
+  excludeCredentials?: TPasskeyCredentialDescriptor[];
+  authenticatorSelection?: {
+    authenticatorAttachment?: 'platform' | 'cross-platform';
+    residentKey?: 'discouraged' | 'preferred' | 'required';
+    requireResidentKey?: boolean;
+    userVerification?: 'discouraged' | 'preferred' | 'required';
+  };
+  attestation?: 'none' | 'indirect' | 'direct' | 'enterprise';
+  hints?: string[];
+};
+
+/** https://w3c.github.io/webauthn/#dictdef-publickeycredentialrequestoptionsjson */
+export type TPasskeyRequestOptions = {
+  challenge: string;
+  timeout?: number;
+  rpId?: string;
+  allowCredentials?: TPasskeyCredentialDescriptor[];
+  userVerification?: 'discouraged' | 'preferred' | 'required';
+  hints?: string[];
+};
+
+/** https://w3c.github.io/webauthn/#dictdef-registrationresponsejson */
+export type TPasskeyRegistrationResponse = {
+  id: string;
+  rawId: string;
+  type: 'public-key';
+  authenticatorAttachment?: 'platform' | 'cross-platform';
+  clientExtensionResults: Record<string, boolean | string | number | object>;
+  response: {
+    clientDataJSON: string;
+    attestationObject: string;
+    authenticatorData?: string;
+    transports?: TPasskeyTransport[];
+    publicKeyAlgorithm?: number;
+    publicKey?: string;
+  };
+};
+
+/** https://w3c.github.io/webauthn/#dictdef-authenticationresponsejson */
+export type TPasskeyAuthenticationResponse = {
+  id: string;
+  rawId: string;
+  type: 'public-key';
+  authenticatorAttachment?: 'platform' | 'cross-platform';
+  clientExtensionResults: Record<string, boolean | string | number | object>;
+  response: {
+    clientDataJSON: string;
+    authenticatorData: string;
+    signature: string;
+    userHandle?: string;
+  };
+};
+
+/**
+ * A registered credential as exposed to the client. Deliberately excludes the
+ * public key and credential ID: the UI only needs to identify and label it.
+ */
+export type TPasskey = {
+  id: string;
+  name: string;
+  deviceType: 'singleDevice' | 'multiDevice';
+  backedUp: boolean;
+  transports: TPasskeyTransport[];
+  createdAt: string;
+  lastUsedAt: string | null;
+};
+
+export type TPasskeysResponse = {
+  passkeys: TPasskey[];
+};
+
+export type TPasskeyResponse = {
+  passkey: TPasskey;
+};
+
+export type TVerifyPasskeyRegistrationRequest = {
+  credential: TPasskeyRegistrationResponse;
+  name?: string;
+};
+
+export type TPasskeyAuthenticationOptionsResponse = {
+  options: TPasskeyRequestOptions;
+  /** Opaque handle tying the assertion back to its server-side challenge. */
+  sessionId: string;
+};
+
+export type TVerifyPasskeyLoginRequest = {
+  credential: TPasskeyAuthenticationResponse;
+  sessionId: string;
+};
+
+export type TRenamePasskeyRequest = {
+  passkeyId: string;
+  name: string;
+};
+
 export type TDisable2FARequest = TOTPVerificationPayload;
 
 export type TDisable2FAResponse = {
