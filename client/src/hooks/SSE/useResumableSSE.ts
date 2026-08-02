@@ -1422,6 +1422,18 @@ export default function useResumableSSE(
         }, 30_000);
         return true;
       };
+      const reconcileRefreshedTerminalStatus = (
+        previousStatus: StreamStatusResponse | undefined,
+        refreshedStatus: StreamStatusResponse,
+      ): StreamStatusResponse =>
+        // Jobless responses are epoch-less: a replacement may have started
+        // and finished during the delay, so only an exact epoch can carry completion.
+        previousStatus?.status === 'complete' &&
+        refreshedStatus.status == null &&
+        previousStatus.createdAt != null &&
+        refreshedStatus.createdAt === previousStatus.createdAt
+          ? { ...previousStatus, ...refreshedStatus, status: 'complete' }
+          : refreshedStatus;
       const belongsToReplacementGeneration = (status: StreamStatusResponse): boolean =>
         status.createdAt != null &&
         (generationCreatedAt == null || status.createdAt !== generationCreatedAt);
@@ -2610,10 +2622,7 @@ export default function useResumableSSE(
             confirmedV2Terminal =
               generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
               supportsGenerationProtocolV2(status);
-            terminalStatus =
-              terminalStatus?.status === 'complete' && status.status == null
-                ? { ...terminalStatus, ...status, status: 'complete' }
-                : status;
+            terminalStatus = reconcileRefreshedTerminalStatus(terminalStatus, status);
             const canRecoverTerminalSteers = generationProtocolVersion === 1 || confirmedV2Terminal;
             const unrecovered = canRecoverTerminalSteers ? (status.unrecoveredSteers ?? []) : [];
             if (unrecovered.length > 0) {
@@ -2928,10 +2937,7 @@ export default function useResumableSSE(
             if (!isCurrentSubscription()) {
               return;
             }
-            status =
-              status?.status === 'complete' && refreshedStatus.status == null
-                ? { ...status, ...refreshedStatus, status: 'complete' }
-                : refreshedStatus;
+            status = reconcileRefreshedTerminalStatus(status, refreshedStatus);
           } catch (error) {
             if (!isCurrentSubscription()) {
               return;

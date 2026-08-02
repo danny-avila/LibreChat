@@ -3750,6 +3750,68 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('does not reuse completion after an epoch-less delayed status refresh', async () => {
+    jest.useFakeTimers();
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      status: 'complete',
+      streamId: CONV_ID,
+      createdAt: 1000,
+      generationProtocolVersion: 2,
+      resumeState: { pendingSteers: [], aggregatedContent: [] },
+    });
+    mockFetchQuery.mockRejectedValueOnce(new Error('message refetch failed'));
+    const submission = {
+      ...buildSubmission(),
+      resumeStreamId: CONV_ID,
+      resumeGenerationCreatedAt: 1000,
+      resumeGenerationProtocolVersion: 2,
+    } as TSubmission & {
+      resumeStreamId: string;
+      resumeGenerationCreatedAt: number;
+      resumeGenerationProtocolVersion: 2;
+    };
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+      await act(async () => {
+        getLastSSE()._emit('error');
+        await Promise.resolve();
+      });
+      await advanceRetryTimer(delay);
+    }
+    await act(async () => {
+      getLastSSE()._emit('error');
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    await advanceRetryTimer(30_000);
+    mockFetchStreamStatus.mockResolvedValueOnce({
+      active: false,
+      generationProtocolVersion: 2,
+    });
+
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 404 });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'aborted' }),
+    );
+    expect(mockSetRunEnd).not.toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'completed' }),
+    );
+    expect(jest.getTimerCount()).toBe(0);
+    unmount();
+  });
+
   it('does not finalize a terminal replacement epoch at the reconnect ceiling', async () => {
     jest.useFakeTimers();
     const replacementStatus = {
