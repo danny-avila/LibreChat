@@ -142,8 +142,11 @@ export function resolveAcknowledgedSteer(
 }
 
 /** True when the latest assistant message carries an unresolved tool approval —
- *  the run is (or is about to be) paused, so a steer POST would 409. */
-function hasLiveToolApproval(messages: TMessage[] | undefined): boolean {
+ *  the run is (or is about to be) paused, so a steer POST would 409.
+ *
+ *  Exported so the in-thread pending steers gate their escalation control on
+ *  the same predicate the composer does, rather than a second approximation. */
+export function hasLiveToolApproval(messages: TMessage[] | undefined): boolean {
   if (!messages || messages.length === 0) {
     return false;
   }
