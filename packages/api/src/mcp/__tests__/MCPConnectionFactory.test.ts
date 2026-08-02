@@ -1868,6 +1868,11 @@ describe('MCPConnectionFactory', () => {
       await Promise.resolve();
 
       expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(2);
+      const scopeA = mockMCPTokenStorage.forceRefreshTokens.mock.calls[0][0].singleFlightScope;
+      const scopeB = mockMCPTokenStorage.forceRefreshTokens.mock.calls[1][0].singleFlightScope;
+      expect(scopeA).toEqual(expect.any(String));
+      expect(scopeB).toEqual(expect.any(String));
+      expect(scopeA).not.toBe(scopeB);
       const tokensA: MCPOAuthTokens = {
         access_token: 'server-a-token',
         token_type: 'Bearer',

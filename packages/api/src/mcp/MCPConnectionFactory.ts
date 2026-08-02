@@ -559,6 +559,23 @@ export class MCPConnectionFactory {
     return MCPOAuthHandler.generateTokenFlowId(this.userId!, this.serverName, this.tenantId);
   }
 
+  private getOAuthBindingDigest(): string {
+    const oauth = this.serverConfig.oauth;
+    return createHash('sha256')
+      .update(
+        JSON.stringify([
+          (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url,
+          oauth?.client_id,
+          oauth?.client_secret,
+          oauth?.authorization_url,
+          oauth?.token_url,
+          oauth?.token_exchange_method,
+          oauth?.token_endpoint_auth_methods_supported,
+        ]),
+      )
+      .digest('base64url');
+  }
+
   /** Retrieves existing OAuth tokens from storage or returns null */
   protected async getOAuthTokens(): Promise<MCPOAuthTokens | null> {
     if (!this.tokenMethods?.findToken) return null;
@@ -578,6 +595,7 @@ export class MCPConnectionFactory {
               updateToken: this.tokenMethods!.updateToken,
               deleteTokens: this.tokenMethods!.deleteTokens,
               refreshTokens: this.createRefreshTokensFunction(),
+              singleFlightScope: this.getOAuthBindingDigest(),
             }),
           );
         },
@@ -688,20 +706,7 @@ export class MCPConnectionFactory {
 
     // Scope the lock by tenant and OAuth binding so neither another tenant nor a
     // same-name server whose URL/client configuration changed can join the refresh.
-    const oauth = this.serverConfig.oauth;
-    const bindingDigest = createHash('sha256')
-      .update(
-        JSON.stringify([
-          (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url,
-          oauth?.client_id,
-          oauth?.client_secret,
-          oauth?.authorization_url,
-          oauth?.token_url,
-          oauth?.token_exchange_method,
-          oauth?.token_endpoint_auth_methods_supported,
-        ]),
-      )
-      .digest('base64url');
+    const bindingDigest = this.getOAuthBindingDigest();
     const lockKey = `${this.tenantId ?? ''}:${this.userId ?? ''}:${this.serverName}:${bindingDigest}`;
     const inflight = MCPConnectionFactory.inflightSilentRefreshes.get(lockKey);
     if (inflight) {
@@ -713,7 +718,7 @@ export class MCPConnectionFactory {
     const abortController = new AbortController();
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let abortGraceTimeoutId: ReturnType<typeof setTimeout> | null = null;
-    const refreshPromise = this.runSilentRefresh(abortController.signal);
+    const refreshPromise = this.runSilentRefresh(abortController.signal, bindingDigest);
     const promise = new Promise<MCPOAuthTokens | null>((resolve) => {
       timeoutId = setTimeout(() => {
         abortController.abort();
@@ -758,7 +763,10 @@ export class MCPConnectionFactory {
    * persists the new tokens. Called by `attemptSilentTokenRefresh` under the
    * `inflightSilentRefreshes` coalescing lock.
    */
-  private async runSilentRefresh(signal: AbortSignal): Promise<MCPOAuthTokens | null> {
+  private async runSilentRefresh(
+    signal: AbortSignal,
+    singleFlightScope: string,
+  ): Promise<MCPOAuthTokens | null> {
     try {
       const tokens = await this.runWithCapturedTenant(async () =>
         MCPTokenStorage.forceRefreshTokens({
@@ -769,6 +777,7 @@ export class MCPConnectionFactory {
           updateToken: this.tokenMethods!.updateToken,
           deleteTokens: this.tokenMethods!.deleteTokens,
           refreshTokens: this.createRefreshTokensFunction(),
+          singleFlightScope,
           signal,
           /**
            * Drop any previously cached `mcp_get_tokens` result so the next

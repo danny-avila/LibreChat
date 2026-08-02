@@ -78,6 +78,8 @@ interface GetTokensParams {
    * cache invalidation tied to the fresh tokens cannot be skipped by a timeout.
    */
   onRefreshSuccess?: (tokens: MCPOAuthTokens) => Promise<void>;
+  /** Separates in-flight redemptions for the same named server under different OAuth bindings. */
+  singleFlightScope?: string;
 }
 
 /**
@@ -135,7 +137,7 @@ function cloneTokenMetadata(tokenData: IToken): Record<string, unknown> | Map<st
 export class MCPTokenStorage {
   /**
    * Process-local in-flight refresh-token redemptions, keyed by
-   * `tenantId:userId:serverName`. Every code path that redeems a refresh token
+   * `tenantId:userId:serverName:bindingScope`. Every code path that redeems a refresh token
    * (expired-token refresh via `getTokens`, silent refresh on 401, reconnect
    * retries) converges on `forceRefreshTokens`, so coalescing here guarantees
    * at most one wire call to the token endpoint per user/server at a time.
@@ -656,7 +658,7 @@ export class MCPTokenStorage {
    * server has signaled token invalidity (e.g. a 401 mid-session) — the 401 is
    * the authoritative signal, not the local `expires_at`.
    *
-   * Single-flighted per `(tenantId, userId, serverName)`: concurrent callers
+   * Single-flighted per `(tenantId, userId, serverName, bindingScope)`: concurrent callers
    * (tool-call 401s, pings, reconnect retries, expired-token reads) share one
    * redemption and receive the same rotated result instead of each replaying
    * the refresh token at the token endpoint.
@@ -670,10 +672,10 @@ export class MCPTokenStorage {
       existingAccessToken?: IToken | null;
     },
   ): Promise<MCPOAuthTokens | null> {
-    const { userId, serverName, refreshTokens, createToken, signal } = params;
+    const { userId, serverName, refreshTokens, createToken, signal, singleFlightScope } = params;
     const logPrefix = this.getLogPrefix(userId, serverName);
 
-    const refreshKey = `${getTenantId() ?? ''}:${userId}:${serverName}`;
+    const refreshKey = `${getTenantId() ?? ''}:${userId}:${serverName}:${singleFlightScope ?? ''}`;
     const inflight = this.inflightRefreshes.get(refreshKey);
     if (inflight) {
       logger.debug(`${logPrefix} Joining in-flight token refresh`);
@@ -916,7 +918,7 @@ export class MCPTokenStorage {
         findToken,
         clientInfo,
         existingTokens: {
-          accessToken: existingAccessToken,
+          accessToken: existingAccessToken ?? undefined,
           refreshToken: refreshTokenData,
           clientInfoToken: clientInfoData,
         },
@@ -926,7 +928,7 @@ export class MCPTokenStorage {
 
       if (onRefreshSuccess) {
         try {
-          await onRefreshSuccess(newTokens);
+          await onRefreshSuccess(storedTokens);
         } catch (hookError) {
           logger.warn(`${logPrefix} onRefreshSuccess callback failed`, hookError);
         }
@@ -993,6 +995,7 @@ export class MCPTokenStorage {
     updateToken,
     deleteTokens,
     refreshTokens,
+    singleFlightScope,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -1040,6 +1043,7 @@ export class MCPTokenStorage {
           updateToken,
           deleteTokens,
           refreshTokens,
+          singleFlightScope,
           existingAccessToken: accessTokenData,
         });
       }

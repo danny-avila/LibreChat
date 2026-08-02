@@ -1786,21 +1786,29 @@ describe('MCPTokenStorage', () => {
   });
 
   describe('forceRefreshTokens concurrent coalescing (single-flight)', () => {
-    /** Seeds an expired access token plus a refresh token for `serverName`. */
+    /** Seeds one coherent expired OAuth credential generation for `serverName`. */
     const seedRefreshableTokens = async (serverName = 'srv1', refreshToken = 'rt-1') => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: `mcp:${serverName}`,
         token: 'enc:expired-access-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: `mcp:${serverName}:refresh`,
         token: `enc:${refreshToken}`,
         expiresIn: 86400,
+      });
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_client',
+        identifier: `mcp:${serverName}:client`,
+        token: 'enc:{"client_id":"cid","client_secret":"secret"}',
+        expiresIn: 86400,
+        metadata: storedBindingMetadata,
       });
     };
 
@@ -1818,6 +1826,7 @@ describe('MCPTokenStorage', () => {
       findToken: store.findToken,
       createToken: store.createToken,
       updateToken: store.updateToken,
+      deleteTokens: store.deleteTokens,
       refreshTokens,
     });
 
@@ -1948,6 +1957,81 @@ describe('MCPTokenStorage', () => {
       expect(result!.access_token).toBe('at-3');
     });
 
+    it('re-reads an access token installed after the missing-token probe', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:late-access-srv:refresh',
+        token: 'enc:rt-1',
+        expiresIn: 86400,
+      });
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:late-access-srv:client',
+        token: 'enc:{"client_id":"cid","client_secret":"secret"}',
+        expiresIn: 86400,
+        metadata: storedBindingMetadata,
+      });
+
+      let accessProbeSeen = false;
+      const findToken = (async (filter: { type?: string }) => {
+        if (filter.type !== 'mcp_oauth' || accessProbeSeen) {
+          return store.findToken(filter as Parameters<InMemoryTokenStore['findToken']>[0]);
+        }
+
+        accessProbeSeen = true;
+        const generationB = { credential_set_id: 'credential-set-b' };
+        await store.createToken({
+          userId: 'u1',
+          type: 'mcp_oauth',
+          identifier: 'mcp:late-access-srv',
+          token: 'enc:interactive-access',
+          expiresIn: -1,
+          metadata: generationB,
+        });
+        await store.updateToken(
+          {
+            userId: 'u1',
+            type: 'mcp_oauth_refresh',
+            identifier: 'mcp:late-access-srv:refresh',
+            metadataCredentialSetId: credentialSetId,
+          },
+          { token: 'enc:interactive-refresh', metadata: generationB },
+        );
+        await store.updateToken(
+          {
+            userId: 'u1',
+            type: 'mcp_oauth_client',
+            identifier: 'mcp:late-access-srv:client',
+            metadataCredentialSetId: credentialSetId,
+          },
+          {
+            token: 'enc:{"client_id":"cid","client_secret":"secret"}',
+            metadata: { ...storedBindingMetadata, ...generationB },
+          },
+        );
+        return null;
+      }) as TokenMethods['findToken'];
+      const createToken = jest.fn(store.createToken);
+      const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(3));
+
+      const result = await MCPTokenStorage.getTokens({
+        ...refreshParams(refreshTokens, 'late-access-srv'),
+        findToken,
+        createToken,
+      });
+
+      expect(result).toMatchObject({ access_token: 'at-3' });
+      expect(refreshTokens).toHaveBeenCalledWith(
+        'interactive-refresh',
+        expect.any(Object),
+        expect.any(AbortSignal),
+      );
+      expect(createToken).not.toHaveBeenCalled();
+      expect(store.getAll().filter((token) => token.type === 'mcp_oauth')).toHaveLength(1);
+    });
+
     it('does not cache results: a refresh after settlement triggers a fresh redemption', async () => {
       await seedRefreshableTokens('sequential-srv');
 
@@ -1998,6 +2082,34 @@ describe('MCPTokenStorage', () => {
       const [firstResult, secondResult] = await Promise.all([first, second]);
       expect(firstResult!.access_token).toBe('at-2');
       expect(secondResult!.access_token).toBe('at-5');
+    });
+
+    it('does not coalesce refreshes across different OAuth binding scopes', async () => {
+      await seedRefreshableTokens('scoped-srv');
+
+      const resolutions: Array<(tokens: MCPOAuthTokens) => void> = [];
+      const refreshTokens = jest.fn(
+        () =>
+          new Promise<MCPOAuthTokens>((resolve) => {
+            resolutions.push(resolve);
+          }),
+      );
+      const params = refreshParams(refreshTokens, 'scoped-srv');
+      const first = MCPTokenStorage.forceRefreshTokens({
+        ...params,
+        singleFlightScope: 'binding-a',
+      });
+      const second = MCPTokenStorage.forceRefreshTokens({
+        ...params,
+        singleFlightScope: 'binding-b',
+      });
+
+      await waitFor(() => refreshTokens.mock.calls.length === 2);
+      resolutions[0](rotatedTokens(2));
+      await expect(first).resolves.toMatchObject({ access_token: 'at-2' });
+      resolutions[1](rotatedTokens(3));
+      await expect(second).rejects.toThrow(ReauthenticationRequiredError);
+      expect(refreshTokens).toHaveBeenCalledTimes(2);
     });
 
     it('propagates refresh failure to all joined callers and releases the single-flight slot', async () => {
@@ -2122,8 +2234,21 @@ describe('MCPTokenStorage', () => {
       resolveRefresh(rotatedTokens(2));
       await waitFor(() => onRefreshSuccess.mock.calls.length === 1);
       expect(onRefreshSuccess).toHaveBeenCalledWith(
-        expect.objectContaining({ access_token: 'at-2' }),
+        expect.objectContaining({
+          access_token: 'at-2',
+          credential_set_id: expect.any(String),
+        }),
       );
+      const callbackTokens = onRefreshSuccess.mock.calls[0][0];
+      const storedAccess = store
+        .getAll()
+        .find((token) => token.type === 'mcp_oauth' && token.identifier === 'mcp:hook-srv');
+      const storedCredentialSetId =
+        storedAccess!.metadata instanceof Map
+          ? storedAccess!.metadata.get('credential_set_id')
+          : storedAccess!.metadata?.credential_set_id;
+      expect(callbackTokens.credential_set_id).toBe(storedCredentialSetId);
+      expect(callbackTokens.credential_set_id).not.toBe(credentialSetId);
     });
 
     it("an initiator's abort resolves only its own wait, not the shared redemption", async () => {
@@ -2187,13 +2312,6 @@ describe('MCPTokenStorage', () => {
 
     it('propagates ReauthenticationRequiredError to concurrent callers', async () => {
       await seedRefreshableTokens('reauth-srv');
-      await store.createToken({
-        userId: 'u1',
-        type: 'mcp_oauth_client',
-        identifier: 'mcp:reauth-srv:client',
-        token: 'enc:{"client_id":"cid"}',
-        expiresIn: 86400,
-      });
 
       let rejectRefresh!: (error: Error) => void;
       const refreshTokens = jest.fn(
