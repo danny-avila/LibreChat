@@ -1,5 +1,10 @@
 import { logger } from '@librechat/data-schemas';
-import { EModelEndpoint, EToolResources, AgentCapabilities } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  EToolResources,
+  AgentCapabilities,
+  FileSources,
+} from 'librechat-data-provider';
 import type { TAgentsEndpoint, TFile } from 'librechat-data-provider';
 import type { IUser, AppConfig } from '@librechat/data-schemas';
 import type { Request as ServerRequest } from 'express';
@@ -349,7 +354,7 @@ describe('primeResources', () => {
               bytes: 256,
               embedded: false,
               usage: 0,
-              source: 'local',
+              source: FileSources.local,
             },
           ],
         },
