@@ -1,4 +1,5 @@
 import { memo, useRef, useMemo, useState, useCallback } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useDrag, useDrop } from 'react-dnd';
 import { X, Pencil, GripVertical } from 'lucide-react';
@@ -6,6 +7,8 @@ import { useMediaQuery, useToastContext } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/store/families';
+import EscalateNowButton from '~/components/Chat/Input/EscalateNowButton';
+import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -55,6 +58,8 @@ interface QueueRowProps {
   order: string[];
   steering: SteeringControls;
   conversationId: string;
+  /** One interrupt at a time: an arm is already unresolved somewhere. */
+  interruptPending: boolean;
   onEditToComposer: QueueProps['onEditToComposer'];
   onRestoreToComposer: RestoreToComposer;
   onAnnounce: (message: string) => void;
@@ -67,6 +72,7 @@ function QueueRow({
   order,
   steering,
   conversationId,
+  interruptPending,
   onEditToComposer,
   onRestoreToComposer,
   onAnnounce,
@@ -141,6 +147,14 @@ function QueueRow({
    *  accepting input) nor send (a run is still active), so it would just
    *  re-queue the message with nothing visible happening. */
   const sendDisabled = steering.duringRunActive && !steering.canSteer;
+  /* A recovered item is consumed atomically only when it starts a normal
+     generation. Escalating it would leave or duplicate the parked source. */
+  const isRecovered = message.recoverySteerId != null;
+  /** `canSteer` is false while paused on approval, but the escalation control
+   *  stays visible-and-disabled there: hiding it during the pause is exactly
+   *  the discoverability gap this button closes. */
+  const showEscalate =
+    !isRecovered && (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
 
   return (
     <div
@@ -214,6 +228,14 @@ function QueueRow({
       >
         {localize('com_ui_send_now')}
       </button>
+      {showEscalate && (
+        <EscalateNowButton
+          surface="queued"
+          messageText={message.text}
+          disabled={steering.pausedOnApproval || interruptPending}
+          onClick={() => steering.sendQueuedNow(message, { preempt: true })}
+        />
+      )}
       <button
         type="button"
         aria-label={localize('com_ui_edit_message')}
@@ -273,9 +295,10 @@ function QueueRow({
 
 /**
  * Messages waiting for the current reply to finish, as a rail tucked behind
- * the composer's top edge. One row per message, three visible actions and no
+ * the composer's top edge. One row per message, its actions all visible and no
  * overflow menu: the menu is where the old design hid a global preference
- * among item actions.
+ * among item actions. That preference ("steering interrupts generation") lives
+ * in Settings now; what stays on the row is only what acts on THAT message.
  *
  * The rail is also the running order: whatever sits at the top is what gets
  * sent when the reply lands, so rows can be dragged past one another by the
@@ -291,6 +314,17 @@ function QueueRow({
 function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer }: QueueProps) {
   const localize = useLocalize();
   const queued = useRecoilValue(store.queuedMessagesByConvoId(steering.queueKey));
+  const pendingSteers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
+  const escalating = useAtomValue(escalatingSteerFamily(conversationId));
+  /* Only one interrupt can be unresolved at a time: a second arm would seal the
+     same run twice. The escalating flag covers an arm's round trip, before its
+     chip can show `preempt`. */
+  const interruptPending = useMemo(
+    () =>
+      escalating ||
+      pendingSteers.some((steer) => steer.preempt === true && steer.status !== 'failed'),
+    [escalating, pendingSteers],
+  );
   /* Spoken only for the keys. A drag reorders on every crossing, and a reader
      narrating each one would be behind the pointer and in the way of it. */
   const [announcement, setAnnouncement] = useState('');
@@ -332,6 +366,7 @@ function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer
             order={order}
             steering={steering}
             conversationId={conversationId}
+            interruptPending={interruptPending}
             onEditToComposer={onEditToComposer}
             onRestoreToComposer={onRestoreToComposer}
             onAnnounce={setAnnouncement}
