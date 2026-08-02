@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import {
   MOCK_ENDPOINTS,
   NEW_CHAT_PATH,
+  isAgentsStream,
   messagesView,
   replyPrompt,
   replyText,
@@ -103,10 +104,14 @@ test.describe('global shortcut yield contract', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
 
-    const generationPosts: string[] = [];
+    // The generation POST goes to /api/agents/chat/<endpoint>; collect every
+    // agents-chat POST path so a duplicate submit (same path, fired again)
+    // cannot hide, whatever the endpoint suffix is.
+    const agentPosts: string[] = [];
     page.on('request', (request) => {
-      if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/agents/chat') {
-        generationPosts.push(request.url());
+      const { pathname } = new URL(request.url());
+      if (request.method() === 'POST' && pathname.startsWith('/api/agents/chat')) {
+        agentPosts.push(pathname);
       }
     });
 
@@ -114,23 +119,18 @@ test.describe('global shortcut yield contract', () => {
     await input.click();
     await input.fill(prompt);
     const [response] = await Promise.all([
-      page.waitForResponse(
-        (res) =>
-          res.request().method() === 'POST' &&
-          new URL(res.url()).pathname === '/api/agents/chat' &&
-          res.status() === 200,
-        { timeout: 30000 },
-      ),
+      page.waitForResponse(isAgentsStream, { timeout: 30000 }),
       input.press('Alt+Enter'),
     ]);
     expect(response.ok()).toBeTruthy();
+    const generationPath = new URL(response.url()).pathname;
     await expect(messagesView(page).getByText(replyText(label))).toBeVisible({ timeout: 30000 });
 
     // Settle briefly so a late duplicate submission would surface, then
     // assert the single-fire invariant at both layers: one generation
     // request on the wire, one user turn + one reply in the thread.
     await page.waitForTimeout(750);
-    expect(generationPosts).toHaveLength(1);
+    expect(agentPosts.filter((pathname) => pathname === generationPath)).toHaveLength(1);
     await expect(messageTurns(page)).toHaveCount(2);
     await expect(messagesView(page).getByText(prompt)).toHaveCount(1);
   });
