@@ -9,6 +9,9 @@ const baseState: ComposerHintState = {
   hasText: false,
   isSubmitting: false,
   duringRunActive: false,
+  /** The common case: the epoch has landed, so the run is reachable. The
+   *  pre-epoch window is exercised explicitly below. */
+  canControlGeneration: true,
   duringRunAction: 'queue' as const,
   answerModeActive: false,
   uploadingCount: 0,
@@ -79,6 +82,42 @@ describe('composeHint', () => {
       expect(hint({ duringRunActive: true, hasText: false, isSubmitting: true })).toBe(
         '⌘ ⇧ X com_ui_composer_hint_stop',
       );
+    });
+
+    /* `isSubmitting` flips the moment the user sends, but the start POST
+       installs the generation epoch a beat later. Through that window every
+       chord that reaches the live run refuses, so naming them would point at
+       keys that do nothing. Queueing is local and keeps working. */
+    describe('before the generation epoch lands', () => {
+      const preEpoch = {
+        duringRunActive: true,
+        hasText: true,
+        isSubmitting: true,
+        canControlGeneration: false,
+      };
+
+      it('promises only the queue, which is the one action that still works', () => {
+        expect(hint(preEpoch)).toBe('com_ui_composer_hint_queue_default');
+      });
+
+      it('names no chord that would refuse', () => {
+        const result = hint(preEpoch);
+        expect(result).not.toContain('com_ui_composer_hint_send_now');
+        expect(result).not.toContain('com_ui_composer_hint_interrupt');
+        expect(result).not.toContain('⌥⏎');
+      });
+
+      it('still names the chord when it IS the queue action', () => {
+        expect(hint({ ...preEpoch, enterToSend: false })).toBe(
+          '⌘⏎ com_ui_composer_hint_queue_verb',
+        );
+      });
+
+      it('restores the full line once the epoch arrives', () => {
+        const result = hint({ ...preEpoch, canControlGeneration: true });
+        expect(result).toContain('com_ui_composer_hint_send_now');
+        expect(result).toContain('com_ui_composer_hint_interrupt');
+      });
     });
   });
 
