@@ -1,8 +1,9 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
+import { tenantStorage } from '~/config/tenantContext';
+import { createTokenModel } from '~/models/token';
 import { createTokenMethods } from './token';
-import tokenSchema from '~/schema/token';
 
 /** Mocking logger */
 jest.mock('~/config/winston', () => ({
@@ -21,7 +22,7 @@ beforeAll(async () => {
   await mongoose.connect(mongoUri);
 
   /** Register models */
-  Token = mongoose.models.Token || mongoose.model<t.IToken>('Token', tokenSchema);
+  Token = createTokenModel(mongoose);
 
   /** Initialize methods */
   methods = createTokenMethods(mongoose);
@@ -34,6 +35,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
+  methods = createTokenMethods(mongoose);
 });
 
 describe('Token Methods - Detailed Tests', () => {
@@ -561,6 +563,39 @@ describe('Token Methods - Detailed Tests', () => {
       const pending = await Token.findOne({ userId, type: 'email_change' }).lean();
       expect(['first-token', 'second-token']).toContain(pending?.token);
       expect(await Token.collection.indexExists('unique_token_scope')).toBe(true);
+    });
+
+    test('preserves the tenant when replacing a scoped token', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const scope = `email_change:${userId.toString()}`;
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+        methods.upsertToken(scope, {
+          userId,
+          type: 'email_change',
+          email: 'first@example.com',
+          token: 'first-token',
+          expiresIn: 900,
+        }),
+      );
+      await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+        methods.upsertToken(scope, {
+          userId,
+          type: 'email_change',
+          email: 'second@example.com',
+          token: 'second-token',
+          expiresIn: 900,
+        }),
+      );
+
+      const pending = await Token.findOne({ scope }).lean();
+      expect(pending?.tenantId).toBe('tenant-a');
+      expect(pending?.token).toBe('second-token');
+
+      const crossTenant = await tenantStorage.run({ tenantId: 'tenant-b' }, () =>
+        methods.findToken({ scope }),
+      );
+      expect(crossTenant).toBeNull();
     });
 
     test('does not collapse tokens outside the email change scope', async () => {
