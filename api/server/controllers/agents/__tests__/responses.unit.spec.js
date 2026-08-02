@@ -3,6 +3,8 @@
  * Tests that recordCollectedUsage is called correctly for token spending
  */
 
+const { ResourceType } = require('librechat-data-provider');
+
 const mockSpendTokens = jest.fn().mockResolvedValue({});
 const mockSpendStructuredTokens = jest.fn().mockResolvedValue({});
 const mockRecordCollectedUsage = jest
@@ -487,6 +489,46 @@ describe('createResponse controller', () => {
         500,
         expect.any(String),
         expect.any(String),
+      );
+    });
+  });
+
+  describe('remote-agent file authorization', () => {
+    it('threads the remote-agent permission boundary through initialization and tool loading', async () => {
+      const { initializeAgent, createToolExecuteHandler } = require('@librechat/api');
+      const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+      const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+
+      await createResponse(req, res);
+
+      const [initializeParams, dbMethods] = initializeAgent.mock.calls.at(-1);
+      const filterParams = {
+        files: [{ file_id: 'owner-file', user: 'agent-owner' }],
+        userId: 'user-123',
+        role: 'USER',
+        agentId: 'agent-123',
+      };
+      await dbMethods.filterFilesByAgentAccess(filterParams);
+      expect(filterFilesByAgentAccess).toHaveBeenLastCalledWith({
+        ...filterParams,
+        resourceType: ResourceType.REMOTE_AGENT,
+      });
+
+      await initializeParams.loadTools({
+        agentId: 'agent-123',
+        tools: ['file_search'],
+        provider: 'anthropic',
+        model: 'claude-3',
+        tool_resources: { file_search: { file_ids: ['owner-file'] } },
+      });
+      expect(loadAgentTools).toHaveBeenLastCalledWith(
+        expect.objectContaining({ agentResourceType: ResourceType.REMOTE_AGENT }),
+      );
+
+      const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
+      await toolExecuteOptions.loadTools(['file_search'], 'agent-123');
+      expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+        expect.objectContaining({ agentResourceType: ResourceType.REMOTE_AGENT }),
       );
     });
   });

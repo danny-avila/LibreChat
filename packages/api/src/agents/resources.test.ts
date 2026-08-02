@@ -177,6 +177,79 @@ describe('primeResources', () => {
         files: [accessibleImage],
       });
     });
+
+    it('should fetch and filter context and image records in one batch', async () => {
+      const contextFile: TFile = {
+        user: 'agent-owner',
+        file_id: 'context-file',
+        filename: 'context.pdf',
+        filepath: '/uploads/context.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: true,
+        usage: 0,
+      };
+      const sharedImage: TFile = {
+        user: 'agent-owner',
+        file_id: 'shared-image',
+        filename: 'shared.png',
+        filepath: '/uploads/shared.png',
+        object: 'file',
+        type: 'image/png',
+        bytes: 2048,
+        embedded: false,
+        usage: 0,
+        height: 800,
+        width: 600,
+      };
+      const imageFile: TFile = {
+        ...sharedImage,
+        file_id: 'image-file',
+        filename: 'image.png',
+        filepath: '/uploads/image.png',
+      };
+
+      mockGetFiles.mockResolvedValue([contextFile, sharedImage, imageFile]);
+      mockFilterFiles.mockResolvedValue([contextFile, sharedImage, imageFile]);
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: undefined,
+        tool_resources: {
+          [EToolResources.context]: {
+            file_ids: ['context-file', 'shared-image'],
+          },
+          [EToolResources.image_edit]: {
+            file_ids: ['shared-image', 'image-file'],
+          },
+        },
+        agentId: 'agent_shared',
+      });
+
+      expect(mockGetFiles).toHaveBeenCalledTimes(1);
+      expect(mockGetFiles).toHaveBeenCalledWith(
+        { file_id: { $in: ['context-file', 'shared-image', 'image-file'] } },
+        {},
+        {},
+      );
+      expect(mockFilterFiles).toHaveBeenCalledTimes(1);
+      expect(mockFilterFiles).toHaveBeenCalledWith({
+        files: [contextFile, sharedImage, imageFile],
+        userId: 'user1',
+        role: 'USER',
+        agentId: 'agent_shared',
+      });
+      expect(result.attachments).toEqual([contextFile, sharedImage]);
+      expect(result.tool_resources?.[EToolResources.image_edit]?.files).toEqual([
+        sharedImage,
+        imageFile,
+      ]);
+    });
   });
 
   describe('when attachments are provided', () => {

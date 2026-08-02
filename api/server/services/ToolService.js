@@ -540,6 +540,7 @@ const isBuiltInTool = (toolName) =>
  * @param {ServerRequest} params.req - The request object
  * @param {ServerResponse} [params.res] - The response object for SSE events
  * @param {Object} params.agent - The agent configuration
+ * @param {string} [params.agentResourceType] - Permission resource type for the authorized agent route
  * @param {string|null} [params.streamId] - Stream ID for resumable mode
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
  * @returns {Promise<{
@@ -554,6 +555,7 @@ async function loadToolDefinitionsWrapper({
   req,
   res,
   agent,
+  agentResourceType,
   streamId = null,
   jobCreatedAt,
   tool_resources,
@@ -1092,6 +1094,7 @@ async function loadToolDefinitionsWrapper({
         req,
         tool_resources,
         agentId: agent.id,
+        agentResourceType,
       });
       if (toolContext) {
         dynamicToolContextMap[Tools.execute_code] = toolContext;
@@ -1110,6 +1113,7 @@ async function loadToolDefinitionsWrapper({
         req,
         tool_resources,
         agentId: agent.id,
+        agentResourceType,
       });
       if (toolContext) {
         dynamicToolContextMap[Tools.file_search] = toolContext;
@@ -1167,6 +1171,7 @@ async function loadToolDefinitionsWrapper({
  * @param {ServerRequest} params.req - The request object
  * @param {ServerResponse} params.res - The response object
  * @param {Object} params.agent - The agent configuration
+ * @param {string} [params.agentResourceType] - Permission resource type for the authorized agent route
  * @param {AbortSignal} [params.signal] - Abort signal
  * @param {Object} [params.tool_resources] - Tool resources
  * @param {string} [params.openAIApiKey] - OpenAI API key
@@ -1180,6 +1185,7 @@ async function loadAgentTools({
   req,
   res,
   agent,
+  agentResourceType,
   signal,
   tool_resources,
   openAIApiKey,
@@ -1193,6 +1199,7 @@ async function loadAgentTools({
       req,
       res,
       agent,
+      agentResourceType,
       streamId,
       jobCreatedAt,
       tool_resources,
@@ -1298,6 +1305,7 @@ async function loadAgentTools({
     options: {
       req,
       res,
+      agentResourceType,
       mcpServerContext,
       jobCreatedAt,
       openAIApiKey,
@@ -1556,6 +1564,7 @@ async function loadAgentTools({
  * @param {ServerResponse} params.res - The response object
  * @param {AbortSignal} [params.signal] - Abort signal
  * @param {Object} params.agent - The agent object
+ * @param {string} [params.agentResourceType] - Permission resource type for the authorized agent route
  * @param {string[]} params.toolNames - Names of tools to load
  * @param {Map} [params.toolRegistry] - Tool registry
  * @param {Record<string, import('@librechat/api').LCAvailableTools>} [params.mcpAvailableTools] - Run-scoped MCP tool definitions
@@ -1573,6 +1582,7 @@ async function loadToolsForExecution({
   res,
   signal,
   agent,
+  agentResourceType,
   toolNames,
   toolRegistry,
   backgroundToolNames,
@@ -1759,6 +1769,7 @@ async function loadToolsForExecution({
       options: {
         req,
         res,
+        agentResourceType,
         jobCreatedAt,
         tool_resources,
         processFileURL,

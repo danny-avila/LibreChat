@@ -29,7 +29,7 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-const { FileContext } = require('librechat-data-provider');
+const { FileContext, ResourceType } = require('librechat-data-provider');
 
 // Mock uuid
 jest.mock('uuid', () => ({
@@ -1898,6 +1898,36 @@ describe('Code Process', () => {
       mockAxios.mockResolvedValue({ data: null });
       return { handleFileUpload, getDownloadStream };
     }
+
+    it('uses the permission resource type established by the calling route', async () => {
+      const files = [
+        {
+          file_id: 'owner-file',
+          filename: 'owner.txt',
+          user: 'agent-owner',
+          metadata: {},
+        },
+      ];
+      getFiles.mockResolvedValue(files);
+      filterFilesByAgentAccess.mockImplementation(({ files: authorizedFiles }) =>
+        Promise.resolve(authorizedFiles),
+      );
+
+      await primeFiles({
+        req: { user: { id: 'remote-viewer', role: 'USER' } },
+        agentId: 'agent-123',
+        agentResourceType: ResourceType.REMOTE_AGENT,
+        tool_resources: { execute_code: { file_ids: ['owner-file'] } },
+      });
+
+      expect(filterFilesByAgentAccess).toHaveBeenCalledWith({
+        files,
+        userId: 'remote-viewer',
+        role: 'USER',
+        agentId: 'agent-123',
+        resourceType: ResourceType.REMOTE_AGENT,
+      });
+    });
 
     it('does not read a runtime file record that has no authorized database record', async () => {
       const getDownloadStream = jest.fn().mockResolvedValue('forged-stream');

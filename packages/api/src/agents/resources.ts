@@ -264,30 +264,45 @@ export const primeResources = async ({
       delete tool_resources[EToolResources.ocr];
     }
 
-    if (fileIds.length > 0 && isContextEnabled) {
+    const shouldLoadContext = fileIds.length > 0 && isContextEnabled;
+    const contextFileIds = new Set(shouldLoadContext ? fileIds : []);
+    const imageEditFileIds = tool_resources[EToolResources.image_edit]?.file_ids ?? [];
+    const imageEditFileIdSet = new Set(imageEditFileIds);
+    const persistedResourceFileIds = new Set(contextFileIds);
+    for (const fileId of imageEditFileIds) {
+      persistedResourceFileIds.add(fileId);
+    }
+
+    if (shouldLoadContext) {
       delete tool_resources[EToolResources.context];
-      let context = await getFiles(
+    }
+
+    let persistedResourceFiles: Array<TFile> = [];
+    if (persistedResourceFileIds.size > 0) {
+      persistedResourceFiles = await getFiles(
         {
-          file_id: { $in: fileIds },
+          file_id: { $in: Array.from(persistedResourceFileIds) },
         },
         {},
         {},
       );
 
       if (filterFiles && req.user?.id && agentId) {
-        context = await filterFiles({
-          files: context,
+        persistedResourceFiles = await filterFiles({
+          files: persistedResourceFiles,
           userId: req.user.id,
           role: req.user.role,
           agentId,
         });
       }
+    }
 
-      for (const file of context) {
-        if (!file?.file_id) {
-          continue;
-        }
+    for (const file of persistedResourceFiles) {
+      if (!file?.file_id) {
+        continue;
+      }
 
+      if (contextFileIds.has(file.file_id)) {
         // Clear from attachmentFileIds if it was pre-added
         attachmentFileIds.delete(file.file_id);
 
@@ -304,37 +319,15 @@ export const primeResources = async ({
           processedResourceFiles,
         });
       }
-    }
 
-    const imageEditFileIds = tool_resources[EToolResources.image_edit]?.file_ids ?? [];
-    if (imageEditFileIds.length > 0) {
-      let imageFiles = await getFiles(
-        {
-          file_id: { $in: imageEditFileIds },
-        },
-        {},
-        {},
-      );
-
-      if (filterFiles && req.user?.id && agentId) {
-        imageFiles = await filterFiles({
-          files: imageFiles,
-          userId: req.user.id,
-          role: req.user.role,
-          agentId,
-        });
-      }
-
-      for (const file of imageFiles) {
+      if (imageEditFileIdSet.has(file.file_id)) {
         addFileToResource({
           file,
           resourceType: EToolResources.image_edit,
           tool_resources,
           processedResourceFiles,
         });
-        if (file.file_id) {
-          attachmentFileIds.add(file.file_id);
-        }
+        attachmentFileIds.add(file.file_id);
       }
     }
 
