@@ -433,7 +433,11 @@ export default function Artifacts() {
             </div>
           )}
         </div>
-        <div ref={fullscreenPortalRef} data-testid="artifact-fullscreen-portal" />
+        <div
+          ref={fullscreenPortalRef}
+          className="z-[101]"
+          data-testid="artifact-fullscreen-portal"
+        />
       </div>
     </Tabs.Root>
   );

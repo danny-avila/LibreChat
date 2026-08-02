@@ -234,8 +234,12 @@ describe('Artifacts fullscreen preview', () => {
     expect(panel).toHaveClass('inset-x-0', 'bottom-0', 'rounded-t-[20px]');
   });
 
-  it('keeps the version menu inside the fullscreen container', async () => {
+  it('keeps the mobile version menu above the fullscreen panel', async () => {
+    setMobileViewport(true);
     await renderArtifacts({ artifacts: [primaryArtifact, secondaryArtifact] });
+
+    const closeButton = screen.getByRole('button', { name: 'Close' });
+    const panel = closeButton.parentElement?.parentElement?.parentElement;
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Enter full screen' }));
@@ -245,6 +249,8 @@ describe('Artifacts fullscreen preview', () => {
     const versionMenu = await screen.findByRole('menu');
     const fullscreenPortal = screen.getByTestId('artifact-fullscreen-portal');
 
+    expect(panel).toHaveClass('z-[100]');
+    expect(fullscreenPortal).toHaveClass('z-[101]');
     expect(document.fullscreenElement).toContainElement(versionMenu);
     expect(fullscreenPortal).toContainElement(versionMenu);
   });
