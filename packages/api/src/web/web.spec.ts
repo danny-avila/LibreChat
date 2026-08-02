@@ -132,13 +132,56 @@ describe('web.ts', () => {
       expect(result.authResult.safeSearch).toBe(SafeSearchTypes.MODERATE);
     });
 
-    it('should return authenticated=false when a required category is not authenticated', async () => {
-      // Mock authentication failure for the providers category
+    it('should authenticate Firecrawl when selected as the search provider', async () => {
+      const firecrawlSearchConfig: TCustomConfig['webSearch'] = {
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        firecrawlVersion: '${FIRECRAWL_VERSION}',
+        searchProvider: 'firecrawl' as SearchProviders,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+        rerankerType: 'none' as RerankerTypes,
+        safeSearch: SafeSearchTypes.MODERATE,
+      };
+
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
         authFields.forEach((field: string) => {
-          // Only provide values for scrapers and rerankers, not for providers
-          if (field !== 'SERPER_API_KEY' && field !== 'SEARXNG_INSTANCE_URL') {
+          if (field === 'FIRECRAWL_API_URL') {
+            result[field] = 'https://api.firecrawl.dev';
+          } else if (field === 'FIRECRAWL_VERSION') {
+            result[field] = 'v2';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: firecrawlSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searchProvider).toBe('firecrawl');
+      expect(result.authResult.firecrawlApiKey).toBe('test-api-key');
+      expect(result.authResult.firecrawlApiUrl).toBe('https://api.firecrawl.dev');
+      expect(result.authResult.firecrawlVersion).toBe('v2');
+    });
+
+    it('should return authenticated=false when selected Firecrawl provider credentials are missing', async () => {
+      const firecrawlProviderConfig: TCustomConfig['webSearch'] = {
+        ...webSearchConfig,
+        searchProvider: 'firecrawl' as SearchProviders,
+        scraperProvider: 'serper' as ScraperProviders,
+        rerankerType: 'none' as RerankerTypes,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field !== 'FIRECRAWL_API_KEY') {
             result[field] =
               field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
           }
@@ -148,13 +191,15 @@ describe('web.ts', () => {
 
       const result = await loadWebSearchAuth({
         userId,
-        webSearchConfig,
+        webSearchConfig: firecrawlProviderConfig,
         loadAuthValues: mockLoadAuthValues,
       });
 
       expect(result.authenticated).toBe(false);
-      // We should still have authTypes for the categories we checked
-      expect(result.authTypes.some(([category]) => category === 'providers')).toBe(true);
+      const providersAuthType = result.authTypes.find(
+        ([category]) => category === 'providers',
+      )?.[1];
+      expect(providersAuthType).toBe(AuthType.USER_PROVIDED);
     });
 
     it('should handle exceptions from loadAuthValues', async () => {
@@ -761,11 +806,14 @@ describe('web.ts', () => {
       // Check providers
       expect(webSearchAuth.providers).toHaveProperty('serper');
       expect(webSearchAuth.providers.serper).toHaveProperty('serperApiKey', 1);
+      expect(webSearchAuth.providers).toHaveProperty('firecrawl');
+      expect(webSearchAuth.providers.firecrawl).toHaveProperty('firecrawlApiKey', 1);
 
       // Check scrapers
       expect(webSearchAuth.scrapers).toHaveProperty('firecrawl');
       expect(webSearchAuth.scrapers.firecrawl).toHaveProperty('firecrawlApiKey', 1);
       expect(webSearchAuth.scrapers.firecrawl).toHaveProperty('firecrawlApiUrl', 0);
+      expect(webSearchAuth.scrapers.firecrawl).toHaveProperty('firecrawlVersion', 0);
 
       // Check rerankers
       expect(webSearchAuth.rerankers).toHaveProperty('jina');
@@ -777,6 +825,7 @@ describe('web.ts', () => {
     it('should mark required keys with value 1', () => {
       // All keys with value 1 are required
       expect(webSearchAuth.providers.serper.serperApiKey).toBe(1);
+      expect(webSearchAuth.providers.firecrawl.firecrawlApiKey).toBe(1);
       expect(webSearchAuth.scrapers.firecrawl.firecrawlApiKey).toBe(1);
       expect(webSearchAuth.rerankers.jina.jinaApiKey).toBe(1);
       expect(webSearchAuth.rerankers.cohere.cohereApiKey).toBe(1);
@@ -784,7 +833,10 @@ describe('web.ts', () => {
 
     it('should mark optional keys with value 0', () => {
       // Keys with value 0 are optional
+      expect(webSearchAuth.providers.firecrawl.firecrawlApiUrl).toBe(0);
+      expect(webSearchAuth.providers.firecrawl.firecrawlVersion).toBe(0);
       expect(webSearchAuth.scrapers.firecrawl.firecrawlApiUrl).toBe(0);
+      expect(webSearchAuth.scrapers.firecrawl.firecrawlVersion).toBe(0);
     });
   });
   describe('loadWebSearchAuth with specific services', () => {
