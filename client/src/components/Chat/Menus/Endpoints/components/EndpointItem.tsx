@@ -134,18 +134,41 @@ function EndpointMenuContent({
     endpoint.showMarketplace === true && marketplaceSearchMatches(searchValue, localize);
   const hasSelectableRows = endpointSpecs.length > 0 || renderedModels.length > 0;
 
+  /**
+   * Once the model list is windowed, the DOM no longer holds every option, so a screen
+   * reader would infer position and total from the mounted slice alone. Declare them
+   * explicitly across the whole listbox — mixing declared and inferred values within one
+   * set is worse than either — and leave them off entirely when nothing is virtualized.
+   */
+  const precedingOptionCount = (showMarketplace ? 1 : 0) + endpointSpecs.length;
+  const isVirtualized = renderedModels.length > VIRTUALIZE_THRESHOLD;
+  const listboxSetSize = isVirtualized ? precedingOptionCount + renderedModels.length : undefined;
+
   return (
     <>
-      {showMarketplace && <MarketplaceItem label={localize('com_agents_marketplace')} />}
+      {showMarketplace && (
+        <MarketplaceItem
+          label={localize('com_agents_marketplace')}
+          posInSet={isVirtualized ? 1 : undefined}
+          setSize={listboxSetSize}
+        />
+      )}
       {showMarketplace && hasSelectableRows && <CustomMenuSeparator />}
-      {endpointSpecs.map((spec: TModelSpec) => (
-        <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
+      {endpointSpecs.map((spec: TModelSpec, specIndex: number) => (
+        <ModelSpecItem
+          key={spec.name}
+          spec={spec}
+          isSelected={selectedSpec === spec.name}
+          posInSet={isVirtualized ? (showMarketplace ? 1 : 0) + specIndex + 1 : undefined}
+          setSize={listboxSetSize}
+        />
       ))}
       <EndpointModels
         endpoint={endpoint}
         renderedModels={renderedModels}
         endpointIndex={endpointIndex}
         searchValue={searchValue}
+        precedingOptionCount={precedingOptionCount}
       />
     </>
   );
@@ -162,11 +185,13 @@ function EndpointModels({
   renderedModels,
   endpointIndex,
   searchValue,
+  precedingOptionCount,
 }: {
   endpoint: Endpoint;
   renderedModels: string[];
   endpointIndex: number;
   searchValue: string;
+  precedingOptionCount: number;
 }) {
   const { isFavoriteModel, toggleFavoriteModel, isFavoriteAgent, toggleFavoriteAgent } =
     useFavorites();
@@ -215,6 +240,7 @@ function EndpointModels({
         isFavorite={isFavorite}
         onToggleFavorite={onToggleFavorite}
         endpointIndex={endpointIndex}
+        precedingOptionCount={precedingOptionCount}
       />
     );
   }

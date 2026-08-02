@@ -17,6 +17,9 @@ interface VirtualizedModelListProps {
   isFavorite: (modelId: string) => boolean;
   onToggleFavorite: (modelId: string) => void;
   endpointIndex?: number;
+  /** Count of options rendered ahead of this list in the same listbox (marketplace entry,
+   *  model specs), so `aria-posinset` is relative to the whole listbox and not just this list. */
+  precedingOptionCount: number;
 }
 
 /**
@@ -40,6 +43,7 @@ export default function VirtualizedModelList({
   isFavorite,
   onToggleFavorite,
   endpointIndex,
+  precedingOptionCount,
 }: VirtualizedModelListProps) {
   const listRef = useRef<List>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -113,11 +117,21 @@ export default function VirtualizedModelList({
             isGlobal={globalByName.get(modelId) ?? false}
             isFavorite={isFavorite(modelId)}
             onToggleFavorite={onToggleFavorite}
+            posInSet={precedingOptionCount + index + 1}
+            setSize={precedingOptionCount + rowCount}
           />
         </div>
       );
     },
-    [endpoint, globalByName, isFavorite, modelIds, onToggleFavorite],
+    [
+      endpoint,
+      globalByName,
+      isFavorite,
+      modelIds,
+      onToggleFavorite,
+      precedingOptionCount,
+      rowCount,
+    ],
   );
 
   return (

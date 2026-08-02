@@ -16,6 +16,14 @@ interface EndpointModelItemProps {
   isGlobal?: boolean;
   isFavorite: boolean;
   onToggleFavorite: (modelId: string) => void;
+  /**
+   * Only set when the list is virtualized. The mounted rows are then a small window over
+   * a much larger set, so the position a screen reader would infer from the DOM is wrong;
+   * these carry the real position and total. Left undefined otherwise, where the DOM holds
+   * every option and the implicit values are already correct.
+   */
+  posInSet?: number;
+  setSize?: number;
 }
 
 function EndpointModelItemComponent({
@@ -24,6 +32,8 @@ function EndpointModelItemComponent({
   isGlobal = false,
   isFavorite,
   onToggleFavorite,
+  posInSet,
+  setSize,
 }: EndpointModelItemProps) {
   const localize = useLocalize();
   const { handleSelectModel, selectedValues } = useModelSelectorContext();
@@ -92,6 +102,8 @@ function EndpointModelItemComponent({
       ref={itemRef}
       onClick={() => handleSelectModel(endpoint, modelId ?? '')}
       aria-selected={isSelected || undefined}
+      aria-posinset={posInSet}
+      aria-setsize={setSize}
       className="group flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
     >
       <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
