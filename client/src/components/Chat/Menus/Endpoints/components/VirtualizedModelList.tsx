@@ -132,6 +132,17 @@ export default function VirtualizedModelList({
         rowRenderer={rowRenderer}
         className="outline-none!"
         style={{ width: '100%' }}
+        /**
+         * `List` spreads its props onto the underlying `Grid`, whose defaults are
+         * `role="grid"`, `containerRole="row"` and `tabIndex={0}`. Left alone, that puts a
+         * focusable grid between Ariakit's listbox and its options: tabbing out of the
+         * search field lands on the wrapper instead of a row, where the combobox no longer
+         * owns the keystroke, and the grid/row semantics fight the surrounding listbox.
+         * Neutralise both so focus and ARIA stay with the combobox items.
+         */
+        role="presentation"
+        containerRole="presentation"
+        tabIndex={-1}
       />
     </div>
   );

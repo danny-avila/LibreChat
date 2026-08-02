@@ -1250,8 +1250,15 @@ const getListAgentsHandler = async (req, res) => {
      * Scoped to agents that actually carry an S3 avatar: deployments on any other file
      * strategy match nothing here instead of loading (and walking) up to
      * `MAX_AVATAR_REFRESH_AGENTS` full agent documents to discover there is no work.
-     * Runs alongside the list query rather than before it — refreshed paths reach the
-     * response through `urlCache` below, not through what the list query happened to read.
+     *
+     * Must settle BEFORE the list query below, and is deliberately not parallelized with
+     * it. `updateAgent` writes through `findOneAndUpdate` on a `timestamps: true` schema,
+     * so refreshing an avatar advances `updatedAt` — the very field
+     * `getListAgentsByAccess` sorts and cursors on. A refresh landing after the first
+     * page's snapshot would move that agent ahead of the returned cursor, dropping it
+     * from every later page and silently truncating the caller's flattened list.
+     * Serializing costs nothing on the common path: a cache hit returns below without
+     * issuing any query, so only the once-per-30-minutes miss pays for the ordering.
      */
     const resolveAvatarRefresh = async () => {
       if (isValidCachedRefresh) {
@@ -1280,17 +1287,16 @@ const getListAgentsHandler = async (req, res) => {
       }
     };
 
+    const cachedRefresh = await resolveAvatarRefresh();
+
     // Use the new ACL-aware function
-    const [cachedRefresh, data] = await Promise.all([
-      resolveAvatarRefresh(),
-      db.getListAgentsByAccess({
-        accessibleIds,
-        otherParams: filter,
-        limit,
-        after: cursor,
-        includeSkillConfig: true,
-      }),
-    ]);
+    const data = await db.getListAgentsByAccess({
+      accessibleIds,
+      otherParams: filter,
+      limit,
+      after: cursor,
+      includeSkillConfig: true,
+    });
 
     const agents = data?.data ?? [];
     if (!agents.length) {

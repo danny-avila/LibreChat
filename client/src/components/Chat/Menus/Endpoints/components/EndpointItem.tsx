@@ -145,6 +145,7 @@ function EndpointMenuContent({
         endpoint={endpoint}
         renderedModels={renderedModels}
         endpointIndex={endpointIndex}
+        searchValue={searchValue}
       />
     </>
   );
@@ -160,10 +161,12 @@ function EndpointModels({
   endpoint,
   renderedModels,
   endpointIndex,
+  searchValue,
 }: {
   endpoint: Endpoint;
   renderedModels: string[];
   endpointIndex: number;
+  searchValue: string;
 }) {
   const { isFavoriteModel, toggleFavoriteModel, isFavoriteAgent, toggleFavoriteAgent } =
     useFavorites();
@@ -197,7 +200,15 @@ function EndpointModels({
 
   if (renderedModels.length > VIRTUALIZE_THRESHOLD) {
     return (
+      /**
+       * Keyed on the filter so a new result set starts at the top. `Grid` keeps its
+       * scroll offset across prop changes and, when the row count shrinks, clamps it to
+       * `totalRowsHeight - height` — the END of the shorter list. Without this a user who
+       * scrolled deep and then searched would land on the tail matches, with only those
+       * rows mounted and therefore reachable by keyboard.
+       */
       <VirtualizedModelList
+        key={searchValue}
         endpoint={endpoint}
         modelIds={renderedModels}
         globalByName={globalByName}

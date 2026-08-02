@@ -2279,6 +2279,46 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.json).toHaveBeenCalled();
     });
 
+    test('should finish avatar writes before snapshotting the paginated list query', async () => {
+      /** `updateAgent` bumps `updatedAt`, which is the field `getListAgentsByAccess`
+       *  sorts and cursors on. If the list query snapshots before a refresh write
+       *  lands, that agent jumps ahead of the returned cursor and vanishes from every
+       *  later page. Assert the ordering rather than the symptom, which only shows up
+       *  on multi-page S3 accounts under a specific interleaving. */
+      const db = require('~/models');
+      const order = [];
+      /** Yield a macrotask so a parallelized refresh would lose the race, the way a real
+       *  S3 presign round trip does. */
+      refreshS3Url.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        order.push('avatar-write');
+        return 'new-s3-path.jpg';
+      });
+      const realList = db.getListAgentsByAccess;
+      const listSpy = jest.spyOn(db, 'getListAgentsByAccess').mockImplementation(async (params) => {
+        if (params.includeSkillConfig) {
+          order.push('list-query');
+          return { object: 'list', data: [], has_more: false, after: null };
+        }
+        return realList(params);
+      });
+      mockCache.get.mockResolvedValue(false);
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      const mockReq = { user: { id: userA.toString(), role: 'USER' }, query: {} };
+      const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+
+      try {
+        await getListAgentsHandler(mockReq, mockRes);
+        expect(order).toContain('avatar-write');
+        expect(order.indexOf('avatar-write')).toBeLessThan(order.indexOf('list-query'));
+      } finally {
+        listSpy.mockRestore();
+        refreshS3Url.mockReset();
+      }
+    });
+
     test('should serve the refreshed filepath in the same response on cache miss', async () => {
       const agentId = agentWithS3Avatar.id;
       mockCache.get.mockResolvedValue(false);
