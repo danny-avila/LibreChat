@@ -45,7 +45,17 @@ const withTenant = (tenantId, operation) =>
 
 const emailChangeService = createEmailChangeService({
   findUserByEmail: (email, tenantId) =>
-    withTenant(tenantId, () => db.findUser({ email }, 'email _id tenantId')),
+    withTenant(tenantId, () =>
+      db.findUser(
+        tenantId
+          ? { email }
+          : {
+              email,
+              $or: [{ tenantId: { $exists: false } }, { tenantId: null }],
+            },
+        'email _id tenantId',
+      ),
+    ),
   getUserById: (userId, tenantId) =>
     withTenant(tenantId, () =>
       db.getUserById(userId, 'email _id name username provider tenantId +password'),

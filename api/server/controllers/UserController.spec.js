@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
+const mockEmailChangeService = {
+  requestEmailChange: jest.fn(),
+  confirmEmailChange: jest.fn(),
+};
+const mockCreateEmailChangeService = jest.fn(() => mockEmailChangeService);
+
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
   return {
@@ -42,6 +48,7 @@ jest.mock('~/models', () => {
     updateUser: jest.fn(),
     acceptTerms: jest.fn(),
     getUserById: jest.fn().mockResolvedValue(null),
+    findUser: jest.fn().mockResolvedValue(null),
     findToken: jest.fn(),
     getFiles: jest.fn().mockResolvedValue([]),
     removeUserFromAllGroups: jest.fn().mockImplementation(async (userId) => {
@@ -71,6 +78,7 @@ jest.mock('sharp', () =>
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
+  createEmailChangeService: (...args) => mockCreateEmailChangeService(...args),
   needsRefresh: jest.fn(),
   getNewS3URL: jest.fn(),
 }));
@@ -117,8 +125,29 @@ const {
   verifyEmailController,
 } = require('./UserController');
 const { Group } = require('~/db/models');
-const { deleteConvos, acceptTerms } = require('~/models');
+const { findUser, deleteConvos, acceptTerms } = require('~/models');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
+
+describe('emailChangeService dependencies', () => {
+  const emailChangeDeps = mockCreateEmailChangeService.mock.calls[0][0];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    findUser.mockResolvedValue(null);
+  });
+
+  it('constrains tenant-less email conflict checks to default-tenant users', async () => {
+    await emailChangeDeps.findUserByEmail('new@example.com');
+
+    expect(findUser).toHaveBeenCalledWith(
+      {
+        email: 'new@example.com',
+        $or: [{ tenantId: { $exists: false } }, { tenantId: null }],
+      },
+      'email _id tenantId',
+    );
+  });
+});
 
 describe('verifyEmailController', () => {
   const mockRes = {

@@ -125,7 +125,7 @@ describe('email change service', () => {
         ip: '203.0.113.9',
       });
 
-      expect(response).toMatchObject({ status: 401, code: 'current_password_invalid' });
+      expect(response).toMatchObject({ status: 403, code: 'current_password_invalid' });
       expect(deps.sendEmail).toHaveBeenCalledTimes(1);
       expect(deps.findUserByEmail).not.toHaveBeenCalled();
       expect(deps.upsertToken).not.toHaveBeenCalled();

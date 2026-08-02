@@ -541,8 +541,8 @@ const resetPassword = async (userId, token, password) => {
   if (
     !currentUser ||
     (passwordResetToken.type === AuthTokenTypes.PASSWORD_RESET &&
-      (!passwordResetToken.email ||
-        passwordResetToken.email.toLowerCase() !== currentUser.email.toLowerCase()))
+      passwordResetToken.email &&
+      passwordResetToken.email.toLowerCase() !== currentUser.email.toLowerCase())
   ) {
     return new Error('Invalid or expired password reset token');
   }

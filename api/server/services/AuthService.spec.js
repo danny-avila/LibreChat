@@ -760,6 +760,26 @@ describe('resetPassword', () => {
     });
   });
 
+  it('accepts typed reset tokens issued before email binding', async () => {
+    const resetHash = bcrypt.hashSync('reset-token', 10);
+    findToken.mockResolvedValue({
+      token: resetHash,
+      userId: 'user-reset',
+      type: 'password_reset',
+    });
+    getUserById.mockResolvedValue({ _id: 'user-reset', email: 'user@example.com' });
+    updateUser.mockResolvedValue({ email: 'user@example.com' });
+
+    const result = await resetPassword('user-reset', 'reset-token', 'new-password');
+
+    expect(result).toEqual({ message: 'Password reset was successful' });
+    expect(updateUser).toHaveBeenCalledWith(
+      'user-reset',
+      { password: expect.any(String) },
+      { email: 'user@example.com' },
+    );
+  });
+
   it('rejects a typed reset token issued to a previous email address', async () => {
     const resetHash = bcrypt.hashSync('reset-token', 10);
     findToken.mockResolvedValue({
