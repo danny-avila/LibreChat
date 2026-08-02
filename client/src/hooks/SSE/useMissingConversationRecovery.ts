@@ -29,6 +29,7 @@ export default function useMissingConversationRecovery({
   const onConfirmedMissingRef = useRef(onConfirmedMissing);
   const { data: streamStatus, isFetching, isSuccess } = useStreamStatus(conversationId, enabled);
   const streamStatusRef = useRef(streamStatus);
+  const recoveringConversationRef = useRef<string | null>(null);
 
   useLayoutEffect(() => {
     onConfirmedMissingRef.current = onConfirmedMissing;
@@ -39,17 +40,31 @@ export default function useMissingConversationRecovery({
   }, [streamStatus]);
 
   useEffect(() => {
-    if (
-      !enabled ||
-      !conversationId ||
-      conversationId === Constants.NEW_CONVO ||
-      !isSuccess ||
-      isFetching ||
-      streamStatus?.active !== false
-    ) {
+    if (!enabled || !conversationId || conversationId === Constants.NEW_CONVO) {
+      recoveringConversationRef.current = null;
+      return;
+    }
+    if (!isSuccess || isFetching) {
+      return;
+    }
+    if (streamStatus?.active === true) {
+      if (
+        recoveringConversationRef.current === conversationId &&
+        streamStatus.generationHandoff !== true
+      ) {
+        queryClient.setQueryData(streamStatusQueryKey(conversationId), {
+          ...streamStatus,
+          generationHandoff: true,
+        });
+      }
+      recoveringConversationRef.current = null;
+      return;
+    }
+    if (streamStatus?.active !== false) {
       return;
     }
 
+    recoveringConversationRef.current = conversationId;
     let cancelled = false;
     const initialStatus = streamStatusRef.current;
     const timeout = setTimeout(() => {
@@ -103,6 +118,7 @@ export default function useMissingConversationRecovery({
             : verifiedStatus,
         );
         if (verifiedStatus.active) {
+          recoveringConversationRef.current = null;
           return;
         }
 
@@ -118,13 +134,16 @@ export default function useMissingConversationRecovery({
           convertSteersToQueued(conversationId, leftoverSteers, {
             generationProtocolVersion: getGenerationProtocolVersion(generationStatus),
           });
+          recoveringConversationRef.current = null;
           return;
         }
 
         if (recoveredMessages != null) {
+          recoveringConversationRef.current = null;
           return;
         }
 
+        recoveringConversationRef.current = null;
         removeConvoFromAllQueries(queryClient, conversationId);
         queryClient.removeQueries({ queryKey: [QueryKeys.conversation, conversationId] });
         queryClient.removeQueries({ queryKey: [QueryKeys.messages, conversationId] });
@@ -144,6 +163,6 @@ export default function useMissingConversationRecovery({
     isFetching,
     isSuccess,
     queryClient,
-    streamStatus?.active,
+    streamStatus,
   ]);
 }

@@ -216,6 +216,42 @@ describe('useMissingConversationRecovery', () => {
     expect(onConfirmedMissing).not.toHaveBeenCalled();
   });
 
+  it('hands off an active shared-status update that cancels delayed recovery', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onConfirmedMissing = jest.fn();
+    const { rerender } = renderHook(
+      () =>
+        useMissingConversationRecovery({
+          conversationId: CONVERSATION_ID,
+          enabled: true,
+          onConfirmedMissing,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    mockUseStreamStatus.mockReturnValue({
+      data: {
+        active: true,
+        generationProtocolVersion: 1,
+        streamId: CONVERSATION_ID,
+      },
+      isFetching: false,
+      isSuccess: true,
+    });
+    rerender();
+
+    expect(queryClient.getQueryData(['streamStatus', CONVERSATION_ID])).toEqual({
+      active: true,
+      generationHandoff: true,
+      generationProtocolVersion: 1,
+      streamId: CONVERSATION_ID,
+    });
+    await advanceRecoveryDelay();
+    expect(mockGetMessages).not.toHaveBeenCalled();
+    expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+    expect(onConfirmedMissing).not.toHaveBeenCalled();
+  });
+
   it('preserves a conversation when a generation starts during verification', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const onConfirmedMissing = jest.fn();
