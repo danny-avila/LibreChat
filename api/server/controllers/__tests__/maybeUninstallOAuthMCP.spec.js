@@ -1,6 +1,11 @@
 const mockGetTokens = jest.fn();
 const mockDeleteUserTokens = jest.fn();
 const mockGetClientInfoAndMetadata = jest.fn();
+const mockAssertCredentialSetBinding = jest.fn((serverName, tokenCredentialSetId, metadata) => {
+  if (!tokenCredentialSetId || tokenCredentialSetId !== metadata?.credential_set_id) {
+    throw new Error(`credential set mismatch for ${serverName}`);
+  }
+});
 const mockRevokeOAuthToken = jest.fn();
 const mockGetServerConfig = jest.fn();
 const mockGetOAuthServers = jest.fn();
@@ -39,6 +44,7 @@ jest.mock('@librechat/api', () => {
     MCPTokenStorage: {
       getTokens: (...args) => mockGetTokens(...args),
       getClientInfoAndMetadata: (...args) => mockGetClientInfoAndMetadata(...args),
+      assertCredentialSetBinding: (...args) => mockAssertCredentialSetBinding(...args),
       deleteUserTokens: (...args) => mockDeleteUserTokens(...args),
     },
     normalizeHttpError: jest.fn(),
@@ -149,7 +155,15 @@ const appConfig = {
 };
 
 const clientInfo = { client_id: 'cid', client_secret: 'csec' };
-const clientMetadata = {};
+const credentialSetId = 'credential-set-a';
+const clientMetadata = {
+  credential_set_id: credentialSetId,
+  server_url: 'https://acme.example.com',
+  token_endpoint: 'https://acme.example.com/token',
+  client_source: 'dynamic',
+  revocation_endpoint: 'https://acme.example.com/revoke',
+  revocation_endpoint_auth_methods_supported: ['client_secret_basic'],
+};
 
 function setupOAuthServerFound() {
   mockGetServerConfig.mockResolvedValue(serverConfig);
@@ -162,6 +176,13 @@ function setupOAuthServerFound() {
 describe('maybeUninstallOAuthMCP', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAssertCredentialSetBinding.mockImplementation(
+      (currentServerName, tokenCredentialSetId, metadata) => {
+        if (!tokenCredentialSetId || tokenCredentialSetId !== metadata?.credential_set_id) {
+          throw new Error(`credential set mismatch for ${currentServerName}`);
+        }
+      },
+    );
     mockGetTenantId.mockReturnValue(undefined);
   });
 
@@ -244,6 +265,7 @@ describe('maybeUninstallOAuthMCP', () => {
     mockGetTokens.mockResolvedValue({
       access_token: 'access-abc',
       refresh_token: 'refresh-xyz',
+      credential_set_id: credentialSetId,
     });
     mockRevokeOAuthToken.mockResolvedValue(undefined);
     mockDeleteUserTokens.mockResolvedValue(undefined);
@@ -264,6 +286,80 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteFlow.mock.calls[0][1]).toBe('mcp_get_tokens');
     expect(mockDeleteFlowAndStateMapping).toHaveBeenCalledTimes(1);
     expect(mockDeleteFlowAndStateMapping).toHaveBeenCalledWith('user-123:acme', expect.anything());
+  });
+
+  test('does not revoke tokens from a concurrently replaced credential generation', async () => {
+    setupOAuthServerFound();
+    mockGetTokens.mockResolvedValue({
+      access_token: 'generation-b-access',
+      refresh_token: 'generation-b-refresh',
+      credential_set_id: 'credential-set-b',
+    });
+
+    await maybeUninstallOAuthMCP(userId, pluginKey, appConfig);
+
+    expect(mockAssertCredentialSetBinding).toHaveBeenCalledWith(
+      serverName,
+      'credential-set-b',
+      expect.objectContaining({ credential_set_id: credentialSetId }),
+    );
+    expect(mockRevokeOAuthToken).not.toHaveBeenCalled();
+    expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      `[maybeUninstallOAuthMCP] Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
+      expect.any(Error),
+    );
+  });
+
+  test('uses the stored revocation binding instead of an edited server configuration', async () => {
+    setupOAuthServerFound();
+    mockGetServerConfig.mockResolvedValue({
+      ...serverConfig,
+      url: 'https://attacker.example.com/mcp',
+      oauth: {
+        revocation_endpoint: 'https://attacker.example.com/revoke',
+        revocation_endpoint_auth_methods_supported: ['client_secret_post'],
+      },
+    });
+    mockGetTokens.mockResolvedValue({
+      access_token: 'access-abc',
+      credential_set_id: credentialSetId,
+    });
+    mockRevokeOAuthToken.mockResolvedValue(undefined);
+
+    await maybeUninstallOAuthMCP(userId, pluginKey, appConfig);
+
+    expect(mockRevokeOAuthToken).toHaveBeenCalledWith(
+      serverName,
+      'access-abc',
+      'access',
+      expect.objectContaining({
+        serverUrl: 'https://acme.example.com',
+        revocationEndpoint: 'https://acme.example.com/revoke',
+        revocationEndpointAuthMethodsSupported: ['client_secret_basic'],
+      }),
+      { 'X-Tenant': 'acme' },
+      undefined,
+      undefined,
+    );
+  });
+
+  test('skips remote revocation for legacy metadata without a stored revocation endpoint', async () => {
+    setupOAuthServerFound();
+    mockGetClientInfoAndMetadata.mockResolvedValue({
+      clientInfo,
+      clientMetadata: {
+        server_url: 'https://acme.example.com',
+        token_endpoint: 'https://acme.example.com/token',
+        client_source: 'dynamic',
+      },
+    });
+
+    await maybeUninstallOAuthMCP(userId, pluginKey, appConfig);
+
+    expect(mockGetTokens).not.toHaveBeenCalled();
+    expect(mockRevokeOAuthToken).not.toHaveBeenCalled();
+    expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
   });
 
   test('skips revocation but still runs cleanup when token retrieval fails', async () => {
@@ -304,7 +400,10 @@ describe('maybeUninstallOAuthMCP', () => {
 
   test('continues cleanup when only one token type is present', async () => {
     setupOAuthServerFound();
-    mockGetTokens.mockResolvedValue({ access_token: 'only-access' });
+    mockGetTokens.mockResolvedValue({
+      access_token: 'only-access',
+      credential_set_id: credentialSetId,
+    });
     mockRevokeOAuthToken.mockResolvedValue(undefined);
     mockDeleteUserTokens.mockResolvedValue(undefined);
     mockDeleteFlow.mockResolvedValue(undefined);
@@ -323,6 +422,7 @@ describe('maybeUninstallOAuthMCP', () => {
     mockGetTokens.mockResolvedValue({
       access_token: 'a',
       refresh_token: 'r',
+      credential_set_id: credentialSetId,
     });
     mockRevokeOAuthToken.mockRejectedValue(new Error('network down'));
     mockDeleteUserTokens.mockResolvedValue(undefined);

@@ -17,6 +17,7 @@ const {
   redactAllServerSecrets,
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
+  isMCPOAuthSecretReentryRequiredError,
 } = require('@librechat/api');
 const {
   Constants,
@@ -59,6 +60,13 @@ function handleMCPError(error, res) {
     });
   }
 
+  if (isMCPOAuthSecretReentryRequiredError(error)) {
+    return res.status(error.statusCode).json({
+      error: error.code,
+      message: error.message,
+    });
+  }
+
   // Fallback for legacy string-based error handling (backwards compatibility)
   if (error.message?.startsWith(MCPErrorCodes.DOMAIN_NOT_ALLOWED)) {
     return res.status(403).json({
@@ -70,6 +78,13 @@ function handleMCPError(error, res) {
   if (error.message?.startsWith(MCPErrorCodes.INSPECTION_FAILED)) {
     return res.status(400).json({
       error: MCPErrorCodes.INSPECTION_FAILED,
+      message: error.message,
+    });
+  }
+
+  if (error.message?.startsWith(MCPErrorCodes.OAUTH_SECRET_REENTRY_REQUIRED)) {
+    return res.status(400).json({
+      error: MCPErrorCodes.OAUTH_SECRET_REENTRY_REQUIRED,
       message: error.message,
     });
   }
