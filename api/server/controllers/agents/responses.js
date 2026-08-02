@@ -71,10 +71,14 @@ const {
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPManager } = require('~/config');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
+
+const filterFilesByRemoteAgentAccess = (params) =>
+  filterFilesByAgentAccess({ ...params, resourceType: ResourceType.REMOTE_AGENT });
 
 /**
  * Creates a tool loader function for the agent.
@@ -102,6 +106,7 @@ function createToolLoader(signal, definitionsOnly = true) {
         agent,
         signal,
         tool_resources,
+        agentResourceType: ResourceType.REMOTE_AGENT,
         definitionsOnly,
         accessibleMcpServerNames,
         streamId: null,
@@ -368,15 +373,10 @@ const executeResponse = async (envelope, { req, res }) => {
       model_parameters: agent.model_parameters ?? {},
     };
 
-    // `filterFilesByAgentAccess` is intentionally omitted: it calls
-    // `checkPermission` with `resourceType: AGENT`, but this route
-    // authorizes callers through `REMOTE_AGENT` (via
-    // `getRemoteAgentPermissions`), so including it would silently drop
-    // owner-attached context files for any remote user who has
-    // `REMOTE_AGENT_VIEWER` but not direct `AGENT_VIEW`.
     const dbMethods = {
       getConvoFiles: db.getConvoFiles,
       getFiles: db.getFiles,
+      filterFilesByAgentAccess: filterFilesByRemoteAgentAccess,
       getUserKey: db.getUserKey,
       getMessages: db.getMessages,
       getAccessibleMcpServerNames,
@@ -721,6 +721,7 @@ const executeResponse = async (envelope, { req, res }) => {
           const result = await loadToolsForExecution({
             req,
             res,
+            agentResourceType: ResourceType.REMOTE_AGENT,
             toolNames,
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
@@ -904,6 +905,7 @@ const executeResponse = async (envelope, { req, res }) => {
           const result = await loadToolsForExecution({
             req,
             res,
+            agentResourceType: ResourceType.REMOTE_AGENT,
             toolNames,
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
