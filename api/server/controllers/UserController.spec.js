@@ -22,6 +22,11 @@ const mockRestoreUserSchedules = jest.fn().mockResolvedValue(undefined);
 const mockGetWebSearchInstallEntries = jest.fn();
 const mockInvalidateCodeEnvironmentConfigCache = jest.fn().mockResolvedValue(undefined);
 const mockRevokeUserCodeEnvironmentWorkers = jest.fn().mockResolvedValue(0);
+const mockEmailChangeService = {
+  requestEmailChange: jest.fn(),
+  confirmEmailChange: jest.fn(),
+};
+const mockCreateEmailChangeService = jest.fn(() => mockEmailChangeService);
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -68,6 +73,7 @@ jest.mock('~/models', () => {
     updateUser: jest.fn(),
     acceptTerms: jest.fn(),
     getUserById: jest.fn().mockResolvedValue(null),
+    findUser: jest.fn().mockResolvedValue(null),
     findToken: jest.fn(),
     getFiles: jest.fn().mockResolvedValue([]),
     removeUserFromAllGroups: jest.fn().mockImplementation(async (userId) => {
@@ -97,6 +103,7 @@ jest.mock('sharp', () =>
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
+  createEmailChangeService: (...args) => mockCreateEmailChangeService(...args),
   needsRefresh: jest.fn(),
   getNewS3URL: jest.fn(),
   getWebSearchInstallEntries: (...args) => mockGetWebSearchInstallEntries(...args),
@@ -178,6 +185,7 @@ const {
 } = require('./UserController');
 const { Group } = require('~/db/models');
 const {
+  findUser,
   deleteConvos,
   acceptTerms,
   deleteUserById,
@@ -276,6 +284,27 @@ describe('updateUserPluginsController', () => {
 
     expect(deleteUserPluginAuth).toHaveBeenCalledWith('user-id', 'KEENABLE_API_URL');
     expect(updateUserPluginAuth).not.toHaveBeenCalled();
+  });
+});
+
+describe('emailChangeService dependencies', () => {
+  const emailChangeDeps = mockCreateEmailChangeService.mock.calls[0][0];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    findUser.mockResolvedValue(null);
+  });
+
+  it('constrains tenant-less email conflict checks to default-tenant users', async () => {
+    await emailChangeDeps.findUserByEmail('new@example.com');
+
+    expect(findUser).toHaveBeenCalledWith(
+      {
+        email: 'new@example.com',
+        $or: [{ tenantId: { $exists: false } }, { tenantId: null }],
+      },
+      'email _id tenantId',
+    );
   });
 });
 

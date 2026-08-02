@@ -15,7 +15,7 @@ function RequestPasswordReset() {
   const localize = useLocalize();
   const [params] = useSearchParams();
 
-  const [countdown, setCountdown] = useState<number>(3);
+  const [countdown, setCountdown] = useState<number>(0);
   const [headerText, setHeaderText] = useState<string>('');
   const [showResendLink, setShowResendLink] = useState<boolean>(false);
   const [verificationStatus, setVerificationStatus] = useState<boolean>(false);

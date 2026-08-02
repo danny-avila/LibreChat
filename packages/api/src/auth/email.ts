@@ -270,7 +270,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       logger.warn(
         `[emailChange] Incorrect password [User ID: ${userId}] [New Email: ${newEmail}] [IP: ${ip}]`,
       );
-      return result(401, 'Current password is incorrect', 'current_password_invalid');
+      return result(403, 'Current password is incorrect', 'current_password_invalid');
     }
 
     if (!isEmailDomainAllowed(newEmail, input.allowedDomains)) {
