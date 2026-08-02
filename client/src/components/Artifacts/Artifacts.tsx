@@ -379,7 +379,12 @@ export default function Artifacts() {
                   }}
                 />
               )}
-              <CopyButton isCopied={isCopied} iconOnly onClick={handleCopyArtifact} />
+              <CopyButton
+                isCopied={isCopied}
+                iconOnly
+                portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
+                onClick={handleCopyArtifact}
+              />
               <DownloadArtifact artifact={currentArtifact} />
               <Button
                 size="icon"

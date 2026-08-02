@@ -61,6 +61,7 @@ export default function ArtifactVersion({
       trigger={
         <TooltipAnchor
           description={localize('com_ui_change_version')}
+          portalElement={portalElement}
           render={
             <Button
               size="icon"

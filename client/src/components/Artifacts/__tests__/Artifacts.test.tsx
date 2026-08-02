@@ -255,6 +255,30 @@ describe('Artifacts fullscreen preview', () => {
     expect(fullscreenPortal).toContainElement(versionMenu);
   });
 
+  it.each([
+    { label: 'Change Version', artifacts: [primaryArtifact, secondaryArtifact], screenX: 1 },
+    { label: 'Copy', artifacts: [primaryArtifact], screenX: 2 },
+  ])(
+    'keeps the $label tooltip inside the fullscreen container',
+    async ({ label, artifacts, screenX }) => {
+      await renderArtifacts({ artifacts });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Enter full screen' }));
+      });
+
+      const control = screen.getByRole('button', { name: label });
+      fireEvent.mouseEnter(control);
+      fireEvent.mouseMove(control, { screenX });
+      const tooltip = await screen.findByRole('tooltip');
+      const fullscreenPortal = screen.getByTestId('artifact-fullscreen-portal');
+
+      expect(tooltip).toHaveTextContent(label);
+      expect(document.fullscreenElement).toContainElement(tooltip);
+      expect(fullscreenPortal).toContainElement(tooltip);
+    },
+  );
+
   it('hides the fullscreen control when the browser does not support it', async () => {
     Object.defineProperty(document, 'fullscreenEnabled', {
       configurable: true,
