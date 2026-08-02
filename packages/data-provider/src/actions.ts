@@ -637,9 +637,10 @@ export type DomainValidationResult = {
 };
 
 function getExplicitPort(value: string): string | null {
-  const protocolSeparatorIndex = value.indexOf('://');
+  const normalizedValue = value.trim();
+  const protocolSeparatorIndex = normalizedValue.indexOf('://');
   const authorityStart = protocolSeparatorIndex === -1 ? 0 : protocolSeparatorIndex + 3;
-  const authority = value.slice(authorityStart).split(/[/?#]/, 1)[0];
+  const authority = normalizedValue.slice(authorityStart).split(/[/?#]/, 1)[0];
   const host = authority.slice(authority.lastIndexOf('@') + 1);
   const portMatch = host.startsWith('[')
     ? host.match(/^\[[^\]]+\]:(\d+)$/)
@@ -650,7 +651,7 @@ function getExplicitPort(value: string): string | null {
   }
 
   const port = Number(portMatch[1]);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`Invalid port in domain: ${value}`);
   }
 

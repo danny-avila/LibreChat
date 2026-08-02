@@ -1936,6 +1936,21 @@ describe('SSRF Protection', () => {
       expect(result.message).toContain('Port mismatch');
     });
 
+    it('rejects a different port when metadata has trailing whitespace', () => {
+      const result = validateActionDomain(
+        'https://example.com:8443 ',
+        'https://example.com:9443/api',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Port mismatch');
+    });
+
+    it('rejects reserved port zero', () => {
+      const result = validateActionDomain('https://example.com:0', 'https://example.com:0/api');
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Invalid port');
+    });
+
     it('rejects a same-IPv4 OpenAPI server on a different metadata port', () => {
       const result = validateActionDomain('http://127.0.0.1:38079', 'http://127.0.0.1:38080/api');
       expect(result.isValid).toBe(false);
