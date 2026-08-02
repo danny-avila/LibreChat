@@ -639,23 +639,36 @@ export type DomainValidationResult = {
 function getExplicitPort(value: string): string | null {
   const normalizedValue = value.trim();
   const protocolSeparatorIndex = normalizedValue.indexOf('://');
-  const authorityStart = protocolSeparatorIndex === -1 ? 0 : protocolSeparatorIndex + 3;
-  const authority = normalizedValue.slice(authorityStart).split(/[/?#]/, 1)[0];
-  const host = authority.slice(authority.lastIndexOf('@') + 1);
-  const portMatch = host.startsWith('[')
-    ? host.match(/^\[[^\]]+\]:(\d+)$/)
-    : host.match(/^[^:]+:(\d+)$/);
+  const hasProtocol = protocolSeparatorIndex !== -1;
+  const authorityAndPath = hasProtocol
+    ? normalizedValue.slice(protocolSeparatorIndex + 3)
+    : normalizedValue;
 
-  if (!portMatch) {
+  let port: string;
+  try {
+    const parsedUrl = new URL(hasProtocol ? normalizedValue : `https://${normalizedValue}`);
+    port = parsedUrl.port;
+
+    // WHATWG URL parsing removes explicit default ports, so parse the same authority with
+    // the alternate HTTP scheme to distinguish an explicit port from an omitted one.
+    if (!port && (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:')) {
+      const alternateProtocol = parsedUrl.protocol === 'http:' ? 'https:' : 'http:';
+      port = new URL(`${alternateProtocol}//${authorityAndPath}`).port;
+    }
+  } catch {
     return null;
   }
 
-  const port = Number(portMatch[1]);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  if (!port) {
+    return null;
+  }
+
+  const parsedPort = Number(port);
+  if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
     throw new Error(`Invalid port in domain: ${value}`);
   }
 
-  return String(port);
+  return String(parsedPort);
 }
 
 function getDefaultActionPort(protocol: string): string {

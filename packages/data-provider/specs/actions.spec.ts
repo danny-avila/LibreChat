@@ -1945,6 +1945,19 @@ describe('SSRF Protection', () => {
       expect(result.message).toContain('Port mismatch');
     });
 
+    it.each([
+      ['an ASCII newline', '\n/path'],
+      ['an ASCII tab', '\t/path'],
+      ['a backslash', '\\path'],
+    ])('rejects a different port when metadata contains %s', (_description, suffix) => {
+      const result = validateActionDomain(
+        `https://example.com:8443${suffix}`,
+        'https://example.com:9443/api',
+      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain('Port mismatch');
+    });
+
     it('rejects reserved port zero', () => {
       const result = validateActionDomain('https://example.com:0', 'https://example.com:0/api');
       expect(result.isValid).toBe(false);
