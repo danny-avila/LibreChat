@@ -549,6 +549,65 @@ describe('Agent Methods', () => {
       expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
     });
 
+    test('should derive the server from a key whose raw tool name contains the delimiter', async () => {
+      const { agentId, authorId } = createTestIds();
+      /** DB server names are slugs and cannot contain the delimiter, so the trailing
+       *  segment is the real server even when the raw tool name carries one. Shared-agent
+       *  access is keyed off this field, so it must not be dropped. */
+      const gatewayTool = `get${Constants.mcp_delimiter}server_version${Constants.mcp_delimiter}gitlab`;
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'Gateway MCP Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [gatewayTool],
+      });
+
+      expect(newAgent.mcpServerNames).toEqual(['gitlab']);
+    });
+
+    test('should preserve a resolved server name across an update that omits it', async () => {
+      const { agentId, authorId } = createTestIds();
+      /** Any caller that writes `tools` without `mcpServerNames` — the Action edit
+       *  path, for one — must not have a configured `Google_mcp_Workspace` reduced to
+       *  `Workspace`, which ServerConfigsDB would resolve as an unrelated DB server. */
+      const mcpTool = `search${Constants.mcp_delimiter}Google${Constants.mcp_delimiter}Workspace`;
+      await createAgent({
+        id: agentId,
+        name: 'Provenance Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [mcpTool],
+        mcpServerNames: [`Google${Constants.mcp_delimiter}Workspace`],
+      });
+
+      const updated = await updateAgent({ id: agentId }, { tools: [mcpTool, 'web_search'] });
+
+      expect(updated!.mcpServerNames).toEqual([`Google${Constants.mcp_delimiter}Workspace`]);
+      expect(updated!.mcpServerNames).not.toContain('Workspace');
+    });
+
+    test('should drop a resolved name once its last tool is gone', async () => {
+      const { agentId, authorId } = createTestIds();
+      const mcpTool = `search${Constants.mcp_delimiter}Google${Constants.mcp_delimiter}Workspace`;
+      await createAgent({
+        id: agentId,
+        name: 'Provenance Agent 2',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [mcpTool],
+        mcpServerNames: [`Google${Constants.mcp_delimiter}Workspace`],
+      });
+
+      const updated = await updateAgent({ id: agentId }, { tools: ['web_search'] });
+
+      expect(updated!.mcpServerNames).toEqual([]);
+    });
+
     test('should derive mcpServerNames only from MCP tools on update', async () => {
       const { agentId, authorId } = createTestIds();
       const actionTool = `sync${Constants.mcp_delimiter}state${actionDelimiter}api---example---com`;
@@ -772,47 +831,172 @@ describe('Agent Methods', () => {
       expect(aclEntriesAfter).toHaveLength(0);
     });
 
-    test('should remove handoff edges referencing deleted agent from other agents', async () => {
+    test('should remove a deleted agent from scalar and array edge endpoints', async () => {
       const authorId = new mongoose.Types.ObjectId();
-      const targetAgentId = `agent_${uuidv4()}`;
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const graphAgentId = `agent_${uuidv4()}`;
       const sourceAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
 
-      // Create target agent (handoff destination)
       await createAgent({
-        id: targetAgentId,
-        name: 'Target Agent',
+        id: deletedAgentId,
+        name: 'Agent To Delete',
         provider: 'test',
         model: 'test-model',
         author: authorId,
       });
 
-      // Create source agent with handoff edge to target
       await createAgent({
-        id: sourceAgentId,
-        name: 'Source Agent',
+        id: graphAgentId,
+        name: 'Agent With Connected Edges',
         provider: 'test',
         model: 'test-model',
         author: authorId,
         edges: [
           {
+            from: deletedAgentId,
+            to: targetAgentId,
+            edgeType: 'handoff',
+          },
+          {
+            from: sourceAgentId,
+            to: deletedAgentId,
+            edgeType: 'handoff',
+          },
+          {
+            from: [deletedAgentId, sourceAgentId],
+            to: targetAgentId,
+            edgeType: 'direct',
+          },
+          {
+            from: sourceAgentId,
+            to: [deletedAgentId, targetAgentId],
+            edgeType: 'handoff',
+          },
+          {
+            from: [deletedAgentId],
+            to: targetAgentId,
+            edgeType: 'handoff',
+          },
+          {
+            from: sourceAgentId,
+            to: [deletedAgentId],
+            edgeType: 'handoff',
+          },
+          {
+            from: [deletedAgentId, sourceAgentId],
+            to: [deletedAgentId, targetAgentId],
+            edgeType: 'direct',
+          },
+          {
             from: sourceAgentId,
             to: targetAgentId,
             edgeType: 'handoff',
+            description: 'Unrelated edge',
           },
         ],
       });
 
-      // Verify edge exists before deletion
-      const sourceAgentBefore = await getAgent({ id: sourceAgentId });
-      expect(sourceAgentBefore!.edges).toHaveLength(1);
-      expect(sourceAgentBefore!.edges![0].to).toBe(targetAgentId);
+      await deleteAgent({ id: deletedAgentId });
 
-      // Delete the target agent
-      await deleteAgent({ id: targetAgentId });
+      const graphAgent = await getAgent({ id: graphAgentId });
+      expect(graphAgent!.edges).toEqual([
+        {
+          from: [sourceAgentId],
+          to: targetAgentId,
+          edgeType: 'direct',
+        },
+        {
+          from: sourceAgentId,
+          to: [targetAgentId],
+          edgeType: 'handoff',
+        },
+        {
+          from: [sourceAgentId],
+          to: [targetAgentId],
+          edgeType: 'direct',
+        },
+        {
+          from: sourceAgentId,
+          to: targetAgentId,
+          edgeType: 'handoff',
+          description: 'Unrelated edge',
+        },
+      ]);
+    });
 
-      // Verify the edge is removed from source agent
-      const sourceAgentAfter = await getAgent({ id: sourceAgentId });
-      expect(sourceAgentAfter!.edges).toHaveLength(0);
+    test('should remove every bulk-deleted agent while preserving surviving edge members', async () => {
+      const deletingAuthorId = new mongoose.Types.ObjectId();
+      const graphAuthorId = new mongoose.Types.ObjectId();
+      const firstDeletedId = `agent_${uuidv4()}`;
+      const secondDeletedId = `agent_${uuidv4()}`;
+      const graphAgentId = `agent_${uuidv4()}`;
+      const sourceAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: firstDeletedId,
+        name: 'First Bulk-Deleted Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: deletingAuthorId,
+      });
+      await createAgent({
+        id: secondDeletedId,
+        name: 'Second Bulk-Deleted Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: deletingAuthorId,
+      });
+      await createAgent({
+        id: graphAgentId,
+        name: 'Bulk Edge Graph',
+        provider: 'test',
+        model: 'test-model',
+        author: graphAuthorId,
+        edges: [
+          {
+            from: [firstDeletedId, sourceAgentId],
+            to: [secondDeletedId, targetAgentId],
+            edgeType: 'direct',
+          },
+          {
+            from: firstDeletedId,
+            to: targetAgentId,
+            edgeType: 'handoff',
+          },
+          {
+            from: sourceAgentId,
+            to: [firstDeletedId, secondDeletedId],
+            edgeType: 'handoff',
+          },
+          {
+            from: sourceAgentId,
+            to: targetAgentId,
+            edgeType: 'handoff',
+            description: 'Unrelated bulk edge',
+          },
+        ],
+      });
+
+      await deleteUserAgents(deletingAuthorId.toString());
+
+      expect(await getAgent({ id: firstDeletedId })).toBeNull();
+      expect(await getAgent({ id: secondDeletedId })).toBeNull();
+      const graphAgent = await getAgent({ id: graphAgentId });
+      expect(graphAgent!.edges).toEqual([
+        {
+          from: [sourceAgentId],
+          to: [targetAgentId],
+          edgeType: 'direct',
+        },
+        {
+          from: sourceAgentId,
+          to: targetAgentId,
+          edgeType: 'handoff',
+          description: 'Unrelated bulk edge',
+        },
+      ]);
     });
 
     test('should remove agent from user favorites when agent is deleted', async () => {

@@ -555,5 +555,21 @@ describe('MCPServerInspector', () => {
 
       expect(result).toEqual({});
     });
+
+    it('builds keys with the normalized server name (model-facing contract)', async () => {
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([
+        {
+          name: 'file_read',
+          description: 'Read a file',
+          inputSchema: { type: 'object', properties: {} },
+        },
+      ]);
+
+      const result = await MCPServerInspector.getToolFunctions('My Server', mockConnection);
+
+      const key = 'file_read_mcp_My_Server';
+      expect(Object.keys(result)).toEqual([key]);
+      expect(result[key]['function'].name).toBe(key);
+    });
   });
 });

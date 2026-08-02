@@ -212,6 +212,47 @@ function hasEphemeralModelOptions({
   );
 }
 
+/**
+ * Whether the stored setup names a concrete agent/assistant pick the selector
+ * still offers. Picker-only deployments (e.g. `addedEndpoints: [agents]`) have
+ * no ephemeral endpoint → model options, yet an agent selected there is a real
+ * choice the soft default must carry forward; ephemeral agent ids and picks
+ * whose endpoint left the allow-list or endpoints config remain residue.
+ */
+function hasSelectableEntitySelection({
+  selection,
+  endpointsConfig,
+  addedEndpoints,
+  modelSelect,
+}: {
+  selection?: Partial<StoredModelSelection>;
+  endpointsConfig?: t.TEndpointsConfig;
+  addedEndpoints?: Array<EModelEndpoint | string>;
+  modelSelect?: boolean;
+}): boolean {
+  const endpoint = selection?.endpoint;
+  if (!modelSelect || !endpoint) {
+    return false;
+  }
+  const isAgentPick =
+    isAgentsEndpoint(endpoint) &&
+    hasSelectionValue(selection.agent_id) &&
+    !isEphemeralAgentId(selection.agent_id);
+  const isAssistantPick =
+    isAssistantsEndpoint(endpoint) && hasSelectionValue(selection.assistant_id);
+  if (!isAgentPick && !isAssistantPick) {
+    return false;
+  }
+  const included = new Set(addedEndpoints ?? []);
+  if (included.size > 0 && !included.has(endpoint)) {
+    return false;
+  }
+  if (endpointsConfig == null || Object.keys(endpointsConfig).length === 0) {
+    return true;
+  }
+  return endpointsConfig[endpoint] != null;
+}
+
 /** Get the conditional logic for switching conversations */
 export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTemplateResult {
   const { conversation, newEndpoint, endpointsConfig, modularChat = false } = params;
@@ -352,9 +393,12 @@ export function applyModelSpecEphemeralAgent({
  * the soft spec is the soft default re-arming, any other spec/agent/endpoint is a
  * selection to carry forward, and an empty setup is a fresh start (clearing chats
  * wipes the selection, so a new chat then falls to the soft default). The soft default
- * also wins whenever the selector offers no ephemeral endpoint → model options, so a
- * stale agent never strands it. The legacy first-spec fallback applies only when specs
- * are prioritized (or the model menu is hidden) and no soft default is configured.
+ * also wins whenever the selector offers no ephemeral endpoint → model options — unless
+ * the setup names a concrete agent/assistant the selector still offers, the one real
+ * selection picker-only deployments provide — so lingering endpoint/model residue never
+ * strands a new chat on an unselectable endpoint. The legacy first-spec fallback applies
+ * only when specs are prioritized (or the model menu is hidden) and no soft default is
+ * configured.
  */
 export function getDefaultModelSpec(
   startupConfig?: t.TStartupConfig,
@@ -393,12 +437,15 @@ export function getDefaultModelSpec(
     if (lastSpec?.name === softDefaultSpec.name) {
       return { softDefault: softDefaultSpec };
     }
+    const modelSelect = interfaceConfig?.modelSelect;
     const yieldsToSelection =
-      hasModelSelection(lastSetup) &&
-      hasEphemeralModelOptions({
+      (hasModelSelection(lastSetup) &&
+        hasEphemeralModelOptions({ endpointsConfig, addedEndpoints, modelSelect })) ||
+      hasSelectableEntitySelection({
+        selection: lastSetup,
         endpointsConfig,
         addedEndpoints,
-        modelSelect: interfaceConfig?.modelSelect,
+        modelSelect,
       });
     return yieldsToSelection ? undefined : { softDefault: softDefaultSpec };
   }

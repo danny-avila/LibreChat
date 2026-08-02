@@ -2,6 +2,7 @@ import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
+import { getActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
 
 export type ExportFormat = 'text' | 'md';
 export type MessageContentExport = [] | [sender: string, text: string];
@@ -35,6 +36,7 @@ export const handledExportContentTypes = [
   ContentTypes.AGENT_UPDATE,
   ContentTypes.SUMMARY,
   ContentTypes.STEER,
+  ContentTypes.ACTIVITY_LABEL,
   ContentTypes.ERROR,
 ] satisfies readonly ContentTypes[];
 
@@ -60,6 +62,7 @@ const exportLabelKeys = {
   retrieval: 'com_ui_export_retrieval',
   fileSearch: 'com_ui_export_file_search',
   agentUpdate: 'com_ui_export_agent_update',
+  activityLabel: 'com_ui_export_activity_label',
 } satisfies Record<string, Parameters<LocalizeFunction>[0]>;
 
 const stripThinkTags = (reasoning: string): string =>
@@ -196,6 +199,14 @@ export function formatMessageContent({
       return [];
     }
     return [localize(exportLabelKeys.steer), text];
+  }
+
+  if (content.type === ContentTypes.ACTIVITY_LABEL) {
+    const text = getActivityLabelText(getActivityLabelPart(content as TMessageContentParts));
+    if (text.trim().length === 0) {
+      return [];
+    }
+    return [localize(exportLabelKeys.activityLabel), text];
   }
 
   return [sender, stringify(content)];

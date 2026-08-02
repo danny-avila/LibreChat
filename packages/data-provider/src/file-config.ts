@@ -184,6 +184,32 @@ export const bedrockDocumentMimeTypes: readonly string[] = Object.keys(bedrockDo
 export const bedrockDocumentExtensions =
   '.pdf,.csv,.doc,.docx,.xls,.xlsx,.html,.htm,.txt,.md,application/pdf,text/csv,application/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/html,text/plain,text/markdown';
 
+/** Textual `application/*` MIME types that can be decoded and sent as plain text */
+const textualApplicationTypes = new Set([
+  'application/json',
+  'application/xml',
+  'application/yaml',
+  'application/sql',
+  'application/typescript',
+  'application/x-sh',
+  'application/csv',
+]);
+
+/**
+ * MIME types the Anthropic Messages API accepts as a plain-text document source
+ * (`source.type: 'text'`)
+ */
+export const isAnthropicTextDocumentType = (mimeType?: string): boolean =>
+  mimeType != null && (mimeType.startsWith('text/') || textualApplicationTypes.has(mimeType));
+
+/**
+ * MIME types the Anthropic Messages API document path can send to the model
+ * (mirrors `isBedrockDocumentType`): PDF via base64, textual types via a
+ * plain-text document source. All other types are rejected with a provider 400.
+ */
+export const isAnthropicDocumentType = (mimeType?: string): boolean =>
+  mimeType === 'application/pdf' || isAnthropicTextDocumentType(mimeType);
+
 export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 

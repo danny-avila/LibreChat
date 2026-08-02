@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { ToolCallTypes } = require('librechat-data-provider');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { validateAndUpdateTool } = require('~/server/services/ActionService');
+const { healMcpToolNames } = require('~/server/services/MCP');
 const { getCachedTools } = require('~/server/services/Config');
 const { manifestToolMap, isAgentsOnlyTool } = require('~/app/clients/tools');
 const { updateAssistantDoc } = require('~/models');
@@ -29,8 +30,9 @@ const createAssistant = async (req, res) => {
     delete assistantData.append_current_datetime;
 
     const toolDefinitions = (await getCachedTools()) ?? {};
+    const healedTools = await healMcpToolNames({ req, tools, toolDefinitions });
 
-    assistantData.tools = tools
+    assistantData.tools = healedTools
       .map((tool) => {
         /** Agents-runtime-only tools (e.g. ask_user_question) cannot execute on
          *  the assistants runtime — drop them even when posted directly, since
@@ -133,7 +135,9 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
   }
 
   let hasFileSearch = false;
-  for (const tool of updateData.tools ?? []) {
+  const toolDefinitions = (await getCachedTools()) ?? {};
+  const healedTools = await healMcpToolNames({ req, tools: updateData.tools, toolDefinitions });
+  for (const tool of healedTools) {
     /** Agents-runtime-only tools (e.g. ask_user_question) cannot execute on
      *  the assistants runtime — drop them even when posted directly, since
      *  the tools-dialog scoping doesn't gate REST clients or stale payloads. */
@@ -143,7 +147,6 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
       );
       continue;
     }
-    const toolDefinitions = (await getCachedTools()) ?? {};
     let actualTool = typeof tool === 'string' ? toolDefinitions[tool] : tool;
 
     if (!actualTool && manifestToolMap[tool] && manifestToolMap[tool].toolkit === true) {

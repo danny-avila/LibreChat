@@ -1,10 +1,5 @@
 import { ResourceType } from 'librechat-data-provider';
-import type {
-  BaseSystemCapability,
-  SystemCapability,
-  ConfigSection,
-  CapabilityCategory,
-} from '~/types/admin';
+import type { TCustomConfig } from 'librechat-data-provider';
 
 // ---------------------------------------------------------------------------
 // System Capabilities
@@ -49,6 +44,39 @@ export const SystemCapabilities = {
    */
   READ_AUDIT_LOG: 'read:audit_log',
 } as const;
+
+/** Base capabilities derived from the SystemCapabilities constant. */
+export type BaseSystemCapability = (typeof SystemCapabilities)[keyof typeof SystemCapabilities];
+
+/** Principal types that can receive config overrides. */
+export type ConfigAssignTarget = 'user' | 'group' | 'role';
+
+/** Top-level keys of the configSchema from librechat.yaml. */
+export type ConfigSection = string & keyof TCustomConfig;
+
+/** Section-level config capabilities derived from configSchema keys. */
+type ConfigSectionCapability = `manage:configs:${ConfigSection}` | `read:configs:${ConfigSection}`;
+
+/** Principal-scoped config assignment capabilities. */
+type ConfigAssignCapability = `assign:configs:${ConfigAssignTarget}`;
+
+/**
+ * Union of all valid capability strings:
+ * - Base capabilities from SystemCapabilities
+ * - Section-level config capabilities (manage:configs:<section>, read:configs:<section>)
+ * - Config assignment capabilities (assign:configs:<user|group|role>)
+ */
+export type SystemCapability =
+  | BaseSystemCapability
+  | ConfigSectionCapability
+  | ConfigAssignCapability;
+
+/** UI grouping of capabilities for the admin panel's capability editor. */
+export type CapabilityCategory = {
+  key: string;
+  labelKey: string;
+  capabilities: BaseSystemCapability[];
+};
 
 /**
  * Capabilities that are implied by holding a broader capability.

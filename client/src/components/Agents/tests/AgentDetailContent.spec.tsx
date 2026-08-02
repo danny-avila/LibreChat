@@ -101,7 +101,7 @@ describe('AgentDetailContent', () => {
           {
             ...baseAgent,
             support_contact: { name: 'Support Team', email: 'support@example.com' },
-            owner_contact: { name: 'Owner User', email: 'owner@example.com' },
+            owner_contact: { name: 'Owner User' },
           } as any
         }
       />,
@@ -121,15 +121,13 @@ describe('AgentDetailContent', () => {
         agent={
           {
             ...baseAgent,
-            owner_contact: { name: 'Owner User', email: 'owner@example.com' },
+            owner_contact: { name: 'Owner User' },
           } as any
         }
       />,
     );
 
-    expect(screen.getByRole('link', { name: 'Owner User' })).toHaveAttribute(
-      'href',
-      'mailto:owner@example.com',
-    );
+    expect(screen.getByText('Owner User')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Owner User' })).not.toBeInTheDocument();
   });
 });

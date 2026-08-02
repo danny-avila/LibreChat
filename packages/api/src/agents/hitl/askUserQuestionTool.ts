@@ -20,7 +20,7 @@ export const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
  */
 const QUESTION_MAX = 2000;
 const DESCRIPTION_MAX = 4000;
-const OPTION_LABEL_MAX = 120;
+const OPTION_LABEL_MAX = 280;
 const OPTION_VALUE_MAX = 500;
 const OPTIONS_MAX = 12;
 
@@ -201,12 +201,25 @@ export const AskUserQuestionToolDefinition: AskUserQuestionToolDefinitionShape =
  * from the top on the resume pass, and sibling tools in the same batch re-execute —
  * which is why the description forbids parallel calls.
  */
+/**
+ * `askUserQuestion` with the optional attribution argument shipped in
+ * `@librechat/agents` > 3.3.8 (interrupt payload gains `tool_call_id`, letting
+ * the host stamp the question/answer onto the exact tool-call part in
+ * multi-ask turns). The pinned release still types the single-arg form; the
+ * extra argument is ignored at runtime by older versions. Drop this alias once
+ * the dependency pin includes the two-arg signature.
+ */
+const askUserQuestionWithId = askUserQuestion as (
+  question: AskUserQuestionToolInput,
+  options?: { toolCallId?: string },
+) => ReturnType<typeof askUserQuestion>;
+
 export function createAskUserQuestionTool(
   validationErrorsByToolCallId?: Map<string, ToolInputValidationError>,
 ): DynamicStructuredTool<typeof askUserQuestionToolSchema> {
   const askTool = tool(
-    async (input: AskUserQuestionToolInput) => {
-      const { answer } = askUserQuestion(input);
+    async (input: AskUserQuestionToolInput, config?: { toolCall?: { id?: string } }) => {
+      const { answer } = askUserQuestionWithId(input, { toolCallId: config?.toolCall?.id });
       return answer;
     },
     {

@@ -1,7 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { ContentTypes, isAssistantsEndpoint } = require('librechat-data-provider');
+const { ContentTypes, feedbackSchema, isAssistantsEndpoint } = require('librechat-data-provider');
 const {
   unescapeLaTeX,
   countTokens,
@@ -431,12 +431,17 @@ router.put(
     try {
       const { conversationId, messageId } = req.params;
       const { feedback } = req.body;
+      const feedbackResult = feedback == null ? null : feedbackSchema.safeParse(feedback);
+
+      if (feedbackResult && !feedbackResult.success) {
+        return res.status(400).json({ error: 'Invalid feedback' });
+      }
 
       const updatedMessage = await db.updateMessage(
         req?.user?.id,
         {
           messageId,
-          feedback: feedback || null,
+          feedback: feedbackResult?.data ?? null,
         },
         { context: 'updateFeedback' },
       );
@@ -445,6 +450,8 @@ router.put(
       if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
         sendFeedbackScore({
           traceId: traceIdForMessage(messageId),
+          sampled: updatedMessage.langfuseSampled,
+          destinationIds: updatedMessage.langfuseDestinationIds,
           feedback: updatedMessage.feedback,
           appConfig: req.config,
           metadata: {

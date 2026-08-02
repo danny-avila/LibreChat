@@ -8,6 +8,7 @@ import useLazyHighlight from './useLazyHighlight';
 import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
 import { langFromPath } from './ReadFileCall';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -128,6 +129,7 @@ export default function FileAuthoringCall({
    *  `Created`/`Updated`, so key the finished label off it for truthfulness. */
   const overwrote = isCreate && output.startsWith('Updated ');
   const filePath = useMemo(() => parseJsonField(args, 'file_path'), [args]);
+  const intent = useToolCallIntent(args);
   const authoredContent = useMemo(() => parseJsonField(args, 'content'), [args]);
   const editArgsPreview = useMemo(() => buildEditArgsPreview(args), [args]);
   const fileName = filePath.split('/').pop() || filePath;
@@ -162,11 +164,16 @@ export default function FileAuthoringCall({
         <ProgressText
           progress={progress}
           onClick={toggleCode}
-          inProgressText={localize(isCreate ? 'com_ui_creating_file' : 'com_ui_editing_file', {
-            0: fileName,
-          })}
+          inProgressText={
+            intent ??
+            localize(isCreate ? 'com_ui_creating_file' : 'com_ui_editing_file', {
+              0: fileName,
+            })
+          }
           finishedText={
-            cancelled ? localize('com_ui_cancelled') : localize(finishedKey, { 0: fileName })
+            cancelled
+              ? localize('com_ui_cancelled')
+              : (intent ?? localize(finishedKey, { 0: fileName }))
           }
           errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={

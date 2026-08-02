@@ -70,6 +70,7 @@ function createHandlers(overrides = {}) {
     deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
     toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
     hasConfigCapability: jest.fn().mockResolvedValue(true),
+    hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
     hasCapability: jest.fn().mockResolvedValue(true),
 
     getAppConfig: jest.fn().mockResolvedValue({ interface: { modelSelect: true } }),
@@ -92,7 +93,7 @@ describe('createAdminConfigHandlers', () => {
               langfuse: {
                 publicKey: 'pk-lf-1',
                 secretKey: 'v3:encrypted',
-                displaySecretKey: 'sk-lf-...cret',
+                secretKeyPreview: 'sk-lf-...cret',
               },
             },
           },
@@ -109,7 +110,7 @@ describe('createAdminConfigHandlers', () => {
       }>;
       expect(configs[0].overrides.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf-...cret',
+        secretKeyPreview: 'sk-lf-...cret',
       });
     });
   });
@@ -118,6 +119,7 @@ describe('createAdminConfigHandlers', () => {
     it('returns 403 before DB lookup when user lacks READ_CONFIGS', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(false),
       });
       const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
       const res = mockRes();
@@ -175,6 +177,195 @@ describe('createAdminConfigHandlers', () => {
       await handlers.getConfig(req, res);
 
       expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('read handlers: section-scoped-only caller (no broad read:configs)', () => {
+    function sectionOnlyDeps(section: string, overrides: Record<string, unknown> = {}) {
+      return {
+        hasConfigCapability: jest.fn(
+          async (_user: unknown, s: string | null, verb = 'manage') =>
+            verb === 'read' && s === section,
+        ),
+        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
+        ...overrides,
+      };
+    }
+
+    it('getConfig: returns 200 with only the held section, other sections stripped', async () => {
+      const config = {
+        _id: 'c1',
+        principalType: 'role',
+        principalId: 'admin',
+        overrides: { memory: { charLimit: 500 }, endpoints: { allowedAddresses: ['10.0.0.1'] } },
+        tombstones: ['memory.tokenLimit', 'endpoints.allowedAddresses'],
+      };
+      const { handlers } = createHandlers(
+        sectionOnlyDeps('memory', { findConfigByPrincipal: jest.fn().mockResolvedValue(config) }),
+      );
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.getConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as { overrides: Record<string, unknown>; tombstones: string[] };
+      expect(body.overrides.memory).toEqual({ charLimit: 500 });
+      expect(body.overrides.endpoints).toBeUndefined();
+      expect(body.tombstones).toEqual(['memory.tokenLimit']);
+    });
+
+    it('listConfigs: strips non-held sections from every listed config', async () => {
+      const configs = [
+        { _id: 'c1', principalType: 'role', principalId: 'admin', overrides: { memory: {} } },
+        {
+          _id: 'c2',
+          principalType: 'user',
+          principalId: 'u1',
+          overrides: { endpoints: {}, memory: { charLimit: 10 } },
+        },
+      ];
+      const { handlers } = createHandlers(
+        sectionOnlyDeps('memory', { listAllConfigs: jest.fn().mockResolvedValue(configs) }),
+      );
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.listConfigs(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.configs as Array<{ overrides: Record<string, unknown> }>;
+      expect(body[0].overrides).toEqual({ memory: {} });
+      expect(body[1].overrides).toEqual({ memory: { charLimit: 10 } });
+    });
+
+    it('getBaseConfig: strips top-level sections and the nested config field to only the held section', async () => {
+      const appConfig = {
+        memory: { charLimit: 500 },
+        endpoints: { allowedAddresses: ['10.0.0.1'] },
+        fileStrategy: 's3',
+        config: { memory: { charLimit: 500 }, endpoints: { allowedAddresses: ['10.0.0.1'] } },
+        paths: { uploads: '/tmp' },
+        availableTools: { foo: {} },
+      };
+      const { handlers } = createHandlers(
+        sectionOnlyDeps('memory', { getAppConfig: jest.fn().mockResolvedValue(appConfig) }),
+      );
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as Record<string, unknown>;
+      expect(body.memory).toEqual({ charLimit: 500 });
+      expect(body.endpoints).toBeUndefined();
+      expect(body.fileStrategy).toBeUndefined();
+      expect((body.config as Record<string, unknown>).memory).toEqual({ charLimit: 500 });
+      expect((body.config as Record<string, unknown>).endpoints).toBeUndefined();
+      expect(body.paths).toEqual({ uploads: '/tmp' });
+      expect(body.availableTools).toBeUndefined();
+    });
+
+    it('getBaseConfig: strips availableTools when the caller holds neither of its source sections', async () => {
+      const appConfig = {
+        memory: { charLimit: 500 },
+        filteredTools: ['dalle'],
+        includedTools: ['google'],
+        availableTools: { google: {} },
+        paths: { uploads: '/tmp' },
+      };
+      const { handlers } = createHandlers(
+        sectionOnlyDeps('memory', { getAppConfig: jest.fn().mockResolvedValue(appConfig) }),
+      );
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as Record<string, unknown>;
+      expect(body.availableTools).toBeUndefined();
+      expect(body.filteredTools).toBeUndefined();
+      expect(body.includedTools).toBeUndefined();
+    });
+
+    it.each(['filteredTools', 'includedTools'])(
+      'getBaseConfig: returns availableTools to a caller holding read:configs:%s',
+      async (section) => {
+        const appConfig = {
+          filteredTools: ['dalle'],
+          includedTools: ['google'],
+          availableTools: { google: {} },
+          paths: { uploads: '/tmp' },
+        };
+        const { handlers } = createHandlers(
+          sectionOnlyDeps(section, { getAppConfig: jest.fn().mockResolvedValue(appConfig) }),
+        );
+        const req = mockReq();
+        const res = mockRes();
+
+        await handlers.getBaseConfig(req, res);
+
+        expect(res.statusCode).toBe(200);
+        const body = res.body!.config as Record<string, unknown>;
+        expect(body.availableTools).toEqual({ google: {} });
+      },
+    );
+
+    it('getBaseConfig: returns fileStrategy only to a caller holding read:configs:fileStrategy', async () => {
+      const appConfig = {
+        fileStrategy: 's3',
+        memory: { charLimit: 500 },
+        paths: { uploads: '/tmp' },
+        availableTools: {},
+      };
+      const { handlers } = createHandlers(
+        sectionOnlyDeps('fileStrategy', { getAppConfig: jest.fn().mockResolvedValue(appConfig) }),
+      );
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as Record<string, unknown>;
+      expect(body.fileStrategy).toBe('s3');
+      expect(body.memory).toBeUndefined();
+    });
+
+    it('getBaseConfig: normalizes renamed top-level fields to their canonical section before checking read access', async () => {
+      // getAppConfig renames interface -> interfaceConfig, turnstile -> turnstileConfig,
+      // and mcpServers -> mcpConfig in the resolved payload. A caller holding
+      // read:configs:interface and read:configs:turnstile (but not mcpServers) must
+      // still see interfaceConfig/turnstileConfig, since checking the raw field name
+      // against a nonexistent "interfaceConfig"/"turnstileConfig" section would wrongly
+      // strip them.
+      const appConfig = {
+        interfaceConfig: { modelSelect: true },
+        turnstileConfig: { siteKey: 'abc' },
+        mcpConfig: { docs: {} },
+        paths: { uploads: '/tmp' },
+        availableTools: {},
+      };
+      const { handlers } = createHandlers({
+        hasConfigCapability: jest.fn(
+          async (_user: unknown, s: string | null, verb = 'manage') =>
+            verb === 'read' && (s === 'interface' || s === 'turnstile'),
+        ),
+        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
+        getAppConfig: jest.fn().mockResolvedValue(appConfig),
+      });
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as Record<string, unknown>;
+      expect(body.interfaceConfig).toEqual({ modelSelect: true });
+      expect(body.turnstileConfig).toEqual({ siteKey: 'abc' });
+      expect(body.mcpConfig).toBeUndefined();
     });
   });
 
@@ -266,9 +457,75 @@ describe('createAdminConfigHandlers', () => {
       expect(savedOverrides.interface).toEqual({ modelSelect: false });
     });
 
-    it('encrypts Langfuse secret keys on full override writes', async () => {
-      process.env.CREDS_KEY =
-        process.env.CREDS_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    it('does not allow tenant-wide Langfuse settings through the generic config API', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          overrides: {
+            langfuse: {
+              enabled: false,
+              publicKey: 'pk-role',
+            },
+            'langfuse.secretKey': 'sk-role',
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ message: 'No actionable override sections provided' });
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('preserves stored Langfuse settings during a full base-config replacement', async () => {
+      const storedLangfuse = {
+        enabled: true,
+        destination: 'eu',
+        publicKey: 'pk-stored',
+        secretKey: 'v3:test:sk-stored',
+        secretKeyPreview: 'sk-sto...ored',
+        projectId: 'project-stored',
+      };
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: { langfuse: storedLangfuse },
+        }),
+        upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
+          _id: 'c1',
+          configVersion: 2,
+          overrides,
+        })),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          overrides: {
+            interface: { modelSelect: false },
+            langfuse: {
+              enabled: false,
+              publicKey: 'pk-caller',
+              projectId: 'project-caller',
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides).toEqual({
+        interface: { modelSelect: false },
+        langfuse: storedLangfuse,
+      });
+    });
+
+    it('encrypts custom endpoint API keys on full override writes and redacts responses', async () => {
       const { handlers, deps } = createHandlers({
         upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
           _id: 'c1',
@@ -280,9 +537,15 @@ describe('createAdminConfigHandlers', () => {
         params: { principalType: 'role', principalId: 'admin' },
         body: {
           overrides: {
-            langfuse: {
-              publicKey: 'pk-lf-1',
-              secretKey: 'sk-lf-secret',
+            endpoints: {
+              custom: [
+                {
+                  name: 'OpenRouter',
+                  apiKey: 'sk-or-secret-key',
+                  baseURL: 'https://openrouter.ai/api/v1',
+                },
+                { name: 'EnvRef', apiKey: '${OPENROUTER_KEY}' },
+              ],
             },
           },
         },
@@ -293,121 +556,27 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(201);
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
-      expect(savedOverrides.langfuse.secretKey).toMatch(/^v3:/);
-      expect(savedOverrides.langfuse.secretKey).not.toBe('sk-lf-secret');
-      expect(savedOverrides.langfuse.displaySecretKey).toBe('sk-lf-...cret');
+      const [saved, envRef] = savedOverrides.endpoints.custom as Array<Record<string, string>>;
+      expect(saved.apiKey).toBe('v3:test:sk-or-secret-key');
+      expect(saved.apiKeyPreview).toBe('sk-or-...-key');
+      expect(envRef.apiKey).toBe('${OPENROUTER_KEY}');
+      expect(envRef.apiKeyPreview).toBeUndefined();
       const responseConfig = res.body!.config as {
-        overrides: { langfuse: Record<string, string> };
+        overrides: { endpoints: { custom: Array<Record<string, string>> } };
       };
-      expect(responseConfig.overrides.langfuse).toEqual({
-        publicKey: 'pk-lf-1',
-        displaySecretKey: savedOverrides.langfuse.displaySecretKey,
-      });
+      expect(responseConfig.overrides.endpoints.custom[0].apiKey).toBeUndefined();
+      expect(responseConfig.overrides.endpoints.custom[0].apiKeyPreview).toBe('sk-or-...-key');
+      expect(responseConfig.overrides.endpoints.custom[1].apiKey).toBe('${OPENROUTER_KEY}');
     });
 
-    it('preserves existing encrypted Langfuse secrets on full override writes when omitted', async () => {
-      const existing = {
-        _id: 'c1',
-        priority: 7,
-        overrides: {
-          langfuse: {
-            publicKey: 'pk-old',
-            secretKey: 'v3:test:sk-old',
-            displaySecretKey: 'sk-old...-old',
-          },
-        },
-      };
-      const { handlers, deps } = createHandlers({
-        findConfigByPrincipal: jest.fn().mockResolvedValue(existing),
-        upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
-          _id: 'c1',
-          configVersion: 2,
-          overrides,
-        })),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: {
-          overrides: {
-            langfuse: {
-              publicKey: 'pk-new',
-              destination: 'eu',
-            },
-          },
-        },
-      });
-      const res = mockRes();
-
-      await handlers.upsertConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(200);
-      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
-      expect(savedOverrides.langfuse).toEqual({
-        publicKey: 'pk-new',
-        destination: 'eu',
-        secretKey: 'v3:test:sk-old',
-        displaySecretKey: 'sk-old...-old',
-      });
-      const responseConfig = res.body!.config as {
-        overrides: { langfuse: Record<string, string> };
-      };
-      expect(responseConfig.overrides.langfuse).toEqual({
-        publicKey: 'pk-new',
-        destination: 'eu',
-        displaySecretKey: 'sk-old...-old',
-      });
-    });
-
-    it('clears existing Langfuse secrets on full override writes when explicitly empty', async () => {
-      const { handlers, deps } = createHandlers({
-        findConfigByPrincipal: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: {
-            langfuse: {
-              secretKey: 'v3:test:sk-old',
-              displaySecretKey: 'sk-old...-old',
-            },
-          },
-        }),
-        upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
-          _id: 'c1',
-          configVersion: 2,
-          overrides,
-        })),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: {
-          overrides: {
-            langfuse: {
-              publicKey: 'pk-new',
-              secretKey: '',
-            },
-          },
-        },
-      });
-      const res = mockRes();
-
-      await handlers.upsertConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(200);
-      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
-      expect(savedOverrides.langfuse).toEqual({
-        publicKey: 'pk-new',
-        secretKey: '',
-        displaySecretKey: '',
-      });
-    });
-
-    it('rejects encrypted Langfuse secret values on full override writes', async () => {
+    it('rejects encrypted custom endpoint API key submissions on full override writes', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
         body: {
           overrides: {
-            langfuse: {
-              publicKey: 'pk-lf-1',
-              secretKey: 'v3:attacker-controlled',
+            endpoints: {
+              custom: [{ name: 'A', apiKey: 'v3:attacker-controlled' }],
             },
           },
         },
@@ -419,42 +588,6 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(400);
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
-
-    it('does not persist literal dotted Langfuse secret keys on full override writes', async () => {
-      const { handlers, deps } = createHandlers({
-        upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
-          _id: 'c1',
-          configVersion: 1,
-          overrides,
-        })),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: {
-          overrides: {
-            'langfuse.secretKey': 'sk-lf-secret',
-            'langfuse.displaySecretKey': 'spoofed',
-            langfuse: { publicKey: 'pk-lf-1' },
-          },
-        },
-      });
-      const res = mockRes();
-
-      await handlers.upsertConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(201);
-      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
-      expect(savedOverrides).not.toHaveProperty('langfuse.secretKey');
-      expect(savedOverrides).not.toHaveProperty('langfuse.displaySecretKey');
-      expect(savedOverrides.langfuse).toEqual({ publicKey: 'pk-lf-1' });
-      const responseConfig = res.body!.config as {
-        overrides: { langfuse: Record<string, string> };
-      };
-      expect(responseConfig.overrides).toEqual({
-        langfuse: { publicKey: 'pk-lf-1' },
-      });
-    });
-
     it('preserves UI sub-keys in composite permission fields like mcpServers', async () => {
       const { handlers, deps } = createHandlers({
         upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
@@ -631,30 +764,26 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'interface.modelSelect');
     });
 
-    it('also deletes the display secret key companion when deleting a secret field', async () => {
+    it('ignores tenant-wide Langfuse deletes through the generic config API', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        query: { fieldPath: 'langfuse.secretKey' },
+        params: { principalType: 'role', principalId: '__base__' },
+        query: { fieldPath: 'langfuse.enabled' },
       });
       const res = mockRes();
 
       await handlers.deleteConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'langfuse.secretKey');
-      expect(deps.unsetConfigField).toHaveBeenCalledWith(
-        'role',
-        'admin',
-        'langfuse.displaySecretKey',
-      );
+      expect(res.body).toEqual({ message: 'No actionable field path provided' });
+      expect(deps.unsetConfigField).not.toHaveBeenCalled();
     });
 
     it('rejects deletes of the displayed secret key', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
-        query: { fieldPath: 'langfuse.displaySecretKey' },
+        query: { fieldPath: 'langfuse.secretKeyPreview' },
       });
       const res = mockRes();
 
@@ -734,38 +863,26 @@ describe('createAdminConfigHandlers', () => {
       );
     });
 
-    it('also tombstones the display secret key companion when tombstoning a secret field', async () => {
+    it('ignores tenant-wide Langfuse tombstones through the generic config API', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { fieldPath: 'langfuse.secretKey' },
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { fieldPath: 'langfuse.enabled' },
       });
       const res = mockRes();
 
       await handlers.tombstoneConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
-        'role',
-        'admin',
-        expect.anything(),
-        'langfuse.secretKey',
-        10,
-      );
-      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
-        'role',
-        'admin',
-        expect.anything(),
-        'langfuse.displaySecretKey',
-        10,
-      );
+      expect(res.body).toEqual({ message: 'No actionable field path provided' });
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
     });
 
     it('rejects tombstones of the displayed secret key', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
-        body: { fieldPath: 'langfuse.displaySecretKey' },
+        body: { fieldPath: 'langfuse.secretKeyPreview' },
       });
       const res = mockRes();
 
@@ -863,135 +980,6 @@ describe('createAdminConfigHandlers', () => {
       expect(patchedFields['interface.modelSelect']).toBe(false);
     });
 
-    it('clears stale Langfuse display secret keys when clearing a secret', async () => {
-      const { handlers, deps } = createHandlers();
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: {
-          entries: [{ fieldPath: 'langfuse.secretKey', value: '' }],
-        },
-      });
-      const res = mockRes();
-
-      await handlers.patchConfigField(req, res);
-
-      expect(res.statusCode).toBe(200);
-      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
-      expect(patchedFields['langfuse.secretKey']).toBe('');
-      expect(patchedFields['langfuse.displaySecretKey']).toBe('');
-    });
-
-    it('encrypts Langfuse secret keys inside object-valued patch entries', async () => {
-      const { handlers, deps } = createHandlers();
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: {
-          entries: [
-            {
-              fieldPath: 'langfuse',
-              value: {
-                publicKey: 'pk-lf-1',
-                secretKey: 'sk-lf-secret',
-              },
-            },
-          ],
-        },
-      });
-      const res = mockRes();
-
-      await handlers.patchConfigField(req, res);
-
-      expect(res.statusCode).toBe(200);
-      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
-      expect(patchedFields.langfuse.secretKey).toMatch(/^v3:/);
-      expect(patchedFields.langfuse.secretKey).not.toBe('sk-lf-secret');
-      expect(patchedFields.langfuse.displaySecretKey).toBe('sk-lf-...cret');
-    });
-
-    it('preserves existing encrypted Langfuse secrets on object-valued patch entries when omitted', async () => {
-      const { handlers, deps } = createHandlers({
-        findConfigByPrincipal: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          priority: 7,
-          overrides: {
-            langfuse: {
-              publicKey: 'pk-old',
-              secretKey: 'v3:test:sk-old',
-              displaySecretKey: 'sk-old...-old',
-            },
-          },
-        }),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: {
-          priority: 12,
-          entries: [
-            {
-              fieldPath: 'langfuse',
-              value: {
-                publicKey: 'pk-new',
-                destination: 'eu',
-              },
-            },
-          ],
-        },
-      });
-      const res = mockRes();
-
-      await handlers.patchConfigField(req, res);
-
-      expect(res.statusCode).toBe(200);
-      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
-      expect(patchedFields.langfuse).toEqual({
-        publicKey: 'pk-new',
-        destination: 'eu',
-        secretKey: 'v3:test:sk-old',
-        displaySecretKey: 'sk-old...-old',
-      });
-      expect(deps.findConfigByPrincipal).toHaveBeenCalled();
-    });
-
-    it('clears existing Langfuse secrets on object-valued patch entries when explicitly empty', async () => {
-      const { handlers, deps } = createHandlers({
-        findConfigByPrincipal: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          priority: 7,
-          overrides: {
-            langfuse: {
-              secretKey: 'v3:test:sk-old',
-              displaySecretKey: 'sk-old...-old',
-            },
-          },
-        }),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: {
-          entries: [
-            {
-              fieldPath: 'langfuse',
-              value: {
-                publicKey: 'pk-new',
-                secretKey: '',
-              },
-            },
-          ],
-        },
-      });
-      const res = mockRes();
-
-      await handlers.patchConfigField(req, res);
-
-      expect(res.statusCode).toBe(200);
-      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
-      expect(patchedFields.langfuse).toEqual({
-        publicKey: 'pk-new',
-        secretKey: '',
-        displaySecretKey: '',
-      });
-    });
-
     it('rejects array-valued Langfuse secret ancestors', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
@@ -1013,12 +1001,12 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
-    it('does not store non-string values at Langfuse secret paths', async () => {
+    it('does not allow tenant-wide Langfuse patches through the generic config API', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
-          entries: [{ fieldPath: 'langfuse.secretKey', value: { hidden: 'sk-lf-secret' } }],
+          entries: [{ fieldPath: 'langfuse.enabled', value: false }],
         },
       });
       const res = mockRes();
@@ -1026,9 +1014,8 @@ describe('createAdminConfigHandlers', () => {
       await handlers.patchConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
-      expect(patchedFields['langfuse.secretKey']).toBe('');
-      expect(patchedFields['langfuse.displaySecretKey']).toBe('');
+      expect(res.body).toEqual({ message: 'No actionable field entries provided' });
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
     it('rejects direct display secret key patch entries', async () => {
@@ -1036,7 +1023,7 @@ describe('createAdminConfigHandlers', () => {
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
         body: {
-          entries: [{ fieldPath: 'langfuse.displaySecretKey', value: 'spoofed' }],
+          entries: [{ fieldPath: 'langfuse.secretKeyPreview', value: 'spoofed' }],
         },
       });
       const res = mockRes();
@@ -1079,12 +1066,12 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
-    it('rejects patch entries below protected Langfuse displaySecretKey paths', async () => {
+    it('rejects patch entries below protected Langfuse secretKeyPreview paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
         body: {
-          entries: [{ fieldPath: 'langfuse.displaySecretKey.hidden', value: 'spoofed' }],
+          entries: [{ fieldPath: 'langfuse.secretKeyPreview.hidden', value: 'spoofed' }],
         },
       });
       const res = mockRes();
@@ -2031,6 +2018,7 @@ describe('createAdminConfigHandlers', () => {
       it(`${name} returns 403 when user lacks capability`, async () => {
         const { handlers } = createHandlers({
           hasConfigCapability: jest.fn().mockResolvedValue(false),
+          hasAnyConfigReadAccess: jest.fn().mockResolvedValue(false),
         });
         const req = mockReq(reqOverrides);
         const res = mockRes();
@@ -2075,6 +2063,7 @@ describe('createAdminConfigHandlers', () => {
     it('returns 403 when user lacks READ_CONFIGS', async () => {
       const { handlers } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(false),
       });
       const req = mockReq();
       const res = mockRes();
@@ -2101,13 +2090,13 @@ describe('createAdminConfigHandlers', () => {
           langfuse: {
             publicKey: 'pk-lf-1',
             secretKey: 'sk-lf-secret',
-            displaySecretKey: 'sk-lf-...cret',
+            secretKeyPreview: 'sk-lf-...cret',
           },
           config: {
             langfuse: {
               publicKey: 'pk-lf-1',
               secretKey: 'sk-lf-raw-secret',
-              displaySecretKey: 'sk-lf-...cret',
+              secretKeyPreview: 'sk-lf-...cret',
             },
           },
         }),
@@ -2124,11 +2113,11 @@ describe('createAdminConfigHandlers', () => {
       };
       expect(responseConfig.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf-...cret',
+        secretKeyPreview: 'sk-lf-...cret',
       });
       expect(responseConfig.config.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf-...cret',
+        secretKeyPreview: 'sk-lf-...cret',
       });
     });
 

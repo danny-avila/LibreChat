@@ -528,16 +528,22 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const scrubTo = useCallback(
     (clientY: number) => {
       const col = columnRef.current;
-      const nav = navRef.current;
-      if (!col || !nav) {
+      if (!col) {
         return;
       }
-      const ribs = nav.querySelectorAll<HTMLElement>('[data-msg-id]');
+      const rect = col.getBoundingClientRect();
+      /** The terminus is pinned below the column, so the pointer reaches it by
+       *  travelling past the bottom edge — the proportional mapping covers only
+       *  the ribs the column actually spans, or every position lands one late. */
+      if (endEntry && clientY >= rect.bottom) {
+        scrollToImmediate(MESSAGES_END_ID);
+        return;
+      }
+      const ribs = col.querySelectorAll<HTMLElement>('[data-msg-id]');
       const count = ribs.length;
       if (count === 0) {
         return;
       }
-      const rect = col.getBoundingClientRect();
       const fraction = rect.height > 0 ? (clientY - rect.top) / rect.height : 0;
       const index = Math.max(0, Math.min(count - 1, Math.round(fraction * (count - 1))));
       const id = ribs[index].getAttribute('data-msg-id');
@@ -545,7 +551,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         scrollToImmediate(id);
       }
     },
-    [scrollToImmediate],
+    [scrollToImmediate, endEntry],
   );
 
   const handlePointerDown = useCallback(

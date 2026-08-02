@@ -1,8 +1,11 @@
+import { randomUUID } from 'crypto';
 import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import {
   Constants,
+  ContentTypes,
   UsageEvents,
   ApprovalEvents,
+  SteerEvents,
   parseTextParts,
   reconcileContextUsage,
   promptTokensFromUsage,
@@ -11,38 +14,63 @@ import type {
   TMessageContentParts,
   TContextUsageEvent,
   TTokenUsageEvent,
-  TPendingSteer,
   Agents,
 } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 import type {
   SerializableJobData,
+  CreatedJobData,
   IEventTransport,
   UsageMetadata,
   AbortResult,
   IJobStore,
+  IJobStoreV2,
   IdempotencyClaimResult,
+  IdempotencyClaimValue,
+  PreemptMessage,
+  SteerQueueItem,
 } from './interfaces/IJobStore';
-import type { SteerOwner, SteerContentView } from './SteeringLifecycle';
+import type { AgentStartupTelemetry } from '~/agents/startup';
+import type { RecoveredSteerPayload } from './SteerRecovery';
+import type { SteerContentView } from './SteeringLifecycle';
 import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
+import {
+  JobCreationSupersededError,
+  JobPredecessorMismatchError,
+  isPendingActionStale,
+  isPendingActionExpired,
+  PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+  STEER_QUEUE_MAX_DEPTH,
+} from './interfaces/IJobStore';
 import {
   recordGenerationStreamResumePendingEvents,
   recordGenerationStreamSubscription,
   setGenerationJobsInFlight,
   recordGenerationJob,
 } from '~/app/metrics';
+import { isRecoveredSteerPayload, RecoveredSteerPayloadMismatchError } from './SteerRecovery';
+import { assertJobStoreV2 } from './jobStoreCapabilities';
+
+/**
+ * Tombstone budget per generation. Twice the queue depth so a full queue's
+ * worth of removals plus in-flight arms fit without eviction in practice.
+ */
+const PREEMPT_TOMBSTONE_MAX = STEER_QUEUE_MAX_DEPTH * 2;
 import {
   SteeringLifecycle,
   toPendingSteer,
   synthesizeAppliedSteerEvents,
 } from './SteeringLifecycle';
-import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobStore';
+import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
+import { normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
+import { emitChunkWithReceipt } from './internal/chunkPublication';
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
-import { ApprovalLifecycle } from './ApprovalLifecycle';
+import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
+import { sanitizeJobMetadata } from './metadata';
 
 /** Terminal error surfaced to a client still attached when its approval window lapses. */
 const APPROVAL_EXPIRED_ERROR = 'Approval expired before a decision was made';
@@ -50,10 +78,192 @@ const APPROVAL_EXPIRED_ERROR = 'Approval expired before a decision was made';
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
 
-/** Lifetime of a start-generation idempotency claim (matches the running-job TTL: 20 min),
- *  so a late retry still dedups for the whole generation window. */
-const IDEMPOTENCY_TTL_SECONDS = 1200;
+/** Bounded completed-request replay horizon. It exceeds the default 24-hour
+ * approval window; if a custom/live job outlasts it, `resumeClaimedGeneration`
+ * atomically adopts the reacquired claim instead of replacing that job. */
+const IDEMPOTENCY_TTL_SECONDS = 25 * 60 * 60;
+/** The legacy, user/request-scoped key deliberately outlives the same-slot
+ * primary. During a rolling upgrade this keeps old replicas fenced while a
+ * new replica can reconstruct an expired primary from the legacy tombstone. */
+const LEGACY_IDEMPOTENCY_TTL_SECONDS = 26 * 60 * 60;
 const OAUTH_TOOL_CALL_PREFIX = `oauth${Constants.mcp_delimiter}`;
+const SHUTDOWN_SUBSCRIBER_ERROR = 'Server is shutting down';
+const SHUTDOWN_JOB_ERROR = 'Generation interrupted because its server shut down';
+const SHUTTING_DOWN_ERROR = 'Generation job manager is shutting down';
+/** Internal transport signal: durable terminal state exists, but its DONE
+ * publication failed. HTTP subscribers must reconnect rather than treating
+ * this as an application-level generation error. */
+export const TERMINAL_PUBLICATION_RECONNECT_ERROR =
+  'Terminal publication failed; reconnect to load the durable result';
+/** Upper bound for a terminal owner's required persistence barrier. A crashed
+ * owner leaves the durable pending bit behind; the next read or subscriber
+ * promotes it to conservative reconciliation after this window. */
+const TERMINAL_PERSISTENCE_TIMEOUT_MS = 30_000;
+const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
+type TokenIdempotencyClaim = IdempotencyClaimValue & {
+  claimedAt: number;
+  claimToken: string;
+  generationProtocolVersion: 1 | 2;
+};
+
+function normalizeClaimProtocol(
+  value: Pick<IdempotencyClaimValue, 'generationProtocolVersion'>,
+): 1 | 2 {
+  return value.generationProtocolVersion === 2 ? 2 : 1;
+}
+
+function assertClaimCoordinates(
+  value: IdempotencyClaimValue | undefined,
+  context: string,
+): asserts value is IdempotencyClaimValue {
+  if (
+    value == null ||
+    typeof value !== 'object' ||
+    typeof value.streamId !== 'string' ||
+    value.streamId.length === 0 ||
+    typeof value.conversationId !== 'string' ||
+    value.conversationId.length === 0 ||
+    !Number.isSafeInteger(value.claimedAt) ||
+    (value.claimedAt as number) < 0 ||
+    (value.startedAt != null && (!Number.isSafeInteger(value.startedAt) || value.startedAt < 0)) ||
+    (value.generationProtocolVersion != null &&
+      value.generationProtocolVersion !== 1 &&
+      value.generationProtocolVersion !== 2)
+  ) {
+    throw new Error(`Invalid ${context} generation idempotency claim`);
+  }
+}
+
+/** A token-bearing value was written by the bridge-capable manager. Its full
+ * coordinates are therefore mandatory; an empty/malformed token must never be
+ * reinterpreted as a harmless old-server value. */
+function normalizeTokenClaim(
+  value: IdempotencyClaimValue | undefined,
+  context: string,
+): TokenIdempotencyClaim {
+  assertClaimCoordinates(value, context);
+  if (
+    typeof value.claimToken !== 'string' ||
+    value.claimToken.length === 0 ||
+    value.claimToken.length > 128 ||
+    (value.previousClaimToken != null &&
+      (typeof value.previousClaimToken !== 'string' ||
+        value.previousClaimToken.length === 0 ||
+        value.previousClaimToken.length > 128 ||
+        value.previousClaimToken === value.claimToken))
+  ) {
+    throw new Error(`Invalid ${context} generation idempotency claim token`);
+  }
+  return {
+    ...value,
+    claimedAt: value.claimedAt as number,
+    claimToken: value.claimToken,
+    generationProtocolVersion: normalizeClaimProtocol(value),
+  };
+}
+
+/** Old replicas wrote a claimedAt/stream pointer but no lease token. They are
+ * authoritative duplicate evidence, not a lease a new replica may take over.
+ * Stream correlation is intentionally left to the controller: pre-upgrade new
+ * chats used a random stream while current retries derive a stable UUID. */
+function normalizeTokenlessLegacyClaim(
+  value: IdempotencyClaimValue | undefined,
+): IdempotencyClaimValue {
+  assertClaimCoordinates(value, 'legacy');
+  if (
+    value.claimToken != null ||
+    value.previousClaimToken != null ||
+    value.startedAt != null ||
+    normalizeClaimProtocol(value) !== 1
+  ) {
+    throw new Error('Invalid tokenless legacy generation idempotency claim');
+  }
+  return { ...value, generationProtocolVersion: 1 };
+}
+
+function assertClaimMatchesRequest(
+  value: TokenIdempotencyClaim,
+  streamId: string,
+  conversationId: string,
+): void {
+  if (value.streamId !== streamId || value.conversationId !== conversationId) {
+    throw new Error('Mismatched generation idempotency claim coordinates');
+  }
+}
+
+function claimsMirrorExactly(left: TokenIdempotencyClaim, right: TokenIdempotencyClaim): boolean {
+  return (
+    left.streamId === right.streamId &&
+    left.conversationId === right.conversationId &&
+    left.claimedAt === right.claimedAt &&
+    left.claimToken === right.claimToken &&
+    left.previousClaimToken === right.previousClaimToken &&
+    left.generationProtocolVersion === right.generationProtocolVersion &&
+    left.startedAt === right.startedAt
+  );
+}
+
+/** The legacy and primary values are mirrors. The only legitimate transient
+ * asymmetry is primary.startedAt being present before the follow-up legacy
+ * mark; the caller reconciles that one direction explicitly. */
+function assertClaimMirrors(legacy: TokenIdempotencyClaim, primary: TokenIdempotencyClaim): void {
+  const startedRepair = legacy.startedAt == null && primary.startedAt != null;
+  if (
+    legacy.streamId !== primary.streamId ||
+    legacy.conversationId !== primary.conversationId ||
+    legacy.claimedAt !== primary.claimedAt ||
+    legacy.claimToken !== primary.claimToken ||
+    legacy.previousClaimToken !== primary.previousClaimToken ||
+    (legacy.generationProtocolVersion !== primary.generationProtocolVersion && !startedRepair) ||
+    (legacy.startedAt != null && legacy.startedAt !== primary.startedAt)
+  ) {
+    throw new Error('Mismatched legacy and primary generation idempotency claims');
+  }
+}
+
+/** Proof of the only repairable unstarted token split: takeover wrote the
+ * primary with an explicit predecessor token, then its reply/legacy CAS was
+ * interrupted. Arbitrary token mismatches remain fail-closed. */
+function isClaimTakeoverOf(
+  predecessor: TokenIdempotencyClaim,
+  candidate: TokenIdempotencyClaim,
+): boolean {
+  return (
+    candidate.previousClaimToken === predecessor.claimToken &&
+    candidate.claimToken !== predecessor.claimToken &&
+    candidate.streamId === predecessor.streamId &&
+    candidate.conversationId === predecessor.conversationId &&
+    candidate.generationProtocolVersion === predecessor.generationProtocolVersion &&
+    candidate.claimedAt >= predecessor.claimedAt
+  );
+}
+
+function isRecoverableTakeoverSplit(
+  legacy: TokenIdempotencyClaim,
+  primary: TokenIdempotencyClaim,
+): boolean {
+  return (
+    legacy.startedAt == null && primary.startedAt == null && isClaimTakeoverOf(legacy, primary)
+  );
+}
+
+function buildTerminalPersistenceReconcile(
+  job: Pick<SerializableJobData, 'createdAt' | 'conversationId' | 'status'>,
+): t.FinalEvent {
+  const aborted = job.status === 'aborted';
+  return {
+    final: true,
+    reconcile: true,
+    reconcileReason: aborted ? 'abort_persistence_failed' : 'terminal_payload_missing',
+    /** A completion whose outcome-defining write is unknown must not trigger
+     * completed-run follow-up draining. Surface it conservatively as an error;
+     * the persisted history refetch remains authoritative if the write won
+     * before the owner disappeared. */
+    terminalStatus: aborted ? 'aborted' : 'error',
+    generationCreatedAt: job.createdAt,
+    conversation: { conversationId: job.conversationId },
+  };
+}
 
 function getToolCallName(toolCall: unknown): unknown {
   return toolCall != null && typeof toolCall === 'object' && 'name' in toolCall
@@ -69,6 +279,40 @@ function hasOAuthToolCall(toolCalls: unknown): boolean {
       return typeof name === 'string' && name.startsWith(OAUTH_TOOL_CALL_PREFIX);
     })
   );
+}
+
+/** One recovery projection for both still-queued and already-drained steers.
+ * Claimed items remain non-drainable, but a reconnect must still render them
+ * until their applied chunk is durably committed. */
+function mergeUnresolvedSteers(...groups: SteerQueueItem[][]): SteerQueueItem[] {
+  const byId = new Map<string, SteerQueueItem>();
+  for (const group of groups) {
+    for (const item of group) {
+      byId.set(item.steerId, item);
+    }
+  }
+  // Each group is already FIFO and callers pass the claimed prefix before the
+  // still-queued suffix. Map preserves first insertion position while still
+  // letting a later duplicate refresh its value; timestamps and random UUIDs
+  // are not safe ordering keys for two accepts in the same millisecond.
+  return [...byId.values()];
+}
+
+function omitAlreadyAppliedSteers(items: SteerQueueItem[], content: unknown[]): SteerQueueItem[] {
+  const appliedIds = new Set<string>();
+  for (const part of content) {
+    if (
+      part != null &&
+      typeof part === 'object' &&
+      'type' in part &&
+      part.type === ContentTypes.STEER &&
+      'steerId' in part &&
+      typeof part.steerId === 'string'
+    ) {
+      appliedIds.add(part.steerId);
+    }
+  }
+  return items.filter((item) => !appliedIds.has(item.steerId));
 }
 
 function getReplayStepId(event: t.ServerSentEvent): unknown {
@@ -127,6 +371,34 @@ function isOAuthReplayEvent(event: t.ServerSentEvent): boolean {
   return false;
 }
 
+function normalizeRunStepReplayIndices(
+  replayEvents: t.ResumeState['replayEvents'],
+  runSteps: readonly Agents.RunStep[],
+): t.ResumeState['replayEvents'] {
+  if (!replayEvents) {
+    return replayEvents;
+  }
+  const runStepsById = new Map(runSteps.map((runStep) => [runStep.id, runStep]));
+  return replayEvents.map((event) => {
+    if (event.event !== 'on_run_step' || event.data == null || typeof event.data !== 'object') {
+      return event;
+    }
+    const stepId = 'id' in event.data ? event.data.id : undefined;
+    const normalizedRunStep = typeof stepId === 'string' ? runStepsById.get(stepId) : undefined;
+    const eventIndex = 'index' in event.data ? event.data.index : undefined;
+    if (!normalizedRunStep || normalizedRunStep.index === eventIndex) {
+      return event;
+    }
+    return {
+      ...event,
+      data: {
+        ...event.data,
+        index: normalizedRunStep.index,
+      },
+    };
+  });
+}
+
 /**
  * Configuration options for GenerationJobManager
  */
@@ -141,6 +413,43 @@ export interface GenerationJobManagerOptions {
   cleanupOnComplete?: boolean;
 }
 
+export interface CreateGenerationJobOptions {
+  startupTelemetry?: AgentStartupTelemetry;
+  initialMetadata?: Partial<t.GenerationJobMetadata>;
+  /** A terminal steer being handed off as this new normal turn. The store
+   * leases this exact parked item while the generation is active; persistence
+   * commits its removal through `consumeRecovered`. */
+  recoveredSteerId?: string;
+  /** Exact user-visible source proof checked inside the store's atomic create.
+   * Required whenever `recoveredSteerId` is present. */
+  recoveredSteerPayload?: RecoveredSteerPayload;
+  idempotencyClientRequestId?: string;
+  idempotencyClaimToken?: string;
+  /** Optional compare-and-set fence from the client's last authoritative
+   * status result. Creation may proceed only if that exact epoch is still
+   * current or the stream has no durable job. */
+  expectedPredecessorCreatedAt?: number;
+}
+
+/**
+ * Proof that this manager won the only legal `running -> terminal` transition
+ * for one generation. Controllers must publish their terminal event only after
+ * receiving this claim, then pass the same object to {@link finishTerminalJob}
+ * from a `finally` block.
+ */
+export interface TerminalJobClaim {
+  readonly streamId: string;
+  readonly createdAt: number;
+  readonly conversationId?: string;
+  readonly status: 'complete' | 'error' | 'aborted';
+  readonly error?: string;
+  /** The winner must durably publish either its normal FINAL or a
+   * reconciliation payload before cleanup may remove the job. */
+  readonly persistencePending?: true;
+  /** Exact queued + claimed steers atomically parked by the winning CAS. */
+  readonly drainedSteers: readonly SteerQueueItem[];
+}
+
 /**
  * Runtime state for active jobs - not serializable, kept in-memory per instance.
  * Contains AbortController, ready promise, and other non-serializable state.
@@ -152,6 +461,8 @@ export interface GenerationJobManagerOptions {
  * @property errorEvent - Cached error event for late subscribers (errors before client connects)
  * @property syncSent - Whether sync event was sent (reset when all subscribers leave)
  * @property earlyEventBuffer - Buffer for events emitted before first subscriber connects
+ * @property earlyEventSequencePromises - Redis sequence assignments corresponding to buffered
+ *   events. Their absolute values identify the exact ordering frontier after replay.
  * @property hasSubscriber - Whether at least one subscriber has connected
  * @property allSubscribersLeftHandlers - Internal handlers for disconnect events.
  *   These are stored separately from eventTransport subscribers to avoid being counted
@@ -160,18 +471,91 @@ export interface GenerationJobManagerOptions {
  *   when the real client connects, which would prevent readyPromise from resolving.
  */
 interface RuntimeJobState {
+  createdAt: number;
   abortController: AbortController;
+  /** Removes this generation's cross-replica abort listener without touching a replacement. */
+  abortUnsubscribe?: () => void;
+  /** A durable successor has stopped this provider but has not yet activated
+   * its own abort registration. Keep this runtime's transport callbacks as a
+   * channel handoff bridge until the successor explicitly releases them. */
+  replacementTransportHold?: boolean;
+  /**
+   * Cooperative-seal requests for THIS generation. Armed by `requestPreempt`
+   * (locally or via a fenced cross-replica publish), polled O(1) by the run's
+   * `shouldPreempt`, and cleared by `noteSteersRemoved` when the steer drains
+   * at any boundary or is cancelled. Lives and dies with the runtime object —
+   * no terminal bookkeeping needed beyond the listener release.
+   */
+  preempt?: {
+    /** Generation identity this request set belongs to. */
+    createdAt: number;
+    /** Server-minted steerIds requested but not yet drained/cancelled. */
+    ids: Set<string>;
+    /**
+     * steerIds whose removal was observed BEFORE their arm. Arm and clear are
+     * published by different replicas over different connections, so a steer
+     * drained at a tool boundary during the arming replica's enqueue round
+     * trip can have its clear land first — without this tombstone the late
+     * arm would resurrect a request no steer backs, sealing an unrelated
+     * stretch of generation. steerIds are single-use UUIDs, so a tombstoned
+     * id can never legitimately be re-armed.
+     */
+    cleared: Set<string>;
+    /** Lowest revision a still-queued steer may use after a non-terminal
+     * capability downgrade. Unlike `cleared`, this allows a later explicit
+     * arm whose store-assigned revision is newer. */
+    minArmRevision: Map<string, number>;
+  };
+  /** Removes this generation's cross-replica preempt listener without touching a replacement. */
+  preemptUnsubscribe?: () => void;
   readyPromise: Promise<void>;
   resolveReady: () => void;
+  startupTelemetry?: AgentStartupTelemetry;
   finalEvent?: t.ServerSentEvent;
   errorEvent?: string;
-  /** Approval-expired host cleanup already ran for this runtime (relay path is swept repeatedly). */
-  approvalCleanupRan?: boolean;
+  /** Local, runtime-scoped terminal handlers. Avoids broadcasting predecessor errors to a
+   * replacement generation that reuses the same durable stream ID. */
+  localErrorHandlers: Set<t.ErrorHandler>;
+  /** Prevents a repeated approval-expiry sweep from republishing the same terminal event. */
+  approvalExpiryPublished?: boolean;
+  /** Prevents a local or cross-replica stale-pause relay from retiring and
+   * republishing the same exact runtime more than once. */
+  pausePersistenceTimeoutRetired?: boolean;
   syncSent: boolean;
   earlyEventBuffer: t.ServerSentEvent[];
+  earlyEventSequencePromises: Array<Promise<void | number>>;
+  /** Initial subscribers eligible to receive the local pre-attachment replay. */
+  earlyReplayHandlers: Set<t.ChunkHandler>;
+  /** Per-resume capture handlers that bridge an in-memory snapshot to transport attachment. */
+  resumeCaptureHandlers: Set<(event: t.ServerSentEvent, sequence: number) => void>;
+  /** Monotonic local emission sequence used to establish an exact resume snapshot frontier. */
+  emissionSequence: number;
+  /** Emissions that started before an in-memory resume snapshot and must become snapshot-visible
+   *  before the graph/job state is read. The event identity also suppresses their later publish. */
+  inFlightSnapshotEmissions: Map<
+    number,
+    { event: t.ServerSentEvent; snapshotReady: Promise<void> }
+  >;
+  /** Prevents later events from overtaking the initial `created` metadata write and publish. */
+  createdEventPublication?: Promise<void>;
   hasSubscriber: boolean;
-  allSubscribersLeftHandlers?: Array<(...args: unknown[]) => void>;
+  /** Advances whenever every local SSE subscriber for one attachment generation leaves. */
+  attachmentGeneration: number;
+  /** Attachment generation whose partial-response disconnect cleanup was most recently started. */
+  lastSubscriberCleanupGeneration?: number;
+  allSubscribersLeftHandlers?: Array<(...args: unknown[]) => void | Promise<void>>;
 }
+
+interface PreparedSubscription {
+  runtime: RuntimeJobState;
+  jobData: SerializableJobData | null;
+  deferDeliveryUntilActivated: boolean;
+}
+
+type DeferredDelivery =
+  | { type: 'chunk'; event: t.ServerSentEvent }
+  | { type: 'done'; event: t.ServerSentEvent }
+  | { type: 'error'; error: string };
 
 /**
  * Manages generation jobs for resumable LLM streams.
@@ -196,7 +580,7 @@ interface RuntimeJobState {
  */
 class GenerationJobManagerClass {
   /** Job metadata + content state storage - swappable for Redis, etc. */
-  private jobStore: IJobStore;
+  private jobStore: IJobStoreV2;
   /** Guarded human-review lifecycle (pause / resolve / expire) over the store. */
   private _approvals: ApprovalLifecycle;
   /** FIFO steering queue (enqueue / drain / peek / clear) over the store. */
@@ -207,8 +591,8 @@ class GenerationJobManagerClass {
   /** Runtime state - always in-memory, not serializable */
   private runtimeState = new Map<string, RuntimeJobState>();
 
-  /** Jobs actively generating in this process. */
-  private runningJobs = new Set<string>();
+  /** Jobs actively owned by this process, pinned to their durable creation epoch. */
+  private ownedJobs = new Map<string, number>();
 
   /** Serializes replay-event read/modify/write updates per stream. */
   private replayEventWriteQueues = new Map<string, Promise<void>>();
@@ -216,7 +600,24 @@ class GenerationJobManagerClass {
   /** Serializes token-usage read/modify/write updates per stream. */
   private tokenUsageWriteQueues = new Map<string, Promise<void>>();
 
+  /** Partial-response and disconnect-state writes still draining during shutdown. */
+  private subscriberCleanupPromises = new Set<Promise<void>>();
+
+  /** Makes terminal cleanup idempotent while keeping claims opaque to callers. */
+  private terminalFinishPromises = new WeakMap<TerminalJobClaim, Promise<void>>();
+
+  /** Exact local runtime observed when a claim won; never clean a later runtime. */
+  private terminalClaimRuntimes = new WeakMap<TerminalJobClaim, RuntimeJobState | null>();
+
+  /** Claims whose durable final exists but whose DONE transport publication
+   * failed. Retain their job record through normal finish so the forced
+   * reconnect can replay that authoritative final payload. */
+  private terminalPublicationFailures = new WeakSet<TerminalJobClaim>();
+
   private cleanupInterval: NodeJS.Timeout | null = null;
+
+  /** Rejects new jobs once graceful shutdown has started. */
+  private shuttingDown = false;
 
   /** Whether we're using Redis stores */
   private _isRedis = false;
@@ -224,19 +625,12 @@ class GenerationJobManagerClass {
   /** Whether to cleanup event transport immediately on job completion */
   private _cleanupOnComplete = true;
 
-  /**
-   * Host cleanup fired after an approval EXPIRES (periodic sweeper or a stale submit) —
-   * e.g. prune the paused run's durable checkpoint eagerly instead of letting it sit
-   * until its store TTL. Best-effort: failures are logged, never break the expiry.
-   */
-  private _onApprovalExpired:
-    | ((streamId: string, job?: SerializableJobData | null) => void | Promise<void>)
-    | null = null;
-
   constructor(options?: GenerationJobManagerOptions) {
-    this.jobStore =
+    const jobStore =
       options?.jobStore ?? new InMemoryJobStore({ ttlAfterComplete: 0, maxJobs: 1000 });
-    this._approvals = new ApprovalLifecycle(this.jobStore);
+    assertJobStoreV2(jobStore);
+    this.jobStore = jobStore;
+    this._approvals = this.createApprovalLifecycle(this.jobStore);
     this._steering = new SteeringLifecycle(this.jobStore);
     this.eventTransport = options?.eventTransport ?? new InMemoryEventTransport();
     this._cleanupOnComplete = options?.cleanupOnComplete ?? true;
@@ -284,41 +678,60 @@ class GenerationJobManagerClass {
     isRedis?: boolean;
     cleanupOnComplete?: boolean;
   }): void {
+    assertJobStoreV2(services.jobStore);
     const previousStore = this.storeLabel;
     if (this.cleanupInterval) {
       logger.warn(
         '[GenerationJobManager] Reconfiguring after initialization - destroying existing services',
       );
-      this.destroy();
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+
+      const replacedJobStore = this.jobStore;
+      const replacedEventTransport = this.eventTransport;
+      const pendingSubscriberCleanups = [...this.subscriberCleanupPromises];
+      for (const runtime of this.runtimeState.values()) {
+        runtime.startupTelemetry?.end('aborted');
+        runtime.startupTelemetry = undefined;
+        this.releaseAbortSubscription(runtime, true);
+        runtime.abortController.abort();
+      }
+
+      // Detach the old transport synchronously so it cannot deliver into a replacement runtime.
+      // Its store can finish draining already-started disconnect persistence in the background.
+      try {
+        replacedEventTransport.destroy();
+      } catch (err) {
+        logger.error('[GenerationJobManager] Failed to destroy replaced event transport:', err);
+      }
+      void Promise.allSettled(pendingSubscriberCleanups)
+        .then(() => replacedJobStore.destroy())
+        .catch((err) => {
+          logger.error('[GenerationJobManager] Failed to destroy replaced job store:', err);
+        });
+
+      this.runtimeState.clear();
+      this.subscriberCleanupPromises.clear();
+      this.runStepBuffers?.clear();
+      this.replayEventWriteQueues.clear();
+      this.tokenUsageWriteQueues.clear();
     }
 
-    this.runningJobs.clear();
+    this.ownedJobs.clear();
     setGenerationJobsInFlight(previousStore, 0);
 
     this.jobStore = services.jobStore;
-    this._approvals = new ApprovalLifecycle(this.jobStore);
+    this._approvals = this.createApprovalLifecycle(this.jobStore);
     this._steering = new SteeringLifecycle(this.jobStore);
     this.eventTransport = services.eventTransport;
     this._isRedis = services.isRedis ?? false;
     this._cleanupOnComplete = services.cleanupOnComplete ?? true;
+    this.shuttingDown = false;
     this.syncRunningJobMetrics();
 
     logger.info(
       `[GenerationJobManager] Configured with ${this._isRedis ? 'Redis' : 'in-memory'} stores`,
     );
-  }
-
-  /**
-   * Register a host callback fired after an approval EXPIRES — from the periodic sweeper or
-   * a stale submit — e.g. to prune the paused run's durable checkpoint eagerly instead of
-   * waiting out its TTL. Unlike {@link configure} this never resets services, so it is safe
-   * to call from any startup path (including ones that run on constructor defaults). The
-   * `streamId` argument equals the LangGraph `thread_id` (LibreChat's conversationId).
-   */
-  setApprovalExpiredHandler(
-    handler: ((streamId: string, job?: SerializableJobData | null) => void | Promise<void>) | null,
-  ): void {
-    this._onApprovalExpired = handler;
   }
 
   /**
@@ -333,13 +746,573 @@ class GenerationJobManagerClass {
   }
 
   private syncRunningJobMetrics(store: GenerationJobStore = this.storeLabel): void {
-    setGenerationJobsInFlight(store, this.runningJobs.size);
+    setGenerationJobsInFlight(store, this.ownedJobs.size);
+  }
+
+  private createApprovalLifecycle(store: IJobStoreV2): ApprovalLifecycle {
+    return new ApprovalLifecycle(store, {
+      onPaused: (streamId, createdAt) => this.releaseJobOwnership(streamId, createdAt),
+      onResumed: (streamId, createdAt) => this.acquireResumedJobOwnership(streamId, createdAt),
+      onExpired: (streamId, createdAt) => this.releaseJobOwnership(streamId, createdAt),
+      onPausePersistenceFailed: (streamId, createdAt, error, drainedSteers) =>
+        this.finishTimedOutPausePersistence(streamId, createdAt, error, drainedSteers, true),
+    });
+  }
+
+  /**
+   * The approval lifecycle already won the exact barrier-to-error CAS. Reuse
+   * the normal terminal finisher so attached clients receive the durable error
+   * and every runtime/ownership resource is retired with the same epoch guards
+   * as an ordinary generation failure.
+   */
+  private async finishTimedOutPausePersistence(
+    streamId: string,
+    createdAt: number,
+    error: string,
+    drainedSteers: SteerQueueItem[],
+    transitionWonLocally = false,
+  ): Promise<void> {
+    const observedRuntime = this.runtimeState.get(streamId);
+    const runtime = observedRuntime?.createdAt === createdAt ? observedRuntime : undefined;
+    if (runtime?.pausePersistenceTimeoutRetired === true) {
+      return;
+    }
+    const job = await this.jobStore.getJob(streamId);
+    if (job?.createdAt !== createdAt) {
+      /** A locally-won CAS may have used a zero completed TTL, or a
+       * replacement may have landed before this follow-up read. The claim's
+       * generation tag still makes publication/runtime cleanup safe. A relay,
+       * by contrast, needs the durable timeout row as its proof. */
+      if (!transitionWonLocally) {
+        this.reconcileInactiveGeneration(streamId, createdAt, job, runtime);
+        return;
+      }
+    }
+    if (job?.createdAt === createdAt && (job.status !== 'error' || job.error !== error)) {
+      return;
+    }
+
+    if (runtime) {
+      runtime.pausePersistenceTimeoutRetired = true;
+    }
+
+    const claim: TerminalJobClaim = Object.freeze({
+      streamId,
+      createdAt,
+      ...(job?.createdAt === createdAt &&
+        job.conversationId != null && { conversationId: job.conversationId }),
+      status: 'error' as const,
+      error,
+      drainedSteers: Object.freeze([...drainedSteers]),
+    });
+    this.terminalClaimRuntimes.set(claim, runtime ?? null);
+    await this.finishTerminalJob(claim);
+  }
+
+  private acquireJobOwnership(streamId: string, createdAt: number): void {
+    this.ownedJobs.set(streamId, createdAt);
+    this.syncRunningJobMetrics();
+  }
+
+  private acquireResumedJobOwnership(streamId: string, createdAt: number): void {
+    const ownedCreatedAt = this.ownedJobs.get(streamId);
+    if (ownedCreatedAt != null && ownedCreatedAt !== createdAt) {
+      return;
+    }
+    this.acquireJobOwnership(streamId, createdAt);
+  }
+
+  private releaseJobOwnership(streamId: string, expectedCreatedAt?: number): boolean {
+    if (expectedCreatedAt != null && this.ownedJobs.get(streamId) !== expectedCreatedAt) {
+      return false;
+    }
+    const released = this.ownedJobs.delete(streamId);
+    if (released) {
+      this.syncRunningJobMetrics();
+    }
+    return released;
+  }
+
+  /**
+   * Releases this generation's cross-replica listeners — abort AND preempt —
+   * and drops any armed preempt requests. Every terminal site that retires a
+   * runtime goes through here, so preempt state cannot outlive the
+   * generation it belongs to.
+   */
+  private releaseAbortSubscription(runtime: RuntimeJobState, force = false): void {
+    if (runtime.replacementTransportHold === true && !force) {
+      return;
+    }
+    if (force) {
+      runtime.replacementTransportHold = false;
+    }
+    this.releasePreemptSubscription(runtime, force);
+    const unsubscribe = runtime.abortUnsubscribe;
+    runtime.abortUnsubscribe = undefined;
+    if (!unsubscribe) {
+      return;
+    }
+
+    try {
+      unsubscribe();
+    } catch (err) {
+      logger.error('[GenerationJobManager] Failed to release abort subscription:', err);
+    }
+  }
+
+  private releasePreemptSubscription(runtime: RuntimeJobState, force = false): void {
+    if (runtime.replacementTransportHold === true && !force) {
+      return;
+    }
+    runtime.preempt = undefined;
+    const unsubscribe = runtime.preemptUnsubscribe;
+    runtime.preemptUnsubscribe = undefined;
+    if (!unsubscribe) {
+      return;
+    }
+
+    try {
+      unsubscribe();
+    } catch (err) {
+      logger.error('[GenerationJobManager] Failed to release preempt subscription:', err);
+    }
+  }
+
+  private reconcileInactiveGeneration(
+    streamId: string,
+    createdAt: number,
+    currentJob: SerializableJobData | null,
+    observedRuntime?: RuntimeJobState,
+  ): void {
+    if (currentJob?.createdAt === createdAt) {
+      if (currentJob.status === 'running') {
+        return;
+      }
+      if (currentJob.status === 'requires_action') {
+        this.releaseJobOwnership(streamId, createdAt);
+        return;
+      }
+    }
+
+    if (
+      observedRuntime?.createdAt === createdAt &&
+      this.runtimeState.get(streamId) === observedRuntime
+    ) {
+      this.releaseAbortSubscription(observedRuntime);
+      observedRuntime.abortController.abort();
+    }
+    this.releaseJobOwnership(streamId, createdAt);
+  }
+
+  private async reconcileLostTerminalTransition(
+    streamId: string,
+    createdAt: number,
+    observedRuntime?: RuntimeJobState,
+  ): Promise<void> {
+    const currentJob = await this.jobStore.getJob(streamId);
+    this.reconcileInactiveGeneration(streamId, createdAt, currentJob, observedRuntime);
+  }
+
+  /** Promotes a terminal claim whose persistence owner disappeared to a conservative
+   * terminal payload. The store CAS races safely with a slow owner: whichever
+   * side finalizes first chooses the only payload subscribers may consume. */
+  private async recoverStaleTerminalPersistence(
+    jobData: SerializableJobData,
+  ): Promise<SerializableJobData | null> {
+    if (
+      jobData.terminalPersistencePending !== true ||
+      !['complete', 'error', 'aborted'].includes(jobData.status)
+    ) {
+      return jobData;
+    }
+    const startedAt =
+      jobData.terminalPersistenceStartedAt ?? jobData.completedAt ?? jobData.createdAt;
+    if (Date.now() - startedAt < TERMINAL_PERSISTENCE_TIMEOUT_MS) {
+      return jobData;
+    }
+
+    const reconcileEvent = buildTerminalPersistenceReconcile(jobData);
+    const serialized = JSON.stringify(reconcileEvent);
+    const recovered = await this.jobStore.finalizeTerminalPersistence(
+      jobData.streamId,
+      jobData.createdAt,
+      serialized,
+    );
+    if (!recovered) {
+      return this.jobStore.getJob(jobData.streamId);
+    }
+
+    const runtime = this.runtimeState.get(jobData.streamId);
+    if (runtime?.createdAt === jobData.createdAt) {
+      runtime.finalEvent = reconcileEvent;
+    }
+    try {
+      await this.eventTransport.emitDone(jobData.streamId, reconcileEvent, jobData.createdAt);
+    } catch (err) {
+      logger.error(
+        `[GenerationJobManager] Failed to publish stale terminal-persistence recovery ${jobData.streamId}:`,
+        err,
+      );
+    }
+    return {
+      ...jobData,
+      terminalPersistencePending: false,
+      finalEvent: serialized,
+    };
+  }
+
+  private async registerAbortSubscription(
+    streamId: string,
+    runtime: RuntimeJobState,
+  ): Promise<void> {
+    if (!this.eventTransport.onAbort) {
+      return;
+    }
+
+    const unsubscribe = await this.eventTransport.onAbort(streamId, (generationId) => {
+      const currentRuntime = this.runtimeState.get(streamId);
+      if (
+        currentRuntime !== runtime ||
+        (generationId != null && currentRuntime.createdAt !== generationId)
+      ) {
+        return false;
+      }
+
+      const ownsProvider = this.ownedJobs.get(streamId) === currentRuntime.createdAt;
+      if (!currentRuntime.abortController.signal.aborted) {
+        logger.debug(`[GenerationJobManager] Received cross-replica abort for ${streamId}`);
+        currentRuntime.abortController.abort();
+        this.releaseAbortSubscription(currentRuntime);
+      }
+      return ownsProvider;
+    });
+
+    if (typeof unsubscribe === 'function') {
+      runtime.abortUnsubscribe = unsubscribe;
+    }
+    if (this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted) {
+      this.releaseAbortSubscription(runtime);
+    }
+  }
+
+  private ensurePreemptState(
+    runtime: RuntimeJobState,
+    createdAt: number,
+  ): NonNullable<RuntimeJobState['preempt']> {
+    runtime.preempt ??= {
+      createdAt,
+      ids: new Set(),
+      cleared: new Set(),
+      minArmRevision: new Map(),
+    };
+    return runtime.preempt;
+  }
+
+  /**
+   * Arms ids that have not already been observed as removed. Returns how many
+   * were actually accepted: a tombstoned id (its steer already drained at an
+   * ordinary boundary while this request was in flight) or an over-cap id is
+   * skipped, and the caller must not report those as armed.
+   */
+  private armPreemptIds(
+    runtime: RuntimeJobState,
+    createdAt: number,
+    steerIds: string[],
+    revisions?: Record<string, number>,
+  ): number {
+    const state = this.ensurePreemptState(runtime, createdAt);
+    let accepted = 0;
+    for (const id of steerIds) {
+      const revision = revisions?.[id] ?? 0;
+      if (
+        state.cleared.has(id) ||
+        revision < (state.minArmRevision.get(id) ?? 0) ||
+        state.ids.size >= STEER_QUEUE_MAX_DEPTH
+      ) {
+        continue;
+      }
+      state.ids.add(id);
+      accepted += 1;
+    }
+    return accepted;
+  }
+
+  /** Non-terminal disarm used by a capable→incapable owner handover. The
+   * queue item remains valid, so this records a revision floor instead of the
+   * permanent removal tombstone used by `clearPreemptIds`. */
+  private downgradePreemptIds(
+    runtime: RuntimeJobState,
+    createdAt: number,
+    steers: Array<{ steerId: string; preemptRevision?: number }>,
+  ): void {
+    const state = this.ensurePreemptState(runtime, createdAt);
+    for (const steer of steers) {
+      state.ids.delete(steer.steerId);
+      state.minArmRevision.set(steer.steerId, (steer.preemptRevision ?? 0) + 1);
+    }
+  }
+
+  /**
+   * Disarms ids and tombstones them against a late-arriving arm. The
+   * tombstone set is bounded by EVICTING its oldest entry rather than
+   * refusing new ones: every drained or cancelled steer is tombstoned, not
+   * just preempting ones, so a refusing cap would silently stop recording
+   * after a long generation and let the late-arm race resurface. Set
+   * iteration is insertion-ordered, so the first key is the oldest.
+   */
+  private clearPreemptIds(runtime: RuntimeJobState, createdAt: number, steerIds: string[]): void {
+    const state = this.ensurePreemptState(runtime, createdAt);
+    for (const id of steerIds) {
+      state.ids.delete(id);
+      if (state.cleared.has(id)) {
+        continue;
+      }
+      if (state.cleared.size >= PREEMPT_TOMBSTONE_MAX) {
+        const oldest = state.cleared.values().next().value;
+        if (oldest != null) {
+          state.cleared.delete(oldest);
+        }
+      }
+      state.cleared.add(id);
+    }
+  }
+
+  /**
+   * Pub/sub delivery is not durable: an ARM can sit in a subscriber buffer
+   * until after the steer drained and a handover reconciliation observed an
+   * empty queue. Re-check the generation-fenced queue on receipt so that late
+   * message cannot resurrect an interrupt with no payload behind it.
+   *
+   * The durable revision, rather than the publication's revision, is used for
+   * a still-preempting item. This preserves liveness when an older duplicate
+   * arrives after a later explicit arm, while `preempt: false` advances the
+   * local floor and keeps a pre-downgrade publication from re-arming it.
+   */
+  private async validateAndArmPreemptMessage(
+    streamId: string,
+    runtime: RuntimeJobState,
+    msg: PreemptMessage,
+  ): Promise<void> {
+    const queued = await this._steering.peek(streamId, msg.createdAt);
+    const currentRuntime = this.runtimeState.get(streamId);
+    if (currentRuntime !== runtime || currentRuntime.createdAt !== msg.createdAt) {
+      return;
+    }
+
+    const queuedById = new Map(queued.map((item) => [item.steerId, item]));
+    const backedIds: string[] = [];
+    const backedRevisions: Record<string, number> = {};
+    const removedIds: string[] = [];
+    const downgraded: SteerQueueItem[] = [];
+
+    for (const steerId of msg.steerIds) {
+      const item = queuedById.get(steerId);
+      if (item == null) {
+        removedIds.push(steerId);
+        continue;
+      }
+      if (item.preempt !== true) {
+        downgraded.push(item);
+        continue;
+      }
+
+      const durableRevision = item.preemptRevision ?? 0;
+      const publishedRevision = msg.revisions?.[steerId] ?? 0;
+      if (publishedRevision > durableRevision) {
+        /** The publication cannot be backed by this authoritative snapshot. */
+        continue;
+      }
+      backedIds.push(steerId);
+      backedRevisions[steerId] = durableRevision;
+    }
+
+    if (removedIds.length > 0) {
+      this.clearPreemptIds(currentRuntime, msg.createdAt, removedIds);
+    }
+    if (downgraded.length > 0) {
+      this.downgradePreemptIds(currentRuntime, msg.createdAt, downgraded);
+    }
+    if (backedIds.length > 0) {
+      /** A local drain/CLEAR during the queue read has already tombstoned the
+       * id, and `armPreemptIds` re-checks that state synchronously here. */
+      this.armPreemptIds(currentRuntime, msg.createdAt, backedIds, backedRevisions);
+    }
+  }
+
+  /**
+   * Mirrors {@link registerAbortSubscription} for cooperative preempts. The
+   * same double fence applies — runtime object identity plus the generation
+   * `createdAt` carried by every {@link PreemptMessage} — so a stale
+   * cross-replica publish can never arm a replacement job on the same
+   * streamId. Arm requests cap at {@link STEER_QUEUE_MAX_DEPTH}, matching
+   * the durable queue they mirror.
+   *
+   * Never rejects. Every caller fires this without awaiting (see the
+   * createJob registration for why), so a propagating subscription error
+   * would surface as an unhandled rejection: an alarming stack trace in
+   * LibreChat's own server, which installs a global handler and keeps
+   * serving, and a dead process for any other consumer of this package,
+   * which under Node's default `--unhandled-rejections=throw` does not.
+   * Neither is warranted — a failed subscription degrades this generation's
+   * preemptive steers to the next tool boundary, the documented fallback.
+   */
+  private async registerPreemptSubscription(
+    streamId: string,
+    runtime: RuntimeJobState,
+  ): Promise<void> {
+    if (!this.eventTransport.onPreempt) {
+      return;
+    }
+
+    try {
+      const unsubscribe = await this.eventTransport.onPreempt(streamId, (msg) => {
+        const currentRuntime = this.runtimeState.get(streamId);
+        if (currentRuntime !== runtime || currentRuntime.createdAt !== msg.createdAt) {
+          return;
+        }
+
+        if (msg.op === 'clear') {
+          this.clearPreemptIds(currentRuntime, msg.createdAt, msg.steerIds);
+          return;
+        }
+
+        void this.validateAndArmPreemptMessage(streamId, runtime, msg).catch((error) => {
+          logger.error(
+            `[GenerationJobManager] Failed to validate preempt arm for ${streamId}; ` +
+              'the queued steer will apply at the next tool boundary:',
+            error,
+          );
+        });
+      });
+
+      if (typeof unsubscribe === 'function') {
+        runtime.preemptUnsubscribe = unsubscribe;
+      }
+      if (this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted) {
+        this.releasePreemptSubscription(runtime);
+      }
+    } catch (err) {
+      logger.error(
+        `[GenerationJobManager] Failed to subscribe to preempts for ${streamId}; ` +
+          'steers on this generation will apply at the next tool boundary:',
+        err,
+      );
+    }
+  }
+
+  private rejectSubscriptionDuringShutdown(
+    subscriptionType: 'initial' | 'resume',
+    onError?: t.ErrorHandler,
+  ): boolean {
+    if (!this.shuttingDown) {
+      return false;
+    }
+
+    recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
+    onError?.(SHUTDOWN_SUBSCRIBER_ERROR);
+    return true;
+  }
+
+  private detachSubscriptionDuringShutdown(
+    subscription: { unsubscribe: t.UnsubscribeFn } | null,
+  ): boolean {
+    if (!this.shuttingDown) {
+      return false;
+    }
+
+    subscription?.unsubscribe();
+    return true;
+  }
+
+  private registerAllSubscribersLeft(streamId: string): void {
+    this.eventTransport.onAllSubscribersLeft(streamId, () => {
+      const runtime = this.runtimeState.get(streamId);
+      if (!runtime) {
+        return;
+      }
+
+      runtime.syncSent = false;
+      runtime.hasSubscriber = false;
+      runtime.attachmentGeneration++;
+      runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
+
+      // Terminal delivery closes the SSE subscription too, but it is not a user
+      // disconnect. Running partial-response handlers here can overwrite the
+      // already-saved final response as unfinished.
+      if (runtime.finalEvent || runtime.errorEvent) {
+        return;
+      }
+
+      const cleanup = this.persistSubscriberCleanup(streamId, runtime);
+      this.subscriberCleanupPromises.add(cleanup);
+      void cleanup.then(
+        () => this.subscriberCleanupPromises.delete(cleanup),
+        (err) => {
+          this.subscriberCleanupPromises.delete(cleanup);
+          logger.error(`[GenerationJobManager] Failed to clean up disconnected subscriber:`, err);
+        },
+      );
+    });
+  }
+
+  private async persistSubscriberCleanup(
+    streamId: string,
+    runtime: RuntimeJobState,
+  ): Promise<void> {
+    const persistSyncState = this.jobStore
+      .updateJob(streamId, { syncSent: false }, runtime.createdAt)
+      .catch((err) => {
+        logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
+      });
+    const handlers = runtime.allSubscribersLeftHandlers
+      ? [...runtime.allSubscribersLeftHandlers]
+      : [];
+
+    if (handlers.length === 0) {
+      await persistSyncState;
+      return;
+    }
+
+    try {
+      const result = await this.jobStore.getContentParts(streamId, runtime.createdAt);
+      const parts = result?.content ?? [];
+      const handlerResults = await Promise.allSettled(
+        handlers.map((handler) => Promise.resolve().then(() => handler(parts))),
+      );
+      for (const handlerResult of handlerResults) {
+        if (handlerResult.status === 'rejected') {
+          logger.error(
+            `[GenerationJobManager] Error in allSubscribersLeft handler:`,
+            handlerResult.reason,
+          );
+        }
+      }
+    } catch (err) {
+      logger.error(
+        `[GenerationJobManager] Failed to get content parts for allSubscribersLeft handlers:`,
+        err,
+      );
+    }
+
+    await persistSyncState;
+  }
+
+  private async drainSubscriberCleanups(): Promise<void> {
+    const pending = [...this.subscriberCleanupPromises];
+    if (pending.length === 0) {
+      return;
+    }
+
+    await Promise.allSettled(pending);
+    if (this.subscriberCleanupPromises.size > 0) {
+      await this.drainSubscriberCleanups();
+    }
   }
 
   /**
    * Get the job store instance (for advanced use cases).
    */
-  getJobStore(): IJobStore {
+  getJobStore(): IJobStoreV2 {
     return this.jobStore;
   }
 
@@ -348,26 +1321,810 @@ class GenerationJobManagerClass {
    *
    * This sets up:
    * 1. Serializable job data in the job store
-   * 2. Runtime state including readyPromise (resolves when first SSE client connects)
+   * 2. Runtime state including the legacy, immediately-resolved readyPromise facade
    * 3. allSubscribersLeft callback for handling client disconnections
    *
-   * The readyPromise mechanism ensures generation doesn't start before the client
-   * is ready to receive events. The controller awaits this promise (with a short timeout)
-   * before starting LLM generation.
+   * Generation starts independently of SSE attachment. Early events are buffered locally and,
+   * in Redis mode, persisted/published for replay when the client subscribes.
    *
    * @param streamId - Unique identifier for this stream
    * @param userId - User who initiated the request
    * @param conversationId - Optional conversation ID for lookup
    * @returns A facade object for the GenerationJob
    */
+  private async notifyReplacedGeneration(
+    streamId: string,
+    predecessorCreatedAt: number,
+    predecessorConversationId?: string,
+    fallbackConversationId?: string,
+    replacementCreationAttemptId?: string,
+    stopProvider = true,
+  ): Promise<boolean> {
+    const reconcileEvent: t.ServerSentEvent = {
+      final: true,
+      reconcile: true,
+      reconcileReason: 'generation_replaced',
+      generationCreatedAt: predecessorCreatedAt,
+      conversation: {
+        conversationId: predecessorConversationId ?? fallbackConversationId ?? streamId,
+      },
+    } satisfies t.FinalEvent;
+    const localPredecessor = this.runtimeState.get(streamId);
+    const ownsExactLocalProvider =
+      localPredecessor?.createdAt === predecessorCreatedAt &&
+      this.ownedJobs.get(streamId) === predecessorCreatedAt;
+    const stoppedExactLocalProvider = stopProvider && ownsExactLocalProvider;
+    if (localPredecessor?.createdAt === predecessorCreatedAt) {
+      localPredecessor.finalEvent = reconcileEvent;
+      if (stopProvider) {
+        // The durable replacement transaction has already removed this active
+        // epoch. Retire its local provider immediately, before any fallible
+        // cross-node publication. A terminal receipt, however, has no live
+        // provider and may still be completing required persistence locally.
+        localPredecessor.startupTelemetry?.end('replaced');
+        localPredecessor.startupTelemetry = undefined;
+        localPredecessor.replacementTransportHold = true;
+        localPredecessor.abortController.abort();
+        // Keep its transport registrations until the successor's abort
+        // subscription is active. Removing the last callback while an older
+        // registration is still resolving can unsubscribe the shared Redis
+        // channel, then strand the successor in the resubscribe gap.
+      }
+    }
+    // Stop the provider before closing attached clients. Both signals are
+    // generation-tagged and serve different consumers; this ordering keeps a
+    // remote owner from emitting a last post-handoff chunk.
+    let delivered = true;
+    if (stopProvider && !stoppedExactLocalProvider) {
+      try {
+        if (!this._isRedis) {
+          // Multiple managers can share an in-memory transport in one process.
+          // Best-effort delivery stops an exact predecessor owned by another
+          // manager; only Redis handoffs require the durable owner proof below.
+          this.eventTransport.emitAbort?.(streamId, predecessorCreatedAt);
+        } else if (this.eventTransport.emitAbortConfirmed != null) {
+          const ownerAcknowledged = await this.eventTransport.emitAbortConfirmed(
+            streamId,
+            predecessorCreatedAt,
+          );
+          if (!ownerAcknowledged) {
+            throw new Error('Generation owner did not acknowledge the replacement abort');
+          }
+        } else {
+          throw new Error('Event transport cannot confirm generation-owner aborts');
+        }
+      } catch (err) {
+        delivered = false;
+        logger.error(
+          `[GenerationJobManager] Failed to stop replaced generation ${streamId}@${predecessorCreatedAt}:`,
+          err,
+        );
+      }
+    }
+    try {
+      if (
+        replacementCreationAttemptId != null &&
+        this.eventTransport.emitReplacedDoneConfirmed != null
+      ) {
+        await this.eventTransport.emitReplacedDoneConfirmed(
+          streamId,
+          reconcileEvent,
+          predecessorCreatedAt,
+          replacementCreationAttemptId,
+        );
+      } else {
+        await this.eventTransport.emitDone(streamId, reconcileEvent, predecessorCreatedAt);
+      }
+    } catch (err) {
+      delivered = false;
+      logger.error(
+        `[GenerationJobManager] Failed to notify replaced generation ${streamId}@${predecessorCreatedAt}:`,
+        err,
+      );
+    }
+    return delivered;
+  }
+
+  /** Finish local resource cleanup when a replacement cannot be exposed after
+   * it already stopped the previous provider. The epoch and object checks keep
+   * this from touching a newer runtime installed during any preceding await. */
+  private retireStoppedPredecessorRuntime(streamId: string, replacementCreatedAt: number): void {
+    const predecessor = this.runtimeState.get(streamId);
+    if (
+      predecessor == null ||
+      predecessor.createdAt >= replacementCreatedAt ||
+      !predecessor.abortController.signal.aborted
+    ) {
+      return;
+    }
+    if (this.runtimeState.get(streamId) === predecessor) {
+      this.runtimeState.delete(streamId);
+      this.releaseJobOwnership(streamId, predecessor.createdAt);
+      this.releaseAbortSubscription(predecessor, true);
+      this.runStepBuffers?.delete(streamId);
+      this.replayEventWriteQueues.delete(streamId);
+      this.tokenUsageWriteQueues.delete(streamId);
+      this.jobStore.clearContentState(streamId, predecessor.createdAt);
+      try {
+        // The replacement cannot be exposed, so neither generation can
+        // safely finish this connection. Delete runtime ownership before
+        // closing: allSubscribersLeft may run synchronously and must not
+        // persist a partial response for the already-replaced predecessor.
+        this.eventTransport.closeLocalSubscribers?.(streamId, TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      } catch (error) {
+        logger.error(
+          `[GenerationJobManager] Failed to recycle subscribers for stopped predecessor ${streamId}:`,
+          error,
+        );
+      }
+    }
+  }
+
+  /** Deliver every transaction-time predecessor receipt retained by the
+   * current creation attempt, then epoch/attempt-fenced acknowledge only the
+   * receipts whose provider/client handoff completed. A replacement racing the
+   * acknowledgement inherits the still-unacknowledged chain and retries it. */
+  private async processDurableReplacementReceipts(
+    streamId: string,
+    job: CreatedJobData,
+    fallbackConversationId?: string,
+    acknowledgeOwnedReceipts = true,
+  ): Promise<boolean> {
+    const receipts = job.replacedJobs ?? (job.replacedJob != null ? [job.replacedJob] : []);
+    if (receipts.length === 0) {
+      return true;
+    }
+
+    const acknowledged: number[] = [];
+    let allReceiptsDelivered = true;
+    for (const receipt of receipts) {
+      // A paused run has already released provider ownership. If resume won
+      // before this atomic replacement, the receipt status is running and the
+      // resumed owner must acknowledge like any other live provider.
+      const hadRunningProvider =
+        receipt.status === 'running' && receipt.providerAbortReady !== false;
+      if (
+        await this.notifyReplacedGeneration(
+          streamId,
+          receipt.createdAt,
+          receipt.conversationId,
+          fallbackConversationId,
+          job.creationAttemptId,
+          hadRunningProvider,
+        )
+      ) {
+        acknowledged.push(receipt.createdAt);
+      } else {
+        allReceiptsDelivered = false;
+      }
+    }
+
+    if (
+      acknowledged.length > 0 &&
+      acknowledgeOwnedReceipts &&
+      job.creationAttemptId != null &&
+      this.jobStore.acknowledgeReplacedJobs != null
+    ) {
+      try {
+        await this.jobStore.acknowledgeReplacedJobs(streamId, job.creationAttemptId, acknowledged);
+      } catch (error) {
+        // The acknowledgement is cleanup, not ownership proof. A lost reply
+        // either committed the trim or leaves the receipts for the next
+        // replacement to deliver again.
+        logger.error(
+          `[GenerationJobManager] Failed to acknowledge replacement receipts for ${streamId}:`,
+          error,
+        );
+      }
+    }
+    return allReceiptsDelivered;
+  }
+
+  /** A legacy started-mark EVAL can commit and lose its reply. Probe both
+   * mirrors before failing closed: the same-slot primary is authoritative for
+   * the full claim lineage, and the legacy key is safe only when it contains
+   * that exact lineage plus this job's started epoch/protocol. SET-NX may
+   * recreate an unexpectedly missing legacy mirror with the already-started
+   * primary value, which establishes the rollout fence before exposure. */
+  private async confirmLegacyStartedFence(
+    streamId: string,
+    userId: string,
+    conversationId: string,
+    clientRequestId: string,
+    claimToken: string,
+    job: Pick<SerializableJobData, 'createdAt' | 'generationProtocolVersion'>,
+  ): Promise<boolean> {
+    const fallback: TokenIdempotencyClaim = {
+      streamId,
+      conversationId,
+      claimedAt: Date.now(),
+      claimToken,
+      startedAt: job.createdAt,
+      generationProtocolVersion: normalizeClaimProtocol(job),
+    };
+    const primaryResult = await this.jobStore.claimIdempotencyKey(
+      this.generationClaimKey(userId, clientRequestId, streamId),
+      fallback,
+      IDEMPOTENCY_TTL_SECONDS,
+    );
+    if (primaryResult.claimed) {
+      // Atomic job creation with an idempotency token must have marked this
+      // same-slot key. Recreating it is a conservative tombstone, not proof
+      // that the generation was safely admitted.
+      return false;
+    }
+    const primary = normalizeTokenClaim(primaryResult.existing, 'primary started fence');
+    assertClaimMatchesRequest(primary, streamId, conversationId);
+    if (
+      primary.claimToken !== claimToken ||
+      primary.startedAt !== job.createdAt ||
+      primary.generationProtocolVersion !== normalizeClaimProtocol(job)
+    ) {
+      return false;
+    }
+
+    const legacyResult = await this.jobStore.claimIdempotencyKey(
+      this.legacyGenerationClaimKey(userId, clientRequestId),
+      primary,
+      LEGACY_IDEMPOTENCY_TTL_SECONDS,
+    );
+    const legacy = legacyResult.claimed
+      ? primary
+      : normalizeTokenClaim(legacyResult.existing, 'legacy started fence');
+    return claimsMirrorExactly(legacy, primary);
+  }
+
+  /**
+   * A Redis script can commit a job and its started idempotency tombstone, then
+   * lose the reply before the store repairs cross-slot membership. Recover only
+   * when the durable job's opaque attempt id (and, when present, its started
+   * claim) proves this invocation created this owner/tenant/epoch. The same-status transition is
+   * intentionally idempotent: besides refreshing the live TTL, Redis uses it to
+   * reconcile the running/user membership sets that live outside the stream's
+   * cluster slot.
+   */
+  private async recoverCommittedCreate(
+    streamId: string,
+    userId: string,
+    conversationId: string | undefined,
+    tenantId: string | undefined,
+    options: CreateGenerationJobOptions,
+    creationAttemptId: string,
+  ): Promise<CreatedJobData | null> {
+    const clientRequestId = options.idempotencyClientRequestId;
+    const claimToken = options.idempotencyClaimToken;
+    const expectedConversationId = conversationId ?? streamId;
+    const matchesCommittedCreate = (job: SerializableJobData | null): job is CreatedJobData =>
+      job != null &&
+      job.status === 'running' &&
+      (job as CreatedJobData).creationAttemptId === creationAttemptId &&
+      job.userId === userId &&
+      (job.tenantId ?? undefined) === tenantId &&
+      (job.conversationId ?? streamId) === expectedConversationId &&
+      (job.idempotencyClientRequestId ?? undefined) === clientRequestId;
+
+    let committedJob = (await this.jobStore.getJob(streamId)) as CreatedJobData | null;
+    if (
+      committedJob != null &&
+      committedJob.userId === userId &&
+      (committedJob.tenantId ?? undefined) === tenantId
+    ) {
+      // Keep a non-null snapshot across the awaited handoff. `committedJob` is
+      // mutable because later recovery may refresh it, so TypeScript cannot
+      // safely retain a narrowing on that outer binding across the await.
+      const currentCommittedJob = committedJob;
+      const ownsCommittedCreate = matchesCommittedCreate(currentCommittedJob);
+      const predecessorsDelivered = await this.processDurableReplacementReceipts(
+        streamId,
+        currentCommittedJob,
+        conversationId,
+        // A superseded/lost-reply helper may deliver the current creator's
+        // receipts, but only that exact opaque creation attempt may clear
+        // them. Otherwise it can race the owner's stale return value: the
+        // helper ACKs first, the owner's replacement-authorized publish is
+        // fenced, and the owner incorrectly terminalizes itself.
+        ownsCommittedCreate,
+      );
+      if (ownsCommittedCreate && !predecessorsDelivered) {
+        await this.terminalizeUnexposedGeneration(
+          streamId,
+          currentCommittedJob,
+          'Generation predecessor handoff could not be confirmed',
+        );
+        return null;
+      }
+    }
+    if (!matchesCommittedCreate(committedJob)) {
+      return null;
+    }
+
+    // Same-slot creation proof comes first. Cross-slot legacy verification may
+    // be unavailable after the commit; in that case this exact epoch is
+    // terminalized below instead of leaving a provider-less running ghost.
+    if (clientRequestId != null && claimToken != null) {
+      try {
+        const primaryKey = this.generationClaimKey(userId, clientRequestId, streamId);
+        const primaryFallback: TokenIdempotencyClaim = {
+          streamId,
+          conversationId: expectedConversationId,
+          claimedAt: Date.now(),
+          claimToken,
+          startedAt: committedJob.createdAt,
+          generationProtocolVersion: normalizeClaimProtocol(committedJob),
+        };
+        const primaryResult = await this.jobStore.claimIdempotencyKey(
+          primaryKey,
+          primaryFallback,
+          IDEMPOTENCY_TTL_SECONDS,
+        );
+        const primary = primaryResult.claimed
+          ? primaryFallback
+          : normalizeTokenClaim(primaryResult.existing, 'primary create recovery');
+        assertClaimMatchesRequest(primary, streamId, expectedConversationId);
+        if (
+          primary.claimToken !== claimToken ||
+          primary.startedAt !== committedJob.createdAt ||
+          primary.generationProtocolVersion !== normalizeClaimProtocol(committedJob)
+        ) {
+          await this.terminalizeUnexposedGeneration(
+            streamId,
+            committedJob,
+            'Generation idempotency proof did not match its ambiguous create',
+          );
+          return null;
+        }
+
+        const legacyResult = await this.jobStore.claimIdempotencyKey(
+          this.legacyGenerationClaimKey(userId, clientRequestId),
+          primary,
+          LEGACY_IDEMPOTENCY_TTL_SECONDS,
+        );
+        const legacy = legacyResult.claimed
+          ? primary
+          : normalizeTokenClaim(legacyResult.existing, 'legacy create recovery');
+        assertClaimMatchesRequest(legacy, streamId, expectedConversationId);
+        if (legacy.claimToken !== claimToken) {
+          await this.terminalizeUnexposedGeneration(
+            streamId,
+            committedJob,
+            'Generation legacy idempotency proof did not match its ambiguous create',
+          );
+          return null;
+        }
+        if (!claimsMirrorExactly(legacy, primary)) {
+          assertClaimMirrors(legacy, primary);
+          await this.synchronizeLegacyGenerationClaim(userId, clientRequestId, legacy, primary);
+        }
+
+        if (primaryResult.claimed) {
+          // JOB_CREATE with an idempotency token marks this same-slot key in
+          // its atomic script. Recreating a missing key is a conservative
+          // tombstone repair, not enough evidence to expose the generation.
+          await this.terminalizeUnexposedGeneration(
+            streamId,
+            committedJob,
+            'Generation primary idempotency proof was missing after its ambiguous create',
+          );
+          return null;
+        }
+      } catch (error) {
+        await this.terminalizeUnexposedGeneration(
+          streamId,
+          committedJob,
+          'Generation idempotency rollout fence could not be recovered',
+        );
+        throw error;
+      }
+    }
+
+    let repairError: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const repaired = await this.jobStore.transitionStatus(streamId, {
+          from: 'running',
+          to: 'running',
+          expectCreatedAt: committedJob.createdAt,
+        });
+        if (repaired) {
+          const confirmed = await this.jobStore.getJob(streamId);
+          if (matchesCommittedCreate(confirmed)) {
+            return confirmed;
+          }
+          return null;
+        }
+      } catch (error) {
+        // The repair itself can commit and lose its reply. A second identical
+        // CAS is safe and gives us a positive, membership-reconciled result.
+        repairError = error;
+      }
+
+      const current = await this.jobStore.getJob(streamId);
+      if (!matchesCommittedCreate(current)) {
+        return null;
+      }
+      committedJob = current;
+    }
+
+    if (repairError != null) {
+      logger.error(
+        `[GenerationJobManager] Failed to confirm membership for recovered generation ${streamId}:`,
+        repairError,
+      );
+    }
+    await this.terminalizeUnexposedGeneration(
+      streamId,
+      committedJob,
+      'Generation membership could not be recovered after an ambiguous create',
+    );
+    return null;
+  }
+
+  /** Persist a conservative FINAL for a job whose generation was never exposed
+   * to its controller. This prevents both a provider-less running ghost and a
+   * terminal hash that makes every duplicate retry wait until Redis TTL expiry. */
+  private async terminalizeUnexposedGeneration(
+    streamId: string,
+    job: Pick<SerializableJobData, 'createdAt' | 'conversationId'>,
+    message: string,
+  ): Promise<boolean> {
+    const finalEvent: t.FinalEvent = {
+      final: true,
+      reconcile: true,
+      reconcileReason: 'terminal_payload_missing',
+      terminalStatus: 'error',
+      generationCreatedAt: job.createdAt,
+      conversation: { conversationId: job.conversationId ?? streamId },
+    };
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (
+          await this.jobStore.transitionStatus(streamId, {
+            from: 'running',
+            to: 'error',
+            patch: {
+              completedAt: Date.now(),
+              error: message,
+              finalEvent: JSON.stringify(finalEvent),
+            },
+            expectCreatedAt: job.createdAt,
+          })
+        ) {
+          return true;
+        }
+      } catch (error) {
+        // As with create, the terminal CAS may have committed before the reply
+        // was lost. Probe its exact epoch before retrying.
+        lastError = error;
+      }
+
+      try {
+        const current = await this.jobStore.getJob(streamId);
+        if (
+          current == null ||
+          current.createdAt !== job.createdAt ||
+          (current.status !== 'running' && current.status !== 'requires_action')
+        ) {
+          return true;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (lastError != null) {
+      logger.error(
+        `[GenerationJobManager] Failed to terminalize unexposed generation ${streamId}:`,
+        lastError,
+      );
+    }
+    return false;
+  }
+
   async createJob(
     streamId: string,
     userId: string,
     conversationId?: string,
+    options: CreateGenerationJobOptions = {},
   ): Promise<t.GenerationJob> {
+    if (this.shuttingDown) {
+      throw new Error(SHUTTING_DOWN_ERROR);
+    }
+    if (typeof userId !== 'string' || userId.length === 0) {
+      throw new Error('Generation job requires a non-empty user id');
+    }
+    const hasClientRequestId = options.idempotencyClientRequestId != null;
+    const hasClaimToken = options.idempotencyClaimToken != null;
+    if (hasClientRequestId !== hasClaimToken) {
+      throw new Error(
+        'Generation idempotency request id and claim token must be provided together',
+      );
+    }
+    if (
+      hasClientRequestId &&
+      (!CLIENT_REQUEST_ID_PATTERN.test(options.idempotencyClientRequestId!) ||
+        options.idempotencyClaimToken!.length === 0 ||
+        options.idempotencyClaimToken!.length > 128)
+    ) {
+      throw new Error('Generation idempotency request id or claim token is invalid');
+    }
+    if (
+      options.expectedPredecessorCreatedAt != null &&
+      (!Number.isSafeInteger(options.expectedPredecessorCreatedAt) ||
+        options.expectedPredecessorCreatedAt < 0)
+    ) {
+      throw new Error('Invalid expected generation predecessor');
+    }
+
     const tenantId = getTenantId();
     const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
-    const jobData = await this.jobStore.createJob(streamId, userId, conversationId, safeTenantId);
+    const initialMetadata = sanitizeJobMetadata(options.initialMetadata ?? {});
+    if (
+      (options.recoveredSteerId != null) !== (options.recoveredSteerPayload != null) ||
+      (options.recoveredSteerPayload != null &&
+        !isRecoveredSteerPayload(options.recoveredSteerPayload))
+    ) {
+      throw new RecoveredSteerPayloadMismatchError();
+    }
+    const creationAttemptId = randomUUID();
+    // Capture the active epoch before the store atomically replaces it. A
+    // subscriber attached to that predecessor filters events by generation,
+    // so replacement must explicitly close/handoff that old attachment.
+    const observedPredecessorJob = await this.jobStore.getJob(streamId);
+    let jobData: CreatedJobData;
+    try {
+      jobData = await this.jobStore.createJob(
+        streamId,
+        userId,
+        conversationId,
+        safeTenantId,
+        initialMetadata,
+        options.recoveredSteerId,
+        options.idempotencyClientRequestId != null
+          ? this.generationClaimKey(userId, options.idempotencyClientRequestId, streamId)
+          : undefined,
+        options.idempotencyClaimToken,
+        options.idempotencyClientRequestId,
+        options.recoveredSteerPayload,
+        creationAttemptId,
+        options.expectedPredecessorCreatedAt,
+      );
+    } catch (error) {
+      if (error instanceof JobPredecessorMismatchError) {
+        throw error;
+      }
+      if (error instanceof JobCreationSupersededError) {
+        try {
+          const current = (await this.jobStore.getJob(streamId)) as CreatedJobData | null;
+          if (
+            current != null &&
+            current.userId === userId &&
+            (current.tenantId ?? undefined) === safeTenantId
+          ) {
+            await this.processDurableReplacementReceipts(streamId, current, conversationId, false);
+          }
+        } catch (handoffError) {
+          logger.error(
+            `[GenerationJobManager] Failed to process superseded creation receipts ${streamId}:`,
+            handoffError,
+          );
+        }
+        throw error;
+      }
+
+      let recovered: CreatedJobData | null = null;
+      try {
+        recovered = await this.recoverCommittedCreate(
+          streamId,
+          userId,
+          conversationId,
+          safeTenantId,
+          options,
+          creationAttemptId,
+        );
+      } catch (recoveryError) {
+        logger.error(
+          `[GenerationJobManager] Failed to reconcile ambiguous job creation ${streamId}:`,
+          recoveryError,
+        );
+      }
+      if (recovered == null) {
+        throw error;
+      }
+      jobData = recovered;
+    }
+
+    if (options.idempotencyClientRequestId != null && options.idempotencyClaimToken != null) {
+      let legacyMarked = false;
+      let legacyMarkError: unknown;
+      try {
+        legacyMarked = await this.jobStore.markIdempotencyKeyStarted(
+          this.legacyGenerationClaimKey(userId, options.idempotencyClientRequestId),
+          options.idempotencyClaimToken,
+          jobData.createdAt,
+          LEGACY_IDEMPOTENCY_TTL_SECONDS,
+        );
+      } catch (error) {
+        legacyMarkError = error;
+        logger.error(
+          '[GenerationJobManager] Failed to mark the legacy generation idempotency tombstone:',
+          error,
+        );
+      }
+      if (!legacyMarked) {
+        try {
+          legacyMarked = await this.confirmLegacyStartedFence(
+            streamId,
+            userId,
+            conversationId ?? streamId,
+            options.idempotencyClientRequestId,
+            options.idempotencyClaimToken,
+            jobData,
+          );
+        } catch (error) {
+          legacyMarkError = error;
+          logger.error(
+            '[GenerationJobManager] Failed to verify the legacy generation idempotency tombstone:',
+            error,
+          );
+        }
+      }
+      if (!legacyMarked) {
+        // The primary was committed atomically with this job, so generation
+        // ownership is no longer ambiguous on new replicas. Do not let the
+        // provider start while an old replica could still interpret an
+        // unmarked/mismatched legacy key as an abandoned request.
+        await this.processDurableReplacementReceipts(streamId, jobData, conversationId).catch(
+          (handoffError) => {
+            logger.error(
+              `[GenerationJobManager] Failed to hand off predecessor after legacy fence failure ${streamId}:`,
+              handoffError,
+            );
+            return false;
+          },
+        );
+        await this.terminalizeUnexposedGeneration(
+          streamId,
+          jobData,
+          'Generation idempotency rollout fence could not be committed',
+        );
+        // If this create replaced a local provider, durable rollback is no
+        // longer possible. The receipt path below is skipped on this failure,
+        // so stop and retire that exact older runtime before returning.
+        const replacedLocal = this.runtimeState.get(streamId);
+        if (replacedLocal != null && replacedLocal.createdAt < jobData.createdAt) {
+          replacedLocal.abortController.abort();
+          this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
+        }
+        if (legacyMarkError != null) {
+          logger.error(
+            '[GenerationJobManager] Legacy generation idempotency fence remained ambiguous:',
+            legacyMarkError,
+          );
+        }
+        throw new Error('Generation idempotency rollout fence could not be committed');
+      }
+    }
+    const currentRuntimeBeforeInstall = this.runtimeState.get(streamId);
+    const ownedCreatedAtBeforeInstall = this.ownedJobs.get(streamId);
+    if (
+      (currentRuntimeBeforeInstall != null &&
+        currentRuntimeBeforeInstall.createdAt > jobData.createdAt) ||
+      (ownedCreatedAtBeforeInstall != null && ownedCreatedAtBeforeInstall > jobData.createdAt)
+    ) {
+      throw new Error('Generation job was replaced during initialization');
+    }
+    if (this.shuttingDown) {
+      await this.processDurableReplacementReceipts(streamId, jobData, conversationId).catch(
+        (handoffError) => {
+          logger.error(
+            `[GenerationJobManager] Failed to hand off predecessor during shutdown ${streamId}:`,
+            handoffError,
+          );
+          return false;
+        },
+      );
+      await this.jobStore.transitionStatus(streamId, {
+        from: 'running',
+        to: 'error',
+        patch: { completedAt: Date.now(), error: SHUTDOWN_JOB_ERROR },
+        expectCreatedAt: jobData.createdAt,
+      });
+      const replacedLocal = this.runtimeState.get(streamId);
+      if (replacedLocal != null && replacedLocal.createdAt < jobData.createdAt) {
+        replacedLocal.abortController.abort();
+        this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
+      }
+      throw new Error(SHUTTING_DOWN_ERROR);
+    }
+
+    if (!(await this.processDurableReplacementReceipts(streamId, jobData, conversationId))) {
+      await this.terminalizeUnexposedGeneration(
+        streamId,
+        jobData,
+        'Generation predecessor handoff could not be confirmed',
+      );
+      this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
+      throw new Error('Generation predecessor handoff could not be confirmed');
+    }
+
+    const replacementEpochs = new Map<number, string | undefined>();
+    const exactPredecessors =
+      jobData.replacedJobs ?? (jobData.replacedJob != null ? [jobData.replacedJob] : []);
+    const exactPredecessorsByEpoch = new Map(
+      exactPredecessors.map((predecessor) => [predecessor.createdAt, predecessor]),
+    );
+    const observedPredecessorReceipt = observedPredecessorJob
+      ? exactPredecessorsByEpoch.get(observedPredecessorJob.createdAt)
+      : undefined;
+    if (
+      observedPredecessorJob &&
+      observedPredecessorJob.createdAt !== jobData.createdAt &&
+      (observedPredecessorJob.status === 'running' ||
+        observedPredecessorJob.status === 'requires_action') &&
+      // The transaction-time predecessor is authoritative for the same
+      // epoch. A pre-read may say running even though it terminalized before
+      // replacement; do not publish a contradictory replaced/abort pair.
+      observedPredecessorReceipt == null
+    ) {
+      replacementEpochs.set(
+        observedPredecessorJob.createdAt,
+        observedPredecessorJob.conversationId,
+      );
+    }
+    const localPredecessor = this.runtimeState.get(streamId);
+    const localPredecessorReceipt = localPredecessor
+      ? exactPredecessorsByEpoch.get(localPredecessor.createdAt)
+      : undefined;
+    if (
+      localPredecessor &&
+      localPredecessor.createdAt < jobData.createdAt &&
+      !localPredecessor.finalEvent &&
+      !localPredecessor.errorEvent &&
+      localPredecessorReceipt == null
+    ) {
+      replacementEpochs.set(localPredecessor.createdAt, observedPredecessorJob?.conversationId);
+    }
+    for (const [predecessorCreatedAt, predecessorConversationId] of replacementEpochs) {
+      await this.notifyReplacedGeneration(
+        streamId,
+        predecessorCreatedAt,
+        predecessorConversationId,
+        conversationId,
+      );
+    }
+
+    // Every predecessor handoff above can yield. A newer same-process create
+    // may have installed its runtime while this older invocation was waiting;
+    // never let the stale continuation overwrite ownership or abort that newer
+    // runtime. No await is permitted between this guard and the synchronous
+    // ownership/runtime installation below.
+    const runtimeImmediatelyBeforeInstall = this.runtimeState.get(streamId);
+    const ownedImmediatelyBeforeInstall = this.ownedJobs.get(streamId);
+    if (
+      (runtimeImmediatelyBeforeInstall != null &&
+        runtimeImmediatelyBeforeInstall.createdAt > jobData.createdAt) ||
+      (ownedImmediatelyBeforeInstall != null && ownedImmediatelyBeforeInstall > jobData.createdAt)
+    ) {
+      throw new Error('Generation job was replaced during initialization');
+    }
+
+    this.acquireJobOwnership(streamId, jobData.createdAt);
+    recordGenerationJob(this.storeLabel, 'created');
+
+    const replacedRuntime = this.runtimeState.get(streamId);
+    if (replacedRuntime) {
+      replacedRuntime.startupTelemetry?.end('replaced');
+      replacedRuntime.startupTelemetry = undefined;
+      const durableReceipt = exactPredecessorsByEpoch.get(replacedRuntime.createdAt);
+      if (
+        durableReceipt == null ||
+        durableReceipt.status === 'running' ||
+        durableReceipt.status === 'requires_action'
+      ) {
+        replacedRuntime.abortController.abort();
+      }
+    }
 
     /**
      * Create runtime state with readyPromise.
@@ -380,79 +2137,98 @@ class GenerationJobManagerClass {
      * We resolve readyPromise immediately to eliminate startup latency.
      * The sync mechanism handles late-connecting clients.
      */
-    let resolveReady: () => void;
-    const readyPromise = new Promise<void>((resolve) => {
-      resolveReady = resolve;
-    });
+    const readyPromise = Promise.resolve();
+    const resolveReady = (): void => undefined;
 
     const runtime: RuntimeJobState = {
+      createdAt: jobData.createdAt,
       abortController: new AbortController(),
       readyPromise,
-      resolveReady: resolveReady!,
+      resolveReady,
+      startupTelemetry: options.startupTelemetry,
       syncSent: false,
       earlyEventBuffer: [],
+      earlyEventSequencePromises: [],
+      earlyReplayHandlers: new Set(),
+      resumeCaptureHandlers: new Set(),
+      localErrorHandlers: new Set(),
+      emissionSequence: 0,
+      inFlightSnapshotEmissions: new Map(),
       hasSubscriber: false,
+      attachmentGeneration: 0,
     };
     this.runtimeState.set(streamId, runtime);
-    this.runningJobs.add(streamId);
-    this.syncRunningJobMetrics();
-    recordGenerationJob(this.storeLabel, 'created');
 
-    // Resolve immediately - early event buffer handles late subscribers
-    resolveReady!();
+    try {
+      this.registerAllSubscribersLeft(streamId);
 
-    /**
-     * Set up all-subscribers-left callback.
-     * When all SSE clients disconnect, this:
-     * 1. Resets syncSent so reconnecting clients get sync event (persisted to Redis)
-     * 2. Calls any registered allSubscribersLeft handlers (e.g., to save partial responses)
-     */
-    this.eventTransport.onAllSubscribersLeft(streamId, () => {
-      const currentRuntime = this.runtimeState.get(streamId);
-      if (currentRuntime) {
-        currentRuntime.syncSent = false;
-        currentRuntime.hasSubscriber = false;
-        // Persist syncSent=false to Redis for cross-replica consistency
-        this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
-          logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
-        });
-        // Call registered handlers (from job.emitter.on('allSubscribersLeft', ...))
-        if (currentRuntime.allSubscribersLeftHandlers) {
-          this.jobStore
-            .getContentParts(streamId)
-            .then((result) => {
-              const parts = result?.content ?? [];
-              for (const handler of currentRuntime.allSubscribersLeftHandlers ?? []) {
-                try {
-                  handler(parts);
-                } catch (err) {
-                  logger.error(`[GenerationJobManager] Error in allSubscribersLeft handler:`, err);
-                }
-              }
-            })
-            .catch((err) => {
-              logger.error(
-                `[GenerationJobManager] Failed to get content parts for allSubscribersLeft handlers:`,
-                err,
-              );
-            });
-        }
+      await this.registerAbortSubscription(streamId, runtime);
+      if (replacedRuntime != null && replacedRuntime !== runtime) {
+        // Keep at least one abort registration on the shared Redis channel
+        // across same-stream replacement. This also lets a predecessor whose
+        // registration was still becoming ready dispose itself without
+        // briefly unsubscribing the successor.
+        this.releaseAbortSubscription(replacedRuntime, true);
       }
-    });
-
-    /**
-     * Set up cross-replica abort listener (Redis mode only).
-     * When abort is triggered on ANY replica, this replica receives the signal
-     * and aborts its local AbortController (if it's the one running generation).
-     */
-    if (this.eventTransport.onAbort) {
-      this.eventTransport.onAbort(streamId, () => {
-        const currentRuntime = this.runtimeState.get(streamId);
-        if (currentRuntime && !currentRuntime.abortController.signal.aborted) {
-          logger.debug(`[GenerationJobManager] Received cross-replica abort for ${streamId}`);
-          currentRuntime.abortController.abort();
-        }
+      // This epoch is not exposed to its controller until the durable bit and
+      // owner listener agree. A replacement that wins before this write sees
+      // explicit false and can safely skip an acknowledgement because no
+      // provider could have started; a lost write reply is confirmed below.
+      await this.jobStore.updateJob(streamId, { providerAbortReady: true }, runtime.createdAt);
+      /**
+       * NOT awaited, unlike abort. Abort must be deliverable before the job
+       * is exposed — a missed abort strands a run. A missed preempt only
+       * degrades that steer to the next tool boundary, which is the
+       * documented fallback, so blocking job creation on a second channel
+       * subscription would trade a real hang risk for a cosmetic guarantee.
+       * The registration's own lost-race tail releases it if the runtime is
+       * retired before the subscription resolves, and it swallows and logs
+       * its own failures, so this detached call cannot reject.
+       */
+      void this.registerPreemptSubscription(streamId, runtime);
+      if (this.runtimeState.get(streamId) !== runtime) {
+        throw new Error('Generation job was replaced during initialization');
+      }
+      const confirmedJobData = await this.jobStore.getJob(streamId);
+      if (
+        this.runtimeState.get(streamId) !== runtime ||
+        !confirmedJobData ||
+        confirmedJobData.createdAt !== runtime.createdAt ||
+        confirmedJobData.status !== 'running' ||
+        confirmedJobData.providerAbortReady !== true
+      ) {
+        throw new Error('Generation job was replaced during initialization');
+      }
+      if (this.shuttingDown) {
+        throw new Error(SHUTTING_DOWN_ERROR);
+      }
+    } catch (error) {
+      if (replacedRuntime != null && replacedRuntime !== runtime) {
+        this.releaseAbortSubscription(replacedRuntime, true);
+      }
+      // The durable job already exists, but the caller has not received its
+      // generation identity yet. Finalize that exact epoch here so a controller
+      // catch never needs to issue an unsafe unscoped terminal mutation.
+      let message = SHUTDOWN_JOB_ERROR;
+      if (!this.shuttingDown) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      await this.completeJob(streamId, message, jobData.createdAt).catch((finalizeError) => {
+        logger.error(
+          `[GenerationJobManager] Failed to finalize partially initialized job ${streamId}:`,
+          finalizeError,
+        );
       });
+      if (
+        this.runtimeState.get(streamId) === runtime &&
+        runtime.replacementTransportHold !== true
+      ) {
+        this.releaseAbortSubscription(runtime);
+        runtime.abortController.abort();
+        this.runtimeState.delete(streamId);
+        this.releaseJobOwnership(streamId, runtime.createdAt);
+      }
+      throw error;
     }
 
     logger.debug(`[GenerationJobManager] Created job: ${streamId}`);
@@ -496,7 +2272,7 @@ class GenerationJobManagerClass {
      * incrementing subscriber count (see class JSDoc above).
      */
     const emitterProxy = {
-      on: (event: string, handler: (...args: unknown[]) => void) => {
+      on: (event: string, handler: (...args: unknown[]) => void | Promise<void>) => {
         if (event === 'allSubscribersLeft') {
           // Store handler for internal callback - don't use subscribe() to avoid counting as a subscriber
           if (!runtime.allSubscribersLeftHandlers) {
@@ -530,6 +2306,8 @@ class GenerationJobManagerClass {
         userId: jobData.userId,
         tenantId: jobData.tenantId,
         conversationId: jobData.conversationId,
+        checkpointNamespace: jobData.checkpointNamespace,
+        generationProtocolVersion: jobData.generationProtocolVersion,
         userMessage: jobData.userMessage,
         responseMessageId: jobData.responseMessageId,
         sender: jobData.sender,
@@ -545,6 +2323,13 @@ class GenerationJobManagerClass {
         // Surface deferred tools discovered before the pause so the resume route can
         // replay them into createRun (the rebuilt graph passes `messages: []`).
         discoveredTools: jobData.discoveredTools,
+        // Surface the owning replica's seal capability so the steer route can
+        // honour it instead of probing its own (possibly older) SDK.
+        preemptCapable: jobData.preemptCapable,
+        steersClosed: jobData.steersClosed,
+        idempotencyClientRequestId: jobData.idempotencyClientRequestId,
+        terminalPersistencePending: jobData.terminalPersistencePending,
+        terminalPersistenceStartedAt: jobData.terminalPersistenceStartedAt,
         // Surface the pending review so status/resume routes built on the
         // facade can render the prompt for a `requires_action` job.
         pendingAction: jobData.pendingAction,
@@ -572,30 +2357,37 @@ class GenerationJobManagerClass {
    * @param streamId - The stream identifier
    * @returns Runtime state or null if job doesn't exist anywhere
    */
-  private async getOrCreateRuntimeState(streamId: string): Promise<RuntimeJobState | null> {
-    const existingRuntime = this.runtimeState.get(streamId);
-    if (existingRuntime) {
-      return existingRuntime;
-    }
-
-    // Job doesn't exist locally - check Redis
-    const jobData = await this.jobStore.getJob(streamId);
+  private async getOrCreateRuntimeState(
+    streamId: string,
+    knownJobData?: SerializableJobData | null,
+  ): Promise<RuntimeJobState | null> {
+    const jobData =
+      knownJobData === undefined ? await this.jobStore.getJob(streamId) : knownJobData;
     if (!jobData) {
       return null;
     }
 
-    // Cross-replica scenario: job exists in Redis but not locally
-    // Create minimal runtime state for handling reconnection/subscription
+    const concurrentRuntime = this.runtimeState.get(streamId);
+    if (concurrentRuntime?.createdAt === jobData.createdAt) {
+      this.reconcileInactiveGeneration(streamId, jobData.createdAt, jobData, concurrentRuntime);
+      return concurrentRuntime;
+    }
+    if (concurrentRuntime && concurrentRuntime.createdAt > jobData.createdAt) {
+      return concurrentRuntime;
+    }
+    if (concurrentRuntime) {
+      concurrentRuntime.startupTelemetry?.end('replaced');
+      concurrentRuntime.startupTelemetry = undefined;
+      this.releaseAbortSubscription(concurrentRuntime);
+      concurrentRuntime.abortController.abort();
+    }
+
+    // Cross-replica scenario: create (or replace) the minimal runtime state
+    // from the durable generation currently owning this stream ID.
     logger.debug(`[GenerationJobManager] Creating cross-replica runtime for ${streamId}`);
 
-    let resolveReady: () => void;
-    const readyPromise = new Promise<void>((resolve) => {
-      resolveReady = resolve;
-    });
-
-    // For jobs created on other replicas, readyPromise should be pre-resolved
-    // since generation has already started
-    resolveReady!();
+    const readyPromise = Promise.resolve();
+    const resolveReady = (): void => undefined;
 
     // Parse finalEvent from Redis if available
     let finalEvent: t.ServerSentEvent | undefined;
@@ -608,65 +2400,64 @@ class GenerationJobManagerClass {
     }
 
     const runtime: RuntimeJobState = {
+      createdAt: jobData.createdAt,
       abortController: new AbortController(),
       readyPromise,
-      resolveReady: resolveReady!,
+      resolveReady,
       syncSent: jobData.syncSent ?? false,
       earlyEventBuffer: [],
+      earlyEventSequencePromises: [],
+      earlyReplayHandlers: new Set(),
+      resumeCaptureHandlers: new Set(),
+      localErrorHandlers: new Set(),
+      emissionSequence: 0,
+      inFlightSnapshotEmissions: new Map(),
       hasSubscriber: false,
+      attachmentGeneration: 0,
       finalEvent,
       errorEvent: jobData.error,
     };
 
     this.runtimeState.set(streamId, runtime);
 
-    // Set up all-subscribers-left callback for this replica
-    this.eventTransport.onAllSubscribersLeft(streamId, () => {
-      const currentRuntime = this.runtimeState.get(streamId);
-      if (currentRuntime) {
-        currentRuntime.syncSent = false;
-        currentRuntime.hasSubscriber = false;
-        // Persist syncSent=false to Redis
-        this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
-          logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
-        });
-        // Call registered handlers
-        if (currentRuntime.allSubscribersLeftHandlers) {
-          this.jobStore
-            .getContentParts(streamId)
-            .then((result) => {
-              const parts = result?.content ?? [];
-              for (const handler of currentRuntime.allSubscribersLeftHandlers ?? []) {
-                try {
-                  handler(parts);
-                } catch (err) {
-                  logger.error(`[GenerationJobManager] Error in allSubscribersLeft handler:`, err);
-                }
-              }
-            })
-            .catch((err) => {
-              logger.error(
-                `[GenerationJobManager] Failed to get content parts for allSubscribersLeft handlers:`,
-                err,
-              );
-            });
-        }
-      }
-    });
+    this.registerAllSubscribersLeft(streamId);
 
-    // Set up cross-replica abort listener (Redis mode only)
-    // This ensures lazily-initialized jobs can receive abort signals
-    if (this.eventTransport.onAbort) {
-      this.eventTransport.onAbort(streamId, () => {
-        const currentRuntime = this.runtimeState.get(streamId);
-        if (currentRuntime && !currentRuntime.abortController.signal.aborted) {
-          logger.debug(
-            `[GenerationJobManager] Received cross-replica abort for lazily-init job ${streamId}`,
-          );
-          currentRuntime.abortController.abort();
-        }
-      });
+    if (jobData.status === 'running' || jobData.status === 'requires_action') {
+      await this.registerAbortSubscription(streamId, runtime);
+      /** Best-effort, non-blocking — see the createJob registration. */
+      void this.registerPreemptSubscription(streamId, runtime);
     }
+
+    const runtimeAfterAbortRegistration = this.runtimeState.get(streamId);
+    if (runtimeAfterAbortRegistration !== runtime) {
+      return runtimeAfterAbortRegistration ?? null;
+    }
+
+    /**
+     * `onAbort` may require an asynchronous Redis subscription. A replacement can
+     * become durable on another replica while that subscription is activating,
+     * without changing this process's runtime map. Re-read the owner before
+     * exposing the facade, and reconcile again if the generation moved.
+     */
+    const confirmedJobData = await this.jobStore.getJob(streamId);
+    if (this.runtimeState.get(streamId) !== runtime) {
+      return this.runtimeState.get(streamId) ?? null;
+    }
+    if (!confirmedJobData) {
+      this.releaseAbortSubscription(runtime);
+      runtime.abortController.abort();
+      this.runtimeState.delete(streamId);
+      return null;
+    }
+    if (confirmedJobData.createdAt !== runtime.createdAt) {
+      return this.getOrCreateRuntimeState(streamId, confirmedJobData);
+    }
+    this.reconcileInactiveGeneration(
+      streamId,
+      confirmedJobData.createdAt,
+      confirmedJobData,
+      runtime,
+    );
 
     return runtime;
   }
@@ -675,13 +2466,21 @@ class GenerationJobManagerClass {
    * Get a job by streamId.
    */
   async getJob(streamId: string): Promise<t.GenerationJob | undefined> {
-    const jobData = await this.jobStore.getJob(streamId);
+    let jobData = await this.jobStore.getJob(streamId);
+    if (!jobData) {
+      return undefined;
+    }
+    jobData = await this.recoverStaleTerminalPersistence(jobData);
     if (!jobData) {
       return undefined;
     }
 
-    const runtime = await this.getOrCreateRuntimeState(streamId);
-    if (!runtime) {
+    const runtime = await this.getOrCreateRuntimeState(streamId, jobData);
+    if (
+      !runtime ||
+      this.runtimeState.get(streamId) !== runtime ||
+      runtime.createdAt !== jobData.createdAt
+    ) {
       return undefined;
     }
 
@@ -706,20 +2505,472 @@ class GenerationJobManagerClass {
     clientRequestId: string,
     streamId: string,
     conversationId: string,
+    generationProtocolVersion?: 1 | 2,
   ): Promise<IdempotencyClaimResult> {
-    return this.jobStore.claimIdempotencyKey(
-      `${userId}:${clientRequestId}`,
-      { streamId, conversationId, claimedAt: Date.now() },
+    const value: TokenIdempotencyClaim = {
+      streamId,
+      conversationId,
+      claimedAt: Date.now(),
+      claimToken: randomUUID(),
+      generationProtocolVersion: generationProtocolVersion === 2 ? 2 : 1,
+    };
+
+    // Old replicas know only this key. Claiming it first means a mixed fleet
+    // still has exactly one admission winner; the primary is a mirror/fence,
+    // never an independent chance to start a billed generation.
+    const legacyResult = await this.jobStore.claimIdempotencyKey(
+      this.legacyGenerationClaimKey(userId, clientRequestId),
+      value,
+      LEGACY_IDEMPOTENCY_TTL_SECONDS,
+    );
+
+    if (legacyResult.claimed) {
+      const primaryResult = await this.jobStore.claimIdempotencyKey(
+        this.generationClaimKey(userId, clientRequestId, streamId),
+        value,
+        IDEMPOTENCY_TTL_SECONDS,
+      );
+      if (primaryResult.claimed) {
+        return { claimed: true, existing: value, source: 'primary' };
+      }
+
+      // This is a crash/expiry repair: an authoritative primary survived while
+      // its longer-lived legacy mirror was unexpectedly absent. Point the
+      // legacy key at that primary and remain a duplicate; never let the fresh
+      // legacy SET turn into a second owner.
+      const primary = normalizeTokenClaim(primaryResult.existing, 'primary');
+      assertClaimMatchesRequest(primary, streamId, conversationId);
+      await this.synchronizeLegacyGenerationClaim(userId, clientRequestId, value, primary);
+      return { claimed: false, existing: primary, source: 'primary' };
+    }
+
+    if (legacyResult.existing?.claimToken == null) {
+      return {
+        claimed: false,
+        existing: normalizeTokenlessLegacyClaim(legacyResult.existing),
+        source: 'legacy',
+      };
+    }
+
+    const legacy = normalizeTokenClaim(legacyResult.existing, 'legacy');
+    assertClaimMatchesRequest(legacy, streamId, conversationId);
+    const primaryResult = await this.jobStore.claimIdempotencyKey(
+      this.generationClaimKey(userId, clientRequestId, streamId),
+      legacy,
       IDEMPOTENCY_TTL_SECONDS,
     );
+    if (primaryResult.claimed) {
+      // We merely repaired the mirror for the already-existing owner. This
+      // retry is still a duplicate and must not create a generation.
+      return { claimed: false, existing: legacy, source: 'primary' };
+    }
+
+    const primary = normalizeTokenClaim(primaryResult.existing, 'primary');
+    assertClaimMatchesRequest(primary, streamId, conversationId);
+    if (isRecoverableTakeoverSplit(legacy, primary)) {
+      await this.synchronizeLegacyGenerationClaim(userId, clientRequestId, legacy, primary);
+      return { claimed: false, existing: primary, source: 'primary' };
+    }
+    assertClaimMirrors(legacy, primary);
+    if (primary.startedAt != null && legacy.startedAt == null) {
+      await this.synchronizeLegacyGenerationClaim(userId, clientRequestId, legacy, primary);
+    }
+    return { claimed: false, existing: primary, source: 'primary' };
+  }
+
+  private generationClaimKey(userId: string, clientRequestId: string, streamId: string): string {
+    return `{${streamId}}:${userId}:${clientRequestId}`;
+  }
+
+  /** Exact pre-bridge physical key through RedisJobStore.KEYS.idempotency:
+   * `stream:idem:{userId:clientRequestId}`. The braces belong in the store key
+   * argument because current stores no longer add a second hash tag. */
+  private legacyGenerationClaimKey(userId: string, clientRequestId: string): string {
+    return `{${userId}:${clientRequestId}}`;
+  }
+
+  /** Finish one proven cross-slot bridge step. A failed CAS may mean another
+   * replica already completed the same value, so probe it before declaring an
+   * ambiguous outcome. The probe's SET-NX behavior also safely recreates an
+   * unexpectedly expired legacy mirror with the authoritative primary value. */
+  private async synchronizeLegacyGenerationClaim(
+    userId: string,
+    clientRequestId: string,
+    expectedLegacy: TokenIdempotencyClaim,
+    primary: TokenIdempotencyClaim,
+  ): Promise<void> {
+    const legacyKey = this.legacyGenerationClaimKey(userId, clientRequestId);
+    let synchronizationError: unknown;
+    let synchronized = false;
+    try {
+      synchronized = await this.jobStore.takeoverIdempotencyKey(
+        legacyKey,
+        expectedLegacy,
+        primary,
+        LEGACY_IDEMPOTENCY_TTL_SECONDS,
+      );
+    } catch (error) {
+      // A single-key CAS can commit and then lose its reply. Probe below before
+      // treating the bridge as split or attempting any rollback.
+      synchronizationError = error;
+    }
+    if (synchronized) {
+      return;
+    }
+
+    const probe = await this.jobStore.claimIdempotencyKey(
+      legacyKey,
+      primary,
+      LEGACY_IDEMPOTENCY_TTL_SECONDS,
+    );
+    const current = probe.claimed ? primary : normalizeTokenClaim(probe.existing, 'legacy');
+    if (claimsMirrorExactly(current, primary)) {
+      return;
+    }
+    if (synchronizationError != null) {
+      throw synchronizationError;
+    }
+    assertClaimMirrors(current, primary);
+    throw new Error('Legacy generation idempotency claim could not be synchronized');
+  }
+
+  /** Once an exact same-owner generation carrying this request id has been
+   * observed, its later completion/deletion cannot erase the historical fact
+   * that the request already started. Convert the freshly reacquired mirrors
+   * into started tombstones even when the live-job adoption CAS loses that
+   * race. The token CAS/probe never overwrites an unrelated claimant. */
+  private async tombstoneObservedGenerationClaim(
+    userId: string,
+    clientRequestId: string,
+    streamId: string,
+    claim: TokenIdempotencyClaim,
+    createdAt: number,
+    generationProtocolVersion: 1 | 2,
+  ): Promise<TokenIdempotencyClaim> {
+    const tombstone: TokenIdempotencyClaim = {
+      ...claim,
+      startedAt: createdAt,
+      generationProtocolVersion,
+    };
+    const primaryKey = this.generationClaimKey(userId, clientRequestId, streamId);
+    let markError: unknown;
+    let marked = false;
+    try {
+      marked = await this.jobStore.takeoverIdempotencyKey(
+        primaryKey,
+        claim,
+        tombstone,
+        IDEMPOTENCY_TTL_SECONDS,
+      );
+    } catch (error) {
+      // The CAS can commit and lose its reply. Resolve only the exact value we
+      // intended; a same-key unrelated token or coordinates remain fail-closed.
+      markError = error;
+    }
+
+    if (!marked) {
+      const probe = await this.jobStore.claimIdempotencyKey(
+        primaryKey,
+        tombstone,
+        IDEMPOTENCY_TTL_SECONDS,
+      );
+      const current = probe.claimed
+        ? tombstone
+        : normalizeTokenClaim(probe.existing, 'observed generation tombstone');
+      if (!claimsMirrorExactly(current, tombstone)) {
+        if (markError != null) {
+          throw markError;
+        }
+        throw new Error('Observed generation idempotency claim changed before it was fenced');
+      }
+    }
+
+    await this.synchronizeLegacyGenerationClaim(userId, clientRequestId, claim, tombstone);
+    return tombstone;
+  }
+
+  async takeoverGeneration(
+    userId: string,
+    clientRequestId: string,
+    streamId: string,
+    expected: IdempotencyClaimValue,
+  ): Promise<IdempotencyClaimResult> {
+    if (expected.claimToken == null) {
+      return {
+        claimed: false,
+        existing: normalizeTokenlessLegacyClaim(expected),
+        source: 'legacy',
+      };
+    }
+
+    const expectedClaim = normalizeTokenClaim(expected, 'takeover');
+    assertClaimMatchesRequest(expectedClaim, streamId, expectedClaim.conversationId);
+    const primaryKey = this.generationClaimKey(userId, clientRequestId, streamId);
+    const legacyKey = this.legacyGenerationClaimKey(userId, clientRequestId);
+
+    // Read-or-bind both mirrors before the CAS. `claimIdempotencyKey` is the
+    // store's cluster-safe single-key probe; if an expired mirror is absent it
+    // recreates the old owner rather than opening a second admission window.
+    const primaryProbe = await this.jobStore.claimIdempotencyKey(
+      primaryKey,
+      expectedClaim,
+      IDEMPOTENCY_TTL_SECONDS,
+    );
+    const primary = primaryProbe.claimed
+      ? expectedClaim
+      : normalizeTokenClaim(primaryProbe.existing, 'primary');
+    const legacyProbe = await this.jobStore.claimIdempotencyKey(
+      legacyKey,
+      expectedClaim,
+      LEGACY_IDEMPOTENCY_TTL_SECONDS,
+    );
+    const legacy = legacyProbe.claimed
+      ? expectedClaim
+      : normalizeTokenClaim(legacyProbe.existing, 'legacy');
+    assertClaimMatchesRequest(primary, streamId, expectedClaim.conversationId);
+    assertClaimMatchesRequest(legacy, streamId, expectedClaim.conversationId);
+    if (isRecoverableTakeoverSplit(legacy, primary)) {
+      await this.synchronizeLegacyGenerationClaim(userId, clientRequestId, legacy, primary);
+      return { claimed: false, existing: primary, source: 'primary' };
+    }
+    assertClaimMirrors(legacy, primary);
+
+    if (primary.startedAt != null) {
+      if (legacy.startedAt == null) {
+        await this.synchronizeLegacyGenerationClaim(userId, clientRequestId, legacy, primary);
+      }
+      return { claimed: false, existing: primary, source: 'primary' };
+    }
+
+    const value: TokenIdempotencyClaim = {
+      streamId,
+      conversationId: expectedClaim.conversationId,
+      claimedAt: Math.max(
+        Date.now(),
+        Math.min(Number.MAX_SAFE_INTEGER, expectedClaim.claimedAt + 1),
+      ),
+      claimToken: randomUUID(),
+      previousClaimToken: expectedClaim.claimToken,
+      generationProtocolVersion: expectedClaim.generationProtocolVersion,
+    };
+    let primaryTaken: boolean;
+    try {
+      primaryTaken = await this.jobStore.takeoverIdempotencyKey(
+        primaryKey,
+        expectedClaim,
+        value,
+        IDEMPOTENCY_TTL_SECONDS,
+      );
+    } catch (error) {
+      // A single-key CAS can commit and then lose its reply. Resolve only a
+      // split carrying this predecessor token; unrelated mismatches remain
+      // outcome-ambiguous and fail closed.
+      const [observedPrimaryResult, observedLegacyResult] = await Promise.all([
+        this.jobStore.claimIdempotencyKey(primaryKey, expectedClaim, IDEMPOTENCY_TTL_SECONDS),
+        this.jobStore.claimIdempotencyKey(legacyKey, expectedClaim, LEGACY_IDEMPOTENCY_TTL_SECONDS),
+      ]);
+      const observedPrimary = observedPrimaryResult.claimed
+        ? expectedClaim
+        : normalizeTokenClaim(observedPrimaryResult.existing, 'primary');
+      const observedLegacy = observedLegacyResult.claimed
+        ? expectedClaim
+        : normalizeTokenClaim(observedLegacyResult.existing, 'legacy');
+
+      if (isRecoverableTakeoverSplit(observedLegacy, observedPrimary)) {
+        await this.synchronizeLegacyGenerationClaim(
+          userId,
+          clientRequestId,
+          observedLegacy,
+          observedPrimary,
+        );
+        return claimsMirrorExactly(observedPrimary, value)
+          ? { claimed: true, existing: value, source: 'primary' }
+          : { claimed: false, existing: observedPrimary, source: 'primary' };
+      }
+      if (claimsMirrorExactly(observedLegacy, observedPrimary)) {
+        if (claimsMirrorExactly(observedPrimary, value)) {
+          return { claimed: true, existing: value, source: 'primary' };
+        }
+        if (isClaimTakeoverOf(expectedClaim, observedPrimary)) {
+          return { claimed: false, existing: observedPrimary, source: 'primary' };
+        }
+      }
+      throw error;
+    }
+    if (!primaryTaken) {
+      return { claimed: false, source: 'primary' };
+    }
+
+    try {
+      const legacyTaken = await this.jobStore.takeoverIdempotencyKey(
+        legacyKey,
+        expectedClaim,
+        value,
+        LEGACY_IDEMPOTENCY_TTL_SECONDS,
+      );
+      if (!legacyTaken) {
+        // Do not strand a new primary token that is not mirrored to old
+        // replicas. Compare-release only the token installed above.
+        await this.jobStore.releaseIdempotencyKey(primaryKey, value);
+        return { claimed: false, source: 'primary' };
+      }
+    } catch (error) {
+      await this.jobStore.releaseIdempotencyKey(primaryKey, value).catch((releaseError) => {
+        logger.error(
+          '[GenerationJobManager] Failed to roll back an unmirrored primary idempotency takeover:',
+          releaseError,
+        );
+      });
+      throw error;
+    }
+
+    return { claimed: true, existing: value, source: 'primary' };
+  }
+
+  /** A fixed replay lease can expire while a long generation is still active.
+   * If the identical client request reacquires that lease, atomically bind it
+   * back to the matching live job instead of letting createJob replace/rebill
+   * the generation. A different clientRequestId remains a genuinely new turn. */
+  async resumeClaimedGeneration(
+    userId: string,
+    clientRequestId: string,
+    streamId: string,
+    claim: IdempotencyClaimValue,
+  ): Promise<IdempotencyClaimValue | null> {
+    const normalizedClaim = normalizeTokenClaim(claim, 'reacquired');
+    assertClaimMatchesRequest(normalizedClaim, streamId, normalizedClaim.conversationId);
+    const tenantId = getTenantId();
+    const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
+    const job = await this.jobStore.getJob(streamId);
+    if (
+      job == null ||
+      job.userId !== userId ||
+      (job.tenantId != null && job.tenantId !== safeTenantId) ||
+      (job.status !== 'running' && job.status !== 'requires_action')
+    ) {
+      return null;
+    }
+    const missingClientRequestId = job.idempotencyClientRequestId == null;
+    if (!missingClientRequestId && job.idempotencyClientRequestId !== clientRequestId) {
+      return null;
+    }
+    const conversationMatches = (job.conversationId ?? streamId) === normalizedClaim.conversationId;
+    const jobProtocol = normalizeClaimProtocol(job);
+    let adoptionError: unknown;
+    let adopted = false;
+    try {
+      adopted = await this.jobStore.adoptIdempotencyKeyForJob(
+        this.generationClaimKey(userId, clientRequestId, streamId),
+        normalizedClaim,
+        streamId,
+        userId,
+        clientRequestId,
+        safeTenantId,
+        job.createdAt,
+        IDEMPOTENCY_TTL_SECONDS,
+        missingClientRequestId,
+      );
+    } catch (error) {
+      adoptionError = error;
+    }
+    if (!adopted) {
+      try {
+        await this.tombstoneObservedGenerationClaim(
+          userId,
+          clientRequestId,
+          streamId,
+          normalizedClaim,
+          job.createdAt,
+          jobProtocol,
+        );
+      } catch (tombstoneError) {
+        if (adoptionError != null) {
+          throw adoptionError;
+        }
+        throw tombstoneError;
+      }
+      throw new Error(
+        'Live generation settled while its idempotency claim was conservatively fenced',
+      );
+    }
+    const adoptedClaim: TokenIdempotencyClaim = {
+      ...normalizedClaim,
+      streamId,
+      conversationId: normalizedClaim.conversationId,
+      startedAt: job.createdAt,
+      generationProtocolVersion: jobProtocol,
+    };
+    await this.synchronizeLegacyGenerationClaim(
+      userId,
+      clientRequestId,
+      normalizedClaim,
+      adoptedClaim,
+    );
+
+    if (missingClientRequestId || !conversationMatches) {
+      // The exact same-owner/tenant/epoch job is active, but old metadata
+      // cannot prove that this retry should attach to its UI. Both fresh
+      // claims are now started tombstones: stay on the controller's 503 path
+      // while active, and settle after deletion without ever allowing a
+      // takeover/rebill.
+      throw new Error(
+        'Active legacy generation was conservatively fenced without attaching the retry',
+      );
+    }
+    return adoptedClaim;
   }
 
   /**
    * Release a start-generation claim so the submission can be retried (e.g. the
    * start failed before generation began).
    */
-  async releaseGeneration(userId: string, clientRequestId: string): Promise<void> {
-    await this.jobStore.releaseIdempotencyKey(`${userId}:${clientRequestId}`);
+  async releaseGeneration(
+    userId: string,
+    clientRequestId: string,
+    streamId: string,
+    expected?: IdempotencyClaimValue,
+  ): Promise<void> {
+    // Releasing without a token would let a stale/old request delete another
+    // replica's owner. Tokenless legacy claims are duplicate-only and are
+    // never owned by this manager.
+    if (expected?.claimToken == null) {
+      return;
+    }
+    const expectedClaim = normalizeTokenClaim(expected, 'release');
+    assertClaimMatchesRequest(expectedClaim, streamId, expectedClaim.conversationId);
+
+    const primaryKey = this.generationClaimKey(userId, clientRequestId, streamId);
+    const primaryProbe = await this.jobStore.claimIdempotencyKey(
+      primaryKey,
+      expectedClaim,
+      IDEMPOTENCY_TTL_SECONDS,
+    );
+    const primary = primaryProbe.claimed
+      ? expectedClaim
+      : normalizeTokenClaim(primaryProbe.existing, 'primary');
+    assertClaimMirrors(expectedClaim, primary);
+    if (primary.startedAt != null) {
+      // createJob may have committed the primary before a later initialization
+      // or legacy-mark failure. The caller still holds its pre-create value;
+      // deleting the now-started tombstone would make a retry bill again.
+      return;
+    }
+    await this.jobStore.releaseIdempotencyKey(primaryKey, expectedClaim);
+
+    const legacyKey = this.legacyGenerationClaimKey(userId, clientRequestId);
+    const legacyProbe = await this.jobStore.claimIdempotencyKey(
+      legacyKey,
+      expectedClaim,
+      LEGACY_IDEMPOTENCY_TTL_SECONDS,
+    );
+    const legacy = legacyProbe.claimed
+      ? expectedClaim
+      : normalizeTokenClaim(legacyProbe.existing, 'legacy');
+    assertClaimMirrors(legacy, expectedClaim);
+    if (legacy.startedAt != null) {
+      return;
+    }
+    await this.jobStore.releaseIdempotencyKey(legacyKey, expectedClaim);
   }
 
   /**
@@ -731,7 +2982,379 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Atomically win terminal ownership for a running generation and park the
+   * exact steer leftovers in the same transaction. A controller must not emit
+   * a terminal client event before this succeeds: abort, pause, and completion
+   * can all race on the same generation epoch.
+   */
+  async claimTerminalJob(
+    streamId: string,
+    status: TerminalJobClaim['status'],
+    error?: string,
+    expectedCreatedAt?: number,
+    options: { persistencePending?: boolean; failedPauseActionId?: string } = {},
+  ): Promise<TerminalJobClaim | null> {
+    if (
+      options.failedPauseActionId != null &&
+      (status !== 'error' || options.persistencePending === true)
+    ) {
+      throw new Error('A failed pause-persistence claim must be a non-pending error terminal');
+    }
+    const observedRuntime = this.runtimeState.get(streamId);
+    const targetCreatedAt = expectedCreatedAt ?? observedRuntime?.createdAt;
+    let jobData = await this.jobStore.getJob(streamId);
+    if (!jobData || (targetCreatedAt != null && jobData.createdAt !== targetCreatedAt)) {
+      if (targetCreatedAt != null) {
+        this.reconcileInactiveGeneration(streamId, targetCreatedAt, jobData, observedRuntime);
+      }
+      logger.debug(
+        `[GenerationJobManager] Skipping stale terminal claim for replaced job: ${streamId}`,
+      );
+      return null;
+    }
+    const failedPauseActionId = options.failedPauseActionId;
+    const failedPauseBarrierId =
+      failedPauseActionId != null ? pausePersistenceActionId(failedPauseActionId) : undefined;
+    if (failedPauseBarrierId != null) {
+      /** The required response write failed while this exact controller still
+       * owns the pause barrier. Terminalize from the barrier state itself;
+       * releasing it first would let a waiting approval resume win the next
+       * `requires_action -> running` CAS before the error transition. */
+      if (
+        jobData.status !== 'requires_action' ||
+        jobData.terminalPersistencePending !== true ||
+        jobData.pendingAction?.actionId !== failedPauseActionId ||
+        jobData.pendingActionId !== failedPauseBarrierId
+      ) {
+        return null;
+      }
+    } else if (
+      jobData.status === 'requires_action' &&
+      jobData.terminalPersistencePending === true
+    ) {
+      jobData = await this._approvals.waitForPausePersistence(streamId, jobData.createdAt);
+      if (!jobData || (targetCreatedAt != null && jobData.createdAt !== targetCreatedAt)) {
+        return null;
+      }
+    }
+    const sourceStatus = jobData.status;
+    const canClaim =
+      sourceStatus === 'running' || (status === 'error' && sourceStatus === 'requires_action');
+    if (!canClaim) {
+      this.reconcileInactiveGeneration(streamId, jobData.createdAt, jobData, observedRuntime);
+      logger.debug(
+        `[GenerationJobManager] Skipping ${status} claim for job ${streamId}: ${jobData.status}`,
+      );
+      return null;
+    }
+
+    const createdAt = jobData.createdAt;
+    const runtime = observedRuntime?.createdAt === createdAt ? observedRuntime : undefined;
+    const terminalError = status === 'error' ? (error ?? 'Generation failed') : undefined;
+    const completedAt = Date.now();
+    const drainedSteers = await this.jobStore.transitionStatusAndDrainSteers(streamId, {
+      from: sourceStatus,
+      to: status,
+      expectCreatedAt: createdAt,
+      ...(sourceStatus === 'requires_action' && {
+        ...(failedPauseBarrierId != null
+          ? { expectActionId: failedPauseBarrierId }
+          : jobData.pendingActionId != null && { expectActionId: jobData.pendingActionId }),
+      }),
+      patch: {
+        completedAt,
+        ...(terminalError != null && { error: terminalError }),
+        ...(options.persistencePending === true && {
+          terminalPersistencePending: true,
+          terminalPersistenceStartedAt: completedAt,
+        }),
+      },
+      ...(sourceStatus === 'requires_action' && {
+        clear: [
+          'pendingAction',
+          'pendingActionId',
+          ...(failedPauseBarrierId != null
+            ? ['terminalPersistencePending', 'terminalPersistenceStartedAt']
+            : []),
+        ] as (keyof SerializableJobData)[],
+      }),
+    });
+    if (drainedSteers == null) {
+      await this.reconcileLostTerminalTransition(streamId, createdAt, runtime);
+      return null;
+    }
+
+    const claim: TerminalJobClaim = Object.freeze({
+      streamId,
+      createdAt,
+      ...(jobData.conversationId != null && { conversationId: jobData.conversationId }),
+      status,
+      ...(terminalError != null && { error: terminalError }),
+      ...(options.persistencePending === true && { persistencePending: true as const }),
+      drainedSteers: Object.freeze([...drainedSteers]),
+    });
+    this.terminalClaimRuntimes.set(claim, runtime ?? null);
+
+    // An aborted claim must stop its exact generation immediately. Cleanup is
+    // still deferred to finishTerminalJob so terminal publication can happen
+    // first and is guaranteed a finally-paired resource release.
+    if (status === 'aborted') {
+      try {
+        this.eventTransport.emitAbort?.(streamId, createdAt);
+      } catch (abortError) {
+        logger.error(
+          `[GenerationJobManager] Failed to publish terminal abort for ${streamId}:`,
+          abortError,
+        );
+      }
+      if (runtime && this.runtimeState.get(streamId) === runtime) {
+        this.releaseAbortSubscription(runtime);
+        runtime.abortController.abort();
+      }
+    }
+
+    return claim;
+  }
+
+  /**
+   * Durably settle and publish a persistence-owning terminal claim. Passing a
+   * normal event means the controller's required writes succeeded; `null`
+   * publishes conservative reconciliation instead. The store CAS also races a
+   * stale-owner recovery, and whichever side wins supplies the only payload
+   * this method will publish.
+   */
+  async publishTerminalClaim(
+    claim: TerminalJobClaim,
+    finalEvent: t.ServerSentEvent | null,
+  ): Promise<{ finalEvent: t.ServerSentEvent; persistenceFailed: boolean }> {
+    if (!this.terminalClaimRuntimes.has(claim) || claim.persistencePending !== true) {
+      throw new Error('Terminal persistence claim was not issued by this manager');
+    }
+
+    const { streamId, createdAt } = claim;
+    const claimedRuntime = this.terminalClaimRuntimes.get(claim) ?? undefined;
+    const runtime =
+      claimedRuntime &&
+      claimedRuntime.createdAt === createdAt &&
+      this.runtimeState.get(streamId) === claimedRuntime
+        ? claimedRuntime
+        : undefined;
+    const reconcileEvent = buildTerminalPersistenceReconcile({
+      createdAt,
+      conversationId: claim.conversationId,
+      status: claim.status,
+    });
+    const desiredEvent = finalEvent ?? reconcileEvent;
+    let publicationEvent: t.ServerSentEvent | null = null;
+    let durable = false;
+
+    try {
+      const finalized = await this.jobStore.finalizeTerminalPersistence(
+        streamId,
+        createdAt,
+        JSON.stringify(desiredEvent),
+      );
+      if (finalized) {
+        publicationEvent = desiredEvent;
+        durable = true;
+      } else {
+        const settledJob = await this.jobStore.getJob(streamId);
+        if (
+          settledJob?.createdAt === createdAt &&
+          settledJob.terminalPersistencePending !== true &&
+          settledJob.finalEvent
+        ) {
+          publicationEvent = JSON.parse(settledJob.finalEvent) as t.ServerSentEvent;
+          durable = true;
+        }
+      }
+    } catch (settleError) {
+      logger.error(
+        `[GenerationJobManager] Failed to finalize terminal persistence for ${streamId}:`,
+        settleError,
+      );
+    }
+
+    /** If durable finalization itself failed, leave the marker for bounded
+     * stale-owner recovery but still close an already-attached client with the
+     * conservative frame. Do not cache that best-effort frame on the runtime:
+     * late subscribers must honor the durable pending marker. */
+    if (!publicationEvent) {
+      publicationEvent = reconcileEvent;
+    } else if (runtime) {
+      runtime.finalEvent = publicationEvent;
+    }
+
+    try {
+      if (runtime?.createdEventPublication) {
+        await runtime.createdEventPublication;
+      }
+      await this.eventTransport.emitDone(streamId, publicationEvent, createdAt);
+    } catch (publicationError) {
+      logger.error(
+        `[GenerationJobManager] Failed to publish terminal persistence result ${streamId}:`,
+        publicationError,
+      );
+      if (durable) {
+        this.terminalPublicationFailures.add(claim);
+      }
+      /** Publication can yield long enough for a same-stream replacement to
+       * install its own runtime/subscriber. Close only while the exact runtime
+       * captured by this terminal claim is still current; the check and the
+       * synchronous close call deliberately have no await between them. */
+      if (runtime && this.runtimeState.get(streamId) === runtime) {
+        try {
+          this.eventTransport.closeLocalSubscribers?.(
+            streamId,
+            TERMINAL_PUBLICATION_RECONNECT_ERROR,
+          );
+        } catch (closeError) {
+          logger.error(
+            `[GenerationJobManager] Failed to close local subscribers after terminal publication failure ${streamId}:`,
+            closeError,
+          );
+        }
+      }
+      throw publicationError;
+    }
+
+    const persistenceFailed =
+      finalEvent == null ||
+      !durable ||
+      publicationEvent !== finalEvent ||
+      ('reconcile' in publicationEvent && publicationEvent.reconcile === true);
+    if (!persistenceFailed && runtime?.startupTelemetry) {
+      this.recordStartupEvent(runtime, publicationEvent);
+    }
+    return { finalEvent: publicationEvent, persistenceFailed };
+  }
+
+  /**
+   * Release resources owned by a successful terminal claim. Reusing the same
+   * claim is idempotent, and every local mutation is pinned to the runtime
+   * object and generation epoch captured when the CAS won.
+   */
+  finishTerminalJob(claim: TerminalJobClaim): Promise<void> {
+    const inFlight = this.terminalFinishPromises.get(claim);
+    if (inFlight) {
+      return inFlight;
+    }
+    if (!this.terminalClaimRuntimes.has(claim)) {
+      return Promise.reject(new Error('Terminal claim was not issued by this manager'));
+    }
+
+    const finishing = this.finishTerminalJobInternal(claim);
+    this.terminalFinishPromises.set(claim, finishing);
+    return finishing;
+  }
+
+  private async finishTerminalJobInternal(claim: TerminalJobClaim): Promise<void> {
+    const { streamId, createdAt, status, error } = claim;
+    const retainForTerminalReplay = this.terminalPublicationFailures.has(claim);
+    const claimedRuntime = this.terminalClaimRuntimes.get(claim) ?? undefined;
+    const runtime =
+      claimedRuntime &&
+      claimedRuntime.createdAt === createdAt &&
+      this.runtimeState.get(streamId) === claimedRuntime
+        ? claimedRuntime
+        : undefined;
+    let cleanupError: unknown;
+
+    // Error jobs stay durable long enough for late subscribers to receive the
+    // stored error. A publication failure must never bypass the finally cleanup.
+    try {
+      if (status === 'error') {
+        const terminalError = error ?? 'Generation failed';
+        if (runtime) {
+          runtime.errorEvent = terminalError;
+        }
+        try {
+          if (runtime?.createdEventPublication) {
+            await runtime.createdEventPublication;
+          }
+          await this.eventTransport.emitError(streamId, terminalError, createdAt);
+        } catch (publishError) {
+          logger.error(
+            `[GenerationJobManager] Failed to publish terminal error for ${streamId}:`,
+            publishError,
+          );
+          if (runtime && this.runtimeState.get(streamId) === runtime) {
+            for (const notify of [...runtime.localErrorHandlers]) {
+              try {
+                notify(terminalError);
+              } catch (notifyError) {
+                logger.error(
+                  `[GenerationJobManager] Failed to notify terminal error for ${streamId}:`,
+                  notifyError,
+                );
+              }
+            }
+          }
+        }
+      } else if (this._cleanupOnComplete) {
+        // A failed finalization write deliberately leaves any terminal pending
+        // marker for bounded stale-owner recovery. Every normally finalized
+        // persistence-owning claim clears it before reaching this cleanup. A
+        // durable final whose DONE publish failed is retained for reconnect
+        // replay even though its pending marker is already clear.
+        const terminalJob = await this.jobStore.getJob(streamId);
+        if (
+          !retainForTerminalReplay &&
+          (terminalJob?.createdAt !== createdAt || terminalJob.terminalPersistencePending !== true)
+        ) {
+          // A same-stream replacement created after the claim makes this a safe
+          // no-op rather than deleting the replacement generation.
+          await this.jobStore.deleteJob(streamId, createdAt);
+        }
+      }
+    } catch (err) {
+      cleanupError = err;
+    } finally {
+      if (runtime && this.runtimeState.get(streamId) === runtime) {
+        this.releaseAbortSubscription(runtime);
+        runtime.abortController.abort();
+        if (status === 'error') {
+          runtime.startupTelemetry?.end('error', new Error(error ?? 'Generation failed'));
+        } else if (status === 'aborted') {
+          runtime.startupTelemetry?.end('aborted');
+        } else {
+          runtime.startupTelemetry?.end('completed_without_delta');
+        }
+        runtime.startupTelemetry = undefined;
+        this.jobStore.clearContentState(streamId, createdAt);
+        this.runStepBuffers?.delete(streamId);
+        this.replayEventWriteQueues.delete(streamId);
+        this.tokenUsageWriteQueues.delete(streamId);
+        if (status !== 'error' && this._cleanupOnComplete) {
+          this.runtimeState.delete(streamId);
+        }
+      }
+
+      this.releaseJobOwnership(streamId, createdAt);
+      this.terminalPublicationFailures.delete(claim);
+      let metricStatus: 'completed' | 'error' | 'aborted' = 'aborted';
+      if (status === 'complete') {
+        metricStatus = 'completed';
+      } else if (status === 'error') {
+        metricStatus = 'error';
+      }
+      recordGenerationJob(this.storeLabel, metricStatus);
+    }
+
+    if (cleanupError != null) {
+      throw cleanupError;
+    }
+    logger.debug(
+      status === 'error'
+        ? `[GenerationJobManager] Job completed with error (keeping for late subscribers): ${streamId}`
+        : `[GenerationJobManager] Job ${status}: ${streamId}`,
+    );
+  }
+
+  /**
    * Mark job as complete.
+   * Returns true only when this caller won the terminal CAS and finished it;
+   * controllers can safely gate generation-owned cleanup on that result.
    * If cleanupOnComplete is true (default), immediately cleans up job resources.
    * Exception: Jobs with errors are NOT immediately deleted to allow late-connecting
    * clients to receive the error (race condition where error occurs before client connects).
@@ -739,86 +3362,47 @@ class GenerationJobManagerClass {
    * fully transmitted. It will be cleaned up when subscribers disconnect or
    * by the periodic cleanup job.
    */
-  async completeJob(streamId: string, error?: string): Promise<void> {
-    const runtime = this.runtimeState.get(streamId);
-
-    // Abort the controller to signal all pending operations (e.g., OAuth flow monitors)
-    // that the job is done and they should clean up
-    if (runtime) {
-      runtime.abortController.abort();
+  async completeJob(
+    streamId: string,
+    error?: string,
+    expectedCreatedAt?: number,
+  ): Promise<boolean> {
+    const claim = await this.claimTerminalJob(
+      streamId,
+      error ? 'error' : 'complete',
+      error,
+      expectedCreatedAt,
+    );
+    if (!claim) {
+      return false;
     }
+    await this.finishTerminalJob(claim);
+    return true;
+  }
 
-    // Clear content state and run step buffer (Redis only)
-    this.jobStore.clearContentState(streamId);
-    this.runStepBuffers?.delete(streamId);
-    this.replayEventWriteQueues.delete(streamId);
-    this.tokenUsageWriteQueues.delete(streamId);
-    // Backstop for direct terminal callers (init failures, unhandled errors)
-    // that never ran the controllers' close-and-park: close the queue, then
-    // park any 202-accepted leftovers for /chat/status claim-on-read instead
-    // of silently clearing them. Paths that already drained find an empty
-    // queue and no-op; the createdAt guard (re-checked inside the store's
-    // atomic drain) keeps a stale completion off a replacement job's queue.
-    // Runs BEFORE the terminal status write — the Redis terminal cleanup DELs
-    // the queue key.
-    try {
-      const jobData = await this.jobStore.getJob(streamId);
-      if (jobData) {
-        const leftovers = (
-          await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
-        ).map(toPendingSteer);
-        await this._steering.park(streamId, leftovers, {
-          userId: jobData.userId,
-          tenantId: jobData.tenantId,
-        });
-      }
-    } catch (err) {
-      logger.warn(`[GenerationJobManager] Failed to park leftover steers for ${streamId}:`, err);
+  /**
+   * Atomically fail the exact paused action whose required unfinished-response
+   * write did not succeed. Unlike `finishPausePersistence` followed by
+   * `completeJob`, this never exposes the ordinary action id between those two
+   * decisions, so a waiting/concurrent resume cannot drive an unpersisted turn.
+   */
+  async failPausePersistence(
+    streamId: string,
+    actionId: string,
+    error: string,
+    expectedCreatedAt?: number,
+  ): Promise<boolean> {
+    if (actionId.length === 0) {
+      return false;
     }
-
-    // For error jobs, DON'T delete immediately - keep around so late-connecting
-    // clients can receive the error. This handles the race condition where error
-    // occurs before client connects to SSE stream.
-    //
-    // Cleanup strategy: Error jobs are cleaned up by periodic cleanup (every 60s)
-    // via jobStore.cleanup() which checks for jobs with status 'error' and
-    // completedAt set. The TTL is configurable via jobStore options (default: 0,
-    // meaning cleanup on next interval). This gives clients ~60s to connect and
-    // receive the error before the job is removed.
-    if (error) {
-      await this.jobStore.updateJob(streamId, {
-        status: 'error',
-        completedAt: Date.now(),
-        error,
-      });
-      this.runningJobs.delete(streamId);
-      this.syncRunningJobMetrics();
-      recordGenerationJob(this.storeLabel, 'error');
-      // Keep runtime state so subscribe() can access errorEvent
-      logger.debug(
-        `[GenerationJobManager] Job completed with error (keeping for late subscribers): ${streamId}`,
-      );
-      return;
+    const claim = await this.claimTerminalJob(streamId, 'error', error, expectedCreatedAt, {
+      failedPauseActionId: actionId,
+    });
+    if (!claim) {
+      return false;
     }
-
-    // Immediate cleanup if configured (default: true) - only for successful completions
-    if (this._cleanupOnComplete) {
-      this.runtimeState.delete(streamId);
-      // Don't cleanup eventTransport here - let the done event fully transmit first.
-      // EventTransport will be cleaned up when subscribers disconnect or by periodic cleanup.
-      await this.jobStore.deleteJob(streamId);
-    } else {
-      // Only update status if keeping the job around
-      await this.jobStore.updateJob(streamId, {
-        status: 'complete',
-        completedAt: Date.now(),
-      });
-    }
-
-    this.runningJobs.delete(streamId);
-    this.syncRunningJobMetrics();
-    recordGenerationJob(this.storeLabel, 'completed');
-    logger.debug(`[GenerationJobManager] Job completed: ${streamId}`);
+    await this.finishTerminalJob(claim);
+    return true;
   }
 
   /**
@@ -839,12 +3423,51 @@ class GenerationJobManagerClass {
     streamId: string,
     options?: {
       transformAbortContent?: (content: TMessageContentParts[]) => TMessageContentParts[];
+      /** Required durable work (for example saving the partial response and
+       * pruning the paused checkpoint) that must finish before the normal
+       * FINAL lets the client submit against that history. Throwing emits a
+       * conservative reconciliation frame instead of the normal payload. */
+      beforePublish?: (result: AbortResult) => void | Promise<void>;
+      /** Epoch observed by the authenticated route. Without this fence, a
+       * same-stream replacement between authorization and the manager read
+       * could be stopped by a stale request intended for its predecessor. */
+      expectedCreatedAt?: number;
     },
   ): Promise<AbortResult> {
-    const jobData = await this.jobStore.getJob(streamId);
-    const runtime = this.runtimeState.get(streamId);
+    const observedRuntime = this.runtimeState.get(streamId);
+    let jobData = await this.jobStore.getJob(streamId);
+
+    if (options?.expectedCreatedAt != null && jobData?.createdAt !== options.expectedCreatedAt) {
+      this.reconcileInactiveGeneration(
+        streamId,
+        options.expectedCreatedAt,
+        jobData,
+        observedRuntime?.createdAt === options.expectedCreatedAt ? observedRuntime : undefined,
+      );
+      logger.debug(
+        `[GenerationJobManager] Refusing stale abort for replaced job: ${streamId}@${options.expectedCreatedAt}`,
+      );
+      recordGenerationJob(this.storeLabel, 'abort_failed');
+      return {
+        text: '',
+        content: [],
+        jobData,
+        success: false,
+        failureReason: 'generation_replaced',
+        finalEvent: null,
+        collectedUsage: [],
+      };
+    }
 
     if (!jobData) {
+      if (observedRuntime) {
+        this.reconcileInactiveGeneration(
+          streamId,
+          observedRuntime.createdAt,
+          jobData,
+          observedRuntime,
+        );
+      }
       logger.warn(`[GenerationJobManager] Cannot abort - job not found: ${streamId}`);
       recordGenerationJob(this.storeLabel, 'abort_failed');
       return {
@@ -857,137 +3480,281 @@ class GenerationJobManagerClass {
       };
     }
 
-    // Emit abort signal for cross-replica support (Redis mode)
-    // This ensures the generating replica receives the abort signal
-    if (this.eventTransport.emitAbort) {
-      this.eventTransport.emitAbort(streamId);
+    if (jobData.status === 'requires_action' && jobData.terminalPersistencePending === true) {
+      const unlockedJob = await this._approvals.waitForPausePersistence(
+        streamId,
+        jobData.createdAt,
+      );
+      if (!unlockedJob || unlockedJob.createdAt !== jobData.createdAt) {
+        this.reconcileInactiveGeneration(streamId, jobData.createdAt, unlockedJob, observedRuntime);
+        return {
+          text: '',
+          content: [],
+          jobData: unlockedJob,
+          success: false,
+          finalEvent: null,
+          collectedUsage: [],
+        };
+      }
+      jobData = unlockedJob;
     }
 
-    // Also abort local controller if we have it (same-replica abort)
-    if (runtime) {
-      runtime.abortController.abort();
+    const abortableStatus = jobData.status;
+    if (abortableStatus !== 'running' && abortableStatus !== 'requires_action') {
+      this.reconcileInactiveGeneration(streamId, jobData.createdAt, jobData, observedRuntime);
+      logger.debug(
+        `[GenerationJobManager] Cannot abort terminal job ${streamId}: ${jobData.status}`,
+      );
+      recordGenerationJob(this.storeLabel, 'abort_failed');
+      return {
+        text: '',
+        content: [],
+        jobData,
+        success: false,
+        finalEvent: null,
+        collectedUsage: [],
+      };
     }
 
-    /** Steers that never reached an injection boundary — reported on the abort
-     *  final event (and the abort route's JSON) so the client can restore them
-     *  as queued chips instead of silently dropping the user's words. The
-     *  close-and-drain rejects any steer POST racing this finalization, and
-     *  the createdAt guard keeps it off a replacement job's queue. Runs
-     *  BEFORE the content snapshot below: a drain hook that already popped a
-     *  steer and applied its part gets captured by the snapshot, so the text
-     *  surfaces either here (pendingSteers) or there (inline part) — an
-     *  encode still in flight across the abort remains inherently racy
-     *  cross-instance, but the window no longer includes completed applies. */
-    const pendingSteers = (
-      await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
-    ).map(toPendingSteer);
-    // No-subscriber recovery: the abort response/final are transient, so park
-    // the leftovers for /chat/status claim-on-read within the recovery TTL.
-    await this.steering.park(streamId, pendingSteers, {
-      userId: jobData.userId,
-      tenantId: jobData.tenantId,
-    });
-
-    /** Content before clearing state */
-    const result = await this.jobStore.getContentParts(streamId);
-    const content = result?.content ?? [];
+    const runtime = observedRuntime?.createdAt === jobData.createdAt ? observedRuntime : undefined;
+    /** Snapshot before claiming terminal state. This is non-destructive: if a
+     * same-epoch approval resume wins the later CAS, its content and steer
+     * queue remain fully owned by that resumed run. */
+    const result = await this.jobStore.getContentParts(streamId, jobData.createdAt);
+    let content = result?.content ?? [];
     let abortContent = filterPersistableAbortContent(content);
     if (options?.transformAbortContent) {
       abortContent = options.transformAbortContent(
         abortContent as TMessageContentParts[],
       ) as typeof abortContent;
     }
-    const shouldPersistAbortContent = abortContent.length > 0;
+    let shouldPersistAbortContent = abortContent.length > 0;
 
     /** Collected usage for all models */
-    const collectedUsage = this.jobStore.getCollectedUsage(streamId);
+    const collectedUsage = this.jobStore.getCollectedUsage(streamId, jobData.createdAt);
 
     /** Text from content parts for fallback token counting; the persisted
      *  abort record keeps steered words (they reached the model context). */
-    const text = shouldPersistAbortContent
+    let text = shouldPersistAbortContent
       ? parseTextParts(abortContent as TMessageContentParts[], false, { includeSteer: true })
       : '';
 
-    /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
-    In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
-    const isEarlyAbort = !shouldPersistAbortContent && jobData.createdEventEmitted !== true;
-
-    /** Final event for abort */
-    const userMessageId = jobData.userMessage?.messageId;
-
-    const abortFinalEvent: t.ServerSentEvent = {
-      final: true,
-      // Don't include conversation for early aborts - it doesn't exist in DB
-      conversation: isEarlyAbort ? null : { conversationId: jobData.conversationId },
-      title: 'New Chat',
-      requestMessage: jobData.userMessage
-        ? {
-            messageId: userMessageId,
-            parentMessageId: jobData.userMessage.parentMessageId,
-            conversationId: jobData.conversationId,
-            text: jobData.userMessage.text ?? '',
-            quotes: jobData.userMessage.quotes,
-            isCreatedByUser: true,
-          }
-        : null,
-      responseMessage: isEarlyAbort
-        ? null
-        : {
-            messageId: jobData.responseMessageId ?? `${userMessageId ?? 'aborted'}_`,
-            parentMessageId: userMessageId,
-            conversationId: jobData.conversationId,
-            content: abortContent,
-            sender: jobData.sender ?? 'AI',
-            endpoint: jobData.endpoint,
-            iconURL: jobData.iconURL,
-            model: jobData.model,
-            unfinished: true,
-            error: false,
-            isCreatedByUser: false,
-          },
-      aborted: true,
-      // Flag for early abort - no messages saved, frontend should go to new chat
-      earlyAbort: isEarlyAbort,
-      ...(pendingSteers.length > 0 && { pendingSteers }),
-    } satisfies t.FinalEvent as t.ServerSentEvent;
-
-    if (runtime) {
-      runtime.finalEvent = abortFinalEvent;
-    }
-
-    await this.eventTransport.emitDone(streamId, abortFinalEvent);
-    this.jobStore.clearContentState(streamId);
-    this.runStepBuffers?.delete(streamId);
-    this.replayEventWriteQueues.delete(streamId);
-    this.tokenUsageWriteQueues.delete(streamId);
-
-    // Immediate cleanup if configured (default: true)
-    if (this._cleanupOnComplete) {
-      this.runtimeState.delete(streamId);
-      // Don't cleanup eventTransport here - let the abort event fully transmit first.
-      await this.jobStore.deleteJob(streamId);
-    } else {
-      // Only update status if keeping the job around
-      await this.jobStore.updateJob(streamId, {
-        status: 'aborted',
-        completedAt: Date.now(),
+    /** Claim terminal ownership and drain steers in one store transaction. A
+     * destructive pre-CAS drain would corrupt a same-epoch run when approval
+     * resolution wins `requires_action -> running`. The returned batch is the
+     * exact queued/claimed set parked by the winning abort, so the final event
+     * can restore it without a second read or a recovery race. */
+    const terminalPersistenceStartedAt = Date.now();
+    let transitionFrom = abortableStatus;
+    let drainedSteers: SteerQueueItem[] | null = null;
+    let currentAfterConflict: SerializableJobData | null = jobData;
+    // An approval decision can move the same epoch between running and
+    // requires_action after our read. Retry that legal same-generation state
+    // change instead of telling the caller it stopped a run that is still live.
+    for (let attempt = 0; attempt < 3 && drainedSteers == null; attempt++) {
+      const expectedActionId =
+        transitionFrom === 'requires_action' ? currentAfterConflict?.pendingActionId : undefined;
+      drainedSteers = await this.jobStore.transitionStatusAndDrainSteers(streamId, {
+        from: transitionFrom,
+        to: 'aborted',
+        expectCreatedAt: jobData.createdAt,
+        ...(expectedActionId != null && { expectActionId: expectedActionId }),
+        patch: {
+          completedAt: terminalPersistenceStartedAt,
+          terminalPersistencePending: true,
+          terminalPersistenceStartedAt,
+        },
       });
+      if (drainedSteers != null) {
+        break;
+      }
+      currentAfterConflict = await this.jobStore.getJob(streamId);
+      if (
+        currentAfterConflict?.createdAt === jobData.createdAt &&
+        currentAfterConflict.status === 'requires_action' &&
+        currentAfterConflict.terminalPersistencePending === true
+      ) {
+        currentAfterConflict = await this._approvals.waitForPausePersistence(
+          streamId,
+          jobData.createdAt,
+        );
+      }
+      if (
+        currentAfterConflict?.createdAt !== jobData.createdAt ||
+        (currentAfterConflict.status !== 'running' &&
+          currentAfterConflict.status !== 'requires_action')
+      ) {
+        break;
+      }
+      if (
+        currentAfterConflict.status === transitionFrom &&
+        (transitionFrom !== 'requires_action' ||
+          currentAfterConflict.pendingActionId === expectedActionId)
+      ) {
+        break;
+      }
+      transitionFrom = currentAfterConflict.status;
     }
+    if (drainedSteers == null) {
+      const currentJob = await this.jobStore.getJob(streamId);
+      this.reconcileInactiveGeneration(streamId, jobData.createdAt, currentJob, runtime);
+      const jobStillActive =
+        currentJob?.createdAt === jobData.createdAt &&
+        (currentJob.status === 'running' || currentJob.status === 'requires_action');
+      return {
+        success: false,
+        ...(jobStillActive
+          ? { failureReason: 'job_still_active' as const }
+          : options?.expectedCreatedAt != null &&
+            currentJob != null &&
+            currentJob?.createdAt !== options.expectedCreatedAt && {
+              failureReason: 'generation_replaced' as const,
+            }),
+        jobData,
+        content: abortContent,
+        finalEvent: null,
+        text,
+        collectedUsage,
+      };
+    }
+    const terminalClaim: TerminalJobClaim = Object.freeze({
+      streamId,
+      createdAt: jobData.createdAt,
+      ...(jobData.conversationId != null && { conversationId: jobData.conversationId }),
+      status: 'aborted',
+      persistencePending: true,
+      drainedSteers: Object.freeze([...drainedSteers]),
+    });
+    this.terminalClaimRuntimes.set(terminalClaim, runtime ?? null);
 
-    this.runningJobs.delete(streamId);
-    this.syncRunningJobMetrics();
-    recordGenerationJob(this.storeLabel, 'aborted');
-    logger.debug(`[GenerationJobManager] Job aborted: ${streamId}`);
+    try {
+      const pendingSteers = drainedSteers.map(toPendingSteer);
 
-    return {
-      success: true,
-      jobData,
-      content: abortContent,
-      finalEvent: abortFinalEvent,
-      text,
-      collectedUsage,
-      ...(pendingSteers.length > 0 && { pendingSteers }),
-    };
+      // Signal only the generation whose terminal transaction won above. The
+      // transport tag prevents a delayed predecessor abort from reaching a
+      // same-stream replacement on another replica.
+      if (this.eventTransport.emitAbort) {
+        try {
+          this.eventTransport.emitAbort(streamId, jobData.createdAt);
+        } catch (abortError) {
+          logger.error(
+            `[GenerationJobManager] Failed to publish terminal abort for ${streamId}:`,
+            abortError,
+          );
+        }
+      }
+      if (runtime) {
+        this.releaseAbortSubscription(runtime);
+      }
+      runtime?.abortController.abort();
+
+      // A chunk append racing the initial non-destructive snapshot either
+      // commits before the terminal CAS or loses its own running-status guard.
+      // Re-read after our CAS so the abort payload includes every committed
+      // part while never borrowing content from a replacement epoch.
+      try {
+        const committed = await this.jobStore.getContentParts(streamId, jobData.createdAt);
+        if (committed) {
+          content = committed.content;
+          abortContent = filterPersistableAbortContent(content);
+          if (options?.transformAbortContent) {
+            abortContent = options.transformAbortContent(
+              abortContent as TMessageContentParts[],
+            ) as typeof abortContent;
+          }
+          shouldPersistAbortContent = abortContent.length > 0;
+          text = shouldPersistAbortContent
+            ? parseTextParts(abortContent as TMessageContentParts[], false, {
+                includeSteer: true,
+              })
+            : '';
+        }
+      } catch (contentError) {
+        logger.warn(
+          `[GenerationJobManager] Failed to refresh committed abort content for ${streamId}:`,
+          contentError,
+        );
+      }
+
+      /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
+      In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
+      const isEarlyAbort = !shouldPersistAbortContent && jobData.createdEventEmitted !== true;
+
+      /** Final event for abort */
+      const userMessageId = jobData.userMessage?.messageId;
+
+      const abortFinalEvent: t.ServerSentEvent = {
+        final: true,
+        // Don't include conversation for early aborts - it doesn't exist in DB
+        conversation: isEarlyAbort ? null : { conversationId: jobData.conversationId },
+        title: 'New Chat',
+        requestMessage: jobData.userMessage
+          ? {
+              messageId: userMessageId,
+              parentMessageId: jobData.userMessage.parentMessageId,
+              conversationId: jobData.conversationId,
+              text: jobData.userMessage.text ?? '',
+              quotes: jobData.userMessage.quotes,
+              isCreatedByUser: true,
+            }
+          : null,
+        responseMessage: isEarlyAbort
+          ? null
+          : {
+              messageId: jobData.responseMessageId ?? `${userMessageId ?? 'aborted'}_`,
+              parentMessageId: userMessageId,
+              conversationId: jobData.conversationId,
+              content: abortContent,
+              sender: jobData.sender ?? 'AI',
+              endpoint: jobData.endpoint,
+              iconURL: jobData.iconURL,
+              model: jobData.model,
+              unfinished: true,
+              error: false,
+              isCreatedByUser: false,
+            },
+        aborted: true,
+        // Flag for early abort - no messages saved, frontend should go to new chat
+        earlyAbort: isEarlyAbort,
+        ...(pendingSteers.length > 0 && { pendingSteers }),
+      } satisfies t.FinalEvent as t.ServerSentEvent;
+
+      const abortResult: AbortResult = {
+        success: true,
+        jobData,
+        content: abortContent,
+        finalEvent: abortFinalEvent,
+        text,
+        collectedUsage,
+        ...(pendingSteers.length > 0 && { pendingSteers }),
+      };
+
+      let requiredPersistenceFailed = false;
+      try {
+        if (options?.beforePublish) {
+          await options.beforePublish(abortResult);
+        }
+      } catch (persistenceError) {
+        requiredPersistenceFailed = true;
+        logger.error(
+          `[GenerationJobManager] Required abort persistence failed for ${streamId}:`,
+          persistenceError,
+        );
+      }
+
+      const publication = await this.publishTerminalClaim(
+        terminalClaim,
+        requiredPersistenceFailed ? null : abortFinalEvent,
+      );
+
+      return {
+        ...abortResult,
+        finalEvent: publication.finalEvent,
+        ...(publication.persistenceFailed && { persistenceFailed: true }),
+      };
+    } finally {
+      await this.finishTerminalJob(terminalClaim);
+    }
   }
 
   /**
@@ -1018,53 +3785,315 @@ class GenerationJobManagerClass {
     onDone?: t.DoneHandler,
     onError?: t.ErrorHandler,
     options?: t.SubscribeOptions,
-  ): Promise<{ unsubscribe: t.UnsubscribeFn } | null> {
+  ): Promise<t.StreamSubscription | null> {
+    return this.attachSubscription(streamId, onChunk, onDone, onError, options);
+  }
+
+  private async attachSubscription(
+    streamId: string,
+    onChunk: t.ChunkHandler,
+    onDone?: t.DoneHandler,
+    onError?: t.ErrorHandler,
+    options?: t.SubscribeOptions,
+    prepared?: PreparedSubscription,
+  ): Promise<(t.StreamSubscription & { activate?: () => void }) | null> {
     const subscriptionType = options?.skipBufferReplay ? 'resume' : 'initial';
-    // Use lazy initialization to support cross-replica subscriptions
-    const runtime = await this.getOrCreateRuntimeState(streamId);
-    if (!runtime) {
+    if (options?.signal?.aborted) {
+      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
+      return null;
+    }
+    if (this.rejectSubscriptionDuringShutdown(subscriptionType, onError)) {
+      return null;
+    }
+
+    // Read the durable generation first, then reconcile any lazily-created
+    // runtime against it. This also avoids the historical second Redis lookup
+    // when a cross-replica subscriber has no local runtime yet.
+    let jobData = prepared ? prepared.jobData : await this.jobStore.getJob(streamId);
+    if (jobData) {
+      jobData = await this.recoverStaleTerminalPersistence(jobData);
+    }
+    if (options?.signal?.aborted) {
+      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
+      return null;
+    }
+    if (this.rejectSubscriptionDuringShutdown(subscriptionType, onError)) {
+      return null;
+    }
+    if (options?.expectedCreatedAt != null && jobData?.createdAt !== options.expectedCreatedAt) {
       recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'not_found');
       return null;
     }
 
-    const jobData = await this.jobStore.getJob(streamId);
+    const runtime = prepared?.runtime ?? (await this.getOrCreateRuntimeState(streamId, jobData));
+    if (options?.signal?.aborted) {
+      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
+      return null;
+    }
+    if (this.rejectSubscriptionDuringShutdown(subscriptionType, onError)) {
+      return null;
+    }
+    if (!runtime) {
+      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'not_found');
+      return null;
+    }
+    if (options?.expectedCreatedAt != null && runtime.createdAt !== options.expectedCreatedAt) {
+      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'not_found');
+      return null;
+    }
 
-    // If job already complete/error, send final event or error
-    // Error status takes precedence to ensure errors aren't misreported as successes
-    setImmediate(() => {
-      if (jobData && ['complete', 'error', 'aborted'].includes(jobData.status)) {
-        // Check for error status FIRST and prioritize error handling
-        if (jobData.status === 'error' && (runtime.errorEvent || jobData.error)) {
-          const errorToSend = runtime.errorEvent ?? jobData.error;
-          if (errorToSend) {
-            logger.debug(
-              `[GenerationJobManager] Sending stored error to late subscriber: ${streamId}`,
-            );
-            onError?.(errorToSend);
-          }
-        } else if (runtime.finalEvent) {
-          onDone?.(runtime.finalEvent);
+    if (
+      this.runtimeState.get(streamId) !== runtime ||
+      (jobData && runtime.createdAt !== jobData.createdAt)
+    ) {
+      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
+      return null;
+    }
+
+    let subscriptionActive = true;
+    let createdEventDelivered = options?.skipBufferReplay === true;
+    let terminalEventDelivered = false;
+    let terminalEventQueued = false;
+    let terminalPersistenceTimer: NodeJS.Timeout | null = null;
+    /** Identity-fenced initial subscriptions remain paused until a final
+     * durable job check immediately before replay. This prevents a job
+     * replacement during attachment awaits from leaking either replayed or
+     * live events into the stale request. Resume subscriptions already use
+     * the same pause for their sync-first protocol. */
+    let deliveryActivated =
+      prepared?.deferDeliveryUntilActivated !== true && options?.expectedCreatedAt == null;
+    let deferredDeliveries: DeferredDelivery[] = [];
+    let subscription: {
+      ready?: Promise<void>;
+      unsubscribe: t.UnsubscribeFn;
+      activate?: () => void;
+    } | null = null;
+    const releaseSubscriberOnlyAbortSubscription = (generationId?: number): void => {
+      if (
+        generationId == null ||
+        generationId !== runtime.createdAt ||
+        this.ownedJobs.get(streamId) === runtime.createdAt
+      ) {
+        return;
+      }
+      this.releaseAbortSubscription(runtime);
+      runtime.abortController.abort();
+    };
+    const deliverChunk = (event: t.ServerSentEvent): void => {
+      if (!subscriptionActive || terminalEventDelivered) {
+        return;
+      }
+      if ('created' in event) {
+        if (createdEventDelivered) {
+          return;
+        }
+        createdEventDelivered = true;
+      }
+      onChunk(event);
+    };
+    const deliverDone = (event: t.ServerSentEvent): void => {
+      if (!subscriptionActive || terminalEventDelivered) {
+        return;
+      }
+      terminalEventDelivered = true;
+      runtime.finalEvent = event;
+      try {
+        onDone?.(event);
+      } finally {
+        subscription?.unsubscribe();
+      }
+    };
+    const deliverError = (error: string): void => {
+      if (!subscriptionActive || terminalEventDelivered) {
+        return;
+      }
+      terminalEventDelivered = true;
+      // These internal close signals only recycle this process's SSE response; they are not
+      // durable terminal job errors. Leave errorEvent unset so a reconnect can replay the
+      // authoritative store state instead of inheriting a process-local transport failure.
+      if (error !== SHUTDOWN_SUBSCRIBER_ERROR && error !== TERMINAL_PUBLICATION_RECONNECT_ERROR) {
+        runtime.errorEvent = error;
+      }
+      try {
+        onError?.(error);
+      } finally {
+        subscription?.unsubscribe();
+      }
+    };
+    const queueChunk = (event: t.ServerSentEvent): void => {
+      if (!subscriptionActive || terminalEventDelivered || terminalEventQueued) {
+        return;
+      }
+      if (!deliveryActivated) {
+        deferredDeliveries.push({ type: 'chunk', event });
+        return;
+      }
+      deliverChunk(event);
+    };
+    const queueDone = (event: t.ServerSentEvent, generationId?: number): void => {
+      if (generationId != null && generationId !== runtime.createdAt) {
+        return;
+      }
+      if (!subscriptionActive || terminalEventDelivered || terminalEventQueued) {
+        return;
+      }
+      if (!deliveryActivated) {
+        terminalEventQueued = true;
+        runtime.finalEvent = event;
+        deferredDeliveries.push({ type: 'done', event });
+        return;
+      }
+      deliverDone(event);
+    };
+    const queueError = (error: string, generationId?: number): void => {
+      if (generationId != null && generationId !== runtime.createdAt) {
+        return;
+      }
+      if (!subscriptionActive || terminalEventDelivered || terminalEventQueued) {
+        return;
+      }
+      if (!deliveryActivated) {
+        terminalEventQueued = true;
+        if (error !== SHUTDOWN_SUBSCRIBER_ERROR && error !== TERMINAL_PUBLICATION_RECONNECT_ERROR) {
+          runtime.errorEvent = error;
+        }
+        deferredDeliveries.push({ type: 'error', error });
+        return;
+      }
+      deliverError(error);
+    };
+    const activateDelivery = (): void => {
+      if (!subscriptionActive || deliveryActivated) {
+        return;
+      }
+
+      deliveryActivated = true;
+      const deliveries = deferredDeliveries;
+      deferredDeliveries = [];
+
+      for (const delivery of deliveries) {
+        if (!subscriptionActive) {
+          return;
+        }
+        if (delivery.type === 'chunk') {
+          deliverChunk(delivery.event);
+        } else if (delivery.type === 'done') {
+          terminalEventQueued = false;
+          deliverDone(delivery.event);
+        } else {
+          terminalEventQueued = false;
+          deliverError(delivery.error);
         }
       }
-    });
+    };
 
-    const subscription = this.eventTransport.subscribe(streamId, {
-      onChunk: (event) => {
-        const e = event as t.ServerSentEvent;
-        if (!(e as Record<string, unknown>)._internal) {
-          onChunk(e);
-        }
+    const deferSequenceDelivery =
+      this._isRedis && !runtime.hasSubscriber && !options?.skipBufferReplay;
+    const transportSubscription = this.eventTransport.subscribe(
+      streamId,
+      {
+        onChunk: (event, generationId) => {
+          if (
+            this.runtimeState.get(streamId) !== runtime ||
+            (generationId != null && generationId !== runtime.createdAt)
+          ) {
+            return;
+          }
+          const e = event as t.ServerSentEvent;
+          if (!(e as Record<string, unknown>)._internal) {
+            queueChunk(e);
+          }
+        },
+        onDone: (event, generationId) => {
+          releaseSubscriberOnlyAbortSubscription(generationId);
+          queueDone(event as t.ServerSentEvent, generationId);
+        },
+        onError: (error, generationId) => {
+          releaseSubscriberOnlyAbortSubscription(generationId);
+          queueError(error, generationId);
+        },
       },
-      onDone: (event) => onDone?.(event as t.ServerSentEvent),
-      onError,
+      {
+        // Redis can publish an early buffered event before the EVAL response carrying its
+        // sequence reaches this process. Hold sequenced pub/sub delivery until replay and
+        // sync establish the exact frontier, otherwise the new subscriber sees it twice.
+        deferSequenceDelivery,
+      },
+    );
+    runtime.localErrorHandlers.add(queueError);
+    if (!options?.skipBufferReplay) {
+      runtime.earlyReplayHandlers.add(queueChunk);
+    }
+    let resolveDetached!: () => void;
+    const detached = new Promise<void>((resolve) => {
+      resolveDetached = resolve;
     });
+    const detachSignal = options?.signal;
+    const detachOnAbort = (): void => {
+      subscription?.unsubscribe();
+    };
+    subscription = {
+      ready: transportSubscription.ready,
+      ...(prepared?.deferDeliveryUntilActivated === true && { activate: activateDelivery }),
+      unsubscribe: (): void => {
+        if (!subscriptionActive) {
+          return;
+        }
+        subscriptionActive = false;
+        if (terminalPersistenceTimer) {
+          clearTimeout(terminalPersistenceTimer);
+          terminalPersistenceTimer = null;
+        }
+        deferredDeliveries = [];
+        runtime.earlyReplayHandlers.delete(queueChunk);
+        runtime.localErrorHandlers.delete(queueError);
+        detachSignal?.removeEventListener('abort', detachOnAbort);
+        transportSubscription.unsubscribe();
+        resolveDetached();
+      },
+    };
+    if (detachSignal?.aborted) {
+      subscription.unsubscribe();
+    } else {
+      detachSignal?.addEventListener('abort', detachOnAbort, { once: true });
+    }
+    if (terminalEventDelivered) {
+      subscription.unsubscribe();
+    }
+
+    const waitWhileAttached = async (pending: Promise<unknown>): Promise<boolean> => {
+      await Promise.race([pending, detached]);
+      return subscriptionActive;
+    };
+
+    const stillMatchesExpectedGeneration = async (): Promise<boolean> => {
+      if (options?.expectedCreatedAt == null) {
+        return true;
+      }
+      const currentJob = await this.jobStore.getJob(streamId);
+      return (
+        currentJob?.createdAt === options.expectedCreatedAt &&
+        runtime.createdAt === options.expectedCreatedAt &&
+        this.runtimeState.get(streamId) === runtime
+      );
+    };
 
     try {
-      if (subscription.ready) {
-        await subscription.ready;
+      if (subscription.ready && !(await waitWhileAttached(subscription.ready))) {
+        recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
+        return null;
       }
-      recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'success');
+      if (this.detachSubscriptionDuringShutdown(subscription)) {
+        recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
+        return null;
+      }
+      if (!(await stillMatchesExpectedGeneration())) {
+        subscription.unsubscribe();
+        recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'not_found');
+        return null;
+      }
     } catch (err) {
+      subscription.unsubscribe();
       recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
       throw err;
     }
@@ -1073,66 +4102,117 @@ class GenerationJobManagerClass {
 
     if (!runtime.hasSubscriber) {
       runtime.hasSubscriber = true;
+      const attachmentGeneration = runtime.attachmentGeneration;
+      const earlyPublicationFence = this.waitForEarlyEventPublications(runtime);
+      if (!(await waitWhileAttached(earlyPublicationFence))) {
+        this.continueEarlyEventBootstrap(
+          streamId,
+          runtime,
+          earlyPublicationFence,
+          jobData,
+          attachmentGeneration,
+          deferSequenceDelivery,
+        );
+        return null;
+      }
+      if (this.detachSubscriptionDuringShutdown(subscription)) {
+        return null;
+      }
+      if (!(await stillMatchesExpectedGeneration())) {
+        subscription.unsubscribe();
+        recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'not_found');
+        return null;
+      }
 
       /**
-       * Pass earlyReplayCount to syncReorderBuffer so it can prune duplicate pub/sub
-       * entries (seqs 0..count-1) without touching live in-flight chunks.
+       * Redis sequences are conversation-scoped and may start above zero. Use the
+       * absolute sequences assigned to the exact events replayed below; a relative
+       * buffer count can skip live events from a later turn.
        *
-       * Only set when the buffer was actually replayed — those specific seqs were
-       * delivered via onChunk and their pub/sub copies are duplicates.
-       * When skipBufferReplay is true, the resume sync payload delivers aggregated
-       * content up to the Redis counter, so syncReorderBuffer should trust currentSeq
-       * as the frontier (earlyReplayCount = 0).
+       * When no local replay occurs (including resume), undefined tells the transport
+       * to trust the current Redis counter.
        */
-      let earlyReplayCount = 0;
-
-      if (runtime.earlyEventBuffer.length > 0) {
-        if (options?.skipBufferReplay) {
-          logger.debug(
-            `[GenerationJobManager] Skipping ${runtime.earlyEventBuffer.length} buffered events for ${streamId} (skipBufferReplay)`,
-          );
-        } else {
-          earlyReplayCount = runtime.earlyEventBuffer.length;
-          logger.debug(
-            `[GenerationJobManager] Replaying ${earlyReplayCount} buffered events for ${streamId}`,
-          );
-          for (const bufferedEvent of runtime.earlyEventBuffer) {
-            onChunk(bufferedEvent);
-          }
-        }
-        runtime.earlyEventBuffer = [];
-      } else if (this._isRedis && !options?.skipBufferReplay && jobData?.userMessage) {
-        /**
-         * Cross-replica fallback: the created event was buffered on the generating
-         * instance and published via Redis pub/sub before this subscriber was active.
-         * Reconstruct from persisted metadata. Only fields stored by trackUserMessage()
-         * are available (messageId, parentMessageId, conversationId, text);
-         * sender/isCreatedByUser are invariant for user messages and added back here.
-         */
-        logger.debug(
-          `[GenerationJobManager] Cross-replica subscribe: emitting created event from metadata for ${streamId}`,
-        );
-        const createdEvent: t.CreatedEvent = {
-          created: true,
-          message: {
-            ...jobData.userMessage,
-            sender: 'User',
-            isCreatedByUser: true,
-          },
-          streamId,
-        };
-        onChunk(createdEvent);
-      }
+      let replayedNextSeq: number | undefined;
+      const bufferedEvents = runtime.earlyEventBuffer;
+      const sequencePromises = runtime.earlyEventSequencePromises;
+      const hasEarlyReplaySubscribers = runtime.earlyReplayHandlers.size > 0;
 
       try {
-        await this.eventTransport.syncReorderBuffer?.(streamId, earlyReplayCount);
-      } catch (err) {
-        logger.warn(
-          `[GenerationJobManager] Failed to sync reorder buffer for ${streamId}; proceeding with current nextSeq:`,
-          err,
-        );
+        if (bufferedEvents.length > 0) {
+          if (!hasEarlyReplaySubscribers) {
+            logger.debug(
+              `[GenerationJobManager] Skipping ${bufferedEvents.length} buffered events for ${streamId} (skipBufferReplay)`,
+            );
+          } else {
+            const sequences = await Promise.all(sequencePromises);
+            const assignedSequences = sequences.filter(
+              (sequence): sequence is number => typeof sequence === 'number',
+            );
+            if (assignedSequences.length > 0) {
+              replayedNextSeq = Math.max(...assignedSequences) + 1;
+            }
+            logger.debug(
+              `[GenerationJobManager] Replaying ${bufferedEvents.length} buffered events for ${streamId}`,
+            );
+            for (const bufferedEvent of bufferedEvents) {
+              for (const replayHandler of runtime.earlyReplayHandlers) {
+                replayHandler(bufferedEvent);
+              }
+            }
+          }
+        } else if (this._isRedis && hasEarlyReplaySubscribers && jobData?.userMessage) {
+          /**
+           * Cross-replica fallback: metadata can be visible before the generating
+           * replica publishes `created`. Emit the fallback before releasing buffered
+           * live events so `created` remains the first user-facing event. deliverChunk
+           * suppresses the original publication whether it is already pending or
+           * arrives after synchronization.
+           */
+          logger.debug(
+            `[GenerationJobManager] Cross-replica subscribe: emitting created event from metadata for ${streamId}`,
+          );
+          const fallbackCreatedEvent: t.ServerSentEvent = {
+            created: true,
+            message: {
+              ...jobData.userMessage,
+              sender: 'User',
+              isCreatedByUser: true,
+            },
+            streamId,
+          };
+          for (const replayHandler of runtime.earlyReplayHandlers) {
+            replayHandler(fallbackCreatedEvent);
+          }
+        }
+      } finally {
+        runtime.earlyEventBuffer = [];
+        runtime.earlyEventSequencePromises = [];
+        try {
+          const reorderSync = this.eventTransport.syncReorderBuffer?.(streamId, replayedNextSeq);
+          if (reorderSync) {
+            await waitWhileAttached(reorderSync);
+          }
+        } catch (err) {
+          logger.warn(
+            `[GenerationJobManager] Failed to sync reorder buffer for ${streamId}; proceeding with current nextSeq:`,
+            err,
+          );
+        }
+      }
+
+      if (!subscriptionActive) {
+        return null;
+      }
+      if (this.detachSubscriptionDuringShutdown(subscription)) {
+        return null;
       }
     }
+
+    if (this.detachSubscriptionDuringShutdown(subscription)) {
+      return null;
+    }
+
+    recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'success');
 
     if (isFirst) {
       runtime.resolveReady();
@@ -1141,122 +4221,620 @@ class GenerationJobManagerClass {
       );
     }
 
+    if (prepared?.deferDeliveryUntilActivated !== true && options?.expectedCreatedAt != null) {
+      activateDelivery();
+    }
+
+    const scheduleTerminalPersistenceCheck = (delayMs: number): void => {
+      if (!subscriptionActive || terminalEventDelivered || terminalPersistenceTimer) {
+        return;
+      }
+      terminalPersistenceTimer = setTimeout(() => {
+        terminalPersistenceTimer = null;
+        void deliverStoredTerminal();
+      }, delayMs);
+      terminalPersistenceTimer.unref?.();
+    };
+
+    const deliverStoredTerminal = async (): Promise<void> => {
+      try {
+        if (this.shuttingDown || !subscriptionActive || terminalEventDelivered) {
+          return;
+        }
+
+        let terminalJob = await this.jobStore.getJob(streamId);
+        if (
+          terminalJob?.terminalPersistencePending === true &&
+          ['complete', 'error', 'aborted'].includes(terminalJob.status)
+        ) {
+          terminalJob = await this.recoverStaleTerminalPersistence(terminalJob);
+          if (terminalJob?.terminalPersistencePending === true) {
+            const startedAt =
+              terminalJob.terminalPersistenceStartedAt ??
+              terminalJob.completedAt ??
+              terminalJob.createdAt;
+            const remaining = Math.max(
+              1,
+              TERMINAL_PERSISTENCE_TIMEOUT_MS - (Date.now() - startedAt),
+            );
+            // Poll modestly so a successfully persisted payload whose pub/sub
+            // frame was lost is delivered promptly, while the hard deadline
+            // still recovers a crashed owner.
+            scheduleTerminalPersistenceCheck(Math.min(1000, remaining));
+            return;
+          }
+        }
+        if (
+          this.shuttingDown ||
+          !subscriptionActive ||
+          terminalEventDelivered ||
+          !terminalJob ||
+          (terminalJob.status !== 'complete' &&
+            terminalJob.status !== 'error' &&
+            terminalJob.status !== 'aborted')
+        ) {
+          return;
+        }
+
+        // A durable error takes precedence for every terminal status. Approval expiry uses
+        // `aborted` so a late subscriber still needs the stored terminal error.
+        if (runtime.errorEvent || terminalJob.error) {
+          const errorToSend = runtime.errorEvent ?? terminalJob.error;
+          if (errorToSend) {
+            logger.debug(
+              `[GenerationJobManager] Sending stored error to late subscriber: ${streamId}`,
+            );
+            runtime.errorEvent = errorToSend;
+            queueError(errorToSend);
+          }
+          return;
+        }
+
+        let finalEvent = runtime.finalEvent;
+        if (!finalEvent && terminalJob.finalEvent) {
+          try {
+            finalEvent = JSON.parse(terminalJob.finalEvent) as t.ServerSentEvent;
+          } catch (err) {
+            logger.warn(
+              `[GenerationJobManager] Failed to parse stored final event for ${streamId}:`,
+              err,
+            );
+          }
+        }
+        if (finalEvent) {
+          runtime.finalEvent = finalEvent;
+          queueDone(finalEvent);
+          return;
+        }
+
+        /** The terminal CAS can commit just before its owner crashes, leaving
+         * no normal FINAL payload. Never strand a late SSE subscriber on that
+         * durable terminal row: send a control-only terminal event that tells
+         * the client to refetch messages/status and reconcile parked steers.
+         * This is deliberately not an error event, so no user-facing failure
+         * card is fabricated for a generation whose DB writes may be complete. */
+        const reconcileEvent: t.ServerSentEvent = {
+          final: true,
+          reconcile: true,
+          reconcileReason: 'terminal_payload_missing',
+          terminalStatus: terminalJob.status,
+          generationCreatedAt: terminalJob.createdAt,
+          conversation: {
+            conversationId: terminalJob.conversationId ?? streamId,
+          },
+        } satisfies t.FinalEvent;
+        logger.warn(
+          `[GenerationJobManager] Terminal job has no final payload; requesting client reconciliation: ${streamId}`,
+        );
+        runtime.finalEvent = reconcileEvent;
+        queueDone(reconcileEvent);
+      } catch (err) {
+        logger.warn(
+          `[GenerationJobManager] Failed to refresh terminal state for ${streamId}:`,
+          err,
+        );
+        scheduleTerminalPersistenceCheck(1000);
+      }
+    };
+
+    // Only schedule stored terminal delivery after the attachment is fully prepared.
+    // The async function resolves before setImmediate runs, giving the route its
+    // unsubscribe handle before a terminal callback can end the response.
+    setImmediate(() => {
+      void deliverStoredTerminal();
+    });
+
     return subscription;
   }
 
   /**
-   * Atomic resume + subscribe: snapshots resume state and drains the early event buffer
-   * in one synchronous step, then subscribes with skipBufferReplay.
+   * Wait until every buffered publication has an authoritative Redis sequence before replay.
+   * Replaying while a publication is unresolved can deliver the local copy and then deliver the
+   * same event again when its late pub/sub message arrives.
+   */
+  private async waitForEarlyEventPublications(runtime: RuntimeJobState): Promise<void> {
+    const pending = [...runtime.earlyEventSequencePromises];
+    if (pending.length === 0) {
+      return;
+    }
+
+    await Promise.all(pending);
+  }
+
+  /**
+   * If the subscriber that owns Redis attachment bootstrap disconnects, finish the
+   * replay/sync for any concurrent subscriber. Otherwise the transport-wide reorder
+   * fence remains closed forever because later subscribers observe hasSubscriber=true.
+   */
+  private continueEarlyEventBootstrap(
+    streamId: string,
+    runtime: RuntimeJobState,
+    publicationFence: Promise<void>,
+    jobData: SerializableJobData | null,
+    attachmentGeneration: number,
+    sequenceDeliveryDeferred: boolean,
+  ): void {
+    if (this.eventTransport.getSubscriberCount(streamId) === 0) {
+      return;
+    }
+
+    void publicationFence
+      .then(async () => {
+        if (
+          this.shuttingDown ||
+          this.eventTransport.getSubscriberCount(streamId) === 0 ||
+          this.runtimeState.get(streamId) !== runtime ||
+          runtime.attachmentGeneration !== attachmentGeneration
+        ) {
+          return;
+        }
+
+        let replayedNextSeq: number | undefined;
+        try {
+          const hasEarlyReplaySubscribers = runtime.earlyReplayHandlers.size > 0;
+          if (hasEarlyReplaySubscribers && runtime.earlyEventBuffer.length > 0) {
+            const sequences = await Promise.all(runtime.earlyEventSequencePromises);
+            const assignedSequences = sequences.filter(
+              (sequence): sequence is number => typeof sequence === 'number',
+            );
+            if (sequenceDeliveryDeferred && assignedSequences.length > 0) {
+              replayedNextSeq = Math.max(...assignedSequences) + 1;
+            }
+            for (const [index, bufferedEvent] of runtime.earlyEventBuffer.entries()) {
+              /**
+               * A canceled resume bootstrap does not defer Redis delivery. Any event with an
+               * assigned sequence was therefore already published to the surviving subscriber;
+               * replaying it locally would duplicate the event. Failed publications have no
+               * sequence and still need the local replay. When delivery was deferred, replay
+               * every buffered event and prune its pending pub/sub copy during synchronization.
+               */
+              if (!sequenceDeliveryDeferred && typeof sequences[index] === 'number') {
+                continue;
+              }
+              for (const replayHandler of runtime.earlyReplayHandlers) {
+                replayHandler(bufferedEvent);
+              }
+            }
+          } else if (hasEarlyReplaySubscribers && jobData?.userMessage) {
+            const fallbackCreatedEvent: t.ServerSentEvent = {
+              created: true,
+              message: {
+                ...jobData.userMessage,
+                sender: 'User',
+                isCreatedByUser: true,
+              },
+              streamId,
+            };
+            for (const replayHandler of runtime.earlyReplayHandlers) {
+              replayHandler(fallbackCreatedEvent);
+            }
+          }
+        } finally {
+          runtime.earlyEventBuffer = [];
+          runtime.earlyEventSequencePromises = [];
+          await this.eventTransport.syncReorderBuffer?.(streamId, replayedNextSeq);
+        }
+      })
+      .catch((err) => {
+        logger.warn(
+          `[GenerationJobManager] Failed to finish detached attachment bootstrap for ${streamId}:`,
+          err,
+        );
+      });
+  }
+
+  /**
+   * Snapshots resume state and attaches a paused live subscription.
    *
-   * Closes the timing gap between separate `getResumeState()` and `subscribe()` calls
-   * where events could arrive in earlyEventBuffer after the snapshot but before subscribe
-   * clears the buffer.
-   *
-   * In-memory mode: drained buffer events are returned as `pendingEvents` since
-   * they exist nowhere else. The caller must deliver them after the sync payload.
-   * Redis mode: `pendingEvents` is empty — chunks are persisted via appendChunk
-   * and will appear in aggregatedContent on the next resume.
+   * In-memory emissions during the snapshot-to-attachment interval are captured per resume,
+   * so overlapping reconnects do not compete for the shared early-event buffer. Live delivery
+   * remains paused until the caller writes its sync frame and activates the subscription.
    */
   async subscribeWithResume(
     streamId: string,
     onChunk: t.ChunkHandler,
     onDone?: t.DoneHandler,
     onError?: t.ErrorHandler,
+    options?: Pick<t.SubscribeOptions, 'signal' | 'expectedCreatedAt'>,
   ): Promise<t.SubscribeWithResumeResult> {
-    const bufferLengthAtSnapshot = !this._isRedis
-      ? (this.runtimeState.get(streamId)?.earlyEventBuffer.length ?? 0)
-      : 0;
-
-    const resumeState = await this.getResumeState(streamId);
-    recordGenerationStreamSubscription(
-      this.storeLabel,
-      'resume_state',
-      resumeState ? 'found' : 'missing',
-    );
-
-    let pendingEvents: t.ServerSentEvent[] = [];
-    if (!this._isRedis) {
-      const runtime = this.runtimeState.get(streamId);
-      if (runtime) {
-        pendingEvents = runtime.earlyEventBuffer.slice(bufferLengthAtSnapshot);
-        runtime.earlyEventBuffer = [];
-        if (pendingEvents.length > 0) {
-          recordGenerationStreamResumePendingEvents(this.storeLabel, pendingEvents.length);
-          logger.debug(
-            `[GenerationJobManager] Captured ${pendingEvents.length} gap events for ${streamId}`,
-          );
-        }
-      }
+    if (options?.signal?.aborted) {
+      recordGenerationStreamSubscription(this.storeLabel, 'resume', 'error');
+      return { subscription: null, resumeState: null, pendingEvents: [] };
+    }
+    if (this.rejectSubscriptionDuringShutdown('resume', onError)) {
+      return { subscription: null, resumeState: null, pendingEvents: [] };
     }
 
-    const subscription = await this.subscribe(streamId, onChunk, onDone, onError, {
-      skipBufferReplay: true,
-    });
+    const runtime = await this.getOrCreateRuntimeState(streamId);
+    if (options?.signal?.aborted) {
+      recordGenerationStreamSubscription(this.storeLabel, 'resume', 'error');
+      return { subscription: null, resumeState: null, pendingEvents: [] };
+    }
+    if (this.rejectSubscriptionDuringShutdown('resume', onError)) {
+      return { subscription: null, resumeState: null, pendingEvents: [] };
+    }
+    if (!runtime) {
+      recordGenerationStreamSubscription(this.storeLabel, 'resume_state', 'missing');
+      recordGenerationStreamSubscription(this.storeLabel, 'resume', 'not_found');
+      return { subscription: null, resumeState: null, pendingEvents: [] };
+    }
+    if (options?.expectedCreatedAt != null && runtime.createdAt !== options.expectedCreatedAt) {
+      recordGenerationStreamSubscription(this.storeLabel, 'resume_state', 'missing');
+      recordGenerationStreamSubscription(this.storeLabel, 'resume', 'not_found');
+      return { subscription: null, resumeState: null, pendingEvents: [] };
+    }
 
-    // Close the snapshot→subscribe race: getResumeState() snapshots BEFORE we attach the
-    // subscription, so a pause that becomes durable in that window is in neither
-    // resumeState.pendingAction nor (Redis mode) pendingEvents — and trackReplayEvent does
-    // not persist approval events — leaving the client attached to a paused job with no
-    // approval UI. Re-read the live job AFTER subscribing; if it is now requires_action and
-    // the snapshot didn't already carry the action, surface it as a pending event so the
-    // approval prompt renders. Idempotent: a pause landing AFTER attach is delivered live
-    // too, and the client's handler just sets the current action, so a duplicate is benign.
-    const liveJob = await this.jobStore.getJob(streamId);
-    if (!resumeState?.pendingAction) {
+    const capturedPendingEvents: t.ServerSentEvent[] = [];
+    const pendingEvents: t.ServerSentEvent[] = [];
+    const capturedEventSet = new Set<t.ServerSentEvent>();
+    const snapshotCoveredEventSet = new Set<t.ServerSentEvent>();
+    const seenEmissionEvents = new Set<t.ServerSentEvent>();
+    const unclassifiedEmissions: Array<{ event: t.ServerSentEvent; sequence: number }> = [];
+    let snapshotFrontier = 0;
+    let snapshotClassified = this._isRedis;
+    const classifyEmission = (event: t.ServerSentEvent, sequence: number): void => {
+      if (sequence <= snapshotFrontier) {
+        snapshotCoveredEventSet.add(event);
+        return;
+      }
+      capturedEventSet.add(event);
+      capturedPendingEvents.push(event);
+      pendingEvents.push(event);
+    };
+    const capturePendingEvent = (event: t.ServerSentEvent, sequence: number): void => {
+      if (seenEmissionEvents.has(event)) {
+        return;
+      }
+      seenEmissionEvents.add(event);
+      if (!snapshotClassified) {
+        unclassifiedEmissions.push({ event, sequence });
+        return;
+      }
+      classifyEmission(event, sequence);
+    };
+    let resumeState: t.ResumeState | null = null;
+    let jobData: SerializableJobData | null = null;
+    const removeCaptureHandler = (): void => {
+      runtime.resumeCaptureHandlers.delete(capturePendingEvent);
+    };
+    const restoreCapturedEvents = (): void => {
+      if (capturedPendingEvents.length === 0) {
+        return;
+      }
+      const currentRuntime = this.runtimeState.get(streamId);
+      if (currentRuntime && !currentRuntime.hasSubscriber) {
+        const bufferedEvents = new Set(currentRuntime.earlyEventBuffer);
+        const missingEvents = capturedPendingEvents.filter((event) => !bufferedEvents.has(event));
+        if (missingEvents.length > 0) {
+          currentRuntime.earlyEventBuffer = [...missingEvents, ...currentRuntime.earlyEventBuffer];
+        }
+      }
+      capturedPendingEvents.length = 0;
+      capturedEventSet.clear();
+    };
+    let subscription: (t.StreamSubscription & { activate?: () => void }) | null = null;
+    try {
+      if (!this._isRedis) {
+        runtime.resumeCaptureHandlers.add(capturePendingEvent);
+        while (true) {
+          const candidateFrontier = runtime.emissionSequence;
+          const preSnapshotEmissions = [...runtime.inFlightSnapshotEmissions.entries()].filter(
+            ([sequence]) => sequence <= candidateFrontier,
+          );
+          await Promise.all(preSnapshotEmissions.map(([, emission]) => emission.snapshotReady));
+          const [candidateState, candidateJob] = await Promise.all([
+            this.getResumeState(streamId, options?.expectedCreatedAt),
+            this.jobStore.getJob(streamId),
+          ]);
+          if (
+            runtime.emissionSequence !== candidateFrontier &&
+            !options?.signal?.aborted &&
+            !this.shuttingDown
+          ) {
+            continue;
+          }
+
+          snapshotFrontier = candidateFrontier;
+          resumeState = candidateState ? structuredClone(candidateState) : null;
+          jobData = candidateJob;
+          for (const [, emission] of preSnapshotEmissions) {
+            seenEmissionEvents.add(emission.event);
+            snapshotCoveredEventSet.add(emission.event);
+          }
+          for (const emission of unclassifiedEmissions) {
+            classifyEmission(emission.event, emission.sequence);
+          }
+          unclassifiedEmissions.length = 0;
+          snapshotClassified = true;
+          break;
+        }
+      } else {
+        [resumeState, jobData] = await Promise.all([
+          this.getResumeState(streamId, options?.expectedCreatedAt),
+          this.jobStore.getJob(streamId),
+        ]);
+      }
+
+      if (options?.signal?.aborted) {
+        removeCaptureHandler();
+        recordGenerationStreamSubscription(this.storeLabel, 'resume', 'error');
+        return { subscription: null, resumeState, pendingEvents: [] };
+      }
+      if (this.rejectSubscriptionDuringShutdown('resume', onError)) {
+        removeCaptureHandler();
+        return { subscription: null, resumeState, pendingEvents: [] };
+      }
       if (
-        liveJob?.status === 'requires_action' &&
-        liveJob.pendingAction != null &&
-        !isPendingActionStale(liveJob)
+        options?.expectedCreatedAt != null &&
+        (jobData?.createdAt !== options.expectedCreatedAt ||
+          runtime.createdAt !== options.expectedCreatedAt ||
+          this.runtimeState.get(streamId) !== runtime)
       ) {
-        pendingEvents = [
-          ...pendingEvents,
-          {
+        removeCaptureHandler();
+        recordGenerationStreamSubscription(this.storeLabel, 'resume_state', 'missing');
+        recordGenerationStreamSubscription(this.storeLabel, 'resume', 'not_found');
+        return { subscription: null, resumeState: null, pendingEvents: [] };
+      }
+      recordGenerationStreamSubscription(
+        this.storeLabel,
+        'resume_state',
+        resumeState ? 'found' : 'missing',
+      );
+
+      const forwardLiveChunk = (event: t.ServerSentEvent): void => {
+        if (capturedEventSet.has(event) || snapshotCoveredEventSet.has(event)) {
+          return;
+        }
+        onChunk(event);
+      };
+      subscription = await this.attachSubscription(
+        streamId,
+        forwardLiveChunk,
+        onDone,
+        onError,
+        {
+          skipBufferReplay: true,
+          signal: options?.signal,
+          expectedCreatedAt: options?.expectedCreatedAt,
+        },
+        {
+          runtime,
+          jobData,
+          deferDeliveryUntilActivated: true,
+        },
+      );
+      if (pendingEvents.length > 0) {
+        recordGenerationStreamResumePendingEvents(this.storeLabel, pendingEvents.length);
+        logger.debug(
+          `[GenerationJobManager] Captured ${pendingEvents.length} gap events for ${streamId}`,
+        );
+      }
+      const cancelResumeSubscription = (): t.SubscribeWithResumeResult => {
+        removeCaptureHandler();
+        subscription?.unsubscribe();
+        restoreCapturedEvents();
+        snapshotCoveredEventSet.clear();
+        return { subscription: null, resumeState, pendingEvents: [] };
+      };
+      if (!subscription?.activate || options?.signal?.aborted) {
+        return cancelResumeSubscription();
+      }
+      if (this.detachSubscriptionDuringShutdown(subscription)) {
+        return cancelResumeSubscription();
+      }
+
+      // Close the snapshot→subscribe race: getResumeState() snapshots BEFORE we attach the
+      // subscription, so a pause that becomes durable in that window is in neither
+      // resumeState.pendingAction nor (Redis mode) pendingEvents — and trackReplayEvent does
+      // not persist approval events — leaving the client attached to a paused job with no
+      // approval UI. Re-read the live job AFTER subscribing; if it is now requires_action and
+      // the snapshot didn't already carry the action, surface it as a pending event so the
+      // approval prompt renders. Idempotent: a pause landing AFTER attach is delivered live
+      // too, and the client's handler just sets the current action, so a duplicate is benign.
+      const liveJob = await this.jobStore.getJob(streamId);
+      if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
+        return cancelResumeSubscription();
+      }
+      if (!liveJob || liveJob.createdAt !== runtime.createdAt) {
+        return cancelResumeSubscription();
+      }
+      if (!resumeState?.pendingAction) {
+        if (
+          liveJob?.status === 'requires_action' &&
+          liveJob.pendingAction != null &&
+          !isPendingActionStale(liveJob)
+        ) {
+          pendingEvents.push({
             event: ApprovalEvents.ON_PENDING_ACTION,
             data: toClientPendingAction(liveJob.pendingAction) as unknown as Record<
               string,
               unknown
             >,
-          },
-        ];
+          });
+        }
       }
-    }
 
-    // Same snapshot→subscribe race for steers: a steer accepted (and possibly
-    // applied) in the window is invisible to the snapshot, since the Redis
-    // `on_steer_applied` publish is fire-and-forget and the sync payload has no
-    // pendingSteers (in-memory covers it via the early buffer, where this
-    // re-check is a cheap no-op). Always re-peek for still-active jobs,
-    // treating a missing snapshot queue as empty; terminal jobs skip because
-    // the final event owns steer delivery. The content re-read runs only when
-    // the queue shows gap activity, and synthesis sources from the FRESH
-    // content view so an applied steer with no snapshot id still surfaces.
-    const jobActive = liveJob?.status === 'running' || liveJob?.status === 'requires_action';
-    if (resumeState != null && jobActive) {
-      const snapshotSteers = resumeState.pendingSteers ?? [];
-      const liveQueue = await this.jobStore.peekSteers(streamId);
-      const liveIds = new Set(liveQueue.map((item) => item.steerId));
-      const queueChanged =
-        liveQueue.length !== snapshotSteers.length ||
-        snapshotSteers.some((steer) => !liveIds.has(steer.steerId));
-      if (queueChanged) {
-        const livePending = liveQueue.map(toPendingSteer);
-        resumeState.pendingSteers = livePending.length > 0 ? livePending : undefined;
-      }
-      if (queueChanged || liveQueue.length > 0) {
-        const contentResult = await this.jobStore.getContentParts(streamId);
+      // Same snapshot→subscribe race for steers: a steer accepted (and possibly
+      // applied) in the window is invisible to the snapshot, since the Redis
+      // `on_steer_applied` publish is fire-and-forget and the sync payload has no
+      // pendingSteers (in-memory covers it via the early buffer, where this
+      // re-check is a cheap no-op). Always re-peek for still-active jobs,
+      // treating a missing snapshot queue as empty; terminal jobs skip because
+      // the final event owns steer delivery. The content re-read runs only when
+      // the queue shows gap activity, and synthesis sources from the FRESH
+      // content view so an applied steer with no snapshot id still surfaces.
+      const jobActive = liveJob?.status === 'running' || liveJob?.status === 'requires_action';
+      /** Shared by the steer and activity-label gap passes below: whichever
+       *  needs the fresh content view first pays for it, the other reuses it.
+       *  Both reconcile the same snapshot→subscribe window, so re-reading per
+       *  feature would bill two round trips for one question. */
+      let freshContent: t.ServerSentEvent[] | undefined;
+      let freshContentRead = false;
+      const readFreshContent = async (): Promise<unknown[] | undefined> => {
+        if (!freshContentRead) {
+          freshContentRead = true;
+          const contentResult = await this.jobStore.getContentParts(streamId, liveJob?.createdAt);
+          freshContent = contentResult?.content as t.ServerSentEvent[] | undefined;
+        }
+        return freshContent as unknown[] | undefined;
+      };
+      if (resumeState != null && jobActive) {
+        const snapshotSteers = resumeState.pendingSteers ?? [];
+        const [liveQueue, liveClaims] = await Promise.all([
+          this.jobStore.peekSteers(streamId, liveJob.createdAt),
+          this.jobStore.peekClaimedSteers(streamId, liveJob.createdAt),
+        ]);
+        if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
+          return cancelResumeSubscription();
+        }
+        const liveUnresolved = mergeUnresolvedSteers(liveClaims, liveQueue);
+        const livePending = liveUnresolved.map(toPendingSteer);
+        /** Identity alone misses in-place mutations such as an interrupt flag
+         * downgrade in this exact gap. Compare the client-safe projections so
+         * revision/correlation/files/preempt changes replace stale snapshot
+         * truth even when FIFO membership is unchanged. */
+        let queueChanged = JSON.stringify(livePending) !== JSON.stringify(snapshotSteers);
+        if (queueChanged) {
+          resumeState.pendingSteers = livePending.length > 0 ? livePending : undefined;
+        }
+        // Always compare a fresh content frontier after attaching. A steer can
+        // be accepted+applied wholly between the initial XRANGE and queue
+        // reads, leaving both snapshots empty while its pub/sub event also
+        // predates the subscription.
+        const content = await readFreshContent();
+        if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
+          return cancelResumeSubscription();
+        }
+        const freshUnresolved = omitAlreadyAppliedSteers(
+          liveUnresolved,
+          (content ?? []) as unknown[],
+        );
+        const freshPending = freshUnresolved.map(toPendingSteer);
+        if (JSON.stringify(freshPending) !== JSON.stringify(resumeState.pendingSteers ?? [])) {
+          queueChanged = true;
+          resumeState.pendingSteers = freshPending.length > 0 ? freshPending : undefined;
+        }
         const gapEvents = synthesizeAppliedSteerEvents(
           (resumeState.aggregatedContent ?? []) as SteerContentView,
           liveQueue,
-          (contentResult?.content ?? []) as SteerContentView,
+          (content ?? []) as SteerContentView,
           { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
         );
         if (gapEvents.length > 0) {
-          pendingEvents = [...pendingEvents, ...gapEvents];
+          pendingEvents.push(...gapEvents);
         }
       }
-    }
 
-    return { subscription, resumeState, pendingEvents };
+      /**
+       * Same snapshot→subscribe race for activity labels: the label publish is
+       * fire-and-forget, so a slot claimed (or filled) in the window is in
+       * neither the snapshot nor the chunk replay the client already applied.
+       * Compare the snapshot content view against a fresh read and re-emit any
+       * label whose text/pending state moved; the client applier is idempotent
+       * and refuses stale pending placeholders.
+       *
+       * Gated on the run's own flag, falling back to the snapshot when the
+       * flag is absent. Reconciling unconditionally would be simpler and would
+       * also close the residual window below, but it bills a content read to
+       * every resume of every run — including deployments with the feature
+       * off — which the steer pass deliberately avoids ("an unchanged empty
+       * queue skips the content re-read").
+       *
+       * The residual: if `markActivityLabels` lost its write AND the first
+       * label is claimed inside the gap, this is skipped. The flag is a
+       * SEPARATE write from the durable label append, so that is genuinely
+       * possible rather than implying a broken store — which is why the mark
+       * is retried at run setup instead of being fire-and-forget. When the
+       * steer pass above already fetched content, this check is free.
+       */
+      const snapshotHasActivityLabels =
+        resumeState?.aggregatedContent?.some(
+          (part) => (part as { type?: string } | null)?.type === 'activity_label',
+        ) === true;
+      if (
+        resumeState != null &&
+        jobActive &&
+        (liveJob?.activityLabels === true || snapshotHasActivityLabels)
+      ) {
+        const labelContent = await readFreshContent();
+        if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
+          return cancelResumeSubscription();
+        }
+        if (labelContent != null) {
+          const labelGapEvents = synthesizeActivityLabelGapEvents(
+            (resumeState.aggregatedContent ?? []) as Parameters<
+              typeof synthesizeActivityLabelGapEvents
+            >[0],
+            labelContent as Parameters<typeof synthesizeActivityLabelGapEvents>[1],
+            { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
+          );
+          if (labelGapEvents.length > 0) {
+            pendingEvents.push(...(labelGapEvents as t.ServerSentEvent[]));
+          }
+        }
+      }
+
+      // Reconciliation is complete. Events that arrive after this point already belong to the
+      // paused transport subscription and must remain there for activation rather than being
+      // appended to a pending-events array the caller may already be serializing.
+      removeCaptureHandler();
+      const activate = subscription.activate;
+      let activated = false;
+      let closed = false;
+      const resumeSubscription: t.ResumeSubscription = {
+        unsubscribe: () => {
+          if (closed) {
+            return;
+          }
+          closed = true;
+          removeCaptureHandler();
+          subscription?.unsubscribe();
+          if (!activated) {
+            restoreCapturedEvents();
+          }
+          capturedEventSet.clear();
+          snapshotCoveredEventSet.clear();
+        },
+        activate: () => {
+          if (closed || activated) {
+            return;
+          }
+          activated = true;
+          removeCaptureHandler();
+          activate();
+          capturedPendingEvents.length = 0;
+          capturedEventSet.clear();
+          snapshotCoveredEventSet.clear();
+        },
+      };
+      return { subscription: resumeSubscription, resumeState, pendingEvents };
+    } catch (err) {
+      removeCaptureHandler();
+      subscription?.unsubscribe();
+      restoreCapturedEvents();
+      snapshotCoveredEventSet.clear();
+      throw err;
+    }
   }
 
   /**
@@ -1276,69 +4854,443 @@ class GenerationJobManagerClass {
    * cross-replica reconnect can reconstruct content without them. The default
    * stays fire-and-forget — no added latency on the per-delta hot path.
    */
+  /**
+   * Flags a run as producing activity labels. Read back on resume so label
+   * gap-reconciliation can be skipped for runs without the feature WITHOUT
+   * inspecting content — the first label can be claimed inside the
+   * snapshot->subscribe window, so content is not a reliable signal.
+   * Best-effort: the flag is an optimization hint, never correctness.
+   */
+  async markActivityLabels(streamId: string, expectedCreatedAt?: number): Promise<void> {
+    /** Deliberately REJECTS on failure. This flag gates resume gap
+     *  reconciliation, so the caller retries it; swallowing the error here
+     *  resolved successfully and made that retry unreachable, leaving the
+     *  flag absent after a transient write failure. */
+    await this.jobStore.updateJob(streamId, { activityLabels: true }, expectedCreatedAt);
+  }
+
+  /** Publish a durable non-streaming control event from any API replica.
+   * `emitChunk` intentionally requires a local runtime, but steer/arm routes
+   * may execute on a non-owner during horizontal deployment. When the owner
+   * is local we retain the normal ordering/buffering path; otherwise the
+   * generation-fenced chunk append commits before direct transport publish. */
+  async emitChunkFromAnyReplica(
+    streamId: string,
+    event: t.ServerSentEvent,
+    expectedCreatedAt: number,
+  ): Promise<boolean> {
+    const runtime = this.runtimeState.get(streamId);
+    if (
+      runtime != null &&
+      runtime.createdAt === expectedCreatedAt &&
+      this.isCurrentRuntime(streamId, runtime)
+    ) {
+      await this.emitChunk(streamId, event, {
+        durable: true,
+        expectedCreatedAt,
+      });
+      return true;
+    }
+    if (!('event' in event) || event.data === undefined) {
+      return false;
+    }
+    const appended = await this.jobStore.appendChunk(
+      streamId,
+      { event: event.event, data: event.data },
+      expectedCreatedAt,
+    );
+    if (appended === false) {
+      return false;
+    }
+    const published = await emitChunkWithReceipt(
+      this.eventTransport,
+      streamId,
+      event,
+      expectedCreatedAt,
+    );
+    return published !== false;
+  }
+
   async emitChunk(
     streamId: string,
     event: t.ServerSentEvent,
-    options?: { durable?: boolean },
+    options?: {
+      durable?: boolean;
+      expectedCreatedAt?: number;
+      /** Atomically settles a claimed steer with its durable applied event. */
+      deliveredSteer?: SteerQueueItem;
+    },
   ): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
-    if (!runtime || runtime.abortController.signal.aborted) {
+    if (
+      !runtime ||
+      (options?.expectedCreatedAt != null && runtime.createdAt !== options.expectedCreatedAt) ||
+      !this.isCurrentRuntime(streamId, runtime)
+    ) {
+      if (options?.durable === true) {
+        throw new Error(`Durable chunk owner was fenced out for ${streamId}`);
+      }
+      return;
+    }
+    const sequence = ++runtime.emissionSequence;
+    let signalSnapshotReady!: () => void;
+    const snapshotReady = new Promise<void>((resolve) => {
+      signalSnapshotReady = resolve;
+    });
+    let snapshotReadySignaled = false;
+    const markSnapshotReady = (): void => {
+      if (snapshotReadySignaled) {
+        return;
+      }
+      snapshotReadySignaled = true;
+      signalSnapshotReady();
+    };
+    runtime.inFlightSnapshotEmissions.set(sequence, { event, snapshotReady });
+
+    try {
+      const isCreatedEvent = 'created' in event;
+      const pendingCreatedEvent = runtime.createdEventPublication;
+      if (!isCreatedEvent) {
+        if (pendingCreatedEvent) {
+          await pendingCreatedEvent;
+          if (!this.isCurrentRuntime(streamId, runtime)) {
+            if (options?.durable === true) {
+              throw new Error(`Durable chunk owner was fenced out for ${streamId}`);
+            }
+            return;
+          }
+        }
+        await this.emitChunkNow(streamId, event, runtime, sequence, markSnapshotReady, options);
+        return;
+      }
+
+      if (pendingCreatedEvent) {
+        await pendingCreatedEvent;
+        if (!this.isCurrentRuntime(streamId, runtime)) {
+          if (options?.durable === true) {
+            throw new Error(`Durable chunk owner was fenced out for ${streamId}`);
+          }
+          return;
+        }
+      }
+
+      let releaseCreatedEvent!: () => void;
+      const createdEventPublication = new Promise<void>((resolve) => {
+        releaseCreatedEvent = resolve;
+      });
+      runtime.createdEventPublication = createdEventPublication;
+
+      try {
+        await this.emitChunkNow(streamId, event, runtime, sequence, markSnapshotReady, options);
+      } finally {
+        releaseCreatedEvent();
+        if (runtime.createdEventPublication === createdEventPublication) {
+          runtime.createdEventPublication = undefined;
+        }
+      }
+    } finally {
+      markSnapshotReady();
+      if (runtime.inFlightSnapshotEmissions.get(sequence)?.event === event) {
+        runtime.inFlightSnapshotEmissions.delete(sequence);
+      }
+    }
+  }
+
+  private async emitChunkNow(
+    streamId: string,
+    event: t.ServerSentEvent,
+    runtime: RuntimeJobState,
+    sequence: number,
+    markSnapshotReady: () => void,
+    options?: { durable?: boolean; deliveredSteer?: SteerQueueItem },
+  ): Promise<void> {
+    if (!this.isCurrentRuntime(streamId, runtime)) {
+      if (options?.durable === true) {
+        throw new Error(`Durable chunk owner was fenced out for ${streamId}`);
+      }
       return;
     }
 
     // Refresh job activity so the store's stale-job failsafe reaps on inactivity
     // (a hung generation), not on age (a long but live stream). Parity with
     // RedisJobStore refreshing the running TTL on each appendChunk.
-    this.jobStore.recordActivity?.(streamId);
+    this.jobStore.recordActivity?.(streamId, runtime.createdAt);
 
-    await this.trackUserMessage(streamId, event);
-    await this.trackTitleEvent(streamId, event);
-    await this.trackReplayEvent(streamId, event);
-    await this.trackContextUsage(streamId, event);
-    await this.trackTokenUsage(streamId, event);
+    const eventTracking = this.trackEvent(streamId, event, runtime.createdAt);
+    if (eventTracking) {
+      await eventTracking;
+      if (!this.isCurrentRuntime(streamId, runtime)) {
+        if (options?.durable === true) {
+          throw new Error(`Durable chunk owner was fenced out for ${streamId}`);
+        }
+        return;
+      }
+    }
+    markSnapshotReady();
+
+    // Retain run-step identity independently of the live graph. Paused in-memory
+    // runs release that graph before a later request rebuilds the run, but the
+    // resume path still needs the original step ids to correlate tool results.
+    const eventObj = event as Record<string, unknown>;
+    const eventType = eventObj.event as string | undefined;
+    const eventData = eventObj.data;
+    if (
+      (eventType === 'on_run_step' || eventType === 'on_run_step_completed') &&
+      eventData != null &&
+      typeof eventData === 'object'
+    ) {
+      this.saveRunStepFromEvent(streamId, eventData as Record<string, unknown>, runtime.createdAt);
+    }
 
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
       // The SSE event structure is { event: string, data: unknown, ... }
       // The aggregator expects { event: string, data: unknown } where data is the payload
-      const eventObj = event as Record<string, unknown>;
-      const eventType = eventObj.event as string | undefined;
-      const eventData = eventObj.data;
-
       if (eventType && eventData !== undefined) {
         // Store in format expected by aggregateContent: { event, data }
-        const appendPromise = this.jobStore
-          .appendChunk(streamId, { event: eventType, data: eventData })
-          .catch((err) => {
-            logger.error(`[GenerationJobManager] Failed to append chunk:`, err);
-          });
-
-        // For run step events, also save to run steps key for quick retrieval
-        if (eventType === 'on_run_step' || eventType === 'on_run_step_completed') {
-          this.saveRunStepFromEvent(streamId, eventData as Record<string, unknown>);
-        }
+        const appendPromise = this.jobStore.appendChunk(
+          streamId,
+          { event: eventType, data: eventData },
+          runtime.createdAt,
+          options?.deliveredSteer,
+        );
 
         if (options?.durable === true) {
-          await appendPromise;
+          let appended: boolean;
+          try {
+            appended = await appendPromise;
+          } catch (error) {
+            if (options.deliveredSteer == null) {
+              this.retireRuntimeAfterDurableFence(streamId, runtime);
+            }
+            throw error;
+          }
+          if (appended === false) {
+            if (options.deliveredSteer == null) {
+              this.retireRuntimeAfterDurableFence(streamId, runtime);
+            }
+            throw new Error(`Durable chunk append was fenced out for ${streamId}`);
+          }
+          if (!this.isCurrentRuntime(streamId, runtime)) {
+            return;
+          }
+        } else {
+          void appendPromise
+            .then((appended) => {
+              if (appended === false && options?.deliveredSteer == null) {
+                this.retireRuntimeAfterDurableFence(streamId, runtime);
+              }
+            })
+            .catch((err) => {
+              logger.error(`[GenerationJobManager] Failed to append chunk:`, err);
+              if (options?.deliveredSteer == null) {
+                this.retireRuntimeAfterDurableFence(streamId, runtime);
+              }
+            });
         }
+      }
+    } else if (options?.deliveredSteer != null) {
+      const settled = await this.jobStore.appendChunk(
+        streamId,
+        event,
+        runtime.createdAt,
+        options.deliveredSteer,
+      );
+      if (settled === false) {
+        throw new Error(`Steer receipt settlement was fenced out for ${streamId}`);
       }
     }
 
-    if (!runtime.hasSubscriber) {
+    if (!this.isCurrentRuntime(streamId, runtime)) {
+      return;
+    }
+
+    if (!this._isRedis && runtime.resumeCaptureHandlers.size > 0) {
+      for (const captureHandler of runtime.resumeCaptureHandlers) {
+        captureHandler(event, sequence);
+      }
+    }
+
+    const buffered = !runtime.hasSubscriber;
+    if (buffered) {
       runtime.earlyEventBuffer.push(event);
       if (!this._isRedis) {
+        if (runtime.startupTelemetry) {
+          this.recordStartupEvent(runtime, event);
+        }
         return;
       }
     }
 
-    await this.eventTransport.emitChunk(streamId, event);
+    if (!buffered && !runtime.startupTelemetry) {
+      try {
+        const published = await emitChunkWithReceipt(
+          this.eventTransport,
+          streamId,
+          event,
+          runtime.createdAt,
+        );
+        if (published === false) {
+          this.retireRuntimeAfterDurableFence(streamId, runtime);
+          if (options?.durable === true && options.deliveredSteer == null) {
+            throw new Error(`Durable chunk publication was fenced out for ${streamId}`);
+          }
+        }
+      } catch (error) {
+        if (options?.deliveredSteer == null) {
+          throw error;
+        }
+        /** The applied part and receipt were committed together above. A
+         * subscriber/transport failure after that point is a delivery problem,
+         * not a storage failure: reconnect replay owns recovery, while
+         * rejecting here would make AgentClient roll back host content that
+         * the receipt already calls delivered. */
+        logger.error(
+          `[GenerationJobManager] Failed to publish committed steer ${options.deliveredSteer.steerId}:`,
+          error,
+        );
+      }
+      return;
+    }
+
+    const publication = emitChunkWithReceipt(
+      this.eventTransport,
+      streamId,
+      event,
+      runtime.createdAt,
+    );
+    if (buffered) {
+      // Store a non-rejecting sequence receipt before yielding. The absolute value
+      // establishes the exact replay frontier; a failed/unsequenced publication
+      // contributes no frontier but can still be replayed from the local buffer.
+      runtime.earlyEventSequencePromises.push(
+        publication.then(
+          (published) => (typeof published === 'number' ? published : undefined),
+          () => undefined,
+        ),
+      );
+    }
+
+    const published = await publication.catch((error) => {
+      if (options?.deliveredSteer == null) {
+        throw error;
+      }
+      /** Same post-commit rule as the direct publication path above. The
+       * buffered event and durable chunk remain replayable. */
+      logger.error(
+        `[GenerationJobManager] Failed to publish committed steer ${options.deliveredSteer.steerId}:`,
+        error,
+      );
+      return undefined;
+    });
+    if (published === false) {
+      this.retireRuntimeAfterDurableFence(streamId, runtime);
+      if (options?.durable === true && options.deliveredSteer == null) {
+        throw new Error(`Durable chunk publication was fenced out for ${streamId}`);
+      }
+      return;
+    }
+    // The false branch returned above, so any remaining receipt is either a
+    // sequence number or an unsequenced success.
+    if (runtime.startupTelemetry) {
+      this.recordStartupEvent(runtime, event);
+    }
+  }
+
+  /** A generation-fenced append returning false is same-slot proof that this
+   * epoch is no longer the durable owner. This is the provider's backstop when
+   * a replacement abort publication is lost. Retire only the exact captured
+   * runtime; a newer local successor may already occupy the same stream id. */
+  private retireRuntimeAfterDurableFence(streamId: string, runtime: RuntimeJobState): void {
+    if (this.runtimeState.get(streamId) !== runtime) {
+      return;
+    }
+    runtime.startupTelemetry?.end('replaced');
+    runtime.startupTelemetry = undefined;
+    runtime.abortController.abort();
+    if (runtime.replacementTransportHold === true) {
+      return;
+    }
+    this.releaseAbortSubscription(runtime);
+    if (this.runtimeState.get(streamId) === runtime) {
+      this.runtimeState.delete(streamId);
+      this.releaseJobOwnership(streamId, runtime.createdAt);
+      this.runStepBuffers?.delete(streamId);
+      this.replayEventWriteQueues.delete(streamId);
+      this.tokenUsageWriteQueues.delete(streamId);
+      this.jobStore.clearContentState(streamId, runtime.createdAt);
+      try {
+        // Delete runtime ownership before closing. The transport's
+        // all-subscribers-left callback may run synchronously; it must not
+        // persist a partial response for this already-replaced epoch.
+        this.eventTransport.closeLocalSubscribers?.(streamId, TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      } catch (error) {
+        logger.error(
+          `[GenerationJobManager] Failed to recycle subscribers for fenced generation ${streamId}:`,
+          error,
+        );
+      }
+    }
+  }
+
+  private isCurrentRuntime(streamId: string, runtime: RuntimeJobState): boolean {
+    return this.runtimeState.get(streamId) === runtime && !runtime.abortController.signal.aborted;
+  }
+
+  private recordStartupEvent(runtime: RuntimeJobState, event: t.ServerSentEvent): void {
+    const telemetry = runtime.startupTelemetry;
+    if (!telemetry) {
+      return;
+    }
+    if ('created' in event) {
+      telemetry.mark('request_message_queued');
+      return;
+    }
+    if (!telemetry.recordGenerationEvent(event)) {
+      return;
+    }
+    runtime.startupTelemetry = undefined;
+  }
+
+  private trackEvent(
+    streamId: string,
+    event: t.ServerSentEvent,
+    expectedCreatedAt: number,
+  ): Promise<void> | undefined {
+    if ('created' in event) {
+      return this.trackUserMessage(streamId, event, expectedCreatedAt);
+    }
+    if (!('event' in event)) {
+      return;
+    }
+    if (event.event === 'title') {
+      return this.trackTitleEvent(streamId, event, expectedCreatedAt);
+    }
+    if (event.event === UsageEvents.ON_CONTEXT_USAGE) {
+      return this.trackContextUsage(streamId, event, expectedCreatedAt);
+    }
+    if (event.event === UsageEvents.ON_TOKEN_USAGE) {
+      return this.trackTokenUsage(streamId, event, expectedCreatedAt);
+    }
+    if (
+      (event.event === 'on_run_step' ||
+        event.event === 'on_run_step_delta' ||
+        event.event === 'on_run_step_completed') &&
+      isOAuthReplayEvent(event)
+    ) {
+      return this.trackReplayEvent(streamId, event, expectedCreatedAt);
+    }
   }
 
   /**
    * Extract and save run step from event data.
    * The data is already the run step object from the event payload.
    */
-  private saveRunStepFromEvent(streamId: string, data: Record<string, unknown>): void {
+  private saveRunStepFromEvent(
+    streamId: string,
+    data: Record<string, unknown>,
+    expectedCreatedAt: number,
+  ): void {
     // The data IS the run step object
     const runStep = data as Agents.RunStep;
     if (!runStep.id) {
@@ -1346,27 +5298,32 @@ class GenerationJobManagerClass {
     }
 
     // Fire and forget - accumulate run steps
-    this.accumulateRunStep(streamId, runStep);
+    this.accumulateRunStep(streamId, runStep, expectedCreatedAt);
   }
 
   /**
-   * Accumulate run steps for a stream (Redis mode only).
-   * Uses a simple in-memory buffer that gets flushed to Redis.
-   * Not used in in-memory mode - run steps come from live graph via WeakRef.
+   * Accumulate run steps for a stream.
+   * Redis stores flush this buffer for cross-replica recovery; in-memory stores
+   * retain it as a fallback after a paused run's live graph has been released.
    */
-  private runStepBuffers: Map<string, Agents.RunStep[]> | null = null;
+  private runStepBuffers: Map<string, { createdAt: number; steps: Agents.RunStep[] }> | null = null;
 
-  private accumulateRunStep(streamId: string, runStep: Agents.RunStep): void {
-    // Lazy initialization - only create map when first used (Redis mode)
+  private accumulateRunStep(
+    streamId: string,
+    runStep: Agents.RunStep,
+    expectedCreatedAt: number,
+  ): void {
+    // Lazy initialization keeps the per-stream allocation off non-agent paths.
     if (!this.runStepBuffers) {
       this.runStepBuffers = new Map();
     }
 
-    let buffer = this.runStepBuffers.get(streamId);
-    if (!buffer) {
-      buffer = [];
-      this.runStepBuffers.set(streamId, buffer);
+    let bufferState = this.runStepBuffers.get(streamId);
+    if (!bufferState || bufferState.createdAt !== expectedCreatedAt) {
+      bufferState = { createdAt: expectedCreatedAt, steps: [] };
+      this.runStepBuffers.set(streamId, bufferState);
     }
+    const buffer = bufferState.steps;
 
     // Update or add run step
     const existingIdx = buffer.findIndex((rs) => rs.id === runStep.id);
@@ -1378,7 +5335,7 @@ class GenerationJobManagerClass {
 
     // Save to Redis
     if (this.jobStore.saveRunSteps) {
-      this.jobStore.saveRunSteps(streamId, buffer).catch((err) => {
+      this.jobStore.saveRunSteps(streamId, buffer, expectedCreatedAt).catch((err) => {
         logger.error(`[GenerationJobManager] Failed to save run steps:`, err);
       });
     }
@@ -1389,14 +5346,22 @@ class GenerationJobManagerClass {
    * aggregation only reconstructs message parts, so UI-only events need their
    * own metadata slot.
    */
-  private async trackTitleEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
+  private async trackTitleEvent(
+    streamId: string,
+    event: t.ServerSentEvent,
+    expectedCreatedAt: number,
+  ): Promise<void> {
     if (!('event' in event) || event.event !== 'title') {
       return;
     }
 
-    await this.jobStore.updateJob(streamId, {
-      titleEvent: JSON.stringify(event),
-    });
+    await this.jobStore.updateJob(
+      streamId,
+      {
+        titleEvent: JSON.stringify(event),
+      },
+      expectedCreatedAt,
+    );
   }
 
   /**
@@ -1404,7 +5369,11 @@ class GenerationJobManagerClass {
    * resuming client can restore the context gauge without waiting for the
    * next model call.
    */
-  private async trackContextUsage(streamId: string, event: t.ServerSentEvent): Promise<void> {
+  private async trackContextUsage(
+    streamId: string,
+    event: t.ServerSentEvent,
+    expectedCreatedAt: number,
+  ): Promise<void> {
     if (!('event' in event) || event.event !== UsageEvents.ON_CONTEXT_USAGE) {
       return;
     }
@@ -1416,9 +5385,13 @@ class GenerationJobManagerClass {
      *  run's gauge when visible calls interleave. FIFO ordering keeps each call's
      *  pre-invoke snapshot ahead of its own usage and behind the next snapshot. */
     await this.queueJobWrite(this.tokenUsageWriteQueues, streamId, () =>
-      this.jobStore.updateJob(streamId, {
-        contextUsage: JSON.stringify((event as { data?: unknown }).data ?? null),
-      }),
+      this.jobStore.updateJob(
+        streamId,
+        {
+          contextUsage: JSON.stringify((event as { data?: unknown }).data ?? null),
+        },
+        expectedCreatedAt,
+      ),
     );
   }
 
@@ -1453,13 +5426,17 @@ class GenerationJobManagerClass {
    * Persist replay-only stream events that are needed to reconstruct active
    * UI state on resume but are not represented by aggregated message content.
    */
-  private async trackReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
+  private async trackReplayEvent(
+    streamId: string,
+    event: t.ServerSentEvent,
+    expectedCreatedAt: number,
+  ): Promise<void> {
     if (!isOAuthReplayEvent(event)) {
       return;
     }
 
     await this.queueJobWrite(this.replayEventWriteQueues, streamId, () =>
-      this.persistReplayEvent(streamId, event),
+      this.persistReplayEvent(streamId, event, expectedCreatedAt),
     );
   }
 
@@ -1468,19 +5445,27 @@ class GenerationJobManagerClass {
    * usage totals on any replica (the live collectedUsage array only exists
    * on the generating instance).
    */
-  private async trackTokenUsage(streamId: string, event: t.ServerSentEvent): Promise<void> {
+  private async trackTokenUsage(
+    streamId: string,
+    event: t.ServerSentEvent,
+    expectedCreatedAt: number,
+  ): Promise<void> {
     if (!('event' in event) || event.event !== UsageEvents.ON_TOKEN_USAGE) {
       return;
     }
 
     await this.queueJobWrite(this.tokenUsageWriteQueues, streamId, () =>
-      this.persistTokenUsage(streamId, event as { data?: unknown }),
+      this.persistTokenUsage(streamId, event as { data?: unknown }, expectedCreatedAt),
     );
   }
 
-  private async persistTokenUsage(streamId: string, event: { data?: unknown }): Promise<void> {
+  private async persistTokenUsage(
+    streamId: string,
+    event: { data?: unknown },
+    expectedCreatedAt: number,
+  ): Promise<void> {
     const jobData = await this.jobStore.getJob(streamId);
-    if (!jobData || event.data == null) {
+    if (!jobData || jobData.createdAt !== expectedCreatedAt || event.data == null) {
       return;
     }
 
@@ -1519,12 +5504,16 @@ class GenerationJobManagerClass {
       }
     }
 
-    await this.jobStore.updateJob(streamId, update);
+    await this.jobStore.updateJob(streamId, update, expectedCreatedAt);
   }
 
-  private async persistReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
+  private async persistReplayEvent(
+    streamId: string,
+    event: t.ServerSentEvent,
+    expectedCreatedAt: number,
+  ): Promise<void> {
     const jobData = await this.jobStore.getJob(streamId);
-    if (!jobData) {
+    if (!jobData || jobData.createdAt !== expectedCreatedAt) {
       return;
     }
 
@@ -1555,9 +5544,13 @@ class GenerationJobManagerClass {
       replayEvents.push(event);
     }
 
-    await this.jobStore.updateJob(streamId, {
-      replayEvents: JSON.stringify(replayEvents),
-    });
+    await this.jobStore.updateJob(
+      streamId,
+      {
+        replayEvents: JSON.stringify(replayEvents),
+      },
+      expectedCreatedAt,
+    );
   }
 
   /**
@@ -1566,7 +5559,11 @@ class GenerationJobManagerClass {
    * guaranteeing any cross-replica getJob() after the pub/sub window
    * finds userMessage in Redis.
    */
-  private async trackUserMessage(streamId: string, event: t.ServerSentEvent): Promise<void> {
+  private async trackUserMessage(
+    streamId: string,
+    event: t.ServerSentEvent,
+    expectedCreatedAt: number,
+  ): Promise<void> {
     if (!('created' in event)) {
       return;
     }
@@ -1605,7 +5602,7 @@ class GenerationJobManagerClass {
       updates.conversationId = message.conversationId;
     }
 
-    await this.jobStore.updateJob(streamId, updates);
+    await this.jobStore.updateJob(streamId, updates, expectedCreatedAt);
   }
 
   /**
@@ -1614,76 +5611,52 @@ class GenerationJobManagerClass {
   async updateMetadata(
     streamId: string,
     metadata: Partial<t.GenerationJobMetadata>,
+    expectedCreatedAt?: number,
   ): Promise<void> {
-    const updates: Partial<SerializableJobData> = {};
-    if (metadata.responseMessageId) {
-      updates.responseMessageId = metadata.responseMessageId;
-    }
-    if (metadata.sender) {
-      updates.sender = metadata.sender;
-    }
-    if (metadata.conversationId) {
-      updates.conversationId = metadata.conversationId;
-    }
-    if (metadata.userMessage) {
-      updates.userMessage = metadata.userMessage;
-    }
-    if (metadata.endpoint) {
-      updates.endpoint = metadata.endpoint;
-    }
-    if (metadata.iconURL) {
-      updates.iconURL = metadata.iconURL;
-    }
-    if (metadata.model) {
-      updates.model = metadata.model;
-    }
-    if (metadata.agent_id) {
-      updates.agent_id = metadata.agent_id;
-    }
-    if (metadata.isTemporary !== undefined) {
-      updates.isTemporary = metadata.isTemporary;
-    }
-    if (metadata.promptTokens !== undefined) {
-      updates.promptTokens = metadata.promptTokens;
-    }
-    if (metadata.discoveredTools) {
-      updates.discoveredTools = metadata.discoveredTools;
-    }
-    await this.jobStore.updateJob(streamId, updates);
+    const generationId = expectedCreatedAt ?? this.runtimeState.get(streamId)?.createdAt;
+    await this.jobStore.updateJob(streamId, sanitizeJobMetadata(metadata), generationId);
   }
 
   /**
    * Set reference to the graph's contentParts array.
    */
-  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void {
-    // Use runtime state check for performance (sync check)
-    if (!this.runtimeState.has(streamId)) {
+  setContentParts(
+    streamId: string,
+    contentParts: Agents.MessageContentComplex[],
+    expectedCreatedAt?: number,
+  ): void {
+    const runtime = this.runtimeState.get(streamId);
+    if (!runtime || (expectedCreatedAt != null && runtime.createdAt !== expectedCreatedAt)) {
       return;
     }
-    this.jobStore.setContentParts(streamId, contentParts);
+    this.jobStore.setContentParts(streamId, contentParts, runtime.createdAt);
   }
 
   /**
    * Set reference to the collectedUsage array.
    * This array accumulates token usage from all models during generation.
    */
-  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void {
-    // Use runtime state check for performance (sync check)
-    if (!this.runtimeState.has(streamId)) {
+  setCollectedUsage(
+    streamId: string,
+    collectedUsage: UsageMetadata[],
+    expectedCreatedAt?: number,
+  ): void {
+    const runtime = this.runtimeState.get(streamId);
+    if (!runtime || (expectedCreatedAt != null && runtime.createdAt !== expectedCreatedAt)) {
       return;
     }
-    this.jobStore.setCollectedUsage(streamId, collectedUsage);
+    this.jobStore.setCollectedUsage(streamId, collectedUsage, runtime.createdAt);
   }
 
   /**
    * Set reference to the graph instance.
    */
-  setGraph(streamId: string, graph: StandardGraph): void {
-    // Use runtime state check for performance (sync check)
-    if (!this.runtimeState.has(streamId)) {
+  setGraph(streamId: string, graph: StandardGraph, expectedCreatedAt?: number): void {
+    const runtime = this.runtimeState.get(streamId);
+    if (!runtime || (expectedCreatedAt != null && runtime.createdAt !== expectedCreatedAt)) {
       return;
     }
-    this.jobStore.setGraph(streamId, graph);
+    this.jobStore.setGraph(streamId, graph, runtime.createdAt);
   }
 
   /**
@@ -1715,23 +5688,303 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Arms a cooperative-seal request for one queued steer and reports whether
+   * the arm actually reached an owner. Never touches job status.
+   *
+   * Returns true when this replica owns the generation (armed locally), or
+   * when the fenced publish was received by at least one subscriber. Returns
+   * FALSE when the publish failed or nobody was listening: the steer is still
+   * durably queued and will inject at the next tool boundary, but nothing
+   * will seal for it, so the caller must not acknowledge it as interrupting.
+   * The owner's own `createdAt` fence still decides whether to honour it.
+   */
+  async requestPreempt(
+    streamId: string,
+    steerId: string,
+    jobCreatedAt: number,
+    revision = 0,
+  ): Promise<boolean> {
+    /**
+     * `ownedJobs`, NOT `runtimeState`: a cross-replica `getJob` installs a
+     * facade runtime on THIS replica via `getOrCreateRuntimeState`, so a
+     * matching `runtime.createdAt` proves only that we have looked at the
+     * job — not that we generate it. Arming that facade would satisfy
+     * nothing while reporting success.
+     */
+    const ownedHere = this.ownedJobs.get(streamId) === jobCreatedAt;
+    const runtime = this.runtimeState.get(streamId);
+    if (ownedHere && runtime != null && runtime.createdAt === jobCreatedAt) {
+      /** Zero accepted means the id was tombstoned (its steer drained at an
+       *  ordinary boundary mid-request) — not an arm, so do not claim one. */
+      return (
+        this.armPreemptIds(runtime, jobCreatedAt, [steerId], {
+          [steerId]: revision,
+        }) > 0
+      );
+    }
+    if (this.eventTransport.emitPreempt == null) {
+      /** Single-process transport: the local arm is the whole mechanism. */
+      return false;
+    }
+    try {
+      await this.eventTransport.emitPreempt(streamId, {
+        op: 'arm',
+        createdAt: jobCreatedAt,
+        steerIds: [steerId],
+        revisions: { [steerId]: revision },
+      });
+      /**
+       * Best effort, and deliberately not read as proof. The publisher's
+       * subscriber count includes THIS replica's own facade subscription, so
+       * it cannot distinguish "the owner heard" from "we heard ourselves";
+       * proving owner receipt would need a correlated request/response over
+       * pub-sub. See the acknowledgement-semantics note on the PR.
+       */
+      return true;
+    } catch (error) {
+      logger.error(`[GenerationJobManager] Failed to publish preempt arm for ${streamId}:`, error);
+      return false;
+    }
+  }
+
+  /** O(1) level-triggered poll consumed by the run's `shouldPreempt`. */
+  isPreemptRequested(streamId: string): boolean {
+    return (this.runtimeState.get(streamId)?.preempt?.ids.size ?? 0) > 0;
+  }
+
+  /**
+   * Clears preempt requests for steers that left the durable queue — drained
+   * at a boundary (tool or preempt), cancelled, or dropped. The fenced
+   * cross-replica `clear` keeps a request from outliving its steer on the
+   * generating replica; without a fence identity the publish is skipped and
+   * the empty-boundary path's self-clear bounds the damage to one seal.
+   */
+  noteSteersRemoved(streamId: string, steerIds: string[], jobCreatedAt?: number): Promise<boolean> {
+    if (steerIds.length === 0) {
+      return Promise.resolve(true);
+    }
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime != null && (jobCreatedAt == null || runtime.createdAt === jobCreatedAt)) {
+      this.clearPreemptIds(runtime, jobCreatedAt ?? runtime.createdAt, steerIds);
+    }
+    const createdAt = jobCreatedAt ?? runtime?.createdAt;
+    if (createdAt == null || this.eventTransport.emitPreempt == null) {
+      /** Nothing to publish: the local disarm above is the whole mechanism. */
+      return Promise.resolve(true);
+    }
+    /**
+     * Awaitable so a CANCEL retries and logs before responding. A dropped
+     * clear is worse than a dropped arm: the owner keeps a level-triggered
+     * request for a steer that no longer exists, seals its next chunk,
+     * drains nothing, and truncates an unrelated answer. Retried once — a
+     * transient publish error is the common case and the retry is cheap.
+     *
+     * The returned boolean means "published without error", NOT "the owner
+     * disarmed": the delivery count includes this replica's own facade
+     * subscription, so publication cannot prove receipt. It is for logging
+     * only and must not be surfaced as a guarantee. Proving receipt needs a
+     * correlated request/response over pub-sub.
+     *
+     * Damage is bounded regardless: if the clear is lost the owner seals
+     * once, the empty-boundary self-clear disarms the generation, and the
+     * turn is persisted `unfinished: true` rather than silently truncated.
+     */
+    const publish = (): Promise<void> =>
+      Promise.resolve().then(async () => {
+        await this.eventTransport.emitPreempt?.(streamId, { op: 'clear', createdAt, steerIds });
+      });
+    return publish().then(
+      () => true,
+      () =>
+        publish().then(
+          () => true,
+          (error: unknown) => {
+            logger.error(
+              `[GenerationJobManager] Failed to publish preempt clear for ${streamId} after retry; ` +
+                'the owner may seal once before its empty boundary self-clears:',
+              error,
+            );
+            return false;
+          },
+        ),
+    );
+  }
+
+  /**
+   * Rebuilds the armed set from the DURABLE queue for a generation whose
+   * ownership just moved (HITL resume landing on another replica).
+   *
+   * An arm lives only in the owning replica's runtime plus a transient
+   * pub/sub message, while the steer's `preempt` flag is durable on the queue
+   * item. A replica that never observed the original arm therefore starts
+   * with an empty set and its poll stays false, so an interrupt the user
+   * already had acknowledged would silently wait for an ordinary tool
+   * boundary.
+   *
+   * REPLACES the armed set rather than adding to it. A replica that only ever
+   * read this job still installed a facade runtime and subscribed, so it can
+   * have accepted an arm and then missed the best-effort clear that followed
+   * the drain. Promotion to owner makes that orphan live, and a union would
+   * keep it: the first resumed stream seals on a steer no longer in the
+   * queue, drains nothing, and truncates the resumed answer as
+   * `preempt_incomplete`. The durable queue is the only authority at a
+   * handover, so anything absent from it is disarmed and tombstoned here —
+   * tombstoned because an arm that outlived its steer must not be able to
+   * come back a second time.
+   */
+  async rearmQueuedPreempts(streamId: string, jobCreatedAt: number): Promise<number> {
+    /** A capable→incapable HITL handover must rewrite durable truth before it
+     * rebuilds runtime arms. The store returns the exact ids it downgraded so
+     * they can be tombstoned against an arm publication that was already in
+     * flight when the approval transition changed capability. `[]` still
+     * proves the live owner is incapable; `null` means capable/missing/stale
+     * and falls through to the ordinary reconciliation below. */
+    const downgraded = await this._steering.downgradePreempts(streamId, jobCreatedAt);
+    if (downgraded != null) {
+      const runtime = this.runtimeState.get(streamId);
+      if (runtime != null && runtime.createdAt === jobCreatedAt) {
+        this.downgradePreemptIds(runtime, jobCreatedAt, downgraded);
+      }
+      if (downgraded.length > 0) {
+        await this.emitChunk(
+          streamId,
+          {
+            event: SteerEvents.ON_STEER_UPDATED,
+            data: {
+              conversationId: streamId,
+              steers: downgraded.map((steer) => ({
+                steerId: steer.steerId,
+                ...(steer.clientSteerId && { clientSteerId: steer.clientSteerId }),
+                preempt: false,
+                preemptRevision: steer.preemptRevision ?? 0,
+              })),
+            },
+          },
+          { durable: true, expectedCreatedAt: jobCreatedAt },
+        );
+      }
+      return 0;
+    }
+
+    /**
+     * The armed set is snapshotted BEFORE the queue is read, and that order is
+     * the entire safety argument. `approvals.resolve` has already reopened
+     * steering by the time this runs, so a concurrent replica can enqueue a
+     * preempt steer and publish its arm while the `peek` is in flight. Reading
+     * the queue first would leave that arm present locally but missing from a
+     * snapshot taken before it existed, and this method would tombstone a live
+     * interrupt the route already acknowledged — unrecoverable, since the
+     * tombstone also blocks the re-arm.
+     *
+     * Taking the arms first makes that impossible without a lock or a second
+     * round trip: a steer is durably enqueued BEFORE its arm is published, so
+     * any id in this snapshot was already queued when it was armed, and the
+     * later `peek` is guaranteed to observe it unless it has since drained —
+     * which is precisely the orphan this reconciliation exists to drop.
+     */
+    const runtime = this.runtimeState.get(streamId);
+    const armedBeforeRead =
+      runtime?.preempt != null && runtime.createdAt === jobCreatedAt
+        ? [...runtime.preempt.ids]
+        : [];
+
+    const queued = await this._steering.peek(streamId, jobCreatedAt);
+    const backedItems = queued.filter((item) => item.preempt === true);
+    const backed = new Set(backedItems.map((item) => item.steerId));
+
+    /** The generation can be replaced across the read; only disarm the runtime
+     *  the snapshot was taken from. */
+    if (runtime != null && this.runtimeState.get(streamId) === runtime) {
+      const orphaned = armedBeforeRead.filter((id) => !backed.has(id));
+      if (orphaned.length > 0) {
+        logger.warn(
+          `[GenerationJobManager] Dropping ${orphaned.length} preempt arm(s) with no queued steer ` +
+            `while ownership of ${streamId} moves`,
+        );
+        this.clearPreemptIds(runtime, jobCreatedAt, orphaned);
+      }
+    }
+
+    let rearmed = 0;
+    for (const item of backedItems) {
+      await this.requestPreempt(streamId, item.steerId, jobCreatedAt, item.preemptRevision ?? 0);
+      rearmed += 1;
+    }
+    return rearmed;
+  }
+
+  /**
+   * Snapshot of the ids armed right now, taken BEFORE a drain so the
+   * empty-boundary disarm can scope itself to them.
+   */
+  getArmedPreemptIds(streamId: string, jobCreatedAt?: number): string[] {
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime?.preempt == null) {
+      return [];
+    }
+    if (jobCreatedAt != null && runtime.createdAt !== jobCreatedAt) {
+      return [];
+    }
+    return [...runtime.preempt.ids];
+  }
+
+  /**
+   * Disarms the requests a spent boundary was responsible for. Called when a
+   * boundary drains nothing: the seal is already spent and those ids refer to
+   * steers no longer in the queue, so leaving them armed would seal again on
+   * the next chunk and truncate an unrelated answer.
+   *
+   * Scoped to an explicit id list rather than wiping the set: a second steer
+   * can enqueue and arm between the atomic drain returning empty and this
+   * call, and that arm is backed by a live queue item that has not been
+   * injected yet.
+   */
+  clearPreemptRequests(streamId: string, steerIds: string[], jobCreatedAt?: number): void {
+    if (steerIds.length === 0) {
+      return;
+    }
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime?.preempt == null) {
+      return;
+    }
+    if (jobCreatedAt != null && runtime.createdAt !== jobCreatedAt) {
+      return;
+    }
+    this.clearPreemptIds(runtime, runtime.createdAt, steerIds);
+  }
+
+  /**
    * Get resume state for reconnecting clients.
    */
-  async getResumeState(streamId: string): Promise<t.ResumeState | null> {
+  async getResumeState(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<t.ResumeState | null> {
     const jobData = await this.jobStore.getJob(streamId);
-    if (!jobData) {
+    if (!jobData || (expectedCreatedAt != null && jobData.createdAt !== expectedCreatedAt)) {
       return null;
     }
 
     /** Independent reads (streamId-only): parallel to collapse 3 Redis round trips into 1.
      *  Safe despite readCachedGraph's cache-drop side effect — each call catches its own
      *  unusable-graph throw and falls back to reconstruction, so ordering cannot change the result. */
-    const [result, runSteps, queuedSteers] = await Promise.all([
-      this.jobStore.getContentParts(streamId),
-      this.jobStore.getRunSteps(streamId),
-      this.jobStore.peekSteers(streamId),
+    const [result, runSteps, queuedSteers, claimedSteers] = await Promise.all([
+      this.jobStore.getContentParts(streamId, jobData.createdAt),
+      this.jobStore.getRunSteps(streamId, jobData.createdAt),
+      this.jobStore.peekSteers(streamId, jobData.createdAt),
+      this.jobStore.peekClaimedSteers(streamId, jobData.createdAt),
     ]);
     const aggregatedContent = result?.content ?? [];
+    const bufferState = this.runStepBuffers?.get(streamId);
+    const bufferedRunSteps = bufferState?.createdAt === jobData.createdAt ? bufferState.steps : [];
+    const runStepsById = new Map(runSteps.map((runStep) => [runStep.id, runStep]));
+    for (const runStep of bufferedRunSteps) {
+      runStepsById.set(runStep.id, runStep);
+    }
+    const effectiveRunSteps = normalizeResumeRunStepIndices(
+      [...runStepsById.values()],
+      aggregatedContent,
+    );
     let titleEvent: t.ResumeState['titleEvent'];
     if (jobData.titleEvent) {
       try {
@@ -1744,6 +5997,7 @@ class GenerationJobManagerClass {
     if (jobData.replayEvents) {
       try {
         replayEvents = JSON.parse(jobData.replayEvents) as t.ResumeState['replayEvents'];
+        replayEvents = normalizeRunStepReplayIndices(replayEvents, effectiveRunSteps);
       } catch {
         // Ignore malformed persisted replay events.
       }
@@ -1771,17 +6025,29 @@ class GenerationJobManagerClass {
     }
 
     /** Steers still queued (not yet injected); injected ones are already in aggregatedContent. */
-    const pendingSteers = queuedSteers.map(toPendingSteer);
+    const pendingSteers = omitAlreadyAppliedSteers(
+      mergeUnresolvedSteers(claimedSteers, queuedSteers),
+      aggregatedContent as unknown[],
+    ).map(toPendingSteer);
+
+    /** The four component reads are generation-fenced, but replacement can
+     * land after the initial job read and make all of them return empty. Do
+     * not turn that into a plausible-looking snapshot with predecessor
+     * metadata; verify the same generation is still live after the snapshot. */
+    const verifiedJob = await this.jobStore.getJob(streamId);
+    if (!verifiedJob || verifiedJob.createdAt !== jobData.createdAt) {
+      return null;
+    }
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
-      runStepsLength: runSteps.length,
+      runStepsLength: effectiveRunSteps.length,
       aggregatedContentLength: aggregatedContent.length,
       collectedUsageLength: collectedUsage?.length ?? 0,
     });
 
     return {
-      runSteps,
+      runSteps: effectiveRunSteps,
       aggregatedContent,
       userMessage: jobData.userMessage,
       responseMessageId: jobData.responseMessageId,
@@ -1801,22 +6067,24 @@ class GenerationJobManagerClass {
           ? toClientPendingAction(jobData.pendingAction)
           : undefined,
       pendingSteers: pendingSteers.length > 0 ? pendingSteers : undefined,
-    };
+    } satisfies t.ResumeState;
   }
 
   /**
    * Mark that sync has been sent.
    * Persists to Redis for cross-replica consistency.
    */
-  markSyncSent(streamId: string): void {
+  markSyncSent(streamId: string, expectedCreatedAt?: number): void {
     const runtime = this.runtimeState.get(streamId);
-    if (runtime) {
+    if (runtime && (expectedCreatedAt == null || runtime.createdAt === expectedCreatedAt)) {
       runtime.syncSent = true;
     }
     // Persist to Redis for cross-replica consistency
-    this.jobStore.updateJob(streamId, { syncSent: true }).catch((err) => {
-      logger.error(`[GenerationJobManager] Failed to persist syncSent flag:`, err);
-    });
+    this.jobStore
+      .updateJob(streamId, { syncSent: true }, expectedCreatedAt ?? runtime?.createdAt)
+      .catch((err) => {
+        logger.error(`[GenerationJobManager] Failed to persist syncSent flag:`, err);
+      });
   }
 
   /**
@@ -1837,16 +6105,31 @@ class GenerationJobManagerClass {
    * Emit a done event.
    * Persists finalEvent to Redis for cross-replica access.
    */
-  async emitDone(streamId: string, event: t.ServerSentEvent): Promise<void> {
+  async emitDone(
+    streamId: string,
+    event: t.ServerSentEvent,
+    expectedCreatedAt?: number,
+  ): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
-    if (runtime) {
-      runtime.finalEvent = event;
+    const generationId = expectedCreatedAt ?? runtime?.createdAt;
+    const matchingRuntime =
+      runtime && (generationId == null || runtime.createdAt === generationId) ? runtime : undefined;
+    if (matchingRuntime) {
+      matchingRuntime.finalEvent = event;
+    }
+    if (matchingRuntime?.createdEventPublication) {
+      await matchingRuntime.createdEventPublication;
     }
     // Persist finalEvent to Redis for cross-replica consistency
-    this.jobStore.updateJob(streamId, { finalEvent: JSON.stringify(event) }).catch((err) => {
-      logger.error(`[GenerationJobManager] Failed to persist finalEvent:`, err);
-    });
-    await this.eventTransport.emitDone(streamId, event);
+    this.jobStore
+      .updateJob(streamId, { finalEvent: JSON.stringify(event) }, generationId)
+      .catch((err) => {
+        logger.error(`[GenerationJobManager] Failed to persist finalEvent:`, err);
+      });
+    await this.eventTransport.emitDone(streamId, event, generationId);
+    if (matchingRuntime?.startupTelemetry) {
+      this.recordStartupEvent(matchingRuntime, event);
+    }
   }
 
   /**
@@ -1854,109 +6137,101 @@ class GenerationJobManagerClass {
    * Stores the error for late-connecting subscribers (race condition where error
    * occurs before client connects to SSE stream).
    */
-  async emitError(streamId: string, error: string): Promise<void> {
+  async emitError(streamId: string, error: string, expectedCreatedAt?: number): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
-    if (runtime) {
-      runtime.errorEvent = error;
+    const generationId = expectedCreatedAt ?? runtime?.createdAt;
+    const matchingRuntime =
+      runtime && (generationId == null || runtime.createdAt === generationId) ? runtime : undefined;
+    if (matchingRuntime) {
+      matchingRuntime.errorEvent = error;
+    }
+    if (matchingRuntime?.createdEventPublication) {
+      await matchingRuntime.createdEventPublication;
     }
     // Persist error to job store for cross-replica consistency
-    this.jobStore.updateJob(streamId, { error }).catch((err) => {
+    this.jobStore.updateJob(streamId, { error }, generationId).catch((err) => {
       logger.error(`[GenerationJobManager] Failed to persist error:`, err);
     });
-    await this.eventTransport.emitError(streamId, error);
+    await this.eventTransport.emitError(streamId, error, generationId);
+    matchingRuntime?.startupTelemetry?.mark('first_response_event_queued');
   }
 
-  /**
-   * Cleanup expired jobs.
-   * Also cleans up any orphaned runtime state, buffers, and event transport entries.
-   */
-  /**
-   * Expire any locally-tracked approval whose window has lapsed: drive the atomic
-   * `requires_action → aborted` transition and, if this caller won it, emit a
-   * terminal error so a connected SSE client closes. Only streams this replica has
-   * runtime for are scanned — those are exactly the ones with a client subscribed
-   * here; a paused job on another replica is finalized by that replica's sweep (and
-   * the store's own cleanup). The durable checkpoint is reclaimed by its Mongo TTL
-   * index, which shares the approval window, so no cross-layer delete is needed here.
-   */
   /**
    * Expire a single observed-stale pending approval NOW (immediate, not via the periodic
    * sweep): run the `requires_action → aborted` CAS — pinned to `actionId` so a concurrent
    * resolve + re-pause on a fresh action isn't aborted — and, on success, emit the terminal
    * `APPROVAL_EXPIRED_ERROR` so any attached SSE client gets a terminal event instead of a
-   * hung stream. Used by the periodic sweeper and by the resume route, which observes a
-   * just-expired action when the user submits a decision after the TTL lapsed. Returns true
-   * if this call expired the action.
+   * hung stream. The durable checkpoint remains bounded by its Mongo TTL; deleting the
+   * thread eagerly here could race a replacement generation. Used by the periodic sweeper
+   * and by the resume route, which observes a just-expired action when the user submits a
+   * decision after the TTL lapsed. Returns true if this call expired the action.
    */
-  async expireApproval(streamId: string, actionId?: string): Promise<boolean> {
-    /** Steers accepted before the pause are frozen for its whole window
-     *  (enqueue rejects while `requires_action`), so this pre-CAS snapshot is
-     *  exactly what the expiry's terminal cleanup is about to delete. Read it
-     *  BEFORE the transition — the store drops the queue key inside it — and
-     *  park only if the CAS wins (a lost CAS means the run resumed and the
-     *  live queue must stay untouched). */
-    let parkableSteers: TPendingSteer[] = [];
-    let steerOwner: SteerOwner | undefined;
-    try {
-      const job = await this.jobStore.getJob(streamId);
-      if (job) {
-        steerOwner = { userId: job.userId, tenantId: job.tenantId };
-        parkableSteers = (await this.jobStore.peekSteers(streamId)).map(toPendingSteer);
+  async expireApproval(
+    streamId: string,
+    actionId?: string,
+    expectedCreatedAt?: number,
+  ): Promise<boolean> {
+    const observedRuntime = this.runtimeState.get(streamId);
+    let observedJob: SerializableJobData | null = null;
+    if (expectedCreatedAt == null) {
+      try {
+        observedJob = await this.jobStore.getJob(streamId);
+      } catch (err) {
+        logger.warn(
+          `[GenerationJobManager] Failed to read approval before expiry ${streamId}`,
+          err,
+        );
       }
-    } catch (err) {
-      logger.warn(`[GenerationJobManager] Failed to snapshot steers pre-expiry ${streamId}`, err);
     }
-    const expired = await this._approvals.expire(streamId, actionId);
-    if (!expired) {
+    const expiredCreatedAt = await this._approvals.expireWithIdentity(
+      streamId,
+      actionId,
+      expectedCreatedAt ?? observedJob?.createdAt,
+    );
+    if (expiredCreatedAt == null) {
       return false;
     }
-    if (steerOwner && parkableSteers.length > 0) {
-      await this.steering.park(streamId, parkableSteers, steerOwner);
-    }
-    try {
-      await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);
-    } catch (err) {
-      logger.error(`[GenerationJobManager] Failed to notify expired approval ${streamId}`, err);
-    }
-    await this.runApprovalExpiredHandler(streamId);
-    this.runningJobs.delete(streamId);
+
+    await this.notifyApprovalExpiredRuntime(streamId, expiredCreatedAt, observedRuntime);
     return true;
   }
 
-  /**
-   * Invoke the host approval-expired cleanup, passing the job so the host can resolve
-   * tenant/user-scoped config (the expiry runs outside any request context). Best-effort:
-   * the job read and the handler itself may fail without breaking the expiry.
-   */
-  private async runApprovalExpiredHandler(
+  private async notifyApprovalExpiredRuntime(
     streamId: string,
-    job?: SerializableJobData | null,
+    createdAt: number,
+    runtime: RuntimeJobState | undefined,
   ): Promise<void> {
-    if (!this._onApprovalExpired) {
+    if (runtime?.createdAt === createdAt && runtime.approvalExpiryPublished) {
       return;
     }
-    // Dedup across the expiry paths: a locally expired approval (expireApproval) stays in
-    // the store/runtime for the completed-job TTL, so later sweeps re-enter the relay
-    // branch for the same aborted approval — run the cleanup once per runtime lifetime.
-    const runtime = this.runtimeState.get(streamId);
-    if (runtime?.approvalCleanupRan) {
-      return;
-    }
-    if (runtime) {
-      runtime.approvalCleanupRan = true;
-    }
-    let resolvedJob = job;
-    if (resolvedJob === undefined) {
-      try {
-        resolvedJob = await this.jobStore.getJob(streamId);
-      } catch {
-        resolvedJob = null;
-      }
+
+    if (runtime?.createdAt === createdAt) {
+      runtime.errorEvent = APPROVAL_EXPIRED_ERROR;
+      runtime.startupTelemetry?.mark('first_response_event_queued');
     }
     try {
-      await this._onApprovalExpired(streamId, resolvedJob);
+      await this.eventTransport.emitError(streamId, APPROVAL_EXPIRED_ERROR, createdAt);
+      if (runtime?.createdAt === createdAt) {
+        runtime.approvalExpiryPublished = true;
+      }
     } catch (err) {
-      logger.warn(`[GenerationJobManager] Approval-expired cleanup failed for ${streamId}`, err);
+      logger.error(`[GenerationJobManager] Failed to publish expired approval ${streamId}`, err);
+      if (runtime?.createdAt === createdAt) {
+        for (const notify of [...runtime.localErrorHandlers]) {
+          try {
+            notify(APPROVAL_EXPIRED_ERROR);
+          } catch (notifyError) {
+            logger.error(
+              `[GenerationJobManager] Failed to notify expired approval ${streamId}`,
+              notifyError,
+            );
+          }
+        }
+      }
+    }
+    if (runtime?.createdAt === createdAt) {
+      this.releaseAbortSubscription(runtime);
+      runtime.abortController.abort();
     }
   }
 
@@ -1982,23 +6257,8 @@ class GenerationJobManagerClass {
       // The `errorEvent` flag (set by emitError) keeps this idempotent vs the win path.
       const runtime = this.runtimeState.get(streamId);
       if (job?.status === 'aborted' && job.error === APPROVAL_EXPIRED_ERROR) {
-        if (!runtime?.errorEvent) {
-          try {
-            await this.emitError(streamId, APPROVAL_EXPIRED_ERROR);
-          } catch (err) {
-            logger.error(
-              `[GenerationJobManager] Failed to relay expired approval ${streamId}`,
-              err,
-            );
-          }
-        }
-        // The winning store cleanup (`cleanupRequiresActionIndex`) transitions status
-        // directly and can't run host cleanup — do it on relay. Deliberately NOT gated on
-        // `errorEvent`: a reconnect seeds that flag from the aborted job, which must not
-        // suppress the (idempotent) prune. The handler dedups per runtime lifetime, which
-        // also covers approvals expired LOCALLY via expireApproval.
-        await this.runApprovalExpiredHandler(streamId, job);
-        changed = this.runningJobs.delete(streamId) || changed;
+        await this.notifyApprovalExpiredRuntime(streamId, job.createdAt, runtime);
+        changed = this.releaseJobOwnership(streamId, job.createdAt) || changed;
         continue;
       }
       if (!job || job.status !== 'requires_action' || !isPendingActionExpired(job)) {
@@ -2008,7 +6268,11 @@ class GenerationJobManagerClass {
       // as stale. Between this read and the CAS, the user could resolve it and the run
       // re-pause on a fresh action; without the id, the CAS (status-only) would abort
       // that valid new pause and leave it terminal.
-      const didExpire = await this.expireApproval(streamId, job.pendingAction?.actionId);
+      const didExpire = await this.expireApproval(
+        streamId,
+        job.pendingAction?.actionId,
+        job.createdAt,
+      );
       if (!didExpire) {
         continue;
       }
@@ -2020,7 +6284,41 @@ class GenerationJobManagerClass {
     }
   }
 
+  /**
+   * Let the manager (rather than store-only cleanup) win stale pause barriers
+   * whenever this replica has the runtime. That preserves the same atomic
+   * fail-closed store transition while also notifying an attached client and
+   * releasing process-local graph/listener resources.
+   */
+  private async failStalePausePersistenceBarriers(): Promise<void> {
+    for (const [streamId, runtime] of [...this.runtimeState]) {
+      try {
+        await this._approvals.failStalePausePersistence(streamId, runtime.createdAt);
+        /** Another replica's store-only cleanup may have won the same exact
+         * CAS first. Relay that durable timeout into this replica's attached
+         * runtime even though there is no barrier left for the lifecycle call
+         * above to transition. */
+        await this.finishTimedOutPausePersistence(
+          streamId,
+          runtime.createdAt,
+          PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+          [],
+        );
+      } catch (error) {
+        logger.error(
+          `[GenerationJobManager] Failed to inspect stale pause persistence: ${streamId}`,
+          error,
+        );
+      }
+    }
+  }
+
   private async cleanup(): Promise<void> {
+    // A crashed pause writer must never become resumable merely because its
+    // lease elapsed. Give a locally-observed runtime the first chance to fail
+    // closed so its attached subscriber receives the terminal error.
+    await this.failStalePausePersistenceBarriers();
+
     // Finalize approvals whose window lapsed before the store's own cleanup, so a
     // client still attached to a paused stream gets a terminal event instead of a
     // connection that hangs open until it gives up.
@@ -2030,37 +6328,90 @@ class GenerationJobManagerClass {
     let runningJobsChanged = false;
 
     // Cleanup runtime state for deleted jobs
-    for (const streamId of this.runtimeState.keys()) {
-      if (!(await this.jobStore.hasJob(streamId))) {
-        /**
-         * Abort any still-pending generation whose job has been reaped (e.g. a
-         * stale "running" job removed by the store's failsafe timeout). This
-         * unwinds the hung in-flight work so its client/graph references can be
-         * garbage collected, rather than leaking via the pending promise.
-         */
-        const runtime = this.runtimeState.get(streamId);
-        if (runtime && !runtime.abortController.signal.aborted) {
-          runtime.abortController.abort();
+    for (const [streamId, observedRuntime] of this.runtimeState) {
+      const jobExists = await this.jobStore.hasJob(streamId);
+      if (jobExists) {
+        const shouldInspectRemoteTerminal =
+          this.ownedJobs.get(streamId) !== observedRuntime.createdAt &&
+          this.eventTransport.getSubscriberCount(streamId) === 0;
+        if (!shouldInspectRemoteTerminal) {
+          continue;
         }
-        // If a client is still attached when the job is reaped, send a terminal
-        // error first so the SSE connection closes instead of hanging open with no
-        // final/done event (the route only ends the response from onDone/onError).
-        if (this.eventTransport.getSubscriberCount(streamId) > 0) {
-          try {
-            await this.eventTransport.emitError(streamId, REAPED_JOB_ERROR);
-          } catch (err) {
-            logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
-          }
+
+        const currentJob = await this.jobStore.getJob(streamId);
+        const isRetainedTerminal =
+          currentJob?.createdAt === observedRuntime.createdAt &&
+          currentJob.status !== 'running' &&
+          currentJob.status !== 'requires_action';
+        if (!isRetainedTerminal || this.runtimeState.get(streamId) !== observedRuntime) {
+          continue;
         }
+
+        this.reconcileInactiveGeneration(
+          streamId,
+          observedRuntime.createdAt,
+          currentJob,
+          observedRuntime,
+        );
         this.runtimeState.delete(streamId);
-        runningJobsChanged = this.runningJobs.delete(streamId) || runningJobsChanged;
         this.runStepBuffers?.delete(streamId);
-        this.jobStore.clearContentState(streamId);
+        this.replayEventWriteQueues.delete(streamId);
+        this.tokenUsageWriteQueues.delete(streamId);
+        this.jobStore.clearContentState(streamId, observedRuntime.createdAt);
         this.eventTransport.cleanup(streamId);
+        continue;
       }
+
+      // A replacement generation can reuse the same streamId while hasJob()
+      // is in flight. Never reap the replacement runtime based on the stale
+      // absence observed for its predecessor.
+      if (this.runtimeState.get(streamId) !== observedRuntime) {
+        this.releaseAbortSubscription(observedRuntime);
+        if (!observedRuntime.abortController.signal.aborted) {
+          observedRuntime.abortController.abort();
+        }
+        continue;
+      }
+      /**
+       * Abort any still-pending generation whose job has been reaped (e.g. a
+       * stale "running" job removed by the store's failsafe timeout). This
+       * unwinds the hung in-flight work so its client/graph references can be
+       * garbage collected, rather than leaking via the pending promise.
+       */
+      if (!observedRuntime.abortController.signal.aborted) {
+        observedRuntime.abortController.abort();
+      }
+      // If a client is still attached when the job is reaped, send a terminal
+      // error first so the SSE connection closes instead of hanging open with no
+      // final/done event (the route only ends the response from onDone/onError).
+      if (this.eventTransport.getSubscriberCount(streamId) > 0) {
+        try {
+          await this.eventTransport.emitError(
+            streamId,
+            REAPED_JOB_ERROR,
+            observedRuntime.createdAt,
+          );
+          observedRuntime.startupTelemetry?.mark('first_response_event_queued');
+        } catch (err) {
+          logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
+        }
+      }
+      // emitError() is asynchronous; a replacement may have appeared while
+      // the terminal event was being published.
+      if (this.runtimeState.get(streamId) !== observedRuntime) {
+        continue;
+      }
+      observedRuntime.startupTelemetry?.end('error', new Error(REAPED_JOB_ERROR));
+      observedRuntime.startupTelemetry = undefined;
+      this.releaseAbortSubscription(observedRuntime);
+      this.runtimeState.delete(streamId);
+      runningJobsChanged = this.ownedJobs.delete(streamId) || runningJobsChanged;
+      this.runStepBuffers?.delete(streamId);
+      this.jobStore.clearContentState(streamId, observedRuntime.createdAt);
+      this.eventTransport.cleanup(streamId);
     }
 
-    // Also check runStepBuffers for any orphaned entries (Redis mode only)
+    // Also check runStepBuffers for any orphaned entries.
     if (this.runStepBuffers) {
       for (const streamId of this.runStepBuffers.keys()) {
         if (!(await this.jobStore.hasJob(streamId))) {
@@ -2100,7 +6451,7 @@ class GenerationJobManagerClass {
       return null;
     }
 
-    const result = await this.jobStore.getContentParts(streamId);
+    const result = await this.jobStore.getContentParts(streamId, jobData.createdAt);
     const aggregatedContent = result?.content ?? [];
 
     return {
@@ -2157,20 +6508,120 @@ class GenerationJobManagerClass {
     return this.jobStore.getActiveJobIdsByUser(userId, tenantId);
   }
 
+  private async finalizeOwnedJobsForShutdown(): Promise<void> {
+    const ownedJobs = [...this.ownedJobs];
+    if (ownedJobs.length === 0) {
+      return;
+    }
+
+    const completedAt = Date.now();
+    const results = await Promise.allSettled(
+      ownedJobs.map(async ([streamId, createdAt]) => {
+        const job = await this.jobStore.getJob(streamId);
+        if (!job || job.createdAt !== createdAt || job.status !== 'running') {
+          return;
+        }
+        const runtime = this.runtimeState.get(streamId);
+        if (
+          runtime?.createdAt === createdAt &&
+          runtime.allSubscribersLeftHandlers?.length &&
+          runtime.lastSubscriberCleanupGeneration !== runtime.attachmentGeneration
+        ) {
+          runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
+          await this.persistSubscriberCleanup(streamId, runtime);
+        }
+        const finalized = await this.jobStore.transitionStatus(streamId, {
+          from: 'running',
+          to: 'error',
+          expectCreatedAt: createdAt,
+          patch: { completedAt, error: SHUTDOWN_JOB_ERROR },
+        });
+        if (!finalized) {
+          return;
+        }
+
+        if (runtime?.createdAt === createdAt) {
+          runtime.errorEvent = SHUTDOWN_JOB_ERROR;
+          this.releaseAbortSubscription(runtime);
+        }
+        try {
+          await this.eventTransport.emitError(streamId, SHUTDOWN_JOB_ERROR, createdAt);
+        } catch (err) {
+          logger.error(
+            `[GenerationJobManager] Failed to publish shutdown error for ${streamId}:`,
+            err,
+          );
+        }
+        if (this.ownedJobs.get(streamId) === createdAt) {
+          this.ownedJobs.delete(streamId);
+        }
+        recordGenerationJob(this.storeLabel, 'error');
+      }),
+    );
+
+    for (let index = 0; index < results.length; index++) {
+      const result = results[index];
+      if (result.status === 'rejected') {
+        logger.error(
+          `[GenerationJobManager] Failed to finalize owned job ${ownedJobs[index][0]} during shutdown:`,
+          result.reason,
+        );
+      }
+    }
+    this.syncRunningJobMetrics();
+  }
+
+  /**
+   * Stop accepting jobs and close only this process's attached SSE responses.
+   *
+   * This runs before HTTP drain. Durable finalization waits until post-drain, when only jobs
+   * still owned by this process are atomically moved to a terminal state.
+   */
+  prepareForShutdown(): void {
+    if (this.shuttingDown) {
+      return;
+    }
+    this.shuttingDown = true;
+
+    for (const runtime of this.runtimeState.values()) {
+      runtime.startupTelemetry?.end('aborted');
+      runtime.startupTelemetry = undefined;
+    }
+
+    const streamIds = new Set([
+      ...this.runtimeState.keys(),
+      ...this.eventTransport.getTrackedStreamIds(),
+    ]);
+    for (const streamId of streamIds) {
+      this.eventTransport.closeLocalSubscribers?.(streamId, SHUTDOWN_SUBSCRIBER_ERROR);
+    }
+  }
+
   /**
    * Destroy the manager.
    * Cleans up all resources including runtime state, buffers, and stores.
    */
   async destroy(): Promise<void> {
+    this.shuttingDown = true;
+
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
 
+    for (const runtime of this.runtimeState.values()) {
+      runtime.startupTelemetry?.end('aborted');
+      runtime.startupTelemetry = undefined;
+      this.releaseAbortSubscription(runtime, true);
+      runtime.abortController.abort();
+    }
+
+    await this.drainSubscriberCleanups();
+    await this.finalizeOwnedJobsForShutdown();
     await this.jobStore.destroy();
     this.eventTransport.destroy();
     this.runtimeState.clear();
-    this.runningJobs.clear();
+    this.ownedJobs.clear();
     this.syncRunningJobMetrics();
     this.runStepBuffers?.clear();
     this.replayEventWriteQueues.clear();

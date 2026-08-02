@@ -26,7 +26,8 @@ env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
 
 jobs:
-  e2e:
+  e2e_shards:
+    name: e2e (${{ matrix.stream_store }}, shard ${{ matrix.shard }}/4)
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
@@ -34,8 +35,25 @@ jobs:
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association))
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        stream_store: [memory, redis]
+        shard: [1, 2, 3, 4]
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
       E2E_CHROMIUM_CHANNEL: chrome
+      E2E_STREAM_STORE: ${{ matrix.stream_store }}
+      REDIS_URI: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@v4
 
@@ -124,7 +142,7 @@ jobs:
           npx playwright install-deps chrome
 
       - name: Run mock-LLM Tier-1 e2e
-        run: npx playwright test --config=e2e/playwright.config.mock.ts
+        run: npx playwright test --config=e2e/playwright.config.mock.ts --shard=${{ matrix.shard }}/4
         env:
           CI: 'true'
 
@@ -132,7 +150,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.stream_store }}-${{ matrix.shard }}
           path: e2e/playwright-report/**
           retention-days: 7
           if-no-files-found: ignore
@@ -141,7 +159,22 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results
+          name: playwright-test-results-${{ matrix.stream_store }}-${{ matrix.shard }}
           path: e2e/specs/.test-results/**
           retention-days: 7
           if-no-files-found: ignore
+
+  e2e:
+    name: e2e
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request != null &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)))
+    needs: e2e_shards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every Playwright shard passed
+        if: needs.e2e_shards.result != 'success'
+        run: exit 1

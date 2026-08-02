@@ -15,6 +15,7 @@ import type {
   ContextPruningConfig,
   OpenAIClientOptions,
   StandardGraphConfig,
+  StreamPreemption,
   LCToolRegistry,
   SubagentConfig,
   HookCallback,
@@ -47,10 +48,12 @@ import {
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
+import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
+import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
+import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
-import { isSteeringSupported } from '~/agents/steering/runtime';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
@@ -149,6 +152,30 @@ export function extractDiscoveredToolsFromHistory(messages: BaseMessage[]): Set<
   }
 
   return discoveredTools;
+}
+
+export interface RunDiscoverySnapshot {
+  getDiscoveredTools?: () => string[];
+  getRunMessages?: () => BaseMessage[] | undefined;
+}
+
+/** Reads canonical run discovery state, with best-effort history parsing for older releases. */
+export function getRunDiscoveredTools(run: RunDiscoverySnapshot): string[] {
+  if (typeof run.getDiscoveredTools === 'function') {
+    const discoveredTools = run.getDiscoveredTools();
+    if (Array.isArray(discoveredTools)) {
+      return Array.from(new Set(discoveredTools));
+    }
+  }
+
+  if (typeof run.getRunMessages !== 'function') {
+    return [];
+  }
+  const messages = run.getRunMessages();
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return [];
+  }
+  return Array.from(extractDiscoveredToolsFromHistory(messages));
 }
 
 /**
@@ -341,6 +368,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   hasDeferredTools?: boolean;
   /** Names of tools injected with the `run_in_background` param (excluded from eager execution). */
   backgroundToolNames?: string[];
+  /** Names of tools with the host-injected `intent` param (stripped from self-spawn inputs). */
+  intentToolNames?: string[];
   /**
    * Per-agent codeenv gate set by `initializeAgent`: admin-level
    * `execute_code` capability AND the agent actually requested
@@ -510,6 +539,7 @@ function resolveSummarizationProvider(
             headers: customEndpointConfig.headers as Record<string, string>,
             user: createSafeUser(headerContext.user),
             body: headerContext.requestBody,
+            stripUnresolved: true,
           })
         : undefined;
     /**
@@ -882,13 +912,16 @@ function buildSubagentConfigs(
     const selfName = agentInput.name ?? agent.name ?? 'self';
     countSubagentConfig(state);
     /**
-     * Self-spawn reuses the parent's AgentInputs. When the parent has background
-     * tools, provide a sanitized copy so the isolated child — which runs the
-     * direct/child-graph path rather than the host background interceptor —
-     * doesn't advertise `run_in_background` / `check_background_task`. The
+     * Self-spawn reuses the parent's AgentInputs. When the parent has
+     * background or host-injected intent tools, provide a sanitized copy so
+     * the isolated child — which runs the direct/child-graph path rather
+     * than the host interceptors — doesn't advertise `run_in_background` /
+     * `check_background_task` or an injected `intent` param its direct tool
+     * invocations would forward to tools that never declared it. The
      * resolver keeps a provided `agentInputs` even with `self: true`.
      */
     const hasBackground = (agent.backgroundToolNames?.length ?? 0) > 0;
+    const hasInjectedIntent = (agent.intentToolNames?.length ?? 0) > 0;
     configs.push({
       self: true,
       type: SELF_SUBAGENT_TYPE,
@@ -896,17 +929,20 @@ function buildSubagentConfigs(
       description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
       /** Self-spawn reuses the parent's config, so mirror the parent's recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, agent),
-      ...(hasBackground
+      ...(hasBackground || hasInjectedIntent
         ? {
             agentInputs: {
               ...agentInput,
-              toolDefinitions: stripBackgroundFromToolDefinitions(
-                agentInput.toolDefinitions,
-                agent.backgroundToolNames,
+              toolDefinitions: stripIntentFromToolDefinitions(
+                stripBackgroundFromToolDefinitions(
+                  agentInput.toolDefinitions,
+                  agent.backgroundToolNames,
+                ),
+                agent.intentToolNames,
               ),
-              toolRegistry: stripBackgroundFromToolRegistry(
-                agentInput.toolRegistry,
-                agent.backgroundToolNames,
+              toolRegistry: stripIntentFromToolRegistry(
+                stripBackgroundFromToolRegistry(agentInput.toolRegistry, agent.backgroundToolNames),
+                agent.intentToolNames,
               ),
             },
           }
@@ -962,6 +998,18 @@ function buildSubagentConfigs(
       childInputs.toolRegistry = stripBackgroundFromToolRegistry(
         childInputs.toolRegistry,
         child.backgroundToolNames,
+      );
+    }
+    /** Same sanitization for the host-injected `intent` param (see the
+     *  self-spawn path above). */
+    if ((child.intentToolNames?.length ?? 0) > 0) {
+      childInputs.toolDefinitions = stripIntentFromToolDefinitions(
+        childInputs.toolDefinitions,
+        child.intentToolNames,
+      );
+      childInputs.toolRegistry = stripIntentFromToolRegistry(
+        childInputs.toolRegistry,
+        child.intentToolNames,
       );
     }
     /**
@@ -1036,6 +1084,7 @@ export async function createRun({
   appConfig,
   subagentUsageSink,
   steering,
+  activityLabel,
   hitlCapable = false,
   toolInputValidationErrors,
   streaming = true,
@@ -1061,9 +1110,9 @@ export async function createRun({
    * extraction. The HITL resume path rebuilds the graph with `messages: []` (state
    * comes from the durable checkpoint), so the in-turn `tool_search` results that
    * would normally mark a deferred tool discovered aren't present — without this the
-   * paused tool would be absent from the rebuilt schema-only toolMap and resume would
-   * fail with "unknown tool". Captured at pause via `extractDiscoveredToolsFromHistory`
-   * and replayed here. Merged with (not replacing) any names extracted from `messages`.
+   * paused tool's schema would be absent from the rebuilt model binding. Captured at
+   * pause from canonical run state (with message parsing for older SDK releases) and
+   * replayed here. Merged with (not replacing) names extracted from `messages`.
    */
   discoveredToolNames?: string[];
   summarizationConfig?: SummarizationConfig;
@@ -1093,7 +1142,27 @@ export async function createRun({
    * node). Only the resumable agents controller passes this; the
    * OpenAI-compatible and Responses controllers have no job/SSE surface.
    */
-  steering?: { hook: HookCallback<'PostToolBatch'> };
+  steering?: {
+    hook: HookCallback<'PostToolBatch'>;
+    /**
+     * The PreemptBoundary twin of `hook`, built via
+     * `createSteerPreemptBoundaryHook` from the same drain closures. Fires
+     * when the SDK seals a model stream mid-generation on a preempt request.
+     */
+    preemptHook?: HookCallback<'PreemptBoundary'>;
+    /**
+     * Level-triggered O(1) poll over the job's armed preempt requests
+     * (`createSteerPreemptPoll`). Threaded into `RunConfig.preemption`, which
+     * also makes the SDK reserve recursion-limit headroom for its seals.
+     */
+    preemption?: StreamPreemption;
+  };
+  /**
+   * Run-scoped tool-batch summary hook (PostToolBatch). Like steering, it
+   * registers independently of the approval policy and needs no checkpointer;
+   * the hook returns immediately and generates off the critical path.
+   */
+  activityLabel?: { hook: HookCallback<'PostToolBatch'> };
   /**
    * Whether the caller implements the HITL pause/resume lifecycle (inspects
    * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
@@ -1361,7 +1430,7 @@ export async function createRun({
   const graphConfig: RunConfig['graphConfig'] = {
     signal,
     agents: agentInputs,
-    edges: agents[0].edges,
+    edges: agents[0].edges ?? [],
   };
 
   if (agentInputs.length > 1 || ((graphConfig as MultiAgentGraphConfig).edges?.length ?? 0) > 0) {
@@ -1453,9 +1522,22 @@ export async function createRun({
    * this guard is defense in depth).
    */
   let hooks = hitl?.hooks;
+  /** Activity labels register BEFORE the steer drain: the label must claim
+   *  its slot while the batch's tool parts are still the content tail. If a
+   *  steer drained first, its injected part would flush the tool block in
+   *  sequential rendering and orphan the label outside its group. With the
+   *  label claimed first, parts order as [tools…, label, steer] — the label
+   *  terminates the group and the steer renders after it. */
+  if (activityLabel != null) {
+    hooks = hooks ?? new HookRegistry();
+    hooks.register('PostToolBatch', { hooks: [activityLabel.hook] });
+  }
   if (steering != null && isSteeringSupported()) {
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolBatch', { hooks: [steering.hook] });
+    if (steering.preemptHook != null && isSteerPreemptSupported()) {
+      hooks.register('PreemptBoundary', { hooks: [steering.preemptHook] });
+    }
   }
 
   /**
@@ -1532,6 +1614,7 @@ export async function createRun({
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
     langfuse: buildLangfuseConfig({
       appConfig,
+      runId,
       tenantId: tenantId ?? user?.tenantId,
       centralTraceExportEnabled,
     }),
@@ -1555,9 +1638,15 @@ export async function createRun({
     // (it gates on result-altering hooks, not registry presence).
     ...(hitl && { humanInTheLoop: hitl.humanInTheLoop }),
     ...(hooks && { hooks }),
+    // Preemption is observation-only like the boundary hooks: the poll never
+    // mutates and the SDK refuses to seal unless a PreemptBoundary matcher is
+    // live, so gating both on the same capability keeps them in lockstep.
+    ...(steering?.preemption != null &&
+      isSteerPreemptSupported() && { preemption: steering.preemption }),
   };
   const run = await Run.create(runConfig);
 
+  applyCustomHandoffPromptKeyCompatibility(run, runConfig.graphConfig);
   applyTestRunHook(run, { messages, agents });
   return run;
 }

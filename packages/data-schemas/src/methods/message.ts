@@ -456,6 +456,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         tokenCount: updatedMessage.tokenCount,
         feedback: updatedMessage.feedback,
         endpoint: updatedMessage.endpoint,
+        langfuseSampled: updatedMessage.langfuseSampled,
+        langfuseDestinationIds: updatedMessage.langfuseDestinationIds,
       };
     } catch (err) {
       logger.error('Error updating message:', err);

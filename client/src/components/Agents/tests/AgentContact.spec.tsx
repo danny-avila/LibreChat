@@ -24,7 +24,7 @@ describe('AgentContact', () => {
         agent={
           {
             support_contact: { name: 'Support Team', email: 'support@example.com' },
-            owner_contact: { name: 'Owner User', email: 'owner@example.com' },
+            owner_contact: { name: 'Owner User' },
           } as any
         }
       />,
@@ -38,7 +38,7 @@ describe('AgentContact', () => {
     expect(screen.queryByText('Owner User')).not.toBeInTheDocument();
   });
 
-  it('falls back to owner contact', () => {
+  it('falls back to owner contact as a plain name without a mailto link', () => {
     render(
       <AgentContact
         agent={
@@ -49,15 +49,6 @@ describe('AgentContact', () => {
         }
       />,
     );
-
-    expect(screen.getByRole('link', { name: 'Owner User' })).toHaveAttribute(
-      'href',
-      'mailto:owner@example.com',
-    );
-  });
-
-  it('renders a plain name when no email is available', () => {
-    render(<AgentContact agent={{ owner_contact: { name: 'Owner User' } } as any} />);
 
     expect(screen.getByText('Owner User')).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();

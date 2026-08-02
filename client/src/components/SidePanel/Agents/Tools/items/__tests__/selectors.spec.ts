@@ -223,6 +223,29 @@ describe('matchesMcpServer', () => {
     expect(matchesMcpServer('mcp_github_extra', 'github_extra')).toBe(true);
     expect(matchesMcpServer('search_mcp_github_extra', 'github_extra')).toBe(true);
   });
+
+  test('boundary-exact matching prevents a delimiter-bearing normalized name from double-matching', () => {
+    /** Raw `foo mcp bar` normalizes to `foo_mcp_bar`, which suffix-matching
+     *  would ALSO attribute to a server named `bar` — both cards would show
+     *  selected and removing `bar` would strip the other server's tool.
+     *  With the full server list, the token resolves once by longest match. */
+    const allServers = ['foo mcp bar', 'bar'];
+    expect(matchesMcpServer('search_mcp_foo_mcp_bar', 'foo mcp bar', allServers)).toBe(true);
+    expect(matchesMcpServer('search_mcp_foo_mcp_bar', 'bar', allServers)).toBe(false);
+    expect(matchesMcpServer('search_mcp_bar', 'bar', allServers)).toBe(true);
+    expect(matchesMcpServer('search_mcp_bar', 'foo mcp bar', allServers)).toBe(false);
+  });
+
+  test('matches normalized-spelling tool ids for a special-character server', () => {
+    /** Model-facing tool ids embed `normalizeServerName(server)`, while the
+     *  marketplace/server cards are keyed raw — both spellings must count as
+     *  attached or a selected server renders as an unselected orphan. */
+    expect(matchesMcpServer('search_mcp_Connector__Company', 'Connector: Company')).toBe(true);
+    expect(matchesMcpServer('search_mcp_Connector: Company', 'Connector: Company')).toBe(true);
+    expect(matchesMcpServer('mcp_Connector__Company', 'Connector: Company')).toBe(true);
+    expect(matchesMcpServer('search_mcp_Connector__Company', 'Connector__Company')).toBe(true);
+    expect(matchesMcpServer('search_mcp_Connector__Other', 'Connector: Company')).toBe(false);
+  });
 });
 
 describe('selection — ask_user_question builtin rides agent.tools', () => {
