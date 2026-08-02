@@ -46,6 +46,9 @@ const steeringWith = (over: Partial<SteeringControls> = {}): SteeringControls =>
 
 const steering = steeringWith();
 const pausedSteering = steeringWith({ canSteer: false });
+/** Paused on a tool approval: steering is unavailable, but the escalation
+ *  control stays visible-and-disabled rather than vanishing mid-pause. */
+const approvalPausedSteering = steeringWith({ canSteer: false, pausedOnApproval: true });
 
 const queued = (over: Partial<QueuedMessage> = {}): QueuedMessage =>
   ({
@@ -88,13 +91,14 @@ describe('Queue', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('renders a row per queued message with three visible actions', () => {
+  it('renders a row per queued message with every action visible, none behind a menu', () => {
     renderQueue([queued({ id: 'q1' }), queued({ id: 'q2' })]);
     const rows = screen.getAllByTestId('queued-message-row');
     expect(rows).toHaveLength(2);
 
     const firstRow = within(rows[0]);
     expect(firstRow.getByText('com_ui_send_now')).toBeInTheDocument();
+    expect(firstRow.getByTestId('queued-interrupt-now')).toBeInTheDocument();
     expect(firstRow.getByLabelText('com_ui_edit_message')).toBeInTheDocument();
     expect(firstRow.getByLabelText('com_ui_remove_queued')).toBeInTheDocument();
     expect(firstRow.queryByLabelText('com_ui_more_options')).not.toBeInTheDocument();
@@ -332,5 +336,43 @@ describe('Queue', () => {
     );
     expect(attachmentLabel.parentElement).not.toHaveAttribute('aria-label');
     expect(screen.getByText('com_ui_queued_attachment_count:2')).toHaveClass('sr-only');
+  });
+
+  /* Escalation is the only way to make a waiting message interrupt the reply
+     rather than wait for its next tool step. Send now sends it as an ordinary
+     steer; this sends it as an interrupt. */
+  describe('interrupt escalation', () => {
+    it('escalates the row that was clicked, as a preempt', () => {
+      renderQueue([queued({ id: 'q1' }), queued({ id: 'q2', text: 'the second one' })]);
+      fireEvent.click(screen.getAllByTestId('queued-interrupt-now')[1]);
+      expect(mockSendQueuedNow).toHaveBeenCalledWith(expect.objectContaining({ id: 'q2' }), {
+        preempt: true,
+      });
+    });
+
+    it('leaves Send now as an ordinary steer', () => {
+      renderQueue([queued({ id: 'q1' })]);
+      fireEvent.click(screen.getByText('com_ui_send_now'));
+      expect(mockSendQueuedNow).toHaveBeenCalledWith(expect.objectContaining({ id: 'q1' }));
+    });
+
+    /* Hiding it during the pause is the discoverability gap this button
+       closes: the pause is exactly when a user wants to cut the reply short. */
+    it('stays visible but disabled while paused on an approval', () => {
+      renderQueue([queued()], approvalPausedSteering);
+      expect(screen.getByTestId('queued-interrupt-now')).toBeDisabled();
+    });
+
+    it('offers nothing once the run is over', () => {
+      renderQueue([queued()], steeringWith({ duringRunActive: false, canSteer: false }));
+      expect(screen.queryByTestId('queued-interrupt-now')).not.toBeInTheDocument();
+    });
+
+    /* A recovered row is consumed atomically only by a normal generation, so
+       escalating it would leave or duplicate its parked server copy. */
+    it('offers nothing on a recovered row', () => {
+      renderQueue([queued({ recoverySteerId: 'srv-1' })]);
+      expect(screen.queryByTestId('queued-interrupt-now')).not.toBeInTheDocument();
+    });
   });
 });

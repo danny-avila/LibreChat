@@ -1,6 +1,12 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import EscalateNowButton from '~/components/Chat/Input/EscalateNowButton';
+import { hasLiveToolApproval } from '~/hooks/Chat/useSteering';
+import useSteerEscalate from '~/hooks/Chat/useSteerEscalate';
 import useSteerRecovery from '~/hooks/Chat/useSteerRecovery';
+import { useGetMessagesByConvoId } from '~/data-provider';
+import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
 import SteerPart from './SteerPart';
 import { cn } from '~/utils';
@@ -24,6 +30,22 @@ function PendingSteers({ conversationId }: PendingSteersProps) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const { retry, sendAsNew } = useSteerRecovery(conversationId);
+  const escalate = useSteerEscalate(conversationId);
+  const escalating = useAtomValue(escalatingSteerFamily(conversationId));
+  /* Reads the cache the composer already populates, so the escalation control
+     is gated on the same pause the composer sees rather than round-tripping to
+     discover the run cannot accept an arm. Boolean `select` for the same reason
+     the composer uses one: streaming deltas must not re-render this row. */
+  const { data: paused } = useGetMessagesByConvoId<boolean>(conversationId, {
+    select: hasLiveToolApproval,
+  });
+  /* Only one interrupt can be unresolved at a time: a second arm would seal the
+     same run twice. The flag covers an arm's round trip, before its own chip
+     can report `preempt`. */
+  const interruptPending = useMemo(
+    () => escalating || steers.some((steer) => steer.preempt === true && steer.status !== 'failed'),
+    [escalating, steers],
+  );
 
   if (steers.length === 0) {
     return null;
@@ -58,8 +80,27 @@ function PendingSteers({ conversationId }: PendingSteersProps) {
               </button>
             </div>
           ) : (
-            <div className="-mt-2 mb-2 pl-9 text-xs text-text-secondary">
-              {localize('com_ui_sending')}
+            <div className="-mt-2 mb-2 flex items-center gap-2 pl-9 text-xs text-text-secondary">
+              <span>
+                {localize(
+                  steer.preempt === true ? 'com_ui_steer_in_flight_preempt' : 'com_ui_sending',
+                )}
+              </span>
+              {/* Only a `pending` steer can be armed: `sending` has no server id
+                  yet, and one already interrupting has nothing left to escalate. */}
+              {steer.status === 'pending' && steer.preempt !== true && (
+                <EscalateNowButton
+                  surface="bubble"
+                  messageText={steer.text}
+                  disabled={paused === true || interruptPending}
+                  onClick={() =>
+                    escalate({
+                      steerId: steer.steerId,
+                      generationCreatedAt: steer.generationCreatedAt,
+                    })
+                  }
+                />
+              )}
             </div>
           )}
         </div>
