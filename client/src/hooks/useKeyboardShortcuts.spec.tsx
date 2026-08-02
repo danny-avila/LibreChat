@@ -190,6 +190,57 @@ describe('global shortcut dispatch', () => {
     expect(getByTestId('sidebar').textContent).not.toBe(before);
   });
 
+  it('yields when a closer handler already claimed the keypress', () => {
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+    const widget = document.createElement('div');
+    widget.addEventListener('keydown', (e) => e.preventDefault());
+    document.body.appendChild(widget);
+
+    dispatchKey({ key: 's', ctrlKey: true, shiftKey: true }, widget);
+
+    expect(getByTestId('sidebar').textContent).toBe(before);
+  });
+
+  it('still acts when the same widget lets the keypress through', () => {
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+    const widget = document.createElement('div');
+    document.body.appendChild(widget);
+
+    const event = dispatchKey({ key: 's', ctrlKey: true, shiftKey: true }, widget);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(getByTestId('sidebar').textContent).not.toBe(before);
+  });
+
+  it('yields to a document-level owner that registered after the dispatcher', () => {
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+    const claim = (e: KeyboardEvent) => e.preventDefault();
+    document.addEventListener('keydown', claim);
+
+    try {
+      dispatchKey({ key: 's', ctrlKey: true, shiftKey: true });
+    } finally {
+      document.removeEventListener('keydown', claim);
+    }
+
+    expect(getByTestId('sidebar').textContent).toBe(before);
+  });
+
+  it('yields an editing-allowed chord that the focused input claimed', () => {
+    renderHarness();
+    const escalation = appendEscalationButton('bubble');
+    const input = document.createElement('input');
+    input.addEventListener('keydown', (e) => e.preventDefault());
+    document.body.appendChild(input);
+
+    dispatchKey({ key: '.', ctrlKey: true, shiftKey: true }, input);
+
+    expect(escalation.onClick).not.toHaveBeenCalled();
+  });
+
   it('ignores shortcuts while a modal dialog is open', () => {
     renderHarness();
     const dialog = document.createElement('div');
