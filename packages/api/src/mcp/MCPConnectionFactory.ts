@@ -590,6 +590,7 @@ export class MCPConnectionFactory {
             userId: this.userId!,
             serverName: this.serverName,
             accessToken: tokens.access_token,
+            credentialSetId: tokens.credential_set_id,
             findToken: this.tokenMethods!.findToken!,
           }),
         );
@@ -602,6 +603,11 @@ export class MCPConnectionFactory {
             serverName: this.serverName,
             findToken: this.tokenMethods!.findToken!,
           }),
+        );
+        MCPTokenStorage.assertCredentialSetBinding(
+          this.serverName,
+          tokens.credential_set_id,
+          storedClient?.clientMetadata,
         );
         MCPOAuthHandler.assertStoredClientBinding(
           this.serverName,
@@ -1081,7 +1087,10 @@ export class MCPConnectionFactory {
           this.flowManager!.createFlow(newFlowId, 'mcp_oauth', {}, this.signal).catch(
             async (error) => {
               logger.debug(`${this.logPrefix} OAuth flow monitor ended`, error);
-              await this.clearStaleClientIfRejected(flowMetadata.reusedStoredClient, error);
+              await this.clearStaleClientIfRejected(
+                flowMetadata.reusedClientCredentialSetId,
+                error,
+              );
             },
           );
 
@@ -1106,7 +1115,7 @@ export class MCPConnectionFactory {
         const { tokens } = result;
         try {
           connection.setOAuthTokens(tokens);
-          await this.runWithCapturedTenant(() =>
+          const storedTokens = await this.runWithCapturedTenant(() =>
             MCPTokenStorage.storeTokens({
               userId: this.userId!,
               serverName: this.serverName,
@@ -1127,7 +1136,7 @@ export class MCPConnectionFactory {
           // `mcp_get_tokens` cache so the next `getOAuthTokens` reads the
           // freshly stored tokens rather than the just-rejected ones the
           // interactive flow replaced.
-          await this.invalidateGetTokensFlow(tokens);
+          await this.invalidateGetTokensFlow(storedTokens);
           logger.info(`${this.logPrefix} OAuth tokens saved to storage`);
         } catch (error) {
           logger.error(`${this.logPrefix} Failed to save OAuth tokens to storage`, error);
@@ -1138,7 +1147,7 @@ export class MCPConnectionFactory {
       if (result?.tokens) {
         connection.emit('oauthHandled');
       } else {
-        await this.clearStaleClientIfRejected(result?.reusedStoredClient, result?.error);
+        await this.clearStaleClientIfRejected(result?.reusedClientCredentialSetId, result?.error);
         logger.warn(`${this.logPrefix} OAuth failed, emitting oauthFailed event`);
         connection.emit('oauthFailed', new Error('OAuth authentication failed'));
       }
@@ -1244,10 +1253,10 @@ export class MCPConnectionFactory {
 
   /** Clears stored client registration if the error indicates client rejection */
   private async clearStaleClientIfRejected(
-    reusedStoredClient: boolean | undefined,
+    reusedClientCredentialSetId: string | undefined,
     error: unknown,
   ): Promise<void> {
-    if (!reusedStoredClient || !this.tokenMethods?.deleteTokens) {
+    if (!reusedClientCredentialSetId || !this.tokenMethods?.deleteTokens) {
       return;
     }
     if (!MCPConnectionFactory.isClientRejection(error)) {
@@ -1258,6 +1267,7 @@ export class MCPConnectionFactory {
         userId: this.userId!,
         serverName: this.serverName,
         deleteTokens: this.tokenMethods!.deleteTokens,
+        credentialSetId: reusedClientCredentialSetId,
       }),
     ).catch((err) => {
       logger.warn(`${this.logPrefix} Failed to clear stale client registration`, err);
@@ -1330,6 +1340,7 @@ export class MCPConnectionFactory {
     resourceMetadata?: OAuthProtectedResourceMetadata;
     clientSource?: OAuthClientSource;
     reusedStoredClient?: boolean;
+    reusedClientCredentialSetId?: string;
     error?: unknown;
   } | null> {
     const serverUrl = (this.serverConfig as t.SSEOptions | t.StreamableHTTPOptions).url;
@@ -1346,6 +1357,7 @@ export class MCPConnectionFactory {
     }
 
     let reusedStoredClient = false;
+    let reusedClientCredentialSetId: string | undefined;
 
     try {
       logger.debug(`${this.logPrefix} Checking for existing OAuth flow for ${this.serverName}...`);
@@ -1382,6 +1394,7 @@ export class MCPConnectionFactory {
             }
 
             reusedStoredClient = flowMeta?.reusedStoredClient === true;
+            reusedClientCredentialSetId = flowMeta?.reusedClientCredentialSetId;
             const tokens = await this.flowManager.createFlow(flowId, 'mcp_oauth', {}, this.signal);
             if (typeof this.oauthEnd === 'function') {
               await this.oauthEnd();
@@ -1396,6 +1409,7 @@ export class MCPConnectionFactory {
               resourceMetadata: flowMeta?.resourceMetadata,
               clientSource: flowMeta?.clientSource,
               reusedStoredClient,
+              reusedClientCredentialSetId,
             };
           }
 
@@ -1428,6 +1442,8 @@ export class MCPConnectionFactory {
               metadata: flowMeta?.metadata,
               resourceMetadata: flowMeta?.resourceMetadata,
               clientSource: flowMeta?.clientSource,
+              reusedStoredClient: flowMeta?.reusedStoredClient,
+              reusedClientCredentialSetId: flowMeta?.reusedClientCredentialSetId,
             };
           }
         }
@@ -1466,6 +1482,7 @@ export class MCPConnectionFactory {
       );
 
       reusedStoredClient = flowMetadata.reusedStoredClient === true;
+      reusedClientCredentialSetId = flowMetadata.reusedClientCredentialSetId;
 
       // Store flow state BEFORE redirecting so the callback can find it
       const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: this.tenantId };
@@ -1496,10 +1513,11 @@ export class MCPConnectionFactory {
         resourceMetadata: flowMetadata.resourceMetadata,
         clientSource: flowMetadata.clientSource,
         reusedStoredClient,
+        reusedClientCredentialSetId,
       };
     } catch (error) {
       logger.error(`${this.logPrefix} Failed to complete OAuth flow for ${this.serverName}`, error);
-      return { tokens: null, reusedStoredClient, error };
+      return { tokens: null, reusedStoredClient, reusedClientCredentialSetId, error };
     }
   }
 }

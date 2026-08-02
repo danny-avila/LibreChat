@@ -1739,12 +1739,21 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         return { access_token: 'test-token', token_type: 'Bearer', expires_in: 3600 };
       });
 
-      await MCPOAuthHandler.completeOAuthFlow('test-flow-id', 'test-auth-code', mockFlowManager, {
-        foo: 'bar',
-      });
+      const result = await MCPOAuthHandler.completeOAuthFlow(
+        'test-flow-id',
+        'test-auth-code',
+        mockFlowManager,
+        { foo: 'bar' },
+      );
 
       const headers = mockFetch.mock.calls[0][1]?.headers as Headers;
       expect(headers.get('foo')).toBe('bar');
+      expect(result.credential_set_id).toMatch(/^[a-f0-9]{32}$/);
+      expect(mockFlowManager.completeFlow).toHaveBeenCalledWith(
+        'test-flow-id',
+        'mcp_oauth',
+        expect.objectContaining({ credential_set_id: result.credential_set_id }),
+      );
     });
 
     it('passes headers to token refresh', async () => {
@@ -2094,6 +2103,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           token_endpoint: 'https://example.com/token',
           server_url: 'https://example.com/mcp',
           client_source: 'dynamic',
+          credential_set_id: 'stored-generation',
         },
       });
 
@@ -2142,6 +2152,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
 
       expect(result.authorizationUrl).toBeDefined();
       expect(result.flowId).toBeDefined();
+      expect(result.flowMetadata.reusedClientCredentialSetId).toBe('stored-generation');
     });
 
     it('should register a new client when findToken is provided but no existing registration found', async () => {

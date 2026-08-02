@@ -30,6 +30,8 @@ export interface OAuthMetadata {
 export type OAuthClientSource = 'configured' | 'dynamic';
 
 export interface OAuthStoredClientMetadata extends OAuthMetadata {
+  /** Random identifier shared by the access, refresh, and client records from one authorization. */
+  credential_set_id?: string;
   /** Canonical MCP server URL the tokens and client registration are bound to. */
   server_url: string;
   /** Whether the client came from server configuration or dynamic client registration. */
@@ -111,11 +113,15 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   allowedAddresses?: string[] | null;
   /** True when the flow reused a stored client registration from a prior successful OAuth flow */
   reusedStoredClient?: boolean;
+  /** Credential generation of the reused client, used to scope stale-registration cleanup. */
+  reusedClientCredentialSetId?: string;
   /** Tenant context captured at flow initiation for callback replay (SameSite cookies unavailable on cross-origin redirects) */
   tenantId?: string;
 }
 
 export interface MCPOAuthTokens extends OAuthTokens {
+  /** Internal identifier for the persisted credential set; never sent to the OAuth provider. */
+  credential_set_id?: string;
   /** When the tokens were obtained */
   obtained_at: number;
   /** Calculated expiry time */

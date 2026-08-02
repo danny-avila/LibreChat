@@ -448,6 +448,31 @@ describe('Token Methods - Detailed Tests', () => {
       expect(updated).toBeNull();
     });
 
+    test('should condition updates on the OAuth credential-set metadata selector', async () => {
+      await Token.updateOne(
+        { token: 'update-token' },
+        { $set: { metadata: { credential_set_id: 'generation-a' } } },
+      );
+
+      const staleUpdate = await methods.updateToken(
+        {
+          token: 'update-token',
+          metadataCredentialSetId: 'generation-b',
+        },
+        { email: 'stale@example.com' },
+      );
+      expect(staleUpdate).toBeNull();
+
+      const currentUpdate = await methods.updateToken(
+        {
+          token: 'update-token',
+          metadataCredentialSetId: 'generation-a',
+        },
+        { email: 'current@example.com' },
+      );
+      expect(currentUpdate?.email).toBe('current@example.com');
+    });
+
     test('should update expiresAt when expiresIn is provided', async () => {
       const beforeUpdate = Date.now();
       const newExpiresIn = 7200;
@@ -578,6 +603,37 @@ describe('Token Methods - Detailed Tests', () => {
       const remainingTokens = await Token.find({});
       expect(remainingTokens).toHaveLength(3);
       expect(remainingTokens.find((t) => t.identifier === 'oauth-identifier-456')).toBeUndefined();
+    });
+
+    test('should condition OAuth client deletion on the credential-set metadata selector', async () => {
+      const identifier = 'mcp:test-server:client';
+      await Token.create({
+        token: 'encrypted-client-registration',
+        userId: oauthUserId,
+        type: 'mcp_oauth_client',
+        identifier,
+        metadata: { credential_set_id: 'generation-b' },
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 3600000),
+      });
+
+      const staleDelete = await methods.deleteTokens({
+        userId: oauthUserId.toString(),
+        type: 'mcp_oauth_client',
+        identifier,
+        metadataCredentialSetId: 'generation-a',
+      });
+      expect(staleDelete.deletedCount).toBe(0);
+      expect(await Token.exists({ token: 'encrypted-client-registration' })).not.toBeNull();
+
+      const currentDelete = await methods.deleteTokens({
+        userId: oauthUserId.toString(),
+        type: 'mcp_oauth_client',
+        identifier,
+        metadataCredentialSetId: 'generation-b',
+      });
+      expect(currentDelete.deletedCount).toBe(1);
+      expect(await Token.exists({ token: 'encrypted-client-registration' })).toBeNull();
     });
 
     test('should delete tokens matching an identifier pattern', async () => {

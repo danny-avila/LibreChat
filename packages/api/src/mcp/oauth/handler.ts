@@ -944,6 +944,7 @@ export class MCPOAuthHandler {
 
       let clientInfo: OAuthClientInformation | undefined;
       let reusedStoredClient = false;
+      let reusedClientCredentialSetId: string | undefined;
       let clientSource: OAuthClientSource = config?.client_id ? 'configured' : 'dynamic';
 
       if (config?.client_id) {
@@ -973,6 +974,7 @@ export class MCPOAuthHandler {
             const storedServerUrl = existing.clientMetadata?.server_url;
             const storedTokenEndpoint = existing.clientMetadata?.token_endpoint;
             const storedResource = existing.clientMetadata?.resource;
+            const storedCredentialSetId = existing.clientMetadata?.credential_set_id;
             const currentResource = resourceMetadata?.resource
               ? new URL(resourceMetadata.resource).href
               : undefined;
@@ -987,6 +989,8 @@ export class MCPOAuthHandler {
               );
             } else if (
               existing.clientMetadata?.client_source !== 'dynamic' ||
+              typeof storedCredentialSetId !== 'string' ||
+              storedCredentialSetId.length === 0 ||
               typeof storedServerUrl !== 'string' ||
               !this.oauthUrlsMatch(storedServerUrl, serverUrl) ||
               typeof storedTokenEndpoint !== 'string' ||
@@ -1002,6 +1006,7 @@ export class MCPOAuthHandler {
               );
               clientInfo = existing.clientInfo;
               reusedStoredClient = true;
+              reusedClientCredentialSetId = storedCredentialSetId;
               clientSource = 'dynamic';
             }
           }
@@ -1114,6 +1119,7 @@ export class MCPOAuthHandler {
         ...(allowedAddresses !== undefined && { allowedAddresses }),
         ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
         ...(reusedStoredClient && { reusedStoredClient }),
+        ...(reusedClientCredentialSetId && { reusedClientCredentialSetId }),
         ...(tenantId && { tenantId }),
       };
 
@@ -1210,6 +1216,7 @@ export class MCPOAuthHandler {
 
       const mcpTokens: MCPOAuthTokens = {
         ...tokens,
+        credential_set_id: randomBytes(16).toString('hex'),
         obtained_at: Date.now(),
         expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
       };

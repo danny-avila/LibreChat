@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import { logger, encryptV2, decryptV2, getTenantId } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods, IToken } from '@librechat/data-schemas';
@@ -30,6 +31,8 @@ interface StoreTokensParams {
   findToken?: TokenMethods['findToken'];
   clientInfo?: OAuthClientInformation;
   metadata?: Partial<OAuthStoredClientMetadata>;
+  /** Existing generation that must still own every stored record before a refresh is persisted. */
+  expectedCredentialSetId?: string;
   /** Optional: Pass existing token state to avoid duplicate DB calls */
   existingTokens?: {
     accessToken?: IToken | null;
@@ -98,6 +101,21 @@ function getJwtAccessTokenExpiry(accessToken?: string): number | null {
   return null;
 }
 
+function getTokenMetadata(tokenData: IToken | null | undefined): Record<string, unknown> {
+  if (tokenData?.metadata == null) {
+    return {};
+  }
+  if (tokenData.metadata instanceof Map) {
+    return Object.fromEntries(tokenData.metadata);
+  }
+  return { ...(tokenData.metadata as unknown as Record<string, unknown>) };
+}
+
+function getCredentialSetId(tokenData: IToken | null | undefined): string | undefined {
+  const value = getTokenMetadata(tokenData).credential_set_id;
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
 export class MCPTokenStorage {
   /**
    * Process-local in-flight refresh-token redemptions, keyed by
@@ -136,11 +154,13 @@ export class MCPTokenStorage {
     userId,
     serverName,
     accessToken,
+    credentialSetId,
     findToken,
   }: {
     userId: string;
     serverName: string;
     accessToken: string;
+    credentialSetId: string | undefined;
     findToken: TokenMethods['findToken'];
   }): Promise<boolean> {
     try {
@@ -152,12 +172,33 @@ export class MCPTokenStorage {
       if (!tokenData || (tokenData.expiresAt && new Date() >= tokenData.expiresAt)) {
         return false;
       }
-      return (await decryptV2(tokenData.token)) === accessToken;
+      return (
+        credentialSetId != null &&
+        getCredentialSetId(tokenData) === credentialSetId &&
+        (await decryptV2(tokenData.token)) === accessToken
+      );
     } catch (error) {
       logger.warn(`${this.getLogPrefix(userId, serverName)} Failed to verify cached access token`, {
         error,
       });
       return false;
+    }
+  }
+
+  /** Fails closed when separately stored OAuth records are not from the same authorization. */
+  static assertCredentialSetBinding(
+    serverName: string,
+    tokenCredentialSetId: string | undefined,
+    clientMetadata: Partial<OAuthStoredClientMetadata> | Record<string, unknown> | undefined,
+  ): void {
+    const clientCredentialSetId = clientMetadata?.credential_set_id;
+    if (
+      !tokenCredentialSetId ||
+      typeof clientCredentialSetId !== 'string' ||
+      clientCredentialSetId.length === 0 ||
+      tokenCredentialSetId !== clientCredentialSetId
+    ) {
+      throw new ReauthenticationRequiredError(serverName, 'binding');
     }
   }
 
@@ -177,11 +218,129 @@ export class MCPTokenStorage {
     clientInfo,
     existingTokens,
     metadata,
-  }: StoreTokensParams): Promise<void> {
+    expectedCredentialSetId,
+  }: StoreTokensParams): Promise<MCPOAuthTokens> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
     try {
       const identifier = `mcp:${serverName}`;
+      const tokenCredentialSetId = (tokens as Partial<MCPOAuthTokens>).credential_set_id;
+      const metadataCredentialSetId = metadata?.credential_set_id;
+      const validTokenCredentialSetId =
+        typeof tokenCredentialSetId === 'string' && tokenCredentialSetId.length > 0
+          ? tokenCredentialSetId
+          : undefined;
+      const validMetadataCredentialSetId =
+        typeof metadataCredentialSetId === 'string' && metadataCredentialSetId.length > 0
+          ? metadataCredentialSetId
+          : undefined;
+      let credentialSetId: string;
+      if (expectedCredentialSetId) {
+        if (
+          (validTokenCredentialSetId && validTokenCredentialSetId !== expectedCredentialSetId) ||
+          (validMetadataCredentialSetId && validMetadataCredentialSetId !== expectedCredentialSetId)
+        ) {
+          throw new ReauthenticationRequiredError(serverName, 'binding');
+        }
+        credentialSetId = expectedCredentialSetId;
+      } else {
+        /**
+         * Only the token exchange result carries an internally generated flow ID. OAuth
+         * metadata is provider-controlled (and the schema permits extensions), so it must
+         * never select the credential generation for an interactive/non-refresh write.
+         */
+        credentialSetId = validTokenCredentialSetId ?? randomUUID();
+      }
+      const tokenMetadata = { credential_set_id: credentialSetId };
+
+      /**
+       * Snapshot every record before the first write. Conditional updates below use these
+       * encrypted values and generation IDs as an optimistic lock, so a refresh response from
+       * generation A cannot overwrite a newer interactive authorization B.
+       */
+      let existingAccessToken: IToken | null | undefined;
+      let existingRefreshToken: IToken | null | undefined;
+      let existingClientInfo: IToken | null | undefined;
+      if (findToken && updateToken) {
+        let accessLookup: Promise<IToken | null | undefined>;
+        let refreshLookup: Promise<IToken | null | undefined>;
+        let clientLookup: Promise<IToken | null | undefined>;
+
+        if (!expectedCredentialSetId && existingTokens?.accessToken !== undefined) {
+          accessLookup = Promise.resolve(existingTokens.accessToken);
+        } else {
+          accessLookup = findToken({ userId, type: 'mcp_oauth', identifier });
+        }
+
+        if (!expectedCredentialSetId && !tokens.refresh_token) {
+          refreshLookup = Promise.resolve(undefined);
+        } else if (!expectedCredentialSetId && existingTokens?.refreshToken !== undefined) {
+          refreshLookup = Promise.resolve(existingTokens.refreshToken);
+        } else {
+          refreshLookup = findToken({
+            userId,
+            type: 'mcp_oauth_refresh',
+            identifier: `${identifier}:refresh`,
+          });
+        }
+
+        if (!expectedCredentialSetId && !clientInfo) {
+          clientLookup = Promise.resolve(undefined);
+        } else if (!expectedCredentialSetId && existingTokens?.clientInfoToken !== undefined) {
+          clientLookup = Promise.resolve(existingTokens.clientInfoToken);
+        } else {
+          clientLookup = findToken({
+            userId,
+            type: 'mcp_oauth_client',
+            identifier: `${identifier}:client`,
+          });
+        }
+
+        [existingAccessToken, existingRefreshToken, existingClientInfo] = await Promise.all([
+          accessLookup,
+          refreshLookup,
+          clientLookup,
+        ]);
+      }
+
+      if (expectedCredentialSetId) {
+        if (!existingRefreshToken || !existingClientInfo) {
+          throw new ReauthenticationRequiredError(serverName, 'binding');
+        }
+        for (const currentRecord of [
+          existingAccessToken,
+          existingRefreshToken,
+          existingClientInfo,
+        ]) {
+          if (currentRecord && getCredentialSetId(currentRecord) !== expectedCredentialSetId) {
+            throw new ReauthenticationRequiredError(serverName, 'binding');
+          }
+        }
+      }
+
+      const updateIfCurrent = async (
+        existingToken: IToken,
+        type: string,
+        recordIdentifier: string,
+        tokenData: Parameters<TokenMethods['updateToken']>[1],
+      ): Promise<void> => {
+        const existingCredentialSetId = getCredentialSetId(existingToken);
+        const updated = await updateToken!(
+          {
+            userId,
+            type,
+            identifier: recordIdentifier,
+            token: existingToken.token,
+            ...(existingCredentialSetId && {
+              metadataCredentialSetId: existingCredentialSetId,
+            }),
+          },
+          tokenData,
+        );
+        if (!updated) {
+          throw new ReauthenticationRequiredError(serverName, 'binding');
+        }
+      };
 
       // Encrypt and store access token
       const encryptedAccessToken = await encryptV2(tokens.access_token);
@@ -238,18 +397,13 @@ export class MCPTokenStorage {
         identifier,
         token: encryptedAccessToken,
         expiresIn: expiresInSeconds > 0 ? expiresInSeconds : defaultTTL,
+        metadata: tokenMetadata,
       };
 
       // Check if token already exists and update if it does
       if (findToken && updateToken) {
-        // Use provided existing token state if available, otherwise look it up
-        const existingToken =
-          existingTokens?.accessToken !== undefined
-            ? existingTokens.accessToken
-            : await findToken({ userId, identifier });
-
-        if (existingToken) {
-          await updateToken({ userId, identifier }, accessTokenData);
+        if (existingAccessToken) {
+          await updateIfCurrent(existingAccessToken, 'mcp_oauth', identifier, accessTokenData);
           logger.debug(`${logPrefix} Updated existing access token`);
         } else {
           await createToken(accessTokenData);
@@ -281,21 +435,18 @@ export class MCPTokenStorage {
           identifier: `${identifier}:refresh`,
           token: encryptedRefreshToken,
           expiresIn: refreshExpiresIn > 0 ? refreshExpiresIn : 365 * 24 * 60 * 60,
+          metadata: tokenMetadata,
         };
 
         // Check if refresh token already exists and update if it does
         if (findToken && updateToken) {
-          // Use provided existing token state if available, otherwise look it up
-          const existingRefreshToken =
-            existingTokens?.refreshToken !== undefined
-              ? existingTokens.refreshToken
-              : await findToken({
-                  userId,
-                  identifier: `${identifier}:refresh`,
-                });
-
           if (existingRefreshToken) {
-            await updateToken({ userId, identifier: `${identifier}:refresh` }, refreshTokenData);
+            await updateIfCurrent(
+              existingRefreshToken,
+              'mcp_oauth_refresh',
+              `${identifier}:refresh`,
+              refreshTokenData,
+            );
             logger.debug(`${logPrefix} Updated existing refresh token`);
           } else {
             await createToken(refreshTokenData);
@@ -309,6 +460,14 @@ export class MCPTokenStorage {
         logger.debug(
           `${logPrefix} No refresh token in response - OAuth server did not rotate refresh token (this is normal for some providers)`,
         );
+        if (expectedCredentialSetId && existingRefreshToken && updateToken) {
+          await updateIfCurrent(
+            existingRefreshToken,
+            'mcp_oauth_refresh',
+            `${identifier}:refresh`,
+            { metadata: tokenMetadata },
+          );
+        }
       }
 
       /** Store client information if provided */
@@ -325,22 +484,18 @@ export class MCPTokenStorage {
           identifier: `${identifier}:client`,
           token: encryptedClientInfo,
           expiresIn: 365 * 24 * 60 * 60,
-          metadata: metadata ? { ...metadata } : undefined,
+          metadata: { ...metadata, credential_set_id: credentialSetId },
         };
 
         // Check if client info already exists and update if it does
         if (findToken && updateToken) {
-          // Use provided existing token state if available, otherwise look it up
-          const existingClientInfo =
-            existingTokens?.clientInfoToken !== undefined
-              ? existingTokens.clientInfoToken
-              : await findToken({
-                  userId,
-                  identifier: `${identifier}:client`,
-                });
-
           if (existingClientInfo) {
-            await updateToken({ userId, identifier: `${identifier}:client` }, clientInfoData);
+            await updateIfCurrent(
+              existingClientInfo,
+              'mcp_oauth_client',
+              `${identifier}:client`,
+              clientInfoData,
+            );
             logger.debug(`${logPrefix} Updated existing client info`);
           } else {
             await createToken(clientInfoData);
@@ -357,6 +512,15 @@ export class MCPTokenStorage {
         has_refresh_token: !!tokens.refresh_token,
         expires_at: 'expires_at' in tokens ? tokens.expires_at : 'N/A',
       });
+      return {
+        ...tokens,
+        credential_set_id: credentialSetId,
+        obtained_at:
+          'obtained_at' in tokens && typeof tokens.obtained_at === 'number'
+            ? tokens.obtained_at
+            : Date.now(),
+        expires_at: accessTokenExpiry.getTime(),
+      };
     } catch (error) {
       const logPrefix = this.getLogPrefix(userId, serverName);
       logger.error(`${logPrefix} Failed to store tokens`, error);
@@ -526,9 +690,9 @@ export class MCPTokenStorage {
       return null;
     }
 
+    const refreshCredentialSetId = getCredentialSetId(refreshTokenData);
     try {
       logger.info(`${logPrefix} Attempting to refresh token`);
-      const decryptedRefreshToken = await decryptV2(refreshTokenData.token);
 
       let clientInfo;
       let clientInfoData;
@@ -553,10 +717,7 @@ export class MCPTokenStorage {
           });
 
           if (clientInfoData.metadata) {
-            const raw =
-              clientInfoData.metadata instanceof Map
-                ? Object.fromEntries(clientInfoData.metadata)
-                : (clientInfoData.metadata as Record<string, unknown>);
+            const raw = getTokenMetadata(clientInfoData);
             storedClientMetadata = raw as Partial<OAuthStoredClientMetadata>;
             if (typeof raw.token_endpoint === 'string') {
               storedTokenEndpoint = raw.token_endpoint;
@@ -579,9 +740,17 @@ export class MCPTokenStorage {
         logger.debug(`${logPrefix} No client info found`);
       }
 
-      if (!clientInfo?.client_id || !storedTokenEndpoint || !storedServerUrl || !clientSource) {
+      if (
+        !clientInfo?.client_id ||
+        !storedTokenEndpoint ||
+        !storedServerUrl ||
+        !clientSource ||
+        !refreshCredentialSetId
+      ) {
         throw new ReauthenticationRequiredError(serverName, 'binding');
       }
+      this.assertCredentialSetBinding(serverName, refreshCredentialSetId, storedClientMetadata);
+      const decryptedRefreshToken = await decryptV2(refreshTokenData.token);
 
       const metadata = {
         userId,
@@ -615,7 +784,7 @@ export class MCPTokenStorage {
 
       // Store the refreshed tokens (handles both create and update)
       // Pass existing token state to avoid duplicate DB calls
-      await this.storeTokens({
+      const storedTokens = await this.storeTokens({
         userId,
         serverName,
         tokens: newTokens,
@@ -629,6 +798,7 @@ export class MCPTokenStorage {
           clientInfoToken: clientInfoData,
         },
         metadata: storedClientMetadata,
+        expectedCredentialSetId: refreshCredentialSetId,
       });
 
       if (onRefreshSuccess) {
@@ -640,7 +810,7 @@ export class MCPTokenStorage {
       }
 
       logger.info(`${logPrefix} Successfully refreshed and stored OAuth tokens`);
-      return newTokens;
+      return storedTokens;
     } catch (refreshError) {
       logger.error(`${logPrefix} Failed to refresh tokens`, refreshError);
       if (refreshError instanceof ReauthenticationRequiredError) {
@@ -659,11 +829,19 @@ export class MCPTokenStorage {
             `${logPrefix} Client registration rejected during token refresh, attempting to clear stale registration and refresh token`,
           );
           const results = await Promise.allSettled([
-            MCPTokenStorage.deleteClientRegistration({ userId, serverName, deleteTokens }),
+            MCPTokenStorage.deleteClientRegistration({
+              userId,
+              serverName,
+              deleteTokens,
+              credentialSetId: refreshCredentialSetId,
+            }),
             deleteTokens({
               userId,
               type: 'mcp_oauth_refresh',
               identifier: `${identifier}:refresh`,
+              ...(refreshCredentialSetId && {
+                metadataCredentialSetId: refreshCredentialSetId,
+              }),
             }),
           ]);
           for (const r of results) {
@@ -748,6 +926,11 @@ export class MCPTokenStorage {
         return null;
       }
 
+      const credentialSetId = getCredentialSetId(accessTokenData);
+      if (!credentialSetId) {
+        throw new ReauthenticationRequiredError(serverName, 'binding');
+      }
+
       const decryptedAccessToken = await decryptV2(accessTokenData.token);
 
       /** Get refresh token if available */
@@ -757,15 +940,29 @@ export class MCPTokenStorage {
         identifier: `${identifier}:refresh`,
       });
 
+      const clientInfoData = await findToken({
+        userId,
+        type: 'mcp_oauth_client',
+        identifier: `${identifier}:client`,
+      });
+      this.assertCredentialSetBinding(
+        serverName,
+        credentialSetId,
+        getTokenMetadata(clientInfoData),
+      );
+
       const tokens: MCPOAuthTokens = {
         access_token: decryptedAccessToken,
         token_type: 'Bearer',
+        credential_set_id: credentialSetId,
         obtained_at: accessTokenData.createdAt.getTime(),
         expires_at: accessTokenData.expiresAt?.getTime(),
       };
 
-      if (refreshTokenData) {
+      if (refreshTokenData && getCredentialSetId(refreshTokenData) === credentialSetId) {
         tokens.refresh_token = await decryptV2(refreshTokenData.token);
+      } else if (refreshTokenData) {
+        logger.warn(`${logPrefix} Ignoring refresh token from a different OAuth credential set`);
       }
 
       logger.debug(`${logPrefix} Loaded existing OAuth tokens from storage`);
@@ -805,19 +1002,7 @@ export class MCPTokenStorage {
     const tokenData = await decryptV2(clientInfoData.token);
     const clientInfo = JSON.parse(tokenData);
 
-    // get metadata from the token as a plain object. While it's defined as a Map in the database type, it's a plain object at runtime.
-    function getMetadata(
-      metadata: Map<string, unknown> | Record<string, unknown> | null,
-    ): Record<string, unknown> {
-      if (metadata == null) {
-        return {};
-      }
-      if (metadata instanceof Map) {
-        return Object.fromEntries(metadata);
-      }
-      return { ...(metadata as Record<string, unknown>) };
-    }
-    const clientMetadata = getMetadata(clientInfoData.metadata ?? null);
+    const clientMetadata = getTokenMetadata(clientInfoData);
 
     return {
       clientInfo,
@@ -830,16 +1015,19 @@ export class MCPTokenStorage {
     userId,
     serverName,
     deleteTokens,
+    credentialSetId,
   }: {
     userId: string;
     serverName: string;
     deleteTokens: TokenMethods['deleteTokens'];
+    credentialSetId?: string;
   }): Promise<void> {
     const identifier = `mcp:${serverName}`;
     await deleteTokens({
       userId,
       type: 'mcp_oauth_client',
       identifier: `${identifier}:client`,
+      ...(credentialSetId && { metadataCredentialSetId: credentialSetId }),
     });
     const logPrefix = this.getLogPrefix(userId, serverName);
     logger.debug(`${logPrefix} Cleared stored client registration`);

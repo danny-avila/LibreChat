@@ -408,22 +408,24 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
       /** Persist tokens immediately so reconnection uses fresh credentials */
       if (flowState?.userId && tokens) {
+        let storedTokens = tokens;
         try {
-          await MCPTokenStorage.storeTokens({
-            userId: flowState.userId,
-            serverName,
-            tokens,
-            createToken: db.createToken,
-            updateToken: db.updateToken,
-            findToken: db.findToken,
-            clientInfo: flowState.clientInfo,
-            metadata: MCPOAuthHandler.buildStoredClientMetadata(
-              flowState.metadata,
-              flowState.resourceMetadata,
-              flowState.serverUrl,
-              flowState.clientSource,
-            ),
-          });
+          storedTokens =
+            (await MCPTokenStorage.storeTokens({
+              userId: flowState.userId,
+              serverName,
+              tokens,
+              createToken: db.createToken,
+              updateToken: db.updateToken,
+              findToken: db.findToken,
+              clientInfo: flowState.clientInfo,
+              metadata: MCPOAuthHandler.buildStoredClientMetadata(
+                flowState.metadata,
+                flowState.resourceMetadata,
+                flowState.serverUrl,
+                flowState.clientSource,
+              ),
+            })) ?? tokens;
           logger.debug('[MCP OAuth] Stored OAuth tokens prior to reconnection', {
             serverName,
             userId: flowState.userId,
@@ -447,13 +449,13 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             await clearGetTokensFlow({
               flowManager,
               flowId: tokenFlowId,
-              tokens,
+              tokens: storedTokens,
             });
             if (tokenFlowId !== flowId) {
               await clearGetTokensFlow({
                 flowManager,
                 flowId,
-                tokens,
+                tokens: storedTokens,
               });
             }
           } catch (error) {

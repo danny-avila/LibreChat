@@ -526,6 +526,7 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     typeof storedServerUrl !== 'string' ||
     typeof clientMetadata.token_endpoint !== 'string' ||
     typeof clientMetadata.revocation_endpoint !== 'string' ||
+    typeof clientMetadata.credential_set_id !== 'string' ||
     (storedClientSource !== 'configured' && storedClientSource !== 'dynamic')
   ) {
     logger.warn(
@@ -543,7 +544,15 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
       serverName,
       findToken: db.findToken,
     });
+    if (tokens) {
+      MCPTokenStorage.assertCredentialSetBinding(
+        serverName,
+        tokens.credential_set_id,
+        clientMetadata,
+      );
+    }
   } catch (error) {
+    tokens = null;
     logger.warn(
       `[maybeUninstallOAuthMCP] Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
       error,

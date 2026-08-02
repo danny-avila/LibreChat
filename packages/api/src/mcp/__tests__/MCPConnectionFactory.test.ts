@@ -475,6 +475,67 @@ describe('MCPConnectionFactory', () => {
       );
     });
 
+    it('rejects a cached token when the client generation changes after access validation', async () => {
+      const currentConfig = {
+        type: 'sse' as const,
+        url: 'https://server.example.com/mcp',
+        initTimeout: 5000,
+      } as t.SSEOptions;
+      mockProcessMCPEnv.mockReturnValue(currentConfig);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue({
+        access_token: 'generation-a-access',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        credential_set_id: 'credential-set-a',
+      });
+      mockMCPTokenStorage.isCurrentAccessToken.mockResolvedValueOnce(true);
+      mockMCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue({
+        clientInfo: { client_id: 'client-b' },
+        clientMetadata: {
+          authorization_endpoint: 'https://auth.example.com/authorize',
+          token_endpoint: 'https://auth.example.com/token',
+          server_url: 'https://server.example.com/mcp',
+          client_source: 'dynamic',
+          credential_set_id: 'credential-set-b',
+        },
+      });
+      mockMCPTokenStorage.assertCredentialSetBinding.mockImplementationOnce(
+        (_serverName, tokenCredentialSetId, clientMetadata) => {
+          if (tokenCredentialSetId !== clientMetadata?.credential_set_id) {
+            throw new Error('mixed OAuth credential generations');
+          }
+        },
+      );
+
+      const factory = new InspectableMCPConnectionFactory(
+        { serverName: 'test-server', serverConfig: currentConfig },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+        },
+      );
+
+      await expect(factory.getOAuthTokensForTest()).resolves.toBeNull();
+      expect(mockMCPTokenStorage.isCurrentAccessToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accessToken: 'generation-a-access',
+          credentialSetId: 'credential-set-a',
+        }),
+      );
+      expect(mockMCPTokenStorage.assertCredentialSetBinding).toHaveBeenCalledWith(
+        'test-server',
+        'credential-set-a',
+        expect.objectContaining({ credential_set_id: 'credential-set-b' }),
+      );
+    });
+
     it.each(['PENDING', 'COMPLETED'] as const)(
       'replaces a recent %s OAuth flow bound to another server URL',
       async (status) => {
@@ -744,6 +805,7 @@ describe('MCPConnectionFactory', () => {
           state: 'random-state',
           clientInfo: { client_id: 'stale-client' },
           reusedStoredClient: true,
+          reusedClientCredentialSetId: 'credential-generation-a',
         },
       };
 
@@ -777,6 +839,7 @@ describe('MCPConnectionFactory', () => {
         expect.objectContaining({
           userId: 'user123',
           serverName: 'test-server',
+          credentialSetId: 'credential-generation-a',
         }),
       );
     });
@@ -3054,6 +3117,91 @@ describe('MCPConnectionFactory', () => {
       // The stale `mcp_get_tokens` cache is cleared so the next
       // `getOAuthTokens` reads the freshly persisted interactive tokens.
       expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('flow123', 'mcp_get_tokens');
+    });
+
+    it('should complete PENDING token waiters with the persisted interactive credential generation', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart: jest.fn(),
+        oauthEnd: jest.fn(),
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+      const callbackTokens: MCPOAuthTokens = {
+        access_token: 'interactive-access',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      const persistedTokens: MCPOAuthTokens = {
+        ...callbackTokens,
+        credential_set_id: 'persisted-generation',
+      };
+
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(null);
+      mockMCPTokenStorage.storeTokens.mockResolvedValueOnce(persistedTokens);
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'fresh-csrf-state',
+        },
+      });
+      mockFlowManager.getFlowState
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          status: 'PENDING' as const,
+          type: 'mcp_get_tokens',
+          metadata: {},
+          createdAt: Date.now(),
+        });
+      mockFlowManager.createFlow.mockResolvedValue(callbackTokens);
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected
+      }
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      expect(mockMCPTokenStorage.storeTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ tokens: callbackTokens }),
+      );
+      expect(mockFlowManager.completeFlow).toHaveBeenCalledWith(
+        'flow123',
+        'mcp_get_tokens',
+        persistedTokens,
+      );
+      expect(mockFlowManager.deleteFlow).not.toHaveBeenCalledWith('flow123', 'mcp_get_tokens');
     });
   });
 

@@ -744,6 +744,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
 
     it('should not throw when access token is valid', async () => {
       const futureDate = new Date(Date.now() + 3600000);
+      const credentialSetId = 'valid-access-credential-set';
 
       const findToken = jest.fn().mockImplementation(async (filter: { type?: string }) => {
         if (filter.type === 'mcp_oauth') {
@@ -751,10 +752,23 @@ describe('MCP OAuth Race Condition Fixes', () => {
             token: 'enc:valid-access-token',
             expiresAt: futureDate,
             createdAt: new Date(),
+            metadata: { credential_set_id: credentialSetId },
           };
         }
         if (filter.type === 'mcp_oauth_refresh') {
           return null;
+        }
+        if (filter.type === 'mcp_oauth_client') {
+          return {
+            token: 'enc:{"client_id":"test-client"}',
+            metadata: {
+              credential_set_id: credentialSetId,
+              authorization_endpoint: 'https://auth.example.com/authorize',
+              token_endpoint: 'https://auth.example.com/token',
+              server_url: 'https://mcp.example.com/',
+              client_source: 'dynamic',
+            },
+          };
         }
         return null;
       });

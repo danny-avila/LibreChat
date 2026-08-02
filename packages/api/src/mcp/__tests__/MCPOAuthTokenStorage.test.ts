@@ -10,12 +10,25 @@ import type { MCPOAuthTokens } from '~/mcp/oauth';
 import { MCPTokenStorage, ReauthenticationRequiredError } from '~/mcp/oauth';
 import { InMemoryTokenStore } from './helpers/oauthTestServer';
 
+const credentialSetId = 'credential-set-a';
+const storedTokenMetadata = { credential_set_id: credentialSetId };
 const storedBindingMetadata = {
+  ...storedTokenMetadata,
   authorization_endpoint: 'https://auth.example.com/authorize',
   token_endpoint: 'https://auth.example.com/token',
   server_url: 'https://mcp.example.com/',
   client_source: 'dynamic',
-};
+} as const;
+
+function createBoundToken(
+  store: InMemoryTokenStore,
+  data: Parameters<InMemoryTokenStore['createToken']>[0],
+) {
+  return store.createToken({
+    ...data,
+    metadata: { ...storedTokenMetadata, ...(data.metadata ?? {}) },
+  });
+}
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -39,7 +52,7 @@ describe('MCPTokenStorage', () => {
 
   describe('isCurrentAccessToken', () => {
     it('rejects a flow-cached token after persistent storage has rotated it', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
@@ -52,6 +65,7 @@ describe('MCPTokenStorage', () => {
           userId: 'u1',
           serverName: 'srv1',
           accessToken: 'old-cached-token',
+          credentialSetId,
           findToken: store.findToken,
         }),
       ).resolves.toBe(false);
@@ -60,13 +74,208 @@ describe('MCPTokenStorage', () => {
           userId: 'u1',
           serverName: 'srv1',
           accessToken: 'new-token',
+          credentialSetId,
           findToken: store.findToken,
         }),
       ).resolves.toBe(true);
     });
+
+    it('rejects the same token value after its credential generation changes', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:same-token',
+        expiresIn: 3600,
+        metadata: { credential_set_id: 'credential-set-b' },
+      });
+
+      await expect(
+        MCPTokenStorage.isCurrentAccessToken({
+          userId: 'u1',
+          serverName: 'srv1',
+          accessToken: 'same-token',
+          credentialSetId,
+          findToken: store.findToken,
+        }),
+      ).resolves.toBe(false);
+    });
   });
 
   describe('storeTokens', () => {
+    it('keeps the trusted flow generation when provider metadata supplies a conflicting ID', async () => {
+      const result = await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'at1',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+          credential_set_id: 'credential-set-from-flow',
+        },
+        createToken: store.createToken,
+        clientInfo: { client_id: 'client-id' },
+        metadata: {
+          ...storedBindingMetadata,
+          credential_set_id: 'credential-set-from-metadata',
+        },
+      });
+
+      expect(result.credential_set_id).toBe('credential-set-from-flow');
+      expect(store.getAll()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'mcp_oauth',
+            metadata: expect.objectContaining({
+              credential_set_id: 'credential-set-from-flow',
+            }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_client',
+            metadata: expect.objectContaining({
+              credential_set_id: 'credential-set-from-flow',
+            }),
+          }),
+        ]),
+      );
+    });
+
+    it('does not adopt a provider metadata generation when callback tokens lack one', async () => {
+      const result = await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: { access_token: 'at1', token_type: 'Bearer' },
+        createToken: store.createToken,
+        clientInfo: { client_id: 'client-id' },
+        metadata: {
+          ...storedBindingMetadata,
+          credential_set_id: 'provider-controlled-generation',
+        },
+      });
+
+      expect(result.credential_set_id).toEqual(expect.any(String));
+      expect(result.credential_set_id).not.toBe('provider-controlled-generation');
+      expect(store.getAll()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'mcp_oauth',
+            metadata: expect.objectContaining({
+              credential_set_id: result.credential_set_id,
+            }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_client',
+            metadata: expect.objectContaining({
+              credential_set_id: result.credential_set_id,
+            }),
+          }),
+        ]),
+      );
+    });
+
+    it('rejects metadata that conflicts with the expected refresh generation', async () => {
+      const createToken = jest.fn();
+
+      await expect(
+        MCPTokenStorage.storeTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          tokens: { access_token: 'at1', token_type: 'Bearer' },
+          createToken,
+          metadata: {
+            ...storedBindingMetadata,
+            credential_set_id: 'different-generation',
+          },
+          expectedCredentialSetId: credentialSetId,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+      expect(createToken).not.toHaveBeenCalled();
+    });
+
+    it('rejects a stale write when the generation changes after prevalidation', async () => {
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'generation-a-access',
+          refresh_token: 'generation-a-refresh',
+          token_type: 'Bearer',
+          credential_set_id: credentialSetId,
+        },
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        findToken: store.findToken,
+        clientInfo: { client_id: 'client-a', client_secret: 'secret-a' },
+        metadata: storedBindingMetadata,
+      });
+
+      let replaced = false;
+      const interleavedUpdate = jest.fn(async (...args: Parameters<typeof store.updateToken>) => {
+        if (!replaced) {
+          replaced = true;
+          await MCPTokenStorage.storeTokens({
+            userId: 'u1',
+            serverName: 'srv1',
+            tokens: {
+              access_token: 'generation-b-access',
+              refresh_token: 'generation-b-refresh',
+              token_type: 'Bearer',
+              credential_set_id: 'credential-set-b',
+            },
+            createToken: store.createToken,
+            updateToken: store.updateToken,
+            findToken: store.findToken,
+            clientInfo: { client_id: 'client-b', client_secret: 'secret-b' },
+            metadata: {
+              ...storedBindingMetadata,
+              credential_set_id: 'credential-set-b',
+            },
+          });
+        }
+        return await store.updateToken(...args);
+      }) as typeof store.updateToken;
+
+      await expect(
+        MCPTokenStorage.storeTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          tokens: {
+            access_token: 'late-generation-a-access',
+            refresh_token: 'late-generation-a-refresh',
+            token_type: 'Bearer',
+            credential_set_id: credentialSetId,
+          },
+          createToken: store.createToken,
+          updateToken: interleavedUpdate,
+          findToken: store.findToken,
+          clientInfo: { client_id: 'client-a', client_secret: 'secret-a' },
+          metadata: storedBindingMetadata,
+          expectedCredentialSetId: credentialSetId,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+
+      expect(interleavedUpdate).toHaveBeenCalledTimes(1);
+      expect(store.getAll()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'mcp_oauth',
+            token: 'enc:generation-b-access',
+            metadata: expect.objectContaining({ credential_set_id: 'credential-set-b' }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_refresh',
+            token: 'enc:generation-b-refresh',
+            metadata: expect.objectContaining({ credential_set_id: 'credential-set-b' }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_client',
+            token: expect.stringContaining('client-b'),
+            metadata: expect.objectContaining({ credential_set_id: 'credential-set-b' }),
+          }),
+        ]),
+      );
+    });
+
     it('should create new access token with expires_in', async () => {
       await MCPTokenStorage.storeTokens({
         userId: 'u1',
@@ -130,7 +339,7 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should update existing access token', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
@@ -259,7 +468,7 @@ describe('MCPTokenStorage', () => {
 
   describe('getTokens', () => {
     beforeEach(async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_client',
         identifier: 'mcp:srv1:client',
@@ -270,7 +479,7 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should return valid non-expired tokens', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
@@ -289,15 +498,60 @@ describe('MCPTokenStorage', () => {
       expect(result!.token_type).toBe('Bearer');
     });
 
+    it('rejects an access token read before a concurrent client generation replacement', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:generation-a-access',
+        expiresIn: 3600,
+      });
+      let replaced = false;
+      const interleavedFind = jest.fn(async (query) => {
+        const result = await store.findToken(query);
+        if (!replaced && query.type === 'mcp_oauth') {
+          replaced = true;
+          await createBoundToken(store, {
+            userId: 'u1',
+            type: 'mcp_oauth',
+            identifier: 'mcp:srv1',
+            token: 'enc:generation-b-access',
+            expiresIn: 3600,
+            metadata: { credential_set_id: 'credential-set-b' },
+          });
+          await createBoundToken(store, {
+            userId: 'u1',
+            type: 'mcp_oauth_client',
+            identifier: 'mcp:srv1:client',
+            token: 'enc:{"client_id":"client-b"}',
+            expiresIn: 86400,
+            metadata: {
+              ...storedBindingMetadata,
+              credential_set_id: 'credential-set-b',
+            },
+          });
+        }
+        return result;
+      }) as typeof store.findToken;
+
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: interleavedFind,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+    });
+
     it('should return tokens with refresh token when available', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:at',
         expiresIn: 3600,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
@@ -315,7 +569,7 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should return tokens without refresh token field when none stored', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
@@ -333,7 +587,7 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should throw ReauthenticationRequiredError when expired and no refresh', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
@@ -361,14 +615,14 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should refresh expired access token when refresh token and callback are available', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:expired-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
@@ -403,14 +657,14 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should return null when refresh fails', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:expired-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
@@ -433,14 +687,14 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should return null when no refreshTokens callback provided', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:expired-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
@@ -458,14 +712,14 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should return null when no createToken callback provided', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:expired-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
@@ -484,21 +738,21 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should pass client info to refreshTokens metadata', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:expired-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
         token: 'enc:rt',
         expiresIn: 86400,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_client',
         identifier: 'mcp:srv1:client',
@@ -534,14 +788,14 @@ describe('MCPTokenStorage', () => {
     it('should handle unauthorized_client refresh error', async () => {
       const { logger } = await import('@librechat/data-schemas');
 
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:expired-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
@@ -566,21 +820,21 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should delete client registration and refresh token on invalid_client when deleteTokens provided', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:expired-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
         token: 'enc:rt',
         expiresIn: 86400,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_client',
         identifier: 'mcp:srv1:client',
@@ -625,14 +879,14 @@ describe('MCPTokenStorage', () => {
     it('should return null and log warning on invalid_client when deleteTokens not provided', async () => {
       const { logger } = await import('@librechat/data-schemas');
 
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:expired-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
@@ -657,21 +911,21 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should handle client_not_found and other vendor-specific rejection patterns', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:expired-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
         token: 'enc:rt',
         expiresIn: 86400,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_client',
         identifier: 'mcp:srv1:client',
@@ -710,14 +964,14 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should handle case-insensitive error messages for client rejection', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:expired-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
@@ -740,14 +994,14 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should still throw ReauthenticationRequiredError when deleteClientRegistration fails', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:expired-token',
         expiresIn: -1,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
@@ -773,7 +1027,7 @@ describe('MCPTokenStorage', () => {
 
   describe('forceRefreshTokens', () => {
     beforeEach(async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_client',
         identifier: 'mcp:srv1:client',
@@ -784,14 +1038,14 @@ describe('MCPTokenStorage', () => {
     });
 
     it('fails closed before invoking refresh for legacy client metadata', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
         token: 'enc:rt',
         expiresIn: 86400,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_client',
         identifier: 'mcp:srv1:client',
@@ -813,18 +1067,260 @@ describe('MCPTokenStorage', () => {
       expect(refreshTokens).not.toHaveBeenCalled();
     });
 
+    it('does not send a refresh token read before a concurrent client generation replacement', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:generation-a-refresh',
+        expiresIn: 86400,
+      });
+      let replaced = false;
+      const interleavedFind = jest.fn(async (query) => {
+        const result = await store.findToken(query);
+        if (!replaced && query.type === 'mcp_oauth_refresh') {
+          replaced = true;
+          await createBoundToken(store, {
+            userId: 'u1',
+            type: 'mcp_oauth_client',
+            identifier: 'mcp:srv1:client',
+            token: 'enc:{"client_id":"client-b","client_secret":"secret-b"}',
+            expiresIn: 86400,
+            metadata: {
+              ...storedBindingMetadata,
+              credential_set_id: 'credential-set-b',
+            },
+          });
+        }
+        return result;
+      }) as typeof store.findToken;
+      const refreshTokens = jest.fn();
+
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: interleavedFind,
+          createToken: store.createToken,
+          refreshTokens,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+
+      expect(refreshTokens).not.toHaveBeenCalled();
+    });
+
+    it('does not persist a late refresh after interactive authorization replaces its generation', async () => {
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'generation-a-access',
+          refresh_token: 'generation-a-refresh',
+          token_type: 'Bearer',
+          expires_in: 3600,
+          credential_set_id: credentialSetId,
+        },
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        findToken: store.findToken,
+        clientInfo: { client_id: 'client-a', client_secret: 'secret-a' },
+        metadata: storedBindingMetadata,
+      });
+
+      let markRefreshStarted!: () => void;
+      const refreshStarted = new Promise<void>((resolve) => {
+        markRefreshStarted = resolve;
+      });
+      let finishRefresh!: (tokens: MCPOAuthTokens) => void;
+      const refreshResponse = new Promise<MCPOAuthTokens>((resolve) => {
+        finishRefresh = resolve;
+      });
+      const refreshTokens = jest.fn(async () => {
+        markRefreshStarted();
+        return await refreshResponse;
+      });
+      const staleCreateToken = jest.fn(store.createToken);
+      const staleUpdateToken = jest.fn(store.updateToken);
+
+      const staleRefresh = MCPTokenStorage.forceRefreshTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        findToken: store.findToken,
+        createToken: staleCreateToken,
+        updateToken: staleUpdateToken,
+        refreshTokens,
+      });
+      let staleRefreshError: unknown;
+      const observedStaleRefresh = staleRefresh.catch((error) => {
+        staleRefreshError = error;
+      });
+      await refreshStarted;
+
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'generation-b-access',
+          refresh_token: 'generation-b-refresh',
+          token_type: 'Bearer',
+          expires_in: 3600,
+          credential_set_id: 'credential-set-b',
+        },
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        findToken: store.findToken,
+        clientInfo: { client_id: 'client-b', client_secret: 'secret-b' },
+        metadata: {
+          ...storedBindingMetadata,
+          credential_set_id: 'credential-set-b',
+        },
+      });
+
+      finishRefresh({
+        access_token: 'late-generation-a-access',
+        refresh_token: 'late-generation-a-refresh',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      });
+      await observedStaleRefresh;
+      expect(staleRefreshError).toBeInstanceOf(ReauthenticationRequiredError);
+
+      expect(staleCreateToken).not.toHaveBeenCalled();
+      expect(staleUpdateToken).not.toHaveBeenCalled();
+      const storedRecords = store.getAll().filter((record) => record.userId === 'u1');
+      expect(storedRecords).toHaveLength(3);
+      expect(storedRecords).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'mcp_oauth',
+            token: 'enc:generation-b-access',
+            metadata: expect.objectContaining({ credential_set_id: 'credential-set-b' }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_refresh',
+            token: 'enc:generation-b-refresh',
+            metadata: expect.objectContaining({ credential_set_id: 'credential-set-b' }),
+          }),
+          expect.objectContaining({
+            type: 'mcp_oauth_client',
+            token: expect.stringContaining('client-b'),
+            metadata: expect.objectContaining({ credential_set_id: 'credential-set-b' }),
+          }),
+        ]),
+      );
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+        }),
+      ).resolves.toMatchObject({
+        access_token: 'generation-b-access',
+        refresh_token: 'generation-b-refresh',
+        credential_set_id: 'credential-set-b',
+      });
+    });
+
+    it('does not delete a newer generation when a late refresh rejects the old client', async () => {
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'generation-a-access',
+          refresh_token: 'generation-a-refresh',
+          token_type: 'Bearer',
+          expires_in: 3600,
+          credential_set_id: credentialSetId,
+        },
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        findToken: store.findToken,
+        clientInfo: { client_id: 'client-a', client_secret: 'secret-a' },
+        metadata: storedBindingMetadata,
+      });
+
+      let markRefreshStarted!: () => void;
+      const refreshStarted = new Promise<void>((resolve) => {
+        markRefreshStarted = resolve;
+      });
+      let rejectRefresh!: (error: Error) => void;
+      const refreshResponse = new Promise<MCPOAuthTokens>((_resolve, reject) => {
+        rejectRefresh = reject;
+      });
+      const refreshTokens = jest.fn(async () => {
+        markRefreshStarted();
+        return await refreshResponse;
+      });
+      const deleteTokens = jest.fn(store.deleteTokens);
+      const staleRefresh = MCPTokenStorage.forceRefreshTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        findToken: store.findToken,
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        deleteTokens,
+        refreshTokens,
+      });
+      let staleRefreshError: unknown;
+      const observedStaleRefresh = staleRefresh.catch((error) => {
+        staleRefreshError = error;
+      });
+      await refreshStarted;
+
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'generation-b-access',
+          refresh_token: 'generation-b-refresh',
+          token_type: 'Bearer',
+          expires_in: 3600,
+          credential_set_id: 'credential-set-b',
+        },
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        findToken: store.findToken,
+        clientInfo: { client_id: 'client-b', client_secret: 'secret-b' },
+        metadata: {
+          ...storedBindingMetadata,
+          credential_set_id: 'credential-set-b',
+        },
+      });
+
+      rejectRefresh(new Error('invalid_client'));
+      await observedStaleRefresh;
+      expect(staleRefreshError).toBeInstanceOf(ReauthenticationRequiredError);
+
+      expect(deleteTokens).toHaveBeenCalledTimes(2);
+      expect(deleteTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ metadataCredentialSetId: credentialSetId }),
+      );
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+        }),
+      ).resolves.toMatchObject({
+        access_token: 'generation-b-access',
+        refresh_token: 'generation-b-refresh',
+        credential_set_id: 'credential-set-b',
+      });
+      expect(store.getAll().filter((record) => record.userId === 'u1')).toHaveLength(3);
+    });
+
     it('should refresh and store tokens even when access token is not locally expired', async () => {
       // Access token still has time on the clock (1 hour), but the server has
       // invalidated it (we simulate a mid-session 401 by calling forceRefreshTokens
       // directly). The local `expires_at` must be ignored — the 401 is the signal.
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
         token: 'enc:stale-access-token',
         expiresIn: 3600,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
@@ -874,7 +1370,7 @@ describe('MCPTokenStorage', () => {
     it('should return null when no refresh token is stored', async () => {
       // Access token exists locally, but no refresh token. Silent refresh is
       // not possible — the caller must fall back to interactive OAuth.
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
         identifier: 'mcp:srv1',
@@ -897,7 +1393,7 @@ describe('MCPTokenStorage', () => {
     });
 
     it('should return null when refresh callback throws non-client-rejection error', async () => {
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
@@ -921,14 +1417,14 @@ describe('MCPTokenStorage', () => {
     it('should throw ReauthenticationRequiredError when refresh fails with invalid_client', async () => {
       // Mirrors the contract that getTokens has on stale client registration —
       // forceRefreshTokens cleans up the stale state and signals re-auth.
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
         identifier: 'mcp:srv1:refresh',
         token: 'enc:rt',
         expiresIn: 86400,
       });
-      await store.createToken({
+      await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_client',
         identifier: 'mcp:srv1:client',
@@ -1419,6 +1915,53 @@ describe('MCPTokenStorage', () => {
       expect(result!.token_type).toBe('Bearer');
       expect(result!.obtained_at).toBeDefined();
       expect(result!.expires_at).toBeDefined();
+      expect(result!.credential_set_id).toEqual(expect.any(String));
+    });
+
+    it('keeps a new access token usable while omitting a stale refresh generation', async () => {
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: {
+          access_token: 'old-access',
+          refresh_token: 'old-refresh',
+          token_type: 'Bearer',
+          expires_in: 3600,
+          credential_set_id: credentialSetId,
+        },
+        createToken: store.createToken,
+        clientInfo: { client_id: 'old-client', client_secret: 'old-secret' },
+        metadata: storedBindingMetadata,
+      });
+
+      const { credential_set_id: _oldCredentialSetId, ...newBindingMetadata } =
+        storedBindingMetadata;
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: { access_token: 'new-access', token_type: 'Bearer', expires_in: 3600 },
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        findToken: store.findToken,
+        clientInfo: { client_id: 'new-client', client_secret: 'new-secret' },
+        metadata: newBindingMetadata,
+      });
+
+      const result = await MCPTokenStorage.getTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        findToken: store.findToken,
+      });
+      const refreshRecord = await store.findToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+      });
+
+      expect(result).toMatchObject({ access_token: 'new-access' });
+      expect(result!.refresh_token).toBeUndefined();
+      expect(result!.credential_set_id).not.toBe(credentialSetId);
+      expect(refreshRecord?.metadata).toMatchObject({ credential_set_id: credentialSetId });
     });
   });
 });

@@ -1353,10 +1353,14 @@ describe('MCP Routes', () => {
         access_token: 'fresh-access-token',
         refresh_token: 'fresh-refresh-token',
       };
+      const storedTokens = {
+        ...mockTokens,
+        credential_set_id: 'persisted-generation',
+      };
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       MCPOAuthHandler.completeOAuthFlow.mockResolvedValue(mockTokens);
-      MCPTokenStorage.storeTokens.mockResolvedValue();
+      MCPTokenStorage.storeTokens.mockResolvedValue(storedTokens);
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
@@ -1386,7 +1390,7 @@ describe('MCP Routes', () => {
       expect(mockFlowManager.completeFlow).toHaveBeenCalledWith(
         'tenant:tenant-a:test-user-id:test-server',
         'mcp_get_tokens',
-        mockTokens,
+        storedTokens,
       );
       expect(mockFlowManager.deleteFlow).not.toHaveBeenCalledWith(
         'tenant:tenant-a:test-user-id:test-server',
