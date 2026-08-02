@@ -3738,7 +3738,10 @@ describe('useResumableSSE', () => {
     expect(mockSSEInstances).toHaveLength(countAtCeiling + 1);
     expect(getLastSSE().stream).toHaveBeenCalledTimes(1);
 
-    mockFetchStreamStatus.mockRejectedValueOnce(new Error('job already cleaned up'));
+    mockFetchStreamStatus.mockResolvedValueOnce({
+      active: false,
+      createdAt: 1000,
+    });
     await act(async () => {
       getLastSSE()._emit('error', { responseCode: 404 });
       await Promise.resolve();
@@ -3753,7 +3756,21 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('does not reuse completion after an epoch-less delayed status refresh', async () => {
+  it.each([
+    {
+      refreshKind: 'an epoch-less',
+      arrangeRefresh: () =>
+        mockFetchStreamStatus.mockResolvedValueOnce({
+          active: false,
+          generationProtocolVersion: 2,
+        }),
+    },
+    {
+      refreshKind: 'a failed',
+      arrangeRefresh: () =>
+        mockFetchStreamStatus.mockRejectedValueOnce(new Error('status unavailable')),
+    },
+  ])('does not reuse completion after a $refreshKind delayed status refresh', async (scenario) => {
     jest.useFakeTimers();
     mockFetchStreamStatus.mockResolvedValue({
       active: false,
@@ -3794,10 +3811,7 @@ describe('useResumableSSE', () => {
 
     expect(mockSetRunEnd).not.toHaveBeenCalled();
     await advanceRetryTimer(30_000);
-    mockFetchStreamStatus.mockResolvedValueOnce({
-      active: false,
-      generationProtocolVersion: 2,
-    });
+    scenario.arrangeRefresh();
 
     await act(async () => {
       getLastSSE()._emit('error', { responseCode: 404 });

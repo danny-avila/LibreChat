@@ -2665,6 +2665,10 @@ export default function useResumableSSE(
             if (!isCurrentSubscription()) {
               return;
             }
+            // A carried terminal snapshot proves only its own past lifecycle.
+            // Without a fresh status read it cannot prove that no replacement
+            // currently owns this conversation.
+            terminalStatus = undefined;
             logger.warn('ResumableSSE', 'Could not recover parked steers after 404', {
               conversationId: recoveryConvoId,
               error,
@@ -2960,6 +2964,9 @@ export default function useResumableSSE(
             if (!isCurrentSubscription()) {
               return;
             }
+            // Never adjudicate current conversation ownership from a terminal
+            // snapshot retained across an unsuccessful status refresh.
+            status = undefined;
             logger.warn('ResumableSSE', 'Could not determine job state after reconnect limit', {
               conversationId: recoveryConvoId,
               error,
@@ -3082,8 +3089,7 @@ export default function useResumableSSE(
           if (
             status.active === false &&
             generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
-            supportsGenerationProtocolV2(status) &&
-            belongsToReplacementGeneration(status)
+            supportsGenerationProtocolV2(status)
           ) {
             try {
               const refreshedStatus = await fetchStreamStatus(recoveryConvoId);
