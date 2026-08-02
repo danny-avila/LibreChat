@@ -20,7 +20,7 @@ import {
 } from './schemas';
 import { bedrockInputSchema } from './bedrock';
 import { ContentTypes } from './types/runs';
-import { alternateName } from './config';
+import { alternateName, specialVariables } from './config';
 
 dayjs.extend(utc);
 dayjs.extend(timezonePlugin);
@@ -477,6 +477,23 @@ export function replaceSpecialVars({
   }
 
   return result;
+}
+
+const CUSTOM_VAR_PATTERN = /{{([a-zA-Z0-9_]+)}}/g;
+
+export function replaceCustomVars({
+  text,
+  customVariables,
+}: {
+  text: string;
+  customVariables?: Record<string, string> | null;
+}): string {
+  if (!text || !customVariables) {
+    return text;
+  }
+  return text.replace(CUSTOM_VAR_PATTERN, (match, name: string) =>
+    name in specialVariables ? match : (customVariables[name] ?? match),
+  );
 }
 
 /**

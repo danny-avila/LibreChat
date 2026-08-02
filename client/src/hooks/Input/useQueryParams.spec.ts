@@ -560,4 +560,54 @@ describe('useQueryParams', () => {
     expect(params.toString()).toBe('');
     expect(options).toEqual(expect.objectContaining({ replace: true }));
   });
+
+  it('should extract custom_* URL params and pass them as customVariables to newConversation', () => {
+    const mockNewConversation = jest.fn();
+    const mockTextAreaRef = {
+      current: {
+        focus: jest.fn(),
+        setSelectionRange: jest.fn(),
+      } as unknown as HTMLTextAreaElement,
+    };
+
+    (useChatContext as jest.Mock).mockReturnValue({
+      conversation: { model: null, endpoint: null },
+      newConversation: mockNewConversation,
+    });
+
+    (useChatFormContext as jest.Mock).mockReturnValue({
+      setValue: jest.fn(),
+      getValues: jest.fn().mockReturnValue(''),
+      handleSubmit: jest.fn((cb) => () => cb({ text: '' })),
+    });
+
+    (useQueryClient as jest.Mock).mockReturnValue({
+      getQueryData: jest.fn().mockImplementation((key) => {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
+          return { modelSpecs: { list: [] } };
+        }
+        if (k === 'endpoints') {
+          return {};
+        }
+        return null;
+      }),
+    });
+
+    setUrlParams({ model: 'gpt-4', custom_name: 'Alice', custom_department: 'Engineering' });
+
+    renderHook(() => useQueryParams({ textAreaRef: mockTextAreaRef }));
+
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(mockNewConversation).toHaveBeenCalled();
+    const callArgs = mockNewConversation.mock.calls[0][0];
+    expect(callArgs.preset).toEqual(
+      expect.objectContaining({
+        customVariables: { name: 'Alice', department: 'Engineering' },
+      }),
+    );
+  });
 });
