@@ -12,6 +12,18 @@ import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { dedupeSteersById, isNotFoundError, removeConvoFromAllQueries } from '~/utils';
 
 const MESSAGE_RECHECK_DELAY_MS = 1_000;
+const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
+
+const isServerNotReadyError = (error: unknown): boolean => {
+  const response = (error as { response?: { status?: number; data?: unknown } } | null)?.response;
+  const data = response?.data;
+  return (
+    response?.status === 503 &&
+    data != null &&
+    typeof data === 'object' &&
+    (data as { code?: unknown }).code === SERVER_NOT_READY_CODE
+  );
+};
 
 type MissingConversationRecoveryParams = {
   conversationId?: string;
@@ -27,7 +39,13 @@ export default function useMissingConversationRecovery({
   const queryClient = useQueryClient();
   const convertSteersToQueued = useSteerConvert();
   const onConfirmedMissingRef = useRef(onConfirmedMissing);
-  const { data: streamStatus, isFetching, isSuccess } = useStreamStatus(conversationId, enabled);
+  const {
+    data: streamStatus,
+    error: streamStatusError,
+    isFetching,
+    isSuccess,
+    refetch: refetchStreamStatus,
+  } = useStreamStatus(conversationId, enabled);
   const streamStatusRef = useRef(streamStatus);
   const recoveringConversationRef = useRef<string | null>(null);
 
@@ -44,7 +62,19 @@ export default function useMissingConversationRecovery({
       recoveringConversationRef.current = null;
       return;
     }
-    if (!isSuccess || isFetching) {
+    if (isFetching) {
+      return;
+    }
+    if (!isSuccess) {
+      if (!isServerNotReadyError(streamStatusError)) {
+        return;
+      }
+      const timeout = setTimeout(() => {
+        void refetchStreamStatus();
+      }, MESSAGE_RECHECK_DELAY_MS);
+      return () => clearTimeout(timeout);
+    }
+    if (streamStatus == null) {
       return;
     }
     if (streamStatus?.active === true) {
@@ -163,6 +193,8 @@ export default function useMissingConversationRecovery({
     isFetching,
     isSuccess,
     queryClient,
+    refetchStreamStatus,
     streamStatus,
+    streamStatusError,
   ]);
 }

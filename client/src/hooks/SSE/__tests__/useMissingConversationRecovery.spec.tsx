@@ -216,6 +216,40 @@ describe('useMissingConversationRecovery', () => {
     expect(onConfirmedMissing).not.toHaveBeenCalled();
   });
 
+  it('retries a transient status-readiness failure', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onConfirmedMissing = jest.fn();
+    const refetch = jest.fn();
+    mockUseStreamStatus.mockReturnValue({
+      data: undefined,
+      error: {
+        response: {
+          status: 503,
+          data: { code: 'SERVER_NOT_READY' },
+        },
+      },
+      isFetching: false,
+      isSuccess: false,
+      refetch,
+    });
+
+    renderHook(
+      () =>
+        useMissingConversationRecovery({
+          conversationId: CONVERSATION_ID,
+          enabled: true,
+          onConfirmedMissing,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await advanceRecoveryDelay();
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(mockGetMessages).not.toHaveBeenCalled();
+    expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+    expect(onConfirmedMissing).not.toHaveBeenCalled();
+  });
+
   it('hands off an active shared-status update that cancels delayed recovery', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const onConfirmedMissing = jest.fn();
