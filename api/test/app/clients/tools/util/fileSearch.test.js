@@ -62,7 +62,13 @@ describe('fileSearch.js - tuple return validation', () => {
       expect(result[1]).toBeUndefined();
     });
 
-    it('should return tuple when no valid results found', async () => {
+    /**
+     * A total search failure must not read as "the documents do not contain this".
+     *
+     * Agents grounded on a corpus are told to say plainly when they find nothing, so conflating
+     * the two makes the model deny information that is in fact present but unreachable.
+     */
+    it('should report a search backend failure as an outage, not as an empty result', async () => {
       generateShortLivedToken.mockReturnValue('mock-jwt-token');
       axios.post.mockRejectedValue(new Error('API Error'));
 
@@ -75,7 +81,8 @@ describe('fileSearch.js - tuple return validation', () => {
 
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(2);
-      expect(result[0]).toBe('No results found or errors occurred while searching the files.');
+      expect(result[0]).toContain('could not be reached');
+      expect(result[0]).not.toContain('No results found');
       expect(result[1]).toBeUndefined();
     });
   });

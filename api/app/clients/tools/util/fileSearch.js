@@ -150,6 +150,23 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
       const validResults = results.filter((entry) => entry !== null);
 
       if (validResults.length === 0) {
+        /**
+         * Distinguish "the documents do not contain this" from "we could not search them".
+         *
+         * Space agents are instructed to answer only from retrieved documents and to say so
+         * plainly when they find nothing. Reporting a total search failure as "no results" makes
+         * the model state confidently that the answer is absent from the knowledge base, when in
+         * fact nothing was ever read — the worst possible failure for a compliance corpus.
+         */
+        if (files.length > 0) {
+          return [
+            'The document search backend could not be reached, so no documents were searched. ' +
+              'Tell the user the knowledge base is temporarily unavailable. ' +
+              'Do not state or imply that the documents lack the requested information.',
+            undefined,
+          ];
+        }
+
         return ['No results found or errors occurred while searching the files.', undefined];
       }
 
