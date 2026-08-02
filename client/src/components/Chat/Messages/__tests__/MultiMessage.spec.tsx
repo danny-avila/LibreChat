@@ -113,4 +113,39 @@ describe('MultiMessage sibling selection', () => {
     view.rerender(treeElement(['a', 'b']));
     expect(displayed()).toBe('a');
   });
+
+  /**
+   * Regression: streaming ids hydrate to durable ids at finalize (the legacy
+   * regenerate path mints a new UUID for `_`-suffixed preliminary ids). The
+   * newest child's id changing WITHOUT the prior newest surviving is a
+   * re-key of the same row, not an append — it must not yank a user who
+   * paged to an older sibling mid-stream.
+   */
+  it('keeps the viewed older branch when the newest sibling is re-keyed at finalize', () => {
+    const view = render(treeElement(['a', 'streaming_']));
+    fireEvent.click(screen.getAllByTestId('prev')[0]);
+    expect(displayed()).toBe('a');
+
+    view.rerender(treeElement(['a', 'durable-id']));
+    expect(displayed()).toBe('a');
+  });
+
+  it('keeps the viewed branch when a re-key lands together with restored middle siblings', () => {
+    const view = render(treeElement(['a', 'streaming_']));
+    fireEvent.click(screen.getAllByTestId('prev')[0]);
+    expect(displayed()).toBe('a');
+
+    view.rerender(treeElement(['a', 'restored-middle', 'durable-id']));
+    expect(displayed()).toBe('a');
+  });
+
+  it('still follows a genuine append after a re-key settled', () => {
+    const view = render(treeElement(['a', 'streaming_']));
+    fireEvent.click(screen.getAllByTestId('prev')[0]);
+    view.rerender(treeElement(['a', 'durable-id']));
+    expect(displayed()).toBe('a');
+
+    view.rerender(treeElement(['a', 'durable-id', 'appended']));
+    expect(displayed()).toBe('appended');
+  });
 });

@@ -37,13 +37,18 @@ function MultiMessage({
    * children array would silently change WHAT this level displays. Reconcile
    * by identity instead of blanket-resetting:
    *
-   * - A NEW newest child means a submission landed here (send, regenerate,
-   *   edit-resubmit all append) — follow it, the long-standing behavior.
-   * - Same newest child means background churn (an abandoned preempt sibling
-   *   restored at finalize, a refetch merge dropping an optimistic row) —
-   *   keep the message the user was viewing, recomputing its reversed index
-   *   from its new position. Only when it no longer exists does the selection
-   *   fall back to the newest.
+   * - An APPENDED newest child means a submission landed here (send,
+   *   regenerate, edit-resubmit all append) — follow it, the long-standing
+   *   behavior. An append is a newest-id change where the prior newest still
+   *   exists; when it vanished instead, the same row was RE-KEYED (streaming
+   *   ids hydrate to durable ids at finalize — the legacy regenerate path
+   *   mints a new UUID for `_`-suffixed ids), and following it would yank a
+   *   user who paged away mid-stream.
+   * - Otherwise the change is background churn (an abandoned preempt sibling
+   *   restored at finalize, a refetch merge dropping an optimistic row, id
+   *   hydration) — keep the message the user was viewing, recomputing its
+   *   reversed index from its new position. Only when it no longer exists
+   *   does the selection fall back to the newest.
    *
    * Keyed on tree identity via `treeRef` (streaming mints a fresh array per
    * write); a plain `siblingIdx` change (the user paging the switcher) only
@@ -69,8 +74,12 @@ function MultiMessage({
     }
 
     const previous = displayedRef.current;
+    const appendedNewest =
+      previous.newestId == null ||
+      (previous.newestId !== newestId &&
+        messagesTree.some((message) => message?.messageId === previous.newestId));
     let nextSiblingIdx = currentIdx;
-    if (previous.newestId !== newestId) {
+    if (appendedNewest) {
       nextSiblingIdx = 0;
     } else if (currentIdx > 0 && previous.viewedId != null) {
       const viewedIndex = messagesTree.findIndex(
