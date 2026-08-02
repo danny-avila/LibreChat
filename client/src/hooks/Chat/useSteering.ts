@@ -1540,7 +1540,7 @@ export default function useSteering({
     ],
   );
 
-  /** Memoized so consumers like `memo(PendingSteerChips)` can bail on the
+  /** Memoized so consumers like `memo(Bar)` and `memo(Queue)` can bail on the
    * `steering` prop; a fresh literal here would defeat them every render. */
   return useMemo(
     () => ({
