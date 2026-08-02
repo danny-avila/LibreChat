@@ -917,7 +917,9 @@ describe('MCPTokenStorage', () => {
     };
 
     it('coalesces concurrent refresh calls into a single token-endpoint redemption', async () => {
-      await seedRefreshableTokens();
+      // Unique server names per test keep single-flight keys isolated, so a
+      // failed test can't leave an unsettled in-flight entry that later tests join.
+      await seedRefreshableTokens('coalesce-srv');
 
       let resolveRefresh!: (tokens: MCPOAuthTokens) => void;
       const refreshTokens = jest.fn(
@@ -927,7 +929,7 @@ describe('MCPTokenStorage', () => {
           }),
       );
 
-      const params = refreshParams(refreshTokens);
+      const params = refreshParams(refreshTokens, 'coalesce-srv');
       const first = MCPTokenStorage.forceRefreshTokens(params);
       const second = MCPTokenStorage.forceRefreshTokens(params);
       const third = MCPTokenStorage.forceRefreshTokens(params);
@@ -945,7 +947,7 @@ describe('MCPTokenStorage', () => {
       const storedRefresh = await store.findToken({
         userId: 'u1',
         type: 'mcp_oauth_refresh',
-        identifier: 'mcp:srv1:refresh',
+        identifier: 'mcp:coalesce-srv:refresh',
       });
       expect(storedRefresh!.token).toBe('enc:rt-2');
     });
@@ -954,7 +956,7 @@ describe('MCPTokenStorage', () => {
       // Mirrors issue #14583: a silent refresh (401-triggered) is mid-redemption
       // when an expired-token read fires its own refresh. Without single-flight,
       // the second caller replays rt-1 and RFC 9700 servers revoke the grant family.
-      await seedRefreshableTokens();
+      await seedRefreshableTokens('join-srv');
 
       let resolveRefresh!: (tokens: MCPOAuthTokens) => void;
       const refreshTokens = jest.fn(
@@ -973,13 +975,13 @@ describe('MCPTokenStorage', () => {
       }) as TokenMethods['findToken'];
 
       const silentRefresh = MCPTokenStorage.forceRefreshTokens({
-        ...refreshParams(refreshTokens),
+        ...refreshParams(refreshTokens, 'join-srv'),
         findToken,
       });
       await waitFor(() => refreshTokens.mock.calls.length === 1);
 
       const expiredRead = MCPTokenStorage.getTokens({
-        ...refreshParams(refreshTokens),
+        ...refreshParams(refreshTokens, 'join-srv'),
         findToken,
       });
       /** getTokens probes the refresh token (2nd refresh-identifier read) and then
@@ -1000,7 +1002,7 @@ describe('MCPTokenStorage', () => {
       // Simulates a refresh completing between getTokens' probe and the
       // redemption (e.g. another replica rotated rt-1 → rt-2). The redemption
       // must use the freshest stored token, never the probe snapshot.
-      await seedRefreshableTokens('srv1', 'rt-1');
+      await seedRefreshableTokens('snapshot-srv', 'rt-1');
 
       let probeSeen = false;
       const findToken = (async (filter: { type?: string }) => {
@@ -1010,7 +1012,7 @@ describe('MCPTokenStorage', () => {
         if (filter.type === 'mcp_oauth_refresh' && !probeSeen) {
           probeSeen = true;
           await store.updateToken(
-            { userId: 'u1', type: 'mcp_oauth_refresh', identifier: 'mcp:srv1:refresh' },
+            { userId: 'u1', type: 'mcp_oauth_refresh', identifier: 'mcp:snapshot-srv:refresh' },
             { token: 'enc:rt-2' },
           );
         }
@@ -1020,7 +1022,7 @@ describe('MCPTokenStorage', () => {
       const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(3));
 
       const result = await MCPTokenStorage.getTokens({
-        ...refreshParams(refreshTokens),
+        ...refreshParams(refreshTokens, 'snapshot-srv'),
         findToken,
       });
 
@@ -1030,14 +1032,14 @@ describe('MCPTokenStorage', () => {
     });
 
     it('does not cache results: a refresh after settlement triggers a fresh redemption', async () => {
-      await seedRefreshableTokens();
+      await seedRefreshableTokens('sequential-srv');
 
       const refreshTokens = jest
         .fn()
         .mockResolvedValueOnce(rotatedTokens(2))
         .mockResolvedValueOnce(rotatedTokens(3));
 
-      const params = refreshParams(refreshTokens);
+      const params = refreshParams(refreshTokens, 'sequential-srv');
       const first = await MCPTokenStorage.forceRefreshTokens(params);
       expect(first!.access_token).toBe('at-2');
 
@@ -1049,8 +1051,8 @@ describe('MCPTokenStorage', () => {
     });
 
     it('does not coalesce refreshes for different servers', async () => {
-      await seedRefreshableTokens('srv1');
-      await seedRefreshableTokens('srv2');
+      await seedRefreshableTokens('multi-a');
+      await seedRefreshableTokens('multi-b');
 
       let resolveFirst!: (tokens: MCPOAuthTokens) => void;
       let resolveSecond!: (tokens: MCPOAuthTokens) => void;
@@ -1067,8 +1069,8 @@ describe('MCPTokenStorage', () => {
           }),
       );
 
-      const first = MCPTokenStorage.forceRefreshTokens(refreshParams(refreshFirst, 'srv1'));
-      const second = MCPTokenStorage.forceRefreshTokens(refreshParams(refreshSecond, 'srv2'));
+      const first = MCPTokenStorage.forceRefreshTokens(refreshParams(refreshFirst, 'multi-a'));
+      const second = MCPTokenStorage.forceRefreshTokens(refreshParams(refreshSecond, 'multi-b'));
 
       await waitFor(
         () => refreshFirst.mock.calls.length === 1 && refreshSecond.mock.calls.length === 1,
@@ -1082,7 +1084,7 @@ describe('MCPTokenStorage', () => {
     });
 
     it('propagates refresh failure to all joined callers and releases the single-flight slot', async () => {
-      await seedRefreshableTokens();
+      await seedRefreshableTokens('fail-srv');
 
       let rejectRefresh!: (error: Error) => void;
       const refreshTokens = jest.fn(
@@ -1092,7 +1094,7 @@ describe('MCPTokenStorage', () => {
           }),
       );
 
-      const params = refreshParams(refreshTokens);
+      const params = refreshParams(refreshTokens, 'fail-srv');
       const first = MCPTokenStorage.forceRefreshTokens(params);
       const second = MCPTokenStorage.forceRefreshTokens(params);
 
@@ -1109,11 +1111,11 @@ describe('MCPTokenStorage', () => {
     });
 
     it('propagates ReauthenticationRequiredError to concurrent callers', async () => {
-      await seedRefreshableTokens();
+      await seedRefreshableTokens('reauth-srv');
       await store.createToken({
         userId: 'u1',
         type: 'mcp_oauth_client',
-        identifier: 'mcp:srv1:client',
+        identifier: 'mcp:reauth-srv:client',
         token: 'enc:{"client_id":"cid"}',
         expiresIn: 86400,
       });
@@ -1126,7 +1128,10 @@ describe('MCPTokenStorage', () => {
           }),
       );
 
-      const params = { ...refreshParams(refreshTokens), deleteTokens: store.deleteTokens };
+      const params = {
+        ...refreshParams(refreshTokens, 'reauth-srv'),
+        deleteTokens: store.deleteTokens,
+      };
       const first = MCPTokenStorage.forceRefreshTokens(params);
       const second = MCPTokenStorage.forceRefreshTokens(params);
 
