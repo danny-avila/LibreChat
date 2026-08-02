@@ -148,4 +148,48 @@ describe('MultiMessage sibling selection', () => {
     view.rerender(treeElement(['a', 'durable-id', 'appended']));
     expect(displayed()).toBe('appended');
   });
+
+  /**
+   * Regression: sibling `createdAt` ties have no sort tie-breaker, so a
+   * refetch can return the same membership in a different order. A changed
+   * last id without a NEW member is a reorder, not an append — the viewed
+   * message must stay selected by identity.
+   */
+  it('treats a same-membership reorder as churn, not an append', () => {
+    const view = render(treeElement(['a', 'b', 'c']));
+    fireEvent.click(screen.getAllByTestId('prev')[0]);
+    expect(displayed()).toBe('b');
+
+    view.rerender(treeElement(['b', 'c', 'a']));
+    expect(displayed()).toBe('b');
+  });
+
+  /**
+   * Regression: the recursive instance is deliberately unkeyed and gets
+   * reused across parents when an ancestor's branch switches. The
+   * reconciliation refs then describe the previous parent's children —
+   * reconciling against them wiped the returned-to branch's saved selection.
+   */
+  it("preserves each parent's saved selection when the instance is reused across parents", () => {
+    const treeFor = (messageId: string, ids: string[]) => (
+      <RecoilRoot>
+        <MultiMessage
+          messageId={messageId}
+          messagesTree={tree(ids)}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
+      </RecoilRoot>
+    );
+
+    const view = render(treeFor('parent-a', ['a1', 'a2']));
+    fireEvent.click(screen.getAllByTestId('prev')[0]);
+    expect(displayed()).toBe('a1');
+
+    view.rerender(treeFor('parent-b', ['b1', 'b2', 'b3']));
+    expect(displayed()).toBe('b3');
+
+    view.rerender(treeFor('parent-a', ['a1', 'a2']));
+    expect(displayed()).toBe('a1');
+  });
 });

@@ -164,14 +164,21 @@ test.describe('thread fold regressions', () => {
     await expect(messagesView(page).getByText(regeneratedReply)).toBeHidden();
     await expect(siblingCounter(page)).toHaveText('1 / 2');
 
-    /** Reload lands on the durable thread: the followed-up branch is the
-     *  latest and both siblings remain reachable through the switcher. */
+    /** Reload rebuilds selection from scratch (in-memory sibling atoms are
+     *  gone); whichever branch the default lands on, the durable tree must be
+     *  intact: both branches reachable through the switcher and the follow-up
+     *  turn present on branch one. A folded tree would strand one branch. */
     await page.reload({ timeout: 15000 });
-    await expect(messagesView(page).getByText(followReply)).toBeVisible({ timeout: 30000 });
+    await expect(siblingCounter(page)).toHaveText(/[12] \/ 2/, { timeout: 30000 });
+    if (!(await messagesView(page).getByText(followReply).isVisible())) {
+      await clickSibling(page, regeneratedReply, 'Previous');
+    }
+    await expect(messagesView(page).getByText(followReply)).toBeVisible({ timeout: 15000 });
     await expect(messagesView(page).getByText(firstReply)).toBeVisible();
     await expect(siblingCounter(page)).toHaveText('1 / 2');
     await clickSibling(page, firstReply, 'Next');
     await expect(messagesView(page).getByText(regeneratedReply)).toBeVisible();
+    await expect(messagesView(page).getByText(followReply)).toBeHidden();
     await expect(siblingCounter(page)).toHaveText('2 / 2');
   });
 });
