@@ -1509,7 +1509,7 @@ export class MCPOAuthHandler {
             const hasConfiguredAuthPolicy =
               config.token_exchange_method !== undefined ||
               config.token_endpoint_auth_methods_supported !== undefined;
-            let configuredAuthMethod = storedAuthMethod;
+            let configuredAuthMethod: ReturnType<typeof inferClientAuthMethod> = storedAuthMethod;
             if (!config.client_secret) {
               configuredAuthMethod = 'none';
             } else if (hasConfiguredAuthPolicy) {

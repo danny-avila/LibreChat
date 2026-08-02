@@ -328,6 +328,56 @@ describe('ServerConfigsDB', () => {
       expect(retrieved?.oauth?.client_secret).toBe('super-secret-key');
     });
 
+    it('should treat empty and omitted OAuth auth-method arrays as equivalent', async () => {
+      const config: ParsedServerConfig = {
+        ...baseBoundOAuthConfig,
+        oauth: {
+          ...baseBoundOAuthConfig.oauth,
+          token_endpoint_auth_methods_supported: undefined,
+          revocation_endpoint_auth_methods_supported: undefined,
+        },
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+      const updatedConfig = updateOAuth(config, {
+        token_endpoint_auth_methods_supported: [],
+        revocation_endpoint_auth_methods_supported: [],
+      });
+
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.oauth?.client_secret).toBe('super-secret-key');
+    });
+
+    it('should preserve OAuth binding fields omitted by the editor', async () => {
+      const created = await serverConfigsDB.add('temp-name', baseBoundOAuthConfig, userId);
+      const updatedConfig: ParsedServerConfig = {
+        ...baseBoundOAuthConfig,
+        description: 'Updated description',
+        oauth: {
+          authorization_url: baseBoundOAuthConfig.oauth?.authorization_url,
+          token_url: baseBoundOAuthConfig.oauth?.token_url,
+          client_id: baseBoundOAuthConfig.oauth?.client_id,
+          token_exchange_method: baseBoundOAuthConfig.oauth?.token_exchange_method,
+        },
+      };
+
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.description).toBe('Updated description');
+      expect(retrieved?.oauth?.client_secret).toBe('super-secret-key');
+      expect(retrieved?.oauth?.token_endpoint_auth_methods_supported).toEqual([
+        'client_secret_basic',
+        'client_secret_post',
+      ]);
+      expect(retrieved?.oauth?.revocation_endpoint).toBe('https://auth.example.com/revoke');
+      expect(retrieved?.oauth?.revocation_endpoint_auth_methods_supported).toEqual([
+        'client_secret_basic',
+        'client_secret_post',
+      ]);
+    });
+
     it('should preserve a secret across equivalent WHATWG URL serialization', async () => {
       const created = await serverConfigsDB.add('temp-name', baseBoundOAuthConfig, userId);
       const updatedConfig: ParsedServerConfig = {

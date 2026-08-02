@@ -30,6 +30,8 @@ const DANGEROUS_CREDENTIAL_PATTERNS = [
 
 const BLOCKED_USER_OAUTH_ENDPOINT_PARAMS = ['audience', 'resource'] as const;
 
+type OAuthConfig = NonNullable<ParsedServerConfig['oauth']>;
+
 /**
  * Sanitizes headers by removing dangerous credential placeholders.
  * This prevents credential exfiltration when MCP servers are shared between users.
@@ -106,10 +108,32 @@ function normalizeOAuthUrl(value?: string): string | undefined {
 }
 
 function normalizeOAuthMethods(values?: readonly string[]): string | undefined {
-  if (!values) {
+  if (!values?.length) {
     return undefined;
   }
   return JSON.stringify([...new Set(values)].sort());
+}
+
+function preserveOmittedOAuthBindingFields(
+  existingOAuth: OAuthConfig,
+  updatedOAuth: OAuthConfig,
+): OAuthConfig {
+  return {
+    ...updatedOAuth,
+    ...(updatedOAuth.token_endpoint_auth_methods_supported === undefined &&
+      existingOAuth.token_endpoint_auth_methods_supported !== undefined && {
+        token_endpoint_auth_methods_supported: existingOAuth.token_endpoint_auth_methods_supported,
+      }),
+    ...(updatedOAuth.revocation_endpoint === undefined &&
+      existingOAuth.revocation_endpoint !== undefined && {
+        revocation_endpoint: existingOAuth.revocation_endpoint,
+      }),
+    ...(updatedOAuth.revocation_endpoint_auth_methods_supported === undefined &&
+      existingOAuth.revocation_endpoint_auth_methods_supported !== undefined && {
+        revocation_endpoint_auth_methods_supported:
+          existingOAuth.revocation_endpoint_auth_methods_supported,
+      }),
+  };
 }
 
 function getChangedOAuthSecretBindingFields(
@@ -123,7 +147,11 @@ function getChangedOAuthSecretBindingFields(
   }
 
   const fields = [
-    ['url', normalizeOAuthUrl(existingConfig.url), normalizeOAuthUrl(updatedConfig.url)],
+    [
+      'url',
+      normalizeOAuthUrl('url' in existingConfig ? existingConfig.url : undefined),
+      normalizeOAuthUrl(updatedConfig.url),
+    ],
     [
       'oauth.authorization_url',
       normalizeOAuthUrl(existingOAuth.authorization_url),
@@ -293,11 +321,15 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     /** Transformed user-provided API key config (adds customUserVars and headers) */
     configToSave = this.transformUserApiKeyConfig(configToSave);
 
+    const existingOAuth = existingServer?.config?.oauth;
+    const existingOAuthSecret = existingOAuth?.client_secret;
     const preservesOAuthSecret =
-      !config.oauth?.client_secret &&
-      !!existingServer?.config?.oauth?.client_secret &&
-      !!configToSave.oauth;
-    if (preservesOAuthSecret && existingServer && configToSave.oauth) {
+      !config.oauth?.client_secret && !!existingOAuthSecret && !!configToSave.oauth;
+    if (preservesOAuthSecret && existingServer && existingOAuth && configToSave.oauth) {
+      configToSave = {
+        ...configToSave,
+        oauth: preserveOmittedOAuthBindingFields(existingOAuth, configToSave.oauth),
+      };
       const changedFields = getChangedOAuthSecretBindingFields(existingServer.config, configToSave);
       if (changedFields.length > 0) {
         throw new MCPOAuthSecretReentryRequiredError(changedFields);
@@ -307,12 +339,12 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     /** Encrypted config before storing in database */
     configToSave = await this.encryptConfig(configToSave);
 
-    if (preservesOAuthSecret && existingServer && configToSave.oauth) {
+    if (preservesOAuthSecret && existingOAuthSecret && configToSave.oauth) {
       configToSave = {
         ...configToSave,
         oauth: {
           ...configToSave.oauth,
-          client_secret: existingServer.config.oauth.client_secret,
+          client_secret: existingOAuthSecret,
         },
       };
     }
