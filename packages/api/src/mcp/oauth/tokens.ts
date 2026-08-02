@@ -1,13 +1,13 @@
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import { logger, encryptV2, decryptV2, getTenantId } from '@librechat/data-schemas';
-import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type {
   TokenMethods,
   IToken,
   TokenCreateData,
   TokenUpdateData,
 } from '@librechat/data-schemas';
+import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthStoredClientMetadata } from './types';
 import { isInvalidClientMessage } from '~/mcp/utils';
 import { isSystemUserId } from '~/mcp/enum';
