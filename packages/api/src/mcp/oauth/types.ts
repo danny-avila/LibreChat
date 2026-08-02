@@ -26,7 +26,14 @@ export interface OAuthMetadata {
   revocation_endpoint_auth_methods_supported?: string[];
 }
 
+/** How the OAuth client credentials associated with stored tokens were obtained. */
+export type OAuthClientSource = 'configured' | 'dynamic';
+
 export interface OAuthStoredClientMetadata extends OAuthMetadata {
+  /** Canonical MCP server URL the tokens and client registration are bound to. */
+  server_url: string;
+  /** Whether the client came from server configuration or dynamic client registration. */
+  client_source: OAuthClientSource;
   /** Canonical OAuth resource indicator used when the authorization code was exchanged. */
   resource?: string;
 }
@@ -91,6 +98,8 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   state: string;
   codeVerifier?: string;
   clientInfo?: OAuthClientInformation;
+  /** Whether this flow uses a configured client or a dynamically registered client. */
+  clientSource?: OAuthClientSource;
   metadata?: OAuthMetadata;
   resourceMetadata?: OAuthProtectedResourceMetadata;
   authorizationUrl?: string;

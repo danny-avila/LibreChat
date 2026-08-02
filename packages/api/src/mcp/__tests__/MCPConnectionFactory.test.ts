@@ -60,6 +60,18 @@ class InspectableMCPConnectionFactory extends MCPConnectionFactory {
     await this.attemptToConnect(connection);
   }
 
+  public async getOAuthTokensForTest(): Promise<MCPOAuthTokens | null> {
+    return await this.getOAuthTokens();
+  }
+
+  public async attemptSilentTokenRefreshForTest(): Promise<MCPOAuthTokens | null> {
+    return await this.attemptSilentTokenRefresh();
+  }
+
+  public async handleOAuthRequiredForTest() {
+    return await this.handleOAuthRequired();
+  }
+
   public getRequestScopedOAuthState(): {
     signal?: AbortSignal;
     oauthStart?: (authURL: string) => Promise<void>;
@@ -137,14 +149,18 @@ describe('MCPConnectionFactory', () => {
       },
     );
     mockMCPOAuthHandler.buildStoredClientMetadata.mockImplementation(
-      (metadata, resourceMetadata) =>
-        metadata
+      (metadata, resourceMetadata, serverUrl, clientSource) =>
+        metadata && serverUrl && clientSource
           ? {
               ...metadata,
+              server_url: serverUrl,
+              client_source: clientSource,
               ...(resourceMetadata?.resource && { resource: resourceMetadata.resource }),
             }
           : undefined,
     );
+    mockMCPOAuthHandler.assertStoredClientBinding.mockImplementation(() => undefined);
+    mockMCPTokenStorage.isCurrentAccessToken.mockResolvedValue(true);
     mockTenantStorage.getStore.mockReturnValue(undefined);
     mockTenantStorage.run.mockImplementation((_context, fn: () => Promise<unknown>) => fn());
     (getTenantId as jest.Mock).mockReturnValue(undefined);
@@ -392,6 +408,171 @@ describe('MCPConnectionFactory', () => {
 
       expect(mockFlowManager.createFlowWithHandler).not.toHaveBeenCalled();
     });
+
+    it('rejects a cached access token before it reaches a differently bound connection', async () => {
+      const currentConfig = {
+        type: 'sse' as const,
+        url: 'https://server-b.example.com/mcp',
+        initTimeout: 5000,
+      } as t.SSEOptions;
+      mockProcessMCPEnv.mockReturnValue(currentConfig);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue({
+        access_token: 'server-a-access-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      });
+      mockMCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue({
+        clientInfo: { client_id: 'dynamic-client' },
+        clientMetadata: {
+          authorization_endpoint: 'https://auth.example.com/authorize',
+          token_endpoint: 'https://auth.example.com/token',
+          server_url: 'https://server-a.example.com/mcp',
+          client_source: 'dynamic',
+        },
+      });
+      mockMCPOAuthHandler.assertStoredClientBinding.mockImplementationOnce(
+        (_serverName, serverUrl, _clientInfo, storedMetadata) => {
+          if (storedMetadata?.server_url !== serverUrl) {
+            throw new Error('stale OAuth binding');
+          }
+        },
+      );
+
+      const factory = new InspectableMCPConnectionFactory(
+        { serverName: 'test-server', serverConfig: currentConfig },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+        },
+      );
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      await expect(factory.createConnectionForTest()).resolves.toBe(mockConnectionInstance);
+      expect(mockMCPTokenStorage.isCurrentAccessToken).toHaveBeenCalledWith(
+        expect.objectContaining({ accessToken: 'server-a-access-token' }),
+      );
+      expect(mockMCPTokenStorage.getClientInfoAndMetadata).toHaveBeenCalled();
+      expect(mockMCPOAuthHandler.assertStoredClientBinding).toHaveBeenCalledWith(
+        'test-server',
+        'https://server-b.example.com/mcp',
+        expect.objectContaining({ client_id: 'dynamic-client' }),
+        expect.objectContaining({ server_url: 'https://server-a.example.com/mcp' }),
+        undefined,
+      );
+      expect(mockMCPConnection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test-server',
+          serverConfig: currentConfig,
+          oauthTokens: null,
+        }),
+      );
+    });
+
+    it.each(['PENDING', 'COMPLETED'] as const)(
+      'replaces a recent %s OAuth flow bound to another server URL',
+      async (status) => {
+        const currentConfig = {
+          type: 'sse' as const,
+          url: 'https://server-b.example.com/mcp',
+          initTimeout: 5000,
+        } as t.SSEOptions;
+        const staleMetadata = {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://server-a.example.com/mcp',
+          state: 'stale-state',
+          authorizationUrl: 'https://auth.example.com/old-authorize',
+          clientInfo: { client_id: 'old-dynamic-client' },
+          clientSource: 'dynamic' as const,
+          metadata: {
+            authorization_endpoint: 'https://auth.example.com/authorize',
+            token_endpoint: 'https://auth.example.com/token',
+          },
+        };
+        const staleTokens: MCPOAuthTokens = {
+          access_token: 'server-a-access-token',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+        };
+        const freshTokens: MCPOAuthTokens = {
+          access_token: 'server-b-access-token',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+        };
+        const oauthStart = jest.fn();
+
+        mockProcessMCPEnv.mockReturnValue(currentConfig);
+        mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+        mockMCPOAuthHandler.assertStoredClientBinding.mockImplementation(
+          (_serverName, serverUrl, _clientInfo, storedMetadata) => {
+            if (storedMetadata?.server_url !== serverUrl) {
+              throw new Error('stale OAuth binding');
+            }
+          },
+        );
+        mockFlowManager.getFlowState.mockResolvedValue({
+          status,
+          type: 'mcp_oauth',
+          metadata: staleMetadata,
+          createdAt: Date.now(),
+          ...(status === 'COMPLETED' && {
+            completedAt: Date.now(),
+            result: staleTokens,
+          }),
+        });
+        mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
+          authorizationUrl: 'https://auth.example.com/fresh-authorize',
+          flowId: 'fresh-flow',
+          flowMetadata: {
+            ...staleMetadata,
+            serverUrl: currentConfig.url,
+            state: 'fresh-state',
+            authorizationUrl: 'https://auth.example.com/fresh-authorize',
+            clientInfo: { client_id: 'fresh-dynamic-client' },
+          },
+        });
+        mockFlowManager.createFlow.mockResolvedValue(freshTokens);
+
+        const factory = new InspectableMCPConnectionFactory(
+          { serverName: 'test-server', serverConfig: currentConfig },
+          {
+            useOAuth: true,
+            user: mockUser,
+            flowManager: mockFlowManager,
+            oauthStart,
+            tokenMethods: {
+              findToken: jest.fn(),
+              createToken: jest.fn(),
+              updateToken: jest.fn(),
+              deleteTokens: jest.fn(),
+            },
+          },
+        );
+
+        const result = await factory.handleOAuthRequiredForTest();
+
+        expect(result?.tokens).toEqual(freshTokens);
+        expect(result?.tokens).not.toEqual(staleTokens);
+        expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('flow123', 'mcp_oauth');
+        expect(mockMCPOAuthHandler.deleteStateMapping).toHaveBeenCalledWith(
+          'stale-state',
+          mockFlowManager,
+        );
+        expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
+        expect(oauthStart).toHaveBeenCalledWith('https://auth.example.com/fresh-authorize');
+        expect(oauthStart).not.toHaveBeenCalledWith(
+          'https://auth.example.com/old-authorize',
+          expect.anything(),
+        );
+      },
+    );
 
     it('should handle token retrieval errors gracefully', async () => {
       const basicOptions = {
@@ -1515,6 +1696,60 @@ describe('MCPConnectionFactory', () => {
       expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(1);
       // Both callers set the connection's tokens with the same refreshed value.
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(refreshedTokens);
+    });
+
+    it('does not coalesce silent refreshes across different server bindings', async () => {
+      const makeConfig = (url: string): t.SSEOptions => ({
+        type: 'sse',
+        url,
+        initTimeout: 15000,
+      });
+      const tokenMethods = {
+        findToken: jest.fn(),
+        createToken: jest.fn(),
+        updateToken: jest.fn(),
+        deleteTokens: jest.fn(),
+      };
+      mockProcessMCPEnv.mockImplementation(({ options }) => options as t.MCPOptions);
+
+      const factoryA = new InspectableMCPConnectionFactory(
+        { serverName: 'test-server', serverConfig: makeConfig('https://server-a.example.com/mcp') },
+        { useOAuth: true, user: mockUser, flowManager: mockFlowManager, tokenMethods },
+      );
+      const factoryB = new InspectableMCPConnectionFactory(
+        { serverName: 'test-server', serverConfig: makeConfig('https://server-b.example.com/mcp') },
+        { useOAuth: true, user: mockUser, flowManager: mockFlowManager, tokenMethods },
+      );
+
+      const resolutions: Array<(tokens: MCPOAuthTokens) => void> = [];
+      mockMCPTokenStorage.forceRefreshTokens.mockImplementation(
+        () =>
+          new Promise<MCPOAuthTokens>((resolve) => {
+            resolutions.push(resolve);
+          }),
+      );
+
+      const attemptA = factoryA.attemptSilentTokenRefreshForTest();
+      await Promise.resolve();
+      const attemptB = factoryB.attemptSilentTokenRefreshForTest();
+      await Promise.resolve();
+
+      expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(2);
+      const tokensA: MCPOAuthTokens = {
+        access_token: 'server-a-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      const tokensB: MCPOAuthTokens = {
+        access_token: 'server-b-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      resolutions[0](tokensA);
+      resolutions[1](tokensB);
+
+      await expect(attemptA).resolves.toEqual(tokensA);
+      await expect(attemptB).resolves.toEqual(tokensB);
     });
 
     it('should keep the in-flight silent-refresh lock until the aborted refresh settles', async () => {

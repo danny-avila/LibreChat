@@ -464,6 +464,27 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       );
     });
 
+    it('stores configured revocation metadata with the OAuth flow', async () => {
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        {
+          ...baseConfig,
+          revocation_endpoint: 'https://auth.example.com/oauth/revoke',
+          revocation_endpoint_auth_methods_supported: ['client_secret_post'],
+        },
+      );
+
+      expect(result.flowMetadata.metadata).toEqual(
+        expect.objectContaining({
+          revocation_endpoint: 'https://auth.example.com/oauth/revoke',
+          revocation_endpoint_auth_methods_supported: ['client_secret_post'],
+        }),
+      );
+    });
+
     it('should use custom code_challenge_methods_supported when provided', async () => {
       const config = {
         ...baseConfig,
@@ -1254,7 +1275,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
         expect(body.get('client_secret')).toBe('test-client-secret');
       });
 
-      it('keeps a dynamically registered client secret bound after the server URL changes', async () => {
+      it('rejects a dynamically registered client after the MCP server URL changes', async () => {
         const metadata = {
           serverName: 'test-server',
           serverUrl: 'https://attacker.example.com/mcp',
@@ -1265,26 +1286,98 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
           },
           storedTokenEndpoint: 'https://auth.example.com/token',
           storedAuthMethods: ['client_secret_post'],
+          storedServerUrl: 'https://mcp.example.com/mcp',
+          clientSource: 'dynamic' as const,
         };
 
-        mockFetch.mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            access_token: 'new-access-token',
-            expires_in: 3600,
-          }),
-        } as Response);
-
-        await MCPOAuthHandler.refreshOAuthTokens('test-refresh-token', metadata, {}, undefined);
+        await expect(
+          MCPOAuthHandler.refreshOAuthTokens('test-refresh-token', metadata, {}, undefined),
+        ).rejects.toThrow('no longer matches the current MCP server URL');
 
         expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it('rejects an edited token endpoint for a stored public configured client', async () => {
+        const metadata = {
+          serverName: 'test-server',
+          serverUrl: 'https://mcp.example.com/mcp',
+          clientInfo: { client_id: 'public-client-id' },
+          storedTokenEndpoint: 'https://auth.example.com/token',
+          storedAuthMethods: ['none'],
+          storedServerUrl: 'https://mcp.example.com/mcp',
+          clientSource: 'configured' as const,
+        };
+
+        await expect(
+          MCPOAuthHandler.refreshOAuthTokens(
+            'test-refresh-token',
+            metadata,
+            {},
+            {
+              client_id: 'public-client-id',
+              token_url: 'https://attacker.example.com/token',
+            },
+          ),
+        ).rejects.toThrow('no longer matches the current configured token endpoint');
+
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it('keeps a configured public client pinned when discovery advertises confidential methods', async () => {
+        const metadata = {
+          serverName: 'test-server',
+          serverUrl: 'https://mcp.example.com/mcp',
+          clientInfo: {
+            client_id: 'public-client-id',
+            token_endpoint_auth_method: 'none',
+          },
+          storedTokenEndpoint: 'https://auth.example.com/token',
+          storedAuthMethods: ['client_secret_basic'],
+          storedServerUrl: 'https://mcp.example.com/mcp',
+          clientSource: 'configured' as const,
+        };
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ access_token: 'new-access-token', expires_in: 3600 }),
+        } as Response);
+
+        await MCPOAuthHandler.refreshOAuthTokens(
+          'test-refresh-token',
+          metadata,
+          {},
+          {
+            client_id: 'public-client-id',
+          },
+        );
+
         expect(mockFetch).toHaveBeenCalledWith(
           'https://auth.example.com/token',
           expect.objectContaining({ method: 'POST' }),
         );
         const body = mockFetch.mock.calls[0][1]?.body as URLSearchParams;
-        expect(body.get('client_id')).toBe('dynamically-registered-client-id');
-        expect(body.get('client_secret')).toBe('dynamically-registered-client-secret');
+        expect(body.get('client_id')).toBe('public-client-id');
+      });
+
+      it('rejects stored configured credentials after the configured client is removed', async () => {
+        const metadata = {
+          serverName: 'test-server',
+          serverUrl: 'https://mcp.example.com/mcp',
+          clientInfo: {
+            client_id: 'configured-client-id',
+            client_secret: 'configured-client-secret',
+          },
+          storedTokenEndpoint: 'https://auth.example.com/token',
+          storedAuthMethods: ['client_secret_basic'],
+          storedServerUrl: 'https://mcp.example.com/mcp',
+          clientSource: 'configured' as const,
+        };
+
+        await expect(
+          MCPOAuthHandler.refreshOAuthTokens('test-refresh-token', metadata, {}, undefined),
+        ).rejects.toThrow('no longer matches the current configured client');
+
+        expect(mockFetch).not.toHaveBeenCalled();
       });
 
       it('uses stored token endpoint when discovery fails (auto-discovered)', async () => {
@@ -1996,7 +2089,12 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
 
       mockGetClientInfoAndMetadata.mockResolvedValueOnce({
         clientInfo: existingClientInfo,
-        clientMetadata: { issuer: 'https://example.com' },
+        clientMetadata: {
+          issuer: 'https://example.com',
+          token_endpoint: 'https://example.com/token',
+          server_url: 'https://example.com/mcp',
+          client_source: 'dynamic',
+        },
       });
 
       // Mock resource metadata discovery to fail

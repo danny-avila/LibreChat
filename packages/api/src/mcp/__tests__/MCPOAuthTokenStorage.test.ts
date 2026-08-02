@@ -10,6 +10,13 @@ import type { MCPOAuthTokens } from '~/mcp/oauth';
 import { MCPTokenStorage, ReauthenticationRequiredError } from '~/mcp/oauth';
 import { InMemoryTokenStore } from './helpers/oauthTestServer';
 
+const storedBindingMetadata = {
+  authorization_endpoint: 'https://auth.example.com/authorize',
+  token_endpoint: 'https://auth.example.com/token',
+  server_url: 'https://mcp.example.com/',
+  client_source: 'dynamic',
+};
+
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     info: jest.fn(),
@@ -28,6 +35,35 @@ describe('MCPTokenStorage', () => {
   beforeEach(() => {
     store = new InMemoryTokenStore();
     jest.clearAllMocks();
+  });
+
+  describe('isCurrentAccessToken', () => {
+    it('rejects a flow-cached token after persistent storage has rotated it', async () => {
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:new-token',
+        expiresIn: 3600,
+      });
+
+      await expect(
+        MCPTokenStorage.isCurrentAccessToken({
+          userId: 'u1',
+          serverName: 'srv1',
+          accessToken: 'old-cached-token',
+          findToken: store.findToken,
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        MCPTokenStorage.isCurrentAccessToken({
+          userId: 'u1',
+          serverName: 'srv1',
+          accessToken: 'new-token',
+          findToken: store.findToken,
+        }),
+      ).resolves.toBe(true);
+    });
   });
 
   describe('storeTokens', () => {
@@ -222,6 +258,17 @@ describe('MCPTokenStorage', () => {
   });
 
   describe('getTokens', () => {
+    beforeEach(async () => {
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:srv1:client',
+        token: 'enc:{"client_id":"cid"}',
+        expiresIn: 86400,
+        metadata: storedBindingMetadata,
+      });
+    });
+
     it('should return valid non-expired tokens', async () => {
       await store.createToken({
         userId: 'u1',
@@ -457,6 +504,7 @@ describe('MCPTokenStorage', () => {
         identifier: 'mcp:srv1:client',
         token: 'enc:{"client_id":"cid","client_secret":"csec"}',
         expiresIn: 86400,
+        metadata: storedBindingMetadata,
       });
 
       const refreshTokens = jest.fn().mockResolvedValue({
@@ -538,6 +586,7 @@ describe('MCPTokenStorage', () => {
         identifier: 'mcp:srv1:client',
         token: 'enc:{"client_id":"cid"}',
         expiresIn: 86400,
+        metadata: storedBindingMetadata,
       });
 
       const refreshTokens = jest.fn().mockRejectedValue(new Error('invalid_client'));
@@ -628,6 +677,7 @@ describe('MCPTokenStorage', () => {
         identifier: 'mcp:srv1:client',
         token: 'enc:{"client_id":"cid"}',
         expiresIn: 86400,
+        metadata: storedBindingMetadata,
       });
 
       const refreshTokens = jest.fn().mockRejectedValue(new Error('client not found'));
@@ -722,6 +772,47 @@ describe('MCPTokenStorage', () => {
   });
 
   describe('forceRefreshTokens', () => {
+    beforeEach(async () => {
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:srv1:client',
+        token: 'enc:{"client_id":"cid"}',
+        expiresIn: 86400,
+        metadata: storedBindingMetadata,
+      });
+    });
+
+    it('fails closed before invoking refresh for legacy client metadata', async () => {
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:srv1:client',
+        token: 'enc:{"client_id":"legacy-client"}',
+        expiresIn: 86400,
+      });
+      const refreshTokens = jest.fn();
+
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          refreshTokens,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+
+      expect(refreshTokens).not.toHaveBeenCalled();
+    });
+
     it('should refresh and store tokens even when access token is not locally expired', async () => {
       // Access token still has time on the clock (1 hour), but the server has
       // invalidated it (we simulate a mid-session 401 by calling forceRefreshTokens
@@ -843,6 +934,7 @@ describe('MCPTokenStorage', () => {
         identifier: 'mcp:srv1:client',
         token: 'enc:{"client_id":"cid"}',
         expiresIn: 86400,
+        metadata: storedBindingMetadata,
       });
 
       const refreshTokens = jest.fn().mockRejectedValue(new Error('invalid_client'));

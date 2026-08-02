@@ -149,7 +149,13 @@ const appConfig = {
 };
 
 const clientInfo = { client_id: 'cid', client_secret: 'csec' };
-const clientMetadata = {};
+const clientMetadata = {
+  server_url: 'https://acme.example.com',
+  token_endpoint: 'https://acme.example.com/token',
+  client_source: 'dynamic',
+  revocation_endpoint: 'https://acme.example.com/revoke',
+  revocation_endpoint_auth_methods_supported: ['client_secret_basic'],
+};
 
 function setupOAuthServerFound() {
   mockGetServerConfig.mockResolvedValue(serverConfig);
@@ -264,6 +270,54 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteFlow.mock.calls[0][1]).toBe('mcp_get_tokens');
     expect(mockDeleteFlowAndStateMapping).toHaveBeenCalledTimes(1);
     expect(mockDeleteFlowAndStateMapping).toHaveBeenCalledWith('user-123:acme', expect.anything());
+  });
+
+  test('uses the stored revocation binding instead of an edited server configuration', async () => {
+    setupOAuthServerFound();
+    mockGetServerConfig.mockResolvedValue({
+      ...serverConfig,
+      url: 'https://attacker.example.com/mcp',
+      oauth: {
+        revocation_endpoint: 'https://attacker.example.com/revoke',
+        revocation_endpoint_auth_methods_supported: ['client_secret_post'],
+      },
+    });
+    mockGetTokens.mockResolvedValue({ access_token: 'access-abc' });
+    mockRevokeOAuthToken.mockResolvedValue(undefined);
+
+    await maybeUninstallOAuthMCP(userId, pluginKey, appConfig);
+
+    expect(mockRevokeOAuthToken).toHaveBeenCalledWith(
+      serverName,
+      'access-abc',
+      'access',
+      expect.objectContaining({
+        serverUrl: 'https://acme.example.com',
+        revocationEndpoint: 'https://acme.example.com/revoke',
+        revocationEndpointAuthMethodsSupported: ['client_secret_basic'],
+      }),
+      { 'X-Tenant': 'acme' },
+      undefined,
+      undefined,
+    );
+  });
+
+  test('skips remote revocation for legacy metadata without a stored revocation endpoint', async () => {
+    setupOAuthServerFound();
+    mockGetClientInfoAndMetadata.mockResolvedValue({
+      clientInfo,
+      clientMetadata: {
+        server_url: 'https://acme.example.com',
+        token_endpoint: 'https://acme.example.com/token',
+        client_source: 'dynamic',
+      },
+    });
+
+    await maybeUninstallOAuthMCP(userId, pluginKey, appConfig);
+
+    expect(mockGetTokens).not.toHaveBeenCalled();
+    expect(mockRevokeOAuthToken).not.toHaveBeenCalled();
+    expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
   });
 
   test('skips revocation but still runs cleanup when token retrieval fails', async () => {

@@ -132,7 +132,12 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
         updateToken: tokenStore.updateToken,
         findToken: tokenStore.findToken,
         clientInfo: firstResult.flowMetadata.clientInfo,
-        metadata: firstResult.flowMetadata.metadata,
+        metadata: MCPOAuthHandler.buildStoredClientMetadata(
+          firstResult.flowMetadata.metadata,
+          firstResult.flowMetadata.resourceMetadata,
+          firstResult.flowMetadata.serverUrl,
+          firstResult.flowMetadata.clientSource,
+        ),
       });
 
       const secondResult = await MCPOAuthHandler.initiateOAuthFlow(
@@ -173,7 +178,12 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
         updateToken: tokenStore.updateToken,
         findToken: tokenStore.findToken,
         clientInfo: initialResult.flowMetadata.clientInfo,
-        metadata: initialResult.flowMetadata.metadata,
+        metadata: MCPOAuthHandler.buildStoredClientMetadata(
+          initialResult.flowMetadata.metadata,
+          initialResult.flowMetadata.resourceMetadata,
+          initialResult.flowMetadata.serverUrl,
+          initialResult.flowMetadata.clientSource,
+        ),
       });
 
       const [resultA, resultB] = await Promise.all([
@@ -309,6 +319,9 @@ describe('MCPOAuthHandler - client registration reuse on reconnection', () => {
           issuer: serverIssuer,
           authorization_endpoint: `${serverIssuer}/authorize`,
           token_endpoint: `${serverIssuer}/token`,
+          server_url: server.url,
+          client_source: 'dynamic',
+          resource: server.resourceUrl,
         },
       });
 

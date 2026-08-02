@@ -7,11 +7,15 @@ import { isInvalidClientMessage } from '~/mcp/utils';
 import { isSystemUserId } from '~/mcp/enum';
 
 export class ReauthenticationRequiredError extends Error {
-  constructor(serverName: string, reason: 'expired' | 'missing' | 'invalid_client') {
-    const detail =
-      reason === 'invalid_client'
-        ? 'stored client registration is no longer valid'
-        : `access token ${reason} and no refresh token available`;
+  constructor(serverName: string, reason: 'expired' | 'missing' | 'invalid_client' | 'binding') {
+    let detail: string;
+    if (reason === 'invalid_client') {
+      detail = 'stored client registration is no longer valid';
+    } else if (reason === 'binding') {
+      detail = 'stored OAuth binding metadata is missing or no longer valid';
+    } else {
+      detail = `access token ${reason} and no refresh token available`;
+    }
     super(`Re-authentication required for "${serverName}": ${detail}`);
     this.name = 'ReauthenticationRequiredError';
   }
@@ -47,6 +51,8 @@ interface GetTokensParams {
       clientInfo?: OAuthClientInformation;
       storedTokenEndpoint?: string;
       storedAuthMethods?: string[];
+      storedServerUrl?: string;
+      clientSource?: OAuthStoredClientMetadata['client_source'];
       resource?: string;
     },
     signal?: AbortSignal,
@@ -120,6 +126,39 @@ export class MCPTokenStorage {
     return isSystemUserId(userId)
       ? `[MCP][${serverName}]`
       : `[MCP][User: ${userId}][${serverName}]`;
+  }
+
+  /**
+   * Confirms a flow-cached access token is still the token in persistent storage. This prevents
+   * an old `mcp_get_tokens` result from being paired with newer client-binding metadata.
+   */
+  static async isCurrentAccessToken({
+    userId,
+    serverName,
+    accessToken,
+    findToken,
+  }: {
+    userId: string;
+    serverName: string;
+    accessToken: string;
+    findToken: TokenMethods['findToken'];
+  }): Promise<boolean> {
+    try {
+      const tokenData = await findToken({
+        userId,
+        type: 'mcp_oauth',
+        identifier: `mcp:${serverName}`,
+      });
+      if (!tokenData || (tokenData.expiresAt && new Date() >= tokenData.expiresAt)) {
+        return false;
+      }
+      return (await decryptV2(tokenData.token)) === accessToken;
+    } catch (error) {
+      logger.warn(`${this.getLogPrefix(userId, serverName)} Failed to verify cached access token`, {
+        error,
+      });
+      return false;
+    }
   }
 
   /**
@@ -496,6 +535,8 @@ export class MCPTokenStorage {
       let storedClientMetadata: Partial<OAuthStoredClientMetadata> | undefined;
       let storedTokenEndpoint: string | undefined;
       let storedAuthMethods: string[] | undefined;
+      let storedServerUrl: string | undefined;
+      let clientSource: OAuthStoredClientMetadata['client_source'] | undefined;
       let resource: string | undefined;
       try {
         clientInfoData = await findToken({
@@ -523,6 +564,12 @@ export class MCPTokenStorage {
             if (Array.isArray(raw.token_endpoint_auth_methods_supported)) {
               storedAuthMethods = raw.token_endpoint_auth_methods_supported as string[];
             }
+            if (typeof raw.server_url === 'string') {
+              storedServerUrl = raw.server_url;
+            }
+            if (raw.client_source === 'configured' || raw.client_source === 'dynamic') {
+              clientSource = raw.client_source;
+            }
             if (typeof raw.resource === 'string') {
               resource = raw.resource;
             }
@@ -532,6 +579,10 @@ export class MCPTokenStorage {
         logger.debug(`${logPrefix} No client info found`);
       }
 
+      if (!clientInfo?.client_id || !storedTokenEndpoint || !storedServerUrl || !clientSource) {
+        throw new ReauthenticationRequiredError(serverName, 'binding');
+      }
+
       const metadata = {
         userId,
         serverName,
@@ -539,6 +590,8 @@ export class MCPTokenStorage {
         clientInfo,
         storedTokenEndpoint,
         storedAuthMethods,
+        storedServerUrl,
+        clientSource,
         resource,
       };
 
@@ -590,6 +643,9 @@ export class MCPTokenStorage {
       return newTokens;
     } catch (refreshError) {
       logger.error(`${logPrefix} Failed to refresh tokens`, refreshError);
+      if (refreshError instanceof ReauthenticationRequiredError) {
+        throw refreshError;
+      }
       // Check if it's an unauthorized_client error (refresh not supported)
       const errorMessage =
         refreshError instanceof Error ? refreshError.message : String(refreshError);

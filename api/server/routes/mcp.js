@@ -420,6 +420,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             metadata: MCPOAuthHandler.buildStoredClientMetadata(
               flowState.metadata,
               flowState.resourceMetadata,
+              flowState.serverUrl,
+              flowState.clientSource,
             ),
           });
           logger.debug('[MCP OAuth] Stored OAuth tokens prior to reconnection', {

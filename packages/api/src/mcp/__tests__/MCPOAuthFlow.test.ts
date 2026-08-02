@@ -275,6 +275,13 @@ describe('MCP OAuth Flow — Real HTTP Server', () => {
           serverName: 'test-srv',
           tokens: initial,
           createToken: tokenStore.createToken,
+          clientInfo: { client_id: 'test-client' },
+          metadata: {
+            authorization_endpoint: `${server.url}authorize`,
+            token_endpoint: `${server.url}token`,
+            server_url: server.url,
+            client_source: 'dynamic',
+          },
         });
 
         // 3. Retrieve — should succeed

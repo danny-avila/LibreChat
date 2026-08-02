@@ -158,6 +158,13 @@ function setupMCPMocks() {
   return { flowManager, mcpManager, registry };
 }
 
+const storedOAuthBinding = {
+  server_url: 'https://example.com/mcp',
+  token_endpoint: 'https://example.com/token',
+  revocation_endpoint: 'https://example.com/revoke',
+  client_source: 'dynamic',
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
   getTenantId.mockReturnValue(undefined);
@@ -337,7 +344,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     const { flowManager } = setupMCPMocks();
     MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue({
       clientInfo: { client_id: 'client-1' },
-      clientMetadata: {},
+      clientMetadata: storedOAuthBinding,
     });
     MCPTokenStorage.getTokens.mockRejectedValue(new Error('token lookup failed'));
 
@@ -371,7 +378,10 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     setupMCPMocks();
     MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue({
       clientInfo: { client_id: 'client-1', client_secret: 'secret-1' },
-      clientMetadata: { revocation_endpoint: 'https://example.com/revoke' },
+      clientMetadata: {
+        ...storedOAuthBinding,
+        revocation_endpoint: 'https://example.com/revoke',
+      },
     });
     MCPTokenStorage.getTokens.mockResolvedValue({
       access_token: 'access-token',
@@ -429,7 +439,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     setupMCPMocks();
     MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue({
       clientInfo: { client_id: 'client-1', client_secret: 'secret-1' },
-      clientMetadata: {},
+      clientMetadata: storedOAuthBinding,
     });
     MCPTokenStorage.getTokens.mockResolvedValue({
       access_token: 'access-token',
@@ -461,7 +471,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     setupMCPMocks();
     MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue({
       clientInfo: { client_id: 'client-1', client_secret: 'secret-1' },
-      clientMetadata: {},
+      clientMetadata: storedOAuthBinding,
     });
     MCPTokenStorage.getTokens.mockResolvedValue({
       refresh_token: 'refresh-token',
