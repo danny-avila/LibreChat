@@ -89,6 +89,11 @@ const resolvedHeaderMaps = new WeakSet<object>();
  * Resolution runs at request time so request-body placeholders (e.g.
  * `{{LIBRECHAT_BODY_CONVERSATIONID}}`) resolve against the live request. It is a
  * no-op for header values without placeholders, and idempotent under config reuse.
+ *
+ * This is the last resolution pass before the outbound provider request, so any
+ * placeholder still unresolved here (missing user context, a user without the
+ * configured field) is stripped rather than forwarded as literal template text
+ * the upstream could mistake for real user data.
  */
 export function resolveConfigHeaders({
   llmConfig,
@@ -113,7 +118,7 @@ export function resolveConfigHeaders({
     if (resolvedHeaderMaps.has(headers)) {
       return headers;
     }
-    const resolved = resolveHeaders({ headers, user, body, customUserVars });
+    const resolved = resolveHeaders({ headers, user, body, customUserVars, stripUnresolved: true });
     resolvedHeaderMaps.add(resolved);
     return resolved;
   };

@@ -97,6 +97,7 @@ async function fetchOllamaModels(
   const resolvedHeaders = resolveHeaders({
     headers: options.headers ?? undefined,
     user: options.user,
+    stripUnresolved: true,
   });
 
   const requestOptions: AxiosRequestConfig & {
@@ -240,6 +241,7 @@ export async function fetchModels({
     const resolvedHeaders = resolveHeaders({
       headers: headers ?? undefined,
       user: userObject,
+      stripUnresolved: true,
     });
 
     const options: AxiosRequestConfig & {
