@@ -21,23 +21,24 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => {
-    const React = jest.requireActual<typeof import('react')>('react');
-    return {
-      OGDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
-        open ? React.createElement('div', null, children) : null,
-      OGDialogContent: ({ children }: { children: ReactNode }) =>
-        React.createElement('div', null, children),
-      Spinner: () => React.createElement('div', { 'data-testid': 'spinner' }),
-      useToastContext: () => ({
-        showToast: mockShowToast,
-      }),
-    };
-  },
-  { virtual: true },
-);
+/* Not `{ virtual: true }`: that option is for modules with no file on disk, and
+   `@librechat/client` is a real workspace package. Registering a real module
+   virtually let resolution fall through to the package itself, which rendered
+   the dialog through its Radix portal and handed back the real toast context —
+   so the file input escaped the container and `showToast` was never the spy. */
+jest.mock('@librechat/client', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  return {
+    OGDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
+      open ? React.createElement('div', null, children) : null,
+    OGDialogContent: ({ children }: { children: ReactNode }) =>
+      React.createElement('div', null, children),
+    Spinner: () => React.createElement('div', { 'data-testid': 'spinner' }),
+    useToastContext: () => ({
+      showToast: mockShowToast,
+    }),
+  };
+});
 
 jest.mock('~/data-provider', () => ({
   useGetFileConfig: ({ select }: { select?: (data: FileConfigInput | undefined) => unknown }) => ({
