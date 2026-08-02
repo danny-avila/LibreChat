@@ -55,6 +55,7 @@ interface GetTokensParams {
   updateToken?: TokenMethods['updateToken'];
   /** Enables cleanup of stale client registration and refresh token on invalid_client errors during refresh. */
   deleteTokens?: TokenMethods['deleteTokens'];
+  /** Waiter-specific: aborting resolves this caller's wait with `null` without cancelling the shared redemption. */
   signal?: AbortSignal;
 }
 
@@ -99,6 +100,14 @@ export class MCPTokenStorage {
    * after settlement triggers a fresh redemption.
    */
   private static inflightRefreshes = new Map<string, Promise<MCPOAuthTokens | null>>();
+
+  /**
+   * How long an in-flight redemption may occupy its single-flight slot before
+   * new callers stop joining it. Generous relative to a healthy refresh round
+   * trip (well under a minute) so eviction only fires for genuinely wedged
+   * executions, keeping the concurrent-replay window closed in normal operation.
+   */
+  static readonly INFLIGHT_REFRESH_STALE_MS = 60_000;
 
   static getLogPrefix(userId: string, serverName: string): string {
     return isSystemUserId(userId)
@@ -329,14 +338,14 @@ export class MCPTokenStorage {
       existingAccessToken?: IToken | null;
     },
   ): Promise<MCPOAuthTokens | null> {
-    const { userId, serverName, refreshTokens, createToken } = params;
+    const { userId, serverName, refreshTokens, createToken, signal } = params;
     const logPrefix = this.getLogPrefix(userId, serverName);
 
     const refreshKey = `${getTenantId() ?? ''}:${userId}:${serverName}`;
     const inflight = this.inflightRefreshes.get(refreshKey);
     if (inflight) {
       logger.debug(`${logPrefix} Joining in-flight token refresh`);
-      return inflight;
+      return this.raceWithAbort(inflight, signal);
     }
 
     if (!refreshTokens) {
@@ -349,17 +358,72 @@ export class MCPTokenStorage {
       return null;
     }
 
+    /**
+     * The shared redemption is owner-neutral: no caller's `AbortSignal` is
+     * threaded into the execution, so an impatient waiter (e.g. the silent
+     * refresh path's short timeout) cannot cancel the wire call for everyone
+     * who joined. Cancellation is waiter-specific via `raceWithAbort`; the
+     * execution itself is bounded by transport timeouts plus the stale-entry
+     * eviction below.
+     */
     const refreshPromise = this.executeTokenRefresh({
       ...params,
       refreshTokens,
       createToken,
     }).finally(() => {
+      clearTimeout(staleTimer);
       if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
         this.inflightRefreshes.delete(refreshKey);
       }
     });
+    /**
+     * Safety valve: if the execution never settles (hung token read/persist or
+     * an unbounded transport stall), evict the map entry so later refreshes
+     * start fresh instead of joining a wedged promise until process restart.
+     * Existing waiters keep their promise; only new callers are decoupled.
+     */
+    const staleTimer = setTimeout(() => {
+      if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
+        this.inflightRefreshes.delete(refreshKey);
+        logger.warn(
+          `${logPrefix} Evicted stalled in-flight token refresh after ${MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS}ms`,
+        );
+      }
+    }, MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS);
+    staleTimer.unref?.();
     this.inflightRefreshes.set(refreshKey, refreshPromise);
-    return refreshPromise;
+    return this.raceWithAbort(refreshPromise, signal);
+  }
+
+  /**
+   * Wraps the shared redemption promise for a single waiter: if the waiter's
+   * `signal` aborts first, that waiter receives `null` (matching the prior
+   * abort contract) while the shared execution continues for other callers.
+   */
+  private static raceWithAbort(
+    promise: Promise<MCPOAuthTokens | null>,
+    signal?: AbortSignal,
+  ): Promise<MCPOAuthTokens | null> {
+    if (!signal) {
+      return promise;
+    }
+    if (signal.aborted) {
+      return Promise.resolve(null);
+    }
+    return new Promise<MCPOAuthTokens | null>((resolve, reject) => {
+      const onAbort = () => resolve(null);
+      signal.addEventListener('abort', onAbort, { once: true });
+      promise.then(
+        (value) => {
+          signal.removeEventListener('abort', onAbort);
+          resolve(value);
+        },
+        (error: unknown) => {
+          signal.removeEventListener('abort', onAbort);
+          reject(error);
+        },
+      );
+    });
   }
 
   /**
@@ -379,7 +443,6 @@ export class MCPTokenStorage {
     deleteTokens,
     refreshTokens,
     existingAccessToken,
-    signal,
   }: GetTokensParams & {
     existingAccessToken?: IToken | null;
     refreshTokens: NonNullable<GetTokensParams['refreshTokens']>;
@@ -454,11 +517,7 @@ export class MCPTokenStorage {
         resource,
       };
 
-      const newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
-
-      if (signal?.aborted) {
-        throw new Error('Token refresh aborted');
-      }
+      const newTokens = await refreshTokens(decryptedRefreshToken, metadata);
 
       logger.debug(`${logPrefix} Refresh completed`, {
         has_new_access_token: !!newTokens.access_token,

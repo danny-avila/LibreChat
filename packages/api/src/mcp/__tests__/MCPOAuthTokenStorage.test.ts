@@ -351,7 +351,6 @@ describe('MCPTokenStorage', () => {
       expect(refreshTokens).toHaveBeenCalledWith(
         'rt',
         expect.objectContaining({ userId: 'u1', serverName: 'srv1' }),
-        undefined,
       );
     });
 
@@ -479,7 +478,6 @@ describe('MCPTokenStorage', () => {
         expect.objectContaining({
           clientInfo: expect.objectContaining({ client_id: 'cid' }),
         }),
-        undefined,
       );
     });
 
@@ -768,7 +766,6 @@ describe('MCPTokenStorage', () => {
           serverName: 'srv1',
           identifier: 'mcp:srv1',
         }),
-        undefined,
       );
 
       // The new access token is persisted, replacing the stale one.
@@ -1108,6 +1105,91 @@ describe('MCPTokenStorage', () => {
       const third = await MCPTokenStorage.forceRefreshTokens(params);
       expect(third!.access_token).toBe('at-2');
       expect(refreshTokens).toHaveBeenCalledTimes(2);
+    });
+
+    it('evicts a stalled redemption so later refreshes are not wedged until restart', async () => {
+      jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+      try {
+        await seedRefreshableTokens('stall-srv');
+
+        const refreshTokens = jest
+          .fn()
+          .mockImplementationOnce(() => new Promise<MCPOAuthTokens>(() => {}))
+          .mockResolvedValueOnce(rotatedTokens(2));
+
+        const params = refreshParams(refreshTokens, 'stall-srv');
+        const stalled = MCPTokenStorage.forceRefreshTokens(params);
+        await waitFor(() => refreshTokens.mock.calls.length === 1);
+
+        jest.advanceTimersByTime(MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS + 1);
+
+        const fresh = await MCPTokenStorage.forceRefreshTokens(params);
+        expect(fresh!.access_token).toBe('at-2');
+        expect(refreshTokens).toHaveBeenCalledTimes(2);
+        /** The stalled promise never settles by design; it must not be awaited. */
+        void stalled;
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("an initiator's abort resolves only its own wait, not the shared redemption", async () => {
+      await seedRefreshableTokens('abort-srv');
+
+      let resolveRefresh!: (tokens: MCPOAuthTokens) => void;
+      const refreshTokens = jest.fn(
+        () =>
+          new Promise<MCPOAuthTokens>((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      );
+
+      const params = refreshParams(refreshTokens, 'abort-srv');
+      const controller = new AbortController();
+      const initiator = MCPTokenStorage.forceRefreshTokens({
+        ...params,
+        signal: controller.signal,
+      });
+      await waitFor(() => refreshTokens.mock.calls.length === 1);
+      const joiner = MCPTokenStorage.forceRefreshTokens(params);
+
+      controller.abort();
+      await expect(initiator).resolves.toBeNull();
+
+      resolveRefresh(rotatedTokens(2));
+      const joined = await joiner;
+      expect(joined!.access_token).toBe('at-2');
+      expect(refreshTokens).toHaveBeenCalledTimes(1);
+    });
+
+    it("a joiner's abort resolves only its own wait, not the shared redemption", async () => {
+      await seedRefreshableTokens('joiner-abort-srv');
+
+      let resolveRefresh!: (tokens: MCPOAuthTokens) => void;
+      const refreshTokens = jest.fn(
+        () =>
+          new Promise<MCPOAuthTokens>((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      );
+
+      const params = refreshParams(refreshTokens, 'joiner-abort-srv');
+      const initiator = MCPTokenStorage.forceRefreshTokens(params);
+      await waitFor(() => refreshTokens.mock.calls.length === 1);
+
+      const controller = new AbortController();
+      const joiner = MCPTokenStorage.forceRefreshTokens({
+        ...params,
+        signal: controller.signal,
+      });
+
+      controller.abort();
+      await expect(joiner).resolves.toBeNull();
+
+      resolveRefresh(rotatedTokens(2));
+      const initiated = await initiator;
+      expect(initiated!.access_token).toBe('at-2');
+      expect(refreshTokens).toHaveBeenCalledTimes(1);
     });
 
     it('propagates ReauthenticationRequiredError to concurrent callers', async () => {
