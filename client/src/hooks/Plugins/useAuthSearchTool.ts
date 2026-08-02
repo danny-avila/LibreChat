@@ -17,6 +17,9 @@ export type SearchApiKeyFormData = {
   tavilyApiKey: string;
   jinaApiKey: string;
   jinaApiUrl: string;
+  zeroEntropyApiKey: string;
+  zeroEntropyApiUrl: string;
+  zeroEntropyModel: string;
   cohereApiKey: string;
 };
 
@@ -58,6 +61,9 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
         tavilyApiKey: data.tavilyApiKey,
         jinaApiKey: data.jinaApiKey,
         jinaApiUrl: data.jinaApiUrl,
+        zeroEntropyApiKey: data.zeroEntropyApiKey,
+        zeroEntropyApiUrl: data.zeroEntropyApiUrl,
+        zeroEntropyModel: data.zeroEntropyModel,
         cohereApiKey: data.cohereApiKey,
       }).reduce(
         (acc, [key, value]) => {

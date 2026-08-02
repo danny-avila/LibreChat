@@ -131,6 +131,28 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: RerankerTypes.ZEROENTROPY,
+      label: localize('com_ui_web_search_reranker_zeroentropy'),
+      inputs: {
+        zeroEntropyApiKey: {
+          placeholder: localize('com_ui_web_search_zeroentropy_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://dashboard.zeroentropy.dev',
+            text: localize('com_ui_web_search_reranker_zeroentropy_key'),
+          },
+        },
+        zeroEntropyApiUrl: {
+          placeholder: localize('com_ui_web_search_zeroentropy_url'),
+          type: 'text' as const,
+        },
+        zeroEntropyModel: {
+          placeholder: localize('com_ui_web_search_zeroentropy_model'),
+          type: 'text' as const,
+        },
+      },
+    },
   ];
 
   const scraperOptions: DropdownOption[] = [

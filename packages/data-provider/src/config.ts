@@ -1681,6 +1681,7 @@ export enum ScraperProviders {
 export enum RerankerTypes {
   JINA = 'jina',
   COHERE = 'cohere',
+  ZEROENTROPY = 'zeroentropy',
   NONE = 'none',
 }
 
@@ -1707,6 +1708,9 @@ export const webSearchSchema = z.object({
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiKeyPreview: apiKeyPreviewSchema,
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
+  zeroEntropyApiKey: z.string().optional().default('${ZEROENTROPY_API_KEY}'),
+  zeroEntropyApiUrl: z.string().optional().default('${ZEROENTROPY_API_URL}'),
+  zeroEntropyModel: z.string().optional().default('zerank-2'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
   cohereApiKeyPreview: apiKeyPreviewSchema,
   searchProvider: z.nativeEnum(SearchProviders).optional(),

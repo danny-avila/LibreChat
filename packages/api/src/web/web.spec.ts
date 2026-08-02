@@ -92,6 +92,9 @@ describe('web.ts', () => {
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
+        zeroEntropyApiKey: '${ZEROENTROPY_API_KEY}',
+        zeroEntropyApiUrl: '${ZEROENTROPY_API_URL}',
+        zeroEntropyModel: 'zerank-2',
         safeSearch: SafeSearchTypes.MODERATE,
       };
     });
@@ -772,6 +775,8 @@ describe('web.ts', () => {
       expect(webSearchAuth.rerankers.jina).toHaveProperty('jinaApiKey', 1);
       expect(webSearchAuth.rerankers).toHaveProperty('cohere');
       expect(webSearchAuth.rerankers.cohere).toHaveProperty('cohereApiKey', 1);
+      expect(webSearchAuth.rerankers).toHaveProperty('zeroentropy');
+      expect(webSearchAuth.rerankers.zeroentropy).toHaveProperty('zeroEntropyApiKey', 1);
     });
 
     it('should mark required keys with value 1', () => {
@@ -780,11 +785,14 @@ describe('web.ts', () => {
       expect(webSearchAuth.scrapers.firecrawl.firecrawlApiKey).toBe(1);
       expect(webSearchAuth.rerankers.jina.jinaApiKey).toBe(1);
       expect(webSearchAuth.rerankers.cohere.cohereApiKey).toBe(1);
+      expect(webSearchAuth.rerankers.zeroentropy.zeroEntropyApiKey).toBe(1);
     });
 
     it('should mark optional keys with value 0', () => {
       // Keys with value 0 are optional
       expect(webSearchAuth.scrapers.firecrawl.firecrawlApiUrl).toBe(0);
+      expect(webSearchAuth.rerankers.zeroentropy.zeroEntropyApiUrl).toBe(0);
+      expect(webSearchAuth.rerankers.zeroentropy.zeroEntropyModel).toBe(0);
     });
   });
   describe('loadWebSearchAuth with specific services', () => {
@@ -1675,6 +1683,40 @@ describe('web.ts', () => {
       });
 
       expect(result.authResult.jinaApiUrl).toBeUndefined();
+      expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost');
+    });
+
+    it('should block user-provided zeroEntropyApiUrl targeting localhost', async () => {
+      mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === 'localhost');
+
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        zeroEntropyApiKey: '${ZEROENTROPY_API_KEY}',
+        zeroEntropyApiUrl: '${ZEROENTROPY_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        rerankerType: 'zeroentropy' as RerankerTypes,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'ZEROENTROPY_API_URL') {
+            result[field] = 'http://localhost:8080/rerank';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.zeroEntropyApiUrl).toBeUndefined();
       expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost');
     });
 

@@ -14,7 +14,7 @@ export enum DATE_RANGE {
 
 export type SearchProvider = 'serper' | 'searxng' | 'tavily';
 export type ScraperProvider = 'firecrawl' | 'serper' | 'tavily';
-export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none';
+export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'zeroentropy' | 'none';
 
 export interface Highlight {
   score: number;
@@ -79,6 +79,9 @@ export interface SearchConfig {
   tavilyApiKey?: string;
   tavilySearchUrl?: string;
   tavilySearchOptions?: TavilyConfig['tavilySearchOptions'];
+  zeroEntropyApiKey?: string;
+  zeroEntropyApiUrl?: string;
+  zeroEntropyModel?: string;
 }
 
 export type References = {

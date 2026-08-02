@@ -84,7 +84,7 @@
 - 🔍 **网页搜索**：  
   - 搜索互联网并检索相关信息以增强 AI 上下文。
   - 结合搜索提供商、内容爬虫和结果重排序，确保最佳检索效果。
-  - **可定制 Jina 重排序**：配置自定义 Jina API URL 用于重排序服务。
+  - **可定制重排序**：为支持的重排序服务配置自定义 API URL 和模型。
   - **[了解更多 →](https://www.librechat.ai/docs/features/web_search)**
 
 - 🪄 **支持代码 Artifacts 的生成式 UI**：  

@@ -60,6 +60,11 @@ describe('ApiKeyDialog', () => {
     // Switch to Cohere
     fireEvent.click(screen.getByText('com_ui_web_search_reranker_cohere'));
     expect(screen.getByPlaceholderText('com_ui_web_search_cohere_key')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('com_ui_web_search_reranker_zeroentropy'));
+    expect(screen.getByPlaceholderText('com_ui_web_search_zeroentropy_key')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('com_ui_web_search_zeroentropy_url')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('com_ui_web_search_zeroentropy_model')).toBeInTheDocument();
   });
 
   it('shows static text for provider and only provider input if provider is set', () => {
@@ -88,6 +93,18 @@ describe('ApiKeyDialog', () => {
     expect(screen.queryByPlaceholderText('com_ui_web_search_jina_key')).not.toBeInTheDocument();
   });
 
+  it('shows only ZeroEntropy reranker fields if rerankerType is set to zeroentropy', () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      data: { webSearch: { rerankerType: RerankerTypes.ZEROENTROPY } },
+    });
+    render(<ApiKeyDialog {...defaultProps} />);
+    expect(screen.getByPlaceholderText('com_ui_web_search_zeroentropy_key')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('com_ui_web_search_zeroentropy_url')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('com_ui_web_search_zeroentropy_model')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('com_ui_web_search_jina_key')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('com_ui_web_search_cohere_key')).not.toBeInTheDocument();
+  });
+
   it('shows documentation link for the visible reranker', () => {
     mockUseGetStartupConfig.mockReturnValue({ data: {} });
     render(<ApiKeyDialog {...defaultProps} />);
@@ -96,6 +113,8 @@ describe('ApiKeyDialog', () => {
     // Switch to Cohere
     fireEvent.click(screen.getByText('com_ui_web_search_reranker_cohere'));
     expect(screen.getByText('com_ui_web_search_reranker_cohere_key')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('com_ui_web_search_reranker_zeroentropy'));
+    expect(screen.getByText('com_ui_web_search_reranker_zeroentropy_key')).toBeInTheDocument();
   });
 
   it('does not render provider section if SYSTEM_DEFINED', () => {

@@ -1,4 +1,9 @@
-import { SafeSearchTypes, SearchProviders, ScraperProviders } from 'librechat-data-provider';
+import {
+  RerankerTypes,
+  SafeSearchTypes,
+  SearchProviders,
+  ScraperProviders,
+} from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import { loadWebSearchConfig } from './web';
 
@@ -54,6 +59,9 @@ describe('loadWebSearchConfig', () => {
         firecrawlVersion: '${FIRECRAWL_VERSION}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
+        zeroEntropyApiKey: '${ZEROENTROPY_API_KEY}',
+        zeroEntropyApiUrl: '${ZEROENTROPY_API_URL}',
+        zeroEntropyModel: 'zerank-2',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
         rerankerType: undefined,
@@ -78,6 +86,7 @@ describe('loadWebSearchConfig', () => {
       expect(result?.firecrawlVersion).toBe('v2');
       expect(result?.safeSearch).toBe(SafeSearchTypes.STRICT);
       expect(result?.jinaApiKey).toBe('${JINA_API_KEY}');
+      expect(result?.zeroEntropyApiKey).toBe('${ZEROENTROPY_API_KEY}');
     });
 
     it('should preserve additional fields from input config', () => {
@@ -92,6 +101,22 @@ describe('loadWebSearchConfig', () => {
       expect(result?.scraperProvider).toBe('serper');
       expect(result?.searchProvider).toBe('serper');
       expect(result?.serperApiKey).toBe('test-key');
+    });
+
+    it('should preserve ZeroEntropy reranker settings', () => {
+      const config: TCustomConfig['webSearch'] = {
+        rerankerType: RerankerTypes.ZEROENTROPY,
+        zeroEntropyApiKey: 'actual-zeroentropy-key',
+        zeroEntropyApiUrl: 'https://api.zeroentropy.dev/v1/models/rerank',
+        zeroEntropyModel: 'zerank-1-small',
+      };
+
+      const result = loadWebSearchConfig(config);
+
+      expect(result?.rerankerType).toBe(RerankerTypes.ZEROENTROPY);
+      expect(result?.zeroEntropyApiKey).toBe('actual-zeroentropy-key');
+      expect(result?.zeroEntropyApiUrl).toBe('https://api.zeroentropy.dev/v1/models/rerank');
+      expect(result?.zeroEntropyModel).toBe('zerank-1-small');
     });
   });
 
@@ -134,12 +159,14 @@ describe('loadWebSearchConfig', () => {
       expect(result?.firecrawlApiKey).toBe('${FIRECRAWL_API_KEY}');
       expect(result?.jinaApiKey).toBe('${JINA_API_KEY}');
       expect(result?.cohereApiKey).toBe('${COHERE_API_KEY}');
+      expect(result?.zeroEntropyApiKey).toBe('${ZEROENTROPY_API_KEY}');
     });
 
     it('should preserve custom API keys', () => {
       const config: TCustomConfig['webSearch'] = {
         serperApiKey: 'actual-serper-key',
         jinaApiKey: 'actual-jina-key',
+        zeroEntropyApiKey: 'actual-zeroentropy-key',
         cohereApiKey: 'actual-cohere-key',
       };
 
@@ -147,6 +174,7 @@ describe('loadWebSearchConfig', () => {
 
       expect(result?.serperApiKey).toBe('actual-serper-key');
       expect(result?.jinaApiKey).toBe('actual-jina-key');
+      expect(result?.zeroEntropyApiKey).toBe('actual-zeroentropy-key');
       expect(result?.cohereApiKey).toBe('actual-cohere-key');
     });
   });
@@ -158,6 +186,7 @@ describe('loadWebSearchConfig', () => {
       expect(result?.searxngInstanceUrl).toBe('${SEARXNG_INSTANCE_URL}');
       expect(result?.firecrawlApiUrl).toBe('${FIRECRAWL_API_URL}');
       expect(result?.jinaApiUrl).toBe('${JINA_API_URL}');
+      expect(result?.zeroEntropyApiUrl).toBe('${ZEROENTROPY_API_URL}');
     });
 
     it('should preserve custom URLs', () => {
@@ -165,6 +194,7 @@ describe('loadWebSearchConfig', () => {
         searxngInstanceUrl: 'https://custom-searxng.com',
         firecrawlApiUrl: 'https://custom-firecrawl.com',
         jinaApiUrl: 'https://custom-jina.com',
+        zeroEntropyApiUrl: 'https://custom-zeroentropy.com',
       };
 
       const result = loadWebSearchConfig(config);
@@ -172,6 +202,15 @@ describe('loadWebSearchConfig', () => {
       expect(result?.searxngInstanceUrl).toBe('https://custom-searxng.com');
       expect(result?.firecrawlApiUrl).toBe('https://custom-firecrawl.com');
       expect(result?.jinaApiUrl).toBe('https://custom-jina.com');
+      expect(result?.zeroEntropyApiUrl).toBe('https://custom-zeroentropy.com');
+    });
+  });
+
+  describe('zeroEntropyModel', () => {
+    it('should default to zerank-2 when not provided', () => {
+      const result = loadWebSearchConfig({});
+
+      expect(result?.zeroEntropyModel).toBe('zerank-2');
     });
   });
 });

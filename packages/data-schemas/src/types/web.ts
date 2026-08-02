@@ -12,6 +12,9 @@ export type TWebSearchKeys =
   | 'tavilyExtractUrl'
   | 'jinaApiKey'
   | 'jinaApiUrl'
+  | 'zeroEntropyApiKey'
+  | 'zeroEntropyApiUrl'
+  | 'zeroEntropyModel'
   | 'cohereApiKey';
 
 export type TWebSearchCategories =
