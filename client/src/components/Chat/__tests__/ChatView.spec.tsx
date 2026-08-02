@@ -102,4 +102,14 @@ describe('ChatView page heading', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'New chat' })).toBeInTheDocument();
   });
+
+  test('ignores a Recoil title that belongs to a different conversation than the route', () => {
+    mockParams.mockReturnValue({ conversationId: 'convo-2' });
+    mockConversation.mockReturnValue({ conversationId: 'convo-1', title: 'Previous chat' });
+
+    render(<ChatView />);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'New chat' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Previous chat' })).not.toBeInTheDocument();
+  });
 });

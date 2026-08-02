@@ -128,8 +128,9 @@ export const TooltipAnchor: ForwardRefExoticComponent<
 
   /**
    * `role="button"` renders a plain element with no native activation, so Enter and
-   * Space must both be handled to match a real button (WCAG 2.1.1). Space is also
-   * preventDefault'd to suppress page scroll.
+   * Space must both be handled to match a real button (WCAG 2.1.1). Space is always
+   * preventDefault'd (including key-repeat) to suppress page scroll. Activation
+   * ignores event.repeat so a held Space does not fire click() repeatedly.
    */
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -141,6 +142,9 @@ export const TooltipAnchor: ForwardRefExoticComponent<
         return;
       }
       event.preventDefault();
+      if (event.repeat) {
+        return;
+      }
       event.currentTarget.click();
     },
     [role, onKeyDown],

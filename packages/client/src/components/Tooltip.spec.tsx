@@ -39,6 +39,27 @@ describe('TooltipAnchor', () => {
       expect(onClick).toHaveBeenCalledTimes(1);
     });
 
+    test('ignores repeated Space keydowns from a held key', () => {
+      const onClick = jest.fn();
+      const anchor = renderButtonAnchor(onClick);
+
+      fireEvent.keyDown(anchor, { key: ' ' });
+      fireEvent.keyDown(anchor, { key: ' ', repeat: true });
+      fireEvent.keyDown(anchor, { key: ' ', repeat: true });
+
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    test('ignores repeated Enter keydowns from a held key', () => {
+      const onClick = jest.fn();
+      const anchor = renderButtonAnchor(onClick);
+
+      fireEvent.keyDown(anchor, { key: 'Enter' });
+      fireEvent.keyDown(anchor, { key: 'Enter', repeat: true });
+
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
     test('prevents default on Space so the page does not scroll', () => {
       const onClick = jest.fn();
       const anchor = renderButtonAnchor(onClick);
@@ -46,6 +67,21 @@ describe('TooltipAnchor', () => {
       const notCancelled = fireEvent.keyDown(anchor, { key: ' ', cancelable: true });
 
       expect(notCancelled).toBe(false);
+    });
+
+    test('still prevents default on repeated Space keydowns', () => {
+      const onClick = jest.fn();
+      const anchor = renderButtonAnchor(onClick);
+
+      fireEvent.keyDown(anchor, { key: ' ' });
+      const notCancelled = fireEvent.keyDown(anchor, {
+        key: ' ',
+        repeat: true,
+        cancelable: true,
+      });
+
+      expect(notCancelled).toBe(false);
+      expect(onClick).toHaveBeenCalledTimes(1);
     });
 
     test('ignores unrelated keys', () => {

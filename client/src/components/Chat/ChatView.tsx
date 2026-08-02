@@ -109,7 +109,12 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
       ? localize('com_ui_new_chat_in_project', { name: project.name })
       : undefined;
 
-  const conversationTitle = chatHelpers.conversation?.title?.trim();
+  // Recoil conversation can lag the route during navigation; only announce a
+  // title that belongs to the conversation currently in the URL.
+  const conversationTitle =
+    chatHelpers.conversation?.conversationId === conversationId
+      ? chatHelpers.conversation?.title?.trim()
+      : undefined;
   const pageHeading =
     isLandingPage || !conversationTitle ? localize('com_ui_new_chat') : conversationTitle;
 

@@ -177,7 +177,9 @@ const PresetItems: FC<{
                                 'm-0 h-full rounded-md bg-transparent p-2 text-gray-400 hover:text-gray-700 focus:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200',
                                 defaultPreset?.presetId === presetId
                                   ? ''
-                                  : 'sm:opacity-0 sm:transition-opacity sm:focus:opacity-100 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100',
+                                  : // opacity keeps buttons in the tab order; pointer-events-none
+                                    // while transparent so touch/pointer cannot hit invisible controls
+                                    'sm:pointer-events-none sm:opacity-0 sm:transition-opacity sm:focus:pointer-events-auto sm:focus:opacity-100 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100',
                               )}
                               onClick={(e) => {
                                 e.preventDefault();
@@ -201,7 +203,7 @@ const PresetItems: FC<{
                           aria-label={localize('com_ui_edit')}
                           render={
                             <button
-                              className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-700 focus:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200 sm:opacity-0 sm:transition-opacity sm:focus:opacity-100 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
+                              className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-700 focus:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200 sm:pointer-events-none sm:opacity-0 sm:transition-opacity sm:focus:pointer-events-auto sm:focus:opacity-100 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -224,7 +226,7 @@ const PresetItems: FC<{
                           aria-label={localize('com_ui_delete')}
                           render={
                             <button
-                              className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-600 focus:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200 sm:opacity-0 sm:transition-opacity sm:focus:opacity-100 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
+                              className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-600 focus:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200 sm:pointer-events-none sm:opacity-0 sm:transition-opacity sm:focus:pointer-events-auto sm:focus:opacity-100 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
