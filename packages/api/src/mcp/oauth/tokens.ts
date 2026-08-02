@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
+import { logger, encryptV2, decryptV2, getTenantId } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods, IToken } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthStoredClientMetadata } from './types';
@@ -55,7 +55,14 @@ interface GetTokensParams {
   updateToken?: TokenMethods['updateToken'];
   /** Enables cleanup of stale client registration and refresh token on invalid_client errors during refresh. */
   deleteTokens?: TokenMethods['deleteTokens'];
+  /** Waiter-specific: aborting resolves this caller's wait with `null` without cancelling the shared redemption. */
   signal?: AbortSignal;
+  /**
+   * Invoked inside the shared redemption after rotated tokens are persisted.
+   * Runs even when the initiating waiter has already aborted its wait, so
+   * cache invalidation tied to the fresh tokens cannot be skipped by a timeout.
+   */
+  onRefreshSuccess?: (tokens: MCPOAuthTokens) => Promise<void>;
 }
 
 /**
@@ -86,6 +93,29 @@ function getJwtAccessTokenExpiry(accessToken?: string): number | null {
 }
 
 export class MCPTokenStorage {
+  /**
+   * Process-local in-flight refresh-token redemptions, keyed by
+   * `tenantId:userId:serverName`. Every code path that redeems a refresh token
+   * (expired-token refresh via `getTokens`, silent refresh on 401, reconnect
+   * retries) converges on `forceRefreshTokens`, so coalescing here guarantees
+   * at most one wire call to the token endpoint per user/server at a time.
+   * RFC 9700 servers treat a replayed (already-consumed) refresh token as
+   * theft and revoke the entire grant family, so concurrent redemptions are
+   * not merely wasteful — they destroy the freshly issued tokens. Only
+   * in-flight promises are held (no result caching): each new refresh request
+   * after settlement triggers a fresh redemption.
+   */
+  private static inflightRefreshes = new Map<string, Promise<MCPOAuthTokens | null>>();
+
+  /**
+   * How long an in-flight redemption may run before it is aborted. Generous
+   * relative to a healthy refresh round trip (well under a minute) so the
+   * abort only fires for genuinely wedged executions. The single-flight slot
+   * is freed when the aborted execution settles — never while it might still
+   * reach the token endpoint with the old refresh token.
+   */
+  static readonly INFLIGHT_REFRESH_STALE_MS = 60_000;
+
   static getLogPrefix(userId: string, serverName: string): string {
     return isSystemUserId(userId)
       ? `[MCP][${serverName}]`
@@ -301,11 +331,131 @@ export class MCPTokenStorage {
    * server has signaled token invalidity (e.g. a 401 mid-session) — the 401 is
    * the authoritative signal, not the local `expires_at`.
    *
+   * Single-flighted per `(tenantId, userId, serverName)`: concurrent callers
+   * (tool-call 401s, pings, reconnect retries, expired-token reads) share one
+   * redemption and receive the same rotated result instead of each replaying
+   * the refresh token at the token endpoint.
+   *
    * Returns the new tokens, or `null` when refresh is not possible (no refresh
    * token stored, no refresh callback, etc.). Throws `ReauthenticationRequiredError`
    * when the refresh server response indicates the client registration is stale.
    */
-  static async forceRefreshTokens({
+  static async forceRefreshTokens(
+    params: GetTokensParams & {
+      existingAccessToken?: IToken | null;
+    },
+  ): Promise<MCPOAuthTokens | null> {
+    const { userId, serverName, refreshTokens, createToken, signal } = params;
+    const logPrefix = this.getLogPrefix(userId, serverName);
+
+    const refreshKey = `${getTenantId() ?? ''}:${userId}:${serverName}`;
+    const inflight = this.inflightRefreshes.get(refreshKey);
+    if (inflight) {
+      logger.debug(`${logPrefix} Joining in-flight token refresh`);
+      return this.raceWithAbort(inflight, signal);
+    }
+
+    if (!refreshTokens) {
+      logger.warn(`${logPrefix} Cannot refresh tokens: no \`refreshTokens\` callback provided`);
+      return null;
+    }
+
+    if (!createToken) {
+      logger.warn(`${logPrefix} Cannot refresh tokens: no \`createToken\` function provided`);
+      return null;
+    }
+
+    /**
+     * The shared redemption is owner-neutral: no caller's `AbortSignal` is
+     * threaded into the execution, so an impatient waiter (e.g. the silent
+     * refresh path's short timeout) cannot cancel the wire call for everyone
+     * who joined. Cancellation is waiter-specific via `raceWithAbort`; the
+     * execution itself is bounded by the internal stale-abort controller below.
+     */
+    const executionController = new AbortController();
+    const refreshPromise = this.executeTokenRefresh({
+      ...params,
+      refreshTokens,
+      createToken,
+      signal: executionController.signal,
+    }).finally(() => {
+      clearTimeout(staleTimer);
+      if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
+        this.inflightRefreshes.delete(refreshKey);
+      }
+    });
+    /**
+     * Safety valve for wedged executions: after the stale window the execution
+     * is aborted so it can never reach the token endpoint with a refresh token
+     * that a successor is about to redeem. The slot itself is freed only by the
+     * `.finally` above, that is, once the aborted execution has actually
+     * settled. Deleting the entry while the redemption might still consume the
+     * stored refresh token would re-open the concurrent-replay window this
+     * single-flight exists to close.
+     *
+     * If the abort lands after the endpoint already processed the request
+     * (response lost in transit), the rotated tokens are unrecoverable and the
+     * stored refresh token is deliberately left in place rather than deleted.
+     * A later redemption then either succeeds (request never actually
+     * processed, or the server grants rotation leeway) or trips reuse
+     * detection on a family whose fresh tokens were never received and whose
+     * access token was already expired or rejected. That failure ends in the
+     * same re-authentication the proactive deletion would force on every
+     * stall, while deletion would also foreclose the silent recovery paths.
+     */
+    const staleTimer = setTimeout(() => {
+      if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
+        logger.warn(
+          `${logPrefix} Aborting stalled in-flight token refresh after ${MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS}ms`,
+        );
+        executionController.abort();
+      }
+    }, MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS);
+    staleTimer.unref?.();
+    this.inflightRefreshes.set(refreshKey, refreshPromise);
+    return this.raceWithAbort(refreshPromise, signal);
+  }
+
+  /**
+   * Wraps the shared redemption promise for a single waiter: if the waiter's
+   * `signal` aborts first, that waiter receives `null` (matching the prior
+   * abort contract) while the shared execution continues for other callers.
+   */
+  private static raceWithAbort(
+    promise: Promise<MCPOAuthTokens | null>,
+    signal?: AbortSignal,
+  ): Promise<MCPOAuthTokens | null> {
+    if (!signal) {
+      return promise;
+    }
+    if (signal.aborted) {
+      return Promise.resolve(null);
+    }
+    return new Promise<MCPOAuthTokens | null>((resolve, reject) => {
+      const onAbort = () => resolve(null);
+      signal.addEventListener('abort', onAbort, { once: true });
+      promise.then(
+        (value) => {
+          signal.removeEventListener('abort', onAbort);
+          resolve(value);
+        },
+        (error: unknown) => {
+          signal.removeEventListener('abort', onAbort);
+          reject(error);
+        },
+      );
+    });
+  }
+
+  /**
+   * Runs a single refresh-token redemption under the `inflightRefreshes`
+   * single-flight lock. The refresh token is read from storage at execution
+   * time — never from a caller-provided snapshot — so a redemption that starts
+   * after another refresh completed uses the rotated token instead of
+   * replaying the consumed one (which RFC 9700 reuse detection punishes by
+   * revoking the whole grant family).
+   */
+  private static async executeTokenRefresh({
     userId,
     serverName,
     findToken,
@@ -314,36 +464,26 @@ export class MCPTokenStorage {
     deleteTokens,
     refreshTokens,
     existingAccessToken,
-    existingRefreshToken,
+    onRefreshSuccess,
     signal,
   }: GetTokensParams & {
     existingAccessToken?: IToken | null;
-    existingRefreshToken?: IToken | null;
+    refreshTokens: NonNullable<GetTokensParams['refreshTokens']>;
+    createToken: NonNullable<GetTokensParams['createToken']>;
+    /** Internal stale-abort signal owned by `forceRefreshTokens` — never a caller's. */
+    signal: AbortSignal;
   }): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
     const identifier = `mcp:${serverName}`;
 
-    const refreshTokenData =
-      existingRefreshToken !== undefined
-        ? existingRefreshToken
-        : await findToken({
-            userId,
-            type: 'mcp_oauth_refresh',
-            identifier: `${identifier}:refresh`,
-          });
+    const refreshTokenData = await findToken({
+      userId,
+      type: 'mcp_oauth_refresh',
+      identifier: `${identifier}:refresh`,
+    });
 
     if (!refreshTokenData) {
       logger.debug(`${logPrefix} No refresh token in storage`);
-      return null;
-    }
-
-    if (!refreshTokens) {
-      logger.warn(`${logPrefix} Refresh token available but no \`refreshTokens\` provided`);
-      return null;
-    }
-
-    if (!createToken) {
-      logger.warn(`${logPrefix} Refresh token available but no \`createToken\` function provided`);
       return null;
     }
 
@@ -402,11 +542,16 @@ export class MCPTokenStorage {
         resource,
       };
 
-      const newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
-
-      if (signal?.aborted) {
-        throw new Error('Token refresh aborted');
+      /**
+       * A stalled execution may wake here after the stale-abort fired and a
+       * successor already redeemed (and rotated) the refresh token — reaching
+       * the endpoint with the old token would trip RFC 9700 reuse detection.
+       */
+      if (signal.aborted) {
+        throw new Error('Token refresh aborted before reaching the token endpoint');
       }
+
+      const newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
 
       logger.debug(`${logPrefix} Refresh completed`, {
         has_new_access_token: !!newTokens.access_token,
@@ -432,6 +577,14 @@ export class MCPTokenStorage {
         },
         metadata: storedClientMetadata,
       });
+
+      if (onRefreshSuccess) {
+        try {
+          await onRefreshSuccess(newTokens);
+        } catch (hookError) {
+          logger.warn(`${logPrefix} onRefreshSuccess callback failed`, hookError);
+        }
+      }
 
       logger.info(`${logPrefix} Successfully refreshed and stored OAuth tokens`);
       return newTokens;
@@ -504,7 +657,10 @@ export class MCPTokenStorage {
         logger.info(`${logPrefix} Access token ${isMissing ? 'missing' : 'expired'}`);
 
         /** Probe for a refresh token first so we can throw `ReauthenticationRequiredError`
-         *  when none exists, matching the prior contract. */
+         *  when none exists, matching the prior contract. The probe result is
+         *  intentionally not passed to `forceRefreshTokens` — the redemption
+         *  re-reads storage under its single-flight lock so it never replays a
+         *  refresh token that a concurrent refresh already consumed. */
         const refreshTokenData = await findToken({
           userId,
           type: 'mcp_oauth_refresh',
@@ -528,7 +684,6 @@ export class MCPTokenStorage {
           deleteTokens,
           refreshTokens,
           existingAccessToken: accessTokenData,
-          existingRefreshToken: refreshTokenData,
         });
       }
 

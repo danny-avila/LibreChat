@@ -1392,7 +1392,12 @@ describe('MCPConnectionFactory', () => {
         completedAt: Date.now(),
         result: staleCachedTokens,
       });
-      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(freshlyRefreshedTokens);
+      // Mirror the real storage contract: `onRefreshSuccess` runs inside the
+      // shared redemption after the rotated tokens are persisted.
+      mockMCPTokenStorage.forceRefreshTokens.mockImplementationOnce(async (params) => {
+        await params.onRefreshSuccess?.(freshlyRefreshedTokens);
+        return freshlyRefreshedTokens;
+      });
       mockConnectionInstance.isConnected.mockResolvedValue(false);
 
       let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
@@ -2674,7 +2679,12 @@ describe('MCPConnectionFactory', () => {
       (getTenantId as jest.Mock).mockReturnValue('tenant-a');
       mockProcessMCPEnv.mockReturnValue(sseConfig);
       mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
-      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(refreshedTokens);
+      // Mirror the real storage contract: `onRefreshSuccess` runs inside the
+      // shared redemption after the rotated tokens are persisted.
+      mockMCPTokenStorage.forceRefreshTokens.mockImplementationOnce(async (params) => {
+        await params.onRefreshSuccess?.(refreshedTokens);
+        return refreshedTokens;
+      });
       // A concurrent `getOAuthTokens` for this user/server is currently
       // PENDING — joiners are monitoring it via `monitorFlow`.
       mockFlowManager.getFlowState.mockResolvedValue({

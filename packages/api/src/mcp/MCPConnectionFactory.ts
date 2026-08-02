@@ -87,9 +87,10 @@ export class MCPConnectionFactory {
    * The map only holds in-flight promises (no result caching), so each new 401
    * after the previous attempt resolves triggers a fresh redemption.
    *
-   * NOTE: this is a single-process lock. Across multiple worker processes the
-   * race with `getOAuthTokens()`'s `mcp_get_tokens` flow remains; that's an
-   * inherent limitation of process-local coalescing and tracked separately.
+   * NOTE: `MCPTokenStorage.forceRefreshTokens` additionally single-flights the
+   * refresh-token redemption itself, covering the `mcp_get_tokens` and
+   * reconnect paths that bypass this map. Both locks are process-local; the
+   * cross-worker race is an inherent limitation and tracked separately.
    */
   private static inflightSilentRefreshes = new Map<string, Promise<MCPOAuthTokens | null>>();
 
@@ -717,15 +718,18 @@ export class MCPConnectionFactory {
           deleteTokens: this.tokenMethods!.deleteTokens,
           refreshTokens: this.createRefreshTokensFunction(),
           signal,
+          /**
+           * Drop any previously cached `mcp_get_tokens` result so the next
+           * `getOAuthTokens` reads the freshly persisted tokens rather than the
+           * now-stale flow-cached value. Attached to the shared redemption
+           * (not this waiter) so a refresh that completes after this caller's
+           * timeout still invalidates the cache.
+           */
+          onRefreshSuccess: async (refreshed) => {
+            await this.invalidateGetTokensFlow(refreshed);
+          },
         }),
       );
-
-      if (tokens) {
-        // Drop any previously cached `mcp_get_tokens` result so the next call
-        // to `getOAuthTokens` reads the freshly persisted tokens from the
-        // token store rather than the now-stale flow-cached value.
-        await this.invalidateGetTokensFlow(tokens);
-      }
 
       if (tokens) {
         logger.info(`${this.logPrefix} Silent token refresh succeeded`);
