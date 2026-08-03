@@ -54,7 +54,7 @@
 ## 🚀 What's New in v0.8.8-rc1
 
 - **Agent run control:** Interrupt or steer an Agent mid-run, queue follow-up messages, and reclaim, edit, or escalate pending steers.
-- **Human-in-the-loop Agents:** Agents can ask users questions, request tool approval, pause durably, and resume after a decision.
+- **Human-in-the-loop Agents:** Agents stream question progress, ask users for input, request tool approval, pause durably, and resume after a decision.
 - **Unified Agent Builder:** A redesigned Tools marketplace brings together Skills, MCP, Code Interpreter, orchestration, Programmatic Tool Calling, model-spec controls, and per-tool background and intent settings.
 - **Readable Agent activity:** Generated activity-group headers and live tool intent labels make long reasoning and tool runs easier to scan.
 - **Code Interpreter workflows:** Code and shell tools can run in the background, sandbox images return as viewable artifacts, and highly experimental stateful sessions can reuse prewarmed conversation workspaces.
