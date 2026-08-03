@@ -1544,8 +1544,6 @@ export interface RedisJobStoreOptions {
   userJobsSetTtl?: number;
   /** Backstop TTL for a paused (requires_action) job in seconds (default: 86400 = 24 hours). */
   requiresActionTtl?: number;
-  /** Streaming-delta append coalescing window in ms; overrides STREAM_DELTA_COALESCE_MS. */
-  coalesceWindowMs?: number;
 }
 
 interface LocalCacheEntry<T> {
@@ -1604,7 +1602,7 @@ export class RedisJobStore implements IJobStoreV2 {
 
   constructor(redis: Redis | Cluster, options?: RedisJobStoreOptions) {
     this.redis = instrumentIORedisClient(redis, RedisUseCases.GENERATION_STREAM);
-    this.coalesceWindowMs = resolveCoalesceWindowMs(options?.coalesceWindowMs);
+    this.coalesceWindowMs = resolveCoalesceWindowMs();
     this.ttl = {
       completed: options?.completedTtl ?? DEFAULT_TTL.completed,
       running: options?.runningTtl ?? DEFAULT_TTL.running,

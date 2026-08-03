@@ -302,16 +302,11 @@ export class RedisEventTransport implements IEventTransport {
    *
    * @param publisher - Redis client for publishing (can be shared)
    * @param subscriber - Redis client for subscribing (must be dedicated)
-   * @param options - coalesceWindowMs overrides STREAM_DELTA_COALESCE_MS (0 disables)
    */
-  constructor(
-    publisher: Redis | Cluster,
-    subscriber: Redis | Cluster,
-    options?: { coalesceWindowMs?: number },
-  ) {
+  constructor(publisher: Redis | Cluster, subscriber: Redis | Cluster) {
     this.publisher = instrumentIORedisClient(publisher, RedisUseCases.GENERATION_STREAM);
     this.subscriber = instrumentIORedisClient(subscriber, RedisUseCases.GENERATION_STREAM);
-    this.coalesceWindowMs = resolveCoalesceWindowMs(options?.coalesceWindowMs);
+    this.coalesceWindowMs = resolveCoalesceWindowMs();
     registerChunkPublicationCapability(this, (streamId, event, generationId, publishOptions) =>
       this.publishChunkWithReceipt(streamId, event, generationId, publishOptions),
     );
