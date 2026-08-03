@@ -175,13 +175,12 @@ export default function ChatRoute() {
       const querySettings = processValidSettings(queryParams);
 
       /** A spec named in the URL is an explicit selection: it must resolve to its own
-       * full preset, or stale last-selection state (endpoint/agent) fills the gaps. */
+       * full preset, or stale last-selection state (endpoint/agent) fills the gaps.
+       * Names absent from the client config (e.g. `showInMenu: false`) stay in the
+       * query settings untouched, since they remain resolvable server-side by name. */
       const urlSpec = querySettings.spec
         ? startupConfig?.modelSpecs?.list?.find((spec) => spec.name === querySettings.spec)
         : undefined;
-      if (querySettings.spec != null && !urlSpec) {
-        delete querySettings.spec;
-      }
 
       const result = urlSpec ? undefined : getDefaultModelSpec(startupConfig, endpointsQuery.data);
       const spec = urlSpec ?? result?.default ?? result?.last ?? result?.softDefault;
