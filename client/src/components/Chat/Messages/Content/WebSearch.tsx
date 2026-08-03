@@ -238,7 +238,7 @@ export default function WebSearch({
           ) : (
             <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
           )}
-          <span className="font-medium">{completedText}</span>
+          <span className="min-w-0 truncate font-medium">{completedText}</span>
           {hasSourceData && (
             <ChevronDown
               className={cn(
