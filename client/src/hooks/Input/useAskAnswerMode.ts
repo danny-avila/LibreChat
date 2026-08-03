@@ -9,7 +9,7 @@ import {
   findLiveAskUserQuestion,
   splitOtherOption,
 } from '~/utils/approval';
-import { getAskAnswerDraftId, morphTransition } from '~/utils';
+import { getAskAnswerDraftId, morphTransition, setDraft } from '~/utils';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { useOptionalChatFormContext } from '~/Providers';
 import store from '~/store';
@@ -155,9 +155,15 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     (text: string) => {
       if (liveAsk) {
         setAnswerDraft({ actionId: liveAsk.actionId, text });
+        /** While the card owns the answer, `useAutoSave` is tracking the
+         *  conversation draft instead. Keep the dormant ask draft current so
+         *  expanding can restore this edit without clobbering that message. */
+        if (saveDrafts) {
+          setDraft({ id: getAskAnswerDraftId(liveAsk.actionId), value: text });
+        }
       }
     },
-    [liveAsk, setAnswerDraft],
+    [liveAsk, saveDrafts, setAnswerDraft],
   );
 
   /** Selection state is per-question: a new pause must never inherit a stale
@@ -186,11 +192,16 @@ export default function useAskAnswerMode(conversationId?: string | null) {
 
   const expand = useCallback(() => {
     if (liveAsk) {
-      morphTransition(() =>
-        setCollapsedIds((prev) => prev.filter((id) => id !== liveAsk.actionId)),
-      );
+      morphTransition(() => {
+        /** Autosave restores the ask-specific draft after the key switch. If
+         *  drafts are disabled, perform that handoff directly. */
+        if (!saveDrafts) {
+          formContext?.setValue('text', answerText);
+        }
+        setCollapsedIds((prev) => prev.filter((id) => id !== liveAsk.actionId));
+      });
     }
-  }, [liveAsk, setCollapsedIds]);
+  }, [liveAsk, saveDrafts, formContext, answerText, setCollapsedIds]);
 
   /** Pure check toggle: the keyboard highlight is steered only by the
    *  composer's digit/arrow shortcuts, so a mouse toggle never leaves a

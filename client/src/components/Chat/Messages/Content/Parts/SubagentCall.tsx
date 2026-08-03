@@ -82,7 +82,10 @@ export default function SubagentCall({
       isSubmitting,
       typeof args === 'string' ? args : JSON.stringify(args ?? null),
       output ?? '',
-      persistedContent?.length ?? -1,
+      /** Approval interrupts replace nested parts without changing the array
+       *  length. Fingerprint the content so the detached panel receives those
+       *  same-length state transitions. */
+      JSON.stringify(persistedContent ?? null),
       /** Fingerprint attachments by content, not just count — deferred
        *  previews resolve in place (same array length, new filepath), and the
        *  detached panel reads attachments only from this registry entry, so a

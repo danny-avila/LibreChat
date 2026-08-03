@@ -1,10 +1,15 @@
 const mockSubmitAskAnswer = jest.fn();
 const mockResetComposer = jest.fn();
 const mockGetComposerText = jest.fn(() => 'answer from A');
+const mockSetComposerText = jest.fn();
+const mockSetCollapsedIds = jest.fn();
 const mockSetSelected = jest.fn();
 const mockSetChecked = jest.fn();
 const mockSetAnswerDraft = jest.fn();
+const mockSetDraft = jest.fn();
 let mockSaveDrafts = false;
+let mockCollapsedIds: string[] = [];
+let mockAnswerDraft = { actionId: null as string | null, text: '' };
 
 jest.mock('~/data-provider', () => ({ useGetMessagesByConvoId: jest.fn() }));
 jest.mock('~/components/Chat/Messages/Content/ApprovalContext', () => ({
@@ -15,15 +20,20 @@ jest.mock('~/Providers', () => ({
   useOptionalChatFormContext: () => ({
     reset: mockResetComposer,
     getValues: mockGetComposerText,
+    setValue: mockSetComposerText,
   }),
 }));
 jest.mock('~/utils', () => ({
   getAskAnswerDraftId: (id: string) => `draft-${id}`,
   morphTransition: (update: () => void) => update(),
+  setDraft: (...args: unknown[]) => mockSetDraft(...args),
 }));
 jest.mock('recoil', () => ({
   atom: (cfg: unknown) => cfg,
   useRecoilState: (state: { key?: string }) => {
+    if (state.key === 'askAnswerModeCollapsedActions') {
+      return [mockCollapsedIds, mockSetCollapsedIds];
+    }
     if (state.key === 'askAnswerModeSelection') {
       return [null, mockSetSelected];
     }
@@ -31,7 +41,7 @@ jest.mock('recoil', () => ({
       return [[], mockSetChecked];
     }
     if (state.key === 'askAnswerModeText') {
-      return [{ actionId: null, text: '' }, mockSetAnswerDraft];
+      return [mockAnswerDraft, mockSetAnswerDraft];
     }
     return [[], jest.fn()];
   },
@@ -55,6 +65,8 @@ describe('useAskAnswerMode', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSaveDrafts = false;
+    mockCollapsedIds = [];
+    mockAnswerDraft = { actionId: null, text: '' };
     mockGetComposerText.mockReturnValue('answer from A');
   });
 
@@ -112,6 +124,34 @@ describe('useAskAnswerMode', () => {
     expect(mockSetAnswerDraft).toHaveBeenCalledWith({
       actionId: 'a1',
       text: 'answer from A',
+    });
+  });
+
+  it('restores the card answer into the composer when drafts are disabled', () => {
+    mockCollapsedIds = ['a1'];
+    mockAnswerDraft = { actionId: 'a1', text: 'answer edited in the card' };
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => result.current.expand());
+
+    expect(mockSetComposerText).toHaveBeenCalledWith('text', 'answer edited in the card');
+  });
+
+  it('keeps the ask-specific draft current while editing the card', () => {
+    mockSaveDrafts = true;
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => result.current.setAnswerText('answer edited in the card'));
+
+    expect(mockSetAnswerDraft).toHaveBeenCalledWith({
+      actionId: 'a1',
+      text: 'answer edited in the card',
+    });
+    expect(mockSetDraft).toHaveBeenCalledWith({
+      id: 'draft-a1',
+      value: 'answer edited in the card',
     });
   });
 

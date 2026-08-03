@@ -1,7 +1,7 @@
 import React from 'react';
 import { RecoilRoot, useRecoilCallback, useRecoilValue } from 'recoil';
 import { render, screen, act, fireEvent, waitFor, within } from '@testing-library/react';
-import type { SubagentUpdateEvent } from 'librechat-data-provider';
+import type { SubagentUpdateEvent, TMessageContentParts } from 'librechat-data-provider';
 import type {
   SubagentContentPart,
   SubagentTickerState,
@@ -121,6 +121,7 @@ function PanelProbe() {
     <>
       <div data-testid="current-run-id">{runId ?? ''}</div>
       <div data-testid="registered-run-ids">{Object.keys(runs ?? {}).join(',')}</div>
+      <div data-testid="registered-runs">{JSON.stringify(runs ?? {})}</div>
     </>
   );
 }
@@ -132,6 +133,7 @@ function renderWithState(args: {
   output?: string | null;
   progress?: SubagentProgress | null;
   initializeStreaming?: boolean;
+  persistedContent?: TMessageContentParts[];
 }) {
   const setter = { current: null as null | ((next: SubagentProgress | null) => void) };
   const SeedHelper = () => {
@@ -144,7 +146,7 @@ function renderWithState(args: {
     );
     return null;
   };
-  const rendered = render(
+  const renderTree = (persistedContent = args.persistedContent) => (
     <RecoilRoot
       initializeState={({ set }) => {
         if (args.initializeStreaming) {
@@ -160,16 +162,21 @@ function renderWithState(args: {
         isSubmitting={args.isSubmitting ?? false}
         output={args.output}
         args={{ subagent_type: 'self', description: 'compute' }}
+        persistedContent={persistedContent}
       />
-    </RecoilRoot>,
+    </RecoilRoot>
   );
+  const rendered = render(renderTree());
   const setProgress = (next: SubagentProgress | null) => {
     act(() => {
       setter.current?.(next);
     });
   };
   setProgress(args.progress ?? null);
-  return { ...rendered, setProgress };
+  const rerenderPersistedContent = (persistedContent: TMessageContentParts[]) => {
+    rendered.rerender(renderTree(persistedContent));
+  };
+  return { ...rendered, setProgress, rerenderPersistedContent };
 }
 
 describe('SubagentCall — status resolution', () => {
@@ -395,6 +402,42 @@ describe('SubagentCall — panel open contract', () => {
     });
     await waitFor(() => {
       expect(screen.getByTestId('registered-run-ids')).toHaveTextContent('call_register');
+    });
+  });
+
+  it('updates the registry when persisted content changes without changing length', async () => {
+    const initialContent = [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'nested-approval', name: 'approval_probe', progress: 0.5 },
+      },
+    ] as unknown as TMessageContentParts[];
+    const contentWithApproval = [
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'nested-approval',
+          name: 'approval_probe',
+          progress: 0.5,
+          approval: { state: 'pending' },
+        },
+      },
+    ] as unknown as TMessageContentParts[];
+    const { rerenderPersistedContent } = renderWithState({
+      toolCallId: 'call_content_replacement',
+      initialProgress: 0.5,
+      isSubmitting: true,
+      persistedContent: initialContent,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('registered-runs')).not.toHaveTextContent('"state":"pending"');
+    });
+
+    rerenderPersistedContent(contentWithApproval);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('registered-runs')).toHaveTextContent('"state":"pending"');
     });
   });
 
