@@ -4433,22 +4433,26 @@ class GenerationJobManagerClass {
       runtime.earlyEventBuffer.length >= EARLY_EVENT_BUFFER_MAX_EVENTS ||
       runtime.earlyEventBufferBytes + estimatedBytes > EARLY_EVENT_BUFFER_MAX_BYTES
     ) {
-      const droppedEvents = runtime.earlyEventBuffer.length;
-      const droppedBytes = runtime.earlyEventBufferBytes;
-      this.resetEarlyEventBuffer(runtime);
-      runtime.earlyEventBufferClosed = true;
-      runtime.earlyEventBufferOverflowed = true;
-      recordGenerationStreamEarlyBufferOverflow(this.storeLabel);
-      logger.warn(
-        `[GenerationJobManager] Early event buffer overflow for ${streamId}; ` +
-          `discarded ${droppedEvents} buffered events (~${droppedBytes} bytes); ` +
-          'late subscribers will recover from durable/resume state',
-      );
+      this.overflowEarlyEventBuffer(streamId, runtime);
       return false;
     }
     runtime.earlyEventBuffer.push(event);
     runtime.earlyEventBufferBytes += estimatedBytes;
     return true;
+  }
+
+  private overflowEarlyEventBuffer(streamId: string, runtime: RuntimeJobState): void {
+    const droppedEvents = runtime.earlyEventBuffer.length;
+    const droppedBytes = runtime.earlyEventBufferBytes;
+    this.resetEarlyEventBuffer(runtime);
+    runtime.earlyEventBufferClosed = true;
+    runtime.earlyEventBufferOverflowed = true;
+    recordGenerationStreamEarlyBufferOverflow(this.storeLabel);
+    logger.warn(
+      `[GenerationJobManager] Early event buffer overflow for ${streamId}; ` +
+        `discarded ${droppedEvents} buffered events (~${droppedBytes} bytes); ` +
+        'late subscribers will recover from durable/resume state',
+    );
   }
 
   /**
@@ -4623,9 +4627,22 @@ class GenerationJobManagerClass {
         const bufferedEvents = new Set(currentRuntime.earlyEventBuffer);
         const missingEvents = capturedPendingEvents.filter((event) => !bufferedEvents.has(event));
         if (missingEvents.length > 0) {
-          currentRuntime.earlyEventBuffer = [...missingEvents, ...currentRuntime.earlyEventBuffer];
+          let restoredBytes = 0;
           for (const event of missingEvents) {
-            currentRuntime.earlyEventBufferBytes += JSON.stringify(event).length;
+            restoredBytes += JSON.stringify(event).length;
+          }
+          const overflows =
+            currentRuntime.earlyEventBuffer.length + missingEvents.length >
+              EARLY_EVENT_BUFFER_MAX_EVENTS ||
+            currentRuntime.earlyEventBufferBytes + restoredBytes > EARLY_EVENT_BUFFER_MAX_BYTES;
+          if (overflows) {
+            this.overflowEarlyEventBuffer(streamId, currentRuntime);
+          } else {
+            currentRuntime.earlyEventBuffer = [
+              ...missingEvents,
+              ...currentRuntime.earlyEventBuffer,
+            ];
+            currentRuntime.earlyEventBufferBytes += restoredBytes;
           }
         }
       }

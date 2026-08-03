@@ -1786,6 +1786,87 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.destroy();
     });
+
+    test('caps captured events restored by a resume canceled before activation', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      const streamId = `restore-cap-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await setupDisconnectedStream(manager, streamId, 10);
+
+      /** Arm only after the snapshot completes so the gate parks the resume
+       * in its post-attachment steer reconciliation, the window where
+       * emissions are captured per-resume instead of buffered. */
+      let armed = false;
+      const originalGetResumeState = manager.getResumeState.bind(manager);
+      jest
+        .spyOn(manager, 'getResumeState')
+        .mockImplementation(
+          async (...args: Parameters<GenerationJobManagerClass['getResumeState']>) => {
+            const result = await originalGetResumeState(...args);
+            armed = true;
+            return result;
+          },
+        );
+      let releaseGate!: () => void;
+      const gate = new Promise<void>((resolve) => (releaseGate = resolve));
+      let gateReached!: () => void;
+      const reached = new Promise<void>((resolve) => (gateReached = resolve));
+      const originalPeek = jobStore.peekSteers.bind(jobStore);
+      let gated = true;
+      jest
+        .spyOn(jobStore, 'peekSteers')
+        .mockImplementation(async (...args: Parameters<InMemoryJobStore['peekSteers']>) => {
+          if (armed && gated) {
+            gated = false;
+            gateReached();
+            await gate;
+          }
+          return originalPeek(...args);
+        });
+
+      const resumePromise = manager.subscribeWithResume(streamId, () => {});
+
+      await reached;
+      const bigText = 'z'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+        });
+      }
+      releaseGate();
+
+      const { subscription } = await resumePromise;
+      expect(subscription).not.toBeNull();
+      subscription!.unsubscribe();
+
+      /** The ~10MB of captured events must not survive restoration. */
+      const stats = manager.getRuntimeStats();
+      expect(stats.earlyBufferedEvents).toBe(0);
+      expect(stats.earlyBufferedBytes).toBe(0);
+
+      /** Restoration overflowed, so a non-resume attach takes the redirect. */
+      const errors: string[] = [];
+      const probe = await manager.subscribe(
+        streamId,
+        () => {},
+        undefined,
+        (error) => errors.push(error),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(errors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
+      probe?.unsubscribe();
+
+      await manager.destroy();
+    });
   });
 
   describe('Atomic subscribeWithResume', () => {
