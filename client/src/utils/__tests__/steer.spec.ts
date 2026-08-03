@@ -289,19 +289,37 @@ describe('compareQueuedMessages', () => {
 
   it('drains the most recently promoted row first', () => {
     const items = [
-      queued({ id: 'first-bump', createdAt: 1, priority: true, bumpedAt: 100 }),
-      queued({ id: 'second-bump', createdAt: 2, priority: true, bumpedAt: 200 }),
+      queued({ id: 'first-bump', createdAt: 1, bumpedAt: 100 }),
+      queued({ id: 'second-bump', createdAt: 2, bumpedAt: 200 }),
       queued({ id: 'plain', createdAt: 3 }),
     ];
     expect(ids(items)).toEqual(['second-bump', 'first-bump', 'plain']);
   });
 
-  it('ranks a promoted row ahead of an unpromoted interrupt front-insert', () => {
-    const items = [
-      queued({ id: 'armed', createdAt: 1, priority: true }),
-      queued({ id: 'bumped', createdAt: 5, priority: true, bumpedAt: 50 }),
-    ];
-    expect(ids(items)).toEqual(['bumped', 'armed']);
+  /** An interrupt aborted a run to be said now, so it outranks a promotion
+   *  whichever came first — and two interrupts stay FIFO among themselves. */
+  it('keeps interrupts ahead of promotions in both arrival orders', () => {
+    expect(
+      ids([
+        queued({ id: 'bumped', createdAt: 1, bumpedAt: 500 }),
+        queued({ id: 'armed', createdAt: 5, priority: true }),
+      ]),
+    ).toEqual(['armed', 'bumped']);
+    expect(
+      ids([
+        queued({ id: 'armed', createdAt: 1, priority: true }),
+        queued({ id: 'bumped', createdAt: 5, bumpedAt: 500 }),
+      ]),
+    ).toEqual(['armed', 'bumped']);
+  });
+
+  it('keeps two interrupts FIFO, as sequential instructions rather than rivals', () => {
+    expect(
+      ids([
+        queued({ id: 'second', createdAt: 20, priority: true }),
+        queued({ id: 'first', createdAt: 10, priority: true }),
+      ]),
+    ).toEqual(['first', 'second']);
   });
 });
 

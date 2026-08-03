@@ -191,7 +191,7 @@ function PendingSteerChips({
           onEditToComposer={onEditToComposer}
         />
       ))}
-      {drainHold != null && queued.length > 0 && (
+      {drainHold != null && drainHold.status == null && queued.length > 0 && (
         <QueueSendingBanner
           count={queued.length}
           dueAt={drainHold.dueAt}

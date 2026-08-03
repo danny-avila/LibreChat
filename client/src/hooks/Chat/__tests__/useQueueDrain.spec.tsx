@@ -705,6 +705,7 @@ describe('useQueueDrain undo grace', () => {
     const state: {
       setRunEnd?: (value: RunEnd | null) => void;
       setInterruptFlag?: (value: DrainAfterAbort | false) => void;
+      setIsSubmitting?: (value: boolean) => void;
       cancelHold?: () => void;
       queue?: QueuedMessage[];
       newConvoQueue?: QueuedMessage[];
@@ -715,7 +716,16 @@ describe('useQueueDrain undo grace', () => {
       state.setRunEnd = useSetRecoilState(store.runEndByIndex(INDEX));
       state.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
       const setHold = useSetRecoilState(store.queueDrainHoldByConvoId(CONVO_ID));
-      state.cancelHold = () => setHold(null);
+      /** Mirrors `useSteering.cancelQueueDrain`: a released epoch is
+       *  tombstoned rather than merely dropped. */
+      state.cancelHold = () =>
+        setHold((held) => {
+          if (held == null) {
+            return null;
+          }
+          return held.status === 'released' ? { ...held, status: 'cancelled' } : null;
+        });
+      state.setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(INDEX));
       state.queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
       state.newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
       state.hold = useRecoilValue(store.queueDrainHoldByConvoId(CONVO_ID));
@@ -844,6 +854,44 @@ describe('useQueueDrain undo grace', () => {
 
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1), { timeout: AFTER_GRACE_MS * 4 });
     expect(ask).toHaveBeenCalledWith({ text: 'queued on the first turn' }, emptyOverrides);
+  });
+
+  /** A run started INSIDE the window blocks the drain, so the released epoch
+   *  sits parked with the banner still up. Undo then has to neutralize that
+   *  epoch, or it sends anyway the moment the run goes idle. */
+  it('undo after the window closed still cancels the parked epoch', async () => {
+    const { ask, state } = setupGraced(withQueue(queuedMessage('q1', 'must not send')));
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+    await waitFor(() => expect(state.hold).not.toBeNull());
+
+    // The user starts another turn before the window closes.
+    act(() => {
+      state.setIsSubmitting!(true);
+    });
+
+    // The timer hands the epoch back, but the drain is blocked, so the hold
+    // stays — marked released, which is what stops Undo being advertised.
+    await waitFor(() => expect(state.hold?.status).toBe('released'), {
+      timeout: AFTER_GRACE_MS * 4,
+    });
+    expect(ask).not.toHaveBeenCalled();
+
+    act(() => {
+      state.cancelHold!();
+    });
+    expect(state.hold?.status).toBe('cancelled');
+
+    act(() => {
+      state.setIsSubmitting!(false);
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, AFTER_GRACE_MS));
+    expect(ask).not.toHaveBeenCalled();
+    expect(state.queue).toHaveLength(1);
+    expect(state.hold).toBeNull();
   });
 
   it('drains immediately when the window already expired while away', async () => {

@@ -269,6 +269,12 @@ export default function useQueueDrain(
         if (hold != null) {
           set(store.queueDrainHoldByConvoId(conversationId), null);
         }
+        /** Undo landed after the timer handed this epoch back. The epoch is
+         *  consumed above, so discarding it here is what makes the visible
+         *  Undo mean what it says. */
+        if (hold?.status === 'cancelled') {
+          return null;
+        }
         /** Withhold the epoch, never the queue: the rows stay exactly where
          *  they are, so cancelling is a no-op and a reload costs no text.
          *  A first turn's queue does have to migrate before the window opens —
@@ -324,16 +330,20 @@ export default function useQueueDrain(
     ({ snapshot, set }) =>
       (convoId: string) => {
         const held = snapshot.getLoadable(store.queueDrainHoldByConvoId(convoId)).getValue();
-        if (held == null) {
+        if (held == null || held.status != null) {
           return;
         }
+        /** Marked before the epoch goes back so Undo stops being offered the
+         *  moment the window closes — a new run can block the drain, and an
+         *  Undo that no longer undoes anything is worse than none. */
+        set(store.queueDrainHoldByConvoId(convoId), { ...held, status: 'released' });
         set(store.pendingRunEndByConvoId(convoId), held.runEnd);
       },
     [],
   );
 
   useEffect(() => {
-    if (drainHold == null) {
+    if (drainHold == null || drainHold.status != null) {
       return;
     }
     const convoId = activeConversationId ?? Constants.NEW_CONVO;

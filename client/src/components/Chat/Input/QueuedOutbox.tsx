@@ -137,6 +137,21 @@ function QueuedRowBase({
     setDraft(null);
   }, [draft, message.id, steering]);
 
+  /** Removing the input never fires `blur`, and this row is remounted whenever
+   *  the queue crosses the grouping threshold (a front row draining, say), so
+   *  an in-progress edit has to be flushed on the way out or the words are
+   *  lost. Writing for an id that has since drained is a no-op. */
+  const draftRef = useRef<string | null>(null);
+  draftRef.current = draft;
+  useEffect(
+    () => () => {
+      if (draftRef.current != null) {
+        steering.updateQueuedText(message.id, draftRef.current);
+      }
+    },
+    [message.id, steering],
+  );
+
   /** An ordinary row is a living draft: it is rewritten in place. A recovered
    *  row's words are bound to a parked server source matched by exact text, so
    *  its Edit keeps the existing discard-then-hand-to-composer path. */

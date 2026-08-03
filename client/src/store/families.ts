@@ -387,9 +387,9 @@ export type QueuedMessage = {
   /** Front-inserted by "Interrupt & send": stays ahead of chronologically
    *  older items when leftover steers are merged back into the queue. */
   priority?: boolean;
-  /** Set by "Send next": promotes into the priority tier and, within it,
-   *  orders by most recent promotion so the latest explicit choice drains
-   *  first. Absent on items the user never reordered. */
+  /** Set by "Send next": promotes the row above ordinary follow-ups (but never
+   *  above an interrupt), most recent promotion first. Absent on rows the user
+   *  never reordered. */
   bumpedAt?: number;
 };
 
@@ -421,6 +421,11 @@ const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
 export type QueueDrainHold = {
   runEnd: RunEnd;
   dueAt: number;
+  /** Absent while the window is open and Undo is offered. `released` means the
+   *  epoch was handed back to the drain (the window is over, so Undo is no
+   *  longer advertised); `cancelled` neutralizes an epoch already handed back,
+   *  for the frame in which Undo and release can race. */
+  status?: 'released' | 'cancelled';
 };
 
 /** Per-conversation undo grace on the next automatic drain. */

@@ -2420,3 +2420,96 @@ describe('useSteering', () => {
     });
   });
 });
+
+describe('useSteering — clear all', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function setupClearAll(initialize?: (snapshot: MutableSnapshot) => void) {
+    const sendNow = jest.fn();
+    const stopGenerating = jest.fn();
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <RecoilRoot initializeState={withActiveGeneration(initialize)}>{children}</RecoilRoot>
+    );
+    return renderHook(
+      () => ({
+        steering: useSteering({
+          index: 0,
+          conversationId: CONVO_ID,
+          conversation: agentsConversation,
+          isSubmitting: false,
+          answerModeActive: false,
+          sendNow,
+          stopGenerating,
+        }),
+        queue: useQueue(CONVO_ID),
+      }),
+      { wrapper },
+    );
+  }
+
+  it('folds the queue into one payload and empties it', async () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'q1', text: 'first', createdAt: 1 },
+        { id: 'q2', text: 'second', createdAt: 2 },
+      ]);
+    });
+
+    let cleared: QueuedMessage | null | undefined;
+    await act(async () => {
+      cleared = await result.current.steering.clearQueued();
+    });
+
+    expect(cleared?.text).toBe('first\n\nsecond');
+    expect(result.current.queue).toEqual([]);
+  });
+
+  /** Cancelling a parked source is a round trip, so the queue can grow while
+   *  clear-all is in flight; a message the user queued meanwhile is not part
+   *  of what they asked to clear. */
+  it('leaves a message queued after the clear started untouched', async () => {
+    let settleCancel: ((value: { removed: boolean }) => void) | undefined;
+    mockCancelSteer.mockImplementationOnce(
+      () =>
+        new Promise<{ removed: boolean }>((resolve) => {
+          settleCancel = resolve;
+        }),
+    );
+
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        {
+          id: 'q1',
+          text: 'recovered row',
+          createdAt: 1,
+          recoverySteerId: 'server-source',
+          recoveryClientSteerId: 'client-source',
+        },
+        { id: 'q2', text: 'ordinary row', createdAt: 2 },
+      ]);
+    });
+
+    let pending: Promise<QueuedMessage | null> | undefined;
+    act(() => {
+      pending = result.current.steering.clearQueued();
+    });
+
+    // The user queues something else while the cancellation is in flight.
+    act(() => {
+      result.current.steering.enqueue('queued mid-clear', { id: 'q3', createdAt: 3 });
+    });
+
+    let cleared: QueuedMessage | null | undefined;
+    await act(async () => {
+      settleCancel?.({ removed: true });
+      cleared = (await pending) ?? null;
+    });
+
+    expect(cleared?.text).toBe('recovered row\n\nordinary row');
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({ id: 'q3', text: 'queued mid-clear' }),
+    ]);
+  });
+});

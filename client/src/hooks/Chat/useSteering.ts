@@ -697,11 +697,21 @@ export default function useSteering({
   );
 
   /** Cancels a withheld automatic send. The queue was never popped, so this
-   *  only drops the epoch — the rows stay put for a manual send. */
+   *  only drops the epoch — the rows stay put for a manual send. If the timer
+   *  already handed the epoch back (a new run can block the drain, leaving it
+   *  parked), dropping the hold alone would let it drain anyway: tombstone it
+   *  instead so the drain discards that epoch when it finally runs. */
   const cancelQueueDrain = useRecoilCallback(
-    ({ set }) =>
+    ({ snapshot, set }) =>
       () => {
-        set(store.queueDrainHoldByConvoId(queueKey), null);
+        const held = snapshot.getLoadable(store.queueDrainHoldByConvoId(queueKey)).getValue();
+        if (held == null) {
+          return;
+        }
+        set(
+          store.queueDrainHoldByConvoId(queueKey),
+          held.status === 'released' ? { ...held, status: 'cancelled' } : null,
+        );
       },
     [queueKey],
   );
@@ -777,20 +787,24 @@ export default function useSteering({
     [queueKey],
   );
 
-  /** Empties the queue of everything the client fully owns, returning those
-   *  rows folded into one payload for the composer. Rows whose parked source
-   *  refused to cancel STAY — the words are never dropped on the floor. */
+  /** Empties the queue of the rows named by `targetIds`, returning them folded
+   *  into one payload for the composer. Scoped to that snapshot because the
+   *  recovered-source cancellations are round trips: anything the user queues
+   *  while they are in flight is not part of this clear. Rows whose parked
+   *  source refused to cancel STAY — words are never dropped on the floor. */
   const takeAllQueued = useRecoilCallback(
     ({ snapshot, set }) =>
-      (): QueuedMessage | null => {
+      (targetIds: Set<string>): QueuedMessage | null => {
         const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
-        const clearable = queue.filter(isMergeableQueuedMessage);
+        const owned = (item: QueuedMessage) =>
+          targetIds.has(item.id) && isMergeableQueuedMessage(item);
+        const clearable = queue.filter(owned);
         if (clearable.length === 0) {
           return null;
         }
         set(
           store.queuedMessagesByConvoId(queueKey),
-          queue.filter((item) => !isMergeableQueuedMessage(item)),
+          queue.filter((item) => !owned(item)),
         );
         return clearable.length === 1 ? clearable[0] : mergeQueuedMessages(clearable);
       },
@@ -804,13 +818,14 @@ export default function useSteering({
    * The caller owns the composer and decides whether it can accept the payload.
    */
   const clearQueued = useCallback(async (): Promise<QueuedMessage | null> => {
-    for (const item of readQueued()) {
+    const initial = readQueued();
+    for (const item of initial) {
       if (item.recoverySteerId == null) {
         continue;
       }
       await discardQueued(item);
     }
-    return takeAllQueued();
+    return takeAllQueued(new Set(initial.map((item) => item.id)));
   }, [readQueued, discardQueued, takeAllQueued]);
 
   /** Capture-then-remove, including the item's neighbours, so any refused send

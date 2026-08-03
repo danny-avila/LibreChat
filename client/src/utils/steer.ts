@@ -157,17 +157,28 @@ export function carriedSteerContext(source?: SteerCarriedContext): SteerCarriedC
 
 /**
  * The queue's one ordering rule, shared by every writer so a reorder cannot be
- * undone by the next enqueue re-sorting on a different key: the priority tier
- * first ("Interrupt & send" front-inserts, "Send next" promotions), then most
- * recent promotion within that tier, then enqueue order.
+ * undone by the next enqueue re-sorting on a different key. Three tiers:
+ *
+ * 0. "Interrupt & send" front-inserts. They aborted a run to be said now, so
+ *    they outrank everything — and stay FIFO among themselves, because two
+ *    interrupts are sequential instructions, not competing ones.
+ * 1. "Send next" promotions, most recently promoted first.
+ * 2. Everything else, in enqueue order.
  */
+function orderingTier(item: QueuedMessage): number {
+  if (item.priority === true) {
+    return 0;
+  }
+  return item.bumpedAt != null ? 1 : 2;
+}
+
 export function compareQueuedMessages(a: QueuedMessage, b: QueuedMessage): number {
-  const tier = Number(b.priority === true) - Number(a.priority === true);
+  const tier = orderingTier(a) - orderingTier(b);
   if (tier !== 0) {
     return tier;
   }
-  if (a.bumpedAt !== b.bumpedAt) {
-    return (b.bumpedAt ?? 0) - (a.bumpedAt ?? 0);
+  if (a.bumpedAt != null && b.bumpedAt != null && a.bumpedAt !== b.bumpedAt) {
+    return b.bumpedAt - a.bumpedAt;
   }
   return a.createdAt - b.createdAt;
 }
@@ -240,7 +251,11 @@ export function mergeQueuedMessages(items: QueuedMessage[]): QueuedMessage | nul
   };
 }
 
-/** Promotes an item to drain next, leaving every other item's order intact. */
+/**
+ * Promotes an item to drain next, leaving every other item's order intact.
+ * Deliberately does NOT set `priority`: that tier belongs to interrupts, which
+ * aborted a run and must stay ahead of a promotion made before them.
+ */
 export function bumpQueuedMessage(
   queue: QueuedMessage[],
   id: string,
@@ -251,7 +266,7 @@ export function bumpQueuedMessage(
     return queue;
   }
   const next = [...queue];
-  next[index] = { ...next[index], priority: true, bumpedAt };
+  next[index] = { ...next[index], bumpedAt };
   return next.sort(compareQueuedMessages);
 }
 

@@ -761,6 +761,29 @@ describe('PendingSteerChips — queued row editing', () => {
     expect(mockUpdateQueuedText).toHaveBeenCalledWith('q1', 'sharper thought');
   });
 
+  /** The front row draining drops the queue below the grouping threshold, which
+   *  remounts the surviving row. Unmounting an input fires no `blur`, so the
+   *  flush has to happen on the way out or the typing is silently lost. */
+  it('flushes an in-progress edit when the group collapses under it', () => {
+    renderChips(twoQueued, { steering: outboxSteering() });
+    fireEvent.click(screen.getByTestId('queue-group-toggle'));
+
+    const rows = screen.getAllByTestId('queued-message-row');
+    fireEvent.click(rows[1].querySelector('span[title]') as HTMLElement);
+    fireEvent.change(screen.getByTestId('queued-message-edit'), {
+      target: { value: 'edited while the front row drained' },
+    });
+
+    // The front row drains, leaving a lone message: the group gives way to a
+    // plain chip and the edited row is remounted elsewhere in the tree.
+    act(() => {
+      updateQueueForTest!(() => [twoQueued[1]]);
+    });
+
+    expect(screen.queryByTestId('queue-group')).toBeNull();
+    expect(mockUpdateQueuedText).toHaveBeenCalledWith('q2', 'edited while the front row drained');
+  });
+
   it('abandons an edit on Escape', () => {
     renderChips([twoQueued[0]], { steering: outboxSteering() });
 
