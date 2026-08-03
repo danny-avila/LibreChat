@@ -378,12 +378,19 @@ describe('Delta coalescing integration', () => {
       /** Abort lands while both deltas are still inside the 25ms window. The
        * abort path must drain the coalescers before its terminal CAS; without
        * that, the window flush fences (-1) and the false receipts retire the
-       * runtime, error-closing this subscriber with a reconnect error. */
-      const abortResult = await manager.abortJob(streamId);
-      expect(abortResult.success).toBe(true);
-
+       * runtime, error-closing this subscriber with a reconnect error.
+       *
+       * Delivery is observed WHILE the abort runs: the pre-CAS flush publishes
+       * the tail several round trips before abortJob's terminal cleanup tears
+       * down local subscription state, but under Redis Cluster the frames
+       * cross the cluster bus, so waiting until after abortJob returns races
+       * that teardown (publish receipts acknowledge execution, not delivery). */
+      const abortPromise = manager.abortJob(streamId);
       await waitFor(() => received.length === 2);
       expect(received).toEqual(['tail-1', 'tail-2']);
+      const abortResult = await abortPromise;
+      expect(abortResult.success).toBe(true);
+
       await new Promise((resolve) => setTimeout(resolve, 150));
       expect(errors).toEqual([]);
 
