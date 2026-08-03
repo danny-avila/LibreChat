@@ -107,6 +107,59 @@ describe('abort signal honesty across replicas', () => {
     expect(result).toEqual({ delivered: false, published: false });
   });
 
+  it('refuses the abort when the pre-CAS finalization marker cannot be registered', async () => {
+    const { owner, peer, jobStore } = await makeManagers();
+    await owner.createJob('conv-5', 'user-1', 'conv-5');
+    jest
+      .spyOn(jobStore, 'registerUserFinalization')
+      .mockRejectedValue(new Error('marker store down'));
+
+    const result = await peer.abortJob('conv-5');
+
+    // FAIL CLOSED: nothing was aborted, so refusing merely defers — the Stop route
+    // answers retryable and the deletion quiesce keeps its fence. Proceeding instead
+    // would open the CAS-to-persistence window with no marker covering it.
+    expect(result.success).toBe(false);
+    expect(result.failureReason).toBe('fence_unavailable');
+    expect((await jobStore.getJob('conv-5'))?.status).toBe('running');
+  });
+
+  it('registers the abort marker before the terminal CAS and clears it after', async () => {
+    const { owner, jobStore } = await makeManagers();
+    await owner.createJob('conv-6', 'user-1', 'conv-6');
+    const createdAt = (await jobStore.getJob('conv-6'))!.createdAt;
+    const register = jest.spyOn(jobStore, 'registerUserFinalization');
+    const transition = jest.spyOn(jobStore, 'transitionStatusAndDrainSteers');
+
+    const result = await owner.abortJob('conv-6');
+
+    expect(result.success).toBe(true);
+    expect(register).toHaveBeenCalledWith('user-1', 'conv-6', undefined, createdAt);
+    // BEFORE the CAS: registering after it leaves the window uncovered.
+    expect(register.mock.invocationCallOrder[0]).toBeLessThan(
+      transition.mock.invocationCallOrder[0],
+    );
+    // Every write this abort owns has landed by return: the marker is released.
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(0);
+  });
+
+  it('releases the abort marker when the terminal CAS is lost', async () => {
+    const { owner, peer, jobStore } = await makeManagers();
+    await owner.createJob('conv-7', 'user-1', 'conv-7');
+    const observed = await jobStore.getJob('conv-7');
+    // A replacement generation claims the stream before the peer's abort lands.
+    await owner.createJob('conv-7', 'user-1', 'conv-7');
+
+    const result = await peer.abortJob('conv-7', { expectedCreatedAt: observed!.createdAt });
+
+    expect(result.success).toBe(false);
+    // Nothing will be persisted by this loser: holding the marker to its TTL would
+    // fence the user's deletion pointlessly.
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(0);
+  });
+
   it('reports republication as succeeded when the owner acknowledges', async () => {
     const { owner, peer, peerTransport, jobStore } = await makeManagers();
     await owner.createJob('conv-4', 'user-1', 'conv-4');

@@ -34,6 +34,7 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
   isPendingActionStale,
+  finalizationField,
 } from '~/stream/interfaces/IJobStore';
 import {
   MAX_COALESCED_BYTES,
@@ -3054,16 +3055,35 @@ export class RedisJobStore implements IJobStoreV2 {
     userId: string,
     streamId: string,
     tenantId?: string,
+    generationId?: number,
   ): Promise<void> {
     const key = KEYS.userFinalizations(userId, tenantId);
     const expiresAt = Date.now() + USER_FINALIZATION_TTL_MS;
-    await this.redis.hset(key, streamId, String(expiresAt));
-    // Key-level TTL as the crash backstop; per-field expiry is enforced on read.
-    await this.redis.expire(key, Math.ceil(USER_FINALIZATION_TTL_MS / 1000));
+    // ONE atomic script, not HSET-then-EXPIRE: with the user's existing marker hash
+    // near its key TTL, a crash (or failed EXPIRE) between the two commands lets the
+    // freshly registered marker evaporate almost immediately — exactly the fence the
+    // caller is about to rely on. Key-level TTL is the crash backstop; per-field
+    // expiry is enforced on read.
+    await this.redis.eval(
+      REGISTER_FINALIZATION_LUA,
+      1,
+      key,
+      finalizationField(streamId, generationId),
+      String(expiresAt),
+      String(Math.ceil(USER_FINALIZATION_TTL_MS / 1000)),
+    );
   }
 
-  async clearUserFinalization(userId: string, streamId: string, tenantId?: string): Promise<void> {
-    await this.redis.hdel(KEYS.userFinalizations(userId, tenantId), streamId);
+  async clearUserFinalization(
+    userId: string,
+    streamId: string,
+    tenantId?: string,
+    generationId?: number,
+  ): Promise<void> {
+    await this.redis.hdel(
+      KEYS.userFinalizations(userId, tenantId),
+      finalizationField(streamId, generationId),
+    );
   }
 
   async countUserFinalizations(userId: string, tenantId?: string): Promise<number> {

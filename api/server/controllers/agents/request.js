@@ -1374,13 +1374,25 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       if (userFinalizationRegistered) {
         return true;
       }
-      userFinalizationRegistered = await GenerationJobManager.registerUserFinalization(
-        userId,
-        streamId,
-        req.user?.tenantId,
-      )
-        .then(() => true)
-        .catch(() => false);
+      // Generation-qualified (jobCreatedAt): a predecessor's late clear on the same
+      // conversation must never drop THIS generation's marker. One retry absorbs a
+      // transient store blip; a persistent failure is the caller's fail-closed signal.
+      for (let attempt = 1; attempt <= 2 && !userFinalizationRegistered; attempt++) {
+        userFinalizationRegistered = await GenerationJobManager.registerUserFinalization(
+          userId,
+          streamId,
+          req.user?.tenantId,
+          jobCreatedAt,
+        )
+          .then(() => true)
+          .catch((err) => {
+            logger.warn(
+              `[ResumableAgentController] Finalization registration failed (attempt ${attempt}/2): ${streamId}`,
+              err,
+            );
+            return false;
+          });
+      }
       return userFinalizationRegistered;
     };
     const clearUserFinalization = () => {
@@ -1388,9 +1400,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         return;
       }
       userFinalizationRegistered = false;
-      void GenerationJobManager.clearUserFinalization(userId, streamId, req.user?.tenantId).catch(
-        () => undefined,
-      );
+      void GenerationJobManager.clearUserFinalization(
+        userId,
+        streamId,
+        req.user?.tenantId,
+        jobCreatedAt,
+      ).catch(() => undefined);
     };
 
     const claimBeforeResponsePersistence = async () => {
@@ -1426,11 +1441,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       // false here is a transient blip): the title branches re-check with a
       // synchronous-title fallback, and a response save under a missed marker is the
       // pre-marker window, logged loudly rather than failing the user's turn.
+      // FAIL CLOSED: without the marker, the terminal CAS would make this job
+      // invisible to account-deletion quiescing while the response save is still
+      // ahead — exactly the race the marker fences. Throwing routes the turn to the
+      // generation-error path, whose own fenced settlement (below) either registers
+      // its marker or leaves the job ACTIVE for the stale reaper — deletion-visible
+      // either way.
       if (!(await registerUserFinalizationFence())) {
-        logger.error(
-          `[ResumableAgentController] Proceeding without a finalization marker for ${streamId}; ` +
-            'terminal persistence is briefly invisible to account-deletion quiescing',
-        );
+        throw new Error('Finalization marker unavailable before terminal persistence');
       }
       terminalClaim = await GenerationJobManager.claimTerminalJob(
         streamId,
@@ -1923,6 +1941,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               );
             }
           }
+          // Release the marker once this loser's remaining background saves land —
+          // holding it to the TTL would fence the user's deletion pointlessly, while
+          // clearing before the saves flush would reopen the fenced window.
+          await awaitPendingPersistence().catch(() => undefined);
+          clearUserFinalization();
           await finishResumableRequest(req, userId);
           disposeBackgroundClient();
           startupTelemetry?.end(job.abortController.signal.aborted ? 'aborted' : 'replaced');
@@ -2370,19 +2393,30 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
           const generationError = error.message || 'Generation failed';
           try {
-            // completeJob first wins running -> error and atomically parks
-            // steers, then publishes. A competing abort/pause emits nothing.
-            // MUST be awaited: when recordScheduleOutcome exhausted its retries this is
-            // the only write that retains the job as reconcile evidence. Unawaited,
-            // request cleanup (or process exit) can outrun it and the run is left
-            // unreconcilable.
-            await GenerationJobManager.completeJob(streamId, generationError, jobCreatedAt, {
-              preserveForReconcile: Boolean(scheduleId) && !errorScheduleOutcomeRecorded,
-              // Ride the classification on the claim itself so the retained evidence
-              // can never disagree with it (a balance refusal claims an `error`
-              // terminal but must walk the insufficient_balance streak).
-              ...(errorScheduleOutcome != null && { scheduleOutcome: errorScheduleOutcome }),
-            });
+            // FAIL CLOSED, same as the completion claim: the error terminal also drops
+            // the job out of the active set while pending saves are still landing.
+            // Unfenced, SKIP the terminal CAS — an active job is deletion-visible by
+            // itself, and the stale-running reaper recovers it.
+            if (!(await registerUserFinalizationFence())) {
+              logger.error(
+                `[ResumableAgentController] Leaving ${streamId} active for the stale reaper — ` +
+                  'error terminal could not be fenced against account deletion',
+              );
+            } else {
+              // completeJob first wins running -> error and atomically parks
+              // steers, then publishes. A competing abort/pause emits nothing.
+              // MUST be awaited: when recordScheduleOutcome exhausted its retries this is
+              // the only write that retains the job as reconcile evidence. Unawaited,
+              // request cleanup (or process exit) can outrun it and the run is left
+              // unreconcilable.
+              await GenerationJobManager.completeJob(streamId, generationError, jobCreatedAt, {
+                preserveForReconcile: Boolean(scheduleId) && !errorScheduleOutcomeRecorded,
+                // Ride the classification on the claim itself so the retained evidence
+                // can never disagree with it (a balance refusal claims an `error`
+                // terminal but must walk the insufficient_balance streak).
+                ...(errorScheduleOutcome != null && { scheduleOutcome: errorScheduleOutcome }),
+              });
+            }
           } catch (completeErr) {
             logger.warn(
               '[ResumableAgentController] completeJob failed during generation-error cleanup',

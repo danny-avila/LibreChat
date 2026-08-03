@@ -531,19 +531,19 @@ const settleAbortFence = async (user, streamId) => {
     });
     return false;
   }
+  // EVERY status whose owner is still persisting is unsettled — complete, error,
+  // AND aborted (the Stop route's checkpoint prune / partial save run behind the
+  // abort CAS), plus a barrier-held pause. Keep the fence and defer: the owner
+  // clears the flag when its writes land, and stale-owner recovery bounds the wait.
+  if (job.terminalPersistencePending === true) {
+    return false;
+  }
   if (job.status === 'running' || job.status === 'requires_action') {
     // Live again despite terminal-at-CAS bookkeeping: re-abort and keep the fence.
     await GenerationJobManager.abortJob(streamId).catch(() => undefined);
     return false;
   }
   if (job.status === 'complete' || job.status === 'error') {
-    // A terminal whose owner is STILL PERSISTING is not settled: the response save
-    // and FINAL publication are in flight even though the job left the active set.
-    // Keep the fence and defer — the owner clears `terminalPersistencePending` when
-    // its writes land, and stale-owner recovery bounds the wait.
-    if (job.terminalPersistencePending === true) {
-      return false;
-    }
     // The generation reached its OWN terminal — the run ended by its own means, so
     // there is no stop left to deliver and re-signalling (aborted-only) could never
     // clear this fence; it would sit permanent, deferring deletion forever. Any

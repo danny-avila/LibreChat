@@ -201,6 +201,35 @@ describe('Agent Abort Endpoint', () => {
       });
     });
 
+    describe('Fence-unavailable refusal', () => {
+      it('answers 503 retryable when the abort was refused for a missing finalization marker', async () => {
+        const jobStreamId = 'test-stream-123';
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          createdAt: 1000,
+          metadata: { userId: 'test-user-123' },
+        });
+        // abortJob failed CLOSED before its CAS: nothing was stopped, nothing needs
+        // settling — the only correct answer is "try again".
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: false,
+          failureReason: 'fence_unavailable',
+          jobData: null,
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId });
+
+        expect(response.status).toBe(503);
+        expect(response.headers['retry-after']).toBe('2');
+        expect(response.body.error).toMatch(/retry/i);
+        expect(mockGenerationJobManager.resignalAbort).not.toHaveBeenCalled();
+      });
+    });
+
     describe('Early Abort Handling', () => {
       it('should skip message saving when responseMessageId is missing (early abort)', async () => {
         const jobStreamId = 'test-stream-123';

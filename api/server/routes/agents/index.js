@@ -934,6 +934,23 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
       // resume whose live turn a prune would strip the resume state from — so nothing
       // here may act on it, and `beforePublish` never ran.
       if (!abortResult.success) {
+        // The pre-CAS finalization marker could not be made durable: the abort was
+        // REFUSED before doing anything, so nothing was stopped and nothing needs
+        // settling — plainly retryable. Resolve the scheduled stamp so retries are
+        // not answered 'in_progress' against an attempt that never acted.
+        if (abortResult.failureReason === 'fence_unavailable') {
+          await resolveStopAttempt();
+          res.set('Retry-After', '2');
+          return sendGenerationJson(
+            res,
+            503,
+            {
+              error: 'Could not fence the stop against account deletion. Please retry.',
+              aborted: null,
+            },
+            generationProtocolVersion,
+          );
+        }
         // A job already `aborted` is a PREVIOUS Stop's win — but terminal status is
         // not proof its publication ever left that replica. Re-publish rather than
         // trust it (the interactive mirror of the scheduled path's resignalAbort),

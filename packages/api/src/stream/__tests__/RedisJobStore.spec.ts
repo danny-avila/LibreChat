@@ -1042,6 +1042,72 @@ describe('RedisJobStore', () => {
     });
   });
 
+  test('registers a finalization marker in ONE atomic script, generation-qualified', async () => {
+    const evalFn = jest.fn().mockResolvedValue(1);
+    const hdel = jest.fn().mockResolvedValue(1);
+    const redis = { isCluster: false, eval: evalFn, hdel } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await store.registerUserFinalization('user-1', 'conv-1', 'tenant-a', 1000);
+
+    // HSET-then-EXPIRE as two commands loses the fresh marker when the key's old
+    // TTL lapses between them — the script carries both atomically.
+    expect(evalFn).toHaveBeenCalledTimes(1);
+    const [script, keyCount, key, field] = evalFn.mock.calls[0];
+    expect(String(script)).toContain('HSET');
+    expect(String(script)).toContain('EXPIRE');
+    expect(keyCount).toBe(1);
+    expect(String(key)).toContain('user-1');
+    expect(field).toBe('conv-1:1000');
+
+    await store.clearUserFinalization('user-1', 'conv-1', 'tenant-a', 1000);
+    expect(hdel).toHaveBeenCalledWith(expect.stringContaining('user-1'), 'conv-1:1000');
+  });
+
+  test('stale-pause cleanup retains a scheduled fire as stamped error evidence', async () => {
+    const now = Date.now();
+    const staleHash = {
+      streamId: 'conv-stale',
+      userId: 'user-1',
+      status: 'requires_action',
+      createdAt: '1000',
+      pendingActionId: 'pause-persistence:act-1',
+      terminalPersistencePending: '1',
+      terminalPersistenceStartedAt: String(now - 60_000),
+      scheduleId: 'sched-1',
+      scheduledFor: '2026-07-26T12:00:00.000Z',
+    };
+    const redis = {
+      isCluster: false,
+      smembers: jest.fn(async (key: string) =>
+        String(key).includes('requires_action') ? ['conv-stale'] : [],
+      ),
+      scard: jest.fn().mockResolvedValue(0),
+      hgetall: jest.fn().mockResolvedValue(staleHash),
+      expire: jest.fn().mockResolvedValue(1),
+      srem: jest.fn().mockResolvedValue(1),
+      sadd: jest.fn().mockResolvedValue(1),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+    const transition = jest.spyOn(store, 'transitionStatusAndDrainSteers').mockResolvedValue([]);
+
+    await store.cleanup();
+
+    // The retention signal must round-trip Redis exactly like the in-memory path:
+    // no completedAt (evidence TTL, not the short completed TTL) and the stamped
+    // outcome the reconciler prefers over a re-derived `interrupted`.
+    expect(transition).toHaveBeenCalledWith(
+      'conv-stale',
+      expect.objectContaining({
+        from: 'requires_action',
+        to: 'error',
+        patch: expect.objectContaining({ scheduleOutcome: 'error' }),
+      }),
+    );
+    const patch = transition.mock.calls[0][1].patch as Record<string, unknown>;
+    expect(patch.completedAt).toBeUndefined();
+  });
+
   test('writes schedule identity into the created job hash', async () => {
     const evalCreate = jest
       .fn()
