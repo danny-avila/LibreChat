@@ -1466,6 +1466,12 @@ export interface IEventTransport {
     providerExecutionId: string,
   ): Promise<boolean>;
 
+  /** Whether the durable owner acknowledgement proof exists for this exact
+   *  generation. Cross-process retention leases use it as their renewal predicate:
+   *  once the owner has acknowledged (and therefore holds its own lease), a remote
+   *  retainer stops renewing without clearing the shared owner field. */
+  hasAbortAcknowledgement?(streamId: string, generationId: number): Promise<boolean>;
+
   /** Publish a predecessor DONE only while the current job's opaque creation
    * attempt still carries that predecessor in its durable receipt chain. */
   emitReplacedDoneConfirmed?(

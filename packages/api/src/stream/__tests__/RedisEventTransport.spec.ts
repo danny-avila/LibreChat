@@ -204,6 +204,37 @@ describe('RedisEventTransport', () => {
     transport.destroy();
   });
 
+  it('SUPPRESSES the abort acknowledgement when the pre-ACK fence rejects', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'abort-ack-fence-reject';
+    // FAIL CLOSED: an ACK without a durable owner lease lets the stopping side
+    // release its lease into an unfenced gap. The stopping side stays retryable and
+    // every resignal re-drives this handler until the fence holds.
+    transport.beforeAbortAcknowledged = jest.fn(async () => {
+      throw new Error('owner lease unavailable');
+    });
+    await transport.onAbort(streamId, () => true);
+    const messageHandler = getMessageHandler(mockSubscriber);
+
+    messageHandler(
+      `stream:{${streamId}}:events`,
+      JSON.stringify({ type: 'abort', generationId: 7, abortRequestId: 'req-1' }),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockPublisher.set).not.toHaveBeenCalled();
+    const ackPublishes = mockPublisher.publish.mock.calls.filter(([, payload]) =>
+      String(payload).includes('abort_ack'),
+    );
+    expect(ackPublishes).toHaveLength(0);
+    transport.destroy();
+  });
+
   it('ignores sequenced events while only internal abort listeners are attached', async () => {
     jest.useFakeTimers();
     const mockPublisher = createMockPublisher();

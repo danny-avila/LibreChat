@@ -1442,6 +1442,7 @@ class GenerationJobManagerClass {
   private async notifyReplacedGeneration(
     streamId: string,
     predecessorCreatedAt: number,
+    owner: { userId: string; tenantId?: string },
     predecessorConversationId?: string,
     fallbackConversationId?: string,
     replacementCreationAttemptId?: string,
@@ -1460,7 +1461,22 @@ class GenerationJobManagerClass {
     const ownsExactLocalProvider =
       localPredecessor?.createdAt === predecessorCreatedAt &&
       this.ownedJobs.get(streamId) === predecessorCreatedAt;
-    const stoppedExactLocalProvider = stopProvider && ownsExactLocalProvider;
+    let stoppedExactLocalProvider = stopProvider && ownsExactLocalProvider;
+    if (stoppedExactLocalProvider) {
+      // A LOCAL replacement abort is a delivery path like any other: the
+      // predecessor's catch persists asynchronously after this trip, so its owner
+      // lease must be held first. FAIL CLOSED by reporting the receipt undelivered —
+      // the failed-handoff retention then keeps the user fenced.
+      try {
+        await this.acquireOwnerLease(owner.userId, streamId, owner.tenantId, predecessorCreatedAt);
+      } catch (leaseError) {
+        logger.error(
+          `[GenerationJobManager] Owner lease unavailable for replaced generation ${streamId}:`,
+          leaseError,
+        );
+        stoppedExactLocalProvider = false;
+      }
+    }
     if (localPredecessor?.createdAt === predecessorCreatedAt) {
       localPredecessor.finalEvent = reconcileEvent;
       if (stopProvider) {
@@ -1628,18 +1644,12 @@ class GenerationJobManagerClass {
           // The atomic replacement already removed this predecessor from active
           // storage, and an unconfirmed handoff terminalizes the replacement too —
           // leaving NOTHING a deletion quiesce could discover while the
-          // predecessor's provider may still be generating. Retain its owner lease;
-          // the owner replica renews it through the pre-ACK fence when the signal
-          // finally lands, and the TTL bounds a dead owner.
-          await this.jobStore
-            .registerUserFinalization?.(
-              job.userId,
-              streamId,
-              job.tenantId,
-              receipt.createdAt,
-              USER_FINALIZATION_OWNER_LEASE,
-            )
-            .catch(() => undefined);
+          // predecessor's provider may still be generating. Retain its owner lease
+          // on a heartbeat whose renewal predicate is the durable acknowledgement
+          // proof: acquisition failures keep retrying rather than degrading to a
+          // one-shot, and the retainer stands down once the owner ACKs (and thereby
+          // holds its own lease through the pre-ACK fence).
+          this.retainPredecessorOwnerLease(job.userId, streamId, job.tenantId, receipt.createdAt);
         }
       }
     }
@@ -2279,6 +2289,7 @@ class GenerationJobManagerClass {
       await this.notifyReplacedGeneration(
         streamId,
         predecessorCreatedAt,
+        { userId: jobData.userId, tenantId: jobData.tenantId },
         predecessorConversationId,
         conversationId,
       );
@@ -3817,16 +3828,32 @@ class GenerationJobManagerClass {
         .catch(() => undefined);
     } else {
       // Delivery finally left (or this replica owns the generation): the retained
-      // stop lease has served its purpose — reap it instead of waiting out the TTL.
-      await this.jobStore
-        .clearUserFinalization?.(
+      // stop lease has served its purpose. A LOCAL delivery must hand off to the
+      // owner lease FIRST — the owner's catch persistence is still ahead — and the
+      // stop lease stays if that handoff fails (fail closed). A published delivery
+      // was fenced by the pre-ACK hook on the owner's replica.
+      let handedOff = true;
+      if (delivered) {
+        handedOff = await this.acquireOwnerLease(
           jobData.userId,
           streamId,
           jobData.tenantId,
           jobData.createdAt,
-          USER_FINALIZATION_STOP_LEASE,
         )
-        .catch(() => undefined);
+          .then(() => true)
+          .catch(() => false);
+      }
+      if (handedOff) {
+        await this.jobStore
+          .clearUserFinalization?.(
+            jobData.userId,
+            streamId,
+            jobData.tenantId,
+            jobData.createdAt,
+            USER_FINALIZATION_STOP_LEASE,
+          )
+          .catch(() => undefined);
+      }
     }
     return { delivered, published };
   }
@@ -4089,9 +4116,44 @@ class GenerationJobManagerClass {
         transitionFrom = currentAfterConflict.status;
       }
     } catch (transitionError) {
-      // A THROWN transition (store outage, not a lost CAS) aborted nothing: release
-      // the contender lease instead of leaking it to its TTL.
-      clearAbortFinalization();
+      // A THROW is not proof the CAS did not commit: a Lua transaction can commit
+      // and lose its reply, leaving an aborted job invisible to active-set scans
+      // whose provider was never signalled. Disambiguate by re-reading the exact
+      // generation; only a job still live under this identity proves no commit.
+      let observedAfterThrow: SerializableJobData | null | undefined;
+      try {
+        observedAfterThrow = await this.jobStore.getJob(streamId);
+      } catch {
+        observedAfterThrow = undefined;
+      }
+      const provablyUncommitted =
+        observedAfterThrow != null &&
+        observedAfterThrow.createdAt === jobData.createdAt &&
+        (observedAfterThrow.status === 'running' ||
+          observedAfterThrow.status === 'requires_action');
+      if (provablyUncommitted) {
+        clearAbortFinalization();
+      } else {
+        // Committed or ambiguous: hand the fence to the deterministic stop lease
+        // (renewed by every resignal attempt) so the retry path can re-drive
+        // delivery; keep the contender lease if even that handoff fails.
+        const handedOff = await this.jobStore
+          .registerUserFinalization?.(
+            jobData.userId,
+            streamId,
+            jobData.tenantId,
+            jobData.createdAt,
+            USER_FINALIZATION_STOP_LEASE,
+          )
+          .then(() => true)
+          .catch(() => false);
+        if (handedOff) {
+          clearAbortFinalization();
+        }
+        logger.error(
+          `[GenerationJobManager] Abort transition threw with committed/ambiguous outcome for ${streamId}; retaining fence`,
+        );
+      }
       throw transitionError;
     }
     if (drainedSteers == null) {
@@ -4144,7 +4206,7 @@ class GenerationJobManagerClass {
     // so a job observed `requires_action` can be aborted FROM `running`. Treating that
     // as a paused job made delivery vacuously true for a live generation this replica
     // does not own — reporting a stop no generating process ever received.
-    const abortSignalDelivered =
+    let abortSignalDelivered =
       transitionFrom === 'requires_action' || this.ownedJobs.get(streamId) === jobData.createdAt;
     let abortSignalPublished = true;
 
@@ -4171,21 +4233,29 @@ class GenerationJobManagerClass {
       if (runtime) {
         this.releaseAbortSubscription(runtime);
       }
-      // OWNER-LIFECYCLE LEASE before the trip, mirroring the transport's pre-ACK
-      // fence: this abort's own lease clears when the call returns, but the owned
-      // generation's catch persists asynchronously after — the deterministic owner
-      // lease bridges that gap and the owner's catch releases it once its writes
-      // land. Best-effort: the contender lease still covers this call's window.
+      // OWNER-LIFECYCLE LEASE (held) before the trip, mirroring the transport's
+      // pre-ACK fence: this abort's own lease clears when the call returns, but the
+      // owned generation's catch persists asynchronously after — the owner lease
+      // bridges that gap and the owner's catch releases it once its writes land.
+      // FAIL CLOSED post-CAS: the trip itself cannot be withheld (the job is already
+      // terminal and its provider must stop), so an unacquirable lease instead
+      // downgrades delivery — the finally's retention handoff then keeps the user
+      // fenced and the Stop route stays retryable.
       if (abortSignalDelivered && runtime?.createdAt === jobData.createdAt) {
-        await this.jobStore
-          .registerUserFinalization?.(
+        try {
+          await this.acquireOwnerLease(
             jobData.userId,
             streamId,
             jobData.tenantId,
             jobData.createdAt,
-            USER_FINALIZATION_OWNER_LEASE,
-          )
-          .catch(() => undefined);
+          );
+        } catch (leaseError) {
+          logger.error(
+            `[GenerationJobManager] Owner lease unavailable for local abort of ${streamId}; downgrading delivery:`,
+            leaseError,
+          );
+          abortSignalDelivered = false;
+        }
       }
       runtime?.abortController.abort();
 

@@ -1463,16 +1463,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       userFinalizationHold = null;
       hold.release();
       // The OWNER-lifecycle lease is registered out-of-band (at abort-signal time, by
-      // the manager / transport pre-ACK fence — see USER_FINALIZATION_OWNER_LEASE) and
-      // this controller, as the generation owner, releases it with its own: by this
-      // point every owner-side write has landed or failed for good.
-      void GenerationJobManager.clearUserFinalization(
-        userId,
-        streamId,
-        req.user?.tenantId,
-        jobCreatedAt,
-        'owner',
-      ).catch(() => undefined);
+      // the manager / transport pre-ACK fence) and this controller, as the generation
+      // owner, releases it with its own: by this point every owner-side write has
+      // landed or failed for good. releaseOwnerLease also stops the manager-held
+      // heartbeat when it lives on this process.
+      if (jobCreatedAt != null) {
+        void GenerationJobManager.releaseOwnerLease(
+          userId,
+          streamId,
+          req.user?.tenantId,
+          jobCreatedAt,
+        ).catch(() => undefined);
+      }
     };
 
     const claimBeforeResponsePersistence = async () => {

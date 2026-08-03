@@ -475,14 +475,12 @@ async function finalizeResumedTurn({
     finalizationHold?.release();
     finalizationHold = null;
     // Release the owner-lifecycle lease too: this resumed controller IS the
-    // generation owner, and by this point its writes have landed or failed for good
-    // (see USER_FINALIZATION_OWNER_LEASE in the manager).
-    void GenerationJobManager.clearUserFinalization(
+    // generation owner, and by this point its writes have landed or failed for good.
+    void GenerationJobManager.releaseOwnerLease(
       userId,
       streamId,
       req.user?.tenantId,
       job.createdAt,
-      'owner',
     ).catch(() => undefined);
   };
 
@@ -1466,12 +1464,11 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       await settleAbortedScheduledResume(job, streamId, conversationId);
       // This resumed controller is the generation owner; its abort-path writes have
       // now landed, so the signal-time owner lease releases here.
-      void GenerationJobManager.clearUserFinalization(
+      void GenerationJobManager.releaseOwnerLease(
         userId,
         streamId,
         req.user?.tenantId,
         job.createdAt,
-        'owner',
       ).catch(() => undefined);
       return;
     }
