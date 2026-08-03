@@ -155,6 +155,106 @@ export function carriedSteerContext(source?: SteerCarriedContext): SteerCarriedC
   };
 }
 
+/**
+ * The queue's one ordering rule, shared by every writer so a reorder cannot be
+ * undone by the next enqueue re-sorting on a different key: the priority tier
+ * first ("Interrupt & send" front-inserts, "Send next" promotions), then most
+ * recent promotion within that tier, then enqueue order.
+ */
+export function compareQueuedMessages(a: QueuedMessage, b: QueuedMessage): number {
+  const tier = Number(b.priority === true) - Number(a.priority === true);
+  if (tier !== 0) {
+    return tier;
+  }
+  if (a.bumpedAt !== b.bumpedAt) {
+    return (b.bumpedAt ?? 0) - (a.bumpedAt ?? 0);
+  }
+  return a.createdAt - b.createdAt;
+}
+
+/** Queued texts are separate thoughts, so a join reads as paragraphs. */
+export const QUEUED_TEXT_SEPARATOR = '\n\n';
+
+/**
+ * A row bound to a parked server source cannot be merged or rewritten: the
+ * recovery turn must reproduce that source's exact text and file set, and its
+ * user-row identity is the receipt id, so two sources cannot become one turn.
+ * Discarding the parked copy first (`discardQueued`) downgrades the row and
+ * makes it mergeable like any local follow-up.
+ */
+export function isMergeableQueuedMessage(item: QueuedMessage): boolean {
+  return item.recoverySteerId == null && item.clientRequestId == null;
+}
+
+const dedupeFiles = (items: QueuedMessage[]): TMessage['files'] => {
+  const byId = new Map<string, NonNullable<TMessage['files']>[number]>();
+  for (const item of items) {
+    for (const file of item.files ?? []) {
+      const key = file.file_id ?? file.filepath ?? '';
+      if (key.length > 0 && !byId.has(key)) {
+        byId.set(key, file);
+      }
+    }
+  }
+  return byId.size > 0 ? [...byId.values()] : undefined;
+};
+
+const dedupeStrings = (values: Array<string[] | undefined>): string[] | undefined => {
+  const merged = new Set<string>();
+  for (const list of values) {
+    for (const value of list ?? []) {
+      merged.add(value);
+    }
+  }
+  return merged.size > 0 ? [...merged] : undefined;
+};
+
+/**
+ * Folds queued rows into the one turn they were probably always meant to be —
+ * each extra turn costs a full model round trip and context replay. Keeps the
+ * front-most row's identity and position so the merged message drains exactly
+ * where the first of its parts would have, and takes the LATEST predecessor
+ * fence of the batch so the merged turn is gated on everything it followed.
+ */
+export function mergeQueuedMessages(items: QueuedMessage[]): QueuedMessage | null {
+  if (items.length < 2 || items.some((item) => !isMergeableQueuedMessage(item))) {
+    return null;
+  }
+  const [first] = items;
+  const files = dedupeFiles(items);
+  const quotes = dedupeStrings(items.map((item) => item.quotes));
+  const manualSkills = dedupeStrings(items.map((item) => item.manualSkills));
+  const fences = items
+    .map((item) => item.expectedPredecessorCreatedAt)
+    .filter((value): value is number => value != null);
+  return {
+    id: first.id,
+    text: items.map((item) => item.text).join(QUEUED_TEXT_SEPARATOR),
+    createdAt: first.createdAt,
+    ...(first.priority === true && { priority: true }),
+    ...(first.bumpedAt != null && { bumpedAt: first.bumpedAt }),
+    ...(fences.length > 0 && { expectedPredecessorCreatedAt: Math.max(...fences) }),
+    ...(files && { files }),
+    ...(quotes && { quotes }),
+    ...(manualSkills && { manualSkills }),
+  };
+}
+
+/** Promotes an item to drain next, leaving every other item's order intact. */
+export function bumpQueuedMessage(
+  queue: QueuedMessage[],
+  id: string,
+  bumpedAt: number,
+): QueuedMessage[] {
+  const index = queue.findIndex((item) => item.id === id);
+  if (index < 0) {
+    return queue;
+  }
+  const next = [...queue];
+  next[index] = { ...next[index], priority: true, bumpedAt };
+  return next.sort(compareQueuedMessages);
+}
+
 /** Restore a temporarily removed queue item using surviving original
  * neighbours first, then the queue's durable priority/time ordering. */
 export function insertQueuedOrigin(
@@ -199,14 +299,7 @@ export function insertQueuedOrigin(
     }
   }
   if (index < 0) {
-    index = queue.findIndex((queued) => {
-      const itemPriority = Number(restoredItem.priority === true);
-      const queuedPriority = Number(queued.priority === true);
-      return (
-        itemPriority > queuedPriority ||
-        (itemPriority === queuedPriority && restoredItem.createdAt < queued.createdAt)
-      );
-    });
+    index = queue.findIndex((queued) => compareQueuedMessages(restoredItem, queued) < 0);
     if (index < 0) {
       index = queue.length;
     }

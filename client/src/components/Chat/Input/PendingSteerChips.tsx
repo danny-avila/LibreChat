@@ -1,220 +1,24 @@
-import { memo, useMemo, useRef, useState, useCallback } from 'react';
+import { memo, useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import { useToastContext } from '@librechat/client';
-import { X, Zap, Send, Clock, Pencil, Trash2, Paperclip, RotateCcw } from 'lucide-react';
+import { X, Zap, Clock, Pencil, RotateCcw } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
-import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { RestoreToComposer } from './InFlightSteers';
+import type { PendingSteer } from '~/store/families';
 import type { MenuEntry } from './SteerMenu';
 import {
   RowMenu,
   ICON_BTN_CLASS,
   PRIMARY_BTN_CLASS,
-  EscalateNowButton,
   useDefaultToggleEntry,
   useInterruptToggleEntry,
 } from './SteerMenu';
+import { QueuedRow, QueuedOutbox, QueueSendingBanner, ROW_CLASS } from './QueuedOutbox';
 import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
-
-const ROW_CLASS =
-  'flex w-full items-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary';
-
-function AttachmentCount({ count, label }: { count: number; label: string }) {
-  if (count === 0) {
-    return null;
-  }
-  return (
-    <span className="flex shrink-0 items-center gap-0.5 text-xs text-text-secondary">
-      <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
-      {count}
-      <span className="sr-only">{label}</span>
-    </span>
-  );
-}
-
-function QueuedRow({
-  message,
-  steering,
-  conversationId,
-  interruptPending,
-  onEditToComposer,
-  onRestoreToComposer,
-}: {
-  message: QueuedMessage;
-  steering: SteeringControls;
-  conversationId: string;
-  interruptPending: boolean;
-  onEditToComposer: (
-    text: string,
-    files?: TMessage['files'],
-    context?: QueuedMessageContext,
-  ) => void;
-  onRestoreToComposer: RestoreToComposer;
-}) {
-  const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const toggleEntry = useDefaultToggleEntry(steering);
-  const interruptToggle = useInterruptToggleEntry();
-  const fileCount = message.files?.length ?? 0;
-  const isRecovered = message.recoverySteerId != null;
-  const actionPendingRef = useRef(false);
-  const [actionPending, setActionPending] = useState(false);
-  /** A recovered item has a replayable parked source. Edit/remove must first
-   * cancel that source by receipt; local-only rows settle synchronously through
-   * the same control. The ref closes the pre-render double-click window. */
-  const afterDiscard = useCallback(
-    (action: () => boolean) => {
-      if (actionPendingRef.current) {
-        return;
-      }
-      actionPendingRef.current = true;
-      setActionPending(true);
-      void (async () => {
-        let discarded = false;
-        try {
-          discarded = await steering.discardQueued(message);
-        } catch {
-          // The steering hook reports request failures and leaves the row in
-          // place. Keep this guard for test/custom control implementations.
-        }
-        if (!discarded) {
-          actionPendingRef.current = false;
-          setActionPending(false);
-          return;
-        }
-        if (!action()) {
-          actionPendingRef.current = false;
-          setActionPending(false);
-        }
-      })();
-    },
-    [message, steering],
-  );
-  // A recovered item is consumed atomically only when it starts a normal
-  // generation. Re-steering it would leave or duplicate the parked source;
-  // Edit/remove are safe because `afterDiscard` tombstones that source first.
-  const canSteerNow = steering.duringRunActive && steering.canSteer && !isRecovered;
-  const showPrimary = canSteerNow || (!steering.duringRunActive && steering.canSendQueuedNow);
-  /** `canSteer` is defined as false while paused on approval, but the
-   *  escalation control must stay visible-and-disabled there — hiding it
-   *  during the pause is exactly the discoverability gap this button fixes. */
-  const showEscalate =
-    !isRecovered && (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
-
-  const entries: MenuEntry[] = [
-    {
-      key: 'edit',
-      label: localize('com_ui_edit_message'),
-      icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
-      disabled: actionPending,
-      onClick: () => {
-        const context = { quotes: message.quotes, manualSkills: message.manualSkills };
-        if (!isRecovered) {
-          steering.removeQueued(message.id);
-          onEditToComposer(message.text, message.files, {
-            quotes: message.quotes,
-            manualSkills: message.manualSkills,
-          });
-          return;
-        }
-        afterDiscard(() => {
-          const restored = onRestoreToComposer(
-            message.text,
-            message.files,
-            context,
-            conversationId,
-          );
-          if (!restored) {
-            showToast({ message: localize('com_ui_steer_edit_queued'), status: 'info' });
-            return false;
-          }
-          steering.removeQueued(message.id);
-          return true;
-        });
-      },
-    },
-  ];
-  const preferences: MenuEntry[] = [toggleEntry, interruptToggle];
-
-  return (
-    <div role="listitem" className={ROW_CLASS} data-testid="queued-message-row">
-      <Clock className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate" title={message.text}>
-        {message.text}
-      </span>
-      <AttachmentCount
-        count={fileCount}
-        label={localize('com_ui_queued_attachment_count', { 0: String(fileCount) })}
-      />
-      {showPrimary && (
-        <button
-          type="button"
-          className={PRIMARY_BTN_CLASS}
-          disabled={actionPending}
-          onClick={() => steering.sendQueuedNow(message)}
-        >
-          {canSteerNow ? (
-            <>
-              <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
-              {localize('com_ui_steer')}
-            </>
-          ) : (
-            <>
-              <Send className="h-4 w-4" aria-hidden="true" />
-              {localize('com_ui_send_now')}
-            </>
-          )}
-        </button>
-      )}
-      {showEscalate && (
-        <EscalateNowButton
-          surface="queued"
-          messageText={message.text}
-          disabled={steering.pausedOnApproval || interruptPending || actionPending}
-          onClick={() => steering.sendQueuedNow(message, { preempt: true })}
-        />
-      )}
-      <button
-        type="button"
-        aria-label={localize('com_ui_remove_queued')}
-        disabled={actionPending}
-        onClick={() => {
-          const remove = () => {
-            /* Same safety net as the in-flight cancel: once removal is safely
-             * settled, return the words to the composer when it is free (the
-             * gated restore refuses rather than clobber a draft). */
-            onRestoreToComposer(
-              message.text,
-              message.files,
-              { quotes: message.quotes, manualSkills: message.manualSkills },
-              conversationId,
-            );
-            steering.removeQueued(message.id);
-            return true;
-          };
-          if (!isRecovered) {
-            remove();
-            return;
-          }
-          afterDiscard(remove);
-        }}
-        className={ICON_BTN_CLASS}
-      >
-        <Trash2 className="h-4 w-4" aria-hidden="true" />
-      </button>
-      <RowMenu
-        label={localize('com_ui_more_options')}
-        entries={entries}
-        preferences={preferences}
-      />
-    </div>
-  );
-}
 
 function FailedSteerRow({
   steer,
@@ -332,8 +136,11 @@ function FailedSteerRow({
  * (In-flight steers read as messages, not controls — `InFlightSteers` renders
  * them as bubbles anchored above the composer box.)
  * - Failed steer rows (Zap, red): the POST failed, so the text never entered
- *   the thread — kept recoverable with retry / edit / queue actions.
- * - Queued rows (Clock): client-side follow-ups auto-sent after the run.
+ *   the thread — kept recoverable with retry / edit / queue actions. They stay
+ *   OUTSIDE the queued group: a failure is an action item, so no disclosure
+ *   may ever hide one.
+ * - Queued rows (Clock): client-side follow-ups auto-sent after the run. A lone
+ *   one stays a plain chip; two or more collapse into `QueuedOutbox`.
  */
 function PendingSteerChips({
   conversationId,
@@ -353,6 +160,7 @@ function PendingSteerChips({
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const queued = useRecoilValue(store.queuedMessagesByConvoId(steering.queueKey));
+  const drainHold = useRecoilValue(store.queueDrainHoldByConvoId(steering.queueKey));
   const failedSteers = useMemo(() => steers.filter((steer) => steer.status === 'failed'), [steers]);
   /** Only one interrupt can be in flight: a second preempt while one is
    *  unresolved would arm a second seal, so escalation buttons disable. The
@@ -383,17 +191,33 @@ function PendingSteerChips({
           onEditToComposer={onEditToComposer}
         />
       ))}
-      {queued.map((message) => (
+      {drainHold != null && queued.length > 0 && (
+        <QueueSendingBanner
+          count={queued.length}
+          dueAt={drainHold.dueAt}
+          onUndo={steering.cancelQueueDrain}
+        />
+      )}
+      {queued.length === 1 && (
         <QueuedRow
-          key={message.id}
-          message={message}
+          key={queued[0].id}
+          message={queued[0]}
           steering={steering}
           conversationId={conversationId}
           interruptPending={interruptPending}
-          onEditToComposer={onEditToComposer}
+          canBump={false}
           onRestoreToComposer={onRestoreToComposer}
         />
-      ))}
+      )}
+      {queued.length > 1 && (
+        <QueuedOutbox
+          queued={queued}
+          steering={steering}
+          conversationId={conversationId}
+          interruptPending={interruptPending}
+          onRestoreToComposer={onRestoreToComposer}
+        />
+      )}
     </div>
   );
 }

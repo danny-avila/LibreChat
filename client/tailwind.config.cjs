@@ -23,6 +23,10 @@ module.exports = {
         authPageWidth: '370px',
       },
       keyframes: {
+        'queue-undo-grace': {
+          from: { transform: 'scaleX(1)' },
+          to: { transform: 'scaleX(0)' },
+        },
         'accordion-down': {
           from: { height: 0 },
           to: { height: 'var(--radix-accordion-content-height)' },
@@ -62,6 +66,8 @@ module.exports = {
         'slide-out-left': 'slide-out-left 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
         'slide-out-right': 'slide-out-right 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
         'shortcut-shake': 'shortcut-shake 0.25s ease-in-out',
+        /* Duration is overridden inline with the window's remaining time. */
+        'queue-undo-grace': 'queue-undo-grace 3s linear forwards',
       },
       colors: {
         gray: {

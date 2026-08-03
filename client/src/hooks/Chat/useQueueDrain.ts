@@ -4,6 +4,7 @@ import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { DrainAfterAbort, QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
 import type { TAskFunction } from '~/common';
 import { useMarkFilesUsageMutation } from '~/data-provider';
+import { compareQueuedMessages } from '~/utils';
 import store from '~/store';
 
 /** Mirrors the server's per-request cap on a usage touch. */
@@ -36,8 +37,8 @@ const batchFileIds = (fileIds: string[]): string[][] => {
   return batches;
 };
 
-const compareQueuedMessages = (a: QueuedMessage, b: QueuedMessage): number =>
-  Number(b.priority ?? false) - Number(a.priority ?? false) || a.createdAt - b.createdAt;
+/** Gmail-style window to take an automatic send back before it fires. */
+export const QUEUE_UNDO_GRACE_MS = 3000;
 
 /** Interrupt intent belongs to one generation, never to whichever terminal
  * event happens to occupy the shared pane slot next. The NEW_CONVO alias is
@@ -67,17 +68,27 @@ const matchesInterruptArm = (armed: DrainAfterAbort | false, end: RunEnd): boole
  *   the next, so multi-message queues send FIFO in sequence.
  * - Migrates a queue keyed under `NEW_CONVO` to the real conversation id when
  *   the finished run started as a new-conversation submission.
+ * - Withholds an automatic send for `undoGraceMs`: the terminal epoch is
+ *   parked in `queueDrainHoldByConvoId` and re-posted when the window closes.
+ *   The queue itself is untouched while a hold stands, so "undo" is a pure
+ *   cancel — nothing to restore, nothing to lose. Manual sends and armed
+ *   interrupts skip the grace: both are the user asking for it NOW.
  */
 export default function useQueueDrain(
   index: string | number,
   activeConversationId: string | undefined,
   ask: TAskFunction,
+  options?: { undoGraceMs?: number },
 ) {
+  const undoGraceMs = options?.undoGraceMs ?? QUEUE_UNDO_GRACE_MS;
   const runEnd = useRecoilValue(store.runEndByIndex(index));
   const parkedRunEnd = useRecoilValue(
     store.pendingRunEndByConvoId(activeConversationId ?? Constants.NEW_CONVO),
   );
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const drainHold = useRecoilValue(
+    store.queueDrainHoldByConvoId(activeConversationId ?? Constants.NEW_CONVO),
+  );
   const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
   const ownQueue = useRecoilValue(
     store.queuedMessagesByConvoId(activeConversationId ?? Constants.NEW_CONVO),
@@ -205,6 +216,18 @@ export default function useQueueDrain(
         if (end == null) {
           return null;
         }
+        /** A standing window short-circuits BEFORE anything is consumed or
+         *  written: both signal carriers retain unconsumed epochs, so leaving
+         *  this one in place is lossless — and mutating nothing is what keeps
+         *  the effect from re-running itself into a loop while it waits. */
+        if (end.conversationId != null) {
+          const standing = snapshot
+            .getLoadable(store.queueDrainHoldByConvoId(end.conversationId))
+            .getValue();
+          if (standing != null && standing.dueAt > Date.now()) {
+            return null;
+          }
+        }
         // Consume the signal first — a hard double-fire guard even if the
         // effect re-runs before Recoil propagates.
         if (fromParked && activeConversationId) {
@@ -241,6 +264,26 @@ export default function useQueueDrain(
           : ownQueue;
 
         const shouldDrain = end.outcome === 'completed' || interruptArmed;
+        const hold = snapshot.getLoadable(store.queueDrainHoldByConvoId(conversationId)).getValue();
+        const now = Date.now();
+        if (hold != null) {
+          set(store.queueDrainHoldByConvoId(conversationId), null);
+        }
+        /** Withhold the epoch, never the queue: the rows stay exactly where
+         *  they are, so cancelling is a no-op and a reload costs no text. */
+        if (
+          shouldDrain &&
+          !interruptArmed &&
+          hold == null &&
+          undoGraceMs > 0 &&
+          merged.length > 0
+        ) {
+          set(store.queueDrainHoldByConvoId(conversationId), {
+            runEnd: end,
+            dueAt: now + undoGraceMs,
+          });
+          return null;
+        }
         const next = shouldDrain ? (merged[0] ?? null) : null;
         const remainder = next ? merged.slice(1) : merged;
 
@@ -266,6 +309,35 @@ export default function useQueueDrain(
       },
     [index, activeConversationId],
   );
+
+  /** Hands the held epoch back to the drain through the same parked slot a
+   *  returning navigation uses, so an expired window resumes identically
+   *  whether or not the user stayed on the conversation. */
+  const releaseDrainHold = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (convoId: string) => {
+        const held = snapshot.getLoadable(store.queueDrainHoldByConvoId(convoId)).getValue();
+        if (held == null) {
+          return;
+        }
+        set(store.pendingRunEndByConvoId(convoId), held.runEnd);
+      },
+    [],
+  );
+
+  useEffect(() => {
+    if (drainHold == null) {
+      return;
+    }
+    const convoId = activeConversationId ?? Constants.NEW_CONVO;
+    const remaining = drainHold.dueAt - Date.now();
+    if (remaining <= 0) {
+      releaseDrainHold(convoId);
+      return;
+    }
+    const timer = setTimeout(() => releaseDrainHold(convoId), remaining);
+    return () => clearTimeout(timer);
+  }, [drainHold, activeConversationId, releaseDrainHold]);
 
   const restoreQueued = useRecoilCallback(
     ({ set }) =>

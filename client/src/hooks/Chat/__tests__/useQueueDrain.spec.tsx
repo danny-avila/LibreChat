@@ -3,7 +3,7 @@ import { Constants } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
-import type { DrainAfterAbort, RunEnd, QueuedMessage } from '~/store/families';
+import type { DrainAfterAbort, RunEnd, QueuedMessage, QueueDrainHold } from '~/store/families';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
 
@@ -38,7 +38,7 @@ function setup(
       store.queuedMessagesByConvoId(Constants.NEW_CONVO),
     );
     setters.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
-    useQueueDrain(INDEX, activeConversationId, ask);
+    useQueueDrain(INDEX, activeConversationId, ask, { undoGraceMs: 0 });
     return null;
   }
 
@@ -460,7 +460,7 @@ describe('useQueueDrain', () => {
       ({ activeConversationId }: { activeConversationId: string }) => {
         setRunEnd = useSetRecoilState(store.runEndByIndex(INDEX));
         setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(INDEX));
-        useQueueDrain(INDEX, activeConversationId, ask);
+        useQueueDrain(INDEX, activeConversationId, ask, { undoGraceMs: 0 });
         return {
           indexEnd: useRecoilValue(store.runEndByIndex(INDEX)),
           parkedA: useRecoilValue(store.pendingRunEndByConvoId(CONVO_A)),
@@ -599,7 +599,7 @@ describe('useQueueDrain', () => {
         setters.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
         state.newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
         state.parkedUnderOptimistic = useRecoilValue(store.pendingRunEndByConvoId(OPTIMISTIC_ID));
-        useQueueDrain(INDEX, Constants.NEW_CONVO as string, ask);
+        useQueueDrain(INDEX, Constants.NEW_CONVO as string, ask, { undoGraceMs: 0 });
         return null;
       }
 
@@ -691,5 +691,145 @@ describe('useQueueDrain', () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(ask).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** A short real window rather than fake timers: the drain rides react-query
+ *  mutations and Recoil propagation, which fake timers would also freeze. */
+const GRACE_MS = 30;
+const AFTER_GRACE_MS = 120;
+
+describe('useQueueDrain undo grace', () => {
+  function setupGraced(initialize?: (snapshot: MutableSnapshot) => void) {
+    const ask = jest.fn();
+    const state: {
+      setRunEnd?: (value: RunEnd | null) => void;
+      setInterruptFlag?: (value: DrainAfterAbort | false) => void;
+      cancelHold?: () => void;
+      queue?: QueuedMessage[];
+      hold?: QueueDrainHold | null;
+    } = {};
+
+    function Harness() {
+      state.setRunEnd = useSetRecoilState(store.runEndByIndex(INDEX));
+      state.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
+      const setHold = useSetRecoilState(store.queueDrainHoldByConvoId(CONVO_ID));
+      state.cancelHold = () => setHold(null);
+      state.queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
+      state.hold = useRecoilValue(store.queueDrainHoldByConvoId(CONVO_ID));
+      useQueueDrain(INDEX, CONVO_ID, ask, { undoGraceMs: GRACE_MS });
+      return null;
+    }
+
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <RecoilRoot initializeState={initialize}>
+          <Harness />
+          {children}
+        </RecoilRoot>
+      </QueryClientProvider>
+    );
+    renderHook(() => null, { wrapper });
+    return { ask, state };
+  }
+
+  const withQueue =
+    (...items: QueuedMessage[]) =>
+    ({ set }: MutableSnapshot) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), items);
+    };
+
+  it('withholds the send for the grace window, then drains', async () => {
+    const { ask, state } = setupGraced(withQueue(queuedMessage('q1', 'hold me')));
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+
+    // Held: the epoch is parked and the queue is untouched, so there is
+    // nothing to restore if the user cancels.
+    await waitFor(() => expect(state.hold).not.toBeNull());
+    expect(ask).not.toHaveBeenCalled();
+    expect(state.queue).toHaveLength(1);
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1), { timeout: AFTER_GRACE_MS * 4 });
+    expect(ask).toHaveBeenCalledWith({ text: 'hold me' }, emptyOverrides);
+    expect(state.hold).toBeNull();
+  });
+
+  it('cancelling the hold sends nothing and leaves the queue intact', async () => {
+    const { ask, state } = setupGraced(withQueue(queuedMessage('q1', 'never sent')));
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+    await waitFor(() => expect(state.hold).not.toBeNull());
+
+    act(() => {
+      state.cancelHold!();
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, AFTER_GRACE_MS));
+    expect(ask).not.toHaveBeenCalled();
+    expect(state.queue).toEqual([expect.objectContaining({ id: 'q1', text: 'never sent' })]);
+  });
+
+  it('skips the grace when interrupt & send armed the drain', async () => {
+    const { ask, state } = setupGraced(withQueue(queuedMessage('q1', 'now please')));
+
+    act(() => {
+      state.setInterruptFlag!({ conversationId: CONVO_ID, generationCreatedAt: 41 });
+    });
+    act(() => {
+      state.setRunEnd!(runEnd({ outcome: 'aborted' }));
+    });
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(state.hold).toBeNull();
+  });
+
+  it('does not hold when nothing is queued', async () => {
+    const { ask, state } = setupGraced();
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, AFTER_GRACE_MS));
+    expect(state.hold).toBeNull();
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('parks a second epoch arriving inside the window so its drain is not lost', async () => {
+    const { ask, state } = setupGraced(
+      withQueue(queuedMessage('q1', 'first'), queuedMessage('q2', 'second')),
+    );
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+    await waitFor(() => expect(state.hold).not.toBeNull());
+    act(() => {
+      state.setRunEnd!(runEnd({ generationCreatedAt: 99 }));
+    });
+
+    // Both epochs drain their one message each: the second was parked rather
+    // than overwriting the held one.
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(2), { timeout: AFTER_GRACE_MS * 8 });
+    expect(ask.mock.calls.map(([payload]) => payload.text)).toEqual(['first', 'second']);
+  });
+
+  it('drains immediately when the window already expired while away', async () => {
+    const { ask } = setupGraced(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'overdue')]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: runEnd(),
+        dueAt: Date.now() - 1000,
+      });
+    });
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: 'overdue' }, emptyOverrides);
   });
 });

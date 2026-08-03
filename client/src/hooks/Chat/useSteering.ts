@@ -8,18 +8,22 @@ import type { RunEnd, PendingSteer, QueuedMessage, QueuedMessageOrigin } from '~
 import type { GenerationProtocolVersion } from '~/data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
+  appendAppliedSteerIds,
+  bumpQueuedMessage,
+  carriedSteerContext,
+  clearAllDrafts,
+  compareQueuedMessages,
+  insertQueuedOrigin,
+  isMergeableQueuedMessage,
+  mergeQueuedMessages,
+} from '~/utils';
+import {
   useGetMessagesByConvoId,
   useCancelSteerMutation,
   useSteerMessageMutation,
   useMarkFilesUsageMutation,
   supportsGenerationProtocolV2,
 } from '~/data-provider';
-import {
-  appendAppliedSteerIds,
-  carriedSteerContext,
-  clearAllDrafts,
-  insertQueuedOrigin,
-} from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
@@ -559,11 +563,7 @@ export default function useSteering({
           ...(options?.front && { priority: true }),
         };
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
-          [...prev, item].sort(
-            (a, b) =>
-              Number(b.priority ?? false) - Number(a.priority ?? false) ||
-              a.createdAt - b.createdAt,
-          ),
+          [...prev, item].sort(compareQueuedMessages),
         );
         if (options?.skipUsageMark !== true) {
           markQueuedFilesUsage(options?.files);
@@ -643,6 +643,69 @@ export default function useSteering({
     [queueKey],
   );
 
+  /** "Send next". Order lives in the sort key rather than the array so the
+   *  choice survives the next enqueue, drain, or leftover conversion. */
+  const bumpQueued = useRecoilCallback(
+    ({ set }) =>
+      (id: string) => {
+        set(store.queuedMessagesByConvoId(queueKey), (prev) =>
+          bumpQueuedMessage(prev, id, Date.now()),
+        );
+      },
+    [queueKey],
+  );
+
+  /** In-place rewrite of a waiting row. Refuses a recovery-bound row: its
+   *  parked source is matched by exact text server-side, so the words may only
+   *  change after `discardQueued` has downgraded it to an ordinary row. */
+  const updateQueuedText = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (id: string, text: string): boolean => {
+        const trimmed = text.trim();
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        const target = queue.find((item) => item.id === id);
+        if (trimmed.length === 0 || target == null || !isMergeableQueuedMessage(target)) {
+          return false;
+        }
+        if (target.text === trimmed) {
+          return true;
+        }
+        set(
+          store.queuedMessagesByConvoId(queueKey),
+          queue.map((item) => (item.id === id ? { ...item, text: trimmed } : item)),
+        );
+        return true;
+      },
+    [queueKey],
+  );
+
+  /** Folds every ordinary waiting row into one turn. All-or-nothing: a batch
+   *  holding a recovery-bound row is refused rather than partially folded, so
+   *  no parked source is ever stranded behind a merged message. */
+  const mergeQueued = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (): boolean => {
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        const merged = mergeQueuedMessages(queue);
+        if (merged == null) {
+          return false;
+        }
+        set(store.queuedMessagesByConvoId(queueKey), [merged]);
+        return true;
+      },
+    [queueKey],
+  );
+
+  /** Cancels a withheld automatic send. The queue was never popped, so this
+   *  only drops the epoch — the rows stay put for a manual send. */
+  const cancelQueueDrain = useRecoilCallback(
+    ({ set }) =>
+      () => {
+        set(store.queueDrainHoldByConvoId(queueKey), null);
+      },
+    [queueKey],
+  );
+
   /** Once a parked source is discarded it must never be retried as a recovery
    * attempt. Downgrade the row in place so a guarded Edit that finds a newer
    * draft can leave the same words, context, identity, and queue position as
@@ -706,6 +769,49 @@ export default function useSteering({
     },
     [cancelSteer, conversationId, downgradeQueuedRecovery, hasRealConvoId, localize, showToast],
   );
+
+  const readQueued = useRecoilCallback(
+    ({ snapshot }) =>
+      (): QueuedMessage[] =>
+        snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue(),
+    [queueKey],
+  );
+
+  /** Empties the queue of everything the client fully owns, returning those
+   *  rows folded into one payload for the composer. Rows whose parked source
+   *  refused to cancel STAY — the words are never dropped on the floor. */
+  const takeAllQueued = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (): QueuedMessage | null => {
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        const clearable = queue.filter(isMergeableQueuedMessage);
+        if (clearable.length === 0) {
+          return null;
+        }
+        set(
+          store.queuedMessagesByConvoId(queueKey),
+          queue.filter((item) => !isMergeableQueuedMessage(item)),
+        );
+        return clearable.length === 1 ? clearable[0] : mergeQueuedMessages(clearable);
+      },
+    [queueKey],
+  );
+
+  /**
+   * "Clear all": hands the waiting words back to the user rather than deleting
+   * them. Parked sources are cancelled first, one round trip each, because a
+   * surviving copy would be re-offered as a fresh row on the next status read.
+   * The caller owns the composer and decides whether it can accept the payload.
+   */
+  const clearQueued = useCallback(async (): Promise<QueuedMessage | null> => {
+    for (const item of readQueued()) {
+      if (item.recoverySteerId == null) {
+        continue;
+      }
+      await discardQueued(item);
+    }
+    return takeAllQueued();
+  }, [readQueued, discardQueued, takeAllQueued]);
 
   /** Capture-then-remove, including the item's neighbours, so any refused send
    *  or rejected steer can restore the ORIGINAL item in place even if the run
@@ -1462,6 +1568,11 @@ export default function useSteering({
       enqueue,
       removeQueued,
       discardQueued,
+      bumpQueued,
+      updateQueuedText,
+      mergeQueued,
+      clearQueued,
+      cancelQueueDrain,
       sendQueuedNow,
       interruptAndSend,
       interruptSteer,
@@ -1488,6 +1599,11 @@ export default function useSteering({
       enqueue,
       removeQueued,
       discardQueued,
+      bumpQueued,
+      updateQueuedText,
+      mergeQueued,
+      clearQueued,
+      cancelQueueDrain,
       sendQueuedNow,
       interruptAndSend,
       interruptSteer,
