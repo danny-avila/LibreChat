@@ -11,7 +11,6 @@ import { useSkillsInfiniteQuery } from '~/data-provider';
 import { useAgentsMapContext } from '~/Providers';
 import { ephemeralAgentByConvoId } from '~/store';
 import { isEphemeralAgent } from '~/common';
-import { removeCharIfLast } from '~/utils';
 import MentionItem from './MentionItem';
 import store from '~/store';
 
@@ -176,6 +175,7 @@ function SkillsCommandContent({
     inputRef,
     textAreaRef,
     commandChar,
+    preserveTextAfterCursor: true,
     setSearchValue,
     setOpen,
   });
@@ -189,10 +189,6 @@ function SkillsCommandContent({
       setSearchValue('');
       setOpen(false);
       setShowSkillsPopover(false);
-
-      if (textAreaRef.current) {
-        removeCharIfLast(textAreaRef.current, commandChar);
-      }
 
       setEphemeralAgent((prev) => {
         if (prev?.skills) {
