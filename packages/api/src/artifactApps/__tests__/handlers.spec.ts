@@ -286,3 +286,184 @@ describe('version lifecycle', () => {
     expect(hashAfterSecond).toBe(hashAfterFirst);
   });
 });
+
+async function publishAppId(): Promise<string> {
+  const res = makeRes();
+  await handlers.publish(makeReq({ body: samplePublish }), res);
+  return (res.body as { app: { artifactAppId: string } }).app.artifactAppId;
+}
+
+/** Create a second (draft) version and return its id. */
+async function addVersion(appId: string): Promise<string> {
+  const res = makeRes();
+  await handlers.createVersion(
+    makeReq({ params: { id: appId } as never, body: { artifact: samplePublish.artifact } }),
+    res,
+  );
+  return (res.body as { artifactVersionId: string }).artifactVersionId;
+}
+
+describe('update', () => {
+  test('applies the patch and audits', async () => {
+    const appId = await publishAppId();
+    auditActions = [];
+
+    const res = makeRes();
+    await handlers.update(
+      makeReq({ params: { id: appId } as never, body: { title: 'Renamed', category: 'charts' } }),
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { title: string; category: string };
+    expect(body.title).toBe('Renamed');
+    expect(body.category).toBe('charts');
+    expect(auditActions).toContain('artifact_app.updated');
+  });
+
+  test('rejects an empty patch with 400', async () => {
+    const appId = await publishAppId();
+    const res = makeRes();
+    await handlers.update(makeReq({ params: { id: appId } as never, body: {} }), res);
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('rejects an invalid field value with 400', async () => {
+    const appId = await publishAppId();
+    const res = makeRes();
+    await handlers.update(makeReq({ params: { id: appId } as never, body: { title: '' } }), res);
+    expect(res.statusCode).toBe(400);
+  });
+
+  /* Same §8.7 guarantee publish has: server-owned fields supplied by the
+   * client must never be written through a patch. */
+  test('ignores createdBy/tenantId supplied in the patch body', async () => {
+    const appId = await publishAppId();
+    const res = makeRes();
+    await handlers.update(
+      makeReq({
+        params: { id: appId } as never,
+        body: { title: 'Renamed', createdBy: 'attacker', tenantId: 'other-tenant' } as never,
+      }),
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { createdBy: string; tenantId?: string };
+    expect(body.createdBy).toBe('user-1');
+    expect(body.tenantId).toBeUndefined();
+  });
+
+  test('returns 404 for an unknown app', async () => {
+    const res = makeRes();
+    await handlers.update(
+      makeReq({ params: { id: 'app_missing' } as never, body: { title: 'Renamed' } }),
+      res,
+    );
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('remove', () => {
+  test('deletes the app with its versions and audits', async () => {
+    const appId = await publishAppId();
+    await addVersion(appId);
+    auditActions = [];
+
+    const res = makeRes();
+    await handlers.remove(makeReq({ params: { id: appId } as never }), res);
+
+    expect(res.statusCode).toBe(200);
+    expect(auditActions).toContain('artifact_app.archived');
+    expect(await methods.getArtifactAppByAppId({ artifactAppId: appId })).toBeNull();
+    expect(await methods.listArtifactVersions({ artifactAppId: appId })).toHaveLength(0);
+  });
+
+  test('returns 404 for an unknown app', async () => {
+    const res = makeRes();
+    await handlers.remove(makeReq({ params: { id: 'app_missing' } as never }), res);
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('version reads', () => {
+  test('listVersions returns every version of the app', async () => {
+    const appId = await publishAppId();
+    await addVersion(appId);
+
+    const res = makeRes();
+    await handlers.listVersions(makeReq({ params: { id: appId } as never }), res);
+
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { versions: { versionNumber: number }[] };
+    expect(body.versions.map((v) => v.versionNumber).sort()).toEqual([1, 2]);
+  });
+
+  test('listVersions returns an empty list for an unknown app', async () => {
+    const res = makeRes();
+    await handlers.listVersions(makeReq({ params: { id: 'app_missing' } as never }), res);
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { versions: unknown[] }).versions).toHaveLength(0);
+  });
+
+  test('getVersion returns the requested version', async () => {
+    const appId = await publishAppId();
+    const versionId = await addVersion(appId);
+
+    const res = makeRes();
+    await handlers.getVersion(makeReq({ params: { id: appId, versionId } as never }), res);
+
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { artifactVersionId: string }).artifactVersionId).toBe(versionId);
+  });
+
+  test('getVersion returns 404 for an unknown version', async () => {
+    const appId = await publishAppId();
+    const res = makeRes();
+    await handlers.getVersion(
+      makeReq({ params: { id: appId, versionId: 'ver_missing' } as never }),
+      res,
+    );
+    expect(res.statusCode).toBe(404);
+  });
+
+  /* Version ids must not be readable across apps: passing app B's id with
+   * app A's version must miss, not leak A's snapshot. */
+  test('getVersion does not resolve a version belonging to another app', async () => {
+    const appA = await publishAppId();
+    const versionA = await addVersion(appA);
+    const appB = await publishAppId();
+
+    const res = makeRes();
+    await handlers.getVersion(makeReq({ params: { id: appB, versionId: versionA } as never }), res);
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('withdrawVersion', () => {
+  test('withdraws a released version and audits', async () => {
+    const appId = await publishAppId();
+    const versionId = await addVersion(appId);
+    await handlers.releaseVersion(
+      makeReq({ params: { id: appId, versionId } as never }),
+      makeRes(),
+    );
+    auditActions = [];
+
+    const res = makeRes();
+    await handlers.withdrawVersion(makeReq({ params: { id: appId, versionId } as never }), res);
+
+    expect(res.statusCode).toBe(200);
+    expect(auditActions).toContain('artifact_version.withdrawn');
+  });
+
+  test('returns 404 for an unknown version', async () => {
+    const appId = await publishAppId();
+    const res = makeRes();
+    await handlers.withdrawVersion(
+      makeReq({ params: { id: appId, versionId: 'ver_missing' } as never }),
+      res,
+    );
+    expect(res.statusCode).toBe(404);
+  });
+});
