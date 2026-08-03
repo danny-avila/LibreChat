@@ -2481,6 +2481,9 @@ class GenerationJobManagerClass {
       status: jobData.status as t.GenerationJobStatus,
       createdAt: jobData.createdAt,
       completedAt: jobData.completedAt,
+      // Deletion-side settlement guards key on this: a terminal job whose owner is
+      // still persisting must not read as settled just because it left the active set.
+      terminalPersistencePending: jobData.terminalPersistencePending,
       abortController: runtime.abortController,
       error: jobData.error,
       metadata: {

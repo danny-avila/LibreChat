@@ -837,6 +837,18 @@ export interface IJobStoreV2 extends IJobStore {
   getJob(streamId: string): Promise<SerializableJobData | null>;
 
   /**
+   * The finalization-marker trio is OPTIONAL on the legacy public {@link IJobStore}
+   * type (source compatibility for pre-marker stores) but REQUIRED by the runtime
+   * contract: account deletion's quiesce keys its settlement on these markers, and
+   * a store that cannot record them silently reopens the terminal-CAS-to-persistence
+   * window the markers exist to fence. `assertJobStoreV2` rejects such a store at
+   * configure time.
+   */
+  registerUserFinalization(userId: string, streamId: string, tenantId?: string): Promise<void>;
+  clearUserFinalization(userId: string, streamId: string, tenantId?: string): Promise<void>;
+  countUserFinalizations(userId: string, tenantId?: string): Promise<number>;
+
+  /**
    * Update job data. When `expectedCreatedAt` is supplied, apply the write only
    * if the stream still belongs to that generation.
    */

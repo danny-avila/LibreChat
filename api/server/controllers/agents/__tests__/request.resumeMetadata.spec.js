@@ -3007,6 +3007,57 @@ describe('ResumableAgentController resume metadata', () => {
     expect(schedules.clearScheduledJob).not.toHaveBeenCalled();
   });
 
+  it('registers the finalization marker before EVERY persistence-owning claim, titled or not', async () => {
+    // A follow-up turn (existing conversation, no title work) still moves the job
+    // terminal BEFORE saving the response — without the marker, a deletion quiesce
+    // in that window sees neither an active job nor a fence and can cascade while
+    // this request can still recreate messages.
+    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
+    mockGenerationJobManager.claimTerminalJob.mockResolvedValue({
+      streamId: 'conversation-123',
+      createdAt: 1000,
+      status: 'complete',
+      persistencePending: true,
+      drainedSteers: [],
+    });
+    const client = {
+      options: {},
+      sendMessage: jest.fn().mockResolvedValue({
+        userMessage: {
+          messageId: 'user-msg',
+          parentMessageId: 'parent-msg',
+          conversationId: 'conversation-123',
+          text: 'Follow up.',
+        },
+        responseMessage: { messageId: 'resp-msg', conversationId: 'conversation-123' },
+      }),
+    };
+    const initializeClient = jest.fn().mockResolvedValue({ client });
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Follow up.',
+        messageId: 'user-msg',
+        parentMessageId: 'parent-msg',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+    await nextTick();
+
+    expect(mockGenerationJobManager.registerUserFinalization).toHaveBeenCalledWith(
+      'user-123',
+      'conversation-123',
+      undefined,
+    );
+    expect(
+      mockGenerationJobManager.registerUserFinalization.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockGenerationJobManager.claimTerminalJob.mock.invocationCallOrder[0]);
+  });
+
   it('claims terminal ownership before FINAL and always finishes the winning claim', async () => {
     const userMessage = {
       messageId: 'user-msg',

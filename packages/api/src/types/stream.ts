@@ -78,6 +78,10 @@ export interface GenerationJob {
   status: GenerationJobStatus;
   createdAt: number;
   completedAt?: number;
+  /** A terminal status whose owner is still persisting (response save, FINAL
+   *  publication). Deletion-side consumers must treat such a job as unsettled:
+   *  its writes are still in flight even though it left the active set. */
+  terminalPersistencePending?: boolean;
   abortController: AbortController;
   error?: string;
   metadata: GenerationJobMetadata;

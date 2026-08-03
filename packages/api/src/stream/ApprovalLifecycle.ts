@@ -256,7 +256,13 @@ export class ApprovalLifecycle {
       expectActionId: job.pendingActionId,
       expectCreatedAt: job.createdAt,
       patch: {
-        completedAt,
+        // A SCHEDULED fire's stale-pause error is RETAINED (no completedAt) with the
+        // outcome stamped: on the short completed TTL, a Mongo outage longer than the
+        // TTL erases this evidence and the reconciler misreads the vanished run as
+        // `interrupted` instead of `error`. The reconciler's error branch reaps it.
+        ...(job.scheduleId
+          ? { scheduleOutcome: 'error', scheduleOutcomeError: PAUSE_PERSISTENCE_TIMEOUT_ERROR }
+          : { completedAt }),
         error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
       },
       clear: [

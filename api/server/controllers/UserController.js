@@ -537,6 +537,13 @@ const settleAbortFence = async (user, streamId) => {
     return false;
   }
   if (job.status === 'complete' || job.status === 'error') {
+    // A terminal whose owner is STILL PERSISTING is not settled: the response save
+    // and FINAL publication are in flight even though the job left the active set.
+    // Keep the fence and defer — the owner clears `terminalPersistencePending` when
+    // its writes land, and stale-owner recovery bounds the wait.
+    if (job.terminalPersistencePending === true) {
+      return false;
+    }
     // The generation reached its OWN terminal — the run ended by its own means, so
     // there is no stop left to deliver and re-signalling (aborted-only) could never
     // clear this fence; it would sit permanent, deferring deletion forever. Any
