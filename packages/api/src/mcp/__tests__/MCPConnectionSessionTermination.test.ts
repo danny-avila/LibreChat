@@ -350,6 +350,35 @@ describe('MCPConnection Streamable HTTP session termination', () => {
     expect(srv.sessionsCreated()).toBe(1);
     conn = null;
   });
+
+  it('stops a reconnection loop that is already in flight when the owner abandons the connection', async () => {
+    const srv = await createStreamableServer();
+    server = srv;
+    conn = new MCPConnection({
+      serverName: 'test',
+      serverConfig: { type: 'streamable-http', url: srv.url },
+      useSSRFProtection: false,
+    });
+
+    await conn.connect();
+    expect(srv.sessionsCreated()).toBe(1);
+
+    /**
+     * A reconnection loop started by an earlier transport error outlives its
+     * owner's teardown, reopening sessions with the credentials the connection
+     * was built with. Start one, then abandon the connection mid-flight.
+     */
+    const loop = (
+      conn as unknown as { handleReconnection: () => Promise<void> }
+    ).handleReconnection();
+
+    conn.stopReconnecting();
+    await conn.disconnect();
+    await loop;
+
+    expect(srv.sessionsCreated()).toBe(1);
+    conn = null;
+  });
 });
 
 describe('MCPConnection SSE session termination', () => {

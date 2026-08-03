@@ -2230,6 +2230,19 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
+  /**
+   * Cancels any reconnection loop in flight and prevents new ones, for an owner
+   * that is abandoning this connection for good.
+   *
+   * Separate from `disconnect()` on purpose: `connect()` disconnects before
+   * reconnecting, so folding this into `disconnect()` would make every
+   * connection attempt a no-op via the `shouldStopReconnecting` guard in
+   * `connectClient()`.
+   */
+  public stopReconnecting(): void {
+    this.shouldStopReconnecting = true;
+  }
+
   public async disconnect(resetCycleTracking = true, forceAgentClose = false): Promise<void> {
     try {
       if (this.transport) {
