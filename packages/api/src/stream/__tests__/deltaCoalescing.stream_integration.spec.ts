@@ -288,6 +288,55 @@ describe('Delta coalescing integration', () => {
   );
 
   testRedis(
+    'a throwing subscriber callback loses one event, not the rest of the batch',
+    async () => {
+      const { RedisEventTransport, emitChunkWithReceipt } = await importFreshTransportModules();
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient!, subscriber);
+      const streamId = `coalesce-throwing-${Date.now()}`;
+
+      const received: number[] = [];
+      let done = false;
+      const subscription = transport.subscribe(streamId, {
+        onChunk: (event) => {
+          const value = (event as { data: { i: number } }).data.i;
+          if (value === 1) {
+            throw new Error('subscriber exploded on event 1');
+          }
+          received.push(value);
+        },
+        onDone: () => {
+          done = true;
+        },
+      });
+      await subscription.ready;
+
+      const receipts = Array.from({ length: 4 }, (_, i) =>
+        emitChunkWithReceipt(
+          transport,
+          streamId,
+          { event: 'on_message_delta', data: { i } },
+          undefined,
+          { coalesce: true },
+        ),
+      );
+      await transport.emitDone(streamId, { final: true });
+      await Promise.all(receipts);
+
+      /** Event 1's sequence stalls the reorder cursor exactly like a lost
+       * individual frame; the force-flush recovers the remaining events and
+       * the terminal after REORDER_TIMEOUT_MS. What must NOT happen is the
+       * batch tail (2, 3) vanishing without ever entering the buffer. */
+      await waitFor(() => done, 3000);
+      expect(received).toEqual([0, 2, 3]);
+
+      subscription.unsubscribe();
+      transport.destroy();
+    },
+    15000,
+  );
+
+  testRedis(
     'abort with a pending window delivers the tail without error-closing subscribers',
     async () => {
       const manager = createRedisManager();

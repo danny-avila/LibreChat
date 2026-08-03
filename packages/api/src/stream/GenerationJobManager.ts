@@ -79,6 +79,12 @@ const APPROVAL_EXPIRED_ERROR = 'Approval expired before a decision was made';
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
 
+/** Un-awaited coalesced publications allowed per stream before the emitter
+ * awaits a receipt. Healthy settlement keeps outstanding counts in the single
+ * digits; this trips only when Redis stalls, bounding buffered batches and
+ * queued commands by pacing the producer instead of growing without limit. */
+const MAX_OUTSTANDING_COALESCED_RECEIPTS = 256;
+
 /** Bounded completed-request replay horizon. It exceeds the default 24-hour
  * approval window; if a custom/live job outlasts it, `resumeClaimedGeneration`
  * atomically adopts the reacquired claim instead of replacing that job. */
@@ -552,6 +558,8 @@ interface RuntimeJobState {
   >;
   /** Prevents later events from overtaking the initial `created` metadata write and publish. */
   createdEventPublication?: Promise<void>;
+  /** Coalesced delta publications emitted but not yet settled by a window flush. */
+  outstandingCoalescedReceipts?: number;
   hasSubscriber: boolean;
   /** Advances whenever every local SSE subscriber for one attachment generation leaves. */
   attachmentGeneration: number;
@@ -743,7 +751,17 @@ class GenerationJobManagerClass {
     this._steering = new SteeringLifecycle(this.jobStore);
     this.eventTransport = services.eventTransport;
     this._isRedis = services.isRedis ?? false;
-    this._deltaCoalescingEnabled = this._isRedis && resolveCoalesceWindowMs() > 0;
+    /** Coalescing needs BOTH configured services to actually batch: the flush
+     * capabilities are how implementations advertise it. A custom transport
+     * without them would silently lose the awaited per-event ordering contract
+     * (its receipts are un-awaited on the coalescable path), and a batching
+     * transport over a per-event store would let the durable log trail the
+     * sequence counter by a full window, breaking the resume frontier. */
+    this._deltaCoalescingEnabled =
+      this._isRedis &&
+      resolveCoalesceWindowMs() > 0 &&
+      typeof services.eventTransport.flushPendingChunks === 'function' &&
+      typeof services.jobStore.flushPendingAppends === 'function';
     this._cleanupOnComplete = services.cleanupOnComplete ?? true;
     this.shuttingDown = false;
     this.syncRunningJobMetrics();
@@ -5202,16 +5220,31 @@ class GenerationJobManagerClass {
           ),
         );
       }
+      runtime.outstandingCoalescedReceipts = (runtime.outstandingCoalescedReceipts ?? 0) + 1;
       void publication.then(
         (published) => {
+          runtime.outstandingCoalescedReceipts = (runtime.outstandingCoalescedReceipts ?? 1) - 1;
           if (published === false) {
             this.retireRuntimeAfterDurableFence(streamId, runtime);
           }
         },
         (err) => {
+          runtime.outstandingCoalescedReceipts = (runtime.outstandingCoalescedReceipts ?? 1) - 1;
           logger.error(`[GenerationJobManager] Failed to publish coalesced chunk:`, err);
         },
       );
+      /**
+       * Backpressure only under distress. Healthy settlement is one window plus
+       * a round trip (~30ms), so outstanding receipts sit in the single digits
+       * even at hundreds of deltas per second and this await never runs. If
+       * Redis stalls, the un-awaited path would otherwise accumulate batches,
+       * resolver closures, and queued commands without bound — awaiting one
+       * receipt paces the producer to Redis exactly like the flag-off path,
+       * with memory capped near the threshold instead of one delta.
+       */
+      if (runtime.outstandingCoalescedReceipts >= MAX_OUTSTANDING_COALESCED_RECEIPTS) {
+        await publication.catch(() => undefined);
+      }
       return;
     }
 

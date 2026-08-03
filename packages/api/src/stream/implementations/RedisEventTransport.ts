@@ -709,14 +709,22 @@ export class RedisEventTransport implements IEventTransport {
       ) {
         /** Unpack at ingress: each coalesced payload owns baseSeq + i, so the
          * reorder buffer sees the exact per-event sequences it would have seen
-         * from individual frames (dup drop, gap buffering, force-flush). */
+         * from individual frames (dup drop, gap buffering, force-flush). Each
+         * event is isolated: a throwing subscriber callback must degrade like
+         * a lost individual frame (that sequence stalls until the reorder
+         * force-flush) instead of discarding the rest of the batch, whose
+         * sequences are already reserved and would otherwise never arrive. */
         for (let i = 0; i < parsed.events.length; i++) {
-          this.handleOrderedChunk(streamId, streamState, {
-            type: EventTypes.CHUNK,
-            seq: parsed.baseSeq + i,
-            data: parsed.events[i],
-            ...(parsed.generationId != null && { generationId: parsed.generationId }),
-          });
+          try {
+            this.handleOrderedChunk(streamId, streamState, {
+              type: EventTypes.CHUNK,
+              seq: parsed.baseSeq + i,
+              data: parsed.events[i],
+              ...(parsed.generationId != null && { generationId: parsed.generationId }),
+            });
+          } catch (err) {
+            logger.error(`[RedisEventTransport] Failed to deliver coalesced chunk:`, err);
+          }
         }
       } else if (
         (parsed.type === EventTypes.DONE || parsed.type === EventTypes.ERROR) &&

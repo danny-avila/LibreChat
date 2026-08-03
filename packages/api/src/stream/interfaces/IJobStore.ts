@@ -878,6 +878,9 @@ export interface IJobStoreV2 extends IJobStore {
    * Persist any coalesced chunk appends still buffered for this stream.
    * Terminal transitions must flush first so the batch lands under the
    * generation's live status instead of fencing against its own completion.
+   *
+   * Presence of this method is how a store advertises append-coalescing
+   * support; see the transport's flushPendingChunks for the pairing rule.
    */
   flushPendingAppends?(streamId: string): Promise<void>;
 
@@ -1329,6 +1332,11 @@ export interface IEventTransport {
    * Publish any coalesced chunk publications still buffered for this stream.
    * Callers about to transition a generation's status must flush first, or the
    * batch would land behind the transition and fence itself.
+   *
+   * Presence of this method is how a transport advertises delta-coalescing
+   * support: the generation manager only sends `coalesce` hints (and only
+   * stops awaiting per-delta receipts) when both the transport and the job
+   * store expose their flush capability.
    */
   flushPendingChunks?(streamId: string): Promise<void>;
 
