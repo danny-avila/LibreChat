@@ -3006,6 +3006,22 @@ class GenerationJobManagerClass {
    * a terminal client event before this succeeds: abort, pause, and completion
    * can all race on the same generation epoch.
    */
+  /**
+   * Drain both delta coalescers ahead of a terminal status CAS. Coalesced
+   * deltas still buffered for a stream must land under its live status:
+   * flushed after the CAS they fence against the generation's own completion,
+   * and the false receipts retire a healthy runtime and error-close its
+   * subscribers ahead of the terminal frame. Every terminal transition that
+   * can interrupt a live emitter (claim, abort, shutdown) must call this
+   * before its CAS; no-op (two Map lookups) when coalescing is off or idle.
+   */
+  private async flushCoalescedStreamBuffers(streamId: string): Promise<void> {
+    await Promise.all([
+      this.jobStore.flushPendingAppends?.(streamId),
+      this.eventTransport.flushPendingChunks?.(streamId),
+    ]);
+  }
+
   async claimTerminalJob(
     streamId: string,
     status: TerminalJobClaim['status'],
@@ -3070,14 +3086,7 @@ class GenerationJobManagerClass {
     const createdAt = jobData.createdAt;
     const runtime = observedRuntime?.createdAt === createdAt ? observedRuntime : undefined;
     const terminalError = status === 'error' ? (error ?? 'Generation failed') : undefined;
-    /** Coalesced deltas still buffered for this stream must land under its live
-     * status. Flushed after the CAS they would fence against the generation's
-     * own completion, and the false receipts would retire a healthy runtime and
-     * error-close its subscribers ahead of the terminal frame. */
-    await Promise.all([
-      this.jobStore.flushPendingAppends?.(streamId),
-      this.eventTransport.flushPendingChunks?.(streamId),
-    ]);
+    await this.flushCoalescedStreamBuffers(streamId);
     const completedAt = Date.now();
     const drainedSteers = await this.jobStore.transitionStatusAndDrainSteers(streamId, {
       from: sourceStatus,
@@ -3544,6 +3553,10 @@ class GenerationJobManagerClass {
     }
 
     const runtime = observedRuntime?.createdAt === jobData.createdAt ? observedRuntime : undefined;
+    /** Abort claims terminal state through its own CAS loop below (not
+     * claimTerminalJob), so it must drain the coalescers itself — and ahead of
+     * the content snapshot, so a chunk-log reconstruction sees the window tail. */
+    await this.flushCoalescedStreamBuffers(streamId);
     /** Snapshot before claiming terminal state. This is non-destructive: if a
      * same-epoch approval resume wins the later CAS, its content and steer
      * queue remain fully owned by that resumed run. */
@@ -6610,6 +6623,9 @@ class GenerationJobManagerClass {
           runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
           await this.persistSubscriberCleanup(streamId, runtime);
         }
+        /** Shutdown interrupts live emitters, so their coalesced window must
+         * drain before the terminal CAS — same rule as claim/abort. */
+        await this.flushCoalescedStreamBuffers(streamId);
         const finalized = await this.jobStore.transitionStatus(streamId, {
           from: 'running',
           to: 'error',

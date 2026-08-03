@@ -288,6 +288,63 @@ describe('Delta coalescing integration', () => {
   );
 
   testRedis(
+    'abort with a pending window delivers the tail without error-closing subscribers',
+    async () => {
+      const manager = createRedisManager();
+      const streamId = `coalesce-abort-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1', streamId);
+
+      const received: string[] = [];
+      const errors: string[] = [];
+      const subscription = await manager.subscribe(
+        streamId,
+        (event) => {
+          const data = (event as { data?: { delta?: { content?: Array<{ text?: string }> } } })
+            .data;
+          const text = data?.delta?.content?.[0]?.text;
+          if (typeof text === 'string') {
+            received.push(text);
+          }
+        },
+        undefined,
+        (error) => errors.push(error),
+      );
+
+      await manager.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      for (const text of ['tail-1', 'tail-2']) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: [{ type: 'text', text }] } },
+        });
+      }
+
+      /** Abort lands while both deltas are still inside the 25ms window. The
+       * abort path must drain the coalescers before its terminal CAS; without
+       * that, the window flush fences (-1) and the false receipts retire the
+       * runtime, error-closing this subscriber with a reconnect error. */
+      const abortResult = await manager.abortJob(streamId);
+      expect(abortResult.success).toBe(true);
+
+      await waitFor(() => received.length === 2);
+      expect(received).toEqual(['tail-1', 'tail-2']);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(errors).toEqual([]);
+
+      subscription?.unsubscribe();
+      await manager.destroy();
+    },
+    20000,
+  );
+
+  testRedis(
     'manager streams coalesced deltas end-to-end and completes cleanly',
     async () => {
       const manager = createRedisManager();
