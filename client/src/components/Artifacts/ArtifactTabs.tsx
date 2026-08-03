@@ -7,6 +7,8 @@ import { useGetSharedStartupConfig, useGetStartupConfig } from '~/data-provider'
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
 import { useCodeState } from '~/Providers/EditorContext';
+import LiveArtifactPreview from './LiveArtifactPreview';
+import { isLiveArtifact } from '~/utils/liveArtifact';
 import { ArtifactPreview } from './ArtifactPreview';
 import { useShareContext } from '~/Providers';
 
@@ -39,6 +41,9 @@ export default function ArtifactTabs({
   }, [setCurrentCode, artifact.id]);
 
   const { files, fileKey, template, sharedProps } = useArtifactProps({ artifact });
+  // Require a real fileId: the bridge keys off it, so a live render without one
+  // would 400 every tool call. Fall back to the static Sandpack preview instead.
+  const live = isLiveArtifact(artifact.type, artifact.tools) && Boolean(artifact.fileId);
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -56,15 +61,24 @@ export default function ArtifactTabs({
         className="h-full w-full flex-grow overflow-hidden"
         tabIndex={-1}
       >
-        <ArtifactPreview
-          files={files}
-          fileKey={fileKey}
-          template={template}
-          previewRef={previewRef}
-          sharedProps={sharedProps}
-          currentCode={currentCode}
-          startupConfig={resolvedStartupConfig}
-        />
+        {live ? (
+          <LiveArtifactPreview
+            content={currentCode ?? artifact.content ?? ''}
+            fileId={artifact.fileId ?? ''}
+            messageId={artifact.messageId}
+            conversationId={artifact.conversationId}
+          />
+        ) : (
+          <ArtifactPreview
+            files={files}
+            fileKey={fileKey}
+            template={template}
+            previewRef={previewRef}
+            sharedProps={sharedProps}
+            currentCode={currentCode}
+            startupConfig={resolvedStartupConfig}
+          />
+        )}
       </Tabs.Content>
     </div>
   );

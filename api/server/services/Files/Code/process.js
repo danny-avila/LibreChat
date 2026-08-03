@@ -325,6 +325,7 @@ const processCodeOutput = async ({
   session_id,
   agentId,
   freshClaimAfter,
+  mcpTools,
 }) => {
   const appConfig = req.config;
   const currentDate = new Date();
@@ -457,6 +458,19 @@ const processCodeOutput = async ({
       return null;
     }
 
+    /* Live-artifact allowlist for HTML authored via `create_file`. An array
+     * (incl. empty) is authoritative — a create_file overwrite with an empty
+     * or omitted list revokes prior permissions. `undefined` (edit_file / bash
+     * content update) preserves the existing list so an edit doesn't strip it. */
+    const resolvedMcpTools = Array.isArray(mcpTools) ? mcpTools : claimed?.metadata?.mcpTools;
+    const fileMetadata = {
+      codeEnvRef,
+      sourceDispatchedAt,
+      ...(Array.isArray(resolvedMcpTools) && resolvedMcpTools.length > 0
+        ? { mcpTools: resolvedMcpTools }
+        : {}),
+    };
+
     if (isUpdate) {
       logger.debug(
         `[processCodeOutput] Updating existing file "${safeName}" (${file_id}) instead of creating duplicate`,
@@ -530,7 +544,7 @@ const processCodeOutput = async ({
         updatedAt: formattedDate,
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
-        metadata: { codeEnvRef, sourceDispatchedAt },
+        metadata: fileMetadata,
         ...(await getRetentionExpiry(req)),
       };
       if (!(await commitCodeFile(file))) {
@@ -632,7 +646,7 @@ const processCodeOutput = async ({
       tenantId: req.user.tenantId,
       bytes: buffer.length,
       updatedAt: formattedDate,
-      metadata: { codeEnvRef, sourceDispatchedAt },
+      metadata: fileMetadata,
       source: appConfig.fileStrategy,
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
