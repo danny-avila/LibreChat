@@ -106,7 +106,10 @@ describe('publish', () => {
     await handlers.publish(req, res);
 
     expect(res.statusCode).toBe(201);
-    const body = res.body as { app: { artifactAppId: string; createdBy: string }; version: { versionNumber: number; sourceSnapshot: string; integrity: { sourceHash: string } } };
+    const body = res.body as {
+      app: { artifactAppId: string; createdBy: string };
+      version: { versionNumber: number; sourceSnapshot: string; integrity: { sourceHash: string } };
+    };
     expect(body.app.artifactAppId).toMatch(/^app_/);
     expect(body.app.createdBy).toBe('user-1');
     expect(body.version.versionNumber).toBe(1);
@@ -170,7 +173,10 @@ describe('get / list', () => {
     const res = makeRes();
     await handlers.get(makeReq({ params: { id: appId } as never }), res);
     expect(res.statusCode).toBe(200);
-    const body = res.body as { app: { artifactAppId: string }; version: { versionNumber: number } | null };
+    const body = res.body as {
+      app: { artifactAppId: string };
+      version: { versionNumber: number } | null;
+    };
     expect(body.app.artifactAppId).toBe(appId);
     expect(body.version?.versionNumber).toBe(1);
   });
@@ -262,16 +268,20 @@ describe('version lifecycle', () => {
     const versionId = (createRes.body as { artifactVersionId: string }).artifactVersionId;
 
     const firstRelease = makeRes();
-    await handlers.releaseVersion(makeReq({ params: { id: appId, versionId } as never }), firstRelease);
-    const hashAfterFirst = (
-      firstRelease.body as { integrity: { sourceHash: string } }
-    ).integrity.sourceHash;
+    await handlers.releaseVersion(
+      makeReq({ params: { id: appId, versionId } as never }),
+      firstRelease,
+    );
+    const hashAfterFirst = (firstRelease.body as { integrity: { sourceHash: string } }).integrity
+      .sourceHash;
 
     const secondRelease = makeRes();
-    await handlers.releaseVersion(makeReq({ params: { id: appId, versionId } as never }), secondRelease);
-    const hashAfterSecond = (
-      secondRelease.body as { integrity: { sourceHash: string } }
-    ).integrity.sourceHash;
+    await handlers.releaseVersion(
+      makeReq({ params: { id: appId, versionId } as never }),
+      secondRelease,
+    );
+    const hashAfterSecond = (secondRelease.body as { integrity: { sourceHash: string } }).integrity
+      .sourceHash;
 
     expect(hashAfterSecond).toBe(hashAfterFirst);
   });

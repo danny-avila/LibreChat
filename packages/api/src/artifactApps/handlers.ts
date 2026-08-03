@@ -8,11 +8,7 @@ import {
   updateArtifactAppSchema,
   createArtifactVersionSchema,
 } from 'librechat-data-provider';
-import type {
-  TArtifactApp,
-  TArtifactVersion,
-  ArtifactRuntimeType,
-} from 'librechat-data-provider';
+import type { TArtifactApp, TArtifactVersion, ArtifactRuntimeType } from 'librechat-data-provider';
 import type {
   IArtifactApp,
   IArtifactVersion,
