@@ -59,3 +59,31 @@ export function resolveSubagentMaxTurns(
   const limit = resolveRecursionLimit(agentsEConfig, agent);
   return Math.floor(limit / SUBAGENT_RECURSION_MULTIPLIER);
 }
+
+/** Mirrors `StreamLimits` in `@librechat/agents` (agents#381). */
+export interface StreamLimitsConfig {
+  maxToolCallArgBytes?: number;
+  maxDeltaEventsPerTurn?: number;
+}
+
+/**
+ * Maps the librechat.yaml stream circuit-breaker fields
+ * (`endpoints.agents.maxToolCallArgBytes` / `maxDeltaEventsPerTurn`) to the
+ * SDK's `RunConfig.streamLimits`. Returns `undefined` when neither field is
+ * set so the SDK defaults apply: 64 KiB per streamed tool call's arguments,
+ * per-turn delta event cap off. Value normalization (0 disables, NaN falls
+ * back to the default) lives in the SDK's `resolveStreamLimits`.
+ */
+export function resolveStreamLimits(
+  agentsEConfig: Partial<TAgentsEndpoint> | undefined,
+): StreamLimitsConfig | undefined {
+  const maxToolCallArgBytes = agentsEConfig?.maxToolCallArgBytes;
+  const maxDeltaEventsPerTurn = agentsEConfig?.maxDeltaEventsPerTurn;
+  if (maxToolCallArgBytes == null && maxDeltaEventsPerTurn == null) {
+    return undefined;
+  }
+  return {
+    ...(maxToolCallArgBytes != null && { maxToolCallArgBytes }),
+    ...(maxDeltaEventsPerTurn != null && { maxDeltaEventsPerTurn }),
+  };
+}

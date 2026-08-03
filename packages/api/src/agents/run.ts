@@ -52,6 +52,7 @@ import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPrompt
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { resolveStreamLimits, resolveSubagentMaxTurns } from '~/agents/config';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
@@ -59,7 +60,6 @@ import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
-import { resolveSubagentMaxTurns } from '~/agents/config';
 import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
@@ -1540,6 +1540,8 @@ export async function createRun({
     }
   }
 
+  const streamLimits = resolveStreamLimits(agentsEndpointConfig);
+
   /**
    * Built as a variable (not an inline literal) so the extra
    * `subagentUsageSink` field passes assignability against SDK versions
@@ -1643,6 +1645,12 @@ export async function createRun({
     // live, so gating both on the same capability keeps them in lockstep.
     ...(steering?.preemption != null &&
       isSteerPreemptSupported() && { preemption: steering.preemption }),
+    // Stream circuit breakers (librechat.yaml endpoints.agents.maxToolCallArgBytes /
+    // maxDeltaEventsPerTurn). Omitted when unset so the SDK defaults apply: a runaway
+    // streamed tool-call argument aborts the run at 64 KiB, the per-turn delta event
+    // cap stays off. Requires @librechat/agents with streamLimits support (agents#381);
+    // older versions ignore the field.
+    ...(streamLimits && { streamLimits }),
   };
   const run = await Run.create(runConfig);
 

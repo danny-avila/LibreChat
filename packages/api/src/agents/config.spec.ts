@@ -1,5 +1,5 @@
 import type { TAgentsEndpoint } from 'librechat-data-provider';
-import { resolveRecursionLimit, resolveSubagentMaxTurns } from './config';
+import { resolveRecursionLimit, resolveStreamLimits, resolveSubagentMaxTurns } from './config';
 
 describe('resolveRecursionLimit', () => {
   it('returns default 50 when no config or agent provided', () => {
@@ -109,5 +109,38 @@ describe('resolveSubagentMaxTurns', () => {
     const turns = resolveSubagentMaxTurns(config, {});
     expect(turns).toBe(0);
     expect(turns * 3).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('resolveStreamLimits', () => {
+  it('returns undefined when neither yaml field is set, so SDK defaults apply', () => {
+    expect(resolveStreamLimits(undefined)).toBeUndefined();
+    expect(resolveStreamLimits({} as TAgentsEndpoint)).toBeUndefined();
+  });
+
+  it('maps both yaml fields onto the SDK streamLimits shape', () => {
+    const config = {
+      maxToolCallArgBytes: 131072,
+      maxDeltaEventsPerTurn: 100000,
+    } as TAgentsEndpoint;
+    expect(resolveStreamLimits(config)).toEqual({
+      maxToolCallArgBytes: 131072,
+      maxDeltaEventsPerTurn: 100000,
+    });
+  });
+
+  it('passes each field independently, omitting the unset one', () => {
+    expect(resolveStreamLimits({ maxToolCallArgBytes: 1024 } as TAgentsEndpoint)).toEqual({
+      maxToolCallArgBytes: 1024,
+    });
+    expect(resolveStreamLimits({ maxDeltaEventsPerTurn: 5000 } as TAgentsEndpoint)).toEqual({
+      maxDeltaEventsPerTurn: 5000,
+    });
+  });
+
+  it('passes an explicit 0 through so admins can disable the SDK default', () => {
+    expect(resolveStreamLimits({ maxToolCallArgBytes: 0 } as TAgentsEndpoint)).toEqual({
+      maxToolCallArgBytes: 0,
+    });
   });
 });
