@@ -944,16 +944,18 @@ export class RedisEventTransport implements IEventTransport {
         void (async () => {
           // The owner-lifecycle lease must be durable BEFORE the acknowledgement:
           // the stopping side releases its own lease the moment this ACK arrives,
-          // and the owner's abort-catch persistence is still ahead. Best-effort —
-          // an unregistrable lease must not suppress the ACK forever (the stopping
-          // side's retention lease and resignal heartbeat cover that outage).
+          // and the owner's abort-catch persistence is still ahead. FAIL CLOSED — a
+          // rejected fence suppresses the acknowledgement entirely; the stopping
+          // side stays retryable and its retention lease keeps the user fenced,
+          // while every resignal re-drives this handler until the fence holds.
           try {
             await this.beforeAbortAcknowledged?.(streamId, generationId);
           } catch (error) {
             logger.error(
-              `[RedisEventTransport] Failed to fence abort acknowledgement for ${streamId}:`,
+              `[RedisEventTransport] Suppressing abort acknowledgement for ${streamId} — owner fence failed:`,
               error,
             );
+            return;
           }
           await this.publishAbortAcknowledgement(streamId, generationId, abortRequestId);
         })();
@@ -1264,6 +1266,11 @@ export class RedisEventTransport implements IEventTransport {
     clearTimeout(waiter.timeout);
     waiter.resolve(acknowledged);
     this.unsubscribeUnusedChannel(streamId, state);
+  }
+
+  /** Public form of the durable owner-acknowledgement probe (see IEventTransport). */
+  async hasAbortAcknowledgement(streamId: string, generationId: number): Promise<boolean> {
+    return this.hasDurableAbortAck(streamId, generationId);
   }
 
   private async hasDurableAbortAck(streamId: string, generationId: number): Promise<boolean> {

@@ -159,15 +159,18 @@ describe('abort signal honesty across replicas', () => {
     await owner.createJob('conv-7', 'user-1', 'conv-7');
     const observed = await jobStore.getJob('conv-7');
     // A replacement generation claims the stream before the peer's abort lands.
+    // (The replacement handoff itself holds the predecessor's owner lease — that
+    // baseline is the replacement path's designed fence, not this abort's.)
     await owner.createJob('conv-7', 'user-1', 'conv-7');
+    const baseline = await jobStore.countUserFinalizations('user-1');
 
     const result = await peer.abortJob('conv-7', { expectedCreatedAt: observed!.createdAt });
 
     expect(result.success).toBe(false);
-    // Nothing will be persisted by this loser: holding the marker to its TTL would
-    // fence the user's deletion pointlessly.
+    // Nothing will be persisted by this loser: holding ITS marker to the TTL would
+    // fence the user's deletion pointlessly. Only the replacement baseline remains.
     await new Promise((resolve) => setImmediate(resolve));
-    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(0);
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(baseline);
   });
 
   it('RETAINS the abort lease while the stop is undelivered and unpublished', async () => {
@@ -327,6 +330,143 @@ describe('abort signal honesty across replicas', () => {
       hold.release();
       await jest.advanceTimersByTimeAsync(1);
       await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('retains a fence when the abort transition commits but loses its reply', async () => {
+    const { owner, peer, jobStore } = await makeManagers();
+    await owner.createJob('conv-14', 'user-1', 'conv-14');
+    // The Lua CAS commits, then the reply is lost: the job is aborted (invisible to
+    // active-set scans) but no signal was ever sent. Clearing the contender lease on
+    // the throw — as if nothing happened — left NOTHING fencing the user.
+    const realTransition = jobStore.transitionStatusAndDrainSteers.bind(jobStore);
+    jest
+      .spyOn(jobStore, 'transitionStatusAndDrainSteers')
+      .mockImplementation(async (streamId, args) => {
+        await realTransition(streamId, args);
+        throw new Error('connection reset before reply');
+      });
+
+    await expect(peer.abortJob('conv-14')).rejects.toThrow('connection reset');
+
+    expect((await jobStore.getJob('conv-14'))?.status).toBe('aborted');
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBeGreaterThanOrEqual(1);
+  });
+
+  it('clears the contender lease only when the thrown transition provably did not commit', async () => {
+    const { owner, peer, jobStore } = await makeManagers();
+    await owner.createJob('conv-15', 'user-1', 'conv-15');
+    jest
+      .spyOn(jobStore, 'transitionStatusAndDrainSteers')
+      .mockRejectedValue(new Error('store outage'));
+
+    await expect(peer.abortJob('conv-15')).rejects.toThrow('store outage');
+
+    // The re-read shows the generation still live: the CAS did not commit, so the
+    // contender lease releases instead of leaking to its TTL.
+    expect((await jobStore.getJob('conv-15'))?.status).toBe('running');
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(0);
+  });
+
+  it('hands a LOCAL resignal delivery to the owner lease before clearing the stop lease', async () => {
+    const { owner, peer, peerTransport, jobStore } = await makeManagers();
+    await owner.createJob('conv-16', 'user-1', 'conv-16');
+    Object.assign(peerTransport, {
+      emitAbort: jest.fn((): void => undefined),
+      emitAbortConfirmed: jest.fn(async () => false),
+    });
+    await peer.abortJob('conv-16');
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(1);
+
+    // The OWNER's replica retries the resignal: delivery is local, its catch
+    // persistence is still ahead — the stop lease may only clear once the owner
+    // lease holds.
+    const register = jest.spyOn(jobStore, 'registerUserFinalization');
+    const resignal = await owner.resignalAbort('conv-16');
+
+    expect(resignal.delivered).toBe(true);
+    expect(register).toHaveBeenCalledWith(
+      'user-1',
+      'conv-16',
+      undefined,
+      expect.any(Number),
+      'owner',
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    // Exactly the owner lease remains; the stop lease is reaped.
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(1);
+  });
+
+  it('holds the pre-ACK owner lease past the store TTL until the owner releases it', async () => {
+    const { GenerationJobManagerClass } = await import('../GenerationJobManager');
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 0 });
+    const transport = new InMemoryEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport: transport, isRedis: false });
+    manager.initialize();
+    await manager.createJob('conv-17', 'user-1', 'conv-17');
+    const createdAt = (await jobStore.getJob('conv-17'))!.createdAt;
+
+    jest.useFakeTimers({ now: Date.now() });
+    try {
+      // The transport hook is how the owner replica acquires the lease.
+      await (
+        transport as { beforeAbortAcknowledged?: (s: string, g: number) => Promise<void> }
+      ).beforeAbortAcknowledged?.('conv-17', createdAt);
+      await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(1);
+
+      // Owner-side persistence can legitimately outlive the five-minute store TTL.
+      await jest.advanceTimersByTimeAsync(6 * 60 * 1000);
+      await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(1);
+
+      await manager.releaseOwnerLease('user-1', 'conv-17', undefined, createdAt);
+      await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(0);
+      // And the heartbeat is genuinely stopped, not just cleared once.
+      await jest.advanceTimersByTimeAsync(6 * 60 * 1000);
+      await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('retries failed-handoff retention on the heartbeat instead of degrading to one-shot', async () => {
+    const { GenerationJobManagerClass } = await import('../GenerationJobManager');
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 0 });
+    const owner = new GenerationJobManagerClass();
+    owner.configure({ jobStore, eventTransport: new InMemoryEventTransport(), isRedis: false });
+    owner.initialize();
+    const peer = new GenerationJobManagerClass();
+    const peerTransport = new InMemoryEventTransport();
+    Object.assign(peerTransport, { emitAbortConfirmed: jest.fn(async () => false) });
+    peer.configure({ jobStore, eventTransport: peerTransport, isRedis: true });
+    peer.initialize();
+    await owner.createJob('conv-18', 'user-1', 'conv-18');
+
+    // Retention registration fails at first — the retainer must keep trying on its
+    // heartbeat, not silently give up while the predecessor is undiscoverable.
+    const realRegister = jobStore.registerUserFinalization.bind(jobStore);
+    let failures = 0;
+    jest.spyOn(jobStore, 'registerUserFinalization').mockImplementation(async (...args) => {
+      if (args[4] === 'owner' && failures++ < 1) {
+        throw new Error('marker store blip');
+      }
+      return realRegister(...args);
+    });
+    jest.useFakeTimers({ now: Date.now() });
+    try {
+      await expect(peer.createJob('conv-18', 'user-1', 'conv-18')).rejects.toThrow(
+        'predecessor handoff',
+      );
+      await jest.advanceTimersByTimeAsync(61_000);
+      await expect(jobStore.countUserFinalizations('user-1')).resolves.toBeGreaterThanOrEqual(1);
     } finally {
       jest.useRealTimers();
     }

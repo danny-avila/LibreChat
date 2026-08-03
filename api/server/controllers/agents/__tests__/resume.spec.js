@@ -53,6 +53,7 @@ const mockGenerationJobManager = {
   // CAS whenever post-terminal title work is possible, so the facade mock must
   // mirror it or the turn stalls on an undefined call.
   registerUserFinalization: jest.fn(async () => undefined),
+  releaseOwnerLease: jest.fn(async () => undefined),
   holdUserFinalization: jest.fn(async (u, s2, t, g, leaseId) => ({
     leaseId,
     release: mockLeaseRelease,
@@ -2164,12 +2165,11 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockLeaseRelease.mock.invocationCallOrder[0]).toBeGreaterThan(
         mockSaveMessage.mock.invocationCallOrder[0],
       );
-      expect(mockGenerationJobManager.clearUserFinalization).toHaveBeenCalledWith(
+      expect(mockGenerationJobManager.releaseOwnerLease).toHaveBeenCalledWith(
         USER_ID,
         CONVO_ID,
         TENANT_ID,
         1000,
-        'owner',
       );
     });
 

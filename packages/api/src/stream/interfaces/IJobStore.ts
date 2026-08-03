@@ -1426,8 +1426,16 @@ export interface IEventTransport {
    *  for an owned generation. The manager installs the owner-lifecycle lease here:
    *  an acknowledgement is what lets the stopping side release ITS lease, so the
    *  owner's lease must be durable first or a deletion quiesce can land in the gap
-   *  between the ACK and the owner's asynchronous abort-catch persistence. */
+   *  between the ACK and the owner's asynchronous abort-catch persistence.
+   *  A REJECTION suppresses the acknowledgement entirely (fail closed): the stopping
+   *  side stays retryable and its retention lease keeps the user fenced. */
   beforeAbortAcknowledged?: (streamId: string, generationId: number) => Promise<void>;
+
+  /** Whether the durable owner acknowledgement proof exists for this exact
+   *  generation. Cross-process retention leases use it as their renewal predicate:
+   *  once the owner has acknowledged (and therefore holds its own lease), a remote
+   *  retainer stops renewing without clearing the shared owner field. */
+  hasAbortAcknowledgement?(streamId: string, generationId: number): Promise<boolean>;
 
   /** Publish a predecessor DONE only while the current job's opaque creation
    * attempt still carries that predecessor in its durable receipt chain. */
