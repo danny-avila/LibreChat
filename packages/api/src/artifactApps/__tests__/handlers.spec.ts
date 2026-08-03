@@ -38,7 +38,11 @@ function makeRes(): Response & { statusCode: number; body: unknown } {
   return res as unknown as Response & { statusCode: number; body: unknown };
 }
 
-function makeReq(overrides: Partial<ServerRequest>): ServerRequest {
+/** Route bodies are validated by zod inside the handlers, so the mock body is
+ * deliberately unconstrained rather than the chat-shaped `ServerRequest['body']`. */
+type ReqOverrides = Partial<Omit<ServerRequest, 'body'>> & { body?: unknown };
+
+function makeReq(overrides: ReqOverrides): ServerRequest {
   return {
     user: { id: 'user-1', name: 'User One', tenantId: undefined },
     params: {},

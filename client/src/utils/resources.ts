@@ -81,6 +81,16 @@ export const RESOURCE_CONFIGS: Record<ResourceType, ResourceConfig> = {
     getManageMessage: (name?: string) => `Manage access for ${name || 'shared link'}`,
     getCopyUrlMessage: () => 'Share link copied',
   },
+  [ResourceType.ARTIFACT_APP]: {
+    resourceType: ResourceType.ARTIFACT_APP,
+    defaultViewerRoleId: AccessRoleIds.ARTIFACT_APP_VIEWER,
+    defaultEditorRoleId: AccessRoleIds.ARTIFACT_APP_EDITOR,
+    defaultOwnerRoleId: AccessRoleIds.ARTIFACT_APP_OWNER,
+    getResourceName: (name?: string) => name || 'app',
+    getShareMessage: (name?: string) => name || 'app',
+    getManageMessage: (name?: string) => `Manage access for ${name || 'app'}`,
+    getCopyUrlMessage: () => 'App link copied',
+  },
 };
 
 export const getResourceConfig = (resourceType: ResourceType): ResourceConfig | undefined => {

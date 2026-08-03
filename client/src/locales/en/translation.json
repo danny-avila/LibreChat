@@ -859,6 +859,7 @@
   "com_ui_archive": "Archive",
   "com_ui_archive_delete_error": "Failed to delete archived conversation",
   "com_ui_archive_error": "Failed to archive conversation",
+  "com_ui_artifact_app": "App",
   "com_ui_artifact_app_archived": "This app has been archived and is no longer available.",
   "com_ui_artifact_app_forbidden": "You don't have permission to view this app.",
   "com_ui_artifact_app_loading": "Loading app…",
