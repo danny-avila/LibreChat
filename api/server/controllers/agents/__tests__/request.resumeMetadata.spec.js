@@ -228,6 +228,7 @@ jest.mock('~/server/services/Schedules', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  isUserDeleting: jest.fn(async () => false),
   saveMessage: (...args) => mockSaveMessage(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
@@ -3050,16 +3051,110 @@ describe('ResumableAgentController resume metadata', () => {
     await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
     await nextTick();
 
-    // Generation-qualified: a predecessor's late clear must not drop this marker.
+    // Generation- and lease-qualified: a predecessor's (or a losing same-generation
+    // contender's) late clear must not drop this marker. The FIRST registration is
+    // the admission lease covering the auth-to-createJob window.
+    expect(mockGenerationJobManager.registerUserFinalization).toHaveBeenCalledWith(
+      'user-123',
+      'conversation-123',
+      undefined,
+      undefined,
+      expect.stringMatching(/^admission-/),
+    );
     expect(mockGenerationJobManager.registerUserFinalization).toHaveBeenCalledWith(
       'user-123',
       'conversation-123',
       undefined,
       1000,
+      expect.any(String),
     );
     expect(
       mockGenerationJobManager.registerUserFinalization.mock.invocationCallOrder[0],
     ).toBeLessThan(mockGenerationJobManager.claimTerminalJob.mock.invocationCallOrder[0]);
+  });
+
+  it('refuses admission when the deletion barrier is up, lease registered FIRST', async () => {
+    // The order is the fence: lease durable BEFORE the barrier reread, so either this
+    // request sees the barrier (and refuses) or the deletion quiesce sees the lease
+    // (and defers). Without it, a request authenticated before the barrier could
+    // create its job AFTER the cascade swept.
+    const models = require('~/models');
+    models.isUserDeleting.mockResolvedValueOnce(true);
+    const initializeClient = jest.fn();
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Racing a deletion.',
+        messageId: 'user-msg',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+    expect(initializeClient).not.toHaveBeenCalled();
+    const admissionRegister = mockGenerationJobManager.registerUserFinalization.mock.calls.find(
+      (call) => String(call[4]).startsWith('admission-'),
+    );
+    expect(admissionRegister).toBeDefined();
+    // Lease before barrier read.
+    expect(
+      mockGenerationJobManager.registerUserFinalization.mock.invocationCallOrder[0],
+    ).toBeLessThan(models.isUserDeleting.mock.invocationCallOrder[0]);
+    // The refusal releases its own lease.
+    expect(mockGenerationJobManager.clearUserFinalization).toHaveBeenCalledWith(
+      'user-123',
+      'conversation-123',
+      undefined,
+      undefined,
+      admissionRegister[4],
+    );
+  });
+
+  it('releases the admission lease once createJob is durable', async () => {
+    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
+    const client = {
+      options: {},
+      sendMessage: jest.fn().mockResolvedValue({
+        userMessage: {
+          messageId: 'user-msg',
+          parentMessageId: 'parent-msg',
+          conversationId: 'conversation-123',
+          text: 'Follow up.',
+        },
+        responseMessage: { messageId: 'resp-msg', conversationId: 'conversation-123' },
+      }),
+    };
+    const initializeClient = jest.fn().mockResolvedValue({ client });
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Follow up.',
+        messageId: 'user-msg',
+        parentMessageId: 'parent-msg',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+    await nextTick();
+
+    const admissionRegister = mockGenerationJobManager.registerUserFinalization.mock.calls.find(
+      (call) => String(call[4]).startsWith('admission-'),
+    );
+    expect(admissionRegister).toBeDefined();
+    const admissionClear = mockGenerationJobManager.clearUserFinalization.mock.calls.find(
+      (call) => call[4] === admissionRegister[4],
+    );
+    // Held exactly until the job is durable (active-set visible), then released.
+    expect(admissionClear).toBeDefined();
   });
 
   it('fails CLOSED when the finalization marker cannot be registered: no terminal CAS at all', async () => {

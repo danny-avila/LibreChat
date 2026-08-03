@@ -1348,6 +1348,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
     streamId: string,
     tenantId?: string,
     generationId?: number,
+    leaseId?: string,
   ): Promise<void> {
     const userKey = tenantId ? `${tenantId}:${userId}` : userId;
     let entries = this.userFinalizations.get(userKey);
@@ -1355,7 +1356,10 @@ export class InMemoryJobStore implements IJobStoreV2 {
       entries = new Map();
       this.userFinalizations.set(userKey, entries);
     }
-    entries.set(finalizationField(streamId, generationId), Date.now() + USER_FINALIZATION_TTL_MS);
+    entries.set(
+      finalizationField(streamId, generationId, leaseId),
+      Date.now() + USER_FINALIZATION_TTL_MS,
+    );
   }
 
   async clearUserFinalization(
@@ -1363,13 +1367,14 @@ export class InMemoryJobStore implements IJobStoreV2 {
     streamId: string,
     tenantId?: string,
     generationId?: number,
+    leaseId?: string,
   ): Promise<void> {
     const userKey = tenantId ? `${tenantId}:${userId}` : userId;
     const entries = this.userFinalizations.get(userKey);
     if (!entries) {
       return;
     }
-    entries.delete(finalizationField(streamId, generationId));
+    entries.delete(finalizationField(streamId, generationId, leaseId));
     if (entries.size === 0) {
       this.userFinalizations.delete(userKey);
     }

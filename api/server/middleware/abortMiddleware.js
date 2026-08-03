@@ -109,8 +109,71 @@ async function abortMessage(req, res) {
   const conversationId = abortKey?.split(':')?.[0] ?? req.user.id;
   const userId = req.user.id;
 
-  // Use GenerationJobManager to abort the job (streamId === conversationId)
-  const abortResult = await GenerationJobManager.abortJob(conversationId);
+  let responseMessage = null;
+  // Use GenerationJobManager to abort the job (streamId === conversationId).
+  // The usage spend and response save run INSIDE `beforePublish` — between the
+  // abort CAS and publication — so they stay covered by abortJob's finalization
+  // lease. Running them after abortJob returned (as this middleware used to) left
+  // them racing an account-deletion cascade with the lease already released.
+  const abortResult = await GenerationJobManager.abortJob(conversationId, {
+    beforePublish: async (pendingAbortResult) => {
+      const { jobData, content, text, collectedUsage } = pendingAbortResult;
+      const completionTokens = await countTokens(text);
+      const promptTokens = jobData?.promptTokens ?? 0;
+
+      responseMessage = {
+        messageId: jobData?.responseMessageId,
+        parentMessageId: jobData?.userMessage?.messageId,
+        conversationId: jobData?.conversationId,
+        content,
+        text,
+        sender: jobData?.sender ?? 'AI',
+        finish_reason: 'incomplete',
+        endpoint: jobData?.endpoint,
+        iconURL: jobData?.iconURL,
+        model: jobData?.model,
+        unfinished: false,
+        error: false,
+        isCreatedByUser: false,
+        tokenCount: completionTokens,
+      };
+
+      /** Persist the usage/cost rollup + context breakdown for the stopped response
+       *  so its branch/total cost and granular rows survive a reload, matching the
+       *  normal completion path. */
+      const abortMetadata = buildAbortedResponseMetadata(jobData);
+      if (abortMetadata) {
+        responseMessage.metadata = abortMetadata;
+      }
+
+      // Spend tokens for ALL models from collectedUsage (handles parallel agents/addedConvo)
+      if (collectedUsage && collectedUsage.length > 0) {
+        await spendCollectedUsage({
+          userId,
+          conversationId: jobData?.conversationId,
+          collectedUsage,
+          fallbackModel: jobData?.model,
+          messageId: jobData?.responseMessageId,
+        });
+      } else {
+        // Fallback: no collected usage, use text-based token counting for primary model only
+        await db.spendTokens(
+          { ...responseMessage, context: 'incomplete', user: userId },
+          { promptTokens, completionTokens },
+        );
+      }
+
+      await db.saveMessage(
+        {
+          userId: req?.user?.id,
+          isTemporary: req?.body?.isTemporary,
+          interfaceConfig: req?.config?.interfaceConfig,
+        },
+        { ...responseMessage, user: userId },
+        { context: 'api/server/middleware/abortMiddleware.js' },
+      );
+    },
+  });
 
   if (!abortResult.success) {
     if (!res.headersSent) {
@@ -118,63 +181,13 @@ async function abortMessage(req, res) {
     }
     return;
   }
-
-  const { jobData, content, text, collectedUsage } = abortResult;
-
-  const completionTokens = await countTokens(text);
-  const promptTokens = jobData?.promptTokens ?? 0;
-
-  const responseMessage = {
-    messageId: jobData?.responseMessageId,
-    parentMessageId: jobData?.userMessage?.messageId,
-    conversationId: jobData?.conversationId,
-    content,
-    text,
-    sender: jobData?.sender ?? 'AI',
-    finish_reason: 'incomplete',
-    endpoint: jobData?.endpoint,
-    iconURL: jobData?.iconURL,
-    model: jobData?.model,
-    unfinished: false,
-    error: false,
-    isCreatedByUser: false,
-    tokenCount: completionTokens,
-  };
-
-  /** Persist the usage/cost rollup + context breakdown for the stopped response
-   *  so its branch/total cost and granular rows survive a reload, matching the
-   *  normal completion path. */
-  const abortMetadata = buildAbortedResponseMetadata(jobData);
-  if (abortMetadata) {
-    responseMessage.metadata = abortMetadata;
+  if (abortResult.persistenceFailed) {
+    // Same observable behavior as the old inline throw: handleAbort logs it and no
+    // normal final envelope is sent for a stop whose persistence failed.
+    throw new Error(`Failed to persist aborted response for ${conversationId}`);
   }
 
-  // Spend tokens for ALL models from collectedUsage (handles parallel agents/addedConvo)
-  if (collectedUsage && collectedUsage.length > 0) {
-    await spendCollectedUsage({
-      userId,
-      conversationId: jobData?.conversationId,
-      collectedUsage,
-      fallbackModel: jobData?.model,
-      messageId: jobData?.responseMessageId,
-    });
-  } else {
-    // Fallback: no collected usage, use text-based token counting for primary model only
-    await db.spendTokens(
-      { ...responseMessage, context: 'incomplete', user: userId },
-      { promptTokens, completionTokens },
-    );
-  }
-
-  await db.saveMessage(
-    {
-      userId: req?.user?.id,
-      isTemporary: req?.body?.isTemporary,
-      interfaceConfig: req?.config?.interfaceConfig,
-    },
-    { ...responseMessage, user: userId },
-    { context: 'api/server/middleware/abortMiddleware.js' },
-  );
+  const { jobData } = abortResult;
 
   // Get conversation for title
   const conversation = await db.getConvo(userId, conversationId);

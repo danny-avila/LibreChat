@@ -915,6 +915,71 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   }
   startupTelemetry?.mark('request_admitted');
 
+  // ADMISSION FENCE against account deletion. Authentication can pass BEFORE the
+  // deletion barrier goes up, and the durable createJob below is still several async
+  // steps away — in that window a deletion quiesce sees neither an active job nor a
+  // marker and can cascade while this admitted request goes on to create one. The
+  // ORDER is the fence: the lease is durable BEFORE the barrier reread, so either we
+  // observe their barrier (and refuse) or their quiesce observes our lease (and
+  // defers). Held until createJob is durable — from then on the job itself is
+  // deletion-visible. FAIL CLOSED on an unregistrable lease: nothing has been
+  // admitted into generation yet, so refusing is free and plainly retryable.
+  const admissionLeaseId = `admission-${crypto.randomUUID()}`;
+  let admissionLeaseHeld = false;
+  const releaseAdmissionLease = () => {
+    if (!admissionLeaseHeld) {
+      return;
+    }
+    admissionLeaseHeld = false;
+    void GenerationJobManager.clearUserFinalization(
+      userId,
+      streamId,
+      req.user?.tenantId,
+      undefined,
+      admissionLeaseId,
+    ).catch(() => undefined);
+  };
+  const refuseAdmission = async (status, body) => {
+    releaseAdmissionLease();
+    if (!exemptFromConcurrency) {
+      await decrementPendingRequest(userId).catch(() => undefined);
+    }
+    if (ownedIdempotencyClaim) {
+      await GenerationJobManager.releaseGeneration(
+        userId,
+        clientRequestId,
+        streamId,
+        ownedIdempotencyClaim,
+      ).catch(() => {});
+    }
+    startupTelemetry?.end('rejected');
+    return sendGenerationJson(res, status, body, generationProtocolVersion);
+  };
+  admissionLeaseHeld = await GenerationJobManager.registerUserFinalization(
+    userId,
+    streamId,
+    req.user?.tenantId,
+    undefined,
+    admissionLeaseId,
+  )
+    .then(() => true)
+    .catch((err) => {
+      logger.warn(
+        `[ResumableAgentController] Admission lease registration failed: ${streamId}`,
+        err,
+      );
+      return false;
+    });
+  if (!admissionLeaseHeld) {
+    res.set('Retry-After', '2');
+    return refuseAdmission(503, {
+      error: 'Could not fence the request against account deletion. Please retry.',
+    });
+  }
+  if (await isUserDeleting(userId).catch(() => true)) {
+    return refuseAdmission(403, { error: 'Account deletion is in progress' });
+  }
+
   let client = null;
   let jobCreatedAt;
   let providerExecutionId;
@@ -1370,6 +1435,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
      *  an active job nor a fence and cascades mid-title — and cleared once the title
      *  work settles (or immediately when no post-terminal title runs). */
     let userFinalizationRegistered = false;
+    /** Unique per contender: completion and Stop race the same generation, and a
+     *  losing contender's cleanup must only ever release its own lease. */
+    const finalizationLeaseId = crypto.randomUUID();
     const registerUserFinalizationFence = async () => {
       if (userFinalizationRegistered) {
         return true;
@@ -1383,6 +1451,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           streamId,
           req.user?.tenantId,
           jobCreatedAt,
+          finalizationLeaseId,
         )
           .then(() => true)
           .catch((err) => {
@@ -1405,6 +1474,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         streamId,
         req.user?.tenantId,
         jobCreatedAt,
+        finalizationLeaseId,
       ).catch(() => undefined);
     };
 
@@ -2302,6 +2372,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           }
         }
 
+        // A stop that won the terminal CAS leaves THIS controller's pending saves
+        // (background user-message/convo writes) racing deletion with no cover of
+        // their own — the Stop side's lease fences its `beforePublish` writes, not
+        // ours. Best-effort: the writes are already in flight either way.
+        if (wasAborted) {
+          await registerUserFinalizationFence();
+        }
         let errorScheduleOutcomeRecorded = true;
         let errorScheduleOutcome = null;
         if (scheduleId) {
@@ -2496,6 +2573,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       });
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
+    // A failed initialization creates no durable job for the lease to hand off to.
+    releaseAdmissionLease();
     const initializationFailure = getInitializationFailure(error);
     try {
       if (!res.headersSent) {

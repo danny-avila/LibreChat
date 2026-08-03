@@ -323,11 +323,25 @@ export type JobMetadataPatch = Partial<
  * stores so an expired approval is kept out of active-job listings (the client
  * stops polling; cleanup/expiry finalizes it).
  */
-/** Generation-qualified finalization-marker field, shared by the stores so a late
- *  clear from generation A can never drop the marker generation B registered on the
- *  same stream. Unqualified (legacy) callers fall back to the bare streamId. */
-export function finalizationField(streamId: string, generationId?: number): string {
-  return generationId != null ? `${streamId}:${generationId}` : streamId;
+/** Lease-qualified finalization-marker field, shared by the stores. Generation
+ *  qualification stops a late clear from generation A dropping generation B's marker
+ *  on the same stream; the LEASE token goes further — completion and Stop (or two
+ *  Stops) contend on the SAME generation, and a losing contender's cleanup must only
+ *  ever release its own lease, never the winner's still-live one. Unqualified
+ *  (legacy) callers fall back to the bare streamId. */
+export function finalizationField(
+  streamId: string,
+  generationId?: number,
+  leaseId?: string,
+): string {
+  let field = streamId;
+  if (generationId != null) {
+    field += `:${generationId}`;
+  }
+  if (leaseId != null) {
+    field += `:${leaseId}`;
+  }
+  return field;
 }
 
 export function isPendingActionExpired(job: Pick<SerializableJobData, 'pendingAction'>): boolean {
@@ -801,6 +815,7 @@ export interface IJobStore {
     streamId: string,
     tenantId?: string,
     generationId?: number,
+    leaseId?: string,
   ): Promise<void>;
 
   /** Clear a finalization registered by {@link registerUserFinalization}. Must be
@@ -812,6 +827,7 @@ export interface IJobStore {
     streamId: string,
     tenantId?: string,
     generationId?: number,
+    leaseId?: string,
   ): Promise<void>;
 
   /** Count live (unexpired) finalizations for a user. */
@@ -871,12 +887,14 @@ export interface IJobStoreV2 extends IJobStore {
     streamId: string,
     tenantId?: string,
     generationId?: number,
+    leaseId?: string,
   ): Promise<void>;
   clearUserFinalization(
     userId: string,
     streamId: string,
     tenantId?: string,
     generationId?: number,
+    leaseId?: string,
   ): Promise<void>;
   countUserFinalizations(userId: string, tenantId?: string): Promise<number>;
 

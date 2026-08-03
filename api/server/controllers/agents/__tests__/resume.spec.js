@@ -2196,12 +2196,16 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       // first-turn title) are still ahead — without the marker a deletion quiesce in
       // that window sees neither an active job nor a fence.
       // Generation-qualified: a predecessor's late clear must not drop this marker.
+      // Lease-qualified: a losing same-generation contender (a racing Stop) must
+      // only ever release its own lease, never this one.
       expect(mockGenerationJobManager.registerUserFinalization).toHaveBeenCalledWith(
         USER_ID,
         CONVO_ID,
         TENANT_ID,
         1000,
+        expect.any(String),
       );
+      const resumeLeaseId = mockGenerationJobManager.registerUserFinalization.mock.calls[0][4];
       expect(
         mockGenerationJobManager.registerUserFinalization.mock.invocationCallOrder[0],
       ).toBeLessThan(mockGenerationJobManager.claimTerminalJob.mock.invocationCallOrder[0]);
@@ -2210,6 +2214,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         CONVO_ID,
         TENANT_ID,
         1000,
+        resumeLeaseId,
       );
       // Cleared only after the persistence phase (the finish of the terminal claim),
       // never between the CAS and the save.
