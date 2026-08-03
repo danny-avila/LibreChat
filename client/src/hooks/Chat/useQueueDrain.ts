@@ -437,6 +437,10 @@ export default function useQueueDrain(
   }, [
     runEnd,
     parkedRunEnd,
+    /** A standing window leaves later epochs untouched, so removing it has to
+     *  bring the drain back to reconsider them — otherwise a follow-up sits
+     *  stranded until some unrelated dependency happens to change. */
+    drainHold,
     isSubmitting,
     activeConversationId,
     parkForeignRunEnd,

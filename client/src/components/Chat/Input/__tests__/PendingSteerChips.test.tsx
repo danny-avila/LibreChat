@@ -843,10 +843,10 @@ describe('PendingSteerChips — queued row editing', () => {
     expect(mockUpdateQueuedText).toHaveBeenCalledWith('q2', 'edited while the front row drained');
   });
 
-  /** `steering` is rebuilt at every run boundary. A dep on it fired the flush
-   *  while the row was still mounted, committing mid-edit — after which Escape
-   *  had nothing left to abandon. */
-  it('does not commit mid-edit when the run state changes under it', () => {
+  /** `steering` is rebuilt at every run boundary. Whatever the write model,
+   *  the invariant is that a run ending under an open editor must not make the
+   *  edit final — Escape still has to put the original words back. */
+  it('keeps an edit abandonable when the run state changes under it', () => {
     const Harness = ({ live }: { live: boolean }) => (
       <PendingSteerChips
         conversationId={CONVO_ID}
@@ -873,11 +873,10 @@ describe('PendingSteerChips — queued row editing', () => {
 
     // The run ends: same row, a freshly built `steering`.
     rerender(tree(false));
+    expect(screen.getByTestId('queued-message-edit')).toBeInTheDocument();
 
-    expect(mockUpdateQueuedText).not.toHaveBeenCalled();
-    // The editor is still open, so Escape can still abandon the edit.
     fireEvent.keyDown(screen.getByTestId('queued-message-edit'), { key: 'Escape' });
-    expect(mockUpdateQueuedText).not.toHaveBeenCalled();
+    expect(mockUpdateQueuedText).toHaveBeenLastCalledWith('q1', 'first thought');
   });
 
   /** A merged row carries paragraph breaks, and a single-line input flattens
@@ -900,14 +899,15 @@ describe('PendingSteerChips — queued row editing', () => {
   /** The drain reads the atom, not the local draft, so an edit still only local
    *  when the row sends would go out as the old text. The window opening is the
    *  last safe moment to settle it. */
-  it('settles an open edit the moment a send becomes pending', () => {
+  it('closes an open editor the moment a send becomes pending', () => {
     renderChips([twoQueued[0]], { steering: outboxSteering() });
 
     fireEvent.click(screen.getByText('first thought'));
     fireEvent.change(screen.getByTestId('queued-message-edit'), {
       target: { value: 'final wording' },
     });
-    expect(mockUpdateQueuedText).not.toHaveBeenCalled();
+    // Written through immediately, so whatever sends is what is displayed.
+    expect(mockUpdateQueuedText).toHaveBeenCalledWith('q1', 'final wording');
 
     // The run ends and the grace window opens.
     act(() => {
@@ -947,8 +947,9 @@ describe('PendingSteerChips — queued row editing', () => {
     fireEvent.change(editor, { target: { value: 'partial candidate' } });
     fireEvent.keyDown(editor, init);
 
-    expect(mockUpdateQueuedText).not.toHaveBeenCalled();
+    // Still editing: candidate confirmation stays inside the editor.
     expect(screen.getByTestId('queued-message-edit')).toBeInTheDocument();
+    expect(mockUpdateQueuedText).toHaveBeenLastCalledWith('q1', 'partial candidate');
   });
 
   it('adds a line with Shift+Enter instead of committing', () => {
@@ -961,15 +962,16 @@ describe('PendingSteerChips — queued row editing', () => {
     expect(screen.getByTestId('queued-message-edit')).toBeInTheDocument();
   });
 
-  it('abandons an edit on Escape', () => {
+  it('puts the original words back on Escape', () => {
     renderChips([twoQueued[0]], { steering: outboxSteering() });
 
     fireEvent.click(screen.getByText('first thought'));
     const editor = screen.getByTestId('queued-message-edit');
     fireEvent.change(editor, { target: { value: 'discard me' } });
-    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(mockUpdateQueuedText).toHaveBeenCalledWith('q1', 'discard me');
 
-    expect(mockUpdateQueuedText).not.toHaveBeenCalled();
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(mockUpdateQueuedText).toHaveBeenLastCalledWith('q1', 'first thought');
     expect(screen.queryByTestId('queued-message-edit')).toBeNull();
   });
 

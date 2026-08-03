@@ -910,11 +910,17 @@ export default function useSteering({
         };
         queuedOrigins.set(id, origin);
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
-          prev.filter((item) => item.id !== id),
+          prev.filter((queued) => queued.id !== id),
         );
+        /** Expediting the last row is the user taking over from the automatic
+         *  send, so its window retires with it — otherwise a stale completion
+         *  could later drain a row queued under the manually started run. */
+        if (queue.length === 1) {
+          retireDrainHold();
+        }
         return origin;
       },
-    [queueKey],
+    [queueKey, retireDrainHold],
   );
 
   const releaseQueuedOrigin = useCallback(

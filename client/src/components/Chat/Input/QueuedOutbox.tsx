@@ -35,10 +35,6 @@ export const ROW_CLASS =
 
 /** Depth cue for the collapsed stack. Kept INSIDE the row's own footprint (the
  *  wrapper reserves the peek height) because the composer box clips overflow. */
-/** Long enough that a burst of typing is one write, short enough that the
- *  atom is current if the row sends. */
-const DRAFT_SETTLE_MS = 400;
-
 /** Enough to show a merged row's paragraphs without the row eating the box. */
 const EDITOR_MAX_ROWS = 4;
 
@@ -92,6 +88,9 @@ function QueuedRowBase({
   const [draft, setDraft] = useState<string | null>(null);
   const editing = draft != null;
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  /** The pre-edit words, so Escape can put them back after the write-through
+   *  below has already replaced them. */
+  const originalRef = useRef<string>(message.text);
   /** A recovered item has a replayable parked source. Edit/remove must first
    * cancel that source by receipt; local-only rows settle synchronously through
    * the same control. The ref closes the pre-render double-click window. */
@@ -142,48 +141,41 @@ function QueuedRowBase({
     }
   }, [editing]);
 
-  const commitDraft = useCallback(() => {
-    if (draft == null) {
-      return;
-    }
-    steering.updateQueuedText(message.id, draft);
-    setDraft(null);
-  }, [draft, message.id, steering]);
+  const beginEdit = useCallback(() => {
+    originalRef.current = message.text;
+    setDraft(message.text);
+  }, [message.text]);
 
-  /** Removing the input never fires `blur`, and this row is remounted whenever
-   *  the queue crosses the grouping threshold (a front row draining, say), so
-   *  an in-progress edit has to be flushed on the way out or the words are
-   *  lost. Writing for an id that has since drained is a no-op.
+  /**
+   * Every keystroke writes through to the queue. The row is a living draft and
+   * the senders — the drain, Send now, the escalate shortcut — all read the
+   * atom, so anything still only local is a message that sends as its old
+   * text. Local state stays for display alone, because an emptied field has to
+   * survive on screen while the queue keeps the last non-empty words.
    *
-   *  Held in a ref with an EMPTY dep list on purpose: `steering` is rebuilt at
-   *  every run boundary, and a dep on it would fire this cleanup while the row
-   *  is still mounted — committing mid-edit, which Escape could then no longer
-   *  undo. */
-  const draftRef = useRef<string | null>(null);
-  draftRef.current = draft;
-  const flushDraftRef = useRef<() => void>(() => {});
-  flushDraftRef.current = () => {
-    if (draftRef.current != null) {
-      steering.updateQueuedText(message.id, draftRef.current);
-    }
-  };
-  useEffect(() => () => flushDraftRef.current(), []);
+   * The cost is one small-subtree render per keystroke (this stack, never the
+   * thread, which does not subscribe to the queue).
+   */
+  const editDraft = useCallback(
+    (value: string) => {
+      setDraft(value);
+      steering.updateQueuedText(message.id, value);
+    },
+    [message.id, steering],
+  );
 
-  /** The drain reads the atom, not this local draft, so an edit that is still
-   *  only local when the row sends would go out as the old text. Settle it on a
-   *  short idle beat while typing, and immediately once a send is pending —
-   *  which is the moment the grace window opens, before anything is sent. */
+  const abandonEdit = useCallback(() => {
+    steering.updateQueuedText(message.id, originalRef.current);
+    setDraft(null);
+  }, [message.id, steering]);
+
+  /** A row whose send is pending closes its editor: the words are already
+   *  written, and a countdown is no moment to keep typing into. */
   useEffect(() => {
-    if (draft == null) {
-      return;
-    }
     if (sendPending) {
-      commitDraft();
-      return;
+      setDraft(null);
     }
-    const timer = setTimeout(() => steering.updateQueuedText(message.id, draft), DRAFT_SETTLE_MS);
-    return () => clearTimeout(timer);
-  }, [draft, sendPending, commitDraft, message.id, steering]);
+  }, [sendPending]);
 
   /** An ordinary row is a living draft: it is rewritten in place. A recovered
    *  row's words are bound to a parked server source matched by exact text, so
@@ -196,7 +188,7 @@ function QueuedRowBase({
       disabled: actionPending,
       onClick: () => {
         if (editable) {
-          setDraft(message.text);
+          beginEdit();
           return;
         }
         const context = { quotes: message.quotes, manualSkills: message.manualSkills };
@@ -233,8 +225,8 @@ function QueuedRowBase({
           aria-label={localize('com_ui_queue_edit_inline')}
           data-testid="queued-message-edit"
           className="min-w-0 flex-1 resize-none bg-transparent text-sm text-text-primary outline-none"
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commitDraft}
+          onChange={(event) => editDraft(event.target.value)}
+          onBlur={() => setDraft(null)}
           onKeyDown={(event) => {
             /** An IME candidate confirmation arrives as an unshifted Enter
              *  while composition is still active; committing there would save
@@ -244,12 +236,12 @@ function QueuedRowBase({
             }
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
-              commitDraft();
+              setDraft(null);
               return;
             }
             if (event.key === 'Escape') {
               event.preventDefault();
-              setDraft(null);
+              abandonEdit();
             }
           }}
         />
@@ -257,7 +249,7 @@ function QueuedRowBase({
         <span
           className={cn('min-w-0 flex-1 truncate', editable && 'cursor-text')}
           title={editable ? localize('com_ui_queue_edit_inline') : message.text}
-          onClick={editable ? () => setDraft(message.text) : undefined}
+          onClick={editable ? beginEdit : undefined}
         >
           {message.text}
         </span>
