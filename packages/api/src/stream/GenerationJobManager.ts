@@ -5298,6 +5298,16 @@ class GenerationJobManagerClass {
     if (this.runtimeState.get(streamId) !== runtime) {
       return;
     }
+    /** A runtime whose stop signal already landed (cross-replica abort,
+     * replacement handshake) observes this fence as a consequence of its own
+     * termination — most often a coalesced window draining after the abort
+     * CAS. Those flows own terminal delivery and cleanup; the forced teardown
+     * below would error-close local subscribers in a race with the FINAL
+     * frame they are about to receive. It remains the backstop for the
+     * lost-signal case, which is exactly a fence on a NOT-yet-aborted owner. */
+    if (runtime.abortController.signal.aborted) {
+      return;
+    }
     runtime.startupTelemetry?.end('replaced');
     runtime.startupTelemetry = undefined;
     runtime.abortController.abort();

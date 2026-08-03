@@ -345,6 +345,77 @@ describe('Delta coalescing integration', () => {
   );
 
   testRedis(
+    'cross-replica abort does not error-close the owner subscribers over a warm window',
+    async () => {
+      const ownerManager = createRedisManager();
+      const abortingManager = createRedisManager();
+      const streamId = `coalesce-xreplica-abort-${Date.now()}`;
+      await ownerManager.createJob(streamId, 'user-1', streamId);
+
+      const errors: string[] = [];
+      let done = false;
+      const subscription = await ownerManager.subscribe(
+        streamId,
+        () => undefined,
+        () => {
+          done = true;
+        },
+        (error) => errors.push(error),
+      );
+
+      await ownerManager.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      for (const text of ['warm-1', 'warm-2']) {
+        await ownerManager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: [{ type: 'text', text }] } },
+        });
+      }
+
+      /** The abort CAS lands on another replica while the owner's window is
+       * still warm; the owner cannot flush pre-CAS, so its window flush fences
+       * against the aborted status. `beforePublish` runs between the CAS and
+       * the abort FINAL — forcing the owner's flush there pins the race the
+       * window timer only hits probabilistically. The fenced receipts land on
+       * a runtime whose abort signal already arrived, and the fence backstop
+       * must NOT error-close the subscribers awaiting the FINAL frame. */
+      const abortResult = await abortingManager.abortJob(streamId, {
+        beforePublish: async () => {
+          await Promise.all([
+            (
+              ownerManager as unknown as {
+                jobStore: { flushPendingAppends?: (id: string) => Promise<void> };
+              }
+            ).jobStore.flushPendingAppends?.(streamId),
+            (
+              ownerManager as unknown as {
+                eventTransport: { flushPendingChunks?: (id: string) => Promise<void> };
+              }
+            ).eventTransport.flushPendingChunks?.(streamId),
+          ]);
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        },
+      });
+      expect(abortResult.success).toBe(true);
+
+      await waitFor(() => done);
+      expect(errors).toEqual([]);
+
+      subscription?.unsubscribe();
+      await ownerManager.destroy();
+      await abortingManager.destroy();
+    },
+    20000,
+  );
+
+  testRedis(
     'manager streams coalesced deltas end-to-end and completes cleanly',
     async () => {
       const manager = createRedisManager();
