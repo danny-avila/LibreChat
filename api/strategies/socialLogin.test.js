@@ -73,7 +73,7 @@ describe('socialLogin', () => {
         googleId: googleId,
       };
 
-      findUser.mockResolvedValueOnce(existingUser).mockResolvedValueOnce(null);
+      findUser.mockResolvedValueOnce(existingUser).mockResolvedValueOnce(existingUser);
 
       const mockProfile = {
         id: googleId,
@@ -88,7 +88,9 @@ describe('socialLogin', () => {
       await loginFn(null, null, null, mockProfile, callback);
 
       expect(findUser).toHaveBeenNthCalledWith(1, { googleId: googleId });
-      expect(findUser).toHaveBeenCalledTimes(1);
+      // The second read is the deletion-barrier recheck at the login boundary.
+      expect(findUser).toHaveBeenNthCalledWith(2, { _id: 'user123' }, 'deletionRequestedAt');
+      expect(findUser).toHaveBeenCalledTimes(2);
 
       expect(handleExistingUser).toHaveBeenCalledWith(
         existingUser,
@@ -151,7 +153,10 @@ describe('socialLogin', () => {
         googleId: 'old-google-id',
       };
 
-      findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
+      findUser
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existingUser)
+        .mockResolvedValueOnce(existingUser);
 
       const mockProfile = {
         id: googleId,
@@ -167,7 +172,9 @@ describe('socialLogin', () => {
 
       expect(findUser).toHaveBeenNthCalledWith(1, { googleId: googleId });
       expect(findUser).toHaveBeenNthCalledWith(2, { email: email });
-      expect(findUser).toHaveBeenCalledTimes(2);
+      // The third read is the deletion-barrier recheck at the login boundary.
+      expect(findUser).toHaveBeenNthCalledWith(3, { _id: 'user789' }, 'deletionRequestedAt');
+      expect(findUser).toHaveBeenCalledTimes(3);
 
       expect(logger.warn).toHaveBeenCalledWith(
         `[${provider}Login] User found by email: ${email} but not by ${provider}Id`,
@@ -338,7 +345,8 @@ describe('socialLogin', () => {
 
       await loginFn(null, null, null, mockProfile, callback);
 
-      expect(findUser).toHaveBeenCalledTimes(2);
+      // Provider-id lookup, email lookup, and the registration-boundary recheck.
+      expect(findUser).toHaveBeenCalledTimes(3);
 
       expect(createSocialUser).toHaveBeenCalledWith({
         email: email,

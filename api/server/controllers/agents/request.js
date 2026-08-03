@@ -18,7 +18,9 @@ const {
   decrementPendingRequest,
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
+  exemptFromConcurrencyLimiter,
   isUnpersistedPreliminaryParent,
+  isScheduleFireRequest,
   resolveConversationAnchor,
   getAgentStartupTelemetry,
   acceptAgentStartupTelemetry,
@@ -33,6 +35,16 @@ const {
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
 const { logViolation } = require('~/cache');
+const {
+  recordScheduleOutcome,
+  isScheduleLive,
+  clearScheduledJob,
+  awaitStopAbortPersistence,
+} = require('~/server/services/Schedules');
+const {
+  isBalanceViolationError,
+  classifyScheduleOutcome,
+} = require('~/server/controllers/agents/errors');
 const { saveMessage, getMessages, getConvo } = require('~/models');
 const {
   GENERATION_PROTOCOL_HEADER,
@@ -181,7 +193,12 @@ async function finishResumableRequest(req, userId) {
   try {
     await cleanupMCPRequestContextForReq(req);
   } finally {
-    await decrementPendingRequest(userId);
+    // Mirrors the increment: only an AUTOMATIC fire skipped the counter, so only it
+    // must skip the decrement. Uses the decision captured at request start, not a
+    // re-check of the expiring token.
+    if (!exemptFromConcurrencyLimiter(req)) {
+      await decrementPendingRequest(userId);
+    }
   }
 }
 
@@ -324,7 +341,28 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     parentMessageId = null,
     overrideParentMessageId = null,
     responseMessageId: editedResponseMessageId = null,
+    scheduleId: bodyScheduleId = null,
+    scheduledFor: bodyScheduledFor = null,
+    scheduleConfigRevision: bodyScheduleConfigRevision = null,
   } = req.body;
+
+  // Only honor schedule bookkeeping fields on a server-minted scheduled fire
+  // (scope-claim verified). A normal chat could otherwise pass an arbitrary
+  // scheduleId and corrupt another schedule's lastRun/counters via the hook.
+  // Prefer the decision the chat route captured right after auth: the short-lived
+  // fire token can expire during the slower chat middleware, so re-verifying here
+  // would wrongly demote a valid fire to an ordinary chat and orphan its run.
+  const isScheduledFire =
+    typeof req._isScheduledFire === 'boolean' ? req._isScheduledFire : isScheduleFireRequest(req);
+  // Capture the decision on req: the short-lived fire token expires mid-run, so
+  // cleanup must not re-verify it (an expired token would read as non-scheduled
+  // and wrongly decrement the concurrent-request counter it never incremented).
+  req._isScheduledFire = isScheduledFire;
+  const scheduleId = isScheduledFire ? bodyScheduleId : null;
+  const scheduledFor = isScheduledFire ? bodyScheduledFor : null;
+  const scheduleConfigRevision = isScheduledFire
+    ? (bodyScheduleConfigRevision ?? undefined)
+    : undefined;
 
   const userId = req.user.id;
   const tenantId = req.user.tenantId;
@@ -431,13 +469,25 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
      * the source-derived row id while explicitly selecting save index zero. */
     req.body.overrideUserMessageId = `${recoveredSteerId}${Constants.COMMON_DIVIDER}0`;
   }
+  // Treat "new" as a placeholder that needs a real UUID (the frontend may send "new").
   const isNewConvo = !reqConversationId || reqConversationId === 'new';
+  // A verified scheduled fire may supply its own new-conversation id so its run row can
+  // record the id BEFORE the request runs, making the occurrence's job findable by
+  // reconciliation even if the post-accept detail write fails. Gated on the fire flag so
+  // an ordinary chat can't pin an arbitrary conversation id.
+  const scheduledNewConversationId =
+    isScheduledFire && typeof req.body?.newConversationId === 'string'
+      ? req.body.newConversationId
+      : null;
   let conversationId = reqConversationId;
   if (isNewConvo) {
+    // The server-minted scheduled id wins: it is already recorded on the run row, so
+    // reconciliation can only find the job under that id.
     conversationId =
-      typeof clientRequestId === 'string' && clientRequestId.length > 0
+      scheduledNewConversationId ??
+      (typeof clientRequestId === 'string' && clientRequestId.length > 0
         ? uuidv5(`${userId}:${clientRequestId}`, NEW_CONVERSATION_IDEMPOTENCY_NAMESPACE)
-        : crypto.randomUUID();
+        : crypto.randomUUID());
   }
   const conversationAnchorPromise = resolveConversationCreatedAt({
     userId,
@@ -463,8 +513,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
    *  Resolved from the agent's actual endpoint once the client is initialized. */
   let titleTiming = 'immediate';
 
-  // Generate conversationId upfront if not provided - streamId === conversationId always
-  // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
+  // streamId === conversationId always; both are resolved above so the conversation
+  // anchor can be prefetched.
   const streamId = conversationId;
   req.body.conversationId = conversationId;
 
@@ -839,20 +889,35 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
   }
 
-  const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
-  if (!allowed) {
-    if (ownedIdempotencyClaim) {
-      await GenerationJobManager.releaseGeneration(
-        userId,
-        clientRequestId,
-        streamId,
-        ownedIdempotencyClaim,
-      ).catch(() => {});
+  // AUTOMATIC scheduled fires bypass the interactive concurrent-request limiter (like
+  // the message-rate limiters): a user with active chats or several schedules due at
+  // once would otherwise get 429s recorded as schedule errors, walking valid schedules
+  // toward auto-disable. Scheduler caps govern their concurrency.
+  //
+  // Run Now does NOT get that exemption. It is user-paced and can be fired across
+  // several schedules while the same user already has interactive generations running,
+  // so exempting it lets one user run unbounded concurrent generations — and unlike an
+  // automatic occurrence, a 429 here is surfaced to the clicking user rather than
+  // booked against the schedule (see the throttled branch in fireSchedule).
+  // Shared predicate, not a hand-rolled copy: the acquire and both release points
+  // live in different files, and re-deriving it at each is what let them drift.
+  const exemptFromConcurrency = exemptFromConcurrencyLimiter(req);
+  if (!exemptFromConcurrency) {
+    const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
+    if (!allowed) {
+      if (ownedIdempotencyClaim) {
+        await GenerationJobManager.releaseGeneration(
+          userId,
+          clientRequestId,
+          streamId,
+          ownedIdempotencyClaim,
+        ).catch(() => {});
+      }
+      const violationInfo = getViolationInfo(pendingRequests, limit);
+      await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
+      startupTelemetry?.end('rejected');
+      return sendGenerationJson(res, 429, violationInfo, generationProtocolVersion);
     }
-    const violationInfo = getViolationInfo(pendingRequests, limit);
-    await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
-    startupTelemetry?.end('rejected');
-    return sendGenerationJson(res, 429, violationInfo, generationProtocolVersion);
   }
   startupTelemetry?.mark('request_admitted');
 
@@ -896,15 +961,100 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // Persist temporary-chat state so a HITL resume keeps the resumed response
         // non-persisted instead of trusting the resume request to re-send the flag.
         isTemporary: req.body?.isTemporary,
+        // Persist schedule bookkeeping ATOMICALLY with the create, so a concurrent
+        // quiesce can identity-match and abort THIS job from the moment it exists, and
+        // so a HITL resume can record the outcome (the resume request carries no
+        // scheduleId). Only set for verified fires.
+        // scheduleManual records the fire's classification: a paused approval can be
+        // answered up to the abandonment window later, and the resume must apply the
+        // same admission rules this boundary does — which needs to know whether the
+        // occurrence was automatic or an explicit Run Now.
+        ...(scheduleId
+          ? {
+              scheduleId,
+              scheduledFor,
+              ...(req._isManualScheduledFire === true ? { scheduleManual: '1' } : {}),
+              ...(typeof scheduleConfigRevision === 'number'
+                ? { scheduleConfigRevision: String(scheduleConfigRevision) }
+                : {}),
+            }
+          : {}),
         responseMessageId: preliminaryResponseMessageId,
         userMessage: preliminaryUserMessage,
       },
     });
     startupTelemetry?.mark('job_created');
+    jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
+
+    // Re-fence a scheduled fire against a delete/quiesce that landed in the claim ->
+    // POST window: the reservation row existed but this job did not yet, so the
+    // deletion's identity-guarded abort could not have seen it. The identity is now
+    // attached (above, atomically), so re-check liveness and, if a delete landed,
+    // terminalize the run and tear the job down BEFORE any messages are persisted.
+    // Scoped to scheduled fires, so interactive chat never pays for it.
+    if (scheduleId) {
+      if (
+        !(await isScheduleLive(scheduleId, scheduleConfigRevision, {
+          automatic: req._isManualScheduledFire !== true,
+          // Re-apply the LIVE dispatch policy, exactly as both resume gates do. This is
+          // the LAST gate before a billed generation starts, and an operator kill switch,
+          // a narrowed `interface.schedules`, or a revoked SCHEDULES:USE landing after
+          // preflight touches neither the row nor its revision — so without this, an
+          // occurrence already in the claim-to-controller window still ran one full
+          // billed turn for a schedule the operator believes is stopped.
+          policy: true,
+        }))
+      ) {
+        logger.info(
+          `[AgentController] Scheduled fire aborted before start; schedule ${scheduleId} no longer active`,
+        );
+        // No conversationId — and the row's RESERVED id is erased in the same
+        // write: nothing was persisted for this fire, the card links every
+        // non-empty lastRun.conversationId, and recovery replays read the ROW, so
+        // leaving the reserved id there would restore the dead link this omits.
+        const outcomeRecorded = await recordScheduleOutcome({
+          scheduleId,
+          scheduledFor,
+          status: 'interrupted',
+          clearConversationId: true,
+        });
+        // Terminalize as ABORTED, not complete: if the outcome write failed a preserved
+        // `complete` job would be mapped to `success` by the schedules reconciler,
+        // mislabeling this pre-start abort as a successful run. abortJob stores it as
+        // `aborted` (reconcile -> interrupted), preserved only when the outcome write
+        // failed so the evidence survives.
+        await GenerationJobManager.abortJob(streamId, {
+          preserveForReconcile: !outcomeRecorded,
+          expectedCreatedAt: jobCreatedAt,
+        }).catch(() => undefined);
+        // Mirror the init-error cleanup: this return skips the whole generation, so the
+        // pending-request slot (manual Run Now is NOT limiter-exempt) and the
+        // idempotency claim it acquired must be released here — nothing downstream
+        // will. Leaving them held 429'd the user's next interactive messages until the
+        // counter's TTL expired.
+        if (ownedIdempotencyClaim) {
+          await GenerationJobManager.releaseGeneration(
+            userId,
+            clientRequestId,
+            streamId,
+            ownedIdempotencyClaim,
+          ).catch(() => {});
+        }
+        await finishResumableRequest(req, userId);
+        startupTelemetry?.end('aborted');
+        return sendGenerationJson(
+          res,
+          200,
+          { streamId, conversationId, status: 'aborted' },
+          generationProtocolVersion,
+        );
+      }
+    }
     acceptAgentStartupTelemetry(req, streamId);
     startupTelemetry?.mark('metadata_persisted');
+    // `jobCreatedAt` is already captured right after createJob above: the scheduled
+    // re-fence between here and there needs it to identity-guard its abort.
     generationProtocolVersion = negotiateExistingGenerationProtocol(req, job);
-    jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
     let recoveredSteerCommitted = false;
@@ -944,23 +1094,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // The response closes normally after res.json(), which is not an abort condition.
     // Abort handling is done through GenerationJobManager via the SSE stream connection.
 
-    // Track if partial response was already saved to avoid duplicates
+    // Track if partial response was already saved to avoid duplicates. Finalization
+    // sets it too, so a disconnect firing while the terminal saves run cannot
+    // overwrite the completed response with an `unfinished` partial.
     let partialResponseSaved = false;
+    /** The ENTIRE in-flight disconnect-save operation, assigned SYNCHRONOUSLY at
+     *  event dispatch — never from inside the async body, whose first await would
+     *  leave a window where settlement sees no pending write while one is starting.
+     *  Terminal paths (success, abort, error) await it before they save or settle. */
+    let partialSavePromise = null;
 
-    /**
-     * Listen for all subscribers leaving to save partial response.
-     * This ensures the response is saved to DB even if all clients disconnect
-     * while generation continues.
-     *
-     * Note: The messageId used here falls back to `${userMessage.messageId}_` if the
-     * actual response messageId isn't available yet. The final response save will
-     * overwrite this with the complete response using the same messageId pattern.
-     */
-    job.emitter.on('allSubscribersLeft', async (aggregatedContent) => {
-      if (partialResponseSaved || !aggregatedContent || aggregatedContent.length === 0) {
-        return;
-      }
-
+    const savePartialOnDisconnect = async (aggregatedContent) => {
       const persistableContent = filterPersistableAbortContent(aggregatedContent);
       if (persistableContent.length === 0) {
         logger.debug('[ResumableAgentController] No persistable content to save partial response');
@@ -970,6 +1114,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const resumeState = await GenerationJobManager.getResumeState(streamId, jobCreatedAt);
       if (!resumeState?.userMessage) {
         logger.debug('[ResumableAgentController] No user message to save partial response for');
+        return;
+      }
+
+      // Re-check liveness right before writing: this handler can resume from its
+      // awaits after the generation finished or was replaced, and a partial written
+      // then would mark a COMPLETED response unfinished (or write for a job that no
+      // longer exists). Only a still-live incarnation of THIS generation may save.
+      const liveJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+      if (
+        !liveJob ||
+        liveJob.createdAt !== jobCreatedAt ||
+        (liveJob.status !== 'running' && liveJob.status !== 'requires_action') ||
+        partialResponseSaved
+      ) {
         return;
       }
 
@@ -1024,6 +1182,28 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // Reset flag so we can try again if subscribers reconnect and leave again
         partialResponseSaved = false;
       }
+    };
+
+    /**
+     * Listen for all subscribers leaving to save partial response.
+     * This ensures the response is saved to DB even if all clients disconnect
+     * while generation continues.
+     *
+     * Note: The messageId used here falls back to `${userMessage.messageId}_` if the
+     * actual response messageId isn't available yet. The final response save will
+     * overwrite this with the complete response using the same messageId pattern.
+     */
+    job.emitter.on('allSubscribersLeft', (aggregatedContent) => {
+      if (partialResponseSaved || !aggregatedContent || aggregatedContent.length === 0) {
+        return;
+      }
+      // Never-rejecting: settlement awaits completion, not success. Tracked rather
+      // than awaited here so a disconnect cannot hold the emitter, and RETURNED so a
+      // caller that does await the handler observes the same completion.
+      partialSavePromise = savePartialOnDisconnect(aggregatedContent).catch((error) => {
+        logger.error('[ResumableAgentController] Disconnect-partial save failed:', error);
+      });
+      return partialSavePromise;
     });
 
     /** @type {{ client: TAgentClient; userMCPAuthMap?: Record<string, Record<string, string>> }} */
@@ -1050,16 +1230,49 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
 
     if (job.abortController.signal.aborted) {
-      await GenerationJobManager.completeJob(
-        streamId,
-        'Request aborted during initialization',
-        jobCreatedAt,
-      ).catch((completeErr) => {
-        logger.warn(
-          '[ResumableAgentController] completeJob failed after initialization abort',
-          completeErr,
+      if (scheduleId) {
+        // A scheduled fire aborted during initialization (e.g. a delete/quiesce now
+        // identity-matches this job) must record its terminal outcome and preserve the
+        // aborted job when that write fails — otherwise the `started` ScheduleRun row
+        // consumes global capacity until the orphan sweep and the aborted evidence can
+        // be reaped before the reconciler sees it. Mirror the liveness-abort path
+        // (abortJob -> reconcile 'interrupted', not 'success').
+        // An interactive Stop can be what aborted this init: wait for the route's own
+        // writes (durable abortPersistedAt stamp) before settling, same barrier as the
+        // generation catch below. FAIL CLOSED: an unconfirmed barrier means the route
+        // may still be persisting, so don't settle — leave the run active and the
+        // aborted job preserved for the reconciler, which finalizes it once the
+        // owner-death fence lapses.
+        const persisted = await awaitStopAbortPersistence(scheduleId, new Date(scheduledFor)).catch(
+          (err) => {
+            logger.warn('[ResumableAgentController] Stop-abort persistence barrier failed', err);
+            return false;
+          },
         );
-      });
+        const recorded = persisted
+          ? await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              status: 'interrupted',
+              conversationId: streamId,
+            })
+          : false;
+        await GenerationJobManager.abortJob(streamId, {
+          preserveForReconcile: !recorded,
+          expectedCreatedAt: jobCreatedAt,
+        }).catch(() => undefined);
+      } else {
+        await GenerationJobManager.completeJob(
+          streamId,
+          'Request aborted during initialization',
+          jobCreatedAt,
+        ).catch((completeErr) => {
+          logger.warn(
+            '[ResumableAgentController] completeJob failed after initialization abort',
+            completeErr,
+          );
+        });
+      }
       startupTelemetry?.end('aborted');
       try {
         await finishResumableRequest(req, userId);
@@ -1100,12 +1313,58 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
 
     let userMessage;
+    /** BaseClient's background user-message/conversation save (already caught inside
+     *  the client, so it never rejects). Scheduled-run settlement awaits it. */
+    let userMessagePromise;
 
     const getReqData = (data = {}) => {
       if (data.userMessage) {
         userMessage = data.userMessage;
       }
+      if (data.userMessagePromise) {
+        userMessagePromise = data.userMessagePromise;
+      }
       // conversationId is pre-generated, no need to update from callback
+    };
+
+    /**
+     * Barrier before a scheduled run's terminal settlement. Settlement is what drops
+     * the run out of the active set — the exact signal deletion drains wait on — so
+     * every write that could land after it must be flushed first: the background
+     * user-message/conversation save, any disconnect-partial save, and (for an
+     * interactive Stop) the abort route's checkpoint prune + partial-response save,
+     * awaited via the durable `abortPersistedAt` stamp. Without this, account
+     * deletion can observe zero active runs, destroy the user's data, and have one
+     * of these pending writes recreate messages for the deleted account.
+     *
+     * Returns whether settlement is CLEARED. False only when a requested stop-abort
+     * barrier could not be confirmed (route still persisting, or its state
+     * unreadable) — the caller must then NOT settle, leaving the run active for the
+     * reconciler to finalize once the owner-death fence lapses. Failing open here
+     * would be the original bug with extra steps.
+     */
+    const awaitPendingPersistence = async ({ stopAbort = false } = {}) => {
+      if (userMessagePromise) {
+        await userMessagePromise;
+      }
+      if (partialSavePromise) {
+        await partialSavePromise;
+      }
+      // Titles are BILLED work: recordCollectedUsage writes a balance upsert and a
+      // transaction row. An immediate-mode title still in flight (or just aborted and
+      // unwinding) must land before settlement, or an account-deletion drain that
+      // confirms on the settle has the title's usage writes recreate rows for the
+      // deleted account. The promise carries its own .catch, so it never rejects.
+      if (immediateTitlePromise) {
+        await immediateTitlePromise;
+      }
+      if (stopAbort && scheduleId && scheduledFor) {
+        return awaitStopAbortPersistence(scheduleId, new Date(scheduledFor)).catch((err) => {
+          logger.warn('[ResumableAgentController] Stop-abort persistence barrier failed', err);
+          return false;
+        });
+      }
+      return true;
     };
 
     let immediateTitlePromise = null;
@@ -1134,6 +1393,37 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
      * response write. A lost claim returns false, and BaseClient skips that
      * stale `unfinished:false` write entirely. The fallback invocation below
      * supports test/custom clients that do not derive from BaseClient. */
+    /** OWNER-SIDE persistence acknowledgement for account deletion. A post-terminal
+     *  title persists BILLED work (a balance upsert + a transaction insert) after the
+     *  terminal CAS has already dropped this job out of the active set, so an empty
+     *  active-set enumeration is not settlement. The marker is registered BEFORE that
+     *  CAS — registering after it leaves a window where a deletion quiesce sees neither
+     *  an active job nor a fence and cascades mid-title — and cleared once the title
+     *  work settles (or immediately when no post-terminal title runs). */
+    let userFinalizationRegistered = false;
+    const registerUserFinalizationFence = async () => {
+      if (userFinalizationRegistered) {
+        return true;
+      }
+      userFinalizationRegistered = await GenerationJobManager.registerUserFinalization(
+        userId,
+        streamId,
+        req.user?.tenantId,
+      )
+        .then(() => true)
+        .catch(() => false);
+      return userFinalizationRegistered;
+    };
+    const clearUserFinalization = () => {
+      if (!userFinalizationRegistered) {
+        return;
+      }
+      userFinalizationRegistered = false;
+      void GenerationJobManager.clearUserFinalization(userId, streamId, req.user?.tenantId).catch(
+        () => undefined,
+      );
+    };
+
     const claimBeforeResponsePersistence = async () => {
       if (terminalPersistenceChecked) {
         return terminalClaim != null;
@@ -1147,16 +1437,59 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         return false;
       }
       terminalWasAborted = job.abortController.signal.aborted;
+      /**
+       * A preempt boundary that had nothing to inject (cancelled/stale
+       * request) ends the turn with a genuinely truncated answer — the SDK
+       * reports it via preempt stats and the halt reason. Persist it with
+       * the same honest `unfinished` contract an abort gets, never as a
+       * silent completion.
+       */
       const preemptStats = client?.run?.getPreemptStats?.();
       preemptIncomplete =
         (preemptStats?.emptyBoundaries ?? 0) > 0 ||
         client?.run?.getHaltReason?.() === 'preempt_incomplete';
+      // Fence BEFORE the CAS: a title started after this transition would otherwise
+      // bill against an account whose deletion quiesce already read an empty active
+      // set. Registration is best-effort here and re-checked (with a synchronous-title
+      // fallback) at the title branches, so a store blip cannot fail the generation.
+      const titleCanFollowTerminal =
+        Boolean(addTitle) &&
+        parentMessageId === Constants.NO_PARENT &&
+        isNewConvo &&
+        !req.body?.isTemporary &&
+        !terminalWasAborted;
+      if (titleCanFollowTerminal) {
+        await registerUserFinalizationFence();
+      }
       terminalClaim = await GenerationJobManager.claimTerminalJob(
         streamId,
         terminalWasAborted ? 'aborted' : 'complete',
         undefined,
         jobCreatedAt,
-        { persistencePending: true },
+        {
+          persistencePending: true,
+          // The terminal CAS necessarily precedes the schedule-outcome write, and the
+          // claim is frozen, so a scheduled fire must be claimed RETAINED (terminal
+          // WITHOUT `completedAt`): that record is the only evidence a reconciler could
+          // read if the outcome write never lands. The settlement below reaps it via
+          // `clearScheduledJob` as soon as the outcome IS durable. The intended outcome
+          // rides along for the non-aborted case, because `complete` alone cannot tell
+          // the reconciler a swallowed provider failure (or a mid-run balance refusal)
+          // from a clean finish — see classifyScheduleOutcome.
+          ...(scheduleId
+            ? {
+                preserveForReconcile: true,
+                ...(terminalWasAborted
+                  ? {}
+                  : {
+                      scheduleOutcome: classifyScheduleOutcome(
+                        client?.completionError,
+                        'Run ended in error',
+                      ),
+                    }),
+              }
+            : {}),
+        },
       );
       return terminalClaim != null;
     };
@@ -1368,6 +1701,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           }
           const pauseActionId = client.pendingApproval.actionId;
           const pauseCreatedAt = client.jobCreatedAt ?? jobCreatedAt;
+          // The barrier claim supersedes the old liveness probe: the user can approve the
+          // instant the pending-action SSE lands and resume.js can then claim + finalize,
+          // saving the COMPLETED response, while we are still settling `databasePromise`.
+          // Only the barrier owner may write the pre-pause response as unfinished, so a
+          // resumed/replaced generation can no longer clobber the completed row.
           const ownsPausePersistence = await GenerationJobManager.approvals.ownsPausePersistence(
             streamId,
             pauseActionId,
@@ -1453,6 +1791,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   pauseActionId,
                   pausePersistenceError?.message ?? 'Pause persistence failed',
                   pauseCreatedAt,
+                  // RETAIN a scheduled fire's failed-pause error: on the ordinary short
+                  // completed TTL this evidence evaporates during any outage longer than
+                  // the TTL, and the reconciler then misreads the vanished run as
+                  // `interrupted` instead of `error`. Reaped by the catch below once the
+                  // outcome write lands, or by the reconciler's error branch.
+                  scheduleId
+                    ? {
+                        preserveForReconcile: true,
+                        scheduleOutcome: {
+                          status: 'error',
+                          error: pausePersistenceError?.message ?? 'Pause persistence failed',
+                        },
+                      }
+                    : undefined,
                 );
               } catch (failError) {
                 logger.error(
@@ -1503,18 +1855,46 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               `[ResumableAgentController] Skipping stale pause persistence — ${streamId} no longer owns its barrier`,
             );
           }
+          // UNBLOCK the title BEFORE the persistence barrier below: `addTitle` waits
+          // on `convoReady` before persisting, so awaiting `immediateTitlePromise`
+          // with `convoReady` still pending deadlocks this branch. The conversation
+          // row was saved (and repaired if needed) above, so a title that already
+          // finished generating may persist now; the abort only cancels a
+          // still-in-flight title model call.
           titleAbortController.abort();
           acceptsTitleEvents = false;
           resolveConvoReady();
+          // Every write launched during this segment must land before the pause is
+          // recorded: a deletion drain treats a recorded pause as settleable and can
+          // cascade immediately after. That covers the disconnect-partial save, the
+          // background user-message save, AND the immediate-mode title — a title is
+          // billed work (balance upsert + transaction insert), and its aborted task
+          // unwinding through usage persistence after the cascade would recreate rows
+          // for a deleted account. All never-rejecting by construction.
+          await awaitPendingPersistence();
           // handleRunInterrupt already released the concurrency slot the moment it paused
           // (so a fast /resume isn't 429'd); only release here if that didn't happen.
           // Always run the MCP request-context cleanup.
           await cleanupMCPRequestContextForReq(req);
-          if (!client?.pendingRequestReleased) {
+          // Mirrors the increment: only an AUTOMATIC fire skipped the counter. A Run Now
+          // holds a real slot, so it must release here like an interactive turn.
+          if (!exemptFromConcurrency && !client?.pendingRequestReleased) {
             await decrementPendingRequest(userId);
           }
           if (client) {
             disposeClient(client);
+          }
+          // Record a scheduled fire's pause as `requires_action` NOW (not on the
+          // next reconcile sweep): overlap/capacity checks key on `started`, so a
+          // run left `started` while paused would wrongly block a run-now or the
+          // next occurrence. A failed write just falls back to reconcile marking it.
+          if (scheduleId) {
+            await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              status: 'requires_action',
+              conversationId: streamId,
+            });
           }
           logger.debug(
             `[ResumableAgentController] Turn paused for approval; awaiting resume: ${streamId}`,
@@ -1549,6 +1929,29 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
           acceptsTitleEvents = false;
           resolveConvoReady();
+          // The RUN is identified by (scheduleId, scheduledFor), not by who owns the
+          // conversationId now, so the winner settling this generation must not leave
+          // the occurrence `started` — holding a global capacity slot and blocking
+          // account deletion until the orphan sweep. This turn produced no persisted
+          // response of its own, so it settles as interrupted, never success. FAIL
+          // CLOSED on an unconfirmed stop-abort barrier: leave the run active for the
+          // reconciler rather than settling while the abort route may still persist.
+          if (scheduleId) {
+            const cleared = await awaitPendingPersistence({ stopAbort: true });
+            const recorded = cleared
+              ? await recordScheduleOutcome({
+                  scheduleId,
+                  scheduledFor,
+                  status: 'interrupted',
+                  conversationId: streamId,
+                })
+              : false;
+            if (recorded) {
+              await clearScheduledJob(streamId, { scheduleId, scheduledFor }).catch((err) =>
+                logger.warn('[ResumableAgentController] Failed to clear reconciled job', err),
+              );
+            }
+          }
           await finishResumableRequest(req, userId);
           disposeBackgroundClient();
           startupTelemetry?.end(job.abortController.signal.aborted ? 'aborted' : 'replaced');
@@ -1569,6 +1972,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           isNewConvo &&
           !terminalWasAborted &&
           !preemptIncomplete;
+        /** Whether a scheduled run already ran its deferred title pre-settlement,
+         *  so the post-settle tail must not start a second one. */
+        let scheduledTitleAwaited = false;
+
+        // FINALIZATION owns the response record from here: stop any new
+        // disconnect-partial save (a subscriber leaving mid-teardown would mark the
+        // completed response `unfinished`), and let an already-launched one land
+        // BEFORE the final saves so the completed record is the last writer.
+        partialResponseSaved = true;
+        if (partialSavePromise) {
+          await partialSavePromise;
+        }
 
         // Save user message BEFORE sending final event to avoid race condition
         // where client refetch happens before database is updated
@@ -1641,6 +2056,40 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           await titleEventPromise;
         }
 
+        // The pre-CAS fence above covers the window the terminal transition opened.
+        // Re-assert it here for the paths that only now become known to run
+        // post-terminal title work, and degrade to a SYNCHRONOUS title when the store
+        // could not record the fence at all: settling with neither an active job nor a
+        // marker would let a deletion attempt cascade mid-title once Redis recovers.
+        // Excluded: the scheduled SUCCESS path, whose deferred title is awaited before
+        // settlement (never post-terminal).
+        const deferredTitlePostTerminal =
+          shouldGenerateTitle &&
+          titleTiming !== 'immediate' &&
+          !(scheduleId && !terminalWasAborted);
+        const immediateTitlePending = titleTiming === 'immediate' && immediateTitlePromise != null;
+        let fallbackTitleAwaited = false;
+        if (deferredTitlePostTerminal || immediateTitlePending) {
+          const fenced = await registerUserFinalizationFence();
+          if (!fenced) {
+            if (immediateTitlePending) {
+              await immediateTitlePromise.catch(() => undefined);
+            } else {
+              fallbackTitleAwaited = true;
+              await addTitle(req, {
+                text,
+                response: { ...response },
+                client,
+              }).catch((err) => {
+                logger.error('[ResumableAgentController] Error in title generation', err);
+              });
+            }
+          }
+        } else {
+          // No post-terminal title work on this path: release the pre-CAS fence now.
+          clearUserFinalization();
+        }
+
         let terminalPublicationStarted = false;
         try {
           const pendingSteers = terminalClaim.drainedSteers.map(toPendingSteer);
@@ -1704,6 +2153,73 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // transport publication throws. Cleanup is epoch/runtime guarded.
           await finishOwnedTerminalClaim();
         }
+
+        // Settle the scheduled RUN row after publication but before this request ends.
+        // The terminal claim was taken with `preserveForReconcile` for every scheduled
+        // fire (see `claimBeforeResponsePersistence`), so the completedAt-less terminal
+        // job survives the finish above and is this occurrence's reconcile evidence
+        // until the outcome write below lands — dying in between can only make the
+        // reconciler re-derive the same outcome, never mislabel a finished run.
+        if (scheduleId) {
+          let scheduleOutcomeRecorded;
+          if (!terminalWasAborted) {
+            // Deferred-mode titles normally start AFTER this settle, but a title is
+            // billed work (a balance upsert + a transaction insert), so a scheduled
+            // run must finish it BEFORE settlement — an account-deletion drain
+            // confirming on the settle would otherwise have the title's usage writes
+            // recreate rows for the deleted account. Immediate-mode titles are
+            // awaited inside awaitPendingPersistence below.
+            if (shouldGenerateTitle && titleTiming !== 'immediate') {
+              scheduledTitleAwaited = true;
+              await addTitle(req, {
+                text,
+                response: { ...response },
+                client,
+              }).catch((err) => {
+                logger.error('[ResumableAgentController] Error in title generation', err);
+              });
+            }
+            await awaitPendingPersistence();
+            // Classified, never a bare `success`: sendCompletion swallows a provider,
+            // tool, or model failure into an ERROR content part instead of throwing (so
+            // the interactive UX can show it), which means this branch is also reached by
+            // runs that produced nothing but an error. See classifyScheduleOutcome.
+            scheduleOutcomeRecorded = await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              ...classifyScheduleOutcome(client?.completionError, 'Run ended in error'),
+              conversationId: conversation?.conversationId,
+            });
+          } else {
+            // Record the abort so the run doesn't linger as `started` (blocking
+            // run-now/overlap until the 30-minute orphan cutoff) — but AFTER every
+            // pending persistence write, including the Stop route's (settlement is what
+            // deletion drains confirm on). An UNCONFIRMED barrier means the route may
+            // still be persisting: FAIL CLOSED and leave the run active — the
+            // reconciler finalizes it from the retained aborted job once the
+            // owner-death fence lapses.
+            const cleared = await awaitPendingPersistence({ stopAbort: true });
+            scheduleOutcomeRecorded = cleared
+              ? await recordScheduleOutcome({
+                  scheduleId,
+                  scheduledFor,
+                  status: 'interrupted',
+                  conversationId: conversation?.conversationId,
+                })
+              : false;
+          }
+          // Only reap the retained job once the outcome is durable. Reconcile never
+          // rescans a terminal run, so nothing else would ever clear it — and while the
+          // outcome write is still missing it is the ONLY evidence, read as
+          // success/interrupted from the retained status (never as `error`, which would
+          // count a user stop toward failure auto-disable). Identity- and
+          // generation-fenced, so a replacement generation is never destroyed.
+          if (scheduleOutcomeRecorded) {
+            await clearScheduledJob(streamId, { scheduleId, scheduledFor }).catch((err) =>
+              logger.warn('[ResumableAgentController] Failed to clear reconciled job', err),
+            );
+          }
+        }
         await finishResumableRequest(req, userId);
 
         if (titleTiming === 'immediate') {
@@ -1712,6 +2228,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // so the run/req aren't torn down mid-generation.
           if (immediateTitlePromise) {
             immediateTitlePromise.finally(() => {
+              clearUserFinalization();
               if (client) {
                 disposeClient(client);
               }
@@ -1719,7 +2236,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           } else if (client) {
             disposeClient(client);
           }
-        } else if (shouldGenerateTitle) {
+        } else if (shouldGenerateTitle && !scheduledTitleAwaited && !fallbackTitleAwaited) {
           addTitle(req, {
             text: text || getAttachmentTitleText(req.body.files),
             response: { ...response },
@@ -1729,11 +2246,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               logger.error('[ResumableAgentController] Error in title generation', err);
             })
             .finally(() => {
+              clearUserFinalization();
               if (client) {
                 disposeClient(client);
               }
             });
         } else {
+          // No post-terminal title ran on this path (the scheduled success branch —
+          // or the registration-failure fallback — awaited it while the job was
+          // still active); release any marker registered above.
+          clearUserFinalization();
           if (client) {
             disposeClient(client);
           }
@@ -1748,6 +2270,81 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
         acceptsTitleEvents = false;
         resolveConvoReady();
+
+        // Abort classification, mirroring resume.js: the SIGNAL is authoritative; an
+        // abort-shaped error alone is not. A genuine failure can mention 'abort'
+        // (driver errors like 'transaction aborted') with nothing having finalized
+        // the job — routing it here recorded `interrupted` (skipping the failure
+        // streak and auto-disable policy), emitted no error event, and left the job
+        // `running` with no controller driving it. abortJob flips the job terminal
+        // BEFORE any signal fires, so a job still running under this generation is
+        // proof no abort finalized it.
+        const abortShaped = error?.name === 'AbortError' || error?.message?.includes('abort');
+        let wasAborted = job.abortController.signal.aborted;
+        if (!wasAborted && abortShaped) {
+          try {
+            const liveJob = await GenerationJobManager.getJob(streamId);
+            wasAborted = !(
+              liveJob &&
+              liveJob.createdAt === jobCreatedAt &&
+              liveJob.status === 'running'
+            );
+          } catch (readErr) {
+            logger.warn(
+              '[ResumableAgentController] Abort classification read failed; treating as failure',
+              readErr,
+            );
+          }
+        }
+
+        let errorScheduleOutcomeRecorded = true;
+        let errorScheduleOutcome = null;
+        if (scheduleId) {
+          // SETTLE LAST: flush every pending persistence write (the background
+          // user-message/conversation save, a disconnect-partial save, and — for an
+          // interactive Stop — the abort route's own writes) before the outcome write
+          // drops this run out of the active set that deletion drains confirm on.
+          // An UNCONFIRMED stop barrier means the route may still be persisting:
+          // FAIL CLOSED, skip the settle, and leave the run active — the reconciler
+          // finalizes it from the preserved aborted job once the fence lapses.
+          const cleared = await awaitPendingPersistence({ stopAbort: wasAborted });
+          // The balance middleware's structured refusal is the OWNER's credits, not a
+          // schedule fault: settle as `skipped_balance` so it walks the
+          // insufficient_balance streak instead of too_many_failures.
+          const balanceRefusal = !wasAborted && isBalanceViolationError(error);
+          let outcomeStatus = 'error';
+          if (wasAborted) {
+            outcomeStatus = 'interrupted';
+          } else if (balanceRefusal) {
+            outcomeStatus = 'skipped_balance';
+          }
+          errorScheduleOutcome = {
+            status: outcomeStatus,
+            ...(outcomeStatus === 'error' && { error: error.message || 'Generation failed' }),
+          };
+          // EVIDENCE FIRST: a won complete-claim stamped its outcome BEFORE the
+          // persistence that just failed, so the retained job still says `success`.
+          // Refresh the stamp before the Mongo outcome write — the job store is a
+          // different failure domain, so this usually survives exactly the outage
+          // that fails the write below, and the reconciler then reproduces the
+          // truthful classification instead of re-deriving success.
+          if (terminalClaim && !wasAborted) {
+            await GenerationJobManager.updateScheduleOutcome(
+              streamId,
+              jobCreatedAt,
+              errorScheduleOutcome,
+            );
+          }
+          errorScheduleOutcomeRecorded = cleared
+            ? await recordScheduleOutcome({
+                scheduleId,
+                scheduledFor,
+                status: outcomeStatus,
+                conversationId: streamId,
+                error: outcomeStatus === 'error' ? error.message : undefined,
+              })
+            : false;
+        }
 
         // Once this controller owns terminal persistence, no competing error
         // transition can win. Settle its pending marker with conservative
@@ -1783,17 +2380,27 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             error,
           );
           startupTelemetry?.end('error', error);
-        } else if (job.abortController.signal.aborted || error.message?.includes('abort')) {
+        } else if (wasAborted) {
           logger.debug(`[ResumableAgentController] Generation aborted for ${streamId}`);
           startupTelemetry?.end('aborted');
-          // abortJob already handled emitDone and completeJob
+          // abortJob already handled the terminal event and cleanup.
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
           const generationError = error.message || 'Generation failed';
           try {
             // completeJob first wins running -> error and atomically parks
             // steers, then publishes. A competing abort/pause emits nothing.
-            await GenerationJobManager.completeJob(streamId, generationError, jobCreatedAt);
+            // MUST be awaited: when recordScheduleOutcome exhausted its retries this is
+            // the only write that retains the job as reconcile evidence. Unawaited,
+            // request cleanup (or process exit) can outrun it and the run is left
+            // unreconcilable.
+            await GenerationJobManager.completeJob(streamId, generationError, jobCreatedAt, {
+              preserveForReconcile: Boolean(scheduleId) && !errorScheduleOutcomeRecorded,
+              // Ride the classification on the claim itself so the retained evidence
+              // can never disagree with it (a balance refusal claims an `error`
+              // terminal but must walk the insufficient_balance streak).
+              ...(errorScheduleOutcome != null && { scheduleOutcome: errorScheduleOutcome }),
+            });
           } catch (completeErr) {
             logger.warn(
               '[ResumableAgentController] completeJob failed during generation-error cleanup',
@@ -1802,6 +2409,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           } finally {
             startupTelemetry?.end('error', error);
           }
+        }
+
+        // One reap for every branch above: a schedule delete (or a preserved terminal
+        // claim) leaves an already-terminal job behind, and the outcome recorded above
+        // makes the run terminal, so reconcile never rescans it — nothing else would
+        // ever clear that job. Skipped when the outcome write failed: the job is then
+        // the only reconcile evidence. Identity- and generation-fenced.
+        if (scheduleId && errorScheduleOutcomeRecorded) {
+          await clearScheduledJob(streamId, { scheduleId, scheduledFor }).catch((err) =>
+            logger.warn('[ResumableAgentController] Failed to clear reconciled job', err),
+          );
         }
 
         try {
@@ -1907,6 +2525,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         error,
       );
     }
+    // A scheduled fire whose run row is already `started` (inserted before the
+    // early 200) must be terminalized here — an init failure after acceptance
+    // would otherwise leave it running until orphan reconciliation. Before
+    // completeJob deletes the job (same ordering rationale as the success path).
+    // If the outcome write fails (Mongo down across its retries), preserve the
+    // completed job so reconcile records the failure instead of losing the count.
+    let initScheduleOutcomeRecorded = true;
+    if (scheduleId) {
+      initScheduleOutcomeRecorded = await recordScheduleOutcome({
+        scheduleId,
+        scheduledFor,
+        status: 'error',
+        error: error.message,
+        conversationId: streamId,
+      });
+    }
     // Finalize THIS failed job before releasing the idempotency claim. Releasing first would
     // let the client's retry win the same key and createJob() the same streamId while we are
     // still here. The generation guard is defense-in-depth around that ordering. A
@@ -1918,14 +2552,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const initializationError = initializationFailure
         ? JSON.stringify(initializationFailure)
         : error.message || 'Failed to start generation';
-      await GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt).catch(
-        (completeErr) => {
-          logger.warn(
-            '[ResumableAgentController] completeJob failed during init-error cleanup',
-            completeErr,
-          );
-        },
-      );
+      await GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt, {
+        preserveForReconcile: Boolean(scheduleId) && !initScheduleOutcomeRecorded,
+      }).catch((completeErr) => {
+        logger.warn(
+          '[ResumableAgentController] completeJob failed during init-error cleanup',
+          completeErr,
+        );
+      });
     }
     if (ownedIdempotencyClaim) {
       await GenerationJobManager.releaseGeneration(

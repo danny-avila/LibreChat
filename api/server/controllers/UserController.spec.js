@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
+jest.mock('~/server/services/Schedules', () => ({
+  quiesceUserSchedules: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
   return {
@@ -17,6 +21,13 @@ jest.mock('@librechat/data-schemas', () => {
 jest.mock('~/models', () => {
   const _mongoose = require('mongoose');
   return {
+    markUserDeleting: jest.fn().mockResolvedValue(new Date()),
+    markUserDeletionCommitted: jest.fn().mockResolvedValue(undefined),
+    getUsersPendingDeletion: jest.fn().mockResolvedValue([]),
+    markDeletionSweepAttempted: jest.fn().mockResolvedValue(undefined),
+    addUserAbortFence: jest.fn().mockResolvedValue(undefined),
+    clearUserAbortFence: jest.fn().mockResolvedValue(undefined),
+    getUserAbortFences: jest.fn().mockResolvedValue([]),
     deleteAllUserSessions: jest.fn().mockResolvedValue(undefined),
     deleteAllSharedLinks: jest.fn().mockResolvedValue(undefined),
     deleteAllAgentApiKeys: jest.fn().mockResolvedValue(undefined),
@@ -29,6 +40,7 @@ jest.mock('~/models', () => {
     deleteUserById: jest.fn().mockResolvedValue(undefined),
     deleteUserPrompts: jest.fn().mockResolvedValue(undefined),
     deleteUserSkills: jest.fn().mockResolvedValue(undefined),
+    deleteSchedulesByUser: jest.fn().mockResolvedValue(undefined),
     deleteMessages: jest.fn().mockResolvedValue(undefined),
     deleteBalances: jest.fn().mockResolvedValue(undefined),
     deleteActions: jest.fn().mockResolvedValue(undefined),
@@ -307,6 +319,7 @@ describe('deleteUserController', () => {
     status: jest.fn().mockReturnThis(),
     send: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnThis(),
   };
 
   beforeEach(() => {
@@ -321,6 +334,106 @@ describe('deleteUserController', () => {
 
     expect(mockRes.status).toHaveBeenCalledWith(200);
     expect(mockRes.send).toHaveBeenCalledWith({ message: 'User deleted' });
+
+    // The user document is the RETRY MARKER and must be deleted LAST: a crash or
+    // SIGTERM mid-cascade after an earlier user-doc delete made every remaining
+    // resource unreachable (getUsersPendingDeletion could no longer rediscover
+    // the account), permanently orphaning shared links, files, and agents.
+    const db = require('~/models');
+    const deleteUserOrder = db.deleteUserById.mock.invocationCallOrder[0];
+    const before = [db.deleteMessages, db.deleteFiles, db.deleteUserAgents, db.deleteAclEntries];
+    for (const fn of before) {
+      expect(fn.mock.invocationCallOrder[0]).toBeLessThan(deleteUserOrder);
+    }
+  });
+
+  it('sweep defers a user whose auth-cache fence cannot be re-established', async () => {
+    const db = require('~/models');
+    const { processPendingUserDeletions } = require('~/server/controllers/UserController');
+    const userId = new mongoose.Types.ObjectId();
+    db.getUsersPendingDeletion.mockResolvedValue([
+      {
+        _id: userId,
+        email: 'sweep@test.dev',
+        deletionRequestedAt: new Date(Date.now() - 120_000),
+        deletionCommittedAt: new Date(Date.now() - 120_000),
+      },
+    ]);
+    // markUserDeleting can stamp Mongo then throw on its REQUIRED invalidation;
+    // both markers exist, so without this re-assertion the sweep would cascade
+    // behind a fence that was never confirmed.
+    db.markUserDeleting.mockRejectedValue(new Error('redis down'));
+
+    await processPendingUserDeletions();
+
+    expect(db.deleteMessages).not.toHaveBeenCalled();
+    expect(db.deleteUserById).not.toHaveBeenCalled();
+
+    // Fence re-established: the cascade proceeds.
+    db.markUserDeleting.mockResolvedValue(new Date());
+    await processPendingUserDeletions();
+    expect(db.deleteMessages).toHaveBeenCalled();
+    expect(db.deleteUserById).toHaveBeenCalled();
+
+    db.getUsersPendingDeletion.mockResolvedValue([]);
+  });
+
+  it('sweep defers a user whose interactive generations were just aborted, then finishes next pass', async () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const db = require('~/models');
+    const { processPendingUserDeletions } = require('~/server/controllers/UserController');
+    const userId = new mongoose.Types.ObjectId();
+    db.getUsersPendingDeletion.mockResolvedValue([
+      {
+        _id: userId,
+        email: 'sweep-live@test.dev',
+        deletionRequestedAt: new Date(Date.now() - 120_000),
+        deletionCommittedAt: new Date(Date.now() - 120_000),
+      },
+    ]);
+    const activeSpy = jest
+      .spyOn(GenerationJobManager, 'getActiveJobIdsForUser')
+      .mockResolvedValueOnce(['conv-live']);
+    const abortSpy = jest
+      .spyOn(GenerationJobManager, 'abortJob')
+      .mockResolvedValue({ success: true });
+
+    await processPendingUserDeletions();
+
+    // The abort landed, but settlement is not provable in the aborting pass: the
+    // job leaves the active set at its abort CAS while the generation owner's
+    // message/usage/balance writes are still draining. Cascading now would let
+    // those writes recreate rows for the deleted account.
+    expect(abortSpy).toHaveBeenCalledWith('conv-live');
+    expect(db.deleteMessages).not.toHaveBeenCalled();
+    expect(db.deleteUserById).not.toHaveBeenCalled();
+
+    // Next pass: nothing active anymore — the aborted owner has unwound and the
+    // auth barrier admitted nothing new — so the cascade proceeds.
+    await processPendingUserDeletions();
+    expect(db.deleteMessages).toHaveBeenCalled();
+    expect(db.deleteUserById).toHaveBeenCalled();
+
+    db.getUsersPendingDeletion.mockResolvedValue([]);
+    activeSpy.mockRestore();
+    abortSpy.mockRestore();
+  });
+
+  it('refuses BEFORE the barrier when the deletion commitment cannot be recorded', async () => {
+    const db = require('~/models');
+    db.markUserDeletionCommitted.mockRejectedValue(new Error('mongo down'));
+    const userId = new mongoose.Types.ObjectId();
+    const req = { user: { id: userId.toString(), _id: userId, email: 'test@test.com' } };
+
+    await deleteUserController(req, mockRes);
+
+    // A barrier without a commitment is an unrecoverable lockout: authentication is
+    // refused behind the barrier while the sweep only consumes committed rows. The
+    // ordering guarantees a failed commit leaves the user fully functional.
+    expect(mockRes.status).toHaveBeenCalledWith(503);
+    expect(db.markUserDeleting).not.toHaveBeenCalled();
+    expect(db.deleteMessages).not.toHaveBeenCalled();
+    db.markUserDeletionCommitted.mockResolvedValue(undefined);
   });
 
   it('should remove the user from all groups via $pullAll', async () => {

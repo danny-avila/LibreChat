@@ -41,6 +41,16 @@ const socialLogin =
         }
       }
 
+      // Deletion barrier: a user whose destructive cascade (or deferred sweep) is
+      // running must not mint a fresh session that admits writes behind it.
+      if (existingUser?.deletionRequestedAt != null) {
+        logger.warn(`[${provider}Login] Refusing login for deleting user: ${existingUser._id}`);
+        const error = new Error(ErrorTypes.AUTH_FAILED);
+        error.code = ErrorTypes.AUTH_FAILED;
+        error.message = 'Account deletion in progress';
+        return cb(error);
+      }
+
       const appConfig = existingUser?.tenantId
         ? await resolveAppConfigForUser(getAppConfig, existingUser)
         : baseConfig;
@@ -94,6 +104,26 @@ const socialLogin =
           existingUser[providerKey] = id;
         }
         await handleExistingUser(existingUser, avatarUrl, appConfig, email);
+        // FINAL barrier recheck at the successful-login boundary, sequenced after
+        // the slow awaits above (config resolution, avatar refresh): a barrier
+        // raised mid-callback would otherwise mint a session whose oauthHandler
+        // and setBalanceConfig writes recreate records the cascade deleted. A null
+        // read fails closed — an identity removed mid-flow must not complete.
+        let barrier = null;
+        try {
+          barrier = await findUser({ _id: existingUser._id }, 'deletionRequestedAt');
+        } catch {
+          barrier = null;
+        }
+        if (barrier == null || barrier.deletionRequestedAt != null) {
+          logger.warn(
+            `[${provider}Login] Refusing login for ${existingUser._id}: deletion barrier raised or unverifiable`,
+          );
+          const error = new Error(ErrorTypes.AUTH_FAILED);
+          error.code = ErrorTypes.AUTH_FAILED;
+          error.message = 'Account deletion in progress';
+          return cb(error);
+        }
         return passResult(existingUser);
       } else if (existingUser) {
         logger.info(
@@ -121,6 +151,32 @@ const socialLogin =
         error.code = ErrorTypes.AUTH_FAILED;
         error.message = 'Social registration is disabled';
         return cb(error);
+      }
+
+      // Registration-boundary recheck, sequenced after the slow config awaits: a
+      // barrier raised (or an account created) since the lookups above must not be
+      // shadowed by a fresh document with the same email. A document ABSENT here is
+      // a legitimate fresh registration — the interactive cascade removes the user
+      // document last, so absence means any prior deletion already completed (the
+      // admin path defers its cascade, but that cascade is keyed to the old _id).
+      const trimmedEmail = typeof email === 'string' ? email.trim() : '';
+      if (trimmedEmail !== '') {
+        let priorAccount = null;
+        let priorAccountConclusive = true;
+        try {
+          priorAccount = await findUser({ email: trimmedEmail }, 'deletionRequestedAt');
+        } catch {
+          priorAccountConclusive = false;
+        }
+        if (!priorAccountConclusive || priorAccount != null) {
+          logger.warn(
+            `[${provider}Login] Refusing registration for ${trimmedEmail}: account appeared or barrier unverifiable`,
+          );
+          const error = new Error(ErrorTypes.AUTH_FAILED);
+          error.code = ErrorTypes.AUTH_FAILED;
+          error.message = 'Account state changed during sign-in, please retry';
+          return cb(error);
+        }
       }
 
       const newUser = await createSocialUser({

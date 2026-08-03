@@ -23,11 +23,22 @@ const {
   isSteerPreemptSupported,
   toPendingSteer,
 } = require('@librechat/api');
+const {
+  isBalanceViolationError,
+  classifyScheduleOutcome,
+} = require('~/server/controllers/agents/errors');
 const { disposeClient } = require('~/server/cleanup');
 const {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
+const {
+  recordScheduleOutcome,
+  isScheduleLive,
+  clearScheduledJob,
+  awaitStopAbortPersistence,
+  markScheduledRunResumeClaimed,
+} = require('~/server/services/Schedules');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 const {
   GENERATION_PROTOCOL_HEADER,
@@ -50,6 +61,49 @@ function sendGenerationJson(res, status, body, generationProtocolVersion) {
  * must not strand the client behind a chip label and an arm.
  */
 const STEER_RESUME_SETUP_TIMEOUT_MS = 1000;
+
+/**
+ * Settles a scheduled run whose RESUMED generation was aborted. The abort route
+ * settles only jobs it caught paused; a resumed job is `running` at the abort CAS,
+ * making this controller the generation owner and therefore the settler — after the
+ * route's persistence barrier (its checkpoint prune and partial save must land
+ * before the run leaves the active set deletion drains confirm on). FAILS CLOSED:
+ * an unconfirmed barrier skips the settle and leaves the run for the reconciler,
+ * which finalizes it from the preserved aborted job once the owner-death fence
+ * lapses.
+ */
+async function settleAbortedScheduledResume(job, streamId, conversationId) {
+  const scheduleId = job.metadata?.scheduleId;
+  const scheduledFor = job.metadata?.scheduledFor;
+  if (!scheduleId || !scheduledFor) {
+    return;
+  }
+  const cleared = await awaitStopAbortPersistence(scheduleId, new Date(scheduledFor)).catch(
+    (err) => {
+      logger.warn('[ResumeAgentController] Stop-abort persistence barrier failed', err);
+      return false;
+    },
+  );
+  if (!cleared) {
+    logger.warn(
+      `[ResumeAgentController] Aborted resume left for the reconciler (barrier unconfirmed): ${streamId}`,
+    );
+    return;
+  }
+  const recorded = await recordScheduleOutcome({
+    scheduleId,
+    scheduledFor,
+    status: 'interrupted',
+    conversationId,
+  });
+  // Reconcile only scans ACTIVE runs; with the run terminal, nothing else would
+  // ever reap the job the abort route preserved as evidence.
+  if (recorded) {
+    await clearScheduledJob(streamId, { scheduleId, scheduledFor }).catch((err) =>
+      logger.warn('[ResumeAgentController] Failed to clear reconciled job', err),
+    );
+  }
+}
 
 /**
  * New jobs are physically isolated by an immutable saver namespace, so a
@@ -190,6 +244,22 @@ async function persistRePauseProgress({ req, client, job, streamId, conversation
   }
 }
 
+/**
+ * The schedule outcome for a resumed turn that reached finalize. resumeCompletion
+ * deliberately swallows continuation errors into an ERROR content part (the
+ * interactive UX finalizes with the error visible), surfacing them on
+ * `client.resumeError` — so a mid-continuation failure must be classified HERE, not in
+ * the catch below, which never runs for it. A balance refusal walks the
+ * insufficient_balance policy; every OTHER swallowed error is a genuine failure, and
+ * recording it as `success` reset the consecutive-failure streak, so a schedule whose
+ * every run dies on the provider call never reached `autoDisableAfterFailures` and
+ * retried forever. Aborts never land here — the client only records the error on its
+ * non-aborted branch.
+ */
+function resumedOutcomeStatus(client) {
+  return classifyScheduleOutcome(client?.resumeError, 'Resumed run ended in error');
+}
+
 /** Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check passes. */
 function hasTenantMismatch(job, user) {
   return job.metadata?.tenantId != null && job.metadata.tenantId !== user.tenantId;
@@ -274,6 +344,20 @@ async function finalizeResumedTurn({
     logger.warn(
       `[ResumeAgentController] Skipping resumed finalization — job ${streamId} was replaced`,
     );
+    // The RUN's identity is (scheduleId, scheduledFor), independent of who owns the
+    // conversationId now, so it still has to be settled — otherwise the row stays
+    // active, holds its capacity slot and blocks account deletion until the orphan
+    // sweep. Nothing was persisted before this guard, so `interrupted` is the honest
+    // status rather than claiming output this turn never wrote.
+    if (job.metadata?.scheduleId) {
+      await recordScheduleOutcome({
+        scheduleId: job.metadata.scheduleId,
+        scheduledFor: job.metadata.scheduledFor,
+        status: 'interrupted',
+        conversationId,
+        error: 'Conversation was taken over by a newer turn',
+      });
+    }
     return;
   }
   // Prefer the resumed run's live content: it's complete (seeded with the pre-pause
@@ -365,12 +449,44 @@ async function finalizeResumedTurn({
     'complete',
     undefined,
     job.createdAt,
-    { persistencePending: true },
+    {
+      persistencePending: true,
+      // The terminal CAS necessarily precedes the schedule-outcome write below, and the
+      // claim is frozen, so a scheduled fire must be claimed RETAINED (terminal WITHOUT
+      // `completedAt`): that record is the only evidence a reconciler could read if the
+      // outcome write never lands. The settlement below reaps it via `clearScheduledJob`
+      // as soon as the outcome IS durable. The intended outcome rides along, because
+      // `complete` alone cannot tell the reconciler a balance refusal (or a swallowed
+      // provider failure) from a clean finish.
+      ...(meta.scheduleId
+        ? { preserveForReconcile: true, scheduleOutcome: resumedOutcomeStatus(client) }
+        : {}),
+    },
   );
   if (!terminalClaim) {
     logger.warn(
       `[ResumeAgentController] Skipping resumed FINAL — another terminal/pause transition won for ${streamId}`,
     );
+    // Do NOT record success here. The response save is BELOW this claim (the terminal
+    // CAS deliberately precedes the outcome-defining write), so a lost claim means this
+    // occurrence persisted nothing — and recording it as produced output would also skip
+    // the winner's persistence barrier, releasing the run's capacity slot while Stop was
+    // still writing. Settlement belongs to whoever won: a pause writes
+    // `requires_action`, any other terminal winner writes its own outcome, and an abort
+    // leaves THIS controller the settler for a resumed (running-at-CAS) run — which
+    // `settleAbortedScheduledResume` does behind the barrier, failing closed.
+    if (meta.scheduleId) {
+      const winner = await GenerationJobManager.getJob(streamId).catch((err) => {
+        logger.warn(
+          `[ResumeAgentController] Could not identify the terminal winner for ${streamId}`,
+          err,
+        );
+        return null;
+      });
+      if (winner?.createdAt === job.createdAt && winner.status === 'aborted') {
+        await settleAbortedScheduledResume(job, streamId, conversationId);
+      }
+    }
     return;
   }
   let terminalPublicationStarted = false;
@@ -464,12 +580,47 @@ async function finalizeResumedTurn({
       // down a later run.
       await GenerationJobManager.finishTerminalJob(terminalClaim);
     } finally {
-      await deleteResumedGenerationCheckpoint({
-        conversationId,
-        checkpointerCfg,
-        job,
-        checkpointGeneration,
-      });
+      try {
+        await deleteResumedGenerationCheckpoint({
+          conversationId,
+          checkpointerCfg,
+          job,
+          checkpointGeneration,
+        });
+      } catch (checkpointError) {
+        // Observable, but it must not escape: the FINAL is already published by this
+        // point, so a prune failure throwing here would skip the schedule settlement
+        // below and have the controller catch record `error` for a run that COMPLETED.
+        logger.error(
+          `[ResumeAgentController] Failed to prune checkpoint after resumed finalization for ${streamId}`,
+          checkpointError,
+        );
+      }
+    }
+  }
+
+  // Settle the scheduled RUN after publication, from the paused job's metadata: for a
+  // scheduled fire that paused for approval, THIS resume is the completion point and the
+  // reconciler cannot derive it once the job is gone. The claim above was taken RETAINED
+  // for every scheduled fire, so the completedAt-less terminal job survives the finish
+  // and is this occurrence's evidence until the outcome write lands — dying in between
+  // can only make the reconciler re-derive the same outcome, never mislabel a finished
+  // run as interrupted.
+  if (meta.scheduleId) {
+    const scheduleOutcomeRecorded = await recordScheduleOutcome({
+      scheduleId: meta.scheduleId,
+      scheduledFor: meta.scheduledFor,
+      ...resumedOutcomeStatus(client),
+      conversationId,
+    });
+    // Only reap the retained job once the outcome is durable: reconcile never rescans a
+    // terminal run, so nothing else would ever clear it. Identity- and generation-fenced,
+    // so a replacement generation is never destroyed.
+    if (scheduleOutcomeRecorded) {
+      await clearScheduledJob(streamId, {
+        scheduleId: meta.scheduleId,
+        scheduledFor: meta.scheduledFor,
+      }).catch((err) => logger.warn('[ResumeAgentController] Failed to clear reconciled job', err));
     }
   }
 }
@@ -576,6 +727,52 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       res,
       409,
       { error: 'No live pending action to resume' },
+      generationProtocolVersion,
+    );
+  }
+  // A scheduled run's approval must not start a NEW billed generation once its schedule
+  // stopped being live. Account deletion marks every schedule `deleting` as its FIRST
+  // step, before draining; without this a resume landing mid-drain promotes the job to
+  // `running` after the drain already judged it settleable, so quiesce reports the
+  // account drained while a generation is still persisting messages for it. Also covers
+  // an owner delete/edit landing while the prompt sat unanswered.
+  // The revision the fire was CLAIMED under, replayed so the resume applies the same
+  // fence the fire boundary did: an owner edit landing while the approval sat unanswered
+  // means the paused turn's prompt/agent came from a config that has since been
+  // replaced. Absent on either side leaves the fence off, so older jobs keep working.
+  const pausedConfigRevision =
+    job.metadata?.scheduleConfigRevision != null
+      ? Number(job.metadata.scheduleConfigRevision)
+      : undefined;
+  if (
+    job.metadata?.scheduleId &&
+    !(await isScheduleLive(job.metadata.scheduleId, pausedConfigRevision, {
+      // An AUTOMATIC occurrence must not resume onto a schedule that has since been
+      // auto-disabled: the policy flips `enabled` without touching configRevision, so
+      // no other gate here can see it, and approving hours later would run a fresh
+      // billed turn for a schedule the system already switched off.
+      automatic: job.metadata.scheduleManual !== '1',
+      // Re-apply the LIVE dispatch policy (global kill switch, owner availability,
+      // SCHEDULES:USE) the fire path checked: all three can change while the
+      // approval sits unanswered, and none of them touch the row.
+      policy: true,
+    }))
+  ) {
+    logger.info(
+      `[ResumeAgentController] Refusing resume for a schedule no longer live: ${job.metadata.scheduleId}`,
+    );
+    try {
+      await GenerationJobManager.expireApproval(streamId, pendingAction?.actionId, job.createdAt);
+    } catch (err) {
+      logger.warn(
+        '[ResumeAgentController] Failed to expire action on a dead schedule',
+        err?.message ?? err,
+      );
+    }
+    return sendGenerationJson(
+      res,
+      409,
+      { error: 'This scheduled run is no longer active' },
       generationProtocolVersion,
     );
   }
@@ -719,14 +916,17 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     );
   }
 
+  // v1 scope: the scheduler does NOT orchestrate resumes. A scheduled run that pauses
+  // for approval released its capacity slot on pause and is handed off — from here it is
+  // an ordinary paused conversation the user resumes through the chat UI. The scheduler
+  // only OBSERVES the eventual outcome below (so the schedule card reflects it); it does
+  // not reserve, lease, or fence this resume. Scheduled HITL orchestration is a
+  // fast-follow behind the experimental flag.
   // Atomically claim the resume. The single winner drives the run; a racing second
   // submit (double-click, two tabs) gets false and must not re-drive — that would
-  // re-execute tools and double-bill.
-  //
-  // The claim runs AFTER the slot increment above but BEFORE the run's own try/finally
-  // that releases it, so a store/Redis error here (unlike the clean `!claimed` branch)
-  // would leak the concurrency slot until the counter TTL expires — spuriously 429'ing
-  // the user when they retry the still-paused approval. Release the slot on that path too.
+  // re-execute tools and double-bill. Do NOT release the reservation on a lost claim:
+  // the claim winner drives the `started` run this (or the concurrent same-pause)
+  // request reserved, and an unreserved-but-promoted row is healed by the reconciler.
   let claimed;
   let checkpointGeneration;
   try {
@@ -760,6 +960,73 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       { error: 'This action was already resolved or has expired' },
       generationProtocolVersion,
     );
+  }
+
+  // RE-CHECK after winning the CAS, not only before it. The pre-claim check above is
+  // ~100 lines and a concurrency round trip away from this point, and a schedule delete
+  // or account-deletion drain can begin in that window: the drain reads the job, sees
+  // `requires_action`, judges it settleable and terminalizes the run — then this resume
+  // promotes the job and generates for a schedule (or account) already torn down.
+  // Ordering it AFTER the claim is what closes the race rather than narrowing it: the
+  // CAS is what promotes the job to `running`, so a drain that starts after this point
+  // observes a running generation and waits for it, while one that started before it is
+  // caught here.
+  if (job.metadata?.scheduleId) {
+    // Stamp the run RESUME-CLAIMED before anything else: from here until the pause
+    // record (or the terminal outcome) this run's writes are a hand-off in flight,
+    // and a deletion drain observing a RE-PAUSED job mid-branch must defer rather
+    // than settle while persistRePauseProgress is still landing. The pause record
+    // clears the stamp; a crash leaves it to age out on the staleness bound.
+    await markScheduledRunResumeClaimed(
+      job.metadata.scheduleId,
+      new Date(job.metadata.scheduledFor),
+    );
+    const stillLive = await isScheduleLive(job.metadata.scheduleId, pausedConfigRevision, {
+      policy: true,
+      automatic: job.metadata.scheduleManual !== '1',
+    }).catch(() => false);
+    if (!stillLive) {
+      logger.info(
+        `[ResumeAgentController] Schedule ${job.metadata.scheduleId} went away mid-resume; ` +
+          'aborting the claimed turn before it generates',
+      );
+      // PRESERVE until the outcome is durable: the default abort deletes the job, and
+      // if the Mongo write below exhausts its retries that job is the only evidence the
+      // run stopped. Retained, reconcile settles it; deleted, the row is stranded.
+      await GenerationJobManager.abortJob(streamId, {
+        expectedCreatedAt: job.createdAt,
+        preserveForReconcile: true,
+      }).catch((err) =>
+        logger.warn('[ResumeAgentController] Failed to abort a superseded resume', err),
+      );
+      // Settle the run too. The CAS already promoted it out of `requires_action`, so
+      // without this the row stays active with no generation — holding a capacity slot
+      // and blocking deletion until the orphan sweep.
+      const settled = await recordScheduleOutcome({
+        scheduleId: job.metadata.scheduleId,
+        scheduledFor: job.metadata.scheduledFor,
+        status: 'interrupted',
+        conversationId,
+        error: 'Schedule was no longer active when the approval was answered',
+      });
+      // Only once the outcome is durable is the retained job disposable; reconcile no
+      // longer scans a settled run, so nothing else would reap it.
+      if (settled) {
+        await clearScheduledJob(streamId, {
+          scheduleId: job.metadata.scheduleId,
+          scheduledFor: job.metadata.scheduledFor,
+        }).catch((err) =>
+          logger.warn('[ResumeAgentController] Failed to clear a superseded resume job', err),
+        );
+      }
+      await decrementPendingRequest(userId);
+      return sendGenerationJson(
+        res,
+        409,
+        { error: 'This scheduled run is no longer active' },
+        generationProtocolVersion,
+      );
+    }
   }
 
   /**
@@ -938,18 +1205,43 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
     }
 
-    await client.resumeCompletion({
-      resumeValue: mapped.resumeValue,
-      seedContent,
-      runSteps: resumeState?.runSteps ?? [],
-      abortController: job.abortController,
-      // Carry the user's MCP auth so approved MCP tools run with their credentials.
-      userMCPAuthMap: result.userMCPAuthMap,
-      // Replay deferred tools discovered before the pause (captured at pause). The rebuilt
-      // graph passes `messages: []`, so without these the model would lose their schemas.
-      discoveredToolNames: job.metadata?.discoveredTools,
-      activityPhaseSnapshot: job.metadata?.activityPhaseSnapshot,
-    });
+    // Keep the resume hand-off fence FRESH for the continuation's whole lifetime: the
+    // claim-time stamp ages out on its staleness bound, so a continuation that runs
+    // longer than that and then pauses AGAIN would re-enter `requires_action` with an
+    // expired fence — quiesce could settle it while the re-pause writes were still
+    // landing. Refreshed at half the staleness bound; cleared by the pause record or
+    // aged out after a crash.
+    let fenceRefresh = null;
+    if (job.metadata?.scheduleId) {
+      fenceRefresh = setInterval(
+        () =>
+          markScheduledRunResumeClaimed(
+            job.metadata.scheduleId,
+            new Date(job.metadata.scheduledFor),
+          ).catch(() => undefined),
+        5 * 60_000,
+      );
+      fenceRefresh.unref?.();
+    }
+
+    try {
+      await client.resumeCompletion({
+        resumeValue: mapped.resumeValue,
+        seedContent,
+        runSteps: resumeState?.runSteps ?? [],
+        abortController: job.abortController,
+        // Carry the user's MCP auth so approved MCP tools run with their credentials.
+        userMCPAuthMap: result.userMCPAuthMap,
+        // Replay deferred tools discovered before the pause (captured at pause). The rebuilt
+        // graph passes `messages: []`, so without these the model would lose their schemas.
+        discoveredToolNames: job.metadata?.discoveredTools,
+        activityPhaseSnapshot: job.metadata?.activityPhaseSnapshot,
+      });
+    } finally {
+      if (fenceRefresh) {
+        clearInterval(fenceRefresh);
+      }
+    }
 
     // The model may pause AGAIN (another tool, or a follow-up question). The pending
     // action is already persisted + emitted; leave the job `requires_action`.
@@ -979,6 +1271,19 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
                 pauseActionId,
                 pausePersistenceError?.message ?? 'Re-pause persistence failed',
                 pauseCreatedAt,
+                // RETAIN a scheduled fire's failed re-pause error: this path settles
+                // through the reconciler alone (the outer catch's pause branch records
+                // no outcome), so evidence on the short completed TTL evaporates during
+                // any longer outage and the run is misread as `interrupted`.
+                job.metadata?.scheduleId
+                  ? {
+                      preserveForReconcile: true,
+                      scheduleOutcome: {
+                        status: 'error',
+                        error: pausePersistenceError?.message ?? 'Re-pause persistence failed',
+                      },
+                    }
+                  : undefined,
               )) === true;
             if (!pausePersistenceFailureFinalized) {
               logger.warn(
@@ -992,6 +1297,20 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             );
           }
           throw pausePersistenceError;
+        }
+        // Move the scheduled run back to `requires_action`: it paused again, so it should
+        // stop counting as active (started) for overlap/capacity, and this record is what
+        // clears the resume-claimed hand-off stamp. Written while the pause barrier is
+        // still HELD, so a deletion drain keeps deferring until this run-row write has
+        // landed too. Never throws (it retries internally and reports failure as `false`),
+        // so it cannot strand the barrier below.
+        if (job.metadata?.scheduleId) {
+          await recordScheduleOutcome({
+            scheduleId: job.metadata.scheduleId,
+            scheduledFor: job.metadata.scheduledFor,
+            status: 'requires_action',
+            conversationId,
+          });
         }
         const released = await GenerationJobManager.approvals.finishPausePersistence(
           streamId,
@@ -1012,11 +1331,18 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     }
 
     // If the user aborted mid-resume, the abort route already emitted the terminal
-    // event and finalized the job — don't double-save / double-finalize here.
+    // event and finalized the job — don't double-save / double-finalize here. The
+    // scheduled RUN, though, is THIS controller's to settle: the route settles only
+    // jobs it caught paused, and a resumed job is `running` at the abort CAS, so
+    // returning without settling left the run active until the 30-minute reconciler
+    // cutoff — blocking schedule and account deletion the whole time. Mirror the
+    // request controller: settle after the route's persistence barrier, and FAIL
+    // CLOSED (leave the run for the reconciler) when it cannot be confirmed.
     if (job.abortController.signal.aborted) {
       logger.debug(
-        `[ResumeAgentController] Aborted during resume; abort route finalizes: ${streamId}`,
+        `[ResumeAgentController] Aborted during resume; abort route finalizes the job: ${streamId}`,
       );
+      await settleAbortedScheduledResume(job, streamId, conversationId);
       return;
     }
 
@@ -1030,6 +1356,41 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       checkpointGeneration,
     });
   } catch (err) {
+    // An abort is not a failure: abortJob already emitted the terminal event and
+    // finalized the job, so the error flow below (emitError, completeJob, an `error`
+    // outcome walking the failure streak) belongs only to genuine failures. A
+    // resumed generation usually surfaces its abort as a THROW out of
+    // resumeCompletion, so this classification — not the pre-finalize signal check —
+    // is the path most stops actually take.
+    //
+    // The signal is authoritative; an abort-SHAPED error alone is not. A genuine
+    // failure can mention 'abort' (driver errors like 'transaction aborted') with
+    // nothing having finalized the job, and returning here then left it `running`
+    // forever with no controller driving it. abortJob flips the job terminal BEFORE
+    // any signal fires, so a job still running under this generation is proof no
+    // abort finalized it — send that to the error path below instead.
+    const abortShaped = err?.name === 'AbortError' || err?.message?.includes('abort');
+    let wasAborted = job.abortController.signal.aborted;
+    if (!wasAborted && abortShaped) {
+      try {
+        const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
+        wasAborted = !(
+          liveJob &&
+          liveJob.createdAt === job.createdAt &&
+          liveJob.status === 'running'
+        );
+      } catch (readErr) {
+        logger.warn(
+          '[ResumeAgentController] Abort classification read failed; treating as failure',
+          readErr,
+        );
+      }
+    }
+    if (wasAborted) {
+      logger.debug(`[ResumeAgentController] Resume aborted; settling the run: ${streamId}`);
+      await settleAbortedScheduledResume(job, streamId, conversationId);
+      return;
+    }
     logger.error('[ResumeAgentController] Resume failed', err);
     if (pausePersistenceFailed) {
       // failPausePersistence already performed the exact requires_action ->
@@ -1064,6 +1425,39 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         `[ResumeAgentController] Skipping failed-resume finalization — job ${streamId} was replaced`,
       );
     } else {
+      // Record the schedule error BEFORE the terminal CAS: for a scheduled fire that
+      // paused and then failed on resume, this is the terminal point, and the job is
+      // about to be deleted (the reconciler wouldn't see the error). If the write fails
+      // (Mongo down across its retries), retain the completed job so reconcile records
+      // the failure instead of the run lingering to the abandonment sweep.
+      let scheduleOutcomeRecorded = true;
+      let errorScheduleOutcome = null;
+      if (job.metadata?.scheduleId) {
+        // Same classification as the initial fire's catch: a mid-continuation
+        // balance refusal is the OWNER's credits, not a schedule fault — it walks
+        // the insufficient_balance streak, not too_many_failures.
+        const balanceRefusal = isBalanceViolationError(err);
+        errorScheduleOutcome = balanceRefusal
+          ? { status: 'skipped_balance' }
+          : { status: 'error', error: err?.message ?? 'Resume failed' };
+        // EVIDENCE FIRST: a finalize that claimed `complete` stamped its outcome
+        // BEFORE the response save that just threw, so the retained job still says
+        // `success`. Refresh the stamp (job store — a different failure domain than
+        // Mongo) before the outcome write below, so a reconciler recovering from that
+        // write's failure reproduces the truthful classification.
+        await GenerationJobManager.updateScheduleOutcome(
+          streamId,
+          job.createdAt,
+          errorScheduleOutcome,
+        );
+        scheduleOutcomeRecorded = await recordScheduleOutcome({
+          scheduleId: job.metadata.scheduleId,
+          scheduledFor: job.metadata.scheduledFor,
+          status: errorScheduleOutcome.status,
+          conversationId: streamId,
+          ...(errorScheduleOutcome.error != null && { error: errorScheduleOutcome.error }),
+        });
+      }
       // completeJob atomically claims running -> error and parks steers before
       // publishing. If abort or a re-pause won, it returns false; only the
       // terminal-CAS winner may delete this generation's checkpoint scope.
@@ -1074,9 +1468,28 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             streamId,
             err?.message ?? 'Resume failed',
             job.createdAt,
+            {
+              preserveForReconcile: Boolean(job.metadata?.scheduleId) && !scheduleOutcomeRecorded,
+              // Ride the classification on the claim: a balance refusal claims an
+              // `error` terminal but must walk the insufficient_balance streak.
+              ...(errorScheduleOutcome != null && { scheduleOutcome: errorScheduleOutcome }),
+            },
           )) === true;
       } catch (completeErr) {
         logger.error('[ResumeAgentController] Failed to finalize failed resume', completeErr);
+      }
+      // completeJob early-returns on a job that is no longer `running` — the state a
+      // schedule delete (or a retained terminal claim) leaves behind. The outcome above
+      // makes the run terminal, so reconcile never rescans it and nothing else would ever
+      // reap that job. Skipped when the outcome write failed: the job is then the only
+      // reconcile evidence.
+      if (job.metadata?.scheduleId && scheduleOutcomeRecorded) {
+        await clearScheduledJob(streamId, {
+          scheduleId: job.metadata.scheduleId,
+          scheduledFor: job.metadata.scheduledFor,
+        }).catch((clearErr) =>
+          logger.warn('[ResumeAgentController] Failed to clear reconciled job', clearErr),
+        );
       }
       if (errorFinalized) {
         await deleteFailedResumeCheckpoint(

@@ -4549,4 +4549,141 @@ describe('RedisJobStore Integration Tests', () => {
       }
     });
   });
+
+  describe('User Finalization Markers', () => {
+    test('registers, counts, and clears owner finalizations across store instances', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const owner = new RedisJobStore(ioredisClient);
+      // A SECOND instance reads the marker — the deletion quiesce can run on a
+      // different replica than the generation owner, and the marker must be
+      // visible there (this is what makes the acknowledgement durable).
+      const peer = new RedisJobStore(ioredisClient);
+      await owner.initialize();
+      await peer.initialize();
+      const userId = `final-user-${Date.now()}`;
+
+      await owner.registerUserFinalization(userId, 'conv-final-1', 'tenant-x');
+      await expect(peer.countUserFinalizations(userId, 'tenant-x')).resolves.toBe(1);
+      await expect(peer.countUserFinalizations(userId)).resolves.toBe(0);
+
+      await owner.clearUserFinalization(userId, 'conv-final-1', 'tenant-x');
+      await expect(peer.countUserFinalizations(userId, 'tenant-x')).resolves.toBe(0);
+
+      await owner.destroy();
+      await peer.destroy();
+    });
+  });
+
+  describe('Scheduled run identity', () => {
+    const identity = { scheduleId: 'sched-int-1', scheduledFor: '2026-07-26T12:00:00.000Z' };
+
+    test('survives the hash round-trip', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `sched-identity-${Date.now()}`;
+
+      await store.createJob(streamId, 'user-1', streamId, undefined, identity);
+
+      // A peer replica reads the same job through its own store instance.
+      const peer = new RedisJobStore(ioredisClient);
+      await peer.initialize();
+      expect(await peer.getJob(streamId)).toMatchObject(identity);
+
+      await peer.destroy();
+      await store.destroy();
+    });
+
+    test('survives a status transition and a metadata update', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `sched-transition-${Date.now()}`;
+
+      const job = await store.createJob(streamId, 'user-1', streamId, undefined, identity);
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        expectCreatedAt: job.createdAt,
+        patch: {
+          pendingActionId: `action-${streamId}`,
+          pendingAction: buildPendingAction(streamId),
+        },
+      });
+      expect(await store.getJob(streamId)).toMatchObject({
+        ...identity,
+        status: 'requires_action',
+      });
+
+      await store.updateJob(streamId, { responseMessageId: 'resp-1' });
+      expect(await store.getJob(streamId)).toMatchObject(identity);
+
+      await store.destroy();
+    });
+
+    /**
+     * `completedAt` is what the terminal-TTL sweep keys off; it is withheld for a
+     * scheduled run so the reconciler still has evidence the run finished after an
+     * inline outcome write exhausted its retries.
+     */
+    test('a preserved terminal job keeps the running TTL and no completedAt', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `sched-preserve-${Date.now()}`;
+
+      await store.createJob(streamId, 'user-1', streamId, undefined, identity);
+      await store.updateJob(streamId, { status: 'aborted' });
+
+      const preserved = await store.getJob(streamId);
+      expect(preserved?.status).toBe('aborted');
+      expect(preserved?.completedAt).toBeUndefined();
+      expect(preserved).toMatchObject(identity);
+
+      // Retained on the RUNNING ttl, not the (short) completed one, so reconcile can
+      // still find it. Asserted as a floor so the exact configured value can move.
+      const ttl = await ioredisClient.ttl(`stream:{${streamId}}:job`);
+      expect(ttl).toBeGreaterThan(60);
+
+      await store.destroy();
+    });
+
+    test('a replacement generation sheds the identity, so the fence rejects it', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `sched-replaced-${Date.now()}`;
+
+      const original = await store.createJob(streamId, 'user-1', streamId, undefined, identity);
+      // An interactive turn reuses the conversation; it carries no schedule identity.
+      const replacement = await store.createJob(streamId, 'user-1', streamId);
+
+      expect(replacement.createdAt).toBeGreaterThan(original.createdAt);
+      const live = await store.getJob(streamId);
+      expect(live?.scheduleId).toBeUndefined();
+      expect(live?.scheduledFor).toBeUndefined();
+
+      // The superseded generation's fenced write must not touch the replacement.
+      await store.updateJob(streamId, { responseMessageId: 'stale' }, original.createdAt);
+      expect((await store.getJob(streamId))?.responseMessageId).toBeUndefined();
+
+      await store.destroy();
+    });
+  });
 });

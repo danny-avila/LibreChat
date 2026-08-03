@@ -15,6 +15,12 @@ const mockLogger = {
 };
 
 const mockGenerationJobManager = {
+  // Owner-side finalization fence: the controller registers before its terminal
+  // CAS whenever post-terminal title work is possible, so the facade mock must
+  // mirror it or the turn stalls on an undefined call.
+  registerUserFinalization: jest.fn(async () => undefined),
+  clearUserFinalization: jest.fn(async () => undefined),
+  countUserFinalizations: jest.fn(async () => 0),
   createJob: jest.fn(),
   getJob: jest.fn(),
   emitDone: jest.fn(),

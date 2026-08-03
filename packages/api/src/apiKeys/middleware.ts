@@ -10,7 +10,10 @@ export interface ApiKeyAuthDependencies {
     userId: Types.ObjectId;
     keyId: Types.ObjectId;
   } | null>;
-  findUser: (query: { _id: string | Types.ObjectId }) => Promise<IUser | null>;
+  findUser: (
+    query: { _id: string | Types.ObjectId },
+    fieldsToSelect?: string,
+  ) => Promise<IUser | null>;
 }
 
 export interface RemoteAgentAccessDependencies {
@@ -84,6 +87,46 @@ export function createRequireApiKeyAuth(deps: ApiKeyAuthDependencies) {
         return res.status(401).json({
           error: {
             message: 'User not found for this API key',
+            type: 'invalid_request_error',
+            code: 'invalid_api_key',
+          },
+        });
+      }
+
+      // Deletion barrier: an API key must not admit work for a user whose
+      // destructive cascade (or deferred sweep) is running — writes admitted here
+      // would recreate data behind it.
+      if (user.deletionRequestedAt != null) {
+        logger.warn(`[requireApiKeyAuth] Refusing key for deleting user: ${keyValidation.userId}`);
+        return res.status(401).json({
+          error: {
+            message: 'Account deletion in progress',
+            type: 'invalid_request_error',
+            code: 'invalid_api_key',
+          },
+        });
+      }
+
+      // The read above can be a pre-barrier snapshot returned AFTER the barrier
+      // committed. A second read SEQUENCED after the first observes any barrier
+      // that committed before it — matching the local JWT path. NOT scoped by
+      // HTTP method: method is not a safe classifier (GET handlers persist data
+      // too, e.g. GET /api/balance upserts via setBalanceConfig). Fails closed.
+      let barrier: { deletionRequestedAt?: Date } | null = null;
+      try {
+        barrier = (await deps.findUser({ _id: keyValidation.userId }, 'deletionRequestedAt')) as {
+          deletionRequestedAt?: Date;
+        } | null;
+      } catch {
+        barrier = null;
+      }
+      if (barrier == null || barrier.deletionRequestedAt != null) {
+        logger.warn(
+          `[requireApiKeyAuth] Refusing key for ${keyValidation.userId}: deletion barrier raised or unverifiable`,
+        );
+        return res.status(401).json({
+          error: {
+            message: 'Account deletion in progress',
             type: 'invalid_request_error',
             code: 'invalid_api_key',
           },

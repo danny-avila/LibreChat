@@ -2309,6 +2309,10 @@ describe('GenerationJobManager startup telemetry', () => {
       expect(job.abortController.signal.aborted).toBe(true);
       expect(abortDisposer).toHaveBeenCalledTimes(1);
       const restored = await jobStore.createJob(streamId, 'user-1');
+      // A recreate after a delete mints a NEW generation: reusing the deleted stamp is
+      // what would let a stale fenced cleanup match and tear down the replacement. The
+      // Redis path already retains its epoch for this reason (JOB_CREATE_LUA's
+      // retainedEpoch); the in-memory store matches it.
       expect(restored.createdAt).toBeGreaterThan(job.createdAt);
 
       manager.prepareForShutdown();
@@ -2350,6 +2354,10 @@ describe('GenerationJobManager startup telemetry', () => {
       expect(job.abortController.signal.aborted).toBe(true);
       expect(abortDisposer).toHaveBeenCalledTimes(1);
       const restored = await jobStore.createJob(streamId, 'user-1');
+      // A recreate after a delete mints a NEW generation: reusing the deleted stamp is
+      // what would let a stale fenced cleanup match and tear down the replacement. The
+      // Redis path already retains its epoch for this reason (JOB_CREATE_LUA's
+      // retainedEpoch); the in-memory store matches it.
       expect(restored.createdAt).toBeGreaterThan(job.createdAt);
 
       manager.prepareForShutdown();

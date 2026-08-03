@@ -3,8 +3,11 @@ import { logger } from '@librechat/data-schemas';
 import { CacheKeys } from 'librechat-data-provider';
 import {
   AUTH_USER_DOC_CACHE_TTL_MS,
+  AUTH_USER_DOC_EPOCH_TTL_MS,
   buildAuthUserDocCacheKey,
   buildAuthUserDocReverseIndexKey,
+  buildAuthUserDocTombstoneKey,
+  buildAuthUserDocEpochKey,
   getAuthUserDocCacheMode,
   getCachedAuthUserDoc,
   invalidateCachedAuthUserDoc,
@@ -192,6 +195,87 @@ describe('auth user document cache helpers', () => {
     );
   });
 
+  it('unwinds its own write when the deletion tombstone is present', async () => {
+    const store = makeStore();
+    const userId = new Types.ObjectId();
+    const cacheKey = 'auth-user-doc:v1:tombstoned';
+    // The deletion barrier writes this BEFORE sweeping keys, so a fill whose Mongo
+    // read predates the barrier but whose cache write lands after the sweep must
+    // observe it here and delete its own entry — otherwise the deleted user's
+    // document is served for the full TTL while the destructive cascade runs.
+    store.values.set(buildAuthUserDocTombstoneKey(userId.toString()), Date.now());
+
+    const result = await setCachedAuthUserDoc(store, cacheKey, {
+      _id: userId,
+      id: userId.toString(),
+      email: 'user@example.com',
+    });
+
+    expect(store.values.has(cacheKey)).toBe(false);
+    expect(store.values.has(buildAuthUserDocReverseIndexKey(userId.toString()))).toBe(false);
+    // The caller's own user document predates the barrier too: the strategy must
+    // refuse the authentication, not just lose the cache entry.
+    expect(result).toBe('tombstoned');
+  });
+
+  it('unwinds its own write when the tombstone verification fails', async () => {
+    const store = makeStore();
+    const userId = new Types.ObjectId();
+    const cacheKey = 'auth-user-doc:v1:verify-failed';
+    // Entry + reverse index land, then the tombstone read throws: without the
+    // unwind the NEXT request serves this entry as a fence-conclusive cache hit
+    // without reading Mongo, admitting a pre-barrier document for the full TTL.
+    const realGet = store.get;
+    store.get = (async (key: string) => {
+      if (key.startsWith('auth-user-doc-tombstone:')) {
+        throw new Error('redis blip');
+      }
+      return realGet(key);
+    }) as typeof store.get;
+
+    const result = await setCachedAuthUserDoc(store, cacheKey, {
+      _id: userId,
+      id: userId.toString(),
+      email: 'user@example.com',
+    });
+
+    expect(result).toBe('error');
+    expect(store.values.has(cacheKey)).toBe(false);
+    expect(store.values.has(buildAuthUserDocReverseIndexKey(userId.toString()))).toBe(false);
+  });
+
+  it("preserves the user's OTHER cache entries when unwinding a failed fill", async () => {
+    const store = makeStore();
+    const userId = new Types.ObjectId();
+    const survivingKey = 'auth-user-doc:v1:other-session';
+    const failingKey = 'auth-user-doc:v1:failing-fill';
+    // Another live entry for the same user, already indexed.
+    store.values.set(survivingKey, { version: 1, cachedAt: Date.now(), user: {} });
+    store.values.set(buildAuthUserDocReverseIndexKey(userId.toString()), [survivingKey]);
+    const realGet = store.get;
+    store.get = (async (key: string) => {
+      if (key.startsWith('auth-user-doc-tombstone:')) {
+        throw new Error('redis blip');
+      }
+      return realGet(key);
+    }) as typeof store.get;
+
+    await setCachedAuthUserDoc(store, failingKey, {
+      _id: userId,
+      id: userId.toString(),
+      email: 'user@example.com',
+    });
+
+    // Deleting the WHOLE index left the surviving entry undiscoverable: later
+    // mutations and deletions could no longer invalidate it, so a stale document
+    // was served until its TTL. Only the failed fill's key is removed.
+    expect(store.values.has(failingKey)).toBe(false);
+    expect(store.values.get(buildAuthUserDocReverseIndexKey(userId.toString()))).toEqual([
+      survivingKey,
+    ]);
+    expect(store.values.has(survivingKey)).toBe(true);
+  });
+
   it('deduplicates reverse-index keys and caps the remembered set', async () => {
     const store = makeStore();
     const objectId = new Types.ObjectId();
@@ -237,6 +321,57 @@ describe('auth user document cache helpers', () => {
     expect(store.delete).toHaveBeenCalledWith('key-a');
     expect(store.delete).toHaveBeenCalledWith('key-b');
     expect(store.delete).toHaveBeenCalledWith('key-c');
+    // The epoch is the correctness fence and must land FIRST, before any cleanup.
+    expect(store.set).toHaveBeenCalledWith(
+      buildAuthUserDocEpochKey('user-1'),
+      expect.any(Number),
+      AUTH_USER_DOC_EPOCH_TTL_MS,
+    );
+    expect(store.set.mock.invocationCallOrder[0]).toBeLessThan(
+      store.delete.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('rejects an UNINDEXED entry whose read predates the latest invalidation', async () => {
+    const store = makeStore();
+    const userId = new Types.ObjectId();
+    const cacheKey = 'auth-user-doc:v1:unindexed';
+    const readAt = Date.now() - 50;
+    // The reverse index's read-modify-write can drop a concurrent fill's key, so
+    // this entry exists but was never indexed — the invalidation's key sweep
+    // cannot find it. Only the epoch fence can kill it.
+    await setCachedAuthUserDoc(
+      store,
+      cacheKey,
+      { _id: userId, id: userId.toString(), email: 'user@example.com' },
+      { readAt },
+    );
+    store.values.delete(buildAuthUserDocReverseIndexKey(userId.toString()));
+
+    await invalidateCachedAuthUserDoc(store, { userId: userId.toString() });
+    expect(store.values.has(cacheKey)).toBe(true);
+
+    await expect(getCachedAuthUserDoc(store, cacheKey)).resolves.toBeUndefined();
+    // Rejected entries are also reaped, not just skipped.
+    expect(store.values.has(cacheKey)).toBe(false);
+  });
+
+  it('serves an entry whose read happened after the latest invalidation', async () => {
+    const store = makeStore();
+    const userId = new Types.ObjectId();
+    const cacheKey = 'auth-user-doc:v1:fresh';
+
+    await invalidateCachedAuthUserDoc(store, { userId: userId.toString() });
+    await setCachedAuthUserDoc(
+      store,
+      cacheKey,
+      { _id: userId, id: userId.toString(), email: 'user@example.com' },
+      { readAt: Date.now() + 5 },
+    );
+
+    await expect(getCachedAuthUserDoc(store, cacheKey)).resolves.toMatchObject({
+      id: userId.toString(),
+    });
   });
 
   it('logs cache failures without throwing', async () => {

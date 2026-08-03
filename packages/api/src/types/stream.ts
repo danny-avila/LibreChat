@@ -31,6 +31,16 @@ export interface GenerationJobMetadata {
   agent_id?: string;
   /** Whether the originating turn was a temporary chat; a HITL resume keeps it so. */
   isTemporary?: boolean;
+  /** Schedule bookkeeping for a scheduled fire, so a HITL resume can record its outcome. */
+  scheduleId?: string;
+  scheduledFor?: string;
+  /** '1' when this fire was an explicit Run Now. A paused approval can be answered long
+   *  after the fire, so the resume needs the original classification to apply the same
+   *  admission rules the fire boundary did. */
+  scheduleManual?: string;
+  /** The owner-config generation this fire was claimed under; the resume applies the
+   *  same revision fence the fire boundary did. */
+  scheduleConfigRevision?: string;
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause. A resume
    * replays these into `createRun` because the rebuilt graph uses `messages: []`, so

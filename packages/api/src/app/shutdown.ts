@@ -51,6 +51,13 @@ export function registerShutdownTask(
  * safety net for long-lived connections such as SSE streams that may
  * not finish in time.
  */
+/** Whether graceful shutdown has begun. Set BEFORE the listener starts closing, so
+ *  dispatch gates (e.g. the schedule engine's fire boundary) observe it ahead of any
+ *  pre-drain task ordering — an engine-local flag set by its own task ran too late. */
+export function isShutdownInProgress(): boolean {
+  return isShuttingDown;
+}
+
 export function setupGracefulShutdown(server: Server): void {
   httpServer = server;
   for (const signal of SIGNALS) {

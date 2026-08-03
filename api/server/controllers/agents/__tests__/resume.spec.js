@@ -29,6 +29,7 @@ const TENANT_ID = 'tenant-1';
 const AGENT_ID = 'agent-abc';
 const CONVO_ID = 'convo-123';
 const ACTION_ID = 'action-xyz';
+const SCHEDULED_FOR = '2026-07-26T12:00:00.000Z';
 const NEXT_ACTION_ID = 'action-next';
 const RESPONSE_MSG_ID = 'resp-1';
 const USER_MSG_ID = 'umsg-1';
@@ -47,6 +48,12 @@ const mockJobStore = {
 };
 
 const mockGenerationJobManager = {
+  // Owner-side finalization fence: the controller registers before its terminal
+  // CAS whenever post-terminal title work is possible, so the facade mock must
+  // mirror it or the turn stalls on an undefined call.
+  registerUserFinalization: jest.fn(async () => undefined),
+  clearUserFinalization: jest.fn(async () => undefined),
+  countUserFinalizations: jest.fn(async () => 0),
   getJob: jest.fn(),
   getJobStore: jest.fn(() => mockJobStore),
   getResumeState: jest.fn(),
@@ -60,8 +67,10 @@ const mockGenerationJobManager = {
   publishTerminalClaim: jest.fn(),
   finishTerminalJob: jest.fn(),
   completeJob: jest.fn(),
+  updateScheduleOutcome: jest.fn(async () => true),
   failPausePersistence: jest.fn(),
   expireApproval: jest.fn(),
+  abortJob: jest.fn(),
   approvals: {
     resolve: jest.fn(),
     ownsPausePersistence: jest.fn(),
@@ -98,12 +107,27 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
+  // The schedules service validates its deps at construction; these suites load it
+  // transitively, so the mock must supply the account-deletion barrier probe.
+  isUserDeleting: jest.fn(async () => false),
   getConvo: (...args) => mockGetConvo(...args),
   getMessages: (...args) => mockGetMessages(...args),
 }));
 
 jest.mock('~/server/cleanup', () => ({
   disposeClient: (...args) => mockDisposeClient(...args),
+}));
+
+const mockRecordScheduleOutcome = jest.fn(async () => true);
+const mockIsScheduleLive = jest.fn(async () => true);
+const mockClearScheduledJob = jest.fn(async () => undefined);
+
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
+  isScheduleLive: (...args) => mockIsScheduleLive(...args),
+  clearScheduledJob: (...args) => mockClearScheduledJob(...args),
+  awaitStopAbortPersistence: jest.fn(() => Promise.resolve(true)),
+  markScheduledRunResumeClaimed: jest.fn(async () => undefined),
 }));
 
 jest.mock('~/server/services/MCPRequestContext', () => ({
@@ -250,6 +274,14 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockGenerationJobManager.approvals.resolve.mockResolvedValue(true);
     mockGenerationJobManager.approvals.ownsPausePersistence.mockResolvedValue(true);
     mockGenerationJobManager.approvals.finishPausePersistence.mockResolvedValue(true);
+    mockRecordScheduleOutcome.mockResolvedValue(true);
+    mockIsScheduleLive.mockResolvedValue(true);
+    mockGenerationJobManager.abortJob.mockResolvedValue({ success: true });
+    // Reset + RE-ARM: the controller chains `.catch` on this call, so a bare reset
+    // (implementation wiped, returns undefined) turns every settle path into a
+    // silent throw after the test's earlier assertions already passed.
+    mockClearScheduledJob.mockReset();
+    mockClearScheduledJob.mockResolvedValue(undefined);
 
     // `decrementPendingRequest` runs in the controller's `finally` on every
     // post-ACK path, so resolving on it signals the async continuation is done.
@@ -386,6 +418,160 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       const res = await post(approveBody());
       expect(res.status).toBe(404);
       expect(res.body.error).toMatch(/no paused generation/i);
+    });
+
+    /**
+     * Account deletion marks every schedule `deleting` as its FIRST step, then drains.
+     * A resume landing mid-drain would promote the job to `running` after the drain
+     * already judged it settleable, so quiesce reports the account drained while a
+     * generation is still persisting messages for it.
+     */
+    it('409 when the resumed run belongs to a schedule that is no longer live', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+      mockIsScheduleLive.mockResolvedValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      // policy: true re-applies the live dispatch policy (global kill switch, owner
+      // availability, SCHEDULES:USE) — all three can change while the approval sits.
+      expect(mockIsScheduleLive).toHaveBeenCalledWith('sched-1', undefined, {
+        automatic: true,
+        policy: true,
+      });
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      // The prompt is retired so the stream gets a terminal event instead of hanging.
+      expect(mockGenerationJobManager.expireApproval).toHaveBeenCalledWith(
+        CONVO_ID,
+        ACTION_ID,
+        1000,
+      );
+    });
+
+    /**
+     * An approval can be answered long after the fire, so the classification has to
+     * travel on the job. A Run Now stays admissible on a disabled schedule (the user
+     * asked for it); an automatic occurrence does not.
+     */
+    /**
+     * An owner edit while the approval sits unanswered means the paused turn's
+     * prompt/agent came from a config that has since been replaced. The fire boundary
+     * refuses that; the resume must apply the same fence, which requires the claimed
+     * revision to travel on the job.
+     */
+    /**
+     * A replacement turn owns the conversationId, but the RUN's identity is
+     * (scheduleId, scheduledFor) — so it still has to be settled. Skipping it left the
+     * row `started`, holding a global capacity slot and blocking account deletion until
+     * the 30-minute orphan sweep.
+     */
+    it('settles the run even when a newer turn replaced the job', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+      // The finalize-time re-read sees a DIFFERENT generation.
+      mockJobStore.getJob.mockResolvedValue({ createdAt: 9999 });
+
+      await post(approveBody());
+      await settled;
+
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ scheduleId: 'sched-1', status: 'interrupted' }),
+      );
+    });
+
+    it('replays the claimed config revision into the resume gate', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            scheduleId: 'sched-1',
+            scheduledFor: SCHEDULED_FOR,
+            scheduleConfigRevision: '7',
+          },
+        }),
+      );
+
+      await post(approveBody());
+
+      expect(mockIsScheduleLive).toHaveBeenCalledWith('sched-1', 7, {
+        automatic: true,
+        policy: true,
+      });
+      await settled;
+    });
+
+    it('carries the Run Now classification through to the resume gate', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            scheduleId: 'sched-1',
+            scheduledFor: SCHEDULED_FOR,
+            scheduleManual: '1',
+          },
+        }),
+      );
+
+      await post(approveBody());
+
+      expect(mockIsScheduleLive).toHaveBeenCalledWith('sched-1', undefined, {
+        automatic: false,
+        policy: true,
+      });
+      await settled;
+    });
+
+    /**
+     * The pre-claim check is ~100 lines and a concurrency round trip from the CAS. A
+     * delete landing in that window would otherwise have the resume promote the job and
+     * generate for a schedule already torn down — the drain having already judged the
+     * paused run settleable.
+     */
+    it('aborts the claimed turn when the schedule dies between the check and the CAS', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+      // Live at the pre-claim gate, gone by the time the claim is won.
+      mockIsScheduleLive.mockResolvedValueOnce(true).mockResolvedValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalled();
+      // The CAS already promoted the job, so it must be torn back down rather than left
+      // running for a schedule that no longer exists.
+      expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        expect.objectContaining({ expectedCreatedAt: 1000 }),
+      );
+    });
+
+    it('resumes normally while the schedule is still live', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(200);
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalled();
+      await settled;
+      // The retained job must be cleared once the outcome lands: completeJob no-ops on
+      // an already-terminal job, and reconcile no longer scans a settled run.
+      expect(mockClearScheduledJob).toHaveBeenCalledWith(CONVO_ID, {
+        scheduleId: 'sched-1',
+        scheduledFor: SCHEDULED_FOR,
+      });
+    });
+
+    it('never consults the schedule gate for an ordinary interactive pause', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      await post(approveBody());
+
+      expect(mockIsScheduleLive).not.toHaveBeenCalled();
+      await settled;
     });
 
     it('403 when the job belongs to another user', async () => {
@@ -1110,6 +1296,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         CONVO_ID,
         'Resumed response could not be persisted before terminal publication',
         1000,
+        { preserveForReconcile: false },
       );
       expect(mockDeleteAgentCheckpoint).toHaveBeenCalledTimes(1);
     });
@@ -1206,6 +1393,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         CONVO_ID,
         'transport down',
         1000,
+        { preserveForReconcile: false },
       );
     });
 
@@ -1710,6 +1898,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         NEXT_ACTION_ID,
         're-pause save failed',
         1000,
+        // Interactive turn: no scheduled evidence to retain.
+        undefined,
       );
       expect(mockGenerationJobManager.approvals.finishPausePersistence).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
@@ -1773,6 +1963,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         NEXT_ACTION_ID,
         'Re-pause response progress could not be persisted',
         1000,
+        undefined,
       );
       expect(mockGenerationJobManager.approvals.finishPausePersistence).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
@@ -1798,6 +1989,214 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
     });
 
+    it('finalizes a genuine failure whose message merely mentions abort', async () => {
+      const job = makeToolApprovalJob();
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      // The store still shows OUR generation running: proof no abort finalized the
+      // job (an actual abort flips it terminal BEFORE the signal fires). Taking the
+      // abort path here left the job `running` forever with no controller driving it.
+      mockJobStore.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          resumeCompletion: jest.fn().mockRejectedValue(new Error('transaction aborted by server')),
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      // The failure is published by the terminal-CAS winner, so the proof this took the
+      // ERROR path (not the abort path) is the finalization carrying the message.
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        'transaction aborted by server',
+        1000,
+        { preserveForReconcile: false },
+      );
+    });
+
+    it('treats an abort-shaped throw as an abort when the job is already finalized', async () => {
+      const job = makeToolApprovalJob();
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      // abortJob deleted the job before the throw unwound: classification must not
+      // route this to the error path, whose outcome write would walk the failure
+      // streak for a user stop.
+      mockJobStore.getJob.mockResolvedValue(null);
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          resumeCompletion: jest.fn().mockRejectedValue(new Error('request aborted')),
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+    });
+
+    it('classifies a mid-continuation balance refusal as skipped_balance', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+      mockRecordScheduleOutcome.mockResolvedValue(true);
+      // PRODUCTION SHAPE: resumeCompletion swallows continuation errors into an
+      // ERROR content part and RESOLVES, surfacing the error on client.resumeError —
+      // it does not reject. A rejecting mock exercised a path real runs never take
+      // and hid that the schedule recorded `success`.
+      const client = makeClient();
+      client.resumeCompletion = jest.fn().mockImplementation(async () => {
+        client.resumeError = new Error(JSON.stringify({ type: 'token_balance' }));
+      });
+      mockInitializeClient.mockResolvedValue({ client, userMCPAuthMap: {} });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      // The owner's credits ran out mid-continuation: insufficient_balance streak,
+      // not too_many_failures — same classification as the initial fire's catch.
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ scheduleId: 'sched-1', status: 'skipped_balance' }),
+      );
+      expect(mockRecordScheduleOutcome).not.toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'success' }),
+      );
+    });
+
+    it('classifies any other swallowed continuation failure as error', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+      mockRecordScheduleOutcome.mockResolvedValue(true);
+      const client = makeClient();
+      client.resumeCompletion = jest.fn().mockImplementation(async () => {
+        client.resumeError = new Error('upstream 503');
+      });
+      mockInitializeClient.mockResolvedValue({ client, userMCPAuthMap: {} });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      // Recorded as success, this reset the consecutive-failure streak every run, so a
+      // schedule that always dies on the provider call never hit autoDisableAfterFailures.
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'error', error: 'upstream 503' }),
+      );
+      expect(mockRecordScheduleOutcome).not.toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'success' }),
+      );
+    });
+
+    it('stamps the intended outcome on the retained claim so recovery can reproduce it', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+      const client = makeClient();
+      client.resumeCompletion = jest.fn().mockImplementation(async () => {
+        client.resumeError = new Error(JSON.stringify({ type: 'token_balance' }));
+      });
+      mockInitializeClient.mockResolvedValue({ client, userMCPAuthMap: {} });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      // A terminal `complete` cannot tell a balance refusal from a clean finish, so the
+      // reconciler would re-derive `success` if the inline outcome write failed.
+      expect(mockGenerationJobManager.claimTerminalJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        'complete',
+        undefined,
+        1000,
+        expect.objectContaining({
+          preserveForReconcile: true,
+          scheduleOutcome: { status: 'skipped_balance' },
+        }),
+      );
+    });
+
+    it('refreshes the retained stamp when persistence AND the outcome write both fail', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+      // The complete-claim stamps `success` BEFORE the response save; the save then
+      // fails and the Mongo outcome write fails too. Without the refresh, the retained
+      // evidence keeps saying success and the reconciler faithfully reproduces it.
+      mockSaveMessage.mockResolvedValue(null);
+      mockRecordScheduleOutcome.mockResolvedValue(false);
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockGenerationJobManager.updateScheduleOutcome).toHaveBeenCalledWith(
+        CONVO_ID,
+        1000,
+        expect.objectContaining({ status: 'error' }),
+      );
+      // Evidence FIRST: the job-store stamp lands before the Mongo outcome attempt.
+      expect(
+        mockGenerationJobManager.updateScheduleOutcome.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        mockRecordScheduleOutcome.mock.invocationCallOrder[
+          mockRecordScheduleOutcome.mock.invocationCallOrder.length - 1
+        ],
+      );
+      // The failed outcome write must NOT reap the only reconcile evidence.
+      expect(mockClearScheduledJob).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The terminal CAS precedes the response save, so losing it means this occurrence
+     * persisted NOTHING. Recording success there reported output that does not exist,
+     * and did it without the winner's persistence barrier — releasing the run's slot
+     * while Stop was still writing.
+     */
+    it('never records success for a scheduled resume that lost the terminal claim', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+      mockGenerationJobManager.claimTerminalJob.mockResolvedValue(null);
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).not.toHaveBeenCalled();
+      expect(mockRecordScheduleOutcome).not.toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'success' }),
+      );
+    });
+
+    it('settles a lost claim as interrupted when the abort won, behind the stop barrier', async () => {
+      const paused = makeToolApprovalJob({
+        metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR },
+      });
+      mockGenerationJobManager.getJob
+        .mockResolvedValueOnce(paused)
+        // The post-claim read identifying the winner: a Stop took the same generation.
+        .mockResolvedValue({ ...paused, status: 'aborted' });
+      mockGenerationJobManager.claimTerminalJob.mockResolvedValue(null);
+      mockRecordScheduleOutcome.mockResolvedValue(true);
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ scheduleId: 'sched-1', status: 'interrupted' }),
+      );
+    });
+
     it('resume failure delegates single-winner error publication and prunes the checkpoint', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       mockInitializeClient.mockResolvedValue({
@@ -1812,8 +2211,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await settled;
       await flush();
 
+      // completeJob owns the error publication now; a separate emitError would double it.
       expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000, {
+        // Unscheduled: no reconciler evidence to retain.
+        preserveForReconcile: false,
+      });
       expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
         CONVO_ID,
         { type: 'mongo' },
@@ -1839,7 +2242,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await settled;
       await flush();
 
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000, {
+        preserveForReconcile: false,
+      });
       expect(mockLogger.error).toHaveBeenCalledWith(
         '[ResumeAgentController] Failed to prune checkpoint after failed resume finalization',
         checkpointError,
@@ -1866,7 +2271,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await settled;
       await flush();
 
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000, {
+        preserveForReconcile: false,
+      });
       expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
     });
 

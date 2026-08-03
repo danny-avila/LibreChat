@@ -8,6 +8,12 @@ const mockLogger = {
 };
 
 const mockGenerationJobManager = {
+  // Owner-side finalization fence: the controller registers before its terminal
+  // CAS whenever post-terminal title work is possible, so the facade mock must
+  // mirror it or the turn stalls on an undefined call.
+  registerUserFinalization: jest.fn(async () => undefined),
+  clearUserFinalization: jest.fn(async () => undefined),
+  countUserFinalizations: jest.fn(async () => 0),
   createJob: jest.fn(),
   getJob: jest.fn(),
   emitError: jest.fn(),
@@ -17,7 +23,9 @@ const mockGenerationJobManager = {
   publishTerminalClaim: jest.fn(),
   finishTerminalJob: jest.fn(),
   completeJob: jest.fn(),
+  abortJob: jest.fn(),
   failPausePersistence: jest.fn(),
+  updateScheduleOutcome: jest.fn(async () => true),
   getResumeState: jest.fn(),
   updateMetadata: jest.fn(),
   claimGeneration: jest.fn(),
@@ -147,6 +155,9 @@ jest.mock('@librechat/api', () => ({
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
+  // Real predicate, not a stub: it decides whether this request holds a concurrency
+  // slot, and a stub here would hide a drift between the acquire and release sites.
+  exemptFromConcurrencyLimiter: jest.requireActual('@librechat/api').exemptFromConcurrencyLimiter,
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
     if (!Array.isArray(quotes)) {
@@ -165,6 +176,7 @@ jest.mock('@librechat/api', () => ({
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
+  isScheduleFireRequest: jest.fn(() => false),
   getAgentStartupTelemetry: (...args) => mockGetAgentStartupTelemetry(...args),
   acceptAgentStartupTelemetry: (...args) => mockAcceptAgentStartupTelemetry(...args),
   isUnpersistedPreliminaryParent: async ({
@@ -202,6 +214,15 @@ jest.mock('~/server/middleware', () => ({
 
 jest.mock('~/cache', () => ({
   logViolation: jest.fn(),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: jest.fn(() => Promise.resolve()),
+  // request.js destructures this at import time; omitting it makes the pre-start
+  // liveness re-check a call on undefined.
+  isScheduleLive: jest.fn(() => Promise.resolve(true)),
+  clearScheduledJob: jest.fn(() => Promise.resolve()),
+  awaitStopAbortPersistence: jest.fn(() => Promise.resolve(true)),
 }));
 
 jest.mock('~/models', () => ({
@@ -253,6 +274,8 @@ describe('ResumableAgentController resume metadata', () => {
       emitter: { on: jest.fn() },
     });
     mockGenerationJobManager.getResumeState.mockResolvedValue(null);
+    // No live record by default; suites that need one (the disconnect-partial save
+    // re-checks liveness before writing) arm it per test.
     mockGenerationJobManager.getJob.mockResolvedValue(undefined);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.emitChunk.mockResolvedValue(undefined);
@@ -848,6 +871,9 @@ describe('ResumableAgentController resume metadata', () => {
         }),
       },
     });
+    // The disconnect-partial save re-checks liveness before writing, so the store must
+    // still show this exact generation running for the write to be allowed.
+    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
     mockGenerationJobManager.getResumeState.mockResolvedValue({
       conversationId,
       responseMessageId: 'response-message',
@@ -898,8 +924,12 @@ describe('ResumableAgentController resume metadata', () => {
     const textPart = { type: 'text', text: 'Partial response...' };
 
     mockSaveMessage.mockResolvedValueOnce(undefined).mockResolvedValueOnce({});
+    // The handler dispatches the save asynchronously (assigning it synchronously to
+    // the settlement-awaited promise); drain the queue before asserting.
     await allSubscribersLeftHandler([oauthPart, textPart]);
+    await nextTick();
     await allSubscribersLeftHandler([oauthPart, textPart]);
+    await nextTick();
 
     expect(mockFilterPersistableAbortContent).toHaveBeenCalledWith([oauthPart, textPart]);
     expect(mockSaveMessage).toHaveBeenCalledWith(
@@ -937,6 +967,7 @@ describe('ResumableAgentController resume metadata', () => {
         }),
       },
     });
+    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
     mockGenerationJobManager.getResumeState.mockResolvedValue({
       conversationId,
       responseMessageId: 'response-message',
@@ -990,6 +1021,7 @@ describe('ResumableAgentController resume metadata', () => {
 
     const textPart = { type: 'text', text: 'Partial response...' };
     await allSubscribersLeftHandler([textPart]);
+    await nextTick();
 
     expect(mockSaveMessage).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'user-123' }),
@@ -1716,6 +1748,78 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
   });
 
+  it('re-applies the live dispatch policy at the last gate before a billed generation', async () => {
+    // The claim -> loopback POST window is short but real, and an operator kill switch, a
+    // narrowed `interface.schedules`, or a revoked SCHEDULES:USE touches neither the row
+    // nor its configRevision — so without `policy`, this gate could only catch a delete
+    // or an edit, and an occurrence already in flight still ran one full billed turn.
+    // Both resume gates already ask for it; this one is the fire path's equivalent.
+    const schedules = require('~/server/services/Schedules');
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
+    const req = {
+      user: { id: 'user-123' },
+      _isScheduledFire: true,
+      body: {
+        text: 'Scheduled prompt',
+        messageId: 'user-msg',
+        clientRequestId: 'req-policy',
+        conversationId: 'conversation-123',
+        scheduleId: 'sched-1',
+        scheduledFor: '2026-07-28T12:00:00.000Z',
+        scheduleConfigRevision: 3,
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), jest.fn(), null);
+
+    expect(schedules.isScheduleLive).toHaveBeenCalledWith(
+      'sched-1',
+      3,
+      expect.objectContaining({ automatic: true, policy: true }),
+    );
+  });
+
+  it('releases the pending slot and idempotency claim when the pre-start fence aborts', async () => {
+    // Manual Run Now is NOT limiter-exempt, so the controller incremented the pending
+    // counter and claimed the clientRequestId. The fence abort skips the whole
+    // generation, so nothing downstream releases either — this exit must, or the
+    // user's next interactive messages 429 until the counter's TTL expires.
+    const schedules = require('~/server/services/Schedules');
+    schedules.isScheduleLive.mockResolvedValueOnce(false);
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
+    mockGenerationJobManager.abortJob.mockResolvedValue({ success: true });
+    const req = {
+      user: { id: 'user-123' },
+      _isScheduledFire: true,
+      _isManualScheduledFire: true,
+      body: {
+        text: 'Scheduled prompt',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        scheduleId: 'sched-1',
+        scheduledFor: '2026-07-28T12:00:00.000Z',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'aborted' }));
+    expect(mockCheckAndIncrementPendingRequest).toHaveBeenCalledWith('user-123');
+    expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+    expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
+      'user-123',
+      'req-abc',
+      'conversation-123',
+      DEFAULT_OWNED_CLAIM,
+    );
+  });
+
   it('does not finalize an unscoped generation when job creation rejects before returning', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
     mockGenerationJobManager.createJob.mockRejectedValue(new Error('create failed before return'));
@@ -2041,6 +2145,8 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'provider init failed',
       1000,
+      // Nothing to preserve: an unscheduled turn has no reconciler evidence to keep.
+      { preserveForReconcile: false },
     );
   });
 
@@ -2077,6 +2183,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'Recovered steer cannot skip user message persistence',
       1000,
+      { preserveForReconcile: false },
     );
   });
 
@@ -2571,6 +2678,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       expect.any(String),
       1000,
+      { preserveForReconcile: false },
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
       'user-123',
@@ -2637,6 +2745,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'init boom after res.json',
       1000,
+      { preserveForReconcile: false },
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
       'user-123',
@@ -2752,12 +2861,55 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       generationError.message,
       1000,
+      { preserveForReconcile: false },
     );
     expect(mockGenerationJobManager.completeJob.mock.invocationCallOrder[0]).toBeLessThan(
       mockDecrementPendingRequest.mock.invocationCallOrder[0],
     );
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
     expect(mockDisposeClient).toHaveBeenCalledWith(client);
+  });
+
+  it('retains a scheduled generation failure with its classified outcome on the claim', async () => {
+    const generationError = new Error('provider exploded');
+    const schedules = require('~/server/services/Schedules');
+    // The Mongo outcome write fails too: the claim's stamped classification is then
+    // the ONLY thing standing between the reconciler and a re-derived `success`.
+    schedules.recordScheduleOutcome.mockResolvedValueOnce(false);
+    mockGenerationJobManager.completeJob.mockResolvedValue(true);
+    const client = {
+      options: {},
+      sendMessage: jest.fn().mockRejectedValue(generationError),
+    };
+    const initializeClient = jest.fn().mockResolvedValue({ client });
+    const req = {
+      user: { id: 'user-123' },
+      _isScheduledFire: true,
+      body: {
+        text: 'Scheduled prompt',
+        messageId: 'user-msg',
+        conversationId: 'conversation-123',
+        scheduleId: 'sched-1',
+        scheduledFor: '2026-07-28T12:00:00.000Z',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+    await nextTick();
+
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      generationError.message,
+      1000,
+      {
+        preserveForReconcile: true,
+        scheduleOutcome: { status: 'error', error: generationError.message },
+      },
+    );
+    // The failed outcome write must NOT reap the only reconcile evidence.
+    expect(schedules.clearScheduledJob).not.toHaveBeenCalled();
   });
 
   it('claims terminal ownership before FINAL and always finishes the winning claim', async () => {

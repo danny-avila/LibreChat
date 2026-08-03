@@ -40,6 +40,23 @@ export interface AdminUsersDeps {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<void>;
+  /**
+   * Stops the user's scheduled work and confirms the drain. Unlike the rest of the
+   * cascade this endpoint defers, scheduled runs are ACTIVE: a fire already generating
+   * keeps persisting messages (and billing) after the user document is gone, and the
+   * engine keeps claiming occurrences. Returns false when the drain could not be
+   * confirmed, in which case deletion must be refused rather than proceed.
+   */
+  quiesceUserSchedules: (userId: string) => Promise<boolean>;
+  /** Raises the durable, one-way account-deletion barrier. Must run BEFORE the quiesce:
+   *  the quiesce is a one-shot scan, and only the barrier refuses admission to work
+   *  created after it. */
+  markUserDeleting: (userId: string) => Promise<Date | null>;
+  /** Commits the deletion to automatic completion; only committed rows are swept. */
+  markUserDeletionCommitted: (userId: string) => Promise<void>;
+  /** Hard-deletes the user's Schedule/ScheduleRun rows. Not left to the reconciler's
+   *  `deleting` sweep, which the clustered entrypoint never runs. */
+  deleteSchedulesByUser: (userId: string) => Promise<void>;
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps): {
@@ -47,7 +64,17 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
   searchUsers: (req: ServerRequest, res: Response) => Promise<Response>;
   deleteUser: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
-  const { findUsers, countUsers, deleteUserById, deleteConfig, deleteAclEntries } = deps;
+  const {
+    findUsers,
+    countUsers,
+    deleteUserById,
+    deleteConfig,
+    deleteAclEntries,
+    quiesceUserSchedules,
+    markUserDeleting,
+    markUserDeletionCommitted,
+    deleteSchedulesByUser,
+  } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
     try {
@@ -144,6 +171,81 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         if (adminCount <= 1) {
           return res.status(400).json({ error: 'Cannot delete the last admin user' });
         }
+      }
+
+      // COMMIT to automatic completion BEFORE the barrier, exactly as the
+      // self-service controller orders it: the barrier refuses authentication, and
+      // the background sweep only finishes COMMITTED deletions — an uncommitted
+      // barrier (worker exit here, or an unretried 503 below) locked the account
+      // with its data retained indefinitely. Committed-without-barrier is inert.
+      let committed = false;
+      for (let attempt = 1; attempt <= 3 && !committed; attempt++) {
+        committed = await markUserDeletionCommitted(id).then(
+          () => true,
+          (error) => {
+            logger.error(`[adminUsers] Failed to commit deletion (attempt ${attempt}/3)`, error);
+            return false;
+          },
+        );
+      }
+      if (!committed) {
+        res.set('Retry-After', '30');
+        return res.status(503).json({ error: 'Could not start deletion. Please retry shortly.' });
+      }
+
+      // Raise the durable barrier next, exactly as the self-service controller does.
+      // The quiesce below is a one-shot disable + active-run scan, so a schedule create
+      // or Run Now that overlaps it can pass its own admission check, land after the
+      // scan, and arm or dispatch while the user document is being removed. Only the
+      // barrier refuses that admission for the rest of the cascade.
+      const barrierRaised = await markUserDeleting(id).then(
+        () => true,
+        (error) => {
+          logger.error('[adminUsers] Failed to raise the deletion barrier', error);
+          return false;
+        },
+      );
+      if (!barrierRaised) {
+        res.set('Retry-After', '30');
+        return res.status(503).json({ error: 'Could not start deletion. Please retry shortly.' });
+      }
+
+      // Stop scheduled work BEFORE removing the user. The rest of this endpoint's
+      // cascade is deliberately deferred (see deleteUserById), but scheduled runs are
+      // not dormant data: an in-flight fire keeps persisting messages and billing after
+      // the user document is gone. Refuse rather than delete on an unconfirmed drain,
+      // mirroring the self-service controller.
+      const quiesced = await quiesceUserSchedules(id).catch((error) => {
+        logger.error('[adminUsers] Failed to quiesce scheduled chats', error);
+        return false;
+      });
+      if (!quiesced) {
+        res.set('Retry-After', '30');
+        return res.status(503).json({
+          error: 'Scheduled work for this user is still settling. Please retry shortly.',
+        });
+      }
+
+      // Hard-delete the schedule rows rather than relying on the reconciler's
+      // `deleting` sweep: the clustered `experimental.js` entrypoint never arms the
+      // engine, so in that topology nothing would ever erase them and the deleted
+      // user's prompt text would persist indefinitely. REFUSE on failure, before the
+      // user document goes: once it is deleted this endpoint 404s on retry, making the
+      // leftover rows unretryable — the exact retention this hard delete exists to
+      // prevent. The barrier is up and quiesce confirmed, so refusing here is safe and
+      // the admin simply retries. Mirrors the self-service controller's ordering.
+      const schedulesDeleted = await deleteSchedulesByUser(id).then(
+        () => true,
+        (error) => {
+          logger.error('[adminUsers] Failed to delete schedules for the removed user', error);
+          return false;
+        },
+      );
+      if (!schedulesDeleted) {
+        res.set('Retry-After', '30');
+        return res.status(503).json({
+          error: 'Could not remove scheduled chats for this user. Please retry shortly.',
+        });
       }
 
       const result = await deleteUserById(id);

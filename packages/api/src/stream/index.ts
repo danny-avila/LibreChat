@@ -49,6 +49,7 @@ export {
 export type { RecoveredSteerPayload } from './SteerRecovery';
 
 export { createStreamServices } from './createStreamServices';
+export { configureGenerationStreams } from './startup';
 export type { StreamServicesConfig, StreamServices } from './createStreamServices';
 export { filterPersistableAbortContent, hasPersistableAbortContent } from './abortContent';
 

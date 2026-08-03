@@ -164,6 +164,55 @@ describe('Startup readiness wiring', () => {
     expect(agentsRouteIndex).toBeGreaterThan(-1);
     expect(readinessGateIndex).toBeLessThan(agentsRouteIndex);
   });
+
+  it('initializes generation streams via the SHARED module (not a private copy)', () => {
+    // The clustered entrypoint could not reuse a private const in index.js (requiring
+    // index.js boots a second listener), which is why its workers never configured the
+    // stream services at all. Both entrypoints must call the shared initializer.
+    expect(source).toContain('configureSharedGenerationStreams()');
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+    expect(experimental).toContain('configureGenerationStreams()');
+  });
+
+  it('does not run the scheduler in the clustered entrypoint (v1 is single-process)', () => {
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+    // v1 scope: the clustered entrypoint must not arm the engine at all, and must refuse
+    // schedule writes rather than persist schedules nothing will ever fire.
+    expect(experimental).not.toContain('initializeScheduleEngine');
+    expect(experimental).toContain('SCHEDULES_NOT_SUPPORTED');
+  });
+
+  it('guards schedule writes with a readiness gate on the schedules route', () => {
+    expect(source).toContain(
+      "app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);",
+    );
+  });
+
+  it('keeps schedule DELETE open when the engine never arms (both entrypoints)', () => {
+    // An engine that refuses to arm keeps the gate closed forever; erasure needs no
+    // engine, and users must not be stranded with schedules they can see but never
+    // remove. The set name is asserted so a revert to READ_ONLY_METHODS fails here.
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+    for (const entrypoint of [source, experimental]) {
+      expect(entrypoint).toMatch(
+        /SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set\(\['GET', 'HEAD', 'OPTIONS', 'DELETE'\]\)/,
+      );
+      expect(entrypoint).toContain('SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)');
+    }
+  });
+
+  it('flips schedulesReady only from the engine-init result (indexes must exist first)', () => {
+    const engineInitIndex = source.indexOf(
+      'const scheduleEngine = await initializeScheduleEngine(',
+    );
+    const readyFlipIndex = source.indexOf('schedulesReady = scheduleEngine != null;');
+
+    expect(engineInitIndex).toBeGreaterThan(-1);
+    expect(readyFlipIndex).toBeGreaterThan(-1);
+    // The write gate must open only AFTER the engine (and thus its unique idempotency
+    // + TTL indexes) is confirmed up, never merely on serverReady.
+    expect(engineInitIndex).toBeLessThan(readyFlipIndex);
+  });
 });
 
 describe('Server Configuration', () => {

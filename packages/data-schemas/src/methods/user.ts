@@ -1,5 +1,6 @@
 import mongoose, { FilterQuery } from 'mongoose';
 import {
+  AUTH_USER_DOC_TOMBSTONE_PREFIX,
   AUTH_USER_DOC_BY_ID_PREFIX,
   CacheKeys,
   type RefillIntervalUnit,
@@ -7,8 +8,13 @@ import {
 } from 'librechat-data-provider';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
 import type { CacheStore } from '~/types';
+import { createIndexesWithRetry } from '~/utils/retry';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
+
+/** Sentinel fence returned when the user document cannot be READ: a quiesce that
+ *  cannot see the abort fences must never conclude settlement. */
+export const UNREADABLE_ABORT_FENCE = '__unreadable__';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
@@ -118,6 +124,25 @@ export function createUserMethods(
   getUserById: (userId: string, fieldsToSelect?: string | string[] | null) => Promise<IUser | null>;
   generateToken: (user: IUser, expiresIn?: number) => Promise<string>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
+  /** Raises the one-way account-deletion barrier (monotonic) and invalidates the
+   *  auth user-doc cache. Returns the effective timestamp. */
+  markUserDeleting: (userId: string) => Promise<Date | null>;
+  /** Whether deletion has begun for this user. Fail-closed: unknown means true. */
+  isUserDeleting: (userId: string) => Promise<boolean>;
+  /** Users whose barrier is up but whose document still exists (unfinished cascades). */
+  getUsersPendingDeletion: (limit: number) => Promise<IUser[]>;
+  /** Builds the User schema's declared indexes — notably the partial
+   *  (deletionSweepAt, deletionRequestedAt) index the deferred-deletion sweep scans on.
+   *  Production deployments disable Mongoose autoIndex, so schema declaration alone
+   *  builds nothing there and every sweep pass COLLSCANs the users collection. */
+  ensureUserDeletionIndexes: () => Promise<void>;
+  /** Stamps deferred-deletion sweep attempts so the bounded window rotates. */
+  markDeletionSweepAttempted: (userIds: string[]) => Promise<void>;
+  /** Commits a deletion to automatic completion; only these are swept. */
+  markUserDeletionCommitted: (userId: string) => Promise<void>;
+  addUserAbortFence: (userId: string, streamId: string) => Promise<void>;
+  clearUserAbortFence: (userId: string, streamId: string) => Promise<void>;
+  getUserAbortFences: (userId: string) => Promise<string[]>;
   updateUserPlugins: (
     userId: string,
     plugins: string[] | undefined,
@@ -278,15 +303,49 @@ export function createUserMethods(
     return updated;
   }
 
-  async function invalidateAuthUserDocCache(userId: string): Promise<void> {
+  /**
+   * Drops the cached auth user document.
+   *
+   * `required` makes the operation FAIL CLOSED. For an ordinary profile update a stale
+   * cache entry is a cosmetic lag, so a cache fault must not fail the update. The
+   * deletion BARRIER is different in kind: its whole purpose is that no request can be
+   * admitted with a pre-barrier view of the user, and in burst-cache deployments a
+   * surviving entry keeps populating `req.user` until its TTL expires — while the
+   * destructive cascade runs. Swallowing the fault there reports a barrier that was
+   * never actually raised.
+   */
+  /** Outlives any in-flight auth whose Mongo read predates the barrier; the cached
+   *  doc's own 5s TTL bounds the damage of anything that slips past this window. */
+  const AUTH_USER_DOC_TOMBSTONE_TTL_MS = 60_000;
+
+  async function invalidateAuthUserDocCache(
+    userId: string,
+    options?: { required?: boolean },
+  ): Promise<void> {
     if (!isAuthUserDocCacheEnabled()) {
       return;
     }
     const cache = deps.getCache?.(CacheKeys.AUTH_USER_DOC);
     if (!cache?.get || !cache?.delete) {
+      if (options?.required) {
+        throw new Error(
+          'Auth user-doc cache is enabled but unavailable; cannot confirm deletion barrier',
+        );
+      }
       return;
     }
     try {
+      if (options?.required && cache.set) {
+        // Tombstone FIRST, sweep second. A fill racing this barrier (Mongo read
+        // pre-barrier, cache write post-sweep) re-caches the deleted user for its
+        // full TTL; fills check this key AFTER writing, so either the sweep below
+        // catches their entry or this tombstone makes them unwind it themselves.
+        await cache.set(
+          `${AUTH_USER_DOC_TOMBSTONE_PREFIX}:${userId}`,
+          Date.now(),
+          AUTH_USER_DOC_TOMBSTONE_TTL_MS,
+        );
+      }
       const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
       const cachedKeys = await cache.get(indexKey);
       if (Array.isArray(cachedKeys)) {
@@ -295,9 +354,171 @@ export function createUserMethods(
         );
       }
       await cache.delete(indexKey);
-    } catch {
-      // Cache invalidation must not make a user update fail.
+    } catch (err) {
+      if (options?.required) {
+        throw err;
+      }
+      // Cache invalidation must not make an ordinary user update fail.
     }
+  }
+
+  /**
+   * Raises the durable account-deletion barrier. ONE-WAY and monotonic: the timestamp
+   * is stamped only when absent, so a repeated or concurrent deletion request never
+   * moves it and there is no un-delete race. Returns the effective timestamp.
+   *
+   * Must be called BEFORE quiescing anything: quiescing is the slow part, and the
+   * whole drain window has to already be refusing new work. The auth user-doc cache is
+   * invalidated here because the barrier is only as strong as the shortest cache TTL —
+   * a request holding a stale user document would otherwise sail straight past it.
+   */
+  async function markUserDeleting(userId: string): Promise<Date | null> {
+    const User = mongoose.models.User;
+    // CACHE BARRIER BEFORE THE DURABLE STAMP. The cached-hit path treats an absent
+    // tombstone as a conclusive fence, so stamping Mongo first opened a window where
+    // a hit between the stamp and the tombstone authenticated a user whose deletion
+    // had already durably begun — and the quiesce could then run before that
+    // request's work existed to discover. Tombstone-first closes it: any request
+    // served after the stamp necessarily observes the tombstone. If the stamp below
+    // then fails (or the process dies), the tombstone ages out in 60s with the user
+    // never barriered — auth degrades to refusals/rechecks for that window, never
+    // the reverse. FAIL CLOSED: a throw here propagates to the caller, which reports
+    // the barrier as not raised and refuses to start the destructive cascade; the
+    // retry is safe because the update below is idempotent.
+    await invalidateAuthUserDocCache(userId, { required: true });
+    const updated = await User.findOneAndUpdate(
+      { _id: userId, deletionRequestedAt: { $exists: false } },
+      { $set: { deletionRequestedAt: new Date() } },
+      { new: true },
+    ).lean<IUser>();
+    if (updated?.deletionRequestedAt != null) {
+      return updated.deletionRequestedAt;
+    }
+    // Already raised by a prior/concurrent request: report the existing timestamp
+    // rather than overwriting it, so the barrier stays monotonic.
+    const existing = await User.findById(userId)
+      .select('deletionRequestedAt')
+      .lean<Pick<IUser, 'deletionRequestedAt'>>();
+    return existing?.deletionRequestedAt ?? null;
+  }
+
+  /**
+   * Whether this user's account deletion has begun. FAIL-CLOSED: a lookup failure or a
+   * missing user reports `true`, because refusing work for a live user is recoverable
+   * (the caller retries) while admitting work for a deleting one is not.
+   */
+  async function isUserDeleting(userId: string): Promise<boolean> {
+    const User = mongoose.models.User;
+    try {
+      const user = await User.findById(userId)
+        .select('deletionRequestedAt')
+        .lean<Pick<IUser, 'deletionRequestedAt'>>();
+      return user == null || user.deletionRequestedAt != null;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Users whose deletion barrier is up but whose document still exists, i.e. cascades
+   * that never finished (deferred on an unconfirmed quiesce, or crashed part-way).
+   * Makes the destructive cascade a resumable work list instead of a one-shot.
+   */
+  async function ensureUserDeletionIndexes(): Promise<void> {
+    await createIndexesWithRetry(mongoose.models.User);
+  }
+
+  async function getUsersPendingDeletion(limit: number): Promise<IUser[]> {
+    const User = mongoose.models.User;
+    // Only COMMITTED deletions: the CLI raises the admission barrier too, then can
+    // refuse and exit — a bare-barrier row is not the sweep's to finish.
+    // Least-recently-attempted first (missing sorts before any date): a cascade that
+    // keeps deferring must rotate to the back of this bounded window, or it starves
+    // every pending deletion behind it. Callers stamp markDeletionSweepAttempted.
+    return User.find({
+      deletionRequestedAt: { $exists: true },
+      deletionCommittedAt: { $exists: true },
+    })
+      .sort({ deletionSweepAt: 1, deletionRequestedAt: 1 })
+      .limit(limit)
+      .lean<IUser[]>();
+  }
+
+  /**
+   * Marks this deletion as COMMITTED to automatic completion — the sweep's
+   * eligibility signal, distinct from the admission barrier. One-way and monotonic
+   * like the barrier itself.
+   */
+  async function markUserDeletionCommitted(userId: string): Promise<void> {
+    const User = mongoose.models.User;
+    await User.updateOne(
+      { _id: userId, deletionCommittedAt: { $exists: false } },
+      { $set: { deletionCommittedAt: new Date() } },
+      { timestamps: false },
+    );
+    // Cached copies must not retain stale marker fields; best-effort like every
+    // non-barrier user mutation (the marker is not consulted at admission).
+    await invalidateAuthUserDocCache(userId);
+  }
+
+  /**
+   * Records a stream id whose deletion-side abort is not yet acknowledged. Stamped
+   * BEFORE the abort transitions the shared job, so a failure here refuses the abort
+   * while it is still side-effect free — the inverse ordering left the job terminal
+   * (invisible to the next pass's active-set scan) with no durable fence. Idempotent
+   * via $addToSet. THROWS on failure: the caller must not proceed.
+   */
+  async function addUserAbortFence(userId: string, streamId: string): Promise<void> {
+    const User = mongoose.models.User;
+    await User.updateOne(
+      { _id: userId },
+      { $addToSet: { deletionAbortFences: streamId } },
+      { timestamps: false },
+    );
+  }
+
+  /** Clears an acknowledged abort fence (signal left the replica, or the job is gone). */
+  async function clearUserAbortFence(userId: string, streamId: string): Promise<void> {
+    const User = mongoose.models.User;
+    await User.updateOne(
+      { _id: userId },
+      { $pull: { deletionAbortFences: streamId } },
+      { timestamps: false },
+    );
+  }
+
+  /**
+   * The user's unacknowledged abort fences. A READ FAILURE reports a sentinel fence,
+   * because a quiesce that cannot see the fences must never conclude settlement. A
+   * missing document is not that case: the fences live ON the document, so its
+   * absence means no fence was ever recorded and there is nothing to settle.
+   */
+  async function getUserAbortFences(userId: string): Promise<string[]> {
+    const User = mongoose.models.User;
+    try {
+      const user = await User.findById(userId)
+        .select('deletionAbortFences')
+        .lean<Pick<IUser, 'deletionAbortFences'>>();
+      return user?.deletionAbortFences ?? [];
+    } catch {
+      return [UNREADABLE_ABORT_FENCE];
+    }
+  }
+
+  /** Rotation stamp for the deferred-deletion sweep window. Bookkeeping only, but it
+   *  still mutates user documents, so cached copies are dropped (best-effort — these
+   *  users are already refused at authentication behind the barrier). */
+  async function markDeletionSweepAttempted(userIds: string[]): Promise<void> {
+    if (userIds.length === 0) {
+      return;
+    }
+    const User = mongoose.models.User;
+    await User.updateMany(
+      { _id: { $in: userIds } },
+      { $set: { deletionSweepAt: new Date() } },
+      { timestamps: false },
+    );
+    await Promise.all(userIds.map((userId) => invalidateAuthUserDocCache(userId)));
   }
 
   /**
@@ -628,6 +849,15 @@ export function createUserMethods(
     getUserById,
     generateToken,
     deleteUserById,
+    markUserDeleting,
+    isUserDeleting,
+    getUsersPendingDeletion,
+    ensureUserDeletionIndexes,
+    markDeletionSweepAttempted,
+    markUserDeletionCommitted,
+    addUserAbortFence,
+    clearUserAbortFence,
+    getUserAbortFences,
     updateUserPlugins,
     toggleUserMemories,
     updateUserStatefulCodeEnvironment,
