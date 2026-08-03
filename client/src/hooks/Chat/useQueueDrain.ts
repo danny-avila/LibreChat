@@ -270,7 +270,10 @@ export default function useQueueDrain(
           set(store.queueDrainHoldByConvoId(conversationId), null);
         }
         /** Withhold the epoch, never the queue: the rows stay exactly where
-         *  they are, so cancelling is a no-op and a reload costs no text. */
+         *  they are, so cancelling is a no-op and a reload costs no text.
+         *  A first turn's queue does have to migrate before the window opens —
+         *  the composer reads the resolved id by then, so leaving the rows
+         *  under `NEW_CONVO` would blank the group for the whole window. */
         if (
           shouldDrain &&
           !interruptArmed &&
@@ -278,6 +281,10 @@ export default function useQueueDrain(
           undoGraceMs > 0 &&
           merged.length > 0
         ) {
+          if (shouldMigrate && newConvoQueue.length > 0) {
+            set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), []);
+            set(store.queuedMessagesByConvoId(conversationId), merged);
+          }
           set(store.queueDrainHoldByConvoId(conversationId), {
             runEnd: end,
             dueAt: now + undoGraceMs,

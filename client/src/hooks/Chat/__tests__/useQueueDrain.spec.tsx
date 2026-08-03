@@ -707,6 +707,7 @@ describe('useQueueDrain undo grace', () => {
       setInterruptFlag?: (value: DrainAfterAbort | false) => void;
       cancelHold?: () => void;
       queue?: QueuedMessage[];
+      newConvoQueue?: QueuedMessage[];
       hold?: QueueDrainHold | null;
     } = {};
 
@@ -716,6 +717,7 @@ describe('useQueueDrain undo grace', () => {
       const setHold = useSetRecoilState(store.queueDrainHoldByConvoId(CONVO_ID));
       state.cancelHold = () => setHold(null);
       state.queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
+      state.newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
       state.hold = useRecoilValue(store.queueDrainHoldByConvoId(CONVO_ID));
       useQueueDrain(INDEX, CONVO_ID, ask, { undoGraceMs: GRACE_MS });
       return null;
@@ -818,6 +820,30 @@ describe('useQueueDrain undo grace', () => {
     // than overwriting the held one.
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(2), { timeout: AFTER_GRACE_MS * 8 });
     expect(ask.mock.calls.map(([payload]) => payload.text)).toEqual(['first', 'second']);
+  });
+
+  /** The composer reads the resolved id by run end, so rows left under the
+   *  optimistic key would vanish from the group for the whole window. */
+  it('migrates a first turn`s queue to the resolved conversation before opening the window', async () => {
+    const { ask, state } = setupGraced(({ set }) => {
+      set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
+        queuedMessage('q1', 'queued on the first turn'),
+      ]);
+    });
+
+    act(() => {
+      state.setRunEnd!(runEnd({ startedAsNewConvo: true }));
+    });
+
+    await waitFor(() => expect(state.hold).not.toBeNull());
+    expect(state.newConvoQueue).toEqual([]);
+    expect(state.queue).toEqual([
+      expect.objectContaining({ id: 'q1', text: 'queued on the first turn' }),
+    ]);
+    expect(ask).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1), { timeout: AFTER_GRACE_MS * 4 });
+    expect(ask).toHaveBeenCalledWith({ text: 'queued on the first turn' }, emptyOverrides);
   });
 
   it('drains immediately when the window already expired while away', async () => {
