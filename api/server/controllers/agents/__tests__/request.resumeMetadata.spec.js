@@ -12,6 +12,10 @@ const mockGenerationJobManager = {
   // CAS whenever post-terminal title work is possible, so the facade mock must
   // mirror it or the turn stalls on an undefined call.
   registerUserFinalization: jest.fn(async () => undefined),
+  holdUserFinalization: jest.fn(async (u, s2, t, g, leaseId) => ({
+    leaseId,
+    release: mockLeaseRelease,
+  })),
   clearUserFinalization: jest.fn(async () => undefined),
   countUserFinalizations: jest.fn(async () => 0),
   createJob: jest.fn(),
@@ -137,6 +141,7 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: mockLogger,
 }));
 
+const mockLeaseRelease = jest.fn();
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
   toPendingSteer: jest.fn((item) => item),
@@ -267,6 +272,9 @@ describe('ResumableAgentController resume metadata', () => {
     jest.clearAllMocks();
     mockGenerationJobManager.registerUserFinalization.mockResolvedValue(undefined);
     mockGenerationJobManager.clearUserFinalization.mockResolvedValue(undefined);
+    mockGenerationJobManager.holdUserFinalization.mockImplementation(
+      async (u, s2, t, g, leaseId) => ({ leaseId, release: mockLeaseRelease }),
+    );
     mockMCPContexts = new WeakMap();
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
@@ -3051,26 +3059,26 @@ describe('ResumableAgentController resume metadata', () => {
     await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
     await nextTick();
 
-    // Generation- and lease-qualified: a predecessor's (or a losing same-generation
-    // contender's) late clear must not drop this marker. The FIRST registration is
-    // the admission lease covering the auth-to-createJob window.
-    expect(mockGenerationJobManager.registerUserFinalization).toHaveBeenCalledWith(
+    // Generation- and lease-qualified HOLDS (heartbeat-renewed): a predecessor's (or
+    // a losing same-generation contender's) late clear must not drop this marker.
+    // The FIRST hold is the admission lease covering the auth-to-createJob window.
+    expect(mockGenerationJobManager.holdUserFinalization).toHaveBeenCalledWith(
       'user-123',
       'conversation-123',
       undefined,
       undefined,
       expect.stringMatching(/^admission-/),
     );
-    expect(mockGenerationJobManager.registerUserFinalization).toHaveBeenCalledWith(
+    expect(mockGenerationJobManager.holdUserFinalization).toHaveBeenCalledWith(
       'user-123',
       'conversation-123',
       undefined,
       1000,
       expect.any(String),
     );
-    expect(
-      mockGenerationJobManager.registerUserFinalization.mock.invocationCallOrder[0],
-    ).toBeLessThan(mockGenerationJobManager.claimTerminalJob.mock.invocationCallOrder[0]);
+    expect(mockGenerationJobManager.holdUserFinalization.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGenerationJobManager.claimTerminalJob.mock.invocationCallOrder[0],
+    );
   });
 
   it('refuses admission when the deletion barrier is up, lease registered FIRST', async () => {
@@ -3098,22 +3106,16 @@ describe('ResumableAgentController resume metadata', () => {
     expect(res.status).toHaveBeenCalledWith(403);
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
     expect(initializeClient).not.toHaveBeenCalled();
-    const admissionRegister = mockGenerationJobManager.registerUserFinalization.mock.calls.find(
+    const admissionRegister = mockGenerationJobManager.holdUserFinalization.mock.calls.find(
       (call) => String(call[4]).startsWith('admission-'),
     );
     expect(admissionRegister).toBeDefined();
     // Lease before barrier read.
-    expect(
-      mockGenerationJobManager.registerUserFinalization.mock.invocationCallOrder[0],
-    ).toBeLessThan(models.isUserDeleting.mock.invocationCallOrder[0]);
-    // The refusal releases its own lease.
-    expect(mockGenerationJobManager.clearUserFinalization).toHaveBeenCalledWith(
-      'user-123',
-      'conversation-123',
-      undefined,
-      undefined,
-      admissionRegister[4],
+    expect(mockGenerationJobManager.holdUserFinalization.mock.invocationCallOrder[0]).toBeLessThan(
+      models.isUserDeleting.mock.invocationCallOrder[0],
     );
+    // The refusal releases its own hold.
+    expect(mockLeaseRelease).toHaveBeenCalled();
   });
 
   it('releases the admission lease once createJob is durable', async () => {
@@ -3146,15 +3148,12 @@ describe('ResumableAgentController resume metadata', () => {
     await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
     await nextTick();
 
-    const admissionRegister = mockGenerationJobManager.registerUserFinalization.mock.calls.find(
+    const admissionRegister = mockGenerationJobManager.holdUserFinalization.mock.calls.find(
       (call) => String(call[4]).startsWith('admission-'),
     );
     expect(admissionRegister).toBeDefined();
-    const admissionClear = mockGenerationJobManager.clearUserFinalization.mock.calls.find(
-      (call) => call[4] === admissionRegister[4],
-    );
     // Held exactly until the job is durable (active-set visible), then released.
-    expect(admissionClear).toBeDefined();
+    expect(mockLeaseRelease).toHaveBeenCalled();
   });
 
   it('fails CLOSED when the finalization marker cannot be registered: no terminal CAS at all', async () => {
@@ -3162,9 +3161,9 @@ describe('ResumableAgentController resume metadata', () => {
     // fences: neither the complete-claim NOR the error-path completeJob may run
     // unfenced. The job stays active — deletion-visible by itself — for the stale
     // reaper to recover.
-    mockGenerationJobManager.registerUserFinalization.mockRejectedValue(
-      new Error('marker store down'),
-    );
+    mockGenerationJobManager.holdUserFinalization
+      .mockResolvedValueOnce({ leaseId: 'admission-ok', release: mockLeaseRelease })
+      .mockRejectedValue(new Error('marker store down'));
     mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
     const client = {
       options: {},

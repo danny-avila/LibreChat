@@ -1,6 +1,7 @@
 export {
   GenerationJobManager,
   GenerationJobManagerClass,
+  USER_FINALIZATION_OWNER_LEASE,
   type CreateGenerationJobOptions,
   type GenerationJobManagerOptions,
   type TerminalJobClaim,

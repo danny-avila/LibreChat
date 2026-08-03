@@ -42,6 +42,7 @@ const mockLogger = {
   info: jest.fn(),
 };
 
+const mockLeaseRelease = jest.fn();
 const mockJobStore = {
   getJob: jest.fn(),
   updateJob: jest.fn(),
@@ -52,6 +53,10 @@ const mockGenerationJobManager = {
   // CAS whenever post-terminal title work is possible, so the facade mock must
   // mirror it or the turn stalls on an undefined call.
   registerUserFinalization: jest.fn(async () => undefined),
+  holdUserFinalization: jest.fn(async (u, s2, t, g, leaseId) => ({
+    leaseId,
+    release: mockLeaseRelease,
+  })),
   clearUserFinalization: jest.fn(async () => undefined),
   countUserFinalizations: jest.fn(async () => 0),
   getJob: jest.fn(),
@@ -249,6 +254,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockJobStore.updateJob.mockResolvedValue(undefined);
     mockGenerationJobManager.registerUserFinalization.mockResolvedValue(undefined);
     mockGenerationJobManager.clearUserFinalization.mockResolvedValue(undefined);
+    mockGenerationJobManager.holdUserFinalization.mockImplementation(
+      async (u, s2, t, g, leaseId) => ({ leaseId, release: mockLeaseRelease }),
+    );
     mockGenerationJobManager.getResumeState.mockResolvedValue({ aggregatedContent: [] });
     mockGenerationJobManager.emitDone.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);
@@ -2196,35 +2204,39 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       // first-turn title) are still ahead — without the marker a deletion quiesce in
       // that window sees neither an active job nor a fence.
       // Generation-qualified: a predecessor's late clear must not drop this marker.
-      // Lease-qualified: a losing same-generation contender (a racing Stop) must
-      // only ever release its own lease, never this one.
-      expect(mockGenerationJobManager.registerUserFinalization).toHaveBeenCalledWith(
+      // Lease-qualified HOLD (heartbeat-renewed): a losing same-generation contender
+      // (a racing Stop) must only ever release its own lease, never this one.
+      expect(mockGenerationJobManager.holdUserFinalization).toHaveBeenCalledWith(
         USER_ID,
         CONVO_ID,
         TENANT_ID,
         1000,
         expect.any(String),
       );
-      const resumeLeaseId = mockGenerationJobManager.registerUserFinalization.mock.calls[0][4];
       expect(
-        mockGenerationJobManager.registerUserFinalization.mock.invocationCallOrder[0],
+        mockGenerationJobManager.holdUserFinalization.mock.invocationCallOrder[0],
       ).toBeLessThan(mockGenerationJobManager.claimTerminalJob.mock.invocationCallOrder[0]);
+      // Released only after the persistence phase (the finish of the terminal claim),
+      // never between the CAS and the save — and the owner-lifecycle lease releases
+      // with it (see USER_FINALIZATION_OWNER_LEASE).
+      expect(mockLeaseRelease).toHaveBeenCalled();
+      expect(mockLeaseRelease.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mockSaveMessage.mock.invocationCallOrder[0],
+      );
       expect(mockGenerationJobManager.clearUserFinalization).toHaveBeenCalledWith(
         USER_ID,
         CONVO_ID,
         TENANT_ID,
         1000,
-        resumeLeaseId,
+        'owner',
       );
-      // Cleared only after the persistence phase (the finish of the terminal claim),
-      // never between the CAS and the save.
-      expect(
-        mockGenerationJobManager.clearUserFinalization.mock.invocationCallOrder[0],
-      ).toBeGreaterThan(mockSaveMessage.mock.invocationCallOrder[0]);
     });
 
     it('fails CLOSED when the finalization marker cannot be registered on resume', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockGenerationJobManager.holdUserFinalization.mockRejectedValue(
+        new Error('marker store down'),
+      );
       mockGenerationJobManager.registerUserFinalization.mockRejectedValue(
         new Error('marker store down'),
       );

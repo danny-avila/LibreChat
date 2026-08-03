@@ -925,19 +925,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   // deletion-visible. FAIL CLOSED on an unregistrable lease: nothing has been
   // admitted into generation yet, so refusing is free and plainly retryable.
   const admissionLeaseId = `admission-${crypto.randomUUID()}`;
-  let admissionLeaseHeld = false;
+  let admissionHold = null;
   const releaseAdmissionLease = () => {
-    if (!admissionLeaseHeld) {
+    if (admissionHold == null) {
       return;
     }
-    admissionLeaseHeld = false;
-    void GenerationJobManager.clearUserFinalization(
-      userId,
-      streamId,
-      req.user?.tenantId,
-      undefined,
-      admissionLeaseId,
-    ).catch(() => undefined);
+    const hold = admissionHold;
+    admissionHold = null;
+    hold.release();
   };
   const refuseAdmission = async (status, body) => {
     releaseAdmissionLease();
@@ -955,22 +950,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     startupTelemetry?.end('rejected');
     return sendGenerationJson(res, status, body, generationProtocolVersion);
   };
-  admissionLeaseHeld = await GenerationJobManager.registerUserFinalization(
+  admissionHold = await GenerationJobManager.holdUserFinalization(
     userId,
     streamId,
     req.user?.tenantId,
     undefined,
     admissionLeaseId,
-  )
-    .then(() => true)
-    .catch((err) => {
-      logger.warn(
-        `[ResumableAgentController] Admission lease registration failed: ${streamId}`,
-        err,
-      );
-      return false;
-    });
-  if (!admissionLeaseHeld) {
+  ).catch((err) => {
+    logger.warn(`[ResumableAgentController] Admission lease registration failed: ${streamId}`, err);
+    return null;
+  });
+  if (admissionHold == null) {
     res.set('Retry-After', '2');
     return refuseAdmission(503, {
       error: 'Could not fence the request against account deletion. Please retry.',
@@ -1434,47 +1424,54 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
      *  CAS — registering after it leaves a window where a deletion quiesce sees neither
      *  an active job nor a fence and cascades mid-title — and cleared once the title
      *  work settles (or immediately when no post-terminal title runs). */
-    let userFinalizationRegistered = false;
+    let userFinalizationHold = null;
     /** Unique per contender: completion and Stop race the same generation, and a
-     *  losing contender's cleanup must only ever release its own lease. */
+     *  losing contender's cleanup must only ever release its own lease. HELD
+     *  (heartbeat-renewed) rather than one-shot: the store TTL only bounds a crashed
+     *  holder, and live persistence — a stalled save, a long deferred title — must
+     *  never outlive its own fence. */
     const finalizationLeaseId = crypto.randomUUID();
     const registerUserFinalizationFence = async () => {
-      if (userFinalizationRegistered) {
+      if (userFinalizationHold != null) {
         return true;
       }
       // Generation-qualified (jobCreatedAt): a predecessor's late clear on the same
       // conversation must never drop THIS generation's marker. One retry absorbs a
       // transient store blip; a persistent failure is the caller's fail-closed signal.
-      for (let attempt = 1; attempt <= 2 && !userFinalizationRegistered; attempt++) {
-        userFinalizationRegistered = await GenerationJobManager.registerUserFinalization(
+      for (let attempt = 1; attempt <= 2 && userFinalizationHold == null; attempt++) {
+        userFinalizationHold = await GenerationJobManager.holdUserFinalization(
           userId,
           streamId,
           req.user?.tenantId,
           jobCreatedAt,
           finalizationLeaseId,
-        )
-          .then(() => true)
-          .catch((err) => {
-            logger.warn(
-              `[ResumableAgentController] Finalization registration failed (attempt ${attempt}/2): ${streamId}`,
-              err,
-            );
-            return false;
-          });
+        ).catch((err) => {
+          logger.warn(
+            `[ResumableAgentController] Finalization registration failed (attempt ${attempt}/2): ${streamId}`,
+            err,
+          );
+          return null;
+        });
       }
-      return userFinalizationRegistered;
+      return userFinalizationHold != null;
     };
     const clearUserFinalization = () => {
-      if (!userFinalizationRegistered) {
+      if (userFinalizationHold == null) {
         return;
       }
-      userFinalizationRegistered = false;
+      const hold = userFinalizationHold;
+      userFinalizationHold = null;
+      hold.release();
+      // The OWNER-lifecycle lease is registered out-of-band (at abort-signal time, by
+      // the manager / transport pre-ACK fence — see USER_FINALIZATION_OWNER_LEASE) and
+      // this controller, as the generation owner, releases it with its own: by this
+      // point every owner-side write has landed or failed for good.
       void GenerationJobManager.clearUserFinalization(
         userId,
         streamId,
         req.user?.tenantId,
         jobCreatedAt,
-        finalizationLeaseId,
+        'owner',
       ).catch(() => undefined);
     };
 
