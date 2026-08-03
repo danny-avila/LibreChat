@@ -627,6 +627,44 @@ describe('PendingSteerChips — queued outbox group', () => {
     });
   });
 
+  /** Steering refuses a recovery-bound item mid-run, so a proxy pointed at one
+   *  would make the shortcut silently do nothing. */
+  it('points the collapsed escalate stand-in at the newest ELIGIBLE message', () => {
+    renderChips([twoQueued[0], { ...twoQueued[1], recoverySteerId: 'server-source' }], {
+      steering: outboxSteering({ duringRunActive: true, canSteer: true }),
+    });
+
+    fireEvent.click(screen.getByTestId('queued-escalate-newest'));
+    expect(mockSendQueuedNow).toHaveBeenCalledWith(expect.objectContaining({ id: 'q1' }), {
+      preempt: true,
+    });
+  });
+
+  it('offers no collapsed escalate stand-in when every row is recovery-bound', () => {
+    renderChips(
+      twoQueued.map((message, i) => ({ ...message, recoverySteerId: `server-source-${i}` })),
+      { steering: outboxSteering({ duringRunActive: true, canSteer: true }) },
+    );
+
+    expect(screen.queryByTestId('queued-escalate-newest')).toBeNull();
+    expect(document.querySelectorAll('[data-escalate-steer="queued"]')).toHaveLength(0);
+  });
+
+  /** The group stands in for its rows while collapsed, so the accessible list
+   *  must still contain an item — the rows themselves are unmounted. */
+  it('exposes the collapsed group as the list`s item, and the rows as a nested list', () => {
+    renderChips(twoQueued, { steering: outboxSteering() });
+
+    const list = screen.getByRole('list');
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(list).toContainElement(screen.getByTestId('queue-group'));
+
+    fireEvent.click(screen.getByTestId('queue-group-toggle'));
+    // Outer item (the group) plus its two nested rows.
+    expect(screen.getAllByRole('list')).toHaveLength(2);
+    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+  });
+
   it('drops the collapsed escalate stand-in once the rows carry their own', () => {
     renderChips(twoQueued, { steering: outboxSteering({ duringRunActive: true, canSteer: true }) });
     fireEvent.click(screen.getByTestId('queue-group-toggle'));

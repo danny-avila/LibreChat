@@ -304,6 +304,14 @@ export function insertQueuedOrigin(
       index = queue.length;
     }
   }
+  /** Captured neighbours describe where the row WAS, and the queue may have
+   *  been reordered while it was away — a "Send this one next" promotion must
+   *  not be undone by a restore landing in front of it. Walk the neighbour
+   *  slot forward past anything that now outranks the row; with no promotion
+   *  the neighbour slot already satisfies the comparator and this is a no-op. */
+  while (index < queue.length && compareQueuedMessages(queue[index], restoredItem) < 0) {
+    index += 1;
+  }
   return [...queue.slice(0, index), restoredItem, ...queue.slice(index)];
 }
 

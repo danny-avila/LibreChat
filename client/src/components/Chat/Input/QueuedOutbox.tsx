@@ -308,6 +308,7 @@ function QueueSendingBannerBase({
   const remaining = Math.max(0, dueAt - Date.now());
   return (
     <div
+      role="listitem"
       className="flex w-full items-center gap-2 rounded-xl border border-border-light bg-surface-tertiary px-3 py-2 text-sm text-text-primary"
       data-testid="queue-sending-banner"
     >
@@ -361,7 +362,18 @@ function QueuedOutboxBase({
   const { showToast } = useToastContext();
   const [expanded, setExpanded] = useAtom(queueExpandedFamily(steering.queueKey));
   const mergeable = useMemo(() => queued.every(isMergeableQueuedMessage), [queued]);
-  const newest = queued[queued.length - 1];
+  /** The expanded rows omit escalation on recovery-bound items (steering
+   *  refuses them mid-run), so the shortcut naturally lands on the newest
+   *  ELIGIBLE row. The collapsed proxy has to make the same choice, or the
+   *  shortcut silently no-ops when a recovered row happens to sort last. */
+  const escalatable = useMemo(() => {
+    for (let i = queued.length - 1; i >= 0; i -= 1) {
+      if (queued[i].recoverySteerId == null) {
+        return queued[i];
+      }
+    }
+    return undefined;
+  }, [queued]);
   const [next] = queued;
 
   const clearAll = useCallback(() => {
@@ -394,9 +406,12 @@ function QueuedOutboxBase({
   }, [conversationId, localize, onRestoreToComposer, showToast, steering]);
 
   /* One wrapper for both states, so the disclosure button keeps its position
-   * in the tree: remounting it on toggle would drop keyboard focus mid-use. */
+   * in the tree: remounting it on toggle would drop keyboard focus mid-use.
+   * It is the parent list's item — collapsed, the group IS the only item; the
+   * rows become a nested list when expanded. */
   return (
     <div
+      role="listitem"
       className={cn('relative flex flex-col gap-1.5', !expanded && 'pb-1.5')}
       data-testid="queue-group"
     >
@@ -431,31 +446,42 @@ function QueuedOutboxBase({
         )}
       </button>
       {/* Keyboard parity: the escalate shortcut clicks the LAST queued control
-       *  in the document, which is the newest message. Collapsing unmounts the
-       *  rows, so the newest message keeps a control here — offscreen,
-       *  labelled, and only while the rows are hidden. */}
-      {!expanded && !interruptPending && steering.duringRunActive && steering.canSteer && (
-        <button
-          type="button"
-          className="sr-only"
-          data-escalate-steer="queued"
-          data-testid="queued-escalate-newest"
-          aria-label={localize('com_ui_queue_escalate_newest')}
-          onClick={() => steering.sendQueuedNow(newest, { preempt: true })}
-        />
-      )}
-      {expanded &&
-        queued.map((message, position) => (
-          <QueuedRow
-            key={message.id}
-            message={message}
-            steering={steering}
-            conversationId={conversationId}
-            interruptPending={interruptPending}
-            canBump={position > 0}
-            onRestoreToComposer={onRestoreToComposer}
+       *  in the document. Collapsing unmounts the rows, so the newest eligible
+       *  message keeps a control here — offscreen, labelled, and only while
+       *  the rows are hidden. */}
+      {!expanded &&
+        escalatable != null &&
+        !interruptPending &&
+        steering.duringRunActive &&
+        steering.canSteer && (
+          <button
+            type="button"
+            className="sr-only"
+            data-escalate-steer="queued"
+            data-testid="queued-escalate-newest"
+            aria-label={localize('com_ui_queue_escalate_newest')}
+            onClick={() => steering.sendQueuedNow(escalatable, { preempt: true })}
           />
-        ))}
+        )}
+      {expanded && (
+        <div
+          role="list"
+          aria-label={localize('com_ui_queued_messages')}
+          className="flex flex-col gap-1.5"
+        >
+          {queued.map((message, position) => (
+            <QueuedRow
+              key={message.id}
+              message={message}
+              steering={steering}
+              conversationId={conversationId}
+              interruptPending={interruptPending}
+              canBump={position > 0}
+              onRestoreToComposer={onRestoreToComposer}
+            />
+          ))}
+        </div>
+      )}
       {expanded && (
         <div className="flex items-center gap-2 px-1 pb-0.5">
           <button

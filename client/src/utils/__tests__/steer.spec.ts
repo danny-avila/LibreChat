@@ -230,6 +230,43 @@ const queued = (overrides: Partial<QueuedMessage> & { id: string }): QueuedMessa
   ...overrides,
 });
 
+describe('insertQueuedOrigin — promotions made while a row was away', () => {
+  /** B leaves for a steer attempt, C is promoted in its absence, then the
+   *  attempt fails: B's captured neighbours must not put it back in front of
+   *  the row the user explicitly chose to send next. */
+  it('never restores a row ahead of a promotion it did not know about', () => {
+    const origin = {
+      item: { id: 'b', text: 'send B', createdAt: 2 },
+      beforeIds: ['a'],
+      afterIds: ['c'],
+    };
+    const promoted = bumpQueuedMessage(
+      [
+        { id: 'a', text: 'send A', createdAt: 1 },
+        { id: 'c', text: 'send C', createdAt: 3 },
+      ],
+      'c',
+      500,
+    );
+
+    expect(insertQueuedOrigin(promoted, origin).map(({ id }) => id)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('still honours captured neighbours when nothing was promoted', () => {
+    const origin = {
+      item: { id: 'b', text: 'send B', createdAt: 2 },
+      beforeIds: ['a'],
+      afterIds: ['c'],
+    };
+    const queue = [
+      { id: 'a', text: 'send A', createdAt: 1 },
+      { id: 'c', text: 'send C', createdAt: 3 },
+    ];
+
+    expect(insertQueuedOrigin(queue, origin).map(({ id }) => id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
 describe('compareQueuedMessages', () => {
   const ids = (items: QueuedMessage[]) =>
     [...items].sort(compareQueuedMessages).map(({ id }) => id);
