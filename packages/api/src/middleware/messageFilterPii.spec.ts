@@ -403,4 +403,25 @@ describe('configureMessageFilterRegexValidator (RE2 config-load validation)', ()
     // a normal RE2-compatible pattern still passes
     expect(reject('\\bORG-[A-Z0-9]{6,}')).toBe(true);
   });
+
+  it('fails closed with 400 when every configured pattern fails to compile', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {
+        starterPatterns: [],
+        customPatterns: [{ id: 'backref', label: 'Backref', regex: '(a)\\1' }],
+      },
+      { text: 'anything at all' },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
+  it('findPiiMatchInMessages returns a misconfigured match when every pattern fails to compile', () => {
+    const hit = findPiiMatchInMessages([{ role: 'user', content: 'hello' }], {
+      starterPatterns: [],
+      customPatterns: [{ id: 'backref', label: 'Backref', regex: '(a)\\1' }],
+    });
+    expect(hit?.misconfigured).toBe(true);
+  });
 });

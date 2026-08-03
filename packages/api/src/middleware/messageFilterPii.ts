@@ -64,25 +64,33 @@ function selectStarter(ids?: string[]): CompiledPattern[] {
   return out;
 }
 
-const COMPILE_CACHE = new WeakMap<object, CompiledPattern[]>();
+type CompiledConfig = { patterns: CompiledPattern[]; failClosed: boolean };
 
-function compile(config: MessageFilterPiiConfig): CompiledPattern[] {
+const COMPILE_CACHE = new WeakMap<object, CompiledConfig>();
+
+function compile(config: MessageFilterPiiConfig): CompiledConfig {
   const cached = COMPILE_CACHE.get(config);
   if (cached != null) {
     return cached;
   }
   const starter = selectStarter(config.starterPatterns);
   const custom: CompiledPattern[] = [];
+  let dropped = 0;
   for (const p of config.customPatterns ?? []) {
     try {
       custom.push({ id: p.id, label: p.label, pattern: RE2JS.compile(p.regex) });
     } catch (err) {
+      dropped += 1;
       logger.warn(
         `[messageFilter.pii] dropping invalid or unsupported customPattern ${JSON.stringify(p.id)}: ${(err as Error).message}`,
       );
     }
   }
-  const result = [...starter, ...custom];
+  const patterns = [...starter, ...custom];
+  // Fail closed when a config declared patterns but every one failed to compile (e.g. a DB or
+  // admin override carrying RE2-incompatible syntax that never hit load-time validation): with
+  // nothing left to enforce, block rather than pass.
+  const result: CompiledConfig = { patterns, failClosed: patterns.length === 0 && dropped > 0 };
   COMPILE_CACHE.set(config, result);
   return result;
 }
@@ -99,6 +107,8 @@ function findMatch(text: string, patterns: CompiledPattern[]): CompiledPattern |
 export interface PiiMatch {
   id: string;
   label: string;
+  /** Set when the filter is configured but every pattern failed to compile; block without a real matched label. */
+  misconfigured?: boolean;
 }
 
 type ContentPart = { type?: string; text?: string; [key: string]: unknown };
@@ -114,7 +124,10 @@ export function findPiiMatchInMessages(
   if (config == null || !Array.isArray(messages) || messages.length === 0) {
     return null;
   }
-  const patterns = compile(config);
+  const { patterns, failClosed } = compile(config);
+  if (failClosed) {
+    return { id: '__misconfigured__', label: 'restricted value', misconfigured: true };
+  }
   if (patterns.length === 0) {
     return null;
   }
@@ -206,7 +219,14 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
       next();
       return;
     }
-    const patterns = compile(config);
+    const { patterns, failClosed } = compile(config);
+    if (failClosed) {
+      res.status(400).json({
+        error: 'message_filter_pii_block',
+        message: 'Message filtering is misconfigured; contact your administrator.',
+      });
+      return;
+    }
     if (patterns.length === 0) {
       next();
       return;
