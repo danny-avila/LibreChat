@@ -36,6 +36,13 @@ import type { SteerContentView } from './SteeringLifecycle';
 import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
 import {
+  recordGenerationStreamEarlyBufferOverflow,
+  recordGenerationStreamResumePendingEvents,
+  recordGenerationStreamSubscription,
+  setGenerationJobsInFlight,
+  recordGenerationJob,
+} from '~/app/metrics';
+import {
   JobCreationSupersededError,
   JobPredecessorMismatchError,
   isPendingActionStale,
@@ -43,12 +50,6 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   STEER_QUEUE_MAX_DEPTH,
 } from './interfaces/IJobStore';
-import {
-  recordGenerationStreamResumePendingEvents,
-  recordGenerationStreamSubscription,
-  setGenerationJobsInFlight,
-  recordGenerationJob,
-} from '~/app/metrics';
 import { isRecoveredSteerPayload, RecoveredSteerPayloadMismatchError } from './SteerRecovery';
 import { assertJobStoreV2 } from './jobStoreCapabilities';
 
@@ -99,6 +100,13 @@ export const TERMINAL_PUBLICATION_RECONNECT_ERROR =
  * owner leaves the durable pending bit behind; the next read or subscriber
  * promotes it to conservative reconciliation after this window. */
 const TERMINAL_PERSISTENCE_TIMEOUT_MS = 30_000;
+/** Hard bounds for a runtime's local early-event replay buffer. The buffer
+ * bridges emission to first attachment, but a generation streaming with no
+ * attached subscriber would otherwise grow it for its entire duration. On
+ * overflow the buffer is discarded and closed: Redis mode recovers from the
+ * durable chunk log, in-memory reconnects recover from the resume snapshot. */
+const EARLY_EVENT_BUFFER_MAX_EVENTS = 5_000;
+const EARLY_EVENT_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 type TokenIdempotencyClaim = IdempotencyClaimValue & {
   claimedAt: number;
@@ -523,6 +531,16 @@ interface RuntimeJobState {
   pausePersistenceTimeoutRetired?: boolean;
   syncSent: boolean;
   earlyEventBuffer: t.ServerSentEvent[];
+  /** Estimated serialized size of earlyEventBuffer, for the overflow guard. */
+  earlyEventBufferBytes: number;
+  /** Closed after the first attachment drains the buffer in Redis mode (the
+   * durable chunk log owns later recovery) or after an overflow discard. A
+   * closed buffer never re-accumulates events for this runtime. */
+  earlyEventBufferClosed: boolean;
+  /** The buffer was discarded by the overflow guard before a subscriber
+   * consumed it. Non-resume attachments are redirected to the resume path,
+   * which reconstructs the discarded output from durable/snapshot state. */
+  earlyEventBufferOverflowed?: true;
   earlyEventSequencePromises: Array<Promise<void | number>>;
   /** Initial subscribers eligible to receive the local pre-attachment replay. */
   earlyReplayHandlers: Set<t.ChunkHandler>;
@@ -2148,6 +2166,8 @@ class GenerationJobManagerClass {
       startupTelemetry: options.startupTelemetry,
       syncSent: false,
       earlyEventBuffer: [],
+      earlyEventBufferBytes: 0,
+      earlyEventBufferClosed: false,
       earlyEventSequencePromises: [],
       earlyReplayHandlers: new Set(),
       resumeCaptureHandlers: new Set(),
@@ -2406,6 +2426,8 @@ class GenerationJobManagerClass {
       resolveReady,
       syncSent: jobData.syncSent ?? false,
       earlyEventBuffer: [],
+      earlyEventBufferBytes: 0,
+      earlyEventBufferClosed: false,
       earlyEventSequencePromises: [],
       earlyReplayHandlers: new Set(),
       resumeCaptureHandlers: new Set(),
@@ -4185,8 +4207,14 @@ class GenerationJobManagerClass {
           }
         }
       } finally {
-        runtime.earlyEventBuffer = [];
-        runtime.earlyEventSequencePromises = [];
+        this.resetEarlyEventBuffer(runtime);
+        if (this._isRedis) {
+          /** After the first attachment, the durable chunk log and pub/sub own
+           * recovery; re-buffering on a later detach would grow for the rest
+           * of a detached run. Cross-replica subscribers already attach with
+           * no local buffer, so a closed buffer follows the same path. */
+          runtime.earlyEventBufferClosed = true;
+        }
         try {
           const reorderSync = this.eventTransport.syncReorderBuffer?.(streamId, replayedNextSeq);
           if (reorderSync) {
@@ -4210,6 +4238,20 @@ class GenerationJobManagerClass {
 
     if (this.detachSubscriptionDuringShutdown(subscription)) {
       return null;
+    }
+
+    if (
+      runtime.earlyEventBufferOverflowed === true &&
+      !options?.skipBufferReplay &&
+      !runtime.finalEvent &&
+      !runtime.errorEvent
+    ) {
+      /** The overflow guard discarded the pre-attachment buffer, so a
+       * non-resume attachment cannot be made whole from local replay. Close
+       * the transport with the reconnect signal instead of streaming a
+       * silently truncated response: the client re-attaches with resume=true
+       * and its sync frame carries full durable/snapshot state. */
+      queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
     }
 
     recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'success');
@@ -4361,6 +4403,58 @@ class GenerationJobManagerClass {
     await Promise.all(pending);
   }
 
+  private resetEarlyEventBuffer(runtime: RuntimeJobState): void {
+    runtime.earlyEventBuffer = [];
+    runtime.earlyEventSequencePromises = [];
+    runtime.earlyEventBufferBytes = 0;
+  }
+
+  /**
+   * Buffers a pre-attachment event for local replay, enforcing hard bounds.
+   *
+   * A generation streaming with no attached subscriber can run for its entire
+   * duration; unbounded buffering here retained every emitted event in memory,
+   * with GC cost climbing alongside the heap. On overflow the whole buffer is
+   * discarded and closed — the durable chunk log (Redis) or the resume
+   * snapshot (in-memory) already owns recovery for late subscribers.
+   *
+   * @returns whether the event was accepted into the buffer.
+   */
+  private bufferEarlyEvent(
+    streamId: string,
+    runtime: RuntimeJobState,
+    event: t.ServerSentEvent,
+  ): boolean {
+    if (runtime.earlyEventBufferClosed) {
+      return false;
+    }
+    const estimatedBytes = JSON.stringify(event).length;
+    if (
+      runtime.earlyEventBuffer.length >= EARLY_EVENT_BUFFER_MAX_EVENTS ||
+      runtime.earlyEventBufferBytes + estimatedBytes > EARLY_EVENT_BUFFER_MAX_BYTES
+    ) {
+      this.overflowEarlyEventBuffer(streamId, runtime);
+      return false;
+    }
+    runtime.earlyEventBuffer.push(event);
+    runtime.earlyEventBufferBytes += estimatedBytes;
+    return true;
+  }
+
+  private overflowEarlyEventBuffer(streamId: string, runtime: RuntimeJobState): void {
+    const droppedEvents = runtime.earlyEventBuffer.length;
+    const droppedBytes = runtime.earlyEventBufferBytes;
+    this.resetEarlyEventBuffer(runtime);
+    runtime.earlyEventBufferClosed = true;
+    runtime.earlyEventBufferOverflowed = true;
+    recordGenerationStreamEarlyBufferOverflow(this.storeLabel);
+    logger.warn(
+      `[GenerationJobManager] Early event buffer overflow for ${streamId}; ` +
+        `discarded ${droppedEvents} buffered events (~${droppedBytes} bytes); ` +
+        'late subscribers will recover from durable/resume state',
+    );
+  }
+
   /**
    * If the subscriber that owns Redis attachment bootstrap disconnects, finish the
    * replay/sync for any concurrent subscriber. Otherwise the transport-wide reorder
@@ -4430,8 +4524,11 @@ class GenerationJobManagerClass {
             }
           }
         } finally {
-          runtime.earlyEventBuffer = [];
-          runtime.earlyEventSequencePromises = [];
+          this.resetEarlyEventBuffer(runtime);
+          if (this._isRedis) {
+            /** Same closure as the owning-subscriber bootstrap above. */
+            runtime.earlyEventBufferClosed = true;
+          }
           await this.eventTransport.syncReorderBuffer?.(streamId, replayedNextSeq);
         }
       })
@@ -4522,11 +4619,31 @@ class GenerationJobManagerClass {
         return;
       }
       const currentRuntime = this.runtimeState.get(streamId);
-      if (currentRuntime && !currentRuntime.hasSubscriber) {
+      if (
+        currentRuntime &&
+        !currentRuntime.hasSubscriber &&
+        !currentRuntime.earlyEventBufferClosed
+      ) {
         const bufferedEvents = new Set(currentRuntime.earlyEventBuffer);
         const missingEvents = capturedPendingEvents.filter((event) => !bufferedEvents.has(event));
         if (missingEvents.length > 0) {
-          currentRuntime.earlyEventBuffer = [...missingEvents, ...currentRuntime.earlyEventBuffer];
+          let restoredBytes = 0;
+          for (const event of missingEvents) {
+            restoredBytes += JSON.stringify(event).length;
+          }
+          const overflows =
+            currentRuntime.earlyEventBuffer.length + missingEvents.length >
+              EARLY_EVENT_BUFFER_MAX_EVENTS ||
+            currentRuntime.earlyEventBufferBytes + restoredBytes > EARLY_EVENT_BUFFER_MAX_BYTES;
+          if (overflows) {
+            this.overflowEarlyEventBuffer(streamId, currentRuntime);
+          } else {
+            currentRuntime.earlyEventBuffer = [
+              ...missingEvents,
+              ...currentRuntime.earlyEventBuffer,
+            ];
+            currentRuntime.earlyEventBufferBytes += restoredBytes;
+          }
         }
       }
       capturedPendingEvents.length = 0;
@@ -5111,15 +5228,13 @@ class GenerationJobManagerClass {
       }
     }
 
-    const buffered = !runtime.hasSubscriber;
-    if (buffered) {
-      runtime.earlyEventBuffer.push(event);
-      if (!this._isRedis) {
-        if (runtime.startupTelemetry) {
-          this.recordStartupEvent(runtime, event);
-        }
-        return;
+    const detached = !runtime.hasSubscriber;
+    const buffered = detached && this.bufferEarlyEvent(streamId, runtime, event);
+    if (detached && !this._isRedis) {
+      if (runtime.startupTelemetry) {
+        this.recordStartupEvent(runtime, event);
       }
+      return;
     }
 
     if (!buffered && !runtime.startupTelemetry) {
@@ -6474,11 +6589,21 @@ class GenerationJobManagerClass {
     runtimeStateSize: number;
     runStepBufferSize: number;
     eventTransportStreams: number;
+    earlyBufferedEvents: number;
+    earlyBufferedBytes: number;
   } {
+    let earlyBufferedEvents = 0;
+    let earlyBufferedBytes = 0;
+    for (const runtime of this.runtimeState.values()) {
+      earlyBufferedEvents += runtime.earlyEventBuffer.length;
+      earlyBufferedBytes += runtime.earlyEventBufferBytes;
+    }
     return {
       runtimeStateSize: this.runtimeState.size,
       runStepBufferSize: this.runStepBuffers?.size ?? 0,
       eventTransportStreams: this.eventTransport.getTrackedStreamIds().length,
+      earlyBufferedEvents,
+      earlyBufferedBytes,
     };
   }
 

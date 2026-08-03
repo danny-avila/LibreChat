@@ -1557,10 +1557,14 @@ describe('RedisEventTransport', () => {
 
     subscription?.unsubscribe();
 
+    /** After the first attachment the local buffer stays closed; a detached
+     * emission is durable-log-only, and the reconnect frontier must advance
+     * past its sequence so the next live chunk is not held for reordering. */
     await manager.emitChunk(streamId, {
       event: 'on_message_delta',
-      data: { delta: { content: { type: 'text', text: 'buffered after disconnect' } } },
+      data: { delta: { content: { type: 'text', text: 'detached after disconnect' } } },
     });
+    expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
 
     const resumed: unknown[] = [];
     const resumedSubscription = await manager.subscribe(streamId, (event) => resumed.push(event));
@@ -1570,10 +1574,6 @@ describe('RedisEventTransport', () => {
     });
 
     expect(resumed).toEqual([
-      {
-        event: 'on_message_delta',
-        data: { delta: { content: { type: 'text', text: 'buffered after disconnect' } } },
-      },
       {
         event: 'on_message_delta',
         data: { delta: { content: { type: 'text', text: 'live after reconnect' } } },
