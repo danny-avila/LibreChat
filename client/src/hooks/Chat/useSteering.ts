@@ -15,6 +15,7 @@ import {
   compareQueuedMessages,
   insertQueuedOrigin,
   isMergeableQueuedMessage,
+  isSameRunEpoch,
   mergeQueuedMessages,
 } from '~/utils';
 import {
@@ -85,16 +86,6 @@ function isDefiniteSteerRejection(error: unknown): boolean {
     status !== 408 &&
     status !== 425
   );
-}
-
-function isSameRunEpoch(a: RunEnd | null, b: RunEnd): boolean {
-  if (a == null || a.conversationId !== b.conversationId) {
-    return false;
-  }
-  if (a.generationCreatedAt != null || b.generationCreatedAt != null) {
-    return a.generationCreatedAt === b.generationCreatedAt;
-  }
-  return a.endedAt === b.endedAt;
 }
 
 /** True when the latest assistant message carries an unresolved tool approval —
@@ -634,11 +625,19 @@ export default function useSteering({
   }, []);
 
   const removeQueued = useRecoilCallback(
-    ({ set }) =>
+    ({ snapshot, set }) =>
       (id: string) => {
-        set(store.queuedMessagesByConvoId(queueKey), (prev) =>
-          prev.filter((item) => item.id !== id),
-        );
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        const next = queue.filter((item) => item.id !== id);
+        if (next.length === queue.length) {
+          return;
+        }
+        set(store.queuedMessagesByConvoId(queueKey), next);
+        /** Nothing left to auto-send: retiring the window here stops a stale
+         *  completion from later draining a row queued under a NEWER run. */
+        if (next.length === 0) {
+          set(store.queueDrainHoldByConvoId(queueKey), null);
+        }
       },
     [queueKey],
   );
@@ -959,7 +958,15 @@ export default function useSteering({
       (convoId: string, end: RunEnd) => {
         const indexArmed = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
         const parkedArmed = snapshot.getLoadable(store.pendingRunEndByConvoId(convoId)).getValue();
-        if (isSameRunEpoch(indexArmed, end) || isSameRunEpoch(parkedArmed, end)) {
+        /** A withheld epoch lives in the hold, in neither carrier — without
+         *  this the re-arm appends a copy and the release appends the held one,
+         *  leaving two identical completions to drain two rows. */
+        const held = snapshot.getLoadable(store.queueDrainHoldByConvoId(convoId)).getValue();
+        if (
+          isSameRunEpoch(indexArmed, end) ||
+          isSameRunEpoch(parkedArmed, end) ||
+          isSameRunEpoch(held?.runEnd, end)
+        ) {
           return;
         }
         set(store.pendingRunEndByConvoId(convoId), end);

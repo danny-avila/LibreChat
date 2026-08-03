@@ -665,6 +665,29 @@ describe('PendingSteerChips — queued outbox group', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(3);
   });
 
+  /** The shortcut promises the newest waiting message, and a promotion moves
+   *  that row to the FRONT — so the target cannot be read off the array tail. */
+  it('keeps the escalate stand-in on the newest message after a promotion', () => {
+    const promoted = [
+      { id: 'q2', text: 'newest, promoted', createdAt: 2, bumpedAt: 500 },
+      { id: 'q1', text: 'older', createdAt: 1 },
+    ];
+    renderChips(promoted, {
+      steering: outboxSteering({ duringRunActive: true, canSteer: true }),
+    });
+
+    fireEvent.click(screen.getByTestId('queued-escalate-newest'));
+    expect(mockSendQueuedNow).toHaveBeenCalledWith(expect.objectContaining({ id: 'q2' }), {
+      preempt: true,
+    });
+  });
+
+  it('keeps the hidden escalate stand-in out of the tab order', () => {
+    renderChips(twoQueued, { steering: outboxSteering({ duringRunActive: true, canSteer: true }) });
+
+    expect(screen.getByTestId('queued-escalate-newest')).toHaveAttribute('tabindex', '-1');
+  });
+
   it('drops the collapsed escalate stand-in once the rows carry their own', () => {
     renderChips(twoQueued, { steering: outboxSteering({ duringRunActive: true, canSteer: true }) });
     fireEvent.click(screen.getByTestId('queue-group-toggle'));

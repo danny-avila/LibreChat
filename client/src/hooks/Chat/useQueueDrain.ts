@@ -3,8 +3,8 @@ import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { DrainAfterAbort, QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
 import type { TAskFunction } from '~/common';
+import { compareQueuedMessages, isSameRunEpoch } from '~/utils';
 import { useMarkFilesUsageMutation } from '~/data-provider';
-import { compareQueuedMessages } from '~/utils';
 import store from '~/store';
 
 /** Mirrors the server's per-request cap on a usage touch. */
@@ -275,13 +275,18 @@ export default function useQueueDrain(
         const shouldDrain = end.outcome === 'completed' || interruptArmed;
         const hold = snapshot.getLoadable(store.queueDrainHoldByConvoId(conversationId)).getValue();
         const now = Date.now();
-        if (hold != null) {
+        /** A hold owns exactly ONE epoch. A newer terminal event can be the one
+         *  consumed above, and retiring the hold (or discarding that event) on
+         *  its behalf would lose the newer signal and leave the older one to
+         *  reopen a window — so act only on the epoch the hold actually holds. */
+        const holdOwnsEnd = hold != null && isSameRunEpoch(hold.runEnd, end);
+        if (holdOwnsEnd) {
           set(store.queueDrainHoldByConvoId(conversationId), null);
         }
         /** Undo landed after the timer handed this epoch back. The epoch is
          *  consumed above, so discarding it here is what makes the visible
          *  Undo mean what it says. */
-        if (hold?.status === 'cancelled') {
+        if (holdOwnsEnd && hold?.status === 'cancelled') {
           return null;
         }
         /** Withhold the epoch, never the queue: the rows stay exactly where

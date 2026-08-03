@@ -921,6 +921,41 @@ describe('useQueueDrain undo grace', () => {
     expect(ask).toHaveBeenCalledWith({ text: 'interrupt text' }, emptyOverrides);
   });
 
+  /** A hold owns exactly one epoch. Acting on a NEWER terminal event on its
+   *  behalf loses that signal and leaves the older one to reopen a window. */
+  it('a cancelled hold discards only its own epoch', async () => {
+    const { ask, state } = setupGraced(
+      withQueue(queuedMessage('q1', 'first'), queuedMessage('q2', 'second')),
+    );
+
+    act(() => {
+      state.setRunEnd!(runEnd({ generationCreatedAt: 41 }));
+    });
+    await waitFor(() => expect(state.hold).not.toBeNull());
+
+    // A newer run finishes while the window is open, so its epoch queues up
+    // behind the held one; then the window closes and Undo lands.
+    act(() => {
+      state.setIsSubmitting!(true);
+    });
+    act(() => {
+      state.setRunEnd!(runEnd({ generationCreatedAt: 77 }));
+    });
+    await waitFor(() => expect(state.hold?.status).toBe('released'));
+    act(() => {
+      state.cancelHold!();
+    });
+    act(() => {
+      state.setIsSubmitting!(false);
+    });
+
+    // The cancelled epoch sends nothing; the NEWER completion is still honoured
+    // and drains one row, rather than being swallowed on the hold's behalf.
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1), { timeout: AFTER_GRACE_MS * 8 });
+    expect(ask).toHaveBeenCalledWith({ text: 'first' }, emptyOverrides);
+    expect(state.queue).toHaveLength(1);
+  });
+
   it('drains immediately when the window already expired while away', async () => {
     const { ask } = setupGraced(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'overdue')]);

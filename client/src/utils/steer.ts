@@ -5,7 +5,7 @@ import type {
   TSteerAppliedEvent,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import type { QueuedMessage, QueuedMessageOrigin } from '~/store/families';
+import type { QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
 
 type SteerPart = Extract<TMessageContentParts, { type: ContentTypes.STEER }>;
 
@@ -139,6 +139,21 @@ export function appendAppliedSteerIds(prev: string[], steerIds: string[]): strin
     return prev;
   }
   return [...prev, ...fresh].slice(-APPLIED_STEER_IDS_CAP);
+}
+
+/**
+ * Whether two terminal signals are the same generation. Conversation ids are
+ * reused by later turns, so identity is the exact epoch: the generation stamp
+ * when either side carries one, else the termination time.
+ */
+export function isSameRunEpoch(a: RunEnd | null | undefined, b: RunEnd): boolean {
+  if (a == null || a.conversationId !== b.conversationId) {
+    return false;
+  }
+  if (a.generationCreatedAt != null || b.generationCreatedAt != null) {
+    return a.generationCreatedAt === b.generationCreatedAt;
+  }
+  return a.endedAt === b.endedAt;
 }
 
 export type SteerCarriedContext = { quotes?: string[]; manualSkills?: string[] };

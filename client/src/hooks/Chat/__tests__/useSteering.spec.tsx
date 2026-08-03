@@ -2450,6 +2450,45 @@ describe('useSteering — clear all', () => {
     );
   }
 
+  /** Removing the last row leaves nothing to auto-send, and a surviving window
+   *  could later drain a row queued under a NEWER run. */
+  it('retires the pending send when removal empties the queue', () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [{ id: 'q1', text: 'only row', createdAt: 1 }]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 4_000_000_000_000,
+      });
+    });
+
+    act(() => {
+      result.current.steering.removeQueued('q1');
+    });
+
+    expect(result.current.queue).toEqual([]);
+    expect(result.current.drainHold).toBeNull();
+  });
+
+  it('keeps the pending send while other rows remain', () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'q1', text: 'first', createdAt: 1 },
+        { id: 'q2', text: 'second', createdAt: 2 },
+      ]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 4_000_000_000_000,
+      });
+    });
+
+    act(() => {
+      result.current.steering.removeQueued('q1');
+    });
+
+    expect(result.current.queue).toHaveLength(1);
+    expect(result.current.drainHold).not.toBeNull();
+  });
+
   it('folds the queue into one payload and empties it', async () => {
     const { result } = setupClearAll(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [

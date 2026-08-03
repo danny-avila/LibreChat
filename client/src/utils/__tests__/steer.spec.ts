@@ -2,6 +2,7 @@ import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TSteerAppliedEvent } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
 import {
+  isSameRunEpoch,
   getSteerPart,
   applySteerPart,
   resolveRunEndTarget,
@@ -264,6 +265,34 @@ describe('insertQueuedOrigin — promotions made while a row was away', () => {
     ];
 
     expect(insertQueuedOrigin(queue, origin).map(({ id }) => id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('isSameRunEpoch', () => {
+  const epoch = { conversationId: 'c1', outcome: 'completed' as const, endedAt: 10 };
+
+  it('matches on the generation stamp when either side carries one', () => {
+    expect(
+      isSameRunEpoch(
+        { ...epoch, generationCreatedAt: 41 },
+        { ...epoch, generationCreatedAt: 41, endedAt: 99 },
+      ),
+    ).toBe(true);
+    expect(
+      isSameRunEpoch({ ...epoch, generationCreatedAt: 41 }, { ...epoch, generationCreatedAt: 42 }),
+    ).toBe(false);
+    expect(isSameRunEpoch({ ...epoch, generationCreatedAt: 41 }, epoch)).toBe(false);
+  });
+
+  it('falls back to the termination time, and never matches across conversations', () => {
+    expect(isSameRunEpoch(epoch, { ...epoch })).toBe(true);
+    expect(isSameRunEpoch(epoch, { ...epoch, endedAt: 11 })).toBe(false);
+    expect(isSameRunEpoch(epoch, { ...epoch, conversationId: 'c2' })).toBe(false);
+  });
+
+  it('treats an absent signal as no match', () => {
+    expect(isSameRunEpoch(null, epoch)).toBe(false);
+    expect(isSameRunEpoch(undefined, epoch)).toBe(false);
   });
 });
 

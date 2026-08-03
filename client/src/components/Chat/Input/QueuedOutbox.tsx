@@ -394,17 +394,21 @@ function QueuedOutboxBase({
   const { showToast } = useToastContext();
   const [expanded, setExpanded] = useAtom(queueExpandedFamily(steering.queueKey));
   const mergeable = useMemo(() => queued.every(isMergeableQueuedMessage), [queued]);
-  /** The expanded rows omit escalation on recovery-bound items (steering
-   *  refuses them mid-run), so the shortcut naturally lands on the newest
-   *  ELIGIBLE row. The collapsed proxy has to make the same choice, or the
-   *  shortcut silently no-ops when a recovered row happens to sort last. */
+  /** The shortcut's promise is the NEWEST waiting message, which is not the
+   *  last array slot once a promotion has reordered the queue — so pick by
+   *  stamp. Recovery-bound rows are skipped because steering refuses them
+   *  mid-run, exactly as the expanded rows omit their escalation controls. */
   const escalatable = useMemo(() => {
-    for (let i = queued.length - 1; i >= 0; i -= 1) {
-      if (queued[i].recoverySteerId == null) {
-        return queued[i];
+    let newest: QueuedMessage | undefined;
+    for (const item of queued) {
+      if (item.recoverySteerId != null) {
+        continue;
+      }
+      if (newest == null || item.createdAt > newest.createdAt) {
+        newest = item;
       }
     }
-    return undefined;
+    return newest;
   }, [queued]);
   const [next] = queued;
 
@@ -492,6 +496,10 @@ function QueuedOutboxBase({
         steering.canSteer && (
           <button
             type="button"
+            /** Invoked by the shortcut through its data attribute, so it needs
+             *  no sequential focus — and an invisible tab stop with no focus
+             *  presentation is worse than none. */
+            tabIndex={-1}
             className="sr-only"
             data-escalate-steer="queued"
             data-testid="queued-escalate-newest"
