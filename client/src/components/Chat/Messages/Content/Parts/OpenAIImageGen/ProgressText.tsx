@@ -83,7 +83,7 @@ export default function ProgressText({
   return (
     <span
       className={cn(
-        'progress-text-content tool-status-text whitespace-nowrap font-medium',
+        'progress-text-content tool-status-text min-w-0 truncate font-medium',
         progress < 1 && 'shimmer',
       )}
     >

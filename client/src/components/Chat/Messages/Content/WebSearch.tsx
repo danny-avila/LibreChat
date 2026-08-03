@@ -289,7 +289,7 @@ export default function WebSearch({
       </span>
       {showSources && <StackedFavicons sources={streamingSources} start={-5} />}
       <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-      <span className="tool-status-text shimmer font-medium text-text-secondary">
+      <span className="tool-status-text shimmer min-w-0 truncate font-medium text-text-secondary">
         {progressText}
       </span>
     </div>
