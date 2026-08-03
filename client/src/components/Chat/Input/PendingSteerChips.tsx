@@ -206,6 +206,7 @@ function PendingSteerChips({
           conversationId={conversationId}
           interruptPending={interruptPending}
           canBump={false}
+          sendPending={drainHold != null && drainHold.status == null}
           onRestoreToComposer={onRestoreToComposer}
         />
       )}
@@ -215,6 +216,7 @@ function PendingSteerChips({
           steering={steering}
           conversationId={conversationId}
           interruptPending={interruptPending}
+          sendPending={drainHold != null && drainHold.status == null}
           onRestoreToComposer={onRestoreToComposer}
         />
       )}

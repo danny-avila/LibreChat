@@ -624,6 +624,27 @@ export default function useSteering({
     clearAllDrafts(Constants.PENDING_CONVO);
   }, []);
 
+  /**
+   * Stops a pending automatic send. A window still counting down is simply
+   * dropped, but once the timer has handed its epoch back the hold is the only
+   * thing that can neutralize it — so that case leaves a tombstone the drain
+   * consumes, rather than a null that lets the parked epoch through.
+   */
+  const retireDrainHold = useRecoilCallback(
+    ({ snapshot, set }) =>
+      () => {
+        const held = snapshot.getLoadable(store.queueDrainHoldByConvoId(queueKey)).getValue();
+        if (held == null) {
+          return;
+        }
+        set(
+          store.queueDrainHoldByConvoId(queueKey),
+          held.status === 'released' ? { ...held, status: 'cancelled' } : null,
+        );
+      },
+    [queueKey],
+  );
+
   const removeQueued = useRecoilCallback(
     ({ snapshot, set }) =>
       (id: string) => {
@@ -636,10 +657,10 @@ export default function useSteering({
         /** Nothing left to auto-send: retiring the window here stops a stale
          *  completion from later draining a row queued under a NEWER run. */
         if (next.length === 0) {
-          set(store.queueDrainHoldByConvoId(queueKey), null);
+          retireDrainHold();
         }
       },
-    [queueKey],
+    [queueKey, retireDrainHold],
   );
 
   /** "Send next". Order lives in the sort key rather than the array so the
@@ -700,20 +721,9 @@ export default function useSteering({
    *  already handed the epoch back (a new run can block the drain, leaving it
    *  parked), dropping the hold alone would let it drain anyway: tombstone it
    *  instead so the drain discards that epoch when it finally runs. */
-  const cancelQueueDrain = useRecoilCallback(
-    ({ snapshot, set }) =>
-      () => {
-        const held = snapshot.getLoadable(store.queueDrainHoldByConvoId(queueKey)).getValue();
-        if (held == null) {
-          return;
-        }
-        set(
-          store.queueDrainHoldByConvoId(queueKey),
-          held.status === 'released' ? { ...held, status: 'cancelled' } : null,
-        );
-      },
-    [queueKey],
-  );
+  /** Cancels a withheld automatic send. The queue was never popped, so the
+   *  rows simply stay put for a manual send. */
+  const cancelQueueDrain = retireDrainHold;
 
   /** Once a parked source is discarded it must never be retried as a recovery
    * attempt. Downgrade the row in place so a guarded Edit that finds a newer

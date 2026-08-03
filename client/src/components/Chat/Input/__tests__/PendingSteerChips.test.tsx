@@ -3,7 +3,7 @@ import { getDefaultStore } from 'jotai';
 import userEvent from '@testing-library/user-event';
 import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
-import type { PendingSteer, QueuedMessage } from '~/store/families';
+import type { PendingSteer, QueuedMessage, QueueDrainHold } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import { escalatingSteerFamily, queueExpandedFamily } from '~/store/steer';
 import PendingSteerChips from '../PendingSteerChips';
@@ -35,6 +35,13 @@ function QueueState() {
   const setQueue = useSetRecoilState(store.queuedMessagesByConvoId(CONVO_ID));
   updateQueueForTest = (updater) => setQueue(updater);
   return <output data-testid="queue-state">{JSON.stringify(queue)}</output>;
+}
+
+let setHoldForTest: ((value: QueueDrainHold | null) => void) | undefined;
+
+function HoldState() {
+  setHoldForTest = useSetRecoilState(store.queueDrainHoldByConvoId(CONVO_ID));
+  return null;
 }
 
 function PreferenceState() {
@@ -99,6 +106,7 @@ function renderChips(
       />
       <PreferenceState />
       <QueueState />
+      <HoldState />
     </RecoilRoot>,
   );
 }
@@ -688,12 +696,28 @@ describe('PendingSteerChips — queued outbox group', () => {
     expect(screen.getByTestId('queued-escalate-newest')).toHaveAttribute('tabindex', '-1');
   });
 
-  it('drops the collapsed escalate stand-in once the rows carry their own', () => {
+  /** The shortcut's fallback takes the LAST matching control in the document,
+   *  and the rows render in drain order — so the stand-in has to be last in
+   *  BOTH states, or a promotion silently retargets the shortcut. */
+  it.each([
+    ['collapsed', false],
+    ['expanded', true],
+  ])('leaves the escalate stand-in last in the document while %s', (_label, expand) => {
+    renderChips(twoQueued, { steering: outboxSteering({ duringRunActive: true, canSteer: true }) });
+    if (expand) {
+      fireEvent.click(screen.getByTestId('queue-group-toggle'));
+    }
+
+    const controls = document.querySelectorAll('[data-escalate-steer="queued"]');
+    expect(controls).toHaveLength(expand ? 3 : 1);
+    expect(controls[controls.length - 1]).toHaveAttribute('data-testid', 'queued-escalate-newest');
+  });
+
+  it('still offers every row its own escalation control when expanded', () => {
     renderChips(twoQueued, { steering: outboxSteering({ duringRunActive: true, canSteer: true }) });
     fireEvent.click(screen.getByTestId('queue-group-toggle'));
 
-    expect(screen.queryByTestId('queued-escalate-newest')).toBeNull();
-    expect(document.querySelectorAll('[data-escalate-steer="queued"]')).toHaveLength(2);
+    expect(screen.getAllByTestId('queued-interrupt-now')).toHaveLength(2);
   });
 
   it('offers Send next on every row except the one already next', () => {
@@ -871,6 +895,43 @@ describe('PendingSteerChips — queued row editing', () => {
     fireEvent.change(editor, { target: { value: 'first part\n\nsecond part edited' } });
     fireEvent.keyDown(editor, { key: 'Enter' });
     expect(mockUpdateQueuedText).toHaveBeenCalledWith('merged', 'first part\n\nsecond part edited');
+  });
+
+  /** The drain reads the atom, not the local draft, so an edit still only local
+   *  when the row sends would go out as the old text. The window opening is the
+   *  last safe moment to settle it. */
+  it('settles an open edit the moment a send becomes pending', () => {
+    renderChips([twoQueued[0]], { steering: outboxSteering() });
+
+    fireEvent.click(screen.getByText('first thought'));
+    fireEvent.change(screen.getByTestId('queued-message-edit'), {
+      target: { value: 'final wording' },
+    });
+    expect(mockUpdateQueuedText).not.toHaveBeenCalled();
+
+    // The run ends and the grace window opens.
+    act(() => {
+      setHoldForTest!({
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 4_000_000_000_000,
+      });
+    });
+
+    expect(mockUpdateQueuedText).toHaveBeenCalledWith('q1', 'final wording');
+    expect(screen.queryByTestId('queued-message-edit')).toBeNull();
+  });
+
+  it('does not offer an edit while a send is already pending', () => {
+    renderChips([twoQueued[0]], { steering: outboxSteering() });
+    act(() => {
+      setHoldForTest!({
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 4_000_000_000_000,
+      });
+    });
+
+    fireEvent.click(screen.getByText('first thought'));
+    expect(screen.queryByTestId('queued-message-edit')).toBeNull();
   });
 
   /** An IME candidate confirmation arrives as an unshifted Enter while

@@ -35,6 +35,10 @@ export const ROW_CLASS =
 
 /** Depth cue for the collapsed stack. Kept INSIDE the row's own footprint (the
  *  wrapper reserves the peek height) because the composer box clips overflow. */
+/** Long enough that a burst of typing is one write, short enough that the
+ *  atom is current if the row sends. */
+const DRAFT_SETTLE_MS = 400;
+
 /** Enough to show a merged row's paragraphs without the row eating the box. */
 const EDITOR_MAX_ROWS = 4;
 
@@ -60,6 +64,7 @@ function QueuedRowBase({
   conversationId,
   interruptPending,
   canBump,
+  sendPending,
   onRestoreToComposer,
 }: {
   message: QueuedMessage;
@@ -68,6 +73,8 @@ function QueuedRowBase({
   interruptPending: boolean;
   /** False for the front row (already next) and for a lone queued message. */
   canBump: boolean;
+  /** An automatic send is withheld and about to fire for this queue. */
+  sendPending: boolean;
   onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
@@ -76,7 +83,10 @@ function QueuedRowBase({
   const interruptToggle = useInterruptToggleEntry();
   const fileCount = message.files?.length ?? 0;
   const isRecovered = message.recoverySteerId != null;
-  const editable = isMergeableQueuedMessage(message);
+  /** Not while a send is pending: the words are already on their way, so an
+   *  editor that opened and instantly settled would read as a glitch. Undo
+   *  first, then edit. */
+  const editable = isMergeableQueuedMessage(message) && !sendPending;
   const actionPendingRef = useRef(false);
   const [actionPending, setActionPending] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
@@ -158,6 +168,22 @@ function QueuedRowBase({
     }
   };
   useEffect(() => () => flushDraftRef.current(), []);
+
+  /** The drain reads the atom, not this local draft, so an edit that is still
+   *  only local when the row sends would go out as the old text. Settle it on a
+   *  short idle beat while typing, and immediately once a send is pending —
+   *  which is the moment the grace window opens, before anything is sent. */
+  useEffect(() => {
+    if (draft == null) {
+      return;
+    }
+    if (sendPending) {
+      commitDraft();
+      return;
+    }
+    const timer = setTimeout(() => steering.updateQueuedText(message.id, draft), DRAFT_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [draft, sendPending, commitDraft, message.id, steering]);
 
   /** An ordinary row is a living draft: it is rewritten in place. A recovered
    *  row's words are bound to a parked server source matched by exact text, so
@@ -382,12 +408,14 @@ function QueuedOutboxBase({
   steering,
   conversationId,
   interruptPending,
+  sendPending,
   onRestoreToComposer,
 }: {
   queued: QueuedMessage[];
   steering: SteeringControls;
   conversationId: string;
   interruptPending: boolean;
+  sendPending: boolean;
   onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
@@ -485,28 +513,6 @@ function QueuedOutboxBase({
           <ChevronDown className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
         )}
       </button>
-      {/* Keyboard parity: the escalate shortcut clicks the LAST queued control
-       *  in the document. Collapsing unmounts the rows, so the newest eligible
-       *  message keeps a control here — offscreen, labelled, and only while
-       *  the rows are hidden. */}
-      {!expanded &&
-        escalatable != null &&
-        !interruptPending &&
-        steering.duringRunActive &&
-        steering.canSteer && (
-          <button
-            type="button"
-            /** Invoked by the shortcut through its data attribute, so it needs
-             *  no sequential focus — and an invisible tab stop with no focus
-             *  presentation is worse than none. */
-            tabIndex={-1}
-            className="sr-only"
-            data-escalate-steer="queued"
-            data-testid="queued-escalate-newest"
-            aria-label={localize('com_ui_queue_escalate_newest')}
-            onClick={() => steering.sendQueuedNow(escalatable, { preempt: true })}
-          />
-        )}
       {expanded && (
         <div
           role="list"
@@ -521,6 +527,7 @@ function QueuedOutboxBase({
               conversationId={conversationId}
               interruptPending={interruptPending}
               canBump={position > 0}
+              sendPending={sendPending}
               onRestoreToComposer={onRestoreToComposer}
             />
           ))}
@@ -551,6 +558,29 @@ function QueuedOutboxBase({
           </button>
         </div>
       )}
+      {/* Keyboard parity. The shortcut prefers a hovered or focused control and
+       *  otherwise takes the LAST queued one in the document — which is the
+       *  last row in DRAIN order, not the newest message, once a promotion has
+       *  reordered the queue. This offscreen control sits last in both states
+       *  so the fallback resolves to the newest eligible message either way,
+       *  while the visible per-row buttons stay clickable. */}
+      {escalatable != null &&
+        !interruptPending &&
+        steering.duringRunActive &&
+        steering.canSteer && (
+          <button
+            type="button"
+            /** Invoked by the shortcut through its data attribute, so it needs
+             *  no sequential focus — and an invisible tab stop with no focus
+             *  presentation is worse than none. */
+            tabIndex={-1}
+            className="sr-only"
+            data-escalate-steer="queued"
+            data-testid="queued-escalate-newest"
+            aria-label={localize('com_ui_queue_escalate_newest')}
+            onClick={() => steering.sendQueuedNow(escalatable, { preempt: true })}
+          />
+        )}
     </div>
   );
 }

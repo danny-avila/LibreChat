@@ -2469,6 +2469,26 @@ describe('useSteering — clear all', () => {
     expect(result.current.drainHold).toBeNull();
   });
 
+  /** Once the timer has handed the epoch back, the hold is the only thing that
+   *  can neutralize it — dropping it outright lets the parked epoch through. */
+  it('tombstones a released window rather than dropping it', () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [{ id: 'q1', text: 'only row', createdAt: 1 }]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 1,
+        status: 'released',
+      });
+    });
+
+    act(() => {
+      result.current.steering.removeQueued('q1');
+    });
+
+    expect(result.current.queue).toEqual([]);
+    expect(result.current.drainHold).toMatchObject({ status: 'cancelled' });
+  });
+
   it('keeps the pending send while other rows remain', () => {
     const { result } = setupClearAll(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
