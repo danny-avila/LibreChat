@@ -1588,11 +1588,77 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
+    testRedis('should not re-buffer detached events after first attachment (Redis)', async () => {
+      /**
+       * After the first attachment, the durable chunk log owns recovery for
+       * detached events; re-buffering them locally grew without bound for
+       * long detached generations. A late subscriber gets live events only,
+       * and resume reconstructs the detached content from the chunk log.
+       */
+      const manager = createRedisManager();
+      const streamId = `no-rebuffer-redis-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const sub1 = await manager.subscribe(streamId, () => {});
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await manager.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      sub1?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: { type: 'text', text: 'detached-redis' } } },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
+
+      const sub2Events: ServerSentEvent[] = [];
+      const sub2 = await manager.subscribe(streamId, (event) => sub2Events.push(event));
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(sub2Events.length).toBe(0);
+
+      const resumeState = await manager.getResumeState(streamId);
+      expect(JSON.stringify(resumeState?.aggregatedContent ?? [])).toContain('detached-redis');
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: { type: 'text', text: ' live' } } },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(sub2Events.length).toBe(1);
+      expect((sub2Events[0] as StreamEvent).event).toBe('on_message_delta');
+
+      sub2?.unsubscribe();
+      await manager.destroy();
+    });
+  });
+
+  describe('Early event buffer bounds', () => {
+    /**
+     * Regression tests for a production incident: a model streamed a malformed
+     * 150k-character tool argument for ~26 minutes after the browser
+     * disconnected (~40 events/sec, ~58,800 publications). Every event was
+     * retained in earlyEventBuffer, so heap and GC cost climbed for the whole
+     * detached run.
+     */
+
     testRedis(
-      'should replay buffer without skipBufferReplay after disconnect (Redis)',
+      'detached generation keeps the local buffer empty after first attachment (Redis)',
       async () => {
         const manager = createRedisManager();
-        const streamId = `replay-buf-redis-${Date.now()}`;
+        const streamId = `detached-flat-${Date.now()}`;
         await manager.createJob(streamId, 'user-1');
 
         const sub1 = await manager.subscribe(streamId, () => {});
@@ -1600,25 +1666,63 @@ describe('GenerationJobManager Integration Tests', () => {
         sub1?.unsubscribe();
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: 'buffered-redis' } } },
-        });
+        for (let i = 0; i < 200; i++) {
+          await manager.emitChunk(streamId, {
+            event: 'on_run_step_delta',
+            data: {
+              id: 'step-1',
+              delta: { type: 'tool_call_delta', args: `"table_${i}", ` },
+            },
+          });
+        }
 
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        const stats = manager.getRuntimeStats();
+        expect(stats.earlyBufferedEvents).toBe(0);
+        expect(stats.earlyBufferedBytes).toBe(0);
 
-        const sub2Events: ServerSentEvent[] = [];
-        const sub2 = await manager.subscribe(streamId, (event) => sub2Events.push(event));
-
-        await new Promise((resolve) => setTimeout(resolve, 200));
-
-        expect(sub2Events.length).toBe(1);
-        expect((sub2Events[0] as StreamEvent).event).toBe('on_message_delta');
-
-        sub2?.unsubscribe();
         await manager.destroy();
       },
     );
+
+    test('discards and closes the buffer when the byte budget is exceeded (never attached)', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `buf-byte-cap-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const bigText = 'x'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+        });
+      }
+
+      const stats = manager.getRuntimeStats();
+      expect(stats.earlyBufferedEvents).toBe(0);
+      expect(stats.earlyBufferedBytes).toBe(0);
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: { type: 'text', text: 'after-overflow' } } },
+      });
+      expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
+
+      await manager.destroy();
+    });
+
+    test('buffers detached events until the cap in in-memory mode', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `buf-below-cap-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await setupDisconnectedStream(manager, streamId, 10);
+
+      const stats = manager.getRuntimeStats();
+      expect(stats.earlyBufferedEvents).toBe(2);
+      expect(stats.earlyBufferedBytes).toBeGreaterThan(0);
+
+      await manager.destroy();
+    });
   });
 
   describe('Atomic subscribeWithResume', () => {
