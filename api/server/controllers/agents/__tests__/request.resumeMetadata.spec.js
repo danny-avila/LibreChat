@@ -261,6 +261,8 @@ function nextTick() {
 describe('ResumableAgentController resume metadata', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGenerationJobManager.registerUserFinalization.mockResolvedValue(undefined);
+    mockGenerationJobManager.clearUserFinalization.mockResolvedValue(undefined);
     mockMCPContexts = new WeakMap();
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
@@ -2953,14 +2955,57 @@ describe('ResumableAgentController resume metadata', () => {
     await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
     await nextTick();
 
+    // Generation-qualified: a predecessor's late clear must not drop this marker.
     expect(mockGenerationJobManager.registerUserFinalization).toHaveBeenCalledWith(
       'user-123',
       'conversation-123',
       undefined,
+      1000,
     );
     expect(
       mockGenerationJobManager.registerUserFinalization.mock.invocationCallOrder[0],
     ).toBeLessThan(mockGenerationJobManager.claimTerminalJob.mock.invocationCallOrder[0]);
+  });
+
+  it('fails CLOSED when the finalization marker cannot be registered: no terminal CAS at all', async () => {
+    // A transient marker-store failure must not reopen the deletion race the marker
+    // fences: neither the complete-claim NOR the error-path completeJob may run
+    // unfenced. The job stays active — deletion-visible by itself — for the stale
+    // reaper to recover.
+    mockGenerationJobManager.registerUserFinalization.mockRejectedValue(
+      new Error('marker store down'),
+    );
+    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
+    const client = {
+      options: {},
+      sendMessage: jest.fn().mockResolvedValue({
+        userMessage: {
+          messageId: 'user-msg',
+          parentMessageId: 'parent-msg',
+          conversationId: 'conversation-123',
+          text: 'Follow up.',
+        },
+        responseMessage: { messageId: 'resp-msg', conversationId: 'conversation-123' },
+      }),
+    };
+    const initializeClient = jest.fn().mockResolvedValue({ client });
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Follow up.',
+        messageId: 'user-msg',
+        parentMessageId: 'parent-msg',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+    await nextTick();
+
+    expect(mockGenerationJobManager.claimTerminalJob).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
   });
 
   it('claims terminal ownership before FINAL and always finishes the winning claim', async () => {

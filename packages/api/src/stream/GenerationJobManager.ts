@@ -3831,6 +3831,43 @@ class GenerationJobManagerClass {
       ? parseTextParts(abortContent as TMessageContentParts[], false, { includeSteer: true })
       : '';
 
+    /** FENCE BEFORE THE CAS, fail closed. The abort's own persistence (the caller's
+     * `beforePublish` — checkpoint prune, partial-response save) runs between the
+     * terminal transaction and publication, while the job is already invisible to
+     * active-set enumeration; without a marker, an account-deletion quiesce in that
+     * window sees neither an active job nor a fence and can cascade while those
+     * writes still recreate rows. Registration failure REFUSES the abort — nothing
+     * has been aborted yet, so refusing merely defers, and the Stop route/quiesce
+     * both treat the failure as retryable. Generation-qualified so a late clear
+     * from a predecessor can never drop a replacement's marker. */
+    try {
+      await this.jobStore.registerUserFinalization?.(
+        jobData.userId,
+        streamId,
+        jobData.tenantId,
+        jobData.createdAt,
+      );
+    } catch (fenceError) {
+      logger.error(
+        `[GenerationJobManager] Refusing abort — finalization marker unavailable for ${streamId}:`,
+        fenceError,
+      );
+      return {
+        success: false,
+        failureReason: 'fence_unavailable' as const,
+        jobData,
+        content: abortContent,
+        finalEvent: null,
+        text,
+        collectedUsage,
+      };
+    }
+    const clearAbortFinalization = () => {
+      void this.jobStore
+        .clearUserFinalization?.(jobData.userId, streamId, jobData.tenantId, jobData.createdAt)
+        .catch(() => undefined);
+    };
+
     /** Claim terminal ownership and drain steers in one store transaction. A
      * destructive pre-CAS drain would corrupt a same-epoch run when approval
      * resolution wins `requires_action -> running`. The returned batch is the
@@ -3891,6 +3928,8 @@ class GenerationJobManagerClass {
       transitionFrom = currentAfterConflict.status;
     }
     if (drainedSteers == null) {
+      // Lost the CAS: this call will persist nothing, so its fence releases now.
+      clearAbortFinalization();
       const currentJob = await this.jobStore.getJob(streamId);
       this.reconcileInactiveGeneration(streamId, jobData.createdAt, currentJob, runtime);
       const jobStillActive =
@@ -4117,6 +4156,9 @@ class GenerationJobManagerClass {
       };
     } finally {
       await this.finishTerminalJob(terminalClaim);
+      // Every write this abort owns (`beforePublish` persistence, publication) has
+      // now either landed or failed for good — on both paths, this being a finally.
+      clearAbortFinalization();
     }
   }
 
@@ -7388,15 +7430,21 @@ class GenerationJobManagerClass {
     userId: string,
     streamId: string,
     tenantId?: string,
+    generationId?: number,
   ): Promise<void> {
     if (this.jobStore.registerUserFinalization == null) {
       throw new Error('Job store does not support finalization markers');
     }
-    return this.jobStore.registerUserFinalization(userId, streamId, tenantId);
+    return this.jobStore.registerUserFinalization(userId, streamId, tenantId, generationId);
   }
 
-  async clearUserFinalization(userId: string, streamId: string, tenantId?: string): Promise<void> {
-    return this.jobStore.clearUserFinalization?.(userId, streamId, tenantId);
+  async clearUserFinalization(
+    userId: string,
+    streamId: string,
+    tenantId?: string,
+    generationId?: number,
+  ): Promise<void> {
+    return this.jobStore.clearUserFinalization?.(userId, streamId, tenantId, generationId);
   }
 
   async countUserFinalizations(userId: string, tenantId?: string): Promise<number> {

@@ -497,6 +497,30 @@ describe('deleteUserController - interactive generation quiesce', () => {
     expect(mockDeleteUserById).not.toHaveBeenCalled();
   });
 
+  it('keeps a fence whose ABORTED terminal is still persisting', async () => {
+    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
+    const res = createRes();
+    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+    const db = require('~/models');
+    db.getUserAbortFences.mockResolvedValueOnce(['conv-peer']);
+    // The Stop route's checkpoint prune / partial save run BEHIND the abort CAS:
+    // resignal answering 'delivered' is not settlement while those writes are in
+    // flight, and clearing here would let the cascade race them.
+    GenerationJobManager.getJob.mockResolvedValueOnce({
+      status: 'aborted',
+      createdAt: 1000,
+      terminalPersistencePending: true,
+      metadata: { userId: 'user1' },
+    });
+
+    await deleteUserController(req, res);
+
+    expect(db.clearUserAbortFence).not.toHaveBeenCalled();
+    expect(GenerationJobManager.resignalAbort).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(mockDeleteUserById).not.toHaveBeenCalled();
+  });
+
   it('clears the fence immediately when the abort is acknowledged', async () => {
     const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
     const res = createRes();

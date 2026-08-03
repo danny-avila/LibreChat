@@ -246,6 +246,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       contextUsage: null,
     });
     mockJobStore.updateJob.mockResolvedValue(undefined);
+    mockGenerationJobManager.registerUserFinalization.mockResolvedValue(undefined);
+    mockGenerationJobManager.clearUserFinalization.mockResolvedValue(undefined);
     mockGenerationJobManager.getResumeState.mockResolvedValue({ aggregatedContent: [] });
     mockGenerationJobManager.emitDone.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);
@@ -2134,10 +2136,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       // The claim drops the job out of the active set while the response save (and a
       // first-turn title) are still ahead — without the marker a deletion quiesce in
       // that window sees neither an active job nor a fence.
+      // Generation-qualified: a predecessor's late clear must not drop this marker.
       expect(mockGenerationJobManager.registerUserFinalization).toHaveBeenCalledWith(
         USER_ID,
         CONVO_ID,
         TENANT_ID,
+        1000,
       );
       expect(
         mockGenerationJobManager.registerUserFinalization.mock.invocationCallOrder[0],
@@ -2146,12 +2150,30 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         USER_ID,
         CONVO_ID,
         TENANT_ID,
+        1000,
       );
       // Cleared only after the persistence phase (the finish of the terminal claim),
       // never between the CAS and the save.
       expect(
         mockGenerationJobManager.clearUserFinalization.mock.invocationCallOrder[0],
       ).toBeGreaterThan(mockSaveMessage.mock.invocationCallOrder[0]);
+    });
+
+    it('fails CLOSED when the finalization marker cannot be registered on resume', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockGenerationJobManager.registerUserFinalization.mockRejectedValue(
+        new Error('marker store down'),
+      );
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      // No terminal CAS may run unfenced: not the resumed complete-claim, and not
+      // the catch's error finalization either. The job stays deletion-visible.
+      expect(mockGenerationJobManager.claimTerminalJob).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+      expect(mockSaveMessage).not.toHaveBeenCalled();
     });
 
     it('refreshes the retained stamp when persistence AND the outcome write both fail', async () => {

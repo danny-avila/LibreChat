@@ -309,6 +309,13 @@ export type JobMetadataPatch = Partial<
  * stores so an expired approval is kept out of active-job listings (the client
  * stops polling; cleanup/expiry finalizes it).
  */
+/** Generation-qualified finalization-marker field, shared by the stores so a late
+ *  clear from generation A can never drop the marker generation B registered on the
+ *  same stream. Unqualified (legacy) callers fall back to the bare streamId. */
+export function finalizationField(streamId: string, generationId?: number): string {
+  return generationId != null ? `${streamId}:${generationId}` : streamId;
+}
+
 export function isPendingActionExpired(job: Pick<SerializableJobData, 'pendingAction'>): boolean {
   const exp = job.pendingAction?.expiresAt;
   return exp != null && exp <= Date.now();
@@ -611,8 +618,10 @@ export interface AbortResult {
   signalPublished?: boolean;
   /** Distinguishes an epoch-fenced abort from ordinary not-found/terminal
    * failures so an HTTP caller can return RUN_REPLACED instead of silently
-   * reporting success for a newer generation it deliberately did not stop. */
-  failureReason?: 'generation_replaced' | 'job_still_active';
+   * reporting success for a newer generation it deliberately did not stop.
+   * `fence_unavailable`: the pre-CAS finalization marker could not be made
+   * durable, so the abort was REFUSED before doing anything — retryable. */
+  failureReason?: 'generation_replaced' | 'job_still_active' | 'fence_unavailable';
   /** The generation was stopped, but the caller's required durable side
    * effects failed before normal FINAL publication. The manager emitted a
    * conservative reconciliation frame instead. */
@@ -772,10 +781,23 @@ export interface IJobStore {
    * inside the active-set window, so the deletion guarantee holds without markers) and
    * the count reads 0 (nothing can be deferred, so nothing is outstanding).
    */
-  registerUserFinalization?(userId: string, streamId: string, tenantId?: string): Promise<void>;
+  registerUserFinalization?(
+    userId: string,
+    streamId: string,
+    tenantId?: string,
+    generationId?: number,
+  ): Promise<void>;
 
-  /** Clear a finalization registered by {@link registerUserFinalization}. */
-  clearUserFinalization?(userId: string, streamId: string, tenantId?: string): Promise<void>;
+  /** Clear a finalization registered by {@link registerUserFinalization}. Must be
+   *  called with the SAME generationId: entries are generation-qualified so a late
+   *  clear from generation A can never drop the marker generation B registered on
+   *  the same stream. */
+  clearUserFinalization?(
+    userId: string,
+    streamId: string,
+    tenantId?: string,
+    generationId?: number,
+  ): Promise<void>;
 
   /** Count live (unexpired) finalizations for a user. */
   countUserFinalizations?(userId: string, tenantId?: string): Promise<number>;
@@ -829,8 +851,18 @@ export interface IJobStoreV2 extends IJobStore {
    * window the markers exist to fence. `assertJobStoreV2` rejects such a store at
    * configure time.
    */
-  registerUserFinalization(userId: string, streamId: string, tenantId?: string): Promise<void>;
-  clearUserFinalization(userId: string, streamId: string, tenantId?: string): Promise<void>;
+  registerUserFinalization(
+    userId: string,
+    streamId: string,
+    tenantId?: string,
+    generationId?: number,
+  ): Promise<void>;
+  clearUserFinalization(
+    userId: string,
+    streamId: string,
+    tenantId?: string,
+    generationId?: number,
+  ): Promise<void>;
   countUserFinalizations(userId: string, tenantId?: string): Promise<number>;
 
   /**

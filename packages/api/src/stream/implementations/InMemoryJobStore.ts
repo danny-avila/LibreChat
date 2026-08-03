@@ -31,6 +31,7 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
   isPendingActionStale,
+  finalizationField,
 } from '~/stream/interfaces/IJobStore';
 import {
   isRecoveredSteerPayload,
@@ -1273,6 +1274,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
     userId: string,
     streamId: string,
     tenantId?: string,
+    generationId?: number,
   ): Promise<void> {
     const userKey = tenantId ? `${tenantId}:${userId}` : userId;
     let entries = this.userFinalizations.get(userKey);
@@ -1280,16 +1282,21 @@ export class InMemoryJobStore implements IJobStoreV2 {
       entries = new Map();
       this.userFinalizations.set(userKey, entries);
     }
-    entries.set(streamId, Date.now() + USER_FINALIZATION_TTL_MS);
+    entries.set(finalizationField(streamId, generationId), Date.now() + USER_FINALIZATION_TTL_MS);
   }
 
-  async clearUserFinalization(userId: string, streamId: string, tenantId?: string): Promise<void> {
+  async clearUserFinalization(
+    userId: string,
+    streamId: string,
+    tenantId?: string,
+    generationId?: number,
+  ): Promise<void> {
     const userKey = tenantId ? `${tenantId}:${userId}` : userId;
     const entries = this.userFinalizations.get(userKey);
     if (!entries) {
       return;
     }
-    entries.delete(streamId);
+    entries.delete(finalizationField(streamId, generationId));
     if (entries.size === 0) {
       this.userFinalizations.delete(userKey);
     }

@@ -439,32 +439,41 @@ async function finalizeResumedTurn({
     responseMessage.contextMeta = client.contextMeta;
   }
 
-  // Fence BEFORE the CAS: the claim drops this job out of the active set while the
-  // response save (and the first-turn title's billed writes) are still ahead, so a
-  // deletion quiesce landing in that window would otherwise see neither an active job
-  // nor a marker and cascade while this resume can still recreate messages. Cleared in
-  // the persistence try's finally (success and failure alike); best-effort — the store
-  // contract requires marker support, so a false here is a transient blip.
-  const finalizationRegistered = await GenerationJobManager.registerUserFinalization(
-    userId,
-    streamId,
-    req.user?.tenantId,
-  )
-    .then(() => true)
-    .catch(() => false);
+  // Fence BEFORE the CAS, fail closed: the claim drops this job out of the active set
+  // while the response save (and the first-turn title's billed writes) are still
+  // ahead, so a deletion quiesce landing in that window would otherwise see neither an
+  // active job nor a marker and cascade while this resume can still recreate messages.
+  // Generation-qualified (job.createdAt) so a predecessor's late clear can never drop
+  // this generation's marker. Throwing routes to the controller catch, whose own
+  // fenced settlement either registers its marker or leaves the job paused/active —
+  // deletion-visible either way. Cleared in the persistence try's finally.
+  let finalizationRegistered = false;
+  for (let attempt = 1; attempt <= 2 && !finalizationRegistered; attempt++) {
+    finalizationRegistered = await GenerationJobManager.registerUserFinalization(
+      userId,
+      streamId,
+      req.user?.tenantId,
+      job.createdAt,
+    )
+      .then(() => true)
+      .catch((err) => {
+        logger.warn(
+          `[ResumeAgentController] Finalization registration failed (attempt ${attempt}/2): ${streamId}`,
+          err,
+        );
+        return false;
+      });
+  }
   if (!finalizationRegistered) {
-    logger.error(
-      `[ResumeAgentController] Proceeding without a finalization marker for ${streamId}; ` +
-        'terminal persistence is briefly invisible to account-deletion quiescing',
-    );
+    throw new Error('Finalization marker unavailable before resumed terminal persistence');
   }
   const clearFinalization = () => {
-    if (!finalizationRegistered) {
-      return;
-    }
-    void GenerationJobManager.clearUserFinalization(userId, streamId, req.user?.tenantId).catch(
-      () => undefined,
-    );
+    void GenerationJobManager.clearUserFinalization(
+      userId,
+      streamId,
+      req.user?.tenantId,
+      job.createdAt,
+    ).catch(() => undefined);
   };
 
   // Win terminal ownership BEFORE the outcome-defining response write. Stop
@@ -472,25 +481,33 @@ async function finalizeResumedTurn({
   // fence that external write, while this CAS gives exactly one side authority.
   // The durable pending marker keeps status/subscribers on the readiness path
   // until the winner has persisted and published its FINAL.
-  const terminalClaim = await GenerationJobManager.claimTerminalJob(
-    streamId,
-    'complete',
-    undefined,
-    job.createdAt,
-    {
-      persistencePending: true,
-      // The terminal CAS necessarily precedes the schedule-outcome write below, and the
-      // claim is frozen, so a scheduled fire must be claimed RETAINED (terminal WITHOUT
-      // `completedAt`): that record is the only evidence a reconciler could read if the
-      // outcome write never lands. The settlement below reaps it via `clearScheduledJob`
-      // as soon as the outcome IS durable. The intended outcome rides along, because
-      // `complete` alone cannot tell the reconciler a balance refusal (or a swallowed
-      // provider failure) from a clean finish.
-      ...(meta.scheduleId
-        ? { preserveForReconcile: true, scheduleOutcome: resumedOutcomeStatus(client) }
-        : {}),
-    },
-  );
+  let terminalClaim;
+  try {
+    terminalClaim = await GenerationJobManager.claimTerminalJob(
+      streamId,
+      'complete',
+      undefined,
+      job.createdAt,
+      {
+        persistencePending: true,
+        // The terminal CAS necessarily precedes the schedule-outcome write below, and the
+        // claim is frozen, so a scheduled fire must be claimed RETAINED (terminal WITHOUT
+        // `completedAt`): that record is the only evidence a reconciler could read if the
+        // outcome write never lands. The settlement below reaps it via `clearScheduledJob`
+        // as soon as the outcome IS durable. The intended outcome rides along, because
+        // `complete` alone cannot tell the reconciler a balance refusal (or a swallowed
+        // provider failure) from a clean finish.
+        ...(meta.scheduleId
+          ? { preserveForReconcile: true, scheduleOutcome: resumedOutcomeStatus(client) }
+          : {}),
+      },
+    );
+  } catch (claimError) {
+    // No CAS won means no persistence follows from this call: release the marker
+    // now instead of holding the user's deletion behind its TTL.
+    clearFinalization();
+    throw claimError;
+  }
   if (!terminalClaim) {
     logger.warn(
       `[ResumeAgentController] Skipping resumed FINAL — another terminal/pause transition won for ${streamId}`,
@@ -1496,21 +1513,47 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       // publishing. If abort or a re-pause won, it returns false; only the
       // terminal-CAS winner may delete this generation's checkpoint scope.
       let errorFinalized = false;
-      try {
-        errorFinalized =
-          (await GenerationJobManager.completeJob(
+      // Fenced, same protocol as every other terminal CAS: registration failure skips
+      // the transition and leaves the job visible to deletion (the stale reaper
+      // recovers it). Cleared immediately after — the error path owes no
+      // message-recreating writes past its CAS.
+      const errorFenced = await GenerationJobManager.registerUserFinalization(
+        userId,
+        streamId,
+        req.user?.tenantId,
+        job.createdAt,
+      )
+        .then(() => true)
+        .catch(() => false);
+      if (!errorFenced) {
+        logger.error(
+          `[ResumeAgentController] Leaving ${streamId} unfinalized for the stale reaper — ` +
+            'error terminal could not be fenced against account deletion',
+        );
+      } else {
+        try {
+          errorFinalized =
+            (await GenerationJobManager.completeJob(
+              streamId,
+              err?.message ?? 'Resume failed',
+              job.createdAt,
+              {
+                preserveForReconcile: Boolean(job.metadata?.scheduleId) && !scheduleOutcomeRecorded,
+                // Ride the classification on the claim: a balance refusal claims an
+                // `error` terminal but must walk the insufficient_balance streak.
+                ...(errorScheduleOutcome != null && { scheduleOutcome: errorScheduleOutcome }),
+              },
+            )) === true;
+        } catch (completeErr) {
+          logger.error('[ResumeAgentController] Failed to finalize failed resume', completeErr);
+        } finally {
+          void GenerationJobManager.clearUserFinalization(
+            userId,
             streamId,
-            err?.message ?? 'Resume failed',
+            req.user?.tenantId,
             job.createdAt,
-            {
-              preserveForReconcile: Boolean(job.metadata?.scheduleId) && !scheduleOutcomeRecorded,
-              // Ride the classification on the claim: a balance refusal claims an
-              // `error` terminal but must walk the insufficient_balance streak.
-              ...(errorScheduleOutcome != null && { scheduleOutcome: errorScheduleOutcome }),
-            },
-          )) === true;
-      } catch (completeErr) {
-        logger.error('[ResumeAgentController] Failed to finalize failed resume', completeErr);
+          ).catch(() => undefined);
+        }
       }
       // completeJob early-returns on a job that is no longer `running` — the state a
       // schedule delete (or a retained terminal claim) leaves behind. The outcome above
