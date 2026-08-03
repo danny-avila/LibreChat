@@ -439,6 +439,34 @@ async function finalizeResumedTurn({
     responseMessage.contextMeta = client.contextMeta;
   }
 
+  // Fence BEFORE the CAS: the claim drops this job out of the active set while the
+  // response save (and the first-turn title's billed writes) are still ahead, so a
+  // deletion quiesce landing in that window would otherwise see neither an active job
+  // nor a marker and cascade while this resume can still recreate messages. Cleared in
+  // the persistence try's finally (success and failure alike); best-effort — the store
+  // contract requires marker support, so a false here is a transient blip.
+  const finalizationRegistered = await GenerationJobManager.registerUserFinalization(
+    userId,
+    streamId,
+    req.user?.tenantId,
+  )
+    .then(() => true)
+    .catch(() => false);
+  if (!finalizationRegistered) {
+    logger.error(
+      `[ResumeAgentController] Proceeding without a finalization marker for ${streamId}; ` +
+        'terminal persistence is briefly invisible to account-deletion quiescing',
+    );
+  }
+  const clearFinalization = () => {
+    if (!finalizationRegistered) {
+      return;
+    }
+    void GenerationJobManager.clearUserFinalization(userId, streamId, req.user?.tenantId).catch(
+      () => undefined,
+    );
+  };
+
   // Win terminal ownership BEFORE the outcome-defining response write. Stop
   // and completion both write the same Mongo row; a later liveness read cannot
   // fence that external write, while this CAS gives exactly one side authority.
@@ -487,6 +515,7 @@ async function finalizeResumedTurn({
         await settleAbortedScheduledResume(job, streamId, conversationId);
       }
     }
+    clearFinalization();
     return;
   }
   let terminalPublicationStarted = false;
@@ -596,6 +625,11 @@ async function finalizeResumedTurn({
           checkpointError,
         );
       }
+      // Every data-recreating write this resume owns (response save, first-turn
+      // title, FINAL publication) has now either landed or failed for good — on
+      // both paths, since this runs in the persistence try's finally. Left
+      // registered, the TTL would fence this user's deletion pointlessly.
+      clearFinalization();
     }
   }
 

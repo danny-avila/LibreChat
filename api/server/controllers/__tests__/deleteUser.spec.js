@@ -474,6 +474,29 @@ describe('deleteUserController - interactive generation quiesce', () => {
     expect(res.status).toHaveBeenCalledWith(503);
   });
 
+  it('keeps a fence whose complete terminal is still persisting', async () => {
+    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
+    const res = createRes();
+    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+    const db = require('~/models');
+    db.getUserAbortFences.mockResolvedValueOnce(['conv-peer']);
+    // Terminal at the CAS, but the owner's response save / FINAL publication are
+    // still in flight: settled it is not, and clearing here would let the cascade
+    // race writes that recreate messages for the deleted account.
+    GenerationJobManager.getJob.mockResolvedValueOnce({
+      status: 'complete',
+      createdAt: 1000,
+      terminalPersistencePending: true,
+      metadata: { userId: 'user1' },
+    });
+
+    await deleteUserController(req, res);
+
+    expect(db.clearUserAbortFence).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(mockDeleteUserById).not.toHaveBeenCalled();
+  });
+
   it('clears the fence immediately when the abort is acknowledged', async () => {
     const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
     const res = createRes();

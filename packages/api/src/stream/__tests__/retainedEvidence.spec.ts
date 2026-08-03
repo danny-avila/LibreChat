@@ -142,32 +142,96 @@ describe('updateScheduleOutcome', () => {
   });
 });
 
+describe('stale-pause recovery retains scheduled evidence', () => {
+  beforeEach(() => {
+    jest.resetModules();
+  });
+
+  const ageBehindLease = async (
+    jobStore: Harness['jobStore'],
+    streamId: string,
+    createdAt: number,
+  ) => {
+    const { PAUSE_PERSISTENCE_TIMEOUT_MS } = await import('../interfaces/IJobStore');
+    await jobStore.updateJob(
+      streamId,
+      { terminalPersistenceStartedAt: Date.now() - PAUSE_PERSISTENCE_TIMEOUT_MS - 1 },
+      createdAt,
+    );
+  };
+
+  it('in-memory cleanup keeps a scheduled stale pause as retained error evidence', async () => {
+    const harness = await makeEvidenceManager();
+    const { manager, jobStore } = harness;
+    await manager.createJob('conv-5', 'user-1', 'conv-5', {
+      initialMetadata: { scheduleId: 'sched-1', scheduledFor: '2026-07-26T12:00:00.000Z' },
+    });
+    const createdAt = await pauseBehindPersistenceBarrier(harness, 'conv-5', 'act-5');
+    await ageBehindLease(jobStore, 'conv-5', createdAt);
+
+    await jobStore.cleanup();
+
+    const job = await jobStore.getJob('conv-5');
+    expect(job?.status).toBe('error');
+    // The retention signal: WITH completedAt, a Mongo outage longer than the short
+    // completed TTL erases this evidence and the run recovers as `interrupted`.
+    expect(job?.completedAt).toBeUndefined();
+    expect(job?.scheduleOutcome).toBe('error');
+  });
+
+  it('in-memory cleanup keeps the ordinary lifecycle for an interactive stale pause', async () => {
+    const harness = await makeEvidenceManager();
+    const { manager, jobStore } = harness;
+    await manager.createJob('conv-6', 'user-1', 'conv-6');
+    const createdAt = await pauseBehindPersistenceBarrier(harness, 'conv-6', 'act-6');
+    await ageBehindLease(jobStore, 'conv-6', createdAt);
+
+    await jobStore.cleanup();
+
+    const job = await jobStore.getJob('conv-6');
+    expect(job == null || typeof job.completedAt === 'number').toBe(true);
+    expect(job?.scheduleOutcome).toBeUndefined();
+  });
+
+  it('the approval lifecycle keeps a scheduled stale pause as retained error evidence', async () => {
+    const harness = await makeEvidenceManager();
+    const { manager, jobStore } = harness;
+    await manager.createJob('conv-7', 'user-1', 'conv-7', {
+      initialMetadata: { scheduleId: 'sched-1', scheduledFor: '2026-07-26T12:00:00.000Z' },
+    });
+    const createdAt = await pauseBehindPersistenceBarrier(harness, 'conv-7', 'act-7');
+    await ageBehindLease(jobStore, 'conv-7', createdAt);
+
+    await expect(manager.approvals.failStalePausePersistence('conv-7', createdAt)).resolves.toBe(
+      true,
+    );
+
+    const job = await jobStore.getJob('conv-7');
+    expect(job?.status).toBe('error');
+    expect(job?.completedAt).toBeUndefined();
+    expect(job?.scheduleOutcome).toBe('error');
+  });
+});
+
 describe('legacy job stores without finalization markers', () => {
   beforeEach(() => {
     jest.resetModules();
   });
 
-  it('configures, fails registration, and degrades clear/count instead of crashing', async () => {
-    // A store written against the pre-marker IJobStore: the trio simply is not there.
-    const { manager } = await makeEvidenceManager((store) => {
-      // Shadow the prototype methods with own undefined properties — `delete` cannot
-      // remove class methods from an instance.
-      const legacy = store as Record<string, unknown>;
-      legacy.registerUserFinalization = undefined;
-      legacy.clearUserFinalization = undefined;
-      legacy.countUserFinalizations = undefined;
-    });
-    await manager.createJob('conv-4', 'user-1', 'conv-4');
-
-    // Registration must FAIL (not silently no-op): callers fall back to running
-    // billed post-terminal work synchronously, inside the active-set window, so the
-    // deletion guarantee holds without markers.
-    await expect(manager.registerUserFinalization('user-1', 'conv-4')).rejects.toThrow(
-      'finalization markers',
-    );
-    // The deletion quiesce calls these directly — a TypeError here aborted the
-    // whole deletion pass and the account could never be deleted.
-    await expect(manager.countUserFinalizations('user-1')).resolves.toBe(0);
-    await expect(manager.clearUserFinalization('user-1', 'conv-4')).resolves.toBeUndefined();
+  it('is refused at configure time: the runtime contract requires the marker trio', async () => {
+    // The trio stays OPTIONAL on the public IJobStore type (source compatibility),
+    // but account deletion keys its settlement on the markers, so a store that
+    // cannot record them must fail loudly at configure — degrading silently would
+    // reopen the terminal-CAS-to-persistence window the markers fence.
+    await expect(
+      makeEvidenceManager((store) => {
+        // Shadow the prototype methods with own undefined properties — `delete`
+        // cannot remove class methods from an instance.
+        const legacy = store as Record<string, unknown>;
+        legacy.registerUserFinalization = undefined;
+        legacy.clearUserFinalization = undefined;
+        legacy.countUserFinalizations = undefined;
+      }),
+    ).rejects.toThrow(/registerUserFinalization.*clearUserFinalization.*countUserFinalizations/);
   });
 });

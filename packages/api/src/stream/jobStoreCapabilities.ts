@@ -30,6 +30,22 @@ export const JOB_STORE_V2_REQUIRED_METHODS = [
 
 export type JobStoreV2RequiredMethod = (typeof JOB_STORE_V2_REQUIRED_METHODS)[number];
 
+/**
+ * Base-contract methods that are OPTIONAL on the public {@link IJobStore} type (source
+ * compatibility for pre-marker stores) but REQUIRED at runtime: account deletion's
+ * quiesce keys its settlement on the finalization markers, so a store that cannot
+ * record them silently reopens the terminal-CAS-to-persistence window the markers
+ * fence. Kept separate from {@link JOB_STORE_V2_REQUIRED_METHODS} because the
+ * compile-time tripwire below asserts that list against V2-ONLY methods.
+ */
+export const JOB_STORE_REQUIRED_BASE_METHODS = [
+  'registerUserFinalization',
+  'clearUserFinalization',
+  'countUserFinalizations',
+] as const satisfies ReadonlyArray<keyof IJobStore>;
+
+export type JobStoreRequiredBaseMethod = (typeof JOB_STORE_REQUIRED_BASE_METHODS)[number];
+
 type MethodKeys<T> = {
   [Key in keyof T]-?: NonNullable<T[Key]> extends (...args: never[]) => unknown ? Key : never;
 }[keyof T];
@@ -43,10 +59,14 @@ type AssertTrue<Value extends true> = Value;
 /** Compile-time tripwire: adding a v2-only method requires updating the runtime assertion. */
 type _AllV2MethodsHaveRuntimeChecks = AssertTrue<SameUnion<V2OnlyMethod, JobStoreV2RequiredMethod>>;
 
-/** Return the v2 capabilities absent from a legacy-compatible store. */
-export function getMissingJobStoreV2Methods(store: IJobStore): JobStoreV2RequiredMethod[] {
+/** Return the runtime-required capabilities absent from a legacy-compatible store. */
+export function getMissingJobStoreV2Methods(
+  store: IJobStore,
+): Array<JobStoreV2RequiredMethod | JobStoreRequiredBaseMethod> {
   const candidate = store as unknown as Record<string, unknown>;
-  return JOB_STORE_V2_REQUIRED_METHODS.filter((method) => typeof candidate[method] !== 'function');
+  return [...JOB_STORE_V2_REQUIRED_METHODS, ...JOB_STORE_REQUIRED_BASE_METHODS].filter(
+    (method) => typeof candidate[method] !== 'function',
+  );
 }
 
 /**

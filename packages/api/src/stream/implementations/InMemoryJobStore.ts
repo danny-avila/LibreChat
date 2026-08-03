@@ -1033,7 +1033,12 @@ export class InMemoryJobStore implements IJobStoreV2 {
           expectActionId: job.pendingActionId,
           expectCreatedAt: job.createdAt,
           patch: {
-            completedAt: now,
+            // A SCHEDULED fire is RETAINED (no completedAt) with the outcome stamped,
+            // same as the expired-approval branch below: on the short completed TTL an
+            // outage erases the evidence and the run recovers as `interrupted`.
+            ...(job.scheduleId
+              ? { scheduleOutcome: 'error', scheduleOutcomeError: PAUSE_PERSISTENCE_TIMEOUT_ERROR }
+              : { completedAt: now }),
             error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
           },
           clear: [

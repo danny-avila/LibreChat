@@ -1448,18 +1448,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       preemptIncomplete =
         (preemptStats?.emptyBoundaries ?? 0) > 0 ||
         client?.run?.getHaltReason?.() === 'preempt_incomplete';
-      // Fence BEFORE the CAS: a title started after this transition would otherwise
-      // bill against an account whose deletion quiesce already read an empty active
-      // set. Registration is best-effort here and re-checked (with a synchronous-title
-      // fallback) at the title branches, so a store blip cannot fail the generation.
-      const titleCanFollowTerminal =
-        Boolean(addTitle) &&
-        parentMessageId === Constants.NO_PARENT &&
-        isNewConvo &&
-        !req.body?.isTemporary &&
-        !terminalWasAborted;
-      if (titleCanFollowTerminal) {
-        await registerUserFinalizationFence();
+      // Fence BEFORE the CAS — for EVERY persistence-owning claim, not just titled
+      // turns: the CAS drops this job out of the active set while the response save
+      // (and the background user-message/convo saves) are still in flight, so a
+      // deletion quiesce landing in that window would otherwise see neither an active
+      // job nor a marker and cascade while this request can still recreate messages.
+      // Registration is best-effort (the store contract requires marker support, so a
+      // false here is a transient blip): the title branches re-check with a
+      // synchronous-title fallback, and a response save under a missed marker is the
+      // pre-marker window, logged loudly rather than failing the user's turn.
+      if (!(await registerUserFinalizationFence())) {
+        logger.error(
+          `[ResumableAgentController] Proceeding without a finalization marker for ${streamId}; ` +
+            'terminal persistence is briefly invisible to account-deletion quiescing',
+        );
       }
       terminalClaim = await GenerationJobManager.claimTerminalJob(
         streamId,
@@ -2085,10 +2087,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               });
             }
           }
-        } else {
-          // No post-terminal title work on this path: release the pre-CAS fence now.
-          clearUserFinalization();
         }
+        // No early release even without title work: the marker now also fences the
+        // response/background persistence this controller still owes (the tail block
+        // clears it once awaitPendingPersistence confirms those writes landed).
 
         let terminalPublicationStarted = false;
         try {
@@ -2222,18 +2224,29 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
         await finishResumableRequest(req, userId);
 
+        // The marker outlives every write this controller still owes: title work AND
+        // the background user-message/convo saves (awaitPendingPersistence never
+        // rejects by construction). Clearing before those land would reopen the
+        // window the marker fences — a deletion quiesce confirming on an empty
+        // active set while a pending save can still recreate rows.
+        const releaseUserFinalization = () =>
+          awaitPendingPersistence().then(
+            () => clearUserFinalization(),
+            () => clearUserFinalization(),
+          );
         if (titleTiming === 'immediate') {
           // Title was fired in parallel above (if eligible); a stopped turn already
           // aborted it before `resolveConvoReady`. Defer disposal until it settles
           // so the run/req aren't torn down mid-generation.
           if (immediateTitlePromise) {
             immediateTitlePromise.finally(() => {
-              clearUserFinalization();
+              void releaseUserFinalization();
               if (client) {
                 disposeClient(client);
               }
             });
           } else if (client) {
+            void releaseUserFinalization();
             disposeClient(client);
           }
         } else if (shouldGenerateTitle && !scheduledTitleAwaited && !fallbackTitleAwaited) {
@@ -2246,7 +2259,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               logger.error('[ResumableAgentController] Error in title generation', err);
             })
             .finally(() => {
-              clearUserFinalization();
+              void releaseUserFinalization();
               if (client) {
                 disposeClient(client);
               }
@@ -2254,8 +2267,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         } else {
           // No post-terminal title ran on this path (the scheduled success branch —
           // or the registration-failure fallback — awaited it while the job was
-          // still active); release any marker registered above.
-          clearUserFinalization();
+          // still active); release the marker once the remaining saves land.
+          await releaseUserFinalization();
           if (client) {
             disposeClient(client);
           }
@@ -2422,6 +2435,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           );
         }
 
+        // Release the persistence marker only after every pending save has landed
+        // (idempotent re-await for the scheduled branch, which already flushed).
+        // Left registered, the TTL would fence this user's deletion pointlessly.
+        await awaitPendingPersistence({ stopAbort: wasAborted }).catch(() => undefined);
+        clearUserFinalization();
+
         try {
           await finishResumableRequest(req, userId);
         } finally {
@@ -2449,6 +2468,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           },
         );
       }
+      await awaitPendingPersistence().catch(() => undefined);
+      clearUserFinalization();
       try {
         await finishResumableRequest(req, userId);
       } finally {

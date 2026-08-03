@@ -2124,6 +2124,36 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
     });
 
+    it('registers the finalization marker before the resumed terminal claim and clears it after', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      // The claim drops the job out of the active set while the response save (and a
+      // first-turn title) are still ahead — without the marker a deletion quiesce in
+      // that window sees neither an active job nor a fence.
+      expect(mockGenerationJobManager.registerUserFinalization).toHaveBeenCalledWith(
+        USER_ID,
+        CONVO_ID,
+        TENANT_ID,
+      );
+      expect(
+        mockGenerationJobManager.registerUserFinalization.mock.invocationCallOrder[0],
+      ).toBeLessThan(mockGenerationJobManager.claimTerminalJob.mock.invocationCallOrder[0]);
+      expect(mockGenerationJobManager.clearUserFinalization).toHaveBeenCalledWith(
+        USER_ID,
+        CONVO_ID,
+        TENANT_ID,
+      );
+      // Cleared only after the persistence phase (the finish of the terminal claim),
+      // never between the CAS and the save.
+      expect(
+        mockGenerationJobManager.clearUserFinalization.mock.invocationCallOrder[0],
+      ).toBeGreaterThan(mockSaveMessage.mock.invocationCallOrder[0]);
+    });
+
     it('refreshes the retained stamp when persistence AND the outcome write both fail', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(
         makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
