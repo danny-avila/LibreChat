@@ -10,6 +10,7 @@ const {
   getOpenIdIssuer,
   normalizeOpenIdIssuer,
   buildAuthUserDocCacheKey,
+  buildAuthUserDocTombstoneKey,
   getAuthUserDocCacheMode,
   getCachedAuthUserDoc,
   getValidOpenIdReuseUserId,
@@ -145,15 +146,43 @@ const openIdJwtLogin = (openIdConfig) => {
         const authUserCacheMode = getAuthUserDocCacheMode();
         const authUserCacheStore =
           authUserCacheMode !== 'off' && authUserCacheKey ? getAuthUserDocCacheStore() : undefined;
-        const cachedUser =
+        let cachedUser =
           authUserCacheMode !== 'off' && authUserCacheStore && authUserCacheKey
             ? await getCachedAuthUserDoc(authUserCacheStore, authUserCacheKey)
             : undefined;
+        // A hit is only a conclusive deletion fence if the user's tombstone is
+        // ABSENT: the barrier stamps Mongo, writes the tombstone, then sweeps keys,
+        // so a hit read in the stamp-to-sweep window would otherwise authenticate a
+        // pre-barrier document during the cascade. A tombstoned hit falls through
+        // to the fresh lookup, whose own checks refuse the barriered user. Costs
+        // one extra cache read per hit; entries expire in seconds, so past the
+        // tombstone's window a hit cannot be pre-barrier.
+        if (cachedUser != null && authUserCacheStore) {
+          const cachedUserId = cachedUser._id ?? cachedUser.id;
+          const tombstoned =
+            cachedUserId != null
+              ? await authUserCacheStore
+                  .get(buildAuthUserDocTombstoneKey(String(cachedUserId)))
+                  .catch(() => true)
+              : true;
+          if (tombstoned != null && tombstoned !== false) {
+            await invalidateCachedAuthUserDoc(authUserCacheStore, {
+              userId: cachedUserId != null ? String(cachedUserId) : undefined,
+              cacheKey: authUserCacheKey,
+            });
+            cachedUser = undefined;
+          }
+        }
 
         const servedCachedUser =
           authUserCacheMode === 'on' &&
           cachedUser &&
           isUserInAuthCacheScope(cachedUser, authUserCacheScope);
+        // Captured BEFORE the Mongo read: the cache fill stamps this as the entry's
+        // read time, and the epoch fence rejects entries whose read predates the
+        // user's latest invalidation — stamping the (later) fill time would let a
+        // mutation landing mid-read slip under its own epoch.
+        const lookupStartedAt = Date.now();
         const lookupResult = servedCachedUser
           ? { user: cachedUser, error: null, migration: false }
           : await findOpenIDUser({
@@ -200,6 +229,13 @@ const openIdJwtLogin = (openIdConfig) => {
             await updateUser(user.id, updateData);
           }
 
+          // Whether the post-read deletion fence was CONCLUSIVELY evaluated. A served
+          // cache entry counts: fills only persist after passing the fence, and the
+          // barrier sweeps existing entries. Every other path must re-read the durable
+          // barrier below, or a lookup that completed before markUserDeleting could
+          // still authenticate after it (caching disabled, the migration/role-update
+          // branch, or a fill whose tombstone read failed).
+          let deletionFenceConclusive = servedCachedUser;
           if (authUserCacheStore && authUserCacheKey) {
             if (Object.keys(updateData).length > 0) {
               await invalidateCachedAuthUserDoc(authUserCacheStore, {
@@ -207,7 +243,44 @@ const openIdJwtLogin = (openIdConfig) => {
                 cacheKey: authUserCacheKey,
               });
             } else if (!servedCachedUser && isUserInAuthCacheScope(user, authUserCacheScope)) {
-              await setCachedAuthUserDoc(authUserCacheStore, authUserCacheKey, user);
+              const fillResult = await setCachedAuthUserDoc(
+                authUserCacheStore,
+                authUserCacheKey,
+                user,
+                { readAt: lookupStartedAt },
+              );
+              // The tombstone means THIS request's Mongo read predates the deletion
+              // barrier (the deletionRequestedAt check above saw a pre-barrier doc).
+              // Unwinding the cache entry alone would still hand the stale document
+              // to done() and let this request mutate data during the cascade.
+              if (fillResult === 'tombstoned') {
+                logger.warn(
+                  `[openIdJwtLogin] Refusing pre-deletion-barrier authentication for ${user.id}`,
+                );
+                done(null, false, { message: 'Account deletion in progress' });
+                return;
+              }
+              deletionFenceConclusive = fillResult === 'cached';
+            }
+          }
+          if (!deletionFenceConclusive) {
+            // Durable-barrier recheck, ordered AFTER the lookup: any barrier raised
+            // before this read is observed here, so the vulnerable interleaving
+            // (lookup before the stamp, done() after it) cannot complete. Fail
+            // closed like isUserDeleting — refusing a live user is retryable,
+            // admitting a deleting one is not.
+            let barrier = null;
+            try {
+              barrier = await findUser({ _id: user._id }, 'deletionRequestedAt');
+            } catch {
+              barrier = null;
+            }
+            if (barrier == null || barrier.deletionRequestedAt != null) {
+              logger.warn(
+                `[openIdJwtLogin] Refusing authentication for ${user.id}: deletion barrier raised or unverifiable`,
+              );
+              done(null, false, { message: 'Account deletion in progress' });
+              return;
             }
           }
 

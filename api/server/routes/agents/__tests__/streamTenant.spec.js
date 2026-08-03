@@ -2,6 +2,12 @@ const express = require('express');
 const request = require('supertest');
 
 const mockGenerationJobManager = {
+  // Owner-side finalization fence: the controller registers before its terminal
+  // CAS whenever post-terminal title work is possible, so the facade mock must
+  // mirror it or the turn stalls on an undefined call.
+  registerUserFinalization: jest.fn(async () => undefined),
+  clearUserFinalization: jest.fn(async () => undefined),
+  countUserFinalizations: jest.fn(async () => 0),
   getJob: jest.fn(),
   subscribe: jest.fn(),
   subscribeWithResume: jest.fn(),
@@ -38,6 +44,9 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
+  // The schedules service validates its deps at construction; these suites load it
+  // transitively, so the mock must supply the account-deletion barrier probe.
+  isUserDeleting: jest.fn(async () => false),
 }));
 
 let mockUserId = 'user-123';
@@ -882,7 +891,11 @@ describe('SSE stream tenant isolation', () => {
       });
     });
 
-    it('returns 404 when the job disappears before the manager can observe it', async () => {
+    // The manager can return no jobData either because the record VANISHED (benign
+    // Stop-as-it-finishes race) or because a replacement claimed the conversation, so
+    // the route verifies against the store instead of answering from the empty result.
+    // A store that still shows the authorized generation live must never read as a win.
+    it('does not report success when the store still shows the run live after the manager loses it', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue({
         metadata: { userId: 'user-123' },
         status: 'running',
@@ -898,13 +911,26 @@ describe('SSE stream tenant isolation', () => {
         generationCreatedAt: 1000,
       });
 
+      expect(res.status).toBe(409);
+      expect(res.headers['retry-after']).toBe('1');
+      expect(res.body).toEqual({ code: 'RUN_STILL_ACTIVE', generationProtocolVersion: 1 });
+    });
+
+    it('answers 404 for an abort target with no job at all', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(null);
+
+      const res = await request(app).post('/agents/chat/abort').send({
+        streamId: 'stream-123',
+        generationCreatedAt: 1000,
+      });
+
       expect(res.status).toBe(404);
       expect(res.body).toEqual({
-        success: false,
         error: 'Job not found',
         streamId: 'stream-123',
         generationProtocolVersion: 1,
       });
+      expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
     });
 
     it('leaves the run untouched when the required checkpoint snapshot cannot be captured', async () => {

@@ -28,8 +28,13 @@ const {
   setupGracefulShutdown,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  startScheduleErasureSweep,
+  GenerationJobManager,
+  registerShutdownTask,
+  setupGracefulShutdown,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
+const { startPendingDeletionSweep } = require('./controllers/UserController');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
@@ -43,8 +48,14 @@ const {
   updateAccessPermissions,
   seedDatabase,
   sweepOrphanedPreviews,
+  getDeletingSchedules,
+  eraseScheduleIfDrained,
+  markEraseAttempted,
+  getActiveRunsForSchedule,
+  recordRunOutcome,
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
+const { configureGenerationStreams } = require('@librechat/api');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
@@ -160,6 +171,7 @@ if (cluster.isMaster) {
   let activeWorkers = 0;
   const listeningWorkers = new Set();
   let retentionSweepWorkerId = null;
+  let shuttingDown = false;
   const startTime = Date.now();
   let shuttingDown = false;
   let remainingShutdownWorkers = 0;
@@ -200,8 +212,11 @@ if (cluster.isMaster) {
     });
 
   /** Track worker lifecycle */
+  const onlineWorkers = new Set();
+
   cluster.on('online', (worker) => {
-    activeWorkers++;
+    onlineWorkers.add(worker.id);
+    activeWorkers = onlineWorkers.size;
     const uptime = ((Date.now() - startTime) / 1000).toFixed(2);
     logger.info(
       `Worker ${worker.process.pid} is online (${activeWorkers}/${workers}) after ${uptime}s`,
@@ -224,8 +239,26 @@ if (cluster.isMaster) {
   });
 
   cluster.on('exit', (worker, code, signal) => {
-    activeWorkers--;
+    // Set-based accounting: a worker that dies BEFORE ever coming online must not
+    // decrement a count it never incremented — a bare counter skews low and, during
+    // shutdown, reads zero while a live worker is still draining.
+    onlineWorkers.delete(worker.id);
+    activeWorkers = onlineWorkers.size;
     listeningWorkers.delete(worker.id);
+    // SHUTTING DOWN: worker exits are the drain completing, not failures. Respawning
+    // here restarted workers the master had just asked to stop, and reassigning the
+    // retention sweep handed a background job to a process about to be killed.
+    if (shuttingDown) {
+      const remaining = Object.keys(cluster.workers ?? {}).length;
+      logger.info(`Worker ${worker.process.pid} exited during shutdown (${remaining} remaining)`);
+      // The cluster module's own registry is the authority on live children; the
+      // online set can't be (a forked-but-not-yet-online worker is still a process).
+      if (remaining === 0) {
+        logger.info('All workers drained; master exiting');
+        process.exit(0);
+      }
+      return;
+    }
     if (worker.id === retentionSweepWorkerId) {
       retentionSweepWorkerId = null;
       assignRetentionSweepWorker();
@@ -260,10 +293,16 @@ if (cluster.isMaster) {
     for (const worker of liveWorkers) {
       worker.kill();
     }
+    if (Object.keys(cluster.workers ?? {}).length === 0) {
+      process.exit(0);
+    }
+    // Workers run a 60-second graceful-shutdown coordinator (setupGracefulShutdown);
+    // the master's force-exit must outlast it or it truncates their drains — SSE
+    // streams mid-close, stream teardown, the erasure sweep's final pass.
     setTimeout(() => {
       logger.info('Forcing shutdown after timeout');
       process.exit(0);
-    }, 10000);
+    }, 70000);
   };
 
   process.on('SIGTERM', shutdown);
@@ -282,6 +321,30 @@ if (cluster.isMaster) {
   let shouldStartExpiredFileSweep = false;
   let expiredFileSweepOptions = null;
   let expiredFileSweepStarted = false;
+  let schedulesReady = false;
+  const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
+
+  /**
+   * Refuse schedule WRITES in this clustered entrypoint. v1 supports single-process
+   * scheduling only, and this process never arms the engine, so accepting a create or
+   * run-now here would persist a schedule nothing will ever fire. Reads stay open so an
+   * operator can still inspect existing schedules. DELETE stays open too: erasing a
+   * stored prompt needs no engine and no reconciler — the delete path settles runs
+   * whose job is provably absent synchronously, refuses honestly (503) when a run
+   * cannot be confirmed stopped, and a delivered abort erases on the generation's own
+   * outcome write (erase-on-settle) — so a deployment switched to clustered mode is
+   * never stranded with schedules users can see but never remove, and never left
+   * holding a hidden schedule's prompt indefinitely.
+   */
+  const rejectScheduleWritesUntilReady = (req, res, next) => {
+    if (schedulesReady || SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)) {
+      return next();
+    }
+    return res.status(501).json({
+      code: 'SCHEDULES_NOT_SUPPORTED',
+      error: 'Scheduled chats are not available in clustered mode.',
+    });
+  };
 
   const startExpiredFileSweepOnce = () => {
     if (!shouldStartExpiredFileSweep || expiredFileSweepStarted || !expiredFileSweepOptions) {
@@ -354,8 +417,59 @@ if (cluster.isMaster) {
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
       basePath: path.resolve(__dirname, '../..'),
     });
+    // Configure + initialize the generation stream services. This worker previously
+    // only set the approval-expiry handler and NEVER called configure()/initialize(),
+    // so every worker silently ran on the unconfigured default (private in-memory)
+    // store even with USE_REDIS_STREAMS — making the multiworker scheduler private,
+    // so cross-worker aborts and orphan recovery could not work. Shared with
+    // api/server/index.js so both topologies initialize identically.
+    configureGenerationStreams();
+    // Same teardown discipline as api/server/index.js: stop active generations and
+    // close their SSE streams while the HTTP server drains, then release stream
+    // resources. Without this a killed worker leaves its Redis jobs `running` until
+    // an orphan sweep, and cross-worker subscribers hang on dead streams.
+    registerShutdownTask(
+      'generation job manager prepare',
+      () => GenerationJobManager.prepareForShutdown(),
+      { phase: 'pre-drain', priority: 100 },
+    );
+    registerShutdownTask('generation job manager', () => GenerationJobManager.destroy(), {
+      priority: 100,
+    });
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
+    // Cleanup ONLY — never claims, leases, fires or reconciles a run, so it does not
+    // make this entrypoint a scheduler. It exists because DELETE is accepted here while
+    // no engine is: a soft-deleted schedule whose one erase attempt failed (or whose
+    // lease outlived the delete) would otherwise keep the user's prompt forever, hidden
+    // from the very list they would use to retry. Idempotent and drain-checked, so
+    // running it in every worker is safe.
+    startScheduleErasureSweep({
+      methods: {
+        getDeletingSchedules,
+        eraseScheduleIfDrained,
+        markEraseAttempted,
+        getActiveRunsForSchedule,
+        recordRunOutcome,
+      },
+      // Job state for the abandoned-run settle: null = confirmed absent, throw = unknown.
+      getJobStatus: async (conversationId) => {
+        const jobState = await GenerationJobManager.getJobStore()?.getJob(conversationId);
+        if (jobState == null) {
+          return null;
+        }
+        return {
+          status: jobState.status,
+          scheduleId: jobState.scheduleId,
+          scheduledFor: jobState.scheduledFor,
+          createdEventEmitted: jobState.createdEventEmitted === true,
+        };
+      },
+    });
+    // Same category of cleanup: finishes account deletions deferred on an unconfirmed
+    // schedule quiesce (the durable barrier refuses authentication, so no client retry
+    // can arrive). Idempotent, rotation-windowed, safe in every worker.
+    startPendingDeletionSweep();
     await runAsSystem(async () => {
       await performStartupChecks(appConfig);
       await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
@@ -482,6 +596,7 @@ if (cluster.isMaster) {
     app.use('/api/agents', routes.agents);
     app.use('/api/banner', routes.banner);
     app.use('/api/memories', routes.memories);
+    app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);
     app.use('/api/permissions', routes.accessPermissions);
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);

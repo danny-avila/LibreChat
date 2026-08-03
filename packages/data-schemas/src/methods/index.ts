@@ -1,6 +1,11 @@
 import type { RoleMethods, RoleDeps } from './role';
+import {
+  createUserMethods,
+  DEFAULT_SESSION_EXPIRY,
+  UNREADABLE_ABORT_FENCE,
+  type UserMethods,
+} from './user';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
-import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
 import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, RoleConflictError } from './role';
@@ -134,6 +139,7 @@ export {
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
   digestMCPAuthorityValue,
+  UNREADABLE_ABORT_FENCE,
 };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
 export { permissionBitSupersets };

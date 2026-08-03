@@ -5,7 +5,7 @@
  */
 export interface CacheStore {
   get: (key: string) => Promise<unknown>;
-  set: (key: string, value: unknown) => Promise<unknown>;
+  set: (key: string, value: unknown, ttlMs?: number) => Promise<unknown>;
   delete?: (key: string) => Promise<unknown>;
   clear?: () => Promise<unknown>;
   /** True when the store is shared across processes (e.g. Redis-backed). */

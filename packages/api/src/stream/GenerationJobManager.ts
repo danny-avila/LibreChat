@@ -58,6 +58,13 @@ import { assertJobStoreV2 } from './jobStoreCapabilities';
  * worth of removals plus in-flight arms fit without eviction in practice.
  */
 const PREEMPT_TOMBSTONE_MAX = STEER_QUEUE_MAX_DEPTH * 2;
+
+/**
+ * Bound on the cross-replica abort publication. During a Redis outage a queued
+ * ioredis command can stay pending indefinitely, and an unbounded await here
+ * would wedge the abort path after the terminal CAS already landed.
+ */
+const ABORT_PUBLISH_TIMEOUT_MS = 5_000;
 import {
   SteeringLifecycle,
   toPendingSteer,
@@ -65,6 +72,7 @@ import {
 } from './SteeringLifecycle';
 import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
 import { synthesizeReasoningLabelGapEvents } from '~/agents/reasoningLabels';
+import { withTimeout } from '~/utils';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { attachAskUserQuestionAnswers, normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
@@ -479,6 +487,10 @@ export interface TerminalJobClaim {
   readonly conversationId?: string;
   readonly status: 'complete' | 'error' | 'aborted';
   readonly error?: string;
+  /** Retain the terminal record (WITHOUT `completedAt`) instead of deleting it: a
+   *  scheduled run whose inline outcome write exhausted its retries has this job as
+   *  its only surviving evidence, and the reconciler deletes it afterward. */
+  readonly preserveForReconcile?: true;
   /** The winner must durably publish either its normal FINAL or a
    * reconciliation payload before cleanup may remove the job. */
   readonly persistencePending?: true;
@@ -2479,6 +2491,13 @@ class GenerationJobManagerClass {
         generationProtocolVersion: jobData.generationProtocolVersion,
         userMessage: jobData.userMessage,
         responseMessageId: jobData.responseMessageId,
+        // Scheduled-fire identity. Callers read `job.metadata.scheduleId` to attribute a
+        // run to its schedule and to tell it from a replacement interactive turn that
+        // reused the conversationId, so it has to survive the facade.
+        scheduleId: jobData.scheduleId,
+        scheduledFor: jobData.scheduledFor,
+        scheduleManual: jobData.scheduleManual,
+        scheduleConfigRevision: jobData.scheduleConfigRevision,
         sender: jobData.sender,
         endpoint: jobData.endpoint,
         iconURL: jobData.iconURL,
@@ -3183,7 +3202,16 @@ class GenerationJobManagerClass {
     status: TerminalJobClaim['status'],
     error?: string,
     expectedCreatedAt?: number,
-    options: { persistencePending?: boolean; failedPauseActionId?: string } = {},
+    options: {
+      persistencePending?: boolean;
+      failedPauseActionId?: string;
+      preserveForReconcile?: boolean;
+      /** The schedule outcome this owner intends to record, stamped on the retained
+       *  job so a reconciler recovering from a failed outcome write reproduces the
+       *  owner's classification instead of re-deriving `success` from a generic
+       *  `complete`. See SerializableJobData.scheduleOutcome. */
+      scheduleOutcome?: { status: string; error?: string };
+    } = {},
   ): Promise<TerminalJobClaim | null> {
     if (
       options.failedPauseActionId != null &&
@@ -3254,8 +3282,18 @@ class GenerationJobManagerClass {
           : jobData.pendingActionId != null && { expectActionId: jobData.pendingActionId }),
       }),
       patch: {
-        completedAt,
+        // Omitted under preserveForReconcile: a completedAt-less terminal is the
+        // cross-store retention signal the schedules reconciler depends on.
+        ...(options.preserveForReconcile === true ? {} : { completedAt }),
         ...(terminalError != null && { error: terminalError }),
+        // Written in the SAME transaction as the terminal CAS, so retained evidence and
+        // the owner's intended classification can never disagree.
+        ...(options.scheduleOutcome != null && {
+          scheduleOutcome: options.scheduleOutcome.status,
+          ...(options.scheduleOutcome.error != null && {
+            scheduleOutcomeError: options.scheduleOutcome.error,
+          }),
+        }),
         ...(options.persistencePending === true && {
           terminalPersistencePending: true,
           terminalPersistenceStartedAt: completedAt,
@@ -3283,6 +3321,7 @@ class GenerationJobManagerClass {
       status,
       ...(terminalError != null && { error: terminalError }),
       ...(options.persistencePending === true && { persistencePending: true as const }),
+      ...(options.preserveForReconcile === true && { preserveForReconcile: true as const }),
       drainedSteers: Object.freeze([...drainedSteers]),
     });
     this.terminalClaimRuntimes.set(claim, runtime ?? null);
@@ -3555,22 +3594,71 @@ class GenerationJobManagerClass {
    * fully transmitted. It will be cleaned up when subscribers disconnect or
    * by the periodic cleanup job.
    */
+  /**
+   * `options.preserveForReconcile` RETAINS the terminal job record (WITHOUT `completedAt`)
+   * instead of deleting it. It is set when a scheduled run's inline outcome write has
+   * exhausted its Mongo retries, making this job the only surviving evidence that the run
+   * finished — the schedules reconciler reads it and deletes it afterward. Omitting
+   * `completedAt` is what keeps the finished-job sweep from reaping that evidence first.
+   */
   async completeJob(
     streamId: string,
     error?: string,
     expectedCreatedAt?: number,
+    options?: {
+      preserveForReconcile?: boolean;
+      scheduleOutcome?: { status: string; error?: string };
+    },
   ): Promise<boolean> {
     const claim = await this.claimTerminalJob(
       streamId,
       error ? 'error' : 'complete',
       error,
       expectedCreatedAt,
+      {
+        preserveForReconcile: options?.preserveForReconcile,
+        scheduleOutcome: options?.scheduleOutcome,
+      },
     );
     if (!claim) {
       return false;
     }
     await this.finishTerminalJob(claim);
     return true;
+  }
+
+  /**
+   * Refresh the schedule-outcome stamp on an existing job (see
+   * SerializableJobData.scheduleOutcome). The stamp is normally written inside the
+   * terminal CAS with the outcome known at claim time — but a response-persistence
+   * failure AFTER a won `complete` claim changes the truthful outcome to `error`, and
+   * if the Mongo outcome write then also fails, the retained evidence is all a
+   * reconciler ever sees. The job store is a different failure domain than Mongo, so
+   * this refresh usually survives exactly the outage that made it necessary.
+   * Identity-fenced by the store's `updateJob`; best-effort (returns false on failure).
+   */
+  async updateScheduleOutcome(
+    streamId: string,
+    expectedCreatedAt: number | undefined,
+    outcome: { status: string; error?: string },
+  ): Promise<boolean> {
+    try {
+      await this.jobStore.updateJob(
+        streamId,
+        {
+          scheduleOutcome: outcome.status,
+          ...(outcome.error != null && { scheduleOutcomeError: outcome.error }),
+        },
+        expectedCreatedAt,
+      );
+      return true;
+    } catch (error) {
+      logger.warn(
+        `[GenerationJobManager] Failed to refresh schedule-outcome stamp for ${streamId}:`,
+        error,
+      );
+      return false;
+    }
   }
 
   /**
@@ -3584,12 +3672,22 @@ class GenerationJobManagerClass {
     actionId: string,
     error: string,
     expectedCreatedAt?: number,
+    options?: {
+      /** Retain the error terminal as reconcile evidence (see claimTerminalJob).
+       *  Scheduled fires MUST pass this: a failed-pause error job on the ordinary
+       *  short completed TTL evaporates during any outage longer than that TTL, and
+       *  the reconciler then misreads the vanished run as `interrupted`. */
+      preserveForReconcile?: boolean;
+      scheduleOutcome?: { status: string; error?: string };
+    },
   ): Promise<boolean> {
     if (actionId.length === 0) {
       return false;
     }
     const claim = await this.claimTerminalJob(streamId, 'error', error, expectedCreatedAt, {
       failedPauseActionId: actionId,
+      preserveForReconcile: options?.preserveForReconcile,
+      scheduleOutcome: options?.scheduleOutcome,
     });
     if (!claim) {
       return false;
@@ -3612,6 +3710,67 @@ class GenerationJobManagerClass {
    * that the Redis chunk-log reconstruction dropped — reaches the LIVE client
    * too, not just the saved message. Pure/optional; identity when omitted.
    */
+  /**
+   * Re-signals an abort whose terminal CAS already landed. The first abort flips the
+   * job to `aborted` BEFORE its cross-replica publication, so a failed publish leaves
+   * a generation running against a job every retry reads as terminal — and a retry
+   * that trusts that status returns "delivered" without ever republishing. This is
+   * the retry's delivery path: emit the abort again (awaited), abort any local
+   * runtime, and report delivery on the same honest basis as abortJob — generation
+   * OWNERSHIP, never publish success. Callers confirm actual delivery by the run
+   * settling (the owner settles last), which their bounded drains already poll.
+   */
+  async resignalAbort(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<{ delivered: boolean; published: boolean }> {
+    const jobData = await this.jobStore.getJob(streamId);
+    if (
+      jobData == null ||
+      jobData.status !== 'aborted' ||
+      (expectedCreatedAt != null && jobData.createdAt !== expectedCreatedAt)
+    ) {
+      return { delivered: false, published: false };
+    }
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime?.createdAt === jobData.createdAt) {
+      runtime.abortController.abort();
+    }
+    // `published` reports whether the republication left this replica (see
+    // AbortResult.signalPublished); callers must stay retryable when it did not,
+    // instead of discarding a swallowed failure and answering success.
+    const delivered = this.ownedJobs.get(streamId) === jobData.createdAt;
+    let published = true;
+    if (this.eventTransport.emitAbort) {
+      try {
+        if (!delivered && this.eventTransport.emitAbortConfirmed != null) {
+          // ESCALATE exactly as abortJob does. Awaiting the plain `emitAbort` cannot
+          // detect a failure: the signature is void and the Redis implementation
+          // fire-and-forgets its publish behind an internal catch, so the await always
+          // resolves and `published` was unconditionally true — during an outage this
+          // retry path answered "republished" and the deletion quiesce cleared its
+          // durable fence while the peer generation kept running. The acknowledged
+          // variant returns the owner's correlated ack (or its durable proof).
+          published = await withTimeout(
+            this.eventTransport.emitAbortConfirmed(streamId, jobData.createdAt),
+            ABORT_PUBLISH_TIMEOUT_MS,
+            `Abort re-acknowledgement timed out for ${streamId}`,
+          );
+        } else {
+          await withTimeout(
+            Promise.resolve(this.eventTransport.emitAbort(streamId, jobData.createdAt)),
+            ABORT_PUBLISH_TIMEOUT_MS,
+            `Abort republication timed out for ${streamId}`,
+          );
+        }
+      } catch (err) {
+        published = false;
+        logger.error(`[GenerationJobManager] Failed to republish abort for ${streamId}:`, err);
+      }
+    }
+    return { delivered, published };
+  }
+
   async abortJob(
     streamId: string,
     options?: {
@@ -3619,6 +3778,12 @@ class GenerationJobManagerClass {
         content: TMessageContentParts[],
         jobData: SerializableJobData,
       ) => TMessageContentParts[];
+      /**
+       * Retain the aborted job (as `aborted`, WITHOUT `completedAt`) instead of deleting
+       * it, so a scheduled-fire reconciler whose inline outcome write failed can still
+       * observe the abort. The reconciler deletes it afterward.
+       */
+      preserveForReconcile?: boolean;
       /** Required durable work (for example saving the partial response and
        * pruning the paused checkpoint) that must finish before the normal
        * FINAL lets the client submit against that history. Throwing emits a
@@ -3653,6 +3818,24 @@ class GenerationJobManagerClass {
         jobData,
         success: false,
         failureReason: 'generation_replaced',
+        finalEvent: null,
+        collectedUsage: [],
+      };
+    }
+
+    if (
+      options?.expectedCreatedAt != null &&
+      (jobData == null || jobData.createdAt !== options.expectedCreatedAt)
+    ) {
+      // Placed BEFORE the branches below: both call reconcileInactiveGeneration, which
+      // releases job ownership — a real side effect on the wrong generation.
+      logger.debug(`[GenerationJobManager] Abort skipped (generation mismatch): ${streamId}`);
+      recordGenerationJob(this.storeLabel, 'abort_failed');
+      return {
+        text: '',
+        content: [],
+        jobData: null,
+        success: false,
         finalEvent: null,
         collectedUsage: [],
       };
@@ -3761,7 +3944,10 @@ class GenerationJobManagerClass {
         expectCreatedAt: jobData.createdAt,
         ...(expectedActionId != null && { expectActionId: expectedActionId }),
         patch: {
-          completedAt: terminalPersistenceStartedAt,
+          // preserveForReconcile omits completedAt so the finished-job sweep can't
+          // reap the abort before the schedules reconciler observes it — the store
+          // holds completedAt-less terminals on the retained-evidence TTL.
+          ...(options?.preserveForReconcile ? {} : { completedAt: terminalPersistenceStartedAt }),
           terminalPersistencePending: true,
           terminalPersistenceStartedAt,
         },
@@ -3834,9 +4020,19 @@ class GenerationJobManagerClass {
       ...(jobData.conversationId != null && { conversationId: jobData.conversationId }),
       status: 'aborted',
       persistencePending: true,
+      ...(options?.preserveForReconcile === true && { preserveForReconcile: true as const }),
       drainedSteers: Object.freeze([...drainedSteers]),
     });
     this.terminalClaimRuntimes.set(terminalClaim, runtime ?? null);
+
+    // `transitionFrom`, NOT the pre-race `abortableStatus`: the retry loop above
+    // re-reads and re-aims the CAS when an approval decision moves the same generation,
+    // so a job observed `requires_action` can be aborted FROM `running`. Treating that
+    // as a paused job made delivery vacuously true for a live generation this replica
+    // does not own — reporting a stop no generating process ever received.
+    const abortSignalDelivered =
+      transitionFrom === 'requires_action' || this.ownedJobs.get(streamId) === jobData.createdAt;
+    let abortSignalPublished = true;
 
     try {
       const pendingSteers = drainedSteers.map(toPendingSteer);
@@ -3844,20 +4040,63 @@ class GenerationJobManagerClass {
       // Signal only the generation whose terminal transaction won above. The
       // transport tag prevents a delayed predecessor abort from reaching a
       // same-stream replacement on another replica.
+      //
+      // Local delivery is judged by GENERATION OWNERSHIP (`ownedJobs`), never by
+      // mere runtime presence — a subscriber-only replica also holds runtime state,
+      // and counting it as delivery would report a stop no generating process ever
+      // received. A paused job has no generation loop to signal, so delivery is
+      // vacuously true for it. Callers (the Stop route, the account-deletion
+      // quiesce) use these two fields to decide whether an abort still needs a
+      // fence: `signalDelivered === false && signalPublished === false` is the only
+      // combination that proves the stop never left this replica.
+      // Stop the LOCAL generation BEFORE any network publication. The publish can
+      // hang for the whole timeout during a transport outage, and an owned
+      // same-replica generation left running behind a job every retry already sees
+      // as terminal keeps generating and billing. The unsubscribe runs first so
+      // this replica does not consume its own publication.
+      if (runtime) {
+        this.releaseAbortSubscription(runtime);
+      }
+      runtime?.abortController.abort();
+
       if (this.eventTransport.emitAbort) {
         try {
-          this.eventTransport.emitAbort(streamId, jobData.createdAt);
+          if (!abortSignalDelivered && this.eventTransport.emitAbortConfirmed != null) {
+            // Peer-owned generation: dev's acknowledged variant is stronger evidence
+            // than a publish that returned — it waits for the owner's correlated ack
+            // (or its durable proof). Bounded so a transport outage cannot hold the
+            // Stop route past its own persistence work.
+            abortSignalPublished = await withTimeout(
+              this.eventTransport.emitAbortConfirmed(streamId, jobData.createdAt),
+              ABORT_PUBLISH_TIMEOUT_MS,
+              `Abort acknowledgement timed out for ${streamId}`,
+            );
+          } else {
+            // Awaited via Promise.resolve: dev's transport signature is void, but a
+            // transport whose publish rejects asynchronously must still be observed —
+            // reporting an abort as published that never left is what the Stop route's
+            // retryability and the deletion quiesce's fence both key on. Bounded so a
+            // stalled transport cannot hold the caller past its persistence work.
+            await withTimeout(
+              Promise.resolve(this.eventTransport.emitAbort(streamId, jobData.createdAt)),
+              ABORT_PUBLISH_TIMEOUT_MS,
+              `Abort publication timed out for ${streamId}`,
+            );
+          }
         } catch (abortError) {
+          abortSignalPublished = false;
           logger.error(
             `[GenerationJobManager] Failed to publish terminal abort for ${streamId}:`,
             abortError,
           );
         }
+        if (!abortSignalPublished) {
+          // RETAIN the terminal job: it is the only thing a retry (or the Stop
+          // route's immediate resignalAbort) can re-signal from. Reusing dev's
+          // publication-failure retention keeps one cleanup rule for both cases.
+          this.terminalPublicationFailures.add(terminalClaim);
+        }
       }
-      if (runtime) {
-        this.releaseAbortSubscription(runtime);
-      }
-      runtime?.abortController.abort();
 
       // A chunk append racing the initial non-destructive snapshot either
       // commits before the terminal CAS or loses its own running-status guard.
@@ -3934,7 +4173,16 @@ class GenerationJobManagerClass {
 
       const abortResult: AbortResult = {
         success: true,
+        // Distinct from `success` (the terminal CAS): whether a live generation, if
+        // one exists, actually received the stop. Deletion drains and the Stop
+        // route's retryability gate on these; the route's persistence work keeps
+        // gating on `success` alone.
+        signalDelivered: abortSignalDelivered,
+        signalPublished: abortSignalPublished,
         jobData,
+        // The status the CAS won from, which the retry loop may have re-aimed away
+        // from `jobData.status`; see AbortResult.abortedFromStatus.
+        abortedFromStatus: transitionFrom,
         content: abortContent,
         finalEvent: abortFinalEvent,
         text,
@@ -6994,10 +7242,15 @@ class GenerationJobManagerClass {
         );
       }
     }
+    // Forward the job we ALREADY read. Without it the expiry re-reads the store, which
+    // is not just a wasted round trip: the preserve decision keys on `scheduleId`, so a
+    // second read that returns null (or a replacement) would drop a scheduled run's
+    // retained evidence — the opposite of what the first read established.
     const expiredCreatedAt = await this._approvals.expireWithIdentity(
       streamId,
       actionId,
       expectedCreatedAt ?? observedJob?.createdAt,
+      observedJob,
     );
     if (expiredCreatedAt == null) {
       return false;

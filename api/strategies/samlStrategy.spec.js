@@ -6,6 +6,7 @@ jest.mock('@node-saml/passport-saml');
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     info: jest.fn(),
+    warn: jest.fn(),
     debug: jest.fn(),
     error: jest.fn(),
   },
@@ -246,7 +247,7 @@ describe('setupSaml', () => {
 
     // Configure mocks
     const { findUser, createUser, updateUser } = require('~/models');
-    findUser.mockResolvedValue(null);
+    findUser.mockImplementation(async (query) => (query?._id != null ? { _id: query._id } : null));
     createUser.mockImplementation(async (userData) => ({
       _id: 'mock-user-id',
       ...userData,
@@ -401,6 +402,43 @@ u7wlOSk+oFzDIO/UILIA
     const { user } = await validate(profile);
 
     expect(user.name).toBe(expectedFullName);
+  });
+
+  it('refuses when the deletion barrier rose during the login flow', async () => {
+    const { findUser } = require('~/models');
+    const existingUser = {
+      _id: 'existing-user-id',
+      provider: 'saml',
+      email: baseProfile.email,
+      samlId: baseProfile.nameID,
+      username: 'user',
+      name: 'User',
+    };
+    findUser
+      // Pre-barrier snapshot at the samlId lookup.
+      .mockResolvedValueOnce(existingUser)
+      // The boundary recheck, sequenced after the user sync, observes the barrier.
+      .mockResolvedValueOnce({ _id: 'existing-user-id', deletionRequestedAt: new Date() });
+
+    const { user } = await validate({ ...baseProfile });
+
+    expect(user).toBe(false);
+  });
+
+  it('fails closed when the boundary recheck cannot see the identity', async () => {
+    const { findUser } = require('~/models');
+    findUser
+      .mockResolvedValueOnce({
+        _id: 'existing-user-id',
+        provider: 'saml',
+        email: baseProfile.email,
+        samlId: baseProfile.nameID,
+      })
+      .mockResolvedValueOnce(null);
+
+    const { user } = await validate({ ...baseProfile });
+
+    expect(user).toBe(false);
   });
 
   it('should update an existing user on login', async () => {

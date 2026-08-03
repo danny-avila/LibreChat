@@ -1548,6 +1548,19 @@ export const interfaceSchema = z
         }),
       ])
       .optional(),
+    schedules: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          maxPerUser: z.number().int().min(0).optional(),
+          minIntervalMinutes: z.number().int().min(1).optional(),
+          autoDisableAfterFailures: z.number().int().min(1).optional(),
+          fireConcurrency: z.number().int().min(1).optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
     modelSelect: true,
@@ -1610,6 +1623,11 @@ export const interfaceSchema = z
       public: true,
       snapshotFiles: true,
     },
+    // `schedules` is deliberately ABSENT from this default. It is experimental and
+    // default-off in v1, and zod applies this whole object when `interface` is omitted
+    // from librechat.yaml — including it would silently enable the feature (and permit
+    // billable scheduled runs) on every deployment that never opted in. The PERMISSION
+    // defaults live in updateInterfacePermissions, which is a separate concern.
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
@@ -2622,6 +2640,23 @@ export enum CacheKeys {
 }
 
 export const AUTH_USER_DOC_BY_ID_PREFIX = 'auth-user-doc-byid';
+
+/**
+ * Deletion-barrier tombstone for the auth user-doc cache. Written BEFORE the
+ * barrier's key sweep so a cache fill racing the sweep (Mongo read pre-barrier,
+ * cache write post-sweep) observes it after writing and deletes its own entry.
+ */
+export const AUTH_USER_DOC_TOMBSTONE_PREFIX = 'auth-user-doc-tombstone';
+
+/**
+ * Per-user invalidation epoch for the auth user-doc cache. Written FIRST by every
+ * invalidation; reads reject any entry whose Mongo read predates it. This is the
+ * correctness fence — the reverse index is only a cleanup optimization, so its
+ * read-modify-write races (concurrent fills dropping each other's keys, an
+ * invalidation landing between an entry write and its index write) can no longer
+ * let an unindexed entry outlive a mutation.
+ */
+export const AUTH_USER_DOC_EPOCH_PREFIX = 'auth-user-doc-epoch';
 
 /**
  * Enum for violation types, used to identify, log, and cache violations.

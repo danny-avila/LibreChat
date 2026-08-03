@@ -25,6 +25,13 @@ jest.mock('@librechat/data-schemas', () => {
 jest.mock('~/models', () => {
   const _mongoose = require('mongoose');
   return {
+    markUserDeleting: jest.fn().mockResolvedValue(new Date()),
+    markUserDeletionCommitted: jest.fn().mockResolvedValue(undefined),
+    getUsersPendingDeletion: jest.fn().mockResolvedValue([]),
+    markDeletionSweepAttempted: jest.fn().mockResolvedValue(undefined),
+    addUserAbortFence: jest.fn().mockResolvedValue(undefined),
+    clearUserAbortFence: jest.fn().mockResolvedValue(undefined),
+    getUserAbortFences: jest.fn().mockResolvedValue([]),
     deleteAllUserSessions: jest.fn().mockResolvedValue(undefined),
     deleteAllSharedLinks: jest.fn().mockResolvedValue(undefined),
     deleteAllAgentApiKeys: jest.fn().mockResolvedValue(undefined),
@@ -39,6 +46,7 @@ jest.mock('~/models', () => {
     cancelAgentTriggerUserDeletion: jest.fn().mockResolvedValue(true),
     deleteUserPrompts: jest.fn().mockResolvedValue(undefined),
     deleteUserSkills: jest.fn().mockResolvedValue(undefined),
+    deleteSchedulesByUser: jest.fn().mockResolvedValue(undefined),
     deleteMessages: jest.fn().mockResolvedValue(undefined),
     deleteBalances: jest.fn().mockResolvedValue(undefined),
     deleteActions: jest.fn().mockResolvedValue(undefined),
@@ -339,6 +347,7 @@ describe('deleteUserController', () => {
     status: jest.fn().mockReturnThis(),
     send: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnThis(),
   };
 
   beforeEach(() => {

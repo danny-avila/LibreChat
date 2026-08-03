@@ -602,6 +602,13 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     throw new Error(ErrorTypes.AUTH_FAILED);
   }
 
+  // Deletion barrier: a user whose destructive cascade (or deferred sweep) is
+  // running must not mint a fresh session that admits writes behind it.
+  if (user?.deletionRequestedAt != null) {
+    logger.warn(`[openidStrategy] Refusing login for deleting user: ${user._id}`);
+    throw new Error(ErrorTypes.AUTH_FAILED);
+  }
+
   const appConfig = user?.tenantId ? await resolveAppConfigForUser(getAppConfig, user) : baseConfig;
 
   if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
@@ -820,6 +827,25 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   }
 
   user = await updateUser(user._id, user);
+
+  // FINAL barrier recheck at the successful-login boundary, sequenced after the
+  // slow awaits above (userinfo fetch, config resolution, avatar download/save,
+  // role sync): a barrier raised mid-callback would otherwise mint a session whose
+  // downstream login middleware recreates a Balance and Session behind the
+  // destructive cascade. A null read fails closed — an identity removed mid-flow
+  // must not complete.
+  let barrier = null;
+  try {
+    barrier = await findUser({ _id: user._id }, 'deletionRequestedAt');
+  } catch {
+    barrier = null;
+  }
+  if (barrier == null || barrier.deletionRequestedAt != null) {
+    logger.warn(
+      `[openidStrategy] Refusing login for ${user._id}: deletion barrier raised or unverifiable`,
+    );
+    throw new Error(ErrorTypes.AUTH_FAILED);
+  }
 
   logger.info(
     `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,

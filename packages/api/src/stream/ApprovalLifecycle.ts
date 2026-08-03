@@ -1,6 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
-import type { IJobStoreV2, JobMetadataPatch, SteerQueueItem } from '~/stream/interfaces/IJobStore';
+import type {
+  IJobStoreV2,
+  JobMetadataPatch,
+  SerializableJobData,
+  SteerQueueItem,
+} from '~/stream/interfaces/IJobStore';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import {
   isPendingActionExpired,
@@ -333,14 +338,19 @@ export class ApprovalLifecycle {
       // It can't be reviewed, so finalize the job instead of driving a resumed
       // run with no reviewed interrupt payload — consistent with how the active
       // listing and cleanup treat a stale pending action.
-      await this.expire(streamId, undefined, job.createdAt);
+      await this.expire(streamId, undefined, job.createdAt, job);
       return false;
     }
     if (isPendingActionExpired(job)) {
       // Target the exact record observed as expired. If the caller didn't pin an
       // actionId, fall back to the one just read — otherwise a concurrent
       // resume + re-pause for a new action could let this expire abort it.
-      await this.expire(streamId, expectedActionId ?? job.pendingAction.actionId, job.createdAt);
+      await this.expire(
+        streamId,
+        expectedActionId ?? job.pendingAction.actionId,
+        job.createdAt,
+        job,
+      );
       return false;
     }
     const resumed = await this.store.transitionStatus(streamId, {
@@ -372,19 +382,27 @@ export class ApprovalLifecycle {
     streamId: string,
     expectedActionId?: string,
     expectedCreatedAt?: number,
+    observedJob?: SerializableJobData | null,
   ): Promise<boolean> {
-    return (await this.expireWithIdentity(streamId, expectedActionId, expectedCreatedAt)) != null;
+    return (
+      (await this.expireWithIdentity(streamId, expectedActionId, expectedCreatedAt, observedJob)) !=
+      null
+    );
   }
 
   /**
    * Expires the observed approval and returns the winning job identity. Callers
    * that need to notify runtime-local subscribers can use the identity to avoid
    * delivering the predecessor's terminal event to a replacement generation.
+   *
+   * `observedJob` lets a caller that already read the job hand it in, so the
+   * scheduled-fire check below costs no extra round trip.
    */
   async expireWithIdentity(
     streamId: string,
     expectedActionId?: string,
     expectedCreatedAt?: number,
+    observedJob?: SerializableJobData | null,
   ): Promise<number | null> {
     const job = await this.waitForPausePersistence(streamId, expectedCreatedAt);
     if (
@@ -395,13 +413,22 @@ export class ApprovalLifecycle {
       return null;
     }
     const createdAt = job.createdAt;
+    // A scheduled fire's expired approval must be RETAINED so the schedules reconciler
+    // can read `jobStatus === 'aborted'` and settle its `requires_action` run within
+    // ~2 min. Omitting completedAt is the cross-store preserve signal (Redis holds it on
+    // the retained-evidence TTL; the in-memory finished-job sweep keys on completedAt),
+    // so it isn't reaped first — unlike a normal expired approval, which sets
+    // completedAt so terminal cleanup can reclaim it. Prefer the barrier-settled job
+    // above, falling back to the caller's observation.
+    const preserveForSchedule = (job.scheduleId ?? observedJob?.scheduleId) != null;
     const ok = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'aborted',
       clear: ['pendingAction', 'pendingActionId'],
-      // completedAt lets the stores' terminal-cleanup reclaim the job; without
-      // it an expired approval lingers in the in-memory map indefinitely.
-      patch: { error: 'Approval expired before a decision was made', completedAt: Date.now() },
+      patch: {
+        error: 'Approval expired before a decision was made',
+        ...(preserveForSchedule ? {} : { completedAt: Date.now() }),
+      },
       expectActionId: expectedActionId,
       expectCreatedAt: createdAt,
     });

@@ -93,6 +93,11 @@ const legacyStore = {
     return undefined;
   },
   async clearSteers() {},
+  async registerUserFinalization() {},
+  async clearUserFinalization() {},
+  async countUserFinalizations() {
+    return 0;
+  },
 } satisfies IJobStore;
 
 describe('job-store v2 capability boundary', () => {

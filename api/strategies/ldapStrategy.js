@@ -129,6 +129,12 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     }
 
     let user = await findUser({ ldapId });
+    // Deletion barrier: a user whose destructive cascade (or deferred sweep) is
+    // running must not mint a fresh session that admits writes behind it.
+    if (user?.deletionRequestedAt != null) {
+      logger.warn(`[ldapStrategy] Refusing login for deleting user: ${user._id}`);
+      return done(null, false, { message: ErrorTypes.AUTH_FAILED });
+    }
     if (user && user.provider !== 'ldap') {
       logger.info(
         `[ldapStrategy] User ${user.email} already exists with provider ${user.provider}`,
@@ -176,6 +182,23 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     }
 
     user = await updateUser(user._id, user);
+    // FINAL barrier recheck at the successful-login boundary, sequenced after the
+    // slow awaits above (LDAP bind, config resolution, user sync): a barrier raised
+    // mid-callback would otherwise mint a session whose downstream login middleware
+    // recreates a Balance and Session behind the destructive cascade. A null read
+    // fails closed — an identity removed mid-flow must not complete.
+    let barrier = null;
+    try {
+      barrier = await findUser({ _id: user._id }, 'deletionRequestedAt');
+    } catch {
+      barrier = null;
+    }
+    if (barrier == null || barrier.deletionRequestedAt != null) {
+      logger.warn(
+        `[ldapStrategy] Refusing login for ${user._id}: deletion barrier raised or unverifiable`,
+      );
+      return done(null, false, { message: ErrorTypes.AUTH_FAILED });
+    }
     done(null, user);
   } catch (err) {
     logger.error('[ldapStrategy]', err);

@@ -658,6 +658,91 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       ]);
     });
 
+    test('abortJob reports undrained steers and finalizes without a separate drain step', async () => {
+      // Historically the abort drained steers AFTER its terminal CAS, so a drain
+      // rejection could exit before the abort signal and leave every retry seeing a
+      // terminal job while the generation kept running and billing. The drain is now
+      // part of the terminal transaction itself: there is no separate step left to
+      // fail, and the batch the CAS returns is what the caller reports.
+      const streamId = 'steer-abort-drain-atomic';
+      await manager.createJob(streamId, 'user-1');
+      await manager.steering.enqueue(streamId, buildSteer('stranded but non-fatal'));
+      const separateDrain = jest.spyOn(jobStore, 'closeAndDrainSteers');
+
+      const result = await manager.abortJob(streamId);
+
+      expect(result.success).toBe(true);
+      expect(result.finalEvent).toMatchObject({ aborted: true });
+      // Surfaced to the client instead of silently dropped with the abort...
+      expect((result.pendingSteers ?? []).map((steer) => steer.text)).toEqual([
+        'stranded but non-fatal',
+      ]);
+      // ...and never through a post-CAS drain that could strand the signal.
+      expect(separateDrain).not.toHaveBeenCalled();
+      await expect(jobStore.getJob(streamId)).resolves.toMatchObject({ status: 'aborted' });
+    });
+
+    test('abortJob stops the local generation before awaiting the abort publication', async () => {
+      // The publish can hang indefinitely during a Redis outage; the owned local
+      // generation must already be signalled by then or it keeps running and
+      // billing behind a job every retry sees as terminal.
+      const streamId = 'steer-abort-local-first';
+      const transport = new InMemoryEventTransport();
+      let localAbortedAtPublish: boolean | null = null;
+      (transport as IEventTransport).emitAbort = async () => {
+        localAbortedAtPublish = job.abortController.signal.aborted;
+      };
+      const localManager = new GenerationJobManagerClass();
+      localManager.configure({
+        jobStore,
+        eventTransport: transport,
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+      localManager.initialize();
+      const job = await localManager.createJob(streamId, 'user-1');
+
+      try {
+        const result = await localManager.abortJob(streamId);
+        expect(result.success).toBe(true);
+        expect(localAbortedAtPublish).toBe(true);
+      } finally {
+        await localManager.destroy();
+      }
+    });
+
+    test('abortJob retains the job when the publication provably failed', async () => {
+      const streamId = 'steer-abort-publish-fails';
+      const transport = new InMemoryEventTransport();
+      (transport as IEventTransport).emitAbort = async () => {
+        throw new Error('redis publish failed');
+      };
+      const localManager = new GenerationJobManagerClass();
+      localManager.configure({
+        jobStore,
+        eventTransport: transport,
+        isRedis: false,
+        // Production default: terminal jobs are deleted on completion...
+        cleanupOnComplete: true,
+      });
+      localManager.initialize();
+      const job = await localManager.createJob(streamId, 'user-1');
+
+      try {
+        const result = await localManager.abortJob(streamId);
+        expect(result.success).toBe(true);
+        expect(result.signalPublished).toBe(false);
+        // ...but a failed publish RETAINS it: the terminal job is the only thing
+        // a retry (or the route's immediate resignalAbort) can re-signal from.
+        await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+          status: 'aborted',
+          createdAt: job.createdAt,
+        });
+      } finally {
+        await localManager.destroy();
+      }
+    });
+
     test('abortJob publishes nothing when natural completion wins its terminal CAS', async () => {
       const streamId = 'steer-abort-loses-terminal-race';
       const eventTransport = new InMemoryEventTransport();
@@ -671,38 +756,50 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       });
       racingManager.initialize();
       const job = await racingManager.createJob(streamId, 'user-1');
-      const originalGetContentParts = jobStore.getContentParts.bind(jobStore);
-      let signalSnapshotStarted: (() => void) | undefined;
-      const snapshotStarted = new Promise<void>((resolve) => {
-        signalSnapshotStarted = resolve;
+      await racingManager.steering.enqueue(streamId, buildSteer('survives the losing abort'));
+      // Gate the abort between its fresh job READ and its terminal CAS, so a natural
+      // completion wins the transition in that window — the CAS now runs before any
+      // queue mutation, so this is the earliest interleaving a loser can exist in.
+      const originalGetJob = jobStore.getJob.bind(jobStore);
+      let signalReadStarted: (() => void) | undefined;
+      const readStarted = new Promise<void>((resolve) => {
+        signalReadStarted = resolve;
       });
-      let releaseSnapshot: (() => void) | undefined;
-      const snapshotGate = new Promise<void>((resolve) => {
-        releaseSnapshot = resolve;
+      let releaseRead: (() => void) | undefined;
+      const readGate = new Promise<void>((resolve) => {
+        releaseRead = resolve;
       });
-      jest.spyOn(jobStore, 'getContentParts').mockImplementationOnce(async (...args) => {
-        signalSnapshotStarted?.();
-        await snapshotGate;
-        return originalGetContentParts(...args);
+      jest.spyOn(jobStore, 'getJob').mockImplementationOnce(async (...args) => {
+        const result = await originalGetJob(...args);
+        signalReadStarted?.();
+        await readGate;
+        return result;
       });
+      const closeAndDrainSpy = jest.spyOn(jobStore, 'closeAndDrainSteers');
 
       try {
         const aborting = racingManager.abortJob(streamId);
-        await snapshotStarted;
+        await readStarted;
         await racingManager.completeJob(streamId, undefined, job.createdAt);
-        releaseSnapshot?.();
+        // completeJob's own backstop legitimately drains the queue; the assertion
+        // below is that the LOSING abort adds no drain of its own.
+        const drainsAfterCompletion = closeAndDrainSpy.mock.calls.length;
+        releaseRead?.();
 
         await expect(aborting).resolves.toMatchObject({
           success: false,
           finalEvent: null,
         });
+        // The loser must leave NO side effects: it must not have closed or drained
+        // the winner's steer queue (the completion path owns that disposal).
+        expect(closeAndDrainSpy.mock.calls.length).toBe(drainsAfterCompletion);
         await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
           createdAt: job.createdAt,
           status: 'complete',
         });
         expect(emitDone).not.toHaveBeenCalled();
       } finally {
-        releaseSnapshot?.();
+        releaseRead?.();
         await racingManager.destroy();
       }
     });

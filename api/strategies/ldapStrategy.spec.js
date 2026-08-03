@@ -67,7 +67,8 @@ describe('ldapStrategy', () => {
     delete process.env.LDAP_STARTTLS;
 
     // Default model/domain mocks
-    findUser.mockReset().mockResolvedValue(null);
+    findUser.mockReset();
+    findUser.mockImplementation(async (query) => (query?._id != null ? { _id: query._id } : null));
     createUser.mockReset().mockResolvedValue('newUserId');
     updateUser.mockReset().mockImplementation(async (id, user) => ({ _id: id, ...user }));
     countUsers.mockReset().mockResolvedValue(0);
@@ -119,6 +120,30 @@ describe('ldapStrategy', () => {
     expect(info).toEqual({ message: ErrorTypes.AUTH_FAILED });
     expect(createUser).not.toHaveBeenCalled();
     expect(resolveAppConfigForUser).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the deletion barrier rose during the login flow', async () => {
+    findUser
+      // Pre-barrier snapshot at the ldapId lookup.
+      .mockResolvedValueOnce({ _id: 'u1', email: 'a@b.com', provider: 'ldap', ldapId: 'uid123' })
+      // The boundary recheck, sequenced after the user sync, observes the barrier.
+      .mockResolvedValueOnce({ _id: 'u1', deletionRequestedAt: new Date() });
+
+    const { user, info } = await callVerify({ uid: 'uid123', mail: 'a@b.com', cn: 'A' });
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: ErrorTypes.AUTH_FAILED });
+  });
+
+  it('fails closed when the boundary recheck cannot see the identity', async () => {
+    findUser
+      .mockResolvedValueOnce({ _id: 'u1', email: 'a@b.com', provider: 'ldap', ldapId: 'uid123' })
+      .mockResolvedValueOnce(null);
+
+    const { user, info } = await callVerify({ uid: 'uid123', mail: 'a@b.com', cn: 'A' });
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: ErrorTypes.AUTH_FAILED });
   });
 
   it('updates an existing ldap user with current LDAP info', async () => {
@@ -208,7 +233,7 @@ describe('ldapStrategy', () => {
   });
 
   it('uses baseConfig for new user without calling resolveAppConfigForUser', async () => {
-    findUser.mockResolvedValue(null);
+    findUser.mockImplementation(async (query) => (query?._id != null ? { _id: query._id } : null));
 
     const userinfo = {
       uid: 'uid-new',

@@ -64,6 +64,13 @@ export interface IUser extends Document {
   skillStates?: Record<string, boolean>;
   createdAt?: Date;
   updatedAt?: Date;
+  /** Set when account deletion begins; durably blocks all new scheduling for this user. */
+  deletionRequestedAt?: Date;
+  deletionSweepAt?: Date;
+  deletionCommittedAt?: Date;
+  /** Stream ids whose deletion-side abort has not been acknowledged; durable and
+   *  TTL-free so a publication outage can never be mistaken for settlement. */
+  deletionAbortFences?: string[];
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
   tenantId?: string;

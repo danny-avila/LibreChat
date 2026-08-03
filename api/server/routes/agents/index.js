@@ -35,6 +35,12 @@ const {
   getServerGenerationProtocol,
   negotiateExistingGenerationProtocol,
 } = require('~/server/controllers/agents/protocol');
+const {
+  recordScheduleOutcome,
+  clearScheduledJob,
+  requestScheduledRunAbort,
+  markScheduledRunAbortPersisted,
+} = require('~/server/services/Schedules');
 const { saveMessage } = require('~/models');
 const responses = require('./responses');
 const openai = require('./openai');
@@ -606,6 +612,12 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
         ) {
           continue;
         }
+        // A background scheduled fire shares this per-user store but is never what the
+        // stop button meant. With no conversation id to match on, picking one would abort
+        // the schedule and leave the interactive turn the user actually stopped running.
+        if (activeJob.metadata?.scheduleId) {
+          continue;
+        }
         candidates.push({ streamId: activeJobId, job: activeJob });
       }
       if (candidates.length > 1) {
@@ -651,6 +663,10 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
       // gets the question too, not just the saved message on reload.
       const initialResolvedAskUserQuestions = job.metadata?.resolvedAskUserQuestions;
       const agentsCfg = req.config?.endpoints?.agents;
+      /** The pendingAction check covers ask-only pauses: `ask_user_question` attaches a
+       * checkpointer WITHOUT the approval policy, and a job aborted while paused still
+       * carries its pendingAction — exactly the checkpoint that would otherwise go
+       * stale until the Mongo TTL reclaims it. */
       const shouldPruneCheckpoint =
         isHITLEnabled(agentsCfg?.toolApproval) ||
         job.metadata?.pendingAction != null ||
@@ -669,8 +685,100 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
               throwOnError: true,
             })
           : undefined;
+
+      const scheduleId = job.metadata?.scheduleId;
+      const jobIsLive = job.status === 'running' || job.status === 'requires_action';
+      // Stamp the run abort-REQUESTED (source 'stop') before signalling. abortJob flips
+      // the job to `aborted` (or removes it) the moment it wins its status CAS, while
+      // its `beforePublish` barrier below still has to save the partial. Without the
+      // stamp, an account-deletion quiesce reading that post-abort state takes it as
+      // proof the generation is done, confirms its drain, and destroys the user's data
+      // seconds before saveMessage writes a message back for the deleted account. The
+      // stamp is therefore LOAD-BEARING: if it cannot be made durable the abort must not
+      // proceed (nothing has been signalled yet, so refusing here is side-effect free).
+      //
+      // Only against a job observed LIVE: the stamp RENEWS the owner-death fence, and
+      // renewing it for a cleanup abort of an already-terminal job would re-fence a dead
+      // owner's run on every Stop click, keeping it from ever aging into the
+      // reconciler's recovery. `stamped` is remembered so every exit below resolves the
+      // attempt (abortPersistedAt) once this route has nothing further to persist —
+      // otherwise the generation owner's settlement barrier waits its full timeout on
+      // an attempt that lost.
+      const scheduledFireIdentity =
+        scheduleId && job.metadata?.scheduledFor
+          ? { scheduleId, scheduledFor: new Date(job.metadata.scheduledFor) }
+          : null;
+      let scheduledStopStamped = false;
+      if (scheduledFireIdentity && jobIsLive) {
+        const stampResult = await requestScheduledRunAbort(
+          scheduledFireIdentity.scheduleId,
+          scheduledFireIdentity.scheduledFor,
+        );
+        if (stampResult === 'failed') {
+          return sendGenerationJson(
+            res,
+            503,
+            { error: 'Could not record the stop request. Please retry.', aborted: null },
+            generationProtocolVersion,
+          );
+        }
+        // Another Stop attempt is mid-flight for this run (the per-run stamp is the
+        // serialization arbiter). Acting here would race the winner: aborting could
+        // lose its CAS and resolving would release the settlement barrier while the
+        // winner is still pruning and saving. The user's intent is already being
+        // executed, so answer as the duplicate it is.
+        if (stampResult === 'in_progress') {
+          logger.debug(`[AgentStream] Stop already in progress for ${jobStreamId}`);
+          return sendGenerationJson(
+            res,
+            200,
+            { success: true, aborted: jobStreamId },
+            generationProtocolVersion,
+          );
+        }
+        scheduledStopStamped = stampResult === 'stamped';
+      }
+      // Bounded retries, not a single swallowed attempt: an unresolved stamp makes
+      // every subsequent Stop answer 'in_progress' — a false success that retries
+      // nothing — while fencing the owner's settlement barrier and the reconciler
+      // for the full stale window. One transient Mongo failure must not buy all that.
+      const stampAbortPersistedWithRetries = async () => {
+        if (!scheduledFireIdentity) {
+          return true;
+        }
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            await markScheduledRunAbortPersisted(
+              scheduledFireIdentity.scheduleId,
+              scheduledFireIdentity.scheduledFor,
+            );
+            return true;
+          } catch (err) {
+            logger.error(
+              `[AgentStream] Failed to stamp abort persistence (attempt ${attempt}/3): ${jobStreamId}`,
+              err,
+            );
+            if (attempt < 3) {
+              await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+            }
+          }
+        }
+        return false;
+      };
+      const resolveStopAttempt = async () => {
+        if (!scheduledStopStamped || !scheduledFireIdentity) {
+          return;
+        }
+        await stampAbortPersistedWithRetries();
+      };
+
       const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
+        // Fence on the generation THIS handler observed: a replacement turn can reuse the
+        // conversationId between the lookup above and here, and must not receive the stop.
         expectedCreatedAt: job.createdAt,
+        // Retain the terminal job until its outcome is durably recorded below — it is the
+        // reconciler's only evidence if that write fails.
+        preserveForReconcile: Boolean(scheduleId),
         transformAbortContent: (content, abortJobData) => {
           if (!Array.isArray(content)) {
             return content;
@@ -743,6 +851,10 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
               user: userId,
             };
 
+            /** Persist the usage/cost rollup + context breakdown for the stopped
+             *  response (from the job's tracked tokenUsage/contextUsage) so its
+             *  branch/total cost and granular rows survive a reload — parity with the
+             *  normal completion path. */
             const abortMetadata = buildAbortedResponseMetadata(jobData);
             if (abortMetadata) {
               responseMessage.metadata = abortMetadata;
@@ -808,25 +920,142 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
         },
       });
       if (abortResult.failureReason === 'generation_replaced') {
+        await resolveStopAttempt();
         return res.status(409).json({ code: 'RUN_REPLACED', generationProtocolVersion });
       }
       if (abortResult.failureReason === 'job_still_active') {
+        await resolveStopAttempt();
         res.set('Retry-After', '1');
         return res.status(409).json({ code: 'RUN_STILL_ACTIVE', generationProtocolVersion });
       }
+      // Every side effect of a stop (the `beforePublish` checkpoint prune and partial
+      // save, the settlement below) belongs exclusively to a WON abort. A lost CAS means
+      // a concurrent transition owns the job now — a completion, or a pause→running
+      // resume whose live turn a prune would strip the resume state from — so nothing
+      // here may act on it, and `beforePublish` never ran.
       if (!abortResult.success) {
-        // The route authorized a live generation, but the manager can lose its
-        // terminal CAS to natural completion/error (or observe deletion before
-        // its own lookup). Never claim that Stop won when no abort FINAL exists.
-        if (!abortResult.jobData) {
-          return res.status(404).json({
-            success: false,
-            error: 'Job not found',
-            streamId: jobStreamId,
+        // A job already `aborted` is a PREVIOUS Stop's win — but terminal status is
+        // not proof its publication ever left that replica. Re-publish rather than
+        // trust it (the interactive mirror of the scheduled path's resignalAbort),
+        // so the retry after a failed-publish 503 actually redelivers.
+        if (abortResult.jobData?.status === 'aborted') {
+          const resignal = await GenerationJobManager.resignalAbort(
+            jobStreamId,
+            job.createdAt,
+          ).catch(() => ({ delivered: false, published: false }));
+          // A swallowed republication failure must not read as success: with the
+          // signal provably still on this replica, the peer-owned generation keeps
+          // running, so the response stays retryable until a publish leaves (or
+          // this process turns out to own the generation). Scheduled runs included —
+          // the stamp fences settlement, not delivery.
+          if (!resignal.delivered && !resignal.published) {
+            res.set('Retry-After', '2');
+            return sendGenerationJson(
+              res,
+              503,
+              {
+                error: 'Stop recorded but not yet delivered to the generation. Please retry.',
+                aborted: null,
+              },
+              generationProtocolVersion,
+            );
+          }
+          // Delivered or republished. For a SCHEDULED run this retry never held the
+          // live-job stamp (the job was already terminal), so resolveStopAttempt
+          // no-ops — mark the abort persisted DIRECTLY: this route has no stop-side
+          // persistence pending on this path, and without the mark the generation
+          // owner's settlement barrier waits its full timeout on the ORIGINAL
+          // attempt's stamp before deferring to the reconciler. Same bounded retries
+          // as the live-stamp path, and a swallowed exhaustion must not read as
+          // success: with the fence unresolved the run keeps blocking overlap and
+          // global capacity until the stale window, so the response stays retryable
+          // until the stamp is durable.
+          if (scheduledFireIdentity && !scheduledStopStamped) {
+            const stamped = await stampAbortPersistedWithRetries();
+            if (!stamped) {
+              res.set('Retry-After', '2');
+              return sendGenerationJson(
+                res,
+                503,
+                {
+                  error: 'Stop delivered but its bookkeeping is not yet durable. Please retry.',
+                  aborted: null,
+                },
+                generationProtocolVersion,
+              );
+            }
+          }
+          await resolveStopAttempt();
+          return sendGenerationJson(
+            res,
+            200,
+            { success: true, aborted: jobStreamId },
             generationProtocolVersion,
-          });
+          );
         }
 
+        // jobData == null: either the job simply VANISHED between the lookup and the
+        // abort (the benign race of pressing Stop as a generation completes), or a
+        // REPLACEMENT claimed the conversationId. FAIL CLOSED on an unreadable store:
+        // null from getJob means confirmed absent (benign), a thrown read means UNKNOWN
+        // — a replacement may be live. Nothing of ours was stopped, so refusing here
+        // has no side effects and the client simply retries.
+        if (!abortResult.jobData) {
+          let liveJob;
+          try {
+            liveJob = await GenerationJobManager.getJob(jobStreamId);
+          } catch (err) {
+            logger.error(`[AgentStream] Could not verify abort state: ${jobStreamId}`, err);
+            // This attempt is over either way — nothing was stopped, so this route has no
+            // persistence left to perform. Leaving the stamp unresolved would make every
+            // retry answer 'in_progress' (a false success) and hold the owner's settlement
+            // barrier + the reconciler fence for the full stale window.
+            await resolveStopAttempt();
+            return sendGenerationJson(
+              res,
+              503,
+              {
+                error: 'Could not verify the generation state. Please retry.',
+                aborted: null,
+              },
+              generationProtocolVersion,
+            );
+          }
+          await resolveStopAttempt();
+          if (liveJob != null && liveJob.createdAt !== job.createdAt) {
+            logger.debug(
+              `[AgentStream] Abort refused: generation was replaced before it landed: ${jobStreamId}`,
+            );
+            return sendGenerationJson(
+              res,
+              409,
+              { error: 'This generation was superseded', aborted: null },
+              generationProtocolVersion,
+            );
+          }
+          // The authorized generation is still live and no abort FINAL exists: never
+          // claim that Stop won, tell the client to retry instead.
+          if (liveJob?.status === 'running' || liveJob?.status === 'requires_action') {
+            res.set('Retry-After', '1');
+            return res.status(409).json({ code: 'RUN_STILL_ACTIVE', generationProtocolVersion });
+          }
+          // Confirmed benign vanish (or an already-terminal record): nothing to prune or
+          // persist for it, and the generation's own final already reached the client.
+          return sendGenerationJson(
+            res,
+            200,
+            { success: true, aborted: jobStreamId },
+            generationProtocolVersion,
+          );
+        }
+
+        // Lost the terminal CAS between abortJob's own fresh read and its transition:
+        // a completion or a resume claimed the job. Nothing was stopped; nothing may
+        // be pruned or persisted. The stop attempt is over, so resolve it BEFORE the
+        // reconciliation read — the generation owner's settlement barrier must not wait
+        // on a loser even if that read throws.
+        await resolveStopAttempt();
+        logger.debug(`[AgentStream] Abort lost to a concurrent transition: ${jobStreamId}`);
         const currentJob = await GenerationJobManager.getJob(jobStreamId);
         if (currentJob && currentJob.createdAt !== job.createdAt) {
           return res.status(409).json({ code: 'RUN_REPLACED', generationProtocolVersion });
@@ -857,6 +1086,90 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
         abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
         abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
       });
+
+      // The status the abort's terminal CAS actually won FROM. `jobData.status` is the
+      // PRE-race read: a paused run that resumed on another replica before the CAS is
+      // aborted from `running`, and both decisions below ("was there a generation loop
+      // to deliver to?" and "is this route the run's only settler?") are wrong if they
+      // trust the stale read. Falls back for a store that predates the field.
+      const abortedFromStatus = abortResult.abortedFromStatus ?? abortResult.jobData?.status;
+
+      // A won CAS whose cross-replica publication provably FAILED (threw/timed out)
+      // means the stop never left this replica: the peer-owned generation keeps
+      // running and billing. Re-signal once; if that also fails, the response stays
+      // retryable — but the won abort's persistence work (checkpoint prune, partial
+      // save) has already landed inside `beforePublish`, because a client that never
+      // retries must not permanently lose the stopped response over a transient
+      // publish failure. A paused (`requires_action`) job is exempt: it has no
+      // generation loop left to deliver to, so a failed publish there costs nothing
+      // and the stop proceeds as a plain success — including its paused-run settlement.
+      let abortSignalUndelivered = false;
+      if (
+        abortResult.signalDelivered === false &&
+        abortResult.signalPublished === false &&
+        abortedFromStatus !== 'requires_action'
+      ) {
+        const resignal = await GenerationJobManager.resignalAbort(jobStreamId, job.createdAt).catch(
+          () => ({ delivered: false, published: false }),
+        );
+        abortSignalUndelivered = !resignal.delivered && !resignal.published;
+      }
+
+      // If the signal provably never left this replica, the peer-owned generation may
+      // still be running: the stamp stays UNRESOLVED on this exit (an undelivered
+      // abort must keep fencing the drains) and the response stays retryable. The
+      // retry finds the job terminal, republishes on the already-aborted branch above,
+      // and only then resolves the stamp — with nothing left to persist, since
+      // `beforePublish` already persisted everything.
+      if (abortSignalUndelivered) {
+        res.set('Retry-After', '2');
+        return sendGenerationJson(
+          res,
+          503,
+          {
+            error: 'Stop recorded but not yet delivered to the generation. Please retry.',
+            aborted: null,
+          },
+          generationProtocolVersion,
+        );
+      }
+
+      // Stamp the persistence durably: the GENERATION OWNER's settlement barrier waits
+      // for this stamp (see awaitStopAbortPersistence), so the run cannot leave the
+      // active set — and no deletion drain can confirm — while `beforePublish` was
+      // still persisting.
+      await resolveStopAttempt();
+
+      // SETTLE ONLY A PAUSED RUN. A run caught `requires_action` at the abort CAS has no
+      // generation loop left to unwind — its pause already awaited every save — so this
+      // route is its only settler, and settling after the writes above keeps the
+      // settle-last discipline. A RUNNING abort instead settles in its generation
+      // owner's catch, which awaits its own pending saves plus this route's stamp; a
+      // route-side settle there could land while the owner's user-message save was still
+      // in flight — the drain-mid-write hazard again. If that owner is dead, the
+      // reconciler's aborted-branch finalizes the run once the abort fence lapses.
+      //
+      // Only after WINNING the abort: losing the CAS means a concurrent completion or
+      // resume owns the run, and terminalizing it as `interrupted` would release its slot
+      // and reduce the real outcome's write to a no-op against an already-terminal row.
+      if (scheduleId && abortResult.success && abortedFromStatus === 'requires_action') {
+        const recorded = await recordScheduleOutcome({
+          scheduleId,
+          scheduledFor: job.metadata.scheduledFor,
+          status: 'interrupted',
+          conversationId: jobStreamId,
+        });
+        // Reconcile only scans ACTIVE runs, so once the run is terminal nothing else
+        // would ever reap the retained job.
+        if (recorded) {
+          await clearScheduledJob(jobStreamId, {
+            scheduleId,
+            scheduledFor: job.metadata.scheduledFor,
+          }).catch((err) =>
+            logger.error(`[AgentStream] Failed to clear reconciled job: ${jobStreamId}`, err),
+          );
+        }
+      }
 
       if (abortResult.persistenceFailed && generationProtocolVersion < GENERATION_PROTOCOL_V2) {
         res.set('Retry-After', '1');
@@ -970,14 +1283,24 @@ router.post(
 router.use('/', v1);
 
 const chatRouter = express.Router();
+// Verify the scheduled-fire token identity as EARLY as possible — right after the
+// global auth middleware, before configMiddleware, the interactive limiters, and
+// the slower chat chain can outlast the short-lived fire token. Everything
+// downstream (limiter exemption, the controller) reads this captured flag instead
+// of re-verifying a token that may have expired in-flight, which would otherwise
+// throttle/limit a legitimate fire and record schedule errors toward auto-disable.
 chatRouter.use(configMiddleware);
+
+/** Applies `limiter` unless `isExempt` says this fire should skip it. */
+const unless = (isExempt, limiter) => (req, res, next) =>
+  isExempt(req) ? next() : limiter(req, res, next);
 
 if (isEnabled(LIMIT_MESSAGE_IP)) {
   chatRouter.use(unless(exemptAgentTriggerFromIpLimiter, messageIpLimiter));
 }
 
 if (isEnabled(LIMIT_MESSAGE_USER)) {
-  chatRouter.use(messageUserLimiter);
+  chatRouter.use(unless(exemptFromUserLimiter, messageUserLimiter));
 }
 
 chatRouter.use('/', chat);

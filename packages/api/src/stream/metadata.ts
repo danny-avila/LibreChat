@@ -45,5 +45,20 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.activityPhaseSnapshot) {
     patch.activityPhaseSnapshot = metadata.activityPhaseSnapshot;
   }
+  // Scheduled-fire identity. This allowlist is what reconciliation uses to tell a
+  // scheduled run's job from a replacement interactive turn that reused the
+  // conversationId, so dropping it here would silently unattribute every fire.
+  if (metadata.scheduleId) {
+    patch.scheduleId = metadata.scheduleId;
+  }
+  if (metadata.scheduleManual) {
+    patch.scheduleManual = metadata.scheduleManual;
+  }
+  if (metadata.scheduleConfigRevision) {
+    patch.scheduleConfigRevision = metadata.scheduleConfigRevision;
+  }
+  if (metadata.scheduledFor) {
+    patch.scheduledFor = metadata.scheduledFor;
+  }
   return patch;
 }
