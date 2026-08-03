@@ -389,7 +389,7 @@ export default function ToolCallGroup({
          *   adds noise without info. Mixed groups keep the summary. */}
         {toolNameSummary && !allSubagents && !allAskQuestions && (
           <span className="min-w-0 max-w-[40%] truncate text-xs font-normal text-text-secondary">
-            — {toolNameSummary}
+            · {toolNameSummary}
           </span>
         )}
         <ChevronDown
