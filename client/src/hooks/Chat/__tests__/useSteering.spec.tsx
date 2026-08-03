@@ -2444,6 +2444,7 @@ describe('useSteering — clear all', () => {
           stopGenerating,
         }),
         queue: useQueue(CONVO_ID),
+        drainHold: useRecoilValue(store.queueDrainHoldByConvoId(CONVO_ID)),
       }),
       { wrapper },
     );
@@ -2464,6 +2465,24 @@ describe('useSteering — clear all', () => {
 
     expect(cleared?.text).toBe('first\n\nsecond');
     expect(result.current.queue).toEqual([]);
+  });
+
+  /** A standing window would otherwise fire on whatever the fallbacks put back
+   *  — sending exactly what the user just cleared. */
+  it('cancels a pending automatic send as part of clearing', async () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [{ id: 'q1', text: 'cleared', createdAt: 1 }]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: Date.now() + 3000,
+      });
+    });
+
+    await act(async () => {
+      await result.current.steering.clearQueued();
+    });
+
+    expect(result.current.drainHold).toBeNull();
   });
 
   /** The rows must leave the queue BEFORE the cancellations are awaited: a run

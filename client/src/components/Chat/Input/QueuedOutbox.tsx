@@ -210,6 +210,12 @@ function QueuedRowBase({
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commitDraft}
           onKeyDown={(event) => {
+            /** An IME candidate confirmation arrives as an unshifted Enter
+             *  while composition is still active; committing there would save
+             *  half-typed text. Same guard the composer and DynamicTags use. */
+            if (event.nativeEvent.isComposing || event.keyCode === 229) {
+              return;
+            }
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
               commitDraft();

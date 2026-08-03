@@ -835,6 +835,11 @@ export default function useSteering({
    * composer and decides whether it can accept the payload.
    */
   const clearQueued = useCallback(async (): Promise<QueuedMessage | null> => {
+    /** Taking the words back cancels any pending automatic send outright. A
+     *  standing window would otherwise fire on whatever the fallbacks put back
+     *  — a requeued payload the composer refused, or a row whose parked source
+     *  would not cancel — sending exactly what was just cleared. */
+    cancelQueueDrain();
     const taken = takeAllQueued();
     if (taken.length === 0) {
       return null;
@@ -865,7 +870,7 @@ export default function useSteering({
       return null;
     }
     return cleared.length === 1 ? cleared[0] : mergeQueuedMessages(cleared);
-  }, [takeAllQueued, cancelParkedSource, restoreQueuedBatch]);
+  }, [cancelQueueDrain, takeAllQueued, cancelParkedSource, restoreQueuedBatch]);
 
   /** Capture-then-remove, including the item's neighbours, so any refused send
    *  or rejected steer can restore the ORIGINAL item in place even if the run

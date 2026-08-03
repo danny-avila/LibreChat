@@ -850,6 +850,23 @@ describe('PendingSteerChips — queued row editing', () => {
     expect(mockUpdateQueuedText).toHaveBeenCalledWith('merged', 'first part\n\nsecond part edited');
   });
 
+  /** An IME candidate confirmation arrives as an unshifted Enter while
+   *  composition is still active; committing there saves half-typed text. */
+  it.each([
+    ['isComposing', { key: 'Enter', isComposing: true }],
+    ['keyCode 229', { key: 'Enter', keyCode: 229 }],
+  ])('ignores Enter reported as %s by an IME', (_label, init) => {
+    renderChips([twoQueued[0]], { steering: outboxSteering() });
+
+    fireEvent.click(screen.getByText('first thought'));
+    const editor = screen.getByTestId('queued-message-edit');
+    fireEvent.change(editor, { target: { value: 'partial candidate' } });
+    fireEvent.keyDown(editor, init);
+
+    expect(mockUpdateQueuedText).not.toHaveBeenCalled();
+    expect(screen.getByTestId('queued-message-edit')).toBeInTheDocument();
+  });
+
   it('adds a line with Shift+Enter instead of committing', () => {
     renderChips([twoQueued[0]], { steering: outboxSteering() });
 
