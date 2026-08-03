@@ -475,6 +475,9 @@ export function createUserMethods(
       { $addToSet: { deletionAbortFences: streamId } },
       { timestamps: false },
     );
+    // Every user-document mutation invalidates the auth user-doc cache, or a cached
+    // hit keeps serving the pre-mutation document for the cache TTL.
+    await invalidateAuthUserDocCache(userId);
   }
 
   /** Clears an acknowledged abort fence (signal left the replica, or the job is gone). */
@@ -485,6 +488,7 @@ export function createUserMethods(
       { $pull: { deletionAbortFences: streamId } },
       { timestamps: false },
     );
+    await invalidateAuthUserDocCache(userId);
   }
 
   /**

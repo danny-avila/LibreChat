@@ -447,37 +447,41 @@ async function finalizeResumedTurn({
   // this generation's marker. Throwing routes to the controller catch, whose own
   // fenced settlement either registers its marker or leaves the job paused/active —
   // deletion-visible either way. Cleared in the persistence try's finally.
-  let finalizationRegistered = false;
+  let finalizationHold = null;
   /** Unique per contender: this resume and a racing Stop contend on the same
-   *  generation, and a losing contender's cleanup must only release its own lease. */
+   *  generation, and a losing contender's cleanup must only release its own lease.
+   *  HELD (heartbeat-renewed): live persistence must never outlive its fence. */
   const finalizationLeaseId = crypto.randomUUID();
-  for (let attempt = 1; attempt <= 2 && !finalizationRegistered; attempt++) {
-    finalizationRegistered = await GenerationJobManager.registerUserFinalization(
+  for (let attempt = 1; attempt <= 2 && finalizationHold == null; attempt++) {
+    finalizationHold = await GenerationJobManager.holdUserFinalization(
       userId,
       streamId,
       req.user?.tenantId,
       job.createdAt,
       finalizationLeaseId,
-    )
-      .then(() => true)
-      .catch((err) => {
-        logger.warn(
-          `[ResumeAgentController] Finalization registration failed (attempt ${attempt}/2): ${streamId}`,
-          err,
-        );
-        return false;
-      });
+    ).catch((err) => {
+      logger.warn(
+        `[ResumeAgentController] Finalization registration failed (attempt ${attempt}/2): ${streamId}`,
+        err,
+      );
+      return null;
+    });
   }
-  if (!finalizationRegistered) {
+  if (finalizationHold == null) {
     throw new Error('Finalization marker unavailable before resumed terminal persistence');
   }
   const clearFinalization = () => {
+    finalizationHold?.release();
+    finalizationHold = null;
+    // Release the owner-lifecycle lease too: this resumed controller IS the
+    // generation owner, and by this point its writes have landed or failed for good
+    // (see USER_FINALIZATION_OWNER_LEASE in the manager).
     void GenerationJobManager.clearUserFinalization(
       userId,
       streamId,
       req.user?.tenantId,
       job.createdAt,
-      finalizationLeaseId,
+      'owner',
     ).catch(() => undefined);
   };
 
@@ -1445,6 +1449,15 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     if (wasAborted) {
       logger.debug(`[ResumeAgentController] Resume aborted; settling the run: ${streamId}`);
       await settleAbortedScheduledResume(job, streamId, conversationId);
+      // This resumed controller is the generation owner; its abort-path writes have
+      // now landed, so the signal-time owner lease releases here.
+      void GenerationJobManager.clearUserFinalization(
+        userId,
+        streamId,
+        req.user?.tenantId,
+        job.createdAt,
+        'owner',
+      ).catch(() => undefined);
       return;
     }
     logger.error('[ResumeAgentController] Resume failed', err);

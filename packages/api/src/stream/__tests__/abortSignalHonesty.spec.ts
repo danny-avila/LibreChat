@@ -145,9 +145,13 @@ describe('abort signal honesty across replicas', () => {
     expect(register.mock.invocationCallOrder[0]).toBeLessThan(
       transition.mock.invocationCallOrder[0],
     );
-    // Every write this abort owns has landed by return: the marker is released.
+    // An OWNED abort additionally bridges to the deterministic owner-lifecycle lease
+    // before tripping the local generation: the abort call's own contender lease is
+    // released on return, while the owner lease survives for the generation's catch
+    // (its asynchronous persistence) to release.
+    expect(register).toHaveBeenCalledWith('user-1', 'conv-6', undefined, createdAt, 'owner');
     await new Promise((resolve) => setImmediate(resolve));
-    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(0);
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(1);
   });
 
   it('releases the abort marker when the terminal CAS is lost', async () => {
@@ -251,6 +255,81 @@ describe('abort signal honesty across replicas', () => {
 
     releaseWinner();
     await winner;
+  });
+
+  it('clears the retained stop lease once a resignal finally leaves', async () => {
+    const { owner, peer, peerTransport, jobStore } = await makeManagers();
+    await owner.createJob('conv-11', 'user-1', 'conv-11');
+    Object.assign(peerTransport, {
+      emitAbort: jest.fn((): void => undefined),
+      emitAbortConfirmed: jest.fn(async () => false),
+    });
+    await peer.abortJob('conv-11');
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(1);
+    // A failed resignal renews the fence…
+    await peer.resignalAbort('conv-11');
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(1);
+
+    // …and the first one that leaves reaps it instead of waiting out the TTL.
+    Object.assign(peerTransport, { emitAbortConfirmed: jest.fn(async () => true) });
+    const resignal = await peer.resignalAbort('conv-11');
+
+    expect(resignal.published).toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(0);
+  });
+
+  it('retains the predecessor owner lease when a replacement handoff fails', async () => {
+    const { GenerationJobManagerClass } = await import('../GenerationJobManager');
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 0 });
+    const owner = new GenerationJobManagerClass();
+    owner.configure({ jobStore, eventTransport: new InMemoryEventTransport(), isRedis: false });
+    owner.initialize();
+    // Redis mode is what requires the durable owner proof for a replacement handoff;
+    // this transport provides none, so the acknowledgement provably fails.
+    const peer = new GenerationJobManagerClass();
+    const peerTransport = new InMemoryEventTransport();
+    Object.assign(peerTransport, { emitAbortConfirmed: jest.fn(async () => false) });
+    peer.configure({ jobStore, eventTransport: peerTransport, isRedis: true });
+    peer.initialize();
+
+    await owner.createJob('conv-12', 'user-1', 'conv-12');
+    const predecessor = await jobStore.getJob('conv-12');
+    expect(predecessor?.status).toBe('running');
+
+    // The peer replaces the stream: the atomic create removes the predecessor from
+    // active storage, but its owner never acknowledges the handoff — the replacement
+    // is terminalized and createJob throws. Without the retained lease, a deletion
+    // quiesce could discover NEITHER generation while the predecessor's provider may
+    // still be generating.
+    await expect(peer.createJob('conv-12', 'user-1', 'conv-12')).rejects.toThrow(
+      'predecessor handoff',
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBeGreaterThanOrEqual(1);
+  });
+
+  it('heartbeats a held lease past the store TTL until released', async () => {
+    const { owner, jobStore } = await makeManagers();
+    jest.useFakeTimers({ now: Date.now() });
+    try {
+      const hold = await owner.holdUserFinalization('user-1', 'conv-13', undefined, 1000, 'held');
+      await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(1);
+
+      // The store TTL is five minutes and only bounds a crashed holder: live
+      // persistence (a stalled save, a long title) must never outlive its fence.
+      await jest.advanceTimersByTimeAsync(6 * 60 * 1000);
+      await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(1);
+
+      hold.release();
+      await jest.advanceTimersByTimeAsync(1);
+      await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('reports republication as succeeded when the owner acknowledges', async () => {

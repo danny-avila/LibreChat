@@ -1422,6 +1422,13 @@ export interface IEventTransport {
    * A delayed replacement can use the proof after the owner's listeners retire. */
   recordAbortAcknowledgement?(streamId: string, generationId: number): Promise<boolean>;
 
+  /** Awaited by the transport BEFORE it publishes/persists an abort acknowledgement
+   *  for an owned generation. The manager installs the owner-lifecycle lease here:
+   *  an acknowledgement is what lets the stopping side release ITS lease, so the
+   *  owner's lease must be durable first or a deletion quiesce can land in the gap
+   *  between the ACK and the owner's asynchronous abort-catch persistence. */
+  beforeAbortAcknowledged?: (streamId: string, generationId: number) => Promise<void>;
+
   /** Publish a predecessor DONE only while the current job's opaque creation
    * attempt still carries that predecessor in its durable receipt chain. */
   emitReplacedDoneConfirmed?(

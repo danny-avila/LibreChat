@@ -585,6 +585,17 @@ const settleAbortFence = async (user, streamId) => {
  * enrolling them in the job manager so deletion can fence them like everything else.
  */
 const quiesceInteractiveGenerations = async (user) => {
+  // MARKERS BEFORE THE ACTIVE SCAN — the read order is what makes the admission
+  // lease -> durable job handoff atomic from this side. Writers hold the lease
+  // strictly until the job is active-set visible, so with leases read FIRST, any
+  // interleaving either shows the lease here or the job below; jobs-first allowed
+  // a request to create its job after this scan and release its lease before the
+  // count, hiding both. The count itself gates settlement further down; this early
+  // read only has to ORDER before the job scan.
+  const earlyPendingOwnerWork = await GenerationJobManager.countUserFinalizations(
+    user.id,
+    user.tenantId,
+  );
   const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(user.id, user.tenantId);
   for (const streamId of activeJobIds ?? []) {
     // FENCE BEFORE THE CAS. An abort transitions the shared job to terminal, which
@@ -640,10 +651,10 @@ const quiesceInteractiveGenerations = async (user) => {
   // and durable (TTL-free, so an outage can never read as settlement) abort fences on
   // the user document. Multi-replica deployments require the Redis job store (see
   // isTopologySafeToArm), where the owner markers are cross-replica visible.
-  const pendingOwnerWork = await GenerationJobManager.countUserFinalizations(
-    user.id,
-    user.tenantId,
-  );
+  const pendingOwnerWork =
+    earlyPendingOwnerWork > 0
+      ? earlyPendingOwnerWork
+      : await GenerationJobManager.countUserFinalizations(user.id, user.tenantId);
   if (pendingOwnerWork > 0) {
     logger.info(
       `[quiesceInteractiveGenerations] ${pendingOwnerWork} owner finalization(s) still landing for ${user.id}`,

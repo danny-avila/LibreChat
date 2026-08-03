@@ -157,6 +157,53 @@ describe('RedisEventTransport', () => {
     transport.destroy();
   });
 
+  it('publishes the abort acknowledgement only AFTER the pre-ACK fence resolves', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'abort-ack-fence';
+    // The stopping side releases its own lease the moment this ACK arrives; the
+    // owner's abort-catch persistence is still ahead. If the ACK can outrun the
+    // owner-lifecycle lease registration, a deletion quiesce lands in the gap.
+    let releaseFence!: () => void;
+    const fencePending = new Promise<void>((resolve) => {
+      releaseFence = resolve;
+    });
+    const fence = jest.fn(() => fencePending);
+    transport.beforeAbortAcknowledged = fence;
+    await transport.onAbort(streamId, () => true);
+    const messageHandler = getMessageHandler(mockSubscriber);
+
+    messageHandler(
+      `stream:{${streamId}}:events`,
+      JSON.stringify({ type: 'abort', generationId: 7, abortRequestId: 'req-1' }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fence).toHaveBeenCalledWith(streamId, 7);
+    // Neither the durable ack proof nor the ack publication may precede the fence.
+    expect(mockPublisher.set).not.toHaveBeenCalled();
+    const ackPublishes = mockPublisher.publish.mock.calls.filter(([, payload]) =>
+      String(payload).includes('abort_ack'),
+    );
+    expect(ackPublishes).toHaveLength(0);
+
+    releaseFence();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockPublisher.set).toHaveBeenCalledWith(
+      expect.stringContaining('abort-ack'),
+      '1',
+      'EX',
+      expect.any(Number),
+    );
+    transport.destroy();
+  });
+
   it('ignores sequenced events while only internal abort listeners are attached', async () => {
     jest.useFakeTimers();
     const mockPublisher = createMockPublisher();

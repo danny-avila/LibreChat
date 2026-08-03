@@ -474,6 +474,36 @@ describe('deleteUserController - interactive generation quiesce', () => {
     expect(res.status).toHaveBeenCalledWith(503);
   });
 
+  it('reads finalization leases BEFORE the active-job scan', async () => {
+    // The admission-lease -> durable-job handoff is only atomic against a quiesce
+    // that reads in the OPPOSITE order of the writer: writers hold the lease until
+    // the job is active-set visible, so leases-first shows every interleaving either
+    // the lease or the job. Jobs-first allowed a request to create its job after the
+    // scan and release its lease before the count — hiding both, cascading, and then
+    // letting the new generation persist into a deleted account.
+    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
+    const res = createRes();
+    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+
+    await deleteUserController(req, res);
+
+    expect(GenerationJobManager.countUserFinalizations.mock.invocationCallOrder[0]).toBeLessThan(
+      GenerationJobManager.getActiveJobIdsForUser.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('defers on an admission lease observed before the job scan', async () => {
+    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
+    const res = createRes();
+    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+    GenerationJobManager.countUserFinalizations.mockResolvedValueOnce(1);
+
+    await deleteUserController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(mockDeleteUserById).not.toHaveBeenCalled();
+  });
+
   it('keeps a fence whose complete terminal is still persisting', async () => {
     const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
     const res = createRes();
