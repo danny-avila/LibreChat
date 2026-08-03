@@ -124,6 +124,7 @@ jest.mock('~/cache', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  isUserDeleting: jest.fn(async () => false),
   saveMessage: (...args) => mockSaveMessage(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),

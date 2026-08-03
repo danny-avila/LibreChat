@@ -66,6 +66,18 @@ describe('InMemoryJobStore user finalizations', () => {
     await expect(store.countUserFinalizations('user-1')).resolves.toBe(0);
   });
 
+  it('isolates same-generation contenders by lease: a losing Stop cannot drop completion', async () => {
+    // Completion and Stop (or two Stops) contend on the SAME (stream, generation).
+    // Keyed without a lease token they shared one entry, and the losing contender's
+    // cleanup erased the winner's still-live marker.
+    await store.registerUserFinalization('user-1', 'conv-1', undefined, 1000, 'completion-lease');
+    await store.registerUserFinalization('user-1', 'conv-1', undefined, 1000, 'stop-lease');
+
+    await store.clearUserFinalization('user-1', 'conv-1', undefined, 1000, 'stop-lease');
+
+    await expect(store.countUserFinalizations('user-1')).resolves.toBe(1);
+  });
+
   it('an unqualified legacy clear does not drop generation-qualified markers', async () => {
     await store.registerUserFinalization('user-1', 'conv-1', undefined, 1000);
 

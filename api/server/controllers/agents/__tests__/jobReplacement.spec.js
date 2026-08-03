@@ -59,6 +59,7 @@ jest.mock('@librechat/api', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  isUserDeleting: jest.fn(async () => false),
   saveMessage: (...args) => mockSaveMessage(...args),
 }));
 

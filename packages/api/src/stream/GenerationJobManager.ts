@@ -3682,6 +3682,21 @@ class GenerationJobManagerClass {
         logger.error(`[GenerationJobManager] Failed to republish abort for ${streamId}:`, err);
       }
     }
+    if (!delivered && !published) {
+      // HEARTBEAT the fence: the winning abort's lease is TTL-bounded and never
+      // renewed on its own, so each retry re-registers a fresh lease while the stop
+      // remains undelivered — the deletion quiesce keeps deferring for as long as
+      // someone is still trying to deliver it.
+      await this.jobStore
+        .registerUserFinalization?.(
+          jobData.userId,
+          streamId,
+          jobData.tenantId,
+          jobData.createdAt,
+          randomUUID(),
+        )
+        .catch(() => undefined);
+    }
     return { delivered, published };
   }
 
@@ -3840,12 +3855,14 @@ class GenerationJobManagerClass {
      * has been aborted yet, so refusing merely defers, and the Stop route/quiesce
      * both treat the failure as retryable. Generation-qualified so a late clear
      * from a predecessor can never drop a replacement's marker. */
+    const abortLeaseId = randomUUID();
     try {
       await this.jobStore.registerUserFinalization?.(
         jobData.userId,
         streamId,
         jobData.tenantId,
         jobData.createdAt,
+        abortLeaseId,
       );
     } catch (fenceError) {
       logger.error(
@@ -3864,7 +3881,13 @@ class GenerationJobManagerClass {
     }
     const clearAbortFinalization = () => {
       void this.jobStore
-        .clearUserFinalization?.(jobData.userId, streamId, jobData.tenantId, jobData.createdAt)
+        .clearUserFinalization?.(
+          jobData.userId,
+          streamId,
+          jobData.tenantId,
+          jobData.createdAt,
+          abortLeaseId,
+        )
         .catch(() => undefined);
     };
 
@@ -4156,9 +4179,19 @@ class GenerationJobManagerClass {
       };
     } finally {
       await this.finishTerminalJob(terminalClaim);
-      // Every write this abort owns (`beforePublish` persistence, publication) has
-      // now either landed or failed for good — on both paths, this being a finally.
-      clearAbortFinalization();
+      // Release only when the stop provably reached a generation (or at least left
+      // this replica): with delivery AND publication both failed, the remote owner
+      // keeps generating and will persist its abort-catch writes whenever the signal
+      // finally lands — a user Stop writes no durable abort fence, so this lease is
+      // the ONLY thing deferring a deletion quiesce in that window. It stays until
+      // a resignal renews or supersedes it, bounded by the lease TTL.
+      if (abortSignalDelivered || abortSignalPublished) {
+        clearAbortFinalization();
+      } else {
+        logger.warn(
+          `[GenerationJobManager] Retaining abort finalization lease for ${streamId} — stop not yet delivered`,
+        );
+      }
     }
   }
 
@@ -7431,11 +7464,18 @@ class GenerationJobManagerClass {
     streamId: string,
     tenantId?: string,
     generationId?: number,
+    leaseId?: string,
   ): Promise<void> {
     if (this.jobStore.registerUserFinalization == null) {
       throw new Error('Job store does not support finalization markers');
     }
-    return this.jobStore.registerUserFinalization(userId, streamId, tenantId, generationId);
+    return this.jobStore.registerUserFinalization(
+      userId,
+      streamId,
+      tenantId,
+      generationId,
+      leaseId,
+    );
   }
 
   async clearUserFinalization(
@@ -7443,8 +7483,9 @@ class GenerationJobManagerClass {
     streamId: string,
     tenantId?: string,
     generationId?: number,
+    leaseId?: string,
   ): Promise<void> {
-    return this.jobStore.clearUserFinalization?.(userId, streamId, tenantId, generationId);
+    return this.jobStore.clearUserFinalization?.(userId, streamId, tenantId, generationId, leaseId);
   }
 
   async countUserFinalizations(userId: string, tenantId?: string): Promise<number> {

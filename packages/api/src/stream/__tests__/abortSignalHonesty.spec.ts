@@ -134,7 +134,13 @@ describe('abort signal honesty across replicas', () => {
     const result = await owner.abortJob('conv-6');
 
     expect(result.success).toBe(true);
-    expect(register).toHaveBeenCalledWith('user-1', 'conv-6', undefined, createdAt);
+    expect(register).toHaveBeenCalledWith(
+      'user-1',
+      'conv-6',
+      undefined,
+      createdAt,
+      expect.any(String),
+    );
     // BEFORE the CAS: registering after it leaves the window uncovered.
     expect(register.mock.invocationCallOrder[0]).toBeLessThan(
       transition.mock.invocationCallOrder[0],
@@ -158,6 +164,93 @@ describe('abort signal honesty across replicas', () => {
     // fence the user's deletion pointlessly.
     await new Promise((resolve) => setImmediate(resolve));
     await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(0);
+  });
+
+  it('RETAINS the abort lease while the stop is undelivered and unpublished', async () => {
+    const { owner, peer, peerTransport, jobStore } = await makeManagers();
+    await owner.createJob('conv-8', 'user-1', 'conv-8');
+    // Peer-owned generation; the acknowledged publication provably fails.
+    Object.assign(peerTransport, {
+      emitAbort: jest.fn((): void => undefined),
+      emitAbortConfirmed: jest.fn(async () => false),
+    });
+
+    const result = await peer.abortJob('conv-8');
+
+    expect(result.success).toBe(true);
+    expect(result.signalDelivered).toBe(false);
+    expect(result.signalPublished).toBe(false);
+    // The job is terminal (invisible to active-set scans) and a user Stop writes no
+    // durable abort fence — this lease is the ONLY thing deferring a deletion
+    // quiesce while the remote owner keeps generating.
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBe(1);
+  });
+
+  it('renews the fence on each undelivered resignal attempt', async () => {
+    const { owner, peer, peerTransport, jobStore } = await makeManagers();
+    await owner.createJob('conv-9', 'user-1', 'conv-9');
+    Object.assign(peerTransport, {
+      emitAbort: jest.fn((): void => undefined),
+      emitAbortConfirmed: jest.fn(async () => false),
+    });
+    await peer.abortJob('conv-9');
+    const register = jest.spyOn(jobStore, 'registerUserFinalization');
+
+    const resignal = await peer.resignalAbort('conv-9');
+
+    expect(resignal).toEqual({ delivered: false, published: false });
+    // The 5-minute lease is never self-renewing: each retry heartbeats a fresh one
+    // so the quiesce keeps deferring for as long as delivery is still being driven.
+    expect(register).toHaveBeenCalledWith(
+      'user-1',
+      'conv-9',
+      undefined,
+      expect.any(Number),
+      expect.any(String),
+    );
+  });
+
+  it('a losing second Stop releases only its own lease, never the winning one', async () => {
+    const { owner, peer, jobStore } = await makeManagers();
+    await owner.createJob('conv-10', 'user-1', 'conv-10');
+    // The winning abort parks inside its beforePublish persistence.
+    let releaseWinner!: () => void;
+    const winnerPersisting = new Promise<void>((resolve) => {
+      releaseWinner = resolve;
+    });
+    let winnerEntered!: () => void;
+    const winnerEnteredPersistence = new Promise<void>((resolve) => {
+      winnerEntered = resolve;
+    });
+    const winner = owner.abortJob('conv-10', {
+      beforePublish: async () => {
+        winnerEntered();
+        await winnerPersisting;
+      },
+    });
+    await winnerEnteredPersistence;
+
+    // A second Stop RACES the winner: its pre-abort read still sees `running` (the
+    // winner's CAS lands in between), so it gets past the terminal pre-check,
+    // registers its own lease, and only then loses the CAS. Pre-lease keying, its
+    // registration overwrote the winner's field and its cleanup then deleted it.
+    const realGetJob = jobStore.getJob.bind(jobStore);
+    const staleRunning = { ...(await realGetJob('conv-10'))!, status: 'running' as const };
+    const getJobSpy = jest
+      .spyOn(jobStore, 'getJob')
+      .mockImplementationOnce(async () => staleRunning);
+    const loser = await peer.abortJob('conv-10');
+    getJobSpy.mockRestore();
+    expect(loser.success).toBe(false);
+
+    // The winner's persistence is still live: its lease must have survived the
+    // loser's cleanup. Keyed without lease tokens, this read 0.
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(jobStore.countUserFinalizations('user-1')).resolves.toBeGreaterThanOrEqual(1);
+
+    releaseWinner();
+    await winner;
   });
 
   it('reports republication as succeeded when the owner acknowledges', async () => {

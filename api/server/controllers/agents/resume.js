@@ -448,12 +448,16 @@ async function finalizeResumedTurn({
   // fenced settlement either registers its marker or leaves the job paused/active —
   // deletion-visible either way. Cleared in the persistence try's finally.
   let finalizationRegistered = false;
+  /** Unique per contender: this resume and a racing Stop contend on the same
+   *  generation, and a losing contender's cleanup must only release its own lease. */
+  const finalizationLeaseId = crypto.randomUUID();
   for (let attempt = 1; attempt <= 2 && !finalizationRegistered; attempt++) {
     finalizationRegistered = await GenerationJobManager.registerUserFinalization(
       userId,
       streamId,
       req.user?.tenantId,
       job.createdAt,
+      finalizationLeaseId,
     )
       .then(() => true)
       .catch((err) => {
@@ -473,6 +477,7 @@ async function finalizeResumedTurn({
       streamId,
       req.user?.tenantId,
       job.createdAt,
+      finalizationLeaseId,
     ).catch(() => undefined);
   };
 
@@ -1517,11 +1522,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       // the transition and leaves the job visible to deletion (the stale reaper
       // recovers it). Cleared immediately after — the error path owes no
       // message-recreating writes past its CAS.
+      const errorLeaseId = crypto.randomUUID();
       const errorFenced = await GenerationJobManager.registerUserFinalization(
         userId,
         streamId,
         req.user?.tenantId,
         job.createdAt,
+        errorLeaseId,
       )
         .then(() => true)
         .catch(() => false);
@@ -1552,6 +1559,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             streamId,
             req.user?.tenantId,
             job.createdAt,
+            errorLeaseId,
           ).catch(() => undefined);
         }
       }
