@@ -752,7 +752,10 @@ export default function useSteering({
    * local row; the caller decides whether the live composer can consume it.
    * The cancel deliberately omits the active epoch: the receipt belongs to the
    * terminal source generation, not whichever run now occupies the chat. */
-  const discardQueued = useCallback(
+  /** Cancels a row's parked server copy by receipt, independent of whether the
+   *  row is still in the queue — clear-all takes its rows out first, so the
+   *  downgrade step cannot be the thing that reports success. */
+  const cancelParkedSource = useCallback(
     async (item: QueuedMessage): Promise<boolean> => {
       if (item.recoverySteerId == null) {
         return true;
@@ -771,62 +774,98 @@ export default function useSteering({
           showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
           return false;
         }
-        return downgradeQueuedRecovery(item.id);
+        return true;
       } catch {
         showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
         return false;
       }
     },
-    [cancelSteer, conversationId, downgradeQueuedRecovery, hasRealConvoId, localize, showToast],
+    [cancelSteer, conversationId, hasRealConvoId, localize, showToast],
   );
 
-  const readQueued = useRecoilCallback(
-    ({ snapshot }) =>
-      (): QueuedMessage[] =>
-        snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue(),
+  const discardQueued = useCallback(
+    async (item: QueuedMessage): Promise<boolean> => {
+      if (item.recoverySteerId == null) {
+        return true;
+      }
+      const cancelled = await cancelParkedSource(item);
+      return cancelled ? downgradeQueuedRecovery(item.id) : false;
+    },
+    [cancelParkedSource, downgradeQueuedRecovery],
+  );
+
+  /** Empties the queue and hands back what it held. Removing up front is the
+   *  point: the parked-source cancellations below are round trips, and rows
+   *  left in place could be drained by a run ending mid-clear — sending the
+   *  very messages the user asked to take back. */
+  const takeAllQueued = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (): QueuedMessage[] => {
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        if (queue.length > 0) {
+          set(store.queuedMessagesByConvoId(queueKey), []);
+        }
+        return queue;
+      },
     [queueKey],
   );
 
-  /** Empties the queue of the rows named by `targetIds`, returning them folded
-   *  into one payload for the composer. Scoped to that snapshot because the
-   *  recovered-source cancellations are round trips: anything the user queues
-   *  while they are in flight is not part of this clear. Rows whose parked
-   *  source refused to cancel STAY — words are never dropped on the floor. */
-  const takeAllQueued = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (targetIds: Set<string>): QueuedMessage | null => {
-        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
-        const owned = (item: QueuedMessage) =>
-          targetIds.has(item.id) && isMergeableQueuedMessage(item);
-        const clearable = queue.filter(owned);
-        if (clearable.length === 0) {
-          return null;
+  /** Puts rows back without clobbering anything queued in the meantime. */
+  const restoreQueuedBatch = useRecoilCallback(
+    ({ set }) =>
+      (items: QueuedMessage[]) => {
+        if (items.length === 0) {
+          return;
         }
-        set(
-          store.queuedMessagesByConvoId(queueKey),
-          queue.filter((item) => !owned(item)),
-        );
-        return clearable.length === 1 ? clearable[0] : mergeQueuedMessages(clearable);
+        set(store.queuedMessagesByConvoId(queueKey), (prev) => {
+          const held = new Set(prev.map((item) => item.id));
+          const missing = items.filter((item) => !held.has(item.id));
+          return missing.length === 0 ? prev : [...prev, ...missing].sort(compareQueuedMessages);
+        });
       },
     [queueKey],
   );
 
   /**
    * "Clear all": hands the waiting words back to the user rather than deleting
-   * them. Parked sources are cancelled first, one round trip each, because a
-   * surviving copy would be re-offered as a fresh row on the next status read.
-   * The caller owns the composer and decides whether it can accept the payload.
+   * them. Rows leave the queue immediately, then each parked server copy is
+   * cancelled by receipt — a surviving copy would be re-offered as a fresh row
+   * on the next status read. A row whose cancellation fails goes back in the
+   * queue; its words are never dropped on the floor. The caller owns the
+   * composer and decides whether it can accept the payload.
    */
   const clearQueued = useCallback(async (): Promise<QueuedMessage | null> => {
-    const initial = readQueued();
-    for (const item of initial) {
+    const taken = takeAllQueued();
+    if (taken.length === 0) {
+      return null;
+    }
+    const cleared: QueuedMessage[] = [];
+    const stuck: QueuedMessage[] = [];
+    for (const item of taken) {
       if (item.recoverySteerId == null) {
+        cleared.push(item);
         continue;
       }
-      await discardQueued(item);
+      if (!(await cancelParkedSource(item))) {
+        stuck.push(item);
+        continue;
+      }
+      /** The parked copy is gone, so the row is an ordinary local follow-up
+       *  now — and only ordinary rows can be folded together. */
+      const {
+        clientRequestId: _clientRequestId,
+        recoverySteerId: _recoverySteerId,
+        recoveryClientSteerId: _recoveryClientSteerId,
+        ...ordinary
+      } = item;
+      cleared.push(ordinary);
     }
-    return takeAllQueued(new Set(initial.map((item) => item.id)));
-  }, [readQueued, discardQueued, takeAllQueued]);
+    restoreQueuedBatch(stuck);
+    if (cleared.length === 0) {
+      return null;
+    }
+    return cleared.length === 1 ? cleared[0] : mergeQueuedMessages(cleared);
+  }, [takeAllQueued, cancelParkedSource, restoreQueuedBatch]);
 
   /** Capture-then-remove, including the item's neighbours, so any refused send
    *  or rejected steer can restore the ORIGINAL item in place even if the run

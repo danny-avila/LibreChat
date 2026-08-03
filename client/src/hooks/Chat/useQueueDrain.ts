@@ -219,12 +219,21 @@ export default function useQueueDrain(
         /** A standing window short-circuits BEFORE anything is consumed or
          *  written: both signal carriers retain unconsumed epochs, so leaving
          *  this one in place is lossless — and mutating nothing is what keeps
-         *  the effect from re-running itself into a loop while it waits. */
+         *  the effect from re-running itself into a loop while it waits.
+         *
+         *  An armed interrupt is exempt. The user aborted a run to say this
+         *  now, and the standing window may belong to an unrelated earlier
+         *  epoch; making it wait out that timer contradicts the rule that
+         *  armed interrupts skip the grace. Read-only, so the no-loop
+         *  guarantee holds — the arm is consumed on the normal path below. */
         if (end.conversationId != null) {
           const standing = snapshot
             .getLoadable(store.queueDrainHoldByConvoId(end.conversationId))
             .getValue();
-          if (standing != null && standing.dueAt > Date.now()) {
+          const armedNow = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
+          const interruptWaiting =
+            matchesInterruptArm(armedNow, end) || end.interruptArmed === true;
+          if (standing != null && standing.dueAt > Date.now() && !interruptWaiting) {
             return null;
           }
         }

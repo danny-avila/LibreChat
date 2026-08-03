@@ -894,6 +894,33 @@ describe('useQueueDrain undo grace', () => {
     expect(state.hold).toBeNull();
   });
 
+  /** The window may belong to an unrelated earlier epoch, and the user aborted
+   *  a run to say this now — waiting out that timer contradicts the rule that
+   *  armed interrupts skip the grace. */
+  it('lets an armed interrupt drain straight through a standing window', async () => {
+    const { ask, state } = setupGraced(
+      withQueue(queuedMessage('q1', 'interrupt text'), queuedMessage('q2', 'ordinary follow-up')),
+    );
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+    await waitFor(() => expect(state.hold).not.toBeNull());
+    expect(ask).not.toHaveBeenCalled();
+
+    // Interrupt & send: the arm plus the aborted epoch it belongs to.
+    act(() => {
+      state.setInterruptFlag!({ conversationId: CONVO_ID, generationCreatedAt: 99 });
+    });
+    act(() => {
+      state.setRunEnd!(runEnd({ outcome: 'aborted', generationCreatedAt: 99 }));
+    });
+
+    // No timer wait: the assertion resolves well inside the grace window.
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: 'interrupt text' }, emptyOverrides);
+  });
+
   it('drains immediately when the window already expired while away', async () => {
     const { ask } = setupGraced(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'overdue')]);

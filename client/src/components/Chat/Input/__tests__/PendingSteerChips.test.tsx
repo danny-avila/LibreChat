@@ -726,7 +726,12 @@ describe('PendingSteerChips — queued outbox group', () => {
   });
 
   it('returns the words to the queue when the composer refuses them', async () => {
-    const folded: QueuedMessage = { id: 'q1', text: 'not lost', createdAt: 1 };
+    const folded: QueuedMessage = {
+      id: 'q1',
+      text: 'not lost',
+      createdAt: 1,
+      expectedPredecessorCreatedAt: 4242,
+    };
     mockClearQueued = jest.fn(async () => folded);
     mockRestoreToComposer.mockReturnValueOnce(false);
     renderChips(twoQueued, { steering: outboxSteering() });
@@ -736,7 +741,14 @@ describe('PendingSteerChips — queued outbox group', () => {
     await waitFor(() => {
       expect(mockEnqueue).toHaveBeenCalledWith(
         'not lost',
-        expect.objectContaining({ id: 'q1', createdAt: 1, skipUsageMark: true }),
+        expect.objectContaining({
+          id: 'q1',
+          createdAt: 1,
+          skipUsageMark: true,
+          /** An idle chat has no active epoch to substitute, so an unfenced
+           *  requeue could replace a newer generation from another tab. */
+          expectedPredecessorCreatedAt: 4242,
+        }),
       );
     });
     expect(mockShowToast).toHaveBeenCalledWith(
@@ -782,6 +794,70 @@ describe('PendingSteerChips — queued row editing', () => {
 
     expect(screen.queryByTestId('queue-group')).toBeNull();
     expect(mockUpdateQueuedText).toHaveBeenCalledWith('q2', 'edited while the front row drained');
+  });
+
+  /** `steering` is rebuilt at every run boundary. A dep on it fired the flush
+   *  while the row was still mounted, committing mid-edit — after which Escape
+   *  had nothing left to abandon. */
+  it('does not commit mid-edit when the run state changes under it', () => {
+    const Harness = ({ live }: { live: boolean }) => (
+      <PendingSteerChips
+        conversationId={CONVO_ID}
+        steering={steeringStub(outboxSteering({ duringRunActive: live, canSteer: live }))}
+        onEditToComposer={mockEditToComposer}
+        onRestoreToComposer={mockRestoreToComposer}
+      />
+    );
+    const tree = (live: boolean) => (
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(store.queuedMessagesByConvoId(CONVO_ID), [twoQueued[0]]);
+        }}
+      >
+        <Harness live={live} />
+      </RecoilRoot>
+    );
+
+    const { rerender } = render(tree(true));
+    fireEvent.click(screen.getByText('first thought'));
+    fireEvent.change(screen.getByTestId('queued-message-edit'), {
+      target: { value: 'still typing' },
+    });
+
+    // The run ends: same row, a freshly built `steering`.
+    rerender(tree(false));
+
+    expect(mockUpdateQueuedText).not.toHaveBeenCalled();
+    // The editor is still open, so Escape can still abandon the edit.
+    fireEvent.keyDown(screen.getByTestId('queued-message-edit'), { key: 'Escape' });
+    expect(mockUpdateQueuedText).not.toHaveBeenCalled();
+  });
+
+  /** A merged row carries paragraph breaks, and a single-line input flattens
+   *  them on the first keystroke. */
+  it('keeps paragraph breaks while editing a merged row', () => {
+    renderChips([{ id: 'merged', text: 'first part\n\nsecond part', createdAt: 1 }], {
+      steering: outboxSteering(),
+    });
+
+    fireEvent.click(screen.getByTitle('com_ui_queue_edit_inline'));
+    const editor = screen.getByTestId('queued-message-edit');
+    expect(editor.tagName).toBe('TEXTAREA');
+    expect(editor).toHaveValue('first part\n\nsecond part');
+
+    fireEvent.change(editor, { target: { value: 'first part\n\nsecond part edited' } });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(mockUpdateQueuedText).toHaveBeenCalledWith('merged', 'first part\n\nsecond part edited');
+  });
+
+  it('adds a line with Shift+Enter instead of committing', () => {
+    renderChips([twoQueued[0]], { steering: outboxSteering() });
+
+    fireEvent.click(screen.getByText('first thought'));
+    fireEvent.keyDown(screen.getByTestId('queued-message-edit'), { key: 'Enter', shiftKey: true });
+
+    expect(mockUpdateQueuedText).not.toHaveBeenCalled();
+    expect(screen.getByTestId('queued-message-edit')).toBeInTheDocument();
   });
 
   it('abandons an edit on Escape', () => {

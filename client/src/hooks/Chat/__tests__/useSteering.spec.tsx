@@ -2466,6 +2466,68 @@ describe('useSteering — clear all', () => {
     expect(result.current.queue).toEqual([]);
   });
 
+  /** The rows must leave the queue BEFORE the cancellations are awaited: a run
+   *  ending mid-clear would otherwise drain one of the very messages the user
+   *  asked to take back. */
+  it('empties the queue up front rather than during the cancellations', () => {
+    let settleCancel: ((value: { removed: boolean }) => void) | undefined;
+    mockCancelSteer.mockImplementationOnce(
+      () =>
+        new Promise<{ removed: boolean }>((resolve) => {
+          settleCancel = resolve;
+        }),
+    );
+
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        {
+          id: 'q1',
+          text: 'recovered row',
+          createdAt: 1,
+          recoverySteerId: 'server-source',
+          recoveryClientSteerId: 'client-source',
+        },
+        { id: 'q2', text: 'ordinary row', createdAt: 2 },
+      ]);
+    });
+
+    act(() => {
+      void result.current.steering.clearQueued();
+    });
+
+    // Nothing left to drain while the cancellation is still in flight.
+    expect(result.current.queue).toEqual([]);
+    settleCancel?.({ removed: true });
+  });
+
+  it('puts a row back when its parked source refuses to cancel', async () => {
+    mockCancelSteer.mockResolvedValueOnce({ removed: false, generationProtocolVersion: 2 });
+
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        {
+          id: 'q1',
+          text: 'stuck row',
+          createdAt: 1,
+          recoverySteerId: 'server-source',
+          recoveryClientSteerId: 'client-source',
+        },
+        { id: 'q2', text: 'ordinary row', createdAt: 2 },
+      ]);
+    });
+
+    let cleared: QueuedMessage | null | undefined;
+    await act(async () => {
+      cleared = await result.current.steering.clearQueued();
+    });
+
+    // Only the row the client fully owns went to the composer.
+    expect(cleared?.text).toBe('ordinary row');
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({ id: 'q1', recoverySteerId: 'server-source' }),
+    ]);
+  });
+
   /** Cancelling a parked source is a round trip, so the queue can grow while
    *  clear-all is in flight; a message the user queued meanwhile is not part
    *  of what they asked to clear. */

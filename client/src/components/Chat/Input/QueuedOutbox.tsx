@@ -35,6 +35,9 @@ export const ROW_CLASS =
 
 /** Depth cue for the collapsed stack. Kept INSIDE the row's own footprint (the
  *  wrapper reserves the peek height) because the composer box clips overflow. */
+/** Enough to show a merged row's paragraphs without the row eating the box. */
+const EDITOR_MAX_ROWS = 4;
+
 const PEEK_CLASS =
   'pointer-events-none absolute h-full rounded-xl border border-border-light bg-surface-tertiary';
 
@@ -78,7 +81,7 @@ function QueuedRowBase({
   const [actionPending, setActionPending] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
   const editing = draft != null;
-  const editorRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
   /** A recovered item has a replayable parked source. Edit/remove must first
    * cancel that source by receipt; local-only rows settle synchronously through
    * the same control. The ref closes the pre-render double-click window. */
@@ -140,17 +143,21 @@ function QueuedRowBase({
   /** Removing the input never fires `blur`, and this row is remounted whenever
    *  the queue crosses the grouping threshold (a front row draining, say), so
    *  an in-progress edit has to be flushed on the way out or the words are
-   *  lost. Writing for an id that has since drained is a no-op. */
+   *  lost. Writing for an id that has since drained is a no-op.
+   *
+   *  Held in a ref with an EMPTY dep list on purpose: `steering` is rebuilt at
+   *  every run boundary, and a dep on it would fire this cleanup while the row
+   *  is still mounted — committing mid-edit, which Escape could then no longer
+   *  undo. */
   const draftRef = useRef<string | null>(null);
   draftRef.current = draft;
-  useEffect(
-    () => () => {
-      if (draftRef.current != null) {
-        steering.updateQueuedText(message.id, draftRef.current);
-      }
-    },
-    [message.id, steering],
-  );
+  const flushDraftRef = useRef<() => void>(() => {});
+  flushDraftRef.current = () => {
+    if (draftRef.current != null) {
+      steering.updateQueuedText(message.id, draftRef.current);
+    }
+  };
+  useEffect(() => () => flushDraftRef.current(), []);
 
   /** An ordinary row is a living draft: it is rewritten in place. A recovered
    *  row's words are bound to a parked server source matched by exact text, so
@@ -190,16 +197,20 @@ function QueuedRowBase({
     <div role="listitem" className={ROW_CLASS} data-testid="queued-message-row">
       <Clock className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
       {editing ? (
-        <input
+        /* A textarea, not an input: merged rows carry paragraph breaks and an
+         * input silently flattens them on the first keystroke. Enter commits
+         * and Shift+Enter adds a line, matching the composer. */
+        <textarea
           ref={editorRef}
           value={draft}
+          rows={Math.min(EDITOR_MAX_ROWS, draft.split('\n').length)}
           aria-label={localize('com_ui_queue_edit_inline')}
           data-testid="queued-message-edit"
-          className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none"
+          className="min-w-0 flex-1 resize-none bg-transparent text-sm text-text-primary outline-none"
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commitDraft}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') {
+            if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
               commitDraft();
               return;
@@ -414,6 +425,10 @@ function QueuedOutboxBase({
           skipUsageMark: true,
           id: cleared.id,
           createdAt: cleared.createdAt,
+          /** Kept explicitly: an idle chat has no active epoch for `enqueue` to
+           *  substitute, and an unfenced row can replace a newer generation
+           *  instead of taking the predecessor-mismatch recovery path. */
+          expectedPredecessorCreatedAt: cleared.expectedPredecessorCreatedAt,
         });
         showToast({ message: localize('com_ui_steer_edit_queued'), status: 'info' });
       }
