@@ -132,8 +132,8 @@ export default function LiveArtifactPreview({
   // page can't produce the token, so it can never drive the bridge.
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      const frame = iframeRef.current;
-      if (!frame || event.source !== frame.contentWindow) {
+      const frameWindow = iframeRef.current?.contentWindow;
+      if (!frameWindow || event.source !== frameWindow) {
         return;
       }
       if (event.data?.type !== 'librechat:ready' || event.data.token !== token) {
@@ -160,7 +160,7 @@ export default function LiveArtifactPreview({
           requestTool({ id: data.id, name: data.name, args: data.args ?? {}, port: channel.port1 });
         }
       };
-      frame.contentWindow.postMessage({ type: 'librechat:init', token }, '*', [channel.port2]);
+      frameWindow.postMessage({ type: 'librechat:init', token }, '*', [channel.port2]);
     };
     window.addEventListener('message', onMessage);
     return () => {

@@ -2268,7 +2268,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_html',
           name: 'create_file',
           args: {
-            file_path: '/mnt/data/dash.html',
+            path: '/mnt/data/dash.html',
             content: '<h1>hi</h1>',
             mcp_tools: ['list_prs_mcp_github', 'not-an-mcp-tool', 'send_msg_mcp_slack'],
           },
@@ -2298,7 +2298,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_escalate',
           name: 'create_file',
           args: {
-            file_path: '/mnt/data/dash.html',
+            path: '/mnt/data/dash.html',
             content: '<h1>hi</h1>',
             // delete_repo_mcp_github is not in the agent's toolRegistry → dropped.
             mcp_tools: ['list_prs_mcp_github', 'delete_repo_mcp_github'],
@@ -2326,7 +2326,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_txt',
           name: 'create_file',
           args: {
-            file_path: '/mnt/data/data.txt',
+            path: '/mnt/data/data.txt',
             content: 'plain',
             mcp_tools: ['list_prs_mcp_github'],
           },
