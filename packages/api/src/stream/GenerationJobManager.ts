@@ -537,6 +537,10 @@ interface RuntimeJobState {
    * durable chunk log owns later recovery) or after an overflow discard. A
    * closed buffer never re-accumulates events for this runtime. */
   earlyEventBufferClosed: boolean;
+  /** The buffer was discarded by the overflow guard before a subscriber
+   * consumed it. Non-resume attachments are redirected to the resume path,
+   * which reconstructs the discarded output from durable/snapshot state. */
+  earlyEventBufferOverflowed?: true;
   earlyEventSequencePromises: Array<Promise<void | number>>;
   /** Initial subscribers eligible to receive the local pre-attachment replay. */
   earlyReplayHandlers: Set<t.ChunkHandler>;
@@ -4236,6 +4240,20 @@ class GenerationJobManagerClass {
       return null;
     }
 
+    if (
+      runtime.earlyEventBufferOverflowed === true &&
+      !options?.skipBufferReplay &&
+      !runtime.finalEvent &&
+      !runtime.errorEvent
+    ) {
+      /** The overflow guard discarded the pre-attachment buffer, so a
+       * non-resume attachment cannot be made whole from local replay. Close
+       * the transport with the reconnect signal instead of streaming a
+       * silently truncated response: the client re-attaches with resume=true
+       * and its sync frame carries full durable/snapshot state. */
+      queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+    }
+
     recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'success');
 
     if (isFirst) {
@@ -4419,6 +4437,7 @@ class GenerationJobManagerClass {
       const droppedBytes = runtime.earlyEventBufferBytes;
       this.resetEarlyEventBuffer(runtime);
       runtime.earlyEventBufferClosed = true;
+      runtime.earlyEventBufferOverflowed = true;
       recordGenerationStreamEarlyBufferOverflow(this.storeLabel);
       logger.warn(
         `[GenerationJobManager] Early event buffer overflow for ${streamId}; ` +

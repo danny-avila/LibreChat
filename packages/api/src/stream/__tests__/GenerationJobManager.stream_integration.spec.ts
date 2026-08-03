@@ -6,11 +6,14 @@ import {
   keyvRedisClient as staticKeyvClient,
   keyvRedisClientReady,
 } from '~/cache/redisClients';
+import {
+  GenerationJobManagerClass,
+  TERMINAL_PUBLICATION_RECONNECT_ERROR,
+} from '~/stream/GenerationJobManager';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { STEER_ENQUEUE_NOT_RUNNING } from '~/stream/interfaces/IJobStore';
-import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { RedisJobStore } from '~/stream/implementations/RedisJobStore';
 import { createStreamServices } from '~/stream/createStreamServices';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
@@ -1706,6 +1709,66 @@ describe('GenerationJobManager Integration Tests', () => {
         data: { id: 'step-1', delta: { content: { type: 'text', text: 'after-overflow' } } },
       });
       expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
+
+      const errors: string[] = [];
+      const events: ServerSentEvent[] = [];
+      const sub = await manager.subscribe(
+        streamId,
+        (event) => events.push(event),
+        undefined,
+        (error) => errors.push(error),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      /** A non-resume attachment cannot be made whole once the buffer was
+       * discarded, so it is closed with the reconnect signal; the client then
+       * re-attaches with resume=true and syncs from snapshot state. */
+      expect(errors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
+      expect(events).toEqual([]);
+
+      sub?.unsubscribe();
+      await manager.destroy();
+    });
+
+    testRedis('redirects a post-overflow first attachment to resume recovery (Redis)', async () => {
+      const manager = createRedisManager();
+      const streamId = `overflow-redirect-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await manager.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      const bigText = 'y'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+        });
+      }
+      expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
+
+      const errors: string[] = [];
+      const sub = await manager.subscribe(
+        streamId,
+        () => {},
+        undefined,
+        (error) => errors.push(error),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(errors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
+      sub?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      /** The resume path the client falls back to reconstructs the
+       * discarded output from the durable chunk log. */
+      const resumeState = await manager.getResumeState(streamId);
+      expect(JSON.stringify(resumeState?.aggregatedContent ?? [])).toContain('yyyy');
 
       await manager.destroy();
     });
