@@ -67,6 +67,7 @@ import { InMemoryEventTransport } from './implementations/InMemoryEventTransport
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
 import { emitChunkWithReceipt } from './internal/chunkPublication';
+import { resolveCoalesceWindowMs } from './internal/coalescing';
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
@@ -313,6 +314,19 @@ function omitAlreadyAppliedSteers(items: SteerQueueItem[], content: unknown[]): 
     }
   }
   return items.filter((item) => !appliedIds.has(item.steerId));
+}
+
+/**
+ * Streaming deltas eligible for windowed publish/append coalescing. High-volume,
+ * order-preserved by per-event sequences, and consumed for the generation fence
+ * only — unlike control events, nothing awaits their publication for correctness.
+ */
+function isCoalescableDeltaEvent(eventType: string | undefined): boolean {
+  return (
+    eventType === 'on_message_delta' ||
+    eventType === 'on_reasoning_delta' ||
+    eventType === 'on_run_step_delta'
+  );
 }
 
 function getReplayStepId(event: t.ServerSentEvent): unknown {
@@ -622,6 +636,10 @@ class GenerationJobManagerClass {
   /** Whether we're using Redis stores */
   private _isRedis = false;
 
+  /** Whether streaming-delta publish/append coalescing is enabled (Redis only).
+   * Off (the default) preserves the awaited per-event emitChunk contract exactly. */
+  private _deltaCoalescingEnabled = false;
+
   /** Whether to cleanup event transport immediately on job completion */
   private _cleanupOnComplete = true;
 
@@ -725,6 +743,7 @@ class GenerationJobManagerClass {
     this._steering = new SteeringLifecycle(this.jobStore);
     this.eventTransport = services.eventTransport;
     this._isRedis = services.isRedis ?? false;
+    this._deltaCoalescingEnabled = this._isRedis && resolveCoalesceWindowMs() > 0;
     this._cleanupOnComplete = services.cleanupOnComplete ?? true;
     this.shuttingDown = false;
     this.syncRunningJobMetrics();
@@ -3051,6 +3070,14 @@ class GenerationJobManagerClass {
     const createdAt = jobData.createdAt;
     const runtime = observedRuntime?.createdAt === createdAt ? observedRuntime : undefined;
     const terminalError = status === 'error' ? (error ?? 'Generation failed') : undefined;
+    /** Coalesced deltas still buffered for this stream must land under its live
+     * status. Flushed after the CAS they would fence against the generation's
+     * own completion, and the false receipts would retire a healthy runtime and
+     * error-close its subscribers ahead of the terminal frame. */
+    await Promise.all([
+      this.jobStore.flushPendingAppends?.(streamId),
+      this.eventTransport.flushPendingChunks?.(streamId),
+    ]);
     const completedAt = Date.now();
     const drainedSteers = await this.jobStore.transitionStatusAndDrainSteers(streamId, {
       from: sourceStatus,
@@ -5042,6 +5069,19 @@ class GenerationJobManagerClass {
       this.saveRunStepFromEvent(streamId, eventData as Record<string, unknown>, runtime.createdAt);
     }
 
+    /**
+     * One decision drives both durable-log and publish batching: the append and
+     * the sequence allocation for an event must stay tightly coupled in time, or
+     * the resume frontier (chunk-log snapshot → sequence-counter sync) misreads
+     * a window's tail as already-delivered or as duplicates.
+     */
+    const coalescableDelta =
+      this._deltaCoalescingEnabled &&
+      !runtime.startupTelemetry &&
+      options?.durable !== true &&
+      options?.deliveredSteer == null &&
+      isCoalescableDeltaEvent(eventType);
+
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
       // The SSE event structure is { event: string, data: unknown, ... }
@@ -5053,6 +5093,7 @@ class GenerationJobManagerClass {
           { event: eventType, data: eventData },
           runtime.createdAt,
           options?.deliveredSteer,
+          coalescableDelta ? { coalesce: true } : undefined,
         );
 
         if (options?.durable === true) {
@@ -5120,6 +5161,45 @@ class GenerationJobManagerClass {
         }
         return;
       }
+    }
+
+    /**
+     * Streaming deltas dominate publication volume, and their receipt is consumed
+     * only for the generation fence (`false` retires the runtime) — never awaited
+     * for content correctness. Marking them coalescable lets the Redis transport
+     * batch a window of them into one sequenced frame, and NOT awaiting here takes
+     * the per-delta publish round trip off the provider-stream consumption path.
+     * The fence continuation mirrors the fire-and-forget appendChunk fence above.
+     * Fenced emissions (durable, steer receipts, created) and telemetry-observed
+     * runs stay on the awaited per-event path below.
+     */
+    if (coalescableDelta) {
+      const publication = emitChunkWithReceipt(
+        this.eventTransport,
+        streamId,
+        event,
+        runtime.createdAt,
+        { coalesce: true },
+      );
+      if (buffered) {
+        runtime.earlyEventSequencePromises.push(
+          publication.then(
+            (published) => (typeof published === 'number' ? published : undefined),
+            () => undefined,
+          ),
+        );
+      }
+      void publication.then(
+        (published) => {
+          if (published === false) {
+            this.retireRuntimeAfterDurableFence(streamId, runtime);
+          }
+        },
+        (err) => {
+          logger.error(`[GenerationJobManager] Failed to publish coalesced chunk:`, err);
+        },
+      );
+      return;
     }
 
     if (!buffered && !runtime.startupTelemetry) {
