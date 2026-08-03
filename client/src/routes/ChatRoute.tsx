@@ -166,10 +166,6 @@ export default function ChatRoute() {
     }
 
     const getNewConvoPreset = () => {
-      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data);
-      const spec = result?.default ?? result?.last ?? result?.softDefault;
-      const specPreset = spec ? getModelSpecPreset(spec) : undefined;
-
       const queryParams: Record<string, string> = {};
       searchParams.forEach((value, key) => {
         if (key !== 'prompt' && key !== 'q' && key !== 'submit' && key !== 'projectId') {
@@ -177,6 +173,19 @@ export default function ChatRoute() {
         }
       });
       const querySettings = processValidSettings(queryParams);
+
+      /** A spec named in the URL is an explicit selection: it must resolve to its own
+       * full preset, or stale last-selection state (endpoint/agent) fills the gaps. */
+      const urlSpec = querySettings.spec
+        ? startupConfig?.modelSpecs?.list?.find((spec) => spec.name === querySettings.spec)
+        : undefined;
+      if (querySettings.spec != null && !urlSpec) {
+        delete querySettings.spec;
+      }
+
+      const result = urlSpec ? undefined : getDefaultModelSpec(startupConfig, endpointsQuery.data);
+      const spec = urlSpec ?? result?.default ?? result?.last ?? result?.softDefault;
+      const specPreset = spec ? getModelSpecPreset(spec) : undefined;
 
       if (Object.keys(querySettings).length > 0) {
         return mergeQuerySettingsWithSpec(specPreset, querySettings);
