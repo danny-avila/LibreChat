@@ -23,13 +23,17 @@ function setup(overrides: Partial<React.ComponentProps<typeof MCPToolItem>> = {}
     isDeferred: false,
     isProgrammatic: false,
     isBackground: false,
+    isIntent: false,
+    intentDisabled: false,
     deferredToolsEnabled: false,
     programmaticToolsEnabled: false,
     backgroundToolsEnabled: false,
+    toolIntentsEnabled: false,
     onToggleSelect: jest.fn(),
     onToggleDefer: jest.fn(),
     onToggleProgrammatic: jest.fn(),
     onToggleBackground: jest.fn(),
+    onToggleIntent: jest.fn(),
     ...overrides,
   };
   render(<MCPToolItem {...props} />);
@@ -105,5 +109,33 @@ describe('MCPToolItem', () => {
   test('background button is absent when background tools are disabled', () => {
     setup();
     expect(screen.queryByRole('button', { name: 'com_ui_mcp_background' })).not.toBeInTheDocument();
+  });
+
+  test('intent label is an inline button rendered only when enabled', () => {
+    const props = setup({ toolIntentsEnabled: true });
+    const intentButton = screen.getByRole('button', { name: 'com_ui_mcp_intent' });
+    fireEvent.click(intentButton);
+    expect(props.onToggleIntent).toHaveBeenCalledTimes(1);
+  });
+
+  test('intent button is absent when tool intents are disabled', () => {
+    setup();
+    expect(screen.queryByRole('button', { name: 'com_ui_mcp_intent' })).not.toBeInTheDocument();
+  });
+
+  test('intent button reflects the opted-in state via aria-pressed', () => {
+    setup({ toolIntentsEnabled: true, isIntent: true });
+    expect(screen.getByRole('button', { name: 'com_ui_mcp_intent' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  test('intent button is inert for programmatic-only tools (label can never render)', () => {
+    const props = setup({ toolIntentsEnabled: true, intentDisabled: true });
+    const intentButton = screen.getByRole('button', { name: 'com_ui_mcp_intent' });
+    expect(intentButton).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(intentButton);
+    expect(props.onToggleIntent).not.toHaveBeenCalled();
   });
 });

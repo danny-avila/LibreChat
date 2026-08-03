@@ -81,6 +81,24 @@ describe('Telemetry wiring', () => {
     expect(errorControllerIndex).toBeGreaterThan(-1);
     expect(telemetryErrorMiddlewareIndex).toBeLessThan(errorControllerIndex);
   });
+
+  it('captures agent ingress before parsing and creates its recorder before auth routes', () => {
+    const ingressIndex = source.indexOf(
+      "app.use('/api/agents/chat', agentStartupIngressMiddleware);",
+    );
+    const jsonParserIndex = source.indexOf("app.use(express.json({ limit: '3mb' }));");
+    const recorderIndex = source.indexOf(
+      "app.use('/api/agents/chat', agentStartupTelemetryMiddleware);",
+    );
+    const tracingIndex = source.indexOf('app.use(telemetry.telemetryMiddleware);');
+    const agentsRouteIndex = source.indexOf("app.use('/api/agents', routes.agents);");
+
+    expect(ingressIndex).toBeGreaterThan(-1);
+    expect(recorderIndex).toBeGreaterThan(-1);
+    expect(ingressIndex).toBeLessThan(jsonParserIndex);
+    expect(tracingIndex).toBeLessThan(recorderIndex);
+    expect(recorderIndex).toBeLessThan(agentsRouteIndex);
+  });
 });
 
 describe('Startup readiness wiring', () => {
@@ -96,6 +114,28 @@ describe('Startup readiness wiring', () => {
     expect(postListenMcpIndex).toBeGreaterThan(-1);
     expect(streamConfigIndex).toBeLessThan(listenIndex);
     expect(streamConfigIndex).toBeLessThan(postListenMcpIndex);
+  });
+
+  it('registers generation stream cleanup with the graceful shutdown coordinator', () => {
+    const shutdownRegistrationIndex = source.indexOf(
+      "registerShutdownTask('generation job manager'",
+    );
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(shutdownRegistrationIndex).toBeGreaterThan(-1);
+    expect(shutdownRegistrationIndex).toBeLessThan(listenIndex);
+  });
+
+  it('configures HTTP timeouts before graceful shutdown handling', () => {
+    const listenIndex = source.indexOf('const server = app.listen');
+    const timeoutConfigIndex = source.indexOf('configureServerTimeouts(server);');
+    const shutdownIndex = source.indexOf('setupGracefulShutdown(server);');
+
+    expect(listenIndex).toBeGreaterThan(-1);
+    expect(timeoutConfigIndex).toBeGreaterThan(-1);
+    expect(shutdownIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeLessThan(timeoutConfigIndex);
+    expect(timeoutConfigIndex).toBeLessThan(shutdownIndex);
   });
 
   it('mounts the chat-start readiness gate before agent routes', () => {

@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import {
   isBackgroundEligibleToolName,
@@ -11,11 +12,13 @@ import {
   registerBackgroundTaskTool,
   buildBackgroundHandleContent,
   runCheckBackgroundTask,
+  getBackgroundCodeDelivery,
   backgroundTaskRegistry,
   BackgroundTaskRegistryClass,
   CHECK_BACKGROUND_TASK_NAME,
   RUN_IN_BACKGROUND_ARG,
 } from './background';
+import { TOOL_SELECTION_WILDCARD } from './selection';
 import { toolOptionsSchema } from './validation';
 
 const mcpDef = (name: string): LCTool =>
@@ -26,10 +29,8 @@ const mcpDef = (name: string): LCTool =>
   }) as unknown as LCTool;
 
 describe('isBackgroundEligibleToolName', () => {
-  it('excludes direct-path, host-special, code-session, and machinery tools', () => {
+  it('excludes direct-path, host-special, and machinery tools', () => {
     for (const name of [
-      'execute_code',
-      'bash_tool',
       'read_file',
       'skill',
       'tool_search',
@@ -61,6 +62,11 @@ describe('isBackgroundEligibleToolName', () => {
     for (const name of ['search_mcp_docs', 'lookup_customer', 'fetch_weather']) {
       expect(isBackgroundEligibleToolName(name)).toBe(true);
     }
+  });
+
+  it('allows the code-execution pair (natively backgroundable)', () => {
+    expect(isBackgroundEligibleToolName('execute_code')).toBe(true);
+    expect(isBackgroundEligibleToolName('bash_tool')).toBe(true);
   });
 });
 
@@ -287,33 +293,240 @@ describe('registerBackgroundTaskTool', () => {
 });
 
 describe('synthesizeBackgroundToolOptions', () => {
-  it('returns undefined when neither the ephemeral toggle nor the model spec enables it', () => {
-    expect(synthesizeBackgroundToolOptions(['search_mcp_docs'], {})).toBeUndefined();
+  it('returns undefined when neither the ephemeral toggle nor the model spec carries a policy', () => {
+    expect(synthesizeBackgroundToolOptions({})).toBeUndefined();
+    /** The ephemeral toggle is a badge default, not a decision — its `false`
+     *  stays no-policy so the background-native code pair keeps its default. */
     expect(
-      synthesizeBackgroundToolOptions(['search_mcp_docs'], {
+      synthesizeBackgroundToolOptions({
         ephemeralAgent: { run_in_background: false },
-        modelSpec: { runInBackground: false },
       }),
     ).toBeUndefined();
   });
 
-  it('marks only eligible tools (excludes code/HITL/attachment built-ins)', () => {
-    const options = synthesizeBackgroundToolOptions(
-      ['search_mcp_docs', 'execute_code', 'ask_user_question', 'web_search', 'lookup_customer'],
-      { ephemeralAgent: { run_in_background: true } },
-    );
-    expect(options).toEqual({
-      search_mcp_docs: { run_in_background: true },
-      lookup_customer: { run_in_background: true },
+  it('records a spec runInBackground: false as an explicit "none", like the empty list', () => {
+    /** Pre-native, `false` and absent were behaviorally identical (off); a
+     *  config that wrote `false` must not silently flip to backgrounding code. */
+    expect(synthesizeBackgroundToolOptions({ modelSpec: { runInBackground: false } })).toEqual({
+      [TOOL_SELECTION_WILDCARD]: { run_in_background: false },
     });
   });
 
-  it('returns undefined when nothing is eligible', () => {
+  it('records boolean/ephemeral modes as a wildcard opt-in (no name enumeration)', () => {
+    const expected = { [TOOL_SELECTION_WILDCARD]: { run_in_background: true } };
+    expect(synthesizeBackgroundToolOptions({ modelSpec: { runInBackground: true } })).toEqual(
+      expected,
+    );
     expect(
-      synthesizeBackgroundToolOptions(['execute_code', 'skill'], {
-        modelSpec: { runInBackground: true },
+      synthesizeBackgroundToolOptions({ ephemeralAgent: { run_in_background: true } }),
+    ).toEqual(expected);
+  });
+
+  it('records a list as a wildcard opt-out plus verbatim opt-ins', () => {
+    expect(
+      synthesizeBackgroundToolOptions({
+        modelSpec: { runInBackground: ['slow_report_mcp_analytics', 'execute_code'] },
       }),
+    ).toEqual({
+      [TOOL_SELECTION_WILDCARD]: { run_in_background: false },
+      slow_report_mcp_analytics: { run_in_background: true },
+      execute_code: { run_in_background: true },
+    });
+  });
+
+  it('treats an empty list as enabling nothing', () => {
+    expect(synthesizeBackgroundToolOptions({ modelSpec: { runInBackground: [] } })).toEqual({
+      [TOOL_SELECTION_WILDCARD]: { run_in_background: false },
+    });
+  });
+
+  it('drops and warns about a literal wildcard in the list (reserved)', () => {
+    /** `runInBackground: ['*']` would otherwise overwrite the opt-out default
+     *  and detach-enable every eligible tool instead of selecting one. */
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    expect(
+      synthesizeBackgroundToolOptions({
+        modelSpec: { runInBackground: [TOOL_SELECTION_WILDCARD, 'search_mcp_docs'] },
+      }),
+    ).toEqual({
+      [TOOL_SELECTION_WILDCARD]: { run_in_background: false },
+      search_mcp_docs: { run_in_background: true },
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('reserved'));
+    warn.mockRestore();
+  });
+
+  it('the ephemeral toggle stays global even when the spec narrows', () => {
+    expect(
+      synthesizeBackgroundToolOptions({
+        ephemeralAgent: { run_in_background: true },
+        modelSpec: { runInBackground: ['search_mcp_docs'] },
+      }),
+    ).toEqual({ [TOOL_SELECTION_WILDCARD]: { run_in_background: true } });
+  });
+});
+
+describe('selection policy at injection time', () => {
+  it('a wildcard opt-in reaches eligible definitions and skips excluded built-ins', () => {
+    const toolOptions = synthesizeBackgroundToolOptions({ modelSpec: { runInBackground: true } });
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [
+        mcpDef('search_mcp_overlay_server'),
+        mcpDef('web_search'),
+        mcpDef('ask_user_question'),
+      ],
+      toolRegistry: undefined,
+      toolOptions,
+    });
+    expect(backgroundToolNames).toEqual(['search_mcp_overlay_server']);
+  });
+
+  it('rejects and diagnoses a marker whose runtime definitions are all excluded', () => {
+    /** `runInBackground: ['memory']` used to record a successful-looking
+     *  option under the marker while set_memory/delete_memory — the
+     *  definitions it expands into — are background-excluded; nothing
+     *  consumed the entry and nothing warned. */
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const toolOptions = synthesizeBackgroundToolOptions({
+      modelSpec: { runInBackground: ['memory'] },
+    });
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('set_memory'), mcpDef('delete_memory')],
+      toolRegistry: undefined,
+      toolOptions,
+      capabilityToolNames: new Map([['memory', ['set_memory', 'delete_memory']]]),
+    });
+    expect(backgroundToolNames).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('memory'));
+    warn.mockRestore();
+  });
+
+  it('projects a saved-agent execute_code entry onto the bash_tool definition', () => {
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('bash_tool')],
+      toolRegistry: undefined,
+      toolOptions: { execute_code: { run_in_background: true } },
+      capabilityToolNames: new Map([['execute_code', ['read_file', 'bash_tool']]]),
+    });
+    expect(backgroundToolNames).toEqual(['bash_tool']);
+  });
+
+  it('backgrounds the code pair natively, with no tool_options at all', () => {
+    const defs = [mcpDef('bash_tool'), mcpDef('search_mcp_docs')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: undefined,
+    });
+    expect(result.backgroundToolNames).toEqual(['bash_tool']);
+    const bashDef = result.toolDefinitions.find((d) => d.name === 'bash_tool');
+    expect(
+      (bashDef?.parameters as { properties: Record<string, unknown> }).properties[
+        RUN_IN_BACKGROUND_ARG
+      ],
+    ).toBeDefined();
+    const searchDef = result.toolDefinitions.find((d) => d.name === 'search_mcp_docs');
+    expect(
+      (searchDef?.parameters as { properties: Record<string, unknown> }).properties[
+        RUN_IN_BACKGROUND_ARG
+      ],
     ).toBeUndefined();
+    expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(true);
+  });
+
+  it('an explicit false opts the native pair out — by definition name or by marker projection', () => {
+    const byName = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('bash_tool')],
+      toolRegistry: new Map(),
+      toolOptions: { bash_tool: { run_in_background: false } },
+    });
+    expect(byName.backgroundToolNames).toEqual([]);
+
+    const registry: LCToolRegistry = new Map();
+    const byMarker = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('bash_tool')],
+      toolRegistry: registry,
+      toolOptions: { execute_code: { run_in_background: false } },
+      capabilityToolNames: new Map([['execute_code', ['read_file', 'bash_tool']]]),
+    });
+    expect(byMarker.backgroundToolNames).toEqual([]);
+    expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(false);
+  });
+
+  it('a narrowing selection that omits the code pair opts it out via the wildcard', () => {
+    const options = synthesizeBackgroundToolOptions({
+      modelSpec: { runInBackground: ['slow_report_mcp_analytics'] },
+    });
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('bash_tool'), mcpDef('slow_report_mcp_analytics')],
+      toolRegistry: undefined,
+      toolOptions: options,
+    });
+    expect(backgroundToolNames).toEqual(['slow_report_mcp_analytics']);
+  });
+
+  it('a selection can name the code pair by its runtime name (bash_tool)', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const options = synthesizeBackgroundToolOptions({
+      modelSpec: { runInBackground: ['bash_tool'] },
+    });
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('bash_tool'), mcpDef('search_mcp_docs')],
+      toolRegistry: undefined,
+      toolOptions: options,
+      capabilityToolNames: new Map([['execute_code', ['read_file', 'bash_tool']]]),
+    });
+    expect(backgroundToolNames).toEqual(['bash_tool']);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('still enforces eligibility for explicitly named tools, and diagnoses them', () => {
+    /** Backgrounding these would silently drop attachments/citations or break
+     *  artifact continuity, so a list must not be able to force them on. */
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const toolOptions = synthesizeBackgroundToolOptions({
+      modelSpec: { runInBackground: ['search_mcp_docs', 'web_search', 'ask_user_question'] },
+    });
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [
+        mcpDef('search_mcp_docs'),
+        mcpDef('web_search'),
+        mcpDef('ask_user_question'),
+      ],
+      toolRegistry: undefined,
+      toolOptions,
+    });
+    expect(backgroundToolNames).toEqual(['search_mcp_docs']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('web_search'));
+    warn.mockRestore();
+  });
+
+  it('warns about selection names the spec does not equip, rather than silently skipping', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const toolOptions = synthesizeBackgroundToolOptions({
+      modelSpec: { runInBackground: ['search_mcp_docs', 'typo_tool_name'] },
+    });
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('search_mcp_docs')],
+      toolRegistry: undefined,
+      toolOptions,
+    });
+    expect(backgroundToolNames).toEqual(['search_mcp_docs']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('typo_tool_name'));
+    warn.mockRestore();
+  });
+
+  it('does not warn about saved-agent options with no narrowing policy', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('search_mcp_docs')],
+      toolRegistry: undefined,
+      toolOptions: { stale_tool: { run_in_background: true } },
+    });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 
@@ -337,6 +550,35 @@ describe('BackgroundTaskRegistryClass', () => {
     const task = registry.get('u1', 'c1', created.task.id);
     expect(task?.status).toBe('completed');
     expect(task?.result).toBe('DONE');
+  });
+
+  it('stamps strictly-increasing createdAt even for same-millisecond dispatches', () => {
+    /* `createdAt` orders writers in the stale-output guard, which accepts
+     * equal stamps for idempotent re-commits — a wall-clock tie between two
+     * DIFFERENT dispatches would let the older one overwrite the newer. */
+    const registry = new BackgroundTaskRegistryClass();
+    const frozenNow = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(frozenNow);
+    try {
+      const first = registry.create({
+        userId: 'u1',
+        conversationId: 'c1',
+        toolCallId: 'call_a',
+        toolName: 'execute_code',
+      });
+      const second = registry.create({
+        userId: 'u1',
+        conversationId: 'c1',
+        toolCallId: 'call_b',
+        toolName: 'execute_code',
+      });
+      if ('atCapacity' in first || 'atCapacity' in second) {
+        throw new Error('unexpected capacity');
+      }
+      expect(second.task.createdAt).toBeGreaterThan(first.task.createdAt);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('is idempotent within the same run (never double-dispatches on replay)', () => {
@@ -446,12 +688,135 @@ describe('BackgroundTaskRegistryClass', () => {
     const claimed = registry.claimArtifact('u1', 'c1', created.task.id);
     expect(claimed).toEqual({
       toolName: 'search_mcp_docs',
+      toolCallId: 'call_art',
       artifact: { files: ['a.png'] },
       content: 'DONE',
     });
     // second claim yields nothing (delivered once), and the artifact is freed
     expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
     expect(registry.get('u1', 'c1', created.task.id)?.artifact).toBeUndefined();
+  });
+
+  it('keeps harvest state (messageId, attachments) independent of the one-shot artifact claim', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_code',
+      toolName: 'execute_code',
+      messageId: 'dispatch-msg',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'stdout',
+      artifact: { session_id: 'exec-1', files: [{ id: 'f1' }] },
+      harvestStarted: true,
+    });
+
+    const claimed = registry.claimArtifact('u1', 'c1', created.task.id);
+    expect(claimed).toEqual({
+      toolName: 'execute_code',
+      toolCallId: 'call_code',
+      messageId: 'dispatch-msg',
+      harvestStarted: true,
+      artifact: { session_id: 'exec-1', files: [{ id: 'f1' }] },
+      content: 'stdout',
+    });
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
+
+    /** Attachments can land AFTER the artifact was claimed (harvest is
+     *  detached) and stay retrievable on every later poll. */
+    const attachments = [{ file_id: 'f1', toolCallId: 'call_code' }];
+    registry.attachHarvest('u1', 'c1', created.task.id, attachments);
+    expect(registry.get('u1', 'c1', created.task.id)?.attachments).toEqual(attachments);
+  });
+
+  it('revokeHarvest hands delivery back to the fallback path, restoring a claimed artifact', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_code',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    const artifact = { session_id: 'exec-1', files: [{ id: 'f1' }] };
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'stdout',
+      artifact,
+      harvestStarted: true,
+    });
+
+    /** Poll claimed the artifact while the harvest was in flight… */
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)?.harvestStarted).toBe(true);
+    /** …then the harvest failed: revoke restores the artifact for the
+     *  legacy fallback and clears the suppression flag. */
+    registry.revokeHarvest('u1', 'c1', created.task.id, artifact);
+    const task = registry.get('u1', 'c1', created.task.id);
+    expect(task?.harvestStarted).toBeUndefined();
+    expect(task?.artifact).toEqual(artifact);
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)?.harvestStarted).toBeUndefined();
+  });
+
+  it('exposes reaped (timed-out) tasks to the heal path when harvest was armed at dispatch', () => {
+    jest.useFakeTimers();
+    try {
+      const created = backgroundTaskRegistry.create({
+        userId: 'reap_user',
+        conversationId: 'reap_convo',
+        toolCallId: 'call_reaped',
+        toolName: 'execute_code',
+        messageId: 'dispatch-msg',
+        harvestStarted: true,
+      });
+      if ('atCapacity' in created) {
+        throw new Error('unexpected capacity');
+      }
+
+      /** Past the running TTL the sweeper reaps the task to an error; the
+       *  dispatch-time harvest flag keeps it visible to marker/re-anchor
+       *  delivery so the original card doesn't stay on "running" forever. */
+      jest.advanceTimersByTime(31 * 60 * 1000);
+      const delivery = getBackgroundCodeDelivery({
+        userId: 'reap_user',
+        conversationId: 'reap_convo',
+        args: { background_task_id: created.task.id },
+      });
+      expect(delivery).toEqual(
+        expect.objectContaining({
+          status: 'error',
+          toolCallId: 'call_reaped',
+          messageId: 'dispatch-msg',
+          error: 'Background task timed out',
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('fail() can mark a task harvested so failed code tasks join the heal path', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_code_err',
+      toolName: 'execute_code',
+      messageId: 'dispatch-msg',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.fail('u1', 'c1', created.task.id, 'Execution error:\n\nboom', {
+      harvestStarted: true,
+    });
+    const task = registry.get('u1', 'c1', created.task.id);
+    expect(task?.status).toBe('error');
+    expect(task?.harvestStarted).toBe(true);
   });
 
   it('truncates an oversized stored result with an explicit marker (not a silent cut)', () => {
@@ -493,6 +858,7 @@ describe('BackgroundTaskRegistryClass', () => {
     registry.restoreArtifact('u1', 'c1', created.task.id, claimed?.artifact);
     expect(registry.claimArtifact('u1', 'c1', created.task.id)).toEqual({
       toolName: 'search_mcp_docs',
+      toolCallId: 'call_art_retry',
       artifact: { files: ['a.png'] },
       content: 'DONE',
     });
@@ -601,6 +967,76 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u2', 'c1', created.task.id)).toBeUndefined();
     expect(registry.get('u1', 'c2', created.task.id)).toBeUndefined();
     expect(registry.list('u2', 'c1')).toHaveLength(0);
+  });
+});
+
+describe('getBackgroundCodeDelivery (singleton)', () => {
+  it('exposes harvest state for a settled task and stays available across polls', () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'delivery_user',
+      conversationId: 'delivery_convo',
+      toolCallId: 'call_code',
+      toolName: 'execute_code',
+      messageId: 'dispatch-msg',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('delivery_user', 'delivery_convo', created.task.id, {
+      content: 'stdout',
+      artifact: { session_id: 'exec-1' },
+      harvestStarted: true,
+    });
+    backgroundTaskRegistry.attachHarvest('delivery_user', 'delivery_convo', created.task.id, [
+      { file_id: 'f1' },
+    ]);
+
+    const args = { background_task_id: created.task.id };
+    const first = getBackgroundCodeDelivery({
+      userId: 'delivery_user',
+      conversationId: 'delivery_convo',
+      args,
+    });
+    expect(first).toEqual(
+      expect.objectContaining({
+        status: 'completed',
+        toolName: 'execute_code',
+        toolCallId: 'call_code',
+        messageId: 'dispatch-msg',
+        result: 'stdout',
+        attachments: [{ file_id: 'f1' }],
+      }),
+    );
+    /** Not one-shot: a later poll can still re-emit / re-anchor. */
+    expect(
+      getBackgroundCodeDelivery({
+        userId: 'delivery_user',
+        conversationId: 'delivery_convo',
+        args,
+      })?.attachments,
+    ).toEqual([{ file_id: 'f1' }]);
+  });
+
+  it('returns undefined for tasks without a harvest (non-code tools)', () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'delivery_user',
+      conversationId: 'delivery_convo2',
+      toolCallId: 'call_mcp',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('delivery_user', 'delivery_convo2', created.task.id, {
+      content: 'RESULT',
+    });
+    expect(
+      getBackgroundCodeDelivery({
+        userId: 'delivery_user',
+        conversationId: 'delivery_convo2',
+        args: { background_task_id: created.task.id },
+      }),
+    ).toBeUndefined();
   });
 });
 

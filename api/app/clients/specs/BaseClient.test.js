@@ -1,6 +1,14 @@
 const { Constants } = require('librechat-data-provider');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 jest.mock('~/db/connect');
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({
@@ -746,6 +754,136 @@ describe('BaseClient', () => {
       );
     });
 
+    test('does not start the completed response write when terminal ownership is denied', async () => {
+      const hookStarted = deferred();
+      const terminalDecision = deferred();
+      const beforeResponsePersistence = jest.fn(() => {
+        hookStarted.resolve();
+        return terminalDecision.promise;
+      });
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      const responsePromise = TestClient.sendMessage('Race Stop against completion.', {
+        user: {},
+        beforeResponsePersistence,
+      });
+      await hookStarted.promise;
+
+      expect(beforeResponsePersistence).toHaveBeenCalledTimes(1);
+      expect(
+        saveSpy.mock.calls.filter(([message]) => message?.isCreatedByUser === false),
+      ).toHaveLength(0);
+
+      terminalDecision.resolve(false);
+      const response = await responsePromise;
+
+      expect(beforeResponsePersistence).toHaveBeenCalledWith(response);
+      expect(
+        saveSpy.mock.calls.filter(([message]) => message?.isCreatedByUser === false),
+      ).toHaveLength(0);
+      expect(TestClient.savedMessageIds.has(response.messageId)).toBe(false);
+      await expect(response.databasePromise).resolves.toEqual({ persistenceSkipped: true });
+    });
+
+    test('starts the completed response write only after terminal ownership is granted', async () => {
+      const hookStarted = deferred();
+      const terminalDecision = deferred();
+      const beforeResponsePersistence = jest.fn(() => {
+        hookStarted.resolve();
+        return terminalDecision.promise;
+      });
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      const responsePromise = TestClient.sendMessage('Complete after winning ownership.', {
+        user: {},
+        beforeResponsePersistence,
+      });
+      await hookStarted.promise;
+      expect(
+        saveSpy.mock.calls.filter(([message]) => message?.isCreatedByUser === false),
+      ).toHaveLength(0);
+
+      terminalDecision.resolve(true);
+      const response = await responsePromise;
+
+      expect(
+        saveSpy.mock.calls.filter(([message]) => message?.isCreatedByUser === false),
+      ).toHaveLength(1);
+      await expect(response.databasePromise).resolves.toEqual(expect.any(Object));
+    });
+
+    test('persists the generation-time Langfuse sampling decision for agent responses', async () => {
+      const previousSampleRate = process.env.LANGFUSE_SAMPLE_RATE;
+      process.env.LANGFUSE_SAMPLE_RATE = '0';
+      TestClient.options.endpoint = 'agents';
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      try {
+        const response = await TestClient.sendMessage('Hello, world!', { user: {} });
+
+        expect(response.langfuseSampled).toBe(false);
+        expect(response.langfuseDestinationIds).toEqual([]);
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            langfuseSampled: false,
+            langfuseDestinationIds: [],
+          }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      } finally {
+        if (previousSampleRate == null) {
+          delete process.env.LANGFUSE_SAMPLE_RATE;
+        } else {
+          process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
+        }
+      }
+    });
+
+    test('persists no Langfuse destination when a sampled trace has no configured export', async () => {
+      const envKeys = [
+        'LANGFUSE_PUBLIC_KEY',
+        'LANGFUSE_SECRET_KEY',
+        'LANGFUSE_FANOUT_ENABLED',
+        'LANGFUSE_FANOUT_COLLECTOR_URL',
+        'TENANT_ISOLATION_STRICT',
+      ];
+      const previousEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+      const previousSampleRate = process.env.LANGFUSE_SAMPLE_RATE;
+      envKeys.forEach((key) => delete process.env[key]);
+      process.env.LANGFUSE_SAMPLE_RATE = '1';
+      TestClient.options.endpoint = 'agents';
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      try {
+        const response = await TestClient.sendMessage('Hello, world!', { user: {} });
+
+        expect(response.langfuseSampled).toBe(true);
+        expect(response.langfuseDestinationIds).toEqual([]);
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            langfuseSampled: true,
+            langfuseDestinationIds: [],
+          }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      } finally {
+        for (const [key, value] of Object.entries(previousEnv)) {
+          if (value == null) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        }
+        if (previousSampleRate == null) {
+          delete process.env.LANGFUSE_SAMPLE_RATE;
+        } else {
+          process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
+        }
+      }
+    });
+
     test('should handle existing conversation when getConvo retrieves one', async () => {
       const existingConvo = {
         conversationId: 'existing-convo-id',
@@ -903,6 +1041,18 @@ describe('BaseClient', () => {
       const opts = {};
       await TestClient.sendMessage('Hello, world!', opts);
       expect(TestClient.sendCompletion).toHaveBeenCalledWith(payload, opts);
+    });
+
+    test('records history and message-build startup milestones', async () => {
+      const startupTelemetry = { mark: jest.fn() };
+      TestClient.options.startupTelemetry = startupTelemetry;
+
+      await TestClient.sendMessage('Hello, world!', {});
+
+      expect(startupTelemetry.mark.mock.calls.map(([milestone]) => milestone)).toEqual([
+        'history_loaded',
+        'messages_built',
+      ]);
     });
 
     test('getTokenCount for response is called with the correct arguments', async () => {
@@ -1474,6 +1624,45 @@ describe('BaseClient', () => {
         expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
       ]);
       expect(JSON.stringify(secondMessage)).not.toContain('second-forged');
+    });
+
+    test('extracts historical file context while encoding provider attachments', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+      const fileContext = deferred();
+      const providerAttachments = deferred();
+      let completed = false;
+
+      TestClient.addFileContextToMessage.mockImplementation(async (message) => {
+        await fileContext.promise;
+        message.fileContext = 'authorized owner text';
+      });
+      TestClient.processAttachments.mockImplementation(() => providerAttachments.promise);
+
+      const messagesPromise = TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-concurrent-file-work',
+          files: [{ file_id: 'owner-file', filename: 'owner.txt' }],
+        },
+      ]).then((messages) => {
+        completed = true;
+        return messages;
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledTimes(1);
+      expect(TestClient.processAttachments).toHaveBeenCalledTimes(1);
+
+      providerAttachments.resolve([ownerFile]);
+      await Promise.resolve();
+      expect(completed).toBe(false);
+
+      fileContext.resolve();
+      const [message] = await messagesPromise;
+
+      expect(message.fileContext).toBe('authorized owner text');
+      expect(TestClient.message_file_map['msg-concurrent-file-work']).toEqual([ownerFile]);
     });
 
     test('preserves download-only historical attachments without trusting file fields', async () => {

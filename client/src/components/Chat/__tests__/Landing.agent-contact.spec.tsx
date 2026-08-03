@@ -106,7 +106,7 @@ describe('Landing agent contact', () => {
         id: 'agent-1',
         name: 'Portal Remote Agent',
         description: 'Remote Agent Showcase',
-        owner_contact: { name: 'Owner User', email: 'owner@example.com' },
+        owner_contact: { name: 'Owner User' },
       },
     };
 
@@ -115,10 +115,8 @@ describe('Landing agent contact', () => {
     expect(screen.getByText('Portal Remote Agent')).toBeInTheDocument();
     expect(screen.getByText('Remote Agent Showcase')).toBeInTheDocument();
     expect(screen.getByText('Contact:')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Owner User' })).toHaveAttribute(
-      'href',
-      'mailto:owner@example.com',
-    );
+    expect(screen.getByText('Owner User')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Owner User' })).not.toBeInTheDocument();
   });
 
   it('does not show contact when the selected agent is missing from agentsMap', () => {

@@ -4,10 +4,15 @@ const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
+  splitMCPToolKey,
+  buildServerNameAliases,
+  findShadowedServerNames,
   agentCreateSchema,
   agentUpdateSchema,
   refreshListAvatars,
   collectEdgeAgentIds,
+  replaceEdgeSourceId,
+  mergeDeploymentSkillIds,
   mergeAgentOcrConversion,
   sanitizeModelParameters,
   MAX_AVATAR_REFRESH_AGENTS,
@@ -142,18 +147,30 @@ const classifyAgentReferences = async (agentIds, userId, userRole) => {
 };
 
 /**
- * Validates VIEW access for every agent referenced in `edges`.
- * Missing ids are NOT errors here — at create time a self-referential
- * `from` often names the agent being built, which has no DB record
- * yet. Only unauthorized (existing but unviewable) ids are returned.
+ * Validates that every agent referenced in `edges` exists and is viewable.
+ * The create path may allow its newly generated self id because that agent
+ * has not been inserted yet; all other missing references are invalid.
+ * @param {GraphEdge[]} edges
+ * @param {string} userId
+ * @param {string} userRole
+ * @param {Set<string>} [allowedMissingIds]
+ * @returns {Promise<{ missing: string[], unauthorized: string[] }>}
  */
-const validateEdgeAgentAccess = async (edges, userId, userRole) => {
-  const { unauthorized } = await classifyAgentReferences(
+const validateEdgeAgentReferences = async (
+  edges,
+  userId,
+  userRole,
+  allowedMissingIds = new Set(),
+) => {
+  const { missing, unauthorized } = await classifyAgentReferences(
     collectEdgeAgentIds(edges),
     userId,
     userRole,
   );
-  return unauthorized;
+  return {
+    missing: missing.filter((id) => !allowedMissingIds.has(id)),
+    unauthorized,
+  };
 };
 
 /**
@@ -213,9 +230,13 @@ const filterAuthorizedTools = async ({
   availableTools,
   existingTools,
   configServers,
+  resolvedServerNames,
 }) => {
   const filteredTools = [];
   let mcpServerConfigs;
+  /** normalized server name -> the raw key `mcpServerConfigs` is indexed by */
+  let configNamesByNormalized = new Map();
+  let shadowedServerNames = new Set();
   let registryUnavailable = false;
   const existingToolSet = existingTools?.length ? new Set(existingTools) : null;
   const hasMCPTools = tools.some((tool) => tool?.includes(Constants.mcp_delimiter));
@@ -259,10 +280,21 @@ const filterAuthorizedTools = async ({
         mcpServerConfigs = {};
         registryUnavailable = true;
       }
+      /** Shared first-wins construction — authorization must resolve a
+       *  colliding normalized key to the SAME server execution routes to,
+       *  or a tool could be authorized against one server and executed
+       *  against another. */
+      configNamesByNormalized = buildServerNameAliases(Object.keys(mcpServerConfigs));
+      shadowedServerNames = findShadowedServerNames(Object.keys(mcpServerConfigs));
     }
 
-    const parts = tool.split(Constants.mcp_delimiter);
-    if (parts.length !== 2) {
+    /** Tool keys embed the normalized server name; the config is keyed by the raw name. */
+    const [, normalizedServerName] = splitMCPToolKey(
+      tool,
+      Array.from(configNamesByNormalized.keys()),
+    );
+    const serverName = configNamesByNormalized.get(normalizedServerName) ?? normalizedServerName;
+    if (!serverName) {
       logger.warn(
         `[filterAuthorizedTools] Rejected malformed MCP tool key "${tool}" for user ${userId}`,
       );
@@ -274,14 +306,25 @@ const filterAuthorizedTools = async ({
       continue;
     }
 
-    const [, serverName] = parts;
-    if (!serverName || !Object.hasOwn(mcpServerConfigs, serverName)) {
+    if (!Object.hasOwn(mcpServerConfigs, serverName)) {
       logger.warn(
         `[filterAuthorizedTools] Rejected MCP tool "${tool}" — server "${serverName}" not accessible to user ${userId}`,
       );
       continue;
     }
 
+    /** A shadowed server's tools (including its `mcp_all` wildcard) produce
+     *  the SAME normalized function names as the winning server's — in-run
+     *  dispatch could execute either. Fail closed at authorization; this map
+     *  is the full accessible set, so DB-vs-config collisions are visible. */
+    if (shadowedServerNames.has(serverName)) {
+      logger.warn(
+        `[filterAuthorizedTools] Rejected MCP tool "${tool}" — server "${serverName}" is shadowed by a name collision; rename one server to use it`,
+      );
+      continue;
+    }
+
+    resolvedServerNames?.add(serverName);
     filteredTools.push(tool);
   }
 
@@ -365,6 +408,8 @@ const createAgentHandler = async (req, res) => {
     }
 
     const { id: userId, role: userRole } = req.user;
+    agentData.id = `agent_${nanoid()}`;
+    agentData.edges = replaceEdgeSourceId(agentData.edges, '', agentData.id);
 
     if (agentData.tool_resources) {
       await pruneToolResourceFileIdsForAgent({
@@ -375,7 +420,18 @@ const createAgentHandler = async (req, res) => {
     }
 
     if (agentData.edges?.length) {
-      const unauthorized = await validateEdgeAgentAccess(agentData.edges, userId, userRole);
+      const { missing, unauthorized } = await validateEdgeAgentReferences(
+        agentData.edges,
+        userId,
+        userRole,
+        new Set([agentData.id]),
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in edges do not exist',
+          agent_ids: missing,
+        });
+      }
       if (unauthorized.length > 0) {
         return res.status(403).json({
           error: 'You do not have access to one or more agents referenced in edges',
@@ -422,7 +478,6 @@ const createAgentHandler = async (req, res) => {
       }
     }
 
-    agentData.id = `agent_${nanoid()}`;
     agentData.author = userId;
     agentData.tools = [];
 
@@ -432,6 +487,9 @@ const createAgentHandler = async (req, res) => {
       hasMCPTools ? resolveConfigServers(req) : Promise.resolve(undefined),
     ]);
     const mcpPermissionContext = createMCPPermissionContext(req);
+    /** Resolved during authorization, so persistence indexes the real server rather
+     *  than a suffix guess - see the note on `filterAuthorizedTools`. */
+    const resolvedServerNames = new Set();
     agentData.tools = await filterAuthorizedTools({
       tools,
       userId,
@@ -440,7 +498,11 @@ const createAgentHandler = async (req, res) => {
       mcpPermissionContext,
       availableTools,
       configServers,
+      resolvedServerNames,
     });
+    if (hasMCPTools) {
+      agentData.mcpServerNames = Array.from(resolvedServerNames);
+    }
 
     const agent = await db.createAgent(agentData);
 
@@ -628,9 +690,23 @@ const updateAgentHandler = async (req, res) => {
       updateData.avatar = avatarField;
     }
 
+    if (updateData.edges !== undefined) {
+      updateData.edges = replaceEdgeSourceId(updateData.edges, '', id);
+    }
+
     if (updateData.edges?.length) {
       const { id: userId, role: userRole } = req.user;
-      const unauthorized = await validateEdgeAgentAccess(updateData.edges, userId, userRole);
+      const { missing, unauthorized } = await validateEdgeAgentReferences(
+        updateData.edges,
+        userId,
+        userRole,
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in edges do not exist',
+          agent_ids: missing,
+        });
+      }
       if (unauthorized.length > 0) {
         return res.status(403).json({
           error: 'You do not have access to one or more agents referenced in edges',
@@ -712,6 +788,8 @@ const updateAgentHandler = async (req, res) => {
       if (!(await mcpPermissionContext.canUseServers(req.user))) {
         if (editingOwnAgent) {
           updateData.tools = effectiveTools.filter((t) => !isMCPTool(t));
+          /** Every MCP tool just went away, so nothing should stay indexed. */
+          updateData.mcpServerNames = [];
         } else if (hasToolUpdate) {
           const existingMCPToolSet = new Set(existingMCPTools);
           const nextTools = updateData.tools.filter(
@@ -724,10 +802,19 @@ const updateAgentHandler = async (req, res) => {
             }
           }
           updateData.tools = nextTools;
+          /** The agent's MCP tools are retained verbatim here, so carry its resolved
+           *  names across too. Left unset when the agent has none stored, so
+           *  `updateAgent` can still derive rather than being pinned to an empty
+           *  index that would strip agent-scoped access. */
+          if (existingAgent.mcpServerNames?.length) {
+            updateData.mcpServerNames = existingAgent.mcpServerNames;
+          }
         }
       } else if (hasToolUpdate) {
         const existingToolSet = new Set(existingTools);
         const newMCPTools = requestedMCPTools.filter((t) => !existingToolSet.has(t));
+        /** Names resolved during authorization of the newly added tools. */
+        const resolvedServerNames = new Set();
 
         if (newMCPTools.length > 0) {
           const [availableTools, configServers] = await Promise.all([
@@ -742,11 +829,37 @@ const updateAgentHandler = async (req, res) => {
             mcpPermissionContext,
             availableTools,
             configServers,
+            resolvedServerNames,
           });
           const rejectedSet = new Set(newMCPTools.filter((t) => !approvedNew.includes(t)));
           if (rejectedSet.size > 0) {
             updateData.tools = updateData.tools.filter((t) => !rejectedSet.has(t));
           }
+        }
+
+        /** Rebuild the index from the tools that survive this edit: carry a prior name
+         *  forward only while some retained tool still resolves to it, so detaching every
+         *  tool for a server revokes agent-scoped access to it. The agent's own persisted
+         *  names are the candidate set, which needs neither a registry query nor a guess. */
+        const priorNames = existingAgent.mcpServerNames ?? [];
+        if (priorNames.length > 0) {
+          const priorNameSet = new Set(priorNames);
+          for (const tool of updateData.tools ?? []) {
+            if (typeof tool !== 'string' || !tool.includes(Constants.mcp_delimiter)) {
+              continue;
+            }
+            const [, retainedName] = splitMCPToolKey(tool, priorNames);
+            if (retainedName && priorNameSet.has(retainedName)) {
+              resolvedServerNames.add(retainedName);
+            }
+          }
+        }
+        /** Supplying `[]` would pin the index empty and suppress `updateAgent`'s
+         *  derivation, so only assert it when the result is authoritative: either we
+         *  resolved names, or no MCP tool survives and the index genuinely is empty. */
+        const retainsMCPTools = (updateData.tools ?? []).some(isMCPTool);
+        if (resolvedServerNames.size > 0 || !retainsMCPTools) {
+          updateData.mcpServerNames = Array.from(resolvedServerNames);
         }
       }
     }
@@ -801,7 +914,7 @@ const updateAgentHandler = async (req, res) => {
  */
 const duplicateAgentHandler = async (req, res) => {
   const { id } = req.params;
-  const { id: userId } = req.user;
+  const { id: userId, role: userRole } = req.user;
   const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
 
   try {
@@ -851,6 +964,29 @@ const duplicateAgentHandler = async (req, res) => {
       id: newAgentId,
       author: userId,
     });
+    newAgentData.edges = replaceEdgeSourceId(newAgentData.edges, id, newAgentId);
+    newAgentData.edges = replaceEdgeSourceId(newAgentData.edges, '', newAgentId);
+
+    if (newAgentData.edges?.length) {
+      const { missing, unauthorized } = await validateEdgeAgentReferences(
+        newAgentData.edges,
+        userId,
+        userRole,
+        new Set([newAgentId]),
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in edges do not exist',
+          agent_ids: missing,
+        });
+      }
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
 
     const newActionsList = [];
     const originalActions = (await db.getActions({ agent_id: id }, true)) ?? [];
@@ -902,6 +1038,9 @@ const duplicateAgentHandler = async (req, res) => {
         resolveConfigServers(req),
       ]);
       const mcpPermissionContext = createMCPPermissionContext(req);
+      /** The duplicate carries the source agent's `mcpServerNames`; replace it with what
+       *  this user is actually authorized for, or the copy would grant the source's servers. */
+      const resolvedServerNames = new Set();
       newAgentData.tools = await filterAuthorizedTools({
         tools: newAgentData.tools,
         userId,
@@ -911,7 +1050,25 @@ const duplicateAgentHandler = async (req, res) => {
         availableTools,
         existingTools: newAgentData.tools,
         configServers,
+        resolvedServerNames,
       });
+      /** When the registry is unavailable, `filterAuthorizedTools` grandfathers the
+       *  source's tools without resolving them, so carry forward the source names those
+       *  retained tools still point at rather than blanking the index. */
+      const sourceNames = agent.mcpServerNames ?? [];
+      if (sourceNames.length > 0) {
+        const sourceNameSet = new Set(sourceNames);
+        for (const tool of newAgentData.tools ?? []) {
+          if (typeof tool !== 'string' || !tool.includes(Constants.mcp_delimiter)) {
+            continue;
+          }
+          const [, retainedName] = splitMCPToolKey(tool, sourceNames);
+          if (retainedName && sourceNameSet.has(retainedName)) {
+            resolvedServerNames.add(retainedName);
+          }
+        }
+      }
+      newAgentData.mcpServerNames = Array.from(resolvedServerNames);
     }
 
     if (newAgentData.tool_resources) {
@@ -1098,7 +1255,9 @@ const getListAgentsHandler = async (req, res) => {
         resourceType: ResourceType.SKILL,
         requiredPermissions: PermissionBits.VIEW,
       });
-      accessibleSkillSet = new Set(accessibleSkillIds.map((oid) => oid.toString()));
+      accessibleSkillSet = new Set(
+        mergeDeploymentSkillIds(accessibleSkillIds).map((oid) => oid.toString()),
+      );
     }
 
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
@@ -1271,10 +1430,42 @@ const revertAgentVersionHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
+    const revertVersion = existingAgent.versions?.[version_index];
+    const storedRevertEdges = Array.isArray(revertVersion?.edges) ? revertVersion.edges : [];
+    const revertEdges = replaceEdgeSourceId(storedRevertEdges, '', id);
+    const hasLegacyEdgeSource = storedRevertEdges.some((edge) =>
+      Array.isArray(edge.from) ? edge.from.includes('') : edge.from === '',
+    );
+    if (revertEdges.length > 0) {
+      const { missing, unauthorized } = await validateEdgeAgentReferences(
+        revertEdges,
+        req.user.id,
+        req.user.role,
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in edges do not exist',
+          agent_ids: missing,
+        });
+      }
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
+
     // Permissions are enforced via route middleware (ACL EDIT)
 
     let updatedAgent = await db.revertAgentVersion({ id }, version_index);
     const revertUpdates = {};
+    if (
+      revertVersion &&
+      (hasLegacyEdgeSource || (!Array.isArray(revertVersion.edges) && updatedAgent.edges?.length))
+    ) {
+      revertUpdates.edges = revertEdges;
+    }
 
     if (updatedAgent.tools?.length) {
       const [availableTools, configServers] = await Promise.all([

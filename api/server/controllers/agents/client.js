@@ -36,20 +36,33 @@ const {
   buildPendingAction,
   toClientPendingAction,
   computeAgentRequestFingerprint,
-  extractDiscoveredToolsFromHistory,
+  getRunDiscoveredTools,
   captureResumeModelParameters,
   pickResumeContext,
   getApprovalTtlMs,
   isHITLEnabled,
+  captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
+  LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   agentRequestsAskUserQuestion,
   attachAskUserQuestionArgs,
+  hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
   createSteerIndexOffsetHandlers,
   createSteerDrainHook,
+  createSteerPreemptBoundaryHook,
+  createSteerPreemptPoll,
   isSteeringSupported,
+  isSteerPreemptSupported,
   buildSteerMedia,
   stampSteerPartMedia,
+  createActivityLabelWiring,
+  resolveActivityConfig,
+  getCustomEndpointConfig,
+  mapCollectedMetadataToUsage,
+  resolveActivityLabelModel,
+  settlePendingLabelFills,
+  stripActivityLabelParts,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -70,12 +83,15 @@ const {
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
   hasUrlContextTool,
+  hasYouTubeVideoParts,
   appendYouTubeVideoParts,
+  resolveGoogleVideoError,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
 } = require('@librechat/api');
 const {
+  Run,
   Callback,
   Providers,
   TitleMethod,
@@ -86,6 +102,7 @@ const {
 const {
   Constants,
   SteerEvents,
+  ActivityLabelEvents,
   UsageEvents,
   Permissions,
   VisionModes,
@@ -102,7 +119,7 @@ const {
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
-const { resolveConfigServers } = require('~/server/services/MCP');
+const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
@@ -121,6 +138,11 @@ class AgentClient extends BaseClient {
 
     /** @deprecated @type {true} - Is a Chat Completion Request */
     this.isChatCompletion = true;
+    /** @type {number | undefined} */
+    this.jobCreatedAt = options.jobCreatedAt;
+    /** Generation-scoped LangGraph checkpoint namespace. Legacy paused jobs
+     * intentionally use the historical empty namespace. @type {string} */
+    this.checkpointNamespace = options.checkpointNamespace ?? '';
 
     /** @type {AgentRun} */
     this.run;
@@ -136,6 +158,7 @@ class AgentClient extends BaseClient {
     const {
       agentConfigs,
       contentParts,
+      stepMap,
       collectedUsage,
       collectedThoughtSignatures,
       artifactPromises,
@@ -165,6 +188,10 @@ class AgentClient extends BaseClient {
     this.toolInputValidationErrors = toolInputValidationErrors;
     /** @type {MessageContentComplex[]} */
     this.contentParts = contentParts;
+    /** Original run-step identity used by the content aggregator to attach
+     *  completion events to their rendered content indices.
+     *  @type {Map<string, import('@librechat/agents').RunStep | undefined> | undefined} */
+    this.stepMap = stepMap;
     /** @type {Array<UsageMetadata>} */
     this.collectedUsage = collectedUsage;
     /** Vertex Gemini 3 thought signatures captured during the run, keyed by
@@ -278,6 +305,7 @@ class AgentClient extends BaseClient {
       type: ContentTypes.STEER,
       [ContentTypes.STEER]: item.text,
       steerId: item.steerId,
+      ...(item.clientSteerId && { clientSteerId: item.clientSteerId }),
       createdAt: item.createdAt,
       ...(item.files?.length && { files: item.files }),
     };
@@ -286,26 +314,45 @@ class AgentClient extends BaseClient {
     // durable: the chunk-log XADD is this event's recovery record — it must
     // commit before the publish or a cross-replica reconnect that missed the
     // pub/sub delivery reconstructs content without the steer part.
-    await GenerationJobManager.emitChunk(
-      streamId,
-      {
-        event: SteerEvents.ON_STEER_APPLIED,
-        data: {
-          steerId: item.steerId,
-          index,
-          part,
-          responseMessageId: this.responseMessageId,
-          conversationId: this.conversationId,
+    try {
+      await GenerationJobManager.emitChunk(
+        streamId,
+        {
+          event: SteerEvents.ON_STEER_APPLIED,
+          data: {
+            steerId: item.steerId,
+            ...(item.clientSteerId && { clientSteerId: item.clientSteerId }),
+            index,
+            part,
+            responseMessageId: this.responseMessageId,
+            conversationId: this.conversationId,
+          },
         },
-      },
-      { durable: true },
-    );
+        {
+          durable: true,
+          expectedCreatedAt: this.jobCreatedAt,
+          deliveredSteer: item,
+        },
+      );
+    } catch (error) {
+      /** The part and its receipt commit as one durable unit. Roll the local
+       * projection back when that commit fails so the drain can restore the
+       * claimed item instead of injecting an instruction absent from replay. */
+      if (this.contentParts[index] === part) {
+        this.contentParts.splice(index, 1);
+        this.steerOffsetState.offset -= 1;
+      }
+      throw error;
+    }
   }
 
   /**
    * The `steering` fragment for `createRun`: the run-scoped PostToolBatch
-   * drain hook, or `undefined` when there is no resumable job surface or the
-   * installed SDK cannot inject hook messages (draining would drop them).
+   * drain hook — plus, when the SDK can seal mid-stream, the PreemptBoundary
+   * twin and the preempt poll built from the SAME drain closures, so both
+   * boundaries inject byte-identical shapes. `undefined` when there is no
+   * resumable job surface or the installed SDK cannot inject hook messages
+   * (draining would drop them).
    *
    * @param {string | undefined} streamId
    */
@@ -313,23 +360,596 @@ class AgentClient extends BaseClient {
     if (!streamId || !isSteeringSupported()) {
       return undefined;
     }
+    const drainOptions = {
+      streamId,
+      jobCreatedAt: this.jobCreatedAt,
+      applySteer: (item) => this.applySteerPart(streamId, item),
+      buildMedia: (item) =>
+        buildSteerMedia({
+          client: this,
+          user: this.options.req?.user,
+          item,
+          getFiles: db.getFiles,
+        }),
+    };
     return {
-      hook: createSteerDrainHook({
-        streamId,
-        jobCreatedAt: this.jobCreatedAt,
-        applySteer: (item) => this.applySteerPart(streamId, item),
-        buildMedia: (item) =>
-          buildSteerMedia({
-            client: this,
-            user: this.options.req?.user,
-            item,
-            getFiles: db.getFiles,
-          }),
+      hook: createSteerDrainHook(drainOptions),
+      ...(isSteerPreemptSupported() && {
+        preemptHook: createSteerPreemptBoundaryHook(drainOptions),
+        preemption: createSteerPreemptPoll(streamId),
       }),
     };
   }
 
   setOptions(_options) {}
+
+  /**
+   * Resolve provider + client options for the
+   * tool-batch summary model. Same resolution path as titleConvo minus the
+   * title-specific branches. Model precedence: the endpoint's
+   * `activityModel` > its `titleModel` > the agent's own model, on the
+   * endpoint named by `activityEndpoint` (default: the agent's).
+   */
+  async resolveActivityLabelLLM() {
+    /** Memoized per response: resolution reads provider config and can hit the
+     *  database for user keys, and nothing it depends on changes between
+     *  batches of the same run — so re-resolving on every batch (twice, with
+     *  usage accounting) is repeated credential work for an identical result.
+     *  The promise is cached rather than the value so concurrent batches share
+     *  one in-flight resolution. */
+    this.activityLabelLLMPromise =
+      this.activityLabelLLMPromise ??
+      resolveActivityLabelModel({
+        req: this.options.req,
+        agent: this.options.agent,
+        /** Same public-endpoint-first field resolution as the wiring gate. */
+        publicEndpoint: this.options.endpoint,
+        ids: {
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          parentMessageId: this.parentMessageId,
+        },
+        db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
+      }).catch((error) => {
+        /** Never cache a rejection: a transient credential read failure would
+         *  otherwise disable labels for the rest of the response. */
+        this.activityLabelLLMPromise = null;
+        throw error;
+      });
+    return this.activityLabelLLMPromise;
+  }
+
+  /**
+   * Bills the label call and folds its usage into the response rollup with
+   * an `activity-label` tag (subagent precedent) so `metadata.usage` and the
+   * live cost gauge reflect it. Tagged, so it is not a PRIMARY usage event
+   * and cannot disturb the context-snapshot pairing in buildResponseMetadata.
+   */
+  async recordActivityLabelUsage(
+    collectedMetadata,
+    model,
+    endpointTokenConfig,
+    sameEndpoint,
+    /** Optional suppression gate, defaulting open. The hook-driven paths
+     *  deliberately pass nothing: they invoke accounting ONLY for a
+     *  COMMITTED fill, and a committed (visible) label must bill even when
+     *  its scope closed during the durable emit — the commit flag, not the
+     *  scope, is the billing authority. */
+    scopeOpen = () => true,
+    /** The LABEL endpoint's provider — cost math needs it to know whether
+     *  cache tokens are folded into `input_tokens` (additive providers like
+     *  Bedrock keep them separate). */
+    provider = undefined,
+    /** Lazy `() => ({ promptText, completionText })` fallback. When the
+     *  provider omits usage metadata entirely, labels bill by ESTIMATE —
+     *  the title convention — from locally counted text rather than going
+     *  unbilled. Invoked only when no entry carries a real token count. */
+    estimate = undefined,
+  ) {
+    const appConfig = this.options.req?.config;
+    /** Provider ON EVERY ENTRY, not just the streamed event: `splitUsage`
+     *  keys additive-vs-subset cache math on `usage.provider`, and an
+     *  unknown provider takes the additive branch — for Anthropic/OpenAI
+     *  (cache already inside `input_tokens`) that re-adds cache_read and
+     *  cache_creation on top, double-charging the balance while the
+     *  streamed cost (which carries the provider) disagrees. */
+    let collectedUsage = mapCollectedMetadataToUsage(collectedMetadata).map((usage) =>
+      provider != null ? { ...usage, provider } : usage,
+    );
+    const hasRealUsage = collectedUsage.some(
+      (usage) => usage.input_tokens != null || usage.output_tokens != null,
+    );
+    if (!hasRealUsage && typeof estimate === 'function') {
+      try {
+        const { promptText = '', completionText = '' } = estimate() ?? {};
+        const [input_tokens, output_tokens] = await Promise.all([
+          countTokens(promptText),
+          countTokens(completionText),
+        ]);
+        collectedUsage = [
+          provider != null
+            ? { input_tokens, output_tokens, provider }
+            : { input_tokens, output_tokens },
+        ];
+      } catch (err) {
+        logger.warn(
+          `[AgentClient] Failed to estimate activity-label usage: ${err?.message ?? err}`,
+        );
+      }
+    }
+    if (
+      collectedUsage.length === 0 ||
+      !collectedUsage.some((usage) => usage.input_tokens != null || usage.output_tokens != null)
+    ) {
+      return;
+    }
+    if (!scopeOpen()) {
+      return;
+    }
+    const streamId = this.options.req?._resumableStreamId || null;
+    const includeCost = this.options.req?.config?.interfaceConfig?.contextCost === true;
+    /** Cross-endpoint labels (`activityEndpoint`) price with THEIR endpoint's
+     *  rates. `undefined` is a MEANINGFUL result for a built-in label endpoint
+     *  (built-ins price from the shared table, not a per-endpoint map), so it
+     *  must not fall through to the agent's custom rates — a custom primary
+     *  pointing `activityEndpoint` at a built-in would bill the label at its
+     *  own rates. Only inherit when the label actually runs on the agent's
+     *  endpoint. */
+    const labelTokenConfig = sameEndpoint
+      ? (endpointTokenConfig ?? this.options.endpointTokenConfig)
+      : endpointTokenConfig;
+    for (const usage of collectedUsage) {
+      /** `seq` is normally a position in `collectedUsage` (each emitter
+       *  pushes, then emits with the new length). Label usage is billed
+       *  separately and never appended there, so it has no position: any
+       *  positive value eventually collides with a real one, and the client
+       *  dedupes on `runId:seq`. Labels therefore occupy a NEGATIVE seq
+       *  namespace that positional sequences can never reach. The key is
+       *  only used for Set membership, so the sign is inert. */
+      this.activityLabelUsageSeq = (this.activityLabelUsageSeq ?? 0) + 1;
+      const data = {
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        /** Cache tokens ride along (subagent-event shape) so display and
+         *  aggregation price cached label calls at cache rates. */
+        ...(usage.input_token_details != null && {
+          input_token_details: usage.input_token_details,
+        }),
+        ...(provider != null && { provider }),
+        model,
+        usage_type: 'activity-label',
+        /**
+         * Scoped to the GENERATION, not just the response. Editing one
+         * assistant response reuses its `responseMessageId` while each fresh
+         * server generation restarts `activityLabelUsageSeq`, so a second
+         * edit re-emitted `<responseId>:-1` and the client — which dedupes on
+         * exactly `runId:seq` — discarded the newer usage even though its
+         * balance transaction was still written. `jobCreatedAt` is the run's
+         * own epoch: stable across reconnects and HITL resumes of one
+         * generation, distinct between generations.
+         */
+        runId:
+          this.jobCreatedAt != null
+            ? `${this.responseMessageId}:${this.jobCreatedAt}`
+            : this.responseMessageId,
+        seq: -this.activityLabelUsageSeq,
+        /** Cost coverage is all-or-nothing in `aggregateEmittedUsage`: an
+         *  event without `cost` suppresses the whole response's cost when
+         *  `interface.contextCost` is on. */
+        cost: includeCost
+          ? computeUsageCostUSD(
+              { ...usage, model, provider },
+              { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+              labelTokenConfig,
+            )
+          : undefined,
+      };
+      /** Fold into the response rollup synchronously, then stream it like
+       *  primary/subagent usage so the live session gauge stays honest.
+       *  Retained and flushed with the subagent emits so job cleanup cannot
+       *  race the persist. */
+      this.usageEmitSink?.push(data);
+      if (streamId) {
+        const emit = GenerationJobManager.emitChunk(
+          streamId,
+          {
+            event: UsageEvents.ON_TOKEN_USAGE,
+            data,
+          },
+          /** Same epoch scoping as the label event: this usage is recorded
+           *  from a detached generation and must not bill against whichever
+           *  generation replaced it. */
+          { expectedCreatedAt: this.jobCreatedAt },
+        ).catch((err) => {
+          logger.warn(`[AgentClient] Failed to emit activity-label usage: ${err?.message ?? err}`);
+        });
+        this.pendingSubagentEmits.push(emit);
+      }
+    }
+    await this.recordCollectedUsage({
+      collectedUsage,
+      context: 'activity-label',
+      model,
+      endpointTokenConfig: labelTokenConfig,
+      /** The label ran elsewhere, so its config governs even when undefined. */
+      crossEndpoint: sameEndpoint === false,
+      balance: getBalanceConfig(appConfig),
+      transactions: getTransactionsConfig(appConfig),
+      messageId: this.responseMessageId,
+      /** Billed, but NOT the response's stream usage — see the parameter. */
+      updateStreamUsage: false,
+    }).catch((err) => {
+      logger.error(
+        '[api/server/controllers/agents/client.js #recordActivityLabelUsage] Error recording usage',
+        err,
+      );
+    });
+  }
+
+  /**
+   * Bridges label generation to the SDK's `run.generateActivityLabel()` so
+   * the fast-model call is Langfuse-traced under the conversation's session
+   * (thread_id) with its own tags — never as an orphan trace. Returns null
+   * when the label could not be generated.
+   */
+  async generateActivityLabelViaRun({
+    entries,
+    context,
+    previousLabels,
+    traceSeed,
+    signal,
+    charLimit,
+    prompt,
+    executingAgentId,
+    deferUsage,
+  }) {
+    /** Version gating happens at wiring time via the `sdkCapable` prototype
+     *  probe, so this only catches a run that is missing or not yet built.
+     *  Resolve `undefined` (not `null`) so the hook reads it as "this path
+     *  cannot serve the request" and falls back to the direct model call;
+     *  `null` would mean "ran, produced no label" and would leave the slot
+     *  permanently empty. */
+    if (typeof this.run?.generateActivityLabel !== 'function') {
+      return undefined;
+    }
+    const { provider, clientOptions, endpointTokenConfig, sameEndpoint } =
+      await this.resolveActivityLabelLLM();
+    const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
+    /**
+     * NO scope gate here: the hook invokes this ONLY for a COMMITTED fill,
+     * and the commit flag is the single billing authority. A scope that
+     * closes while the fill's durable emit is in flight does not un-commit
+     * the label — it is persisted and visible — so gating on the scope here
+     * turned that race into a completed provider call escaping both the
+     * label charge and the primary abort accounting. The reverse direction
+     * (billed but never shown) is enforced by the commit gate itself: a
+     * dropped fill never reaches this callback.
+     */
+    /**
+     * The PROMPT THE SDK ACTUALLY SENT, captured at chain start. The hook's
+     * estimate thunk carries this module's locally built prompt — same
+     * entries and instruction but different framing — so estimated billing
+     * on this path would count a prompt that was never sent. When capture
+     * succeeded, it replaces the thunk's promptText.
+     */
+    let sdkPromptText;
+    const capturePrompt = {
+      handleLLMStart: (_llm, prompts) => {
+        sdkPromptText = Array.isArray(prompts) ? prompts.join('\n') : undefined;
+      },
+      handleChatModelStart: (_llm, messages) => {
+        try {
+          sdkPromptText = (messages ?? [])
+            .flat()
+            .map((message) =>
+              typeof message?.content === 'string'
+                ? message.content
+                : JSON.stringify(message?.content ?? ''),
+            )
+            .join('\n');
+        } catch {
+          /** Estimation falls back to the local approximation. */
+        }
+      },
+    };
+    const recordUsage = async (estimate) => {
+      const refined =
+        typeof estimate === 'function'
+          ? () => {
+              const base = estimate() ?? {};
+              return sdkPromptText != null && sdkPromptText.length > 0
+                ? { ...base, promptText: sdkPromptText }
+                : base;
+            }
+          : estimate;
+      await this.recordActivityLabelUsage(
+        collectedMetadata,
+        clientOptions.model,
+        endpointTokenConfig,
+        sameEndpoint,
+        undefined,
+        provider,
+        refined,
+      );
+    };
+    /**
+     * Accounting is DEFERRED to the hook, which runs it only after the slot
+     * commit settles. Awaiting it here (pre-fill) let the settlement window
+     * expire during the balance write: the charge landed, then the fill was
+     * dropped as out-of-scope — billed, never shown. Registered before the
+     * call so a mid-call throw still bills whatever metadata the provider
+     * returned, exactly like the old `finally` did.
+     */
+    let usageDeferred = false;
+    if (typeof deferUsage === 'function') {
+      usageDeferred = true;
+      deferUsage(recordUsage);
+    }
+    try {
+      const { label } = await this.run.generateActivityLabel({
+        provider,
+        clientOptions,
+        entries: entries.map(({ toolName, toolInput, toolOutput, error, status }) => ({
+          toolName,
+          toolInput,
+          toolOutput,
+          error,
+          status,
+        })),
+        thinkingExcerpts: context.thinkingExcerpts,
+        lastAssistantText: context.lastAssistantText,
+        ...(previousLabels != null && { previousLabels }),
+        traceSeed,
+        charLimit,
+        /** Selects the EXECUTING agent's Langfuse metadata and, more
+         *  importantly, its tool-output redaction policy. Omitting it lets a
+         *  handoff's activity be traced and redacted under the default
+         *  agent's configuration, bypassing a stricter per-agent policy. */
+        ...(executingAgentId != null && { agentId: executingAgentId }),
+        /** The wiring always supplies one (the yaml `activityPrompt` when
+         *  set, else this repo's instruction). Falling through to the SDK's
+         *  built-in prompt would silently use a different register. */
+        ...((prompt ?? this.activityLabelPrompt) != null && {
+          prompt: prompt ?? this.activityLabelPrompt,
+        }),
+        chainOptions: {
+          signal,
+          callbacks: [{ handleLLMEnd, ...capturePrompt }],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req?.user?.id,
+          },
+        },
+      });
+      return label ?? null;
+    } finally {
+      /** Safety net for a caller that did not defer (none in-tree): the old
+       *  inline accounting, still scope-gated. */
+      if (!usageDeferred) {
+        await recordUsage();
+      }
+    }
+  }
+
+  /** Bounded settle for in-flight label fills before finalization. On
+   *  timeout the label scope is closed and its abort controller fired, so a
+   *  straggler cannot mutate the saved response or emit into a dead job. */
+  async settleActivityLabels(timeoutMs = 3000) {
+    /** Detached even when nothing settled: the wiring attaches its abort
+     *  listener at BUILD time, and a segment can end without a single claim
+     *  (text-only, or handoff batches, which skip labels) — the early
+     *  return below would otherwise leave that listener accumulating across
+     *  HITL approval cycles on the shared job signal. Idempotent. */
+    const detachScopeListeners = () => {
+      for (const scope of this.activityLabelScopes ?? []) {
+        scope.detach?.();
+      }
+    };
+    const pending = this.pendingActivityLabelFills;
+    if (!pending || pending.length === 0) {
+      detachScopeListeners();
+      return;
+    }
+    this.pendingActivityLabelFills = [];
+    await settlePendingLabelFills(pending, timeoutMs, () => {
+      /** Close EVERY generation's scope: a pre-pause wiring's straggler must
+       *  stay closed even though a resume built a newer one. */
+      for (const scope of this.activityLabelScopes ?? []) {
+        scope.closed = true;
+        scope.abort.abort();
+      }
+    });
+    detachScopeListeners();
+  }
+
+  /**
+   * Activity-label wiring. At each batch boundary the hook synchronously
+   * claims a live content slot (steering's index-offset pattern: push
+   * placeholder with deterministic counts, bump the shared offset so
+   * subsequent SDK indices land past it) and fills it when the fast-model
+   * label resolves. Both states reach the live client via the dedicated
+   * `on_activity_label` event; failures leave the counts-only part.
+   * @param {string | undefined} streamId
+   */
+  buildActivityLabelWiring(streamId, abortSignal) {
+    if (!streamId) {
+      return undefined;
+    }
+    /** Per-endpoint opt-in via `activityLabel: true` in librechat.yaml,
+     *  resolved the same way the title options are (endpoints.all > named
+     *  endpoint > custom endpoint config). Custom endpoints live in the
+     *  `endpoints.custom` ARRAY, so their settings are only visible through
+     *  the matched entry — without it every custom endpoint reads as
+     *  disabled. */
+    const agentEndpoint = this.options.agent?.endpoint ?? '';
+    const appConfigForActivity = this.options.req?.config;
+    let customEndpointConfig;
+    try {
+      customEndpointConfig = getCustomEndpointConfig({
+        endpoint: agentEndpoint,
+        appConfig: appConfigForActivity,
+      });
+    } catch {
+      customEndpointConfig = undefined;
+    }
+    const activityConfig = resolveActivityConfig(
+      appConfigForActivity,
+      agentEndpoint,
+      customEndpointConfig,
+      /** The PUBLIC endpoint (`agents`): `initializeAgent` rewrites
+       *  `agent.endpoint` to the backing provider, so without this an
+       *  admin's `endpoints.agents.activityLabel: true` reads the
+       *  provider's block instead and the feature stays off. */
+      this.options.endpoint,
+    );
+    if (!activityConfig.enabled) {
+      return undefined;
+    }
+    this.activityLabelPrompt = activityConfig.prompt;
+    /**
+     * Mark the job so a resume can reconcile label gaps without probing
+     * content. Retried rather than fire-and-forget: this flag GATES that
+     * reconciliation, and it is a separate write from the durable label
+     * append — so a single lost write silently drops a label that the label
+     * content itself recorded perfectly well. One retry costs nothing at run
+     * setup and removes the only realistic way the gate goes stale.
+     */
+    /** Retained (not fire-and-forget): the RUN START awaits this persist
+     *  (chatCompletion/resumeCompletion, before processStream/resume), so
+     *  the flag is durable before any batch can claim a label — closing the
+     *  immediate-reconnect race WITHOUT delaying the claim-time reservation
+     *  emit, whose ordering against shifted SDK indices is load-bearing.
+     *  The chain settles on failure (warned retry), so a lost write can
+     *  never wedge run startup. */
+    this.activityLabelsMarkedPromise = GenerationJobManager.markActivityLabels(
+      streamId,
+      this.jobCreatedAt,
+    ).catch(() =>
+      GenerationJobManager.markActivityLabels(streamId, this.jobCreatedAt).catch(() => {
+        logger.warn(
+          `[AgentClient] Could not flag activity labels for ${streamId}; a label resolving during a resume gap may not be reconciled.`,
+        );
+      }),
+    );
+    /** SDK support probe (steering-style): the Run method and the formatter
+     *  replay skip ship together, so method presence is the capability. */
+    const sdkCapable = typeof Run?.prototype?.generateActivityLabel === 'function';
+    /** Label-scoped abort: fired when settle times out so a straggling
+     *  generation stops burning provider time for a finalized response.
+     *  Chained to the run signal so a user abort still cancels labels. */
+    /** Close state is PER WIRING, not per client: a HITL resume rebuilds the
+     *  wiring, and resetting a shared instance flag would re-open closures
+     *  from the pre-pause segment whose provider call ignored the abort.
+     *  Scopes are retained so settle closes every generation, past included. */
+    const labelScope = { closed: false, abort: new AbortController() };
+    this.activityLabelScopes = this.activityLabelScopes ?? [];
+    this.activityLabelScopes.push(labelScope);
+    /** Seed the usage sequence past the labels already on this response.
+     *  `runId` is the response message id, so a HITL resume — which builds a
+     *  NEW client for the SAME response — would otherwise restart at -1 and
+     *  the client's `runId:seq` deduper would discard the post-approval
+     *  label's usage as already counted. Each label generation is a single
+     *  non-streaming invoke, so one existing label part == one consumed seq. */
+    this.activityLabelUsageSeq =
+      this.activityLabelUsageSeq ??
+      (this.contentParts ?? []).filter((part) => part?.type === ContentTypes.ACTIVITY_LABEL).length;
+    this.activityLabelAbort = labelScope.abort;
+    /** An abort CLOSES the scope, not just cancels the call. The rejected
+     *  generation still runs its catch and calls `fill(null)`; with the scope
+     *  merely aborted that fill would emit — and by then the next generation
+     *  may already own the stream, so the event would land an index from the
+     *  abandoned response onto the new one. */
+    const closeOnAbort = () => {
+      labelScope.closed = true;
+      labelScope.abort.abort();
+    };
+    if (abortSignal != null) {
+      if (abortSignal.aborted) {
+        closeOnAbort();
+      } else {
+        abortSignal.addEventListener('abort', closeOnAbort, { once: true });
+        /** Detached once this segment settles: HITL runs rebuild a wiring
+         *  per approval cycle on the SAME job signal, and `once` only
+         *  removes the listener if an abort actually fires — long
+         *  multi-approval runs would otherwise accumulate obsolete
+         *  closures toward the listener-limit warning. */
+        labelScope.detach = () => abortSignal.removeEventListener('abort', closeOnAbort);
+      }
+    }
+    /** Thin wrapper: slot claiming, lane stamping, emit ordering, and settle
+     *  tracking live in `createActivityLabelWiring` (packages/api, TS). */
+    return createActivityLabelWiring({
+      maxPerRun: activityConfig.maxPerRun,
+      charLimit: activityConfig.charLimit,
+      prompt: activityConfig.prompt,
+      abortSignal: labelScope.abort.signal,
+      isClosed: () => labelScope.closed,
+      getContentParts: () => this.contentParts,
+      bumpIndexOffset: () => {
+        this.steerOffsetState.offset += 1;
+      },
+      /** Emits IMMEDIATELY — never sequenced behind the flag persist. The
+       *  claim has already bumped the shared index offset, so delaying the
+       *  reservation while shifted SDK chunks persist would let a
+       *  cross-instance reconnect reconstruct a hole, compact it, and have
+       *  the late label event overwrite the part that moved into its index.
+       *  Flag ordering is guaranteed upstream instead: run start awaits the
+       *  persist, so the flag is durable before any batch can claim. */
+      emitLabelEvent: (index, part) =>
+        GenerationJobManager.emitChunk(
+          streamId,
+          {
+            event: ActivityLabelEvents.ON_ACTIVITY_LABEL,
+            data: {
+              index,
+              part,
+              responseMessageId: this.responseMessageId,
+              conversationId: this.conversationId,
+            },
+          },
+          /** Label generation is detached and can outlive its generation, so
+           *  the emit is scoped to the epoch that claimed the index. Without
+           *  it a straggler from a replaced generation lands its old index on
+           *  the new response — invisibly, since an empty label renders
+           *  nothing — overwriting whatever occupies that slot. */
+          { durable: true, expectedCreatedAt: this.jobCreatedAt },
+        ),
+      trackPendingFill: (fillDone) => {
+        this.pendingActivityLabelFills = this.pendingActivityLabelFills ?? [];
+        this.pendingActivityLabelFills.push(fillDone);
+      },
+      resolveLLM: () => this.resolveActivityLabelLLM(),
+      /** Per-generation usage accounting for the direct fallback path;
+       *  the SDK bridge records its own via chainOptions callbacks. */
+      getInvokeCallbacks: () => {
+        const { handleLLMEnd, collected } = createMetadataAggregator();
+        return {
+          callbacks: [{ handleLLMEnd }],
+          collect: async (estimate) => {
+            const { provider, clientOptions, endpointTokenConfig, sameEndpoint } =
+              await this.resolveActivityLabelLLM();
+            await this.recordActivityLabelUsage(
+              collected,
+              clientOptions.model,
+              endpointTokenConfig,
+              sameEndpoint,
+              /** No scope gate — the hook invokes collect ONLY for a
+               *  COMMITTED fill (the billing authority), and a scope that
+               *  closes during the fill's durable emit must not let a
+               *  visible label escape its charge. Dropped fills never
+               *  reach this callback. */
+              undefined,
+              provider,
+              estimate,
+            );
+          },
+        };
+      },
+      ...(sdkCapable && {
+        generateLabel: (payload) => this.generateActivityLabelViaRun(payload),
+      }),
+    });
+  }
 
   /**
    * `AgentClient` is not opinionated about vision requests, so we don't do anything here
@@ -427,7 +1047,37 @@ class AgentClient extends BaseClient {
           }))
         : []),
     ];
+
+    /**
+     * Memory authorization/loading and MCP config resolution do not depend on
+     * attachment hydration or prompt formatting. Start them before that work,
+     * but keep the existing context-application barrier below.
+     *
+     * Attach a rejection observer immediately because these operations may
+     * settle while request attachments are still being prepared. Awaiting the
+     * original promise later still propagates either error.
+     */
+    const earlySharedContextPromise = Promise.all([
+      this.useMemory(),
+      resolveConfigServers(this.options.req),
+    ]);
+    void earlySharedContextPromise.catch(() => {});
+
     const sharedRunAttachmentIds = new Set();
+    /** @type {ReturnType<typeof buildAgentScopedContext>} */
+    let agentScopedContextPromise;
+    const startAgentScopedContext = () => {
+      const contextPromise = buildAgentScopedContext({
+        agentIds: allAgents.map(({ agentId }) => agentId),
+        attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+        sharedRunAttachmentIds,
+        req: this.options.req,
+        tokenCountFn: (text) => countTokens(text),
+      });
+      void contextPromise.catch(() => {});
+      return contextPromise;
+    };
+
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
@@ -435,6 +1085,9 @@ class AgentClient extends BaseClient {
       for (const fileId of collectFileIds(attachments)) {
         sharedRunAttachmentIds.add(fileId);
       }
+
+      /** Agent-scoped extraction only depends on the shared attachment IDs. */
+      agentScopedContextPromise = startAgentScopedContext();
 
       if (this.message_file_map) {
         this.message_file_map[latestMessage.messageId] = attachments;
@@ -444,10 +1097,14 @@ class AgentClient extends BaseClient {
         };
       }
 
-      await this.addFileContextToMessage(latestMessage, attachments);
-      const files = await this.processAttachments(latestMessage, attachments);
+      const [, files] = await Promise.all([
+        this.addFileContextToMessage(latestMessage, attachments),
+        this.processAttachments(latestMessage, attachments),
+      ]);
 
       this.options.attachments = files;
+    } else {
+      agentScopedContextPromise = startAgentScopedContext();
     }
 
     /** Note: Bedrock uses legacy RAG API handling */
@@ -600,6 +1257,9 @@ class AgentClient extends BaseClient {
         max,
         mimeType,
       });
+      /** Google rejects an unusable video with a generic `INVALID_ARGUMENT` that names no cause,
+       *  so `#sendCompletion` can only attribute one by knowing this turn carried a video. */
+      this.injectedYouTubeVideo = hasYouTubeVideoParts(latestFormatted.content);
     }
 
     payload = formattedMessages;
@@ -650,19 +1310,21 @@ class AgentClient extends BaseClient {
      * Memory context is handled separately and applied per-agent based on config.
      */
     const sharedRunContextParts = [];
+    const [augmentedPrompt, [memories, configServers], agentScopedContext] = await Promise.all([
+      this.contextHandlers?.createContext(),
+      earlySharedContextPromise,
+      agentScopedContextPromise,
+    ]);
 
     /** Augmented prompt from RAG/context handlers */
-    if (this.contextHandlers) {
-      this.augmentedPrompt = await this.contextHandlers.createContext();
-      if (this.augmentedPrompt) {
-        sharedRunContextParts.push(this.augmentedPrompt);
-      }
+    this.augmentedPrompt = augmentedPrompt;
+    if (this.augmentedPrompt) {
+      sharedRunContextParts.push(this.augmentedPrompt);
     }
 
     /** Memory context (user preferences/memories). Keyed context (with memory
      *  keys + token metadata) is reserved for agents that can call
      *  `delete_memory`; everyone else gets the unkeyed values only. */
-    const memories = await this.useMemory();
     /** Partition the loaded memories belong to (the primary agent's). */
     const loadedMemoryAgentId = getMemoryAgentId(this.options.agent);
     const buildMemoryContext = (text) =>
@@ -694,14 +1356,6 @@ class AgentClient extends BaseClient {
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
-
-    const agentScopedContext = await buildAgentScopedContext({
-      agentIds: allAgents.map(({ agentId }) => agentId),
-      attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
-      sharedRunAttachmentIds,
-      req: this.options.req,
-      tokenCountFn: (text) => countTokens(text),
-    });
 
     /** Preserve prompt token counts for graph formatting and pruning. */
     this.indexTokenCountMap = indexTokenCountMap;
@@ -735,8 +1389,6 @@ class AgentClient extends BaseClient {
      */
     const ephemeralAgent = this.options.req.body.ephemeralAgent;
     const mcpManager = getMCPManager();
-
-    const configServers = await resolveConfigServers(this.options.req);
 
     await Promise.all(
       allAgents.map(async ({ agent, agentId }) => {
@@ -906,6 +1558,7 @@ class AgentClient extends BaseClient {
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getConvoFiles: db.getConvoFiles,
+        getAccessibleMcpServerNames,
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
@@ -947,6 +1600,7 @@ class AgentClient extends BaseClient {
       config,
       messageId,
       streamId,
+      jobCreatedAt: this.jobCreatedAt,
       conversationId,
       memoryMethods: {
         setMemory: db.setMemory,
@@ -1211,7 +1865,41 @@ class AgentClient extends BaseClient {
     transactions,
     context = 'message',
     collectedUsage = this.collectedUsage,
+    /**
+     * Rates for usage that did NOT run on the agent's endpoint — currently
+     * activity labels pointed at a different `activityEndpoint`. Without it
+     * the caller's config was dropped here and the balance transaction was
+     * written at the primary agent's rates while the UI cost was computed at
+     * the label's, so the two disagreed. `undefined` keeps the agent default.
+     */
+    endpointTokenConfig,
+    /**
+     * True when this usage ran on a DIFFERENT endpoint than the agent, making
+     * `endpointTokenConfig` authoritative even when it is `undefined` (a
+     * built-in endpoint prices from the shared table). Presence of the value
+     * cannot express that, which is why the caller states it outright.
+     */
+    crossEndpoint = false,
+    /**
+     * Whether this recording owns `getStreamUsage()`. Only the PRIMARY
+     * generation does. Secondary usage (activity labels) must still be
+     * billed, but writing it here would hand `BaseClient` the label's token
+     * counts as the assistant response's authoritative total — and because
+     * the primary call returns early when it collected nothing, the wrong
+     * value would never be replaced, suppressing the text-based token
+     * fallback and leaving the real generation unbilled.
+     */
+    updateStreamUsage = true,
   }) {
+    /** Per-agent resolution keys off the AGENT's config map, which cannot
+     *  describe a label running on a different endpoint — so an explicit
+     *  config wins outright rather than being second-guessed per usage row.
+     *
+     *  Keyed on the caller's discriminator, NOT on `endpointTokenConfig !==
+     *  undefined`: a built-in label endpoint prices from the shared table, so
+     *  `undefined` is its meaningful value. Reading that as "no override" is
+     *  what silently restored the primary's custom rates. */
+    const overrideTokenConfig = crossEndpoint === true;
     const result = await recordCollectedUsage(
       {
         spendTokens: db.spendTokens,
@@ -1228,12 +1916,16 @@ class AgentClient extends BaseClient {
         messageId: this.responseMessageId,
         balance,
         transactions,
-        endpointTokenConfig: this.options.endpointTokenConfig,
-        resolveEndpointTokenConfig: (usage) => this.resolveAgentEndpointTokenConfig(usage),
+        endpointTokenConfig: overrideTokenConfig
+          ? endpointTokenConfig
+          : this.options.endpointTokenConfig,
+        ...(overrideTokenConfig
+          ? {}
+          : { resolveEndpointTokenConfig: (usage) => this.resolveAgentEndpointTokenConfig(usage) }),
       },
     );
 
-    if (result) {
+    if (result && updateStreamUsage) {
       this.usage = result;
     }
   }
@@ -1297,10 +1989,14 @@ class AgentClient extends BaseClient {
       const emit = (async () => {
         try {
           if (streamId) {
-            await GenerationJobManager.emitChunk(streamId, {
-              event: UsageEvents.ON_TOKEN_USAGE,
-              data,
-            });
+            await GenerationJobManager.emitChunk(
+              streamId,
+              {
+                event: UsageEvents.ON_TOKEN_USAGE,
+                data,
+              },
+              { expectedCreatedAt: this.jobCreatedAt },
+            );
           } else {
             sendEvent(res, { event: UsageEvents.ON_TOKEN_USAGE, data });
           }
@@ -1355,6 +2051,9 @@ class AgentClient extends BaseClient {
         // Steer parts are user speech, not intermediate agent output — dropping
         // one would erase the user's words from the persisted turn.
         part.type === ContentTypes.STEER ||
+        // Activity labels summarize the hidden intermediate outputs — exactly
+        // the affordance hide_sequential_outputs wants to keep visible.
+        part.type === ContentTypes.ACTIVITY_LABEL ||
         part.tool_call_ids,
     );
   }
@@ -1405,7 +2104,11 @@ class AgentClient extends BaseClient {
     // and the streamed args were dropped (name-less chunks) — without this the
     // unfinished turn saves an empty ask part the record card can't render.
     if (interrupt.payload?.type === 'ask_user_question' && Array.isArray(this.contentParts)) {
-      const stamped = attachAskUserQuestionArgs(this.contentParts, interrupt.payload.question);
+      const stamped = attachAskUserQuestionArgs(
+        this.contentParts,
+        interrupt.payload.question,
+        interrupt.payload.tool_call_id,
+      );
       if (stamped !== this.contentParts) {
         this.contentParts.length = 0;
         this.contentParts.push(...stamped);
@@ -1446,36 +2149,29 @@ class AgentClient extends BaseClient {
       }
     }
 
-    const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction);
-    if (!paused) {
-      logger.debug(
-        `[AgentClient] Interrupt fired but job ${streamId} was not running; not pausing`,
-      );
-      return;
-    }
-
-    // Capture deferred tools discovered (via tool_search) earlier in THIS turn so resume
-    // can replay them into createRun. The resumed graph is rebuilt with `messages: []`
-    // (state comes from the checkpoint), so the in-turn tool_search results that mark a
-    // deferred tool discovered aren't present there — without this the paused deferred
-    // tool would be missing from the rebuilt schema-only toolMap and resume would fail
-    // with "unknown tool". Inert for non-deferred turns (the set comes back empty).
+    // Snapshot deferred-tool discovery before exposing the pause. Tool-search results
+    // may live only in the interrupted SDK graph, so they must be committed atomically
+    // with requires_action for an immediate/cross-replica resume to retain the schemas.
+    let discoveredTools = [];
     try {
-      const runMessages =
-        typeof run.getRunMessages === 'function' ? run.getRunMessages() : undefined;
-      if (Array.isArray(runMessages) && runMessages.length > 0) {
-        const discovered = extractDiscoveredToolsFromHistory(runMessages);
-        if (discovered.size > 0) {
-          await GenerationJobManager.updateMetadata(streamId, {
-            discoveredTools: Array.from(discovered),
-          });
-        }
-      }
+      discoveredTools = getRunDiscoveredTools(run);
     } catch (err) {
       logger.warn(
         `[AgentClient] Failed to capture discovered tools for resume on ${streamId}`,
         err?.message ?? err,
       );
+    }
+
+    const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction, {
+      expectedCreatedAt: this.jobCreatedAt,
+      ...(discoveredTools.length > 0 ? { discoveredTools } : {}),
+      persistencePending: true,
+    });
+    if (!paused) {
+      logger.debug(
+        `[AgentClient] Interrupt fired but job ${streamId} was not running; not pausing`,
+      );
+      return;
     }
 
     this.pendingApproval = pendingAction;
@@ -1493,10 +2189,14 @@ class AgentClient extends BaseClient {
         logger.error(`[AgentClient] Failed to release request slot on pause ${streamId}`, err);
       }
     }
-    await GenerationJobManager.emitChunk(streamId, {
-      event: ApprovalEvents.ON_PENDING_ACTION,
-      data: toClientPendingAction(pendingAction),
-    });
+    await GenerationJobManager.emitChunk(
+      streamId,
+      {
+        event: ApprovalEvents.ON_PENDING_ACTION,
+        data: toClientPendingAction(pendingAction),
+      },
+      { expectedCreatedAt: this.jobCreatedAt },
+    );
     // Steers queued before this pause stay IN the store for the whole approval
     // window: `resumeState.pendingSteers` re-seeds the client's chips on
     // reload, and the resumed run drains them at its first tool boundary.
@@ -1541,6 +2241,11 @@ class AgentClient extends BaseClient {
         runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
+          // LangGraph owns `checkpoint_ns` and resets it to '' at every root
+          // invocation. The saver maps this private immutable generation key
+          // into its physical namespace while tools keep the conversation id.
+          checkpoint_ns: '',
+          [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
@@ -1618,7 +2323,7 @@ class AgentClient extends BaseClient {
         summary: initialSummary,
         boundaryTokenAdjustment,
       } = formatAgentMessages(
-        payload,
+        stripActivityLabelParts(payload),
         this.indexTokenCountMap,
         toolSet,
         skillPrimeResult?.skills,
@@ -1692,7 +2397,7 @@ class AgentClient extends BaseClient {
       const memoryMessages =
         this.processMemory && this.memoryPayload
           ? formatAgentMessages(
-              this.memoryPayload,
+              stripActivityLabelParts(this.memoryPayload),
               undefined,
               toolSet,
               skillPrimeResult?.skills,
@@ -1757,7 +2462,63 @@ class AgentClient extends BaseClient {
         }
 
         const streamId = this.options.req?._resumableStreamId;
-        run = await createRun({
+        // HITL: establish an empty checkpoint barrier for THIS immutable generation
+        // before exposing its graph. A retried/recovered initialization may have left
+        // partial state in the same saver scope; a predecessor uses a different scope,
+        // so even a late remote write cannot be rehydrated or deleted here. No-op when
+        // HITL is off or the generation has no remnants. Deliberately unconditional
+        // per HITL turn: any cheaper Redis flag can go stale across replicas/restarts,
+        // while these are two indexed, usually-empty deleteMany operations.
+        // The gate mirrors createRun's checkpointer condition: the approval policy
+        // OR an ask_user_question-capable agent (which attaches a checkpointer
+        // WITHOUT the approval policy).
+        //
+        // Start the prune alongside graph construction. The all-settled barrier
+        // below still guarantees it completes before the graph is exposed or run.
+        const shouldPruneCheckpoint =
+          streamId &&
+          (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion));
+        let checkpointPrunePromise = Promise.resolve();
+        if (shouldPruneCheckpoint && this.checkpointNamespace !== '') {
+          checkpointPrunePromise = deleteAgentCheckpoint(
+            this.conversationId,
+            agentsEConfig?.checkpointer,
+            undefined,
+            {
+              throwOnError: true,
+              checkpointNamespace: this.checkpointNamespace,
+            },
+          );
+        } else if (shouldPruneCheckpoint) {
+          checkpointPrunePromise = captureAgentCheckpointGeneration(
+            this.conversationId,
+            agentsEConfig?.checkpointer,
+            { throwOnError: true },
+          ).then(async (checkpointGeneration) => {
+            /** Legacy jobs share LangGraph's root/nested namespaces. Capture
+             * their immutable ids first, then prove this client still owns
+             * the exact job epoch before deleting that set. If a replacement
+             * arrived before/during capture the check fails; if it arrives
+             * after the check, its newly-written checkpoint ids are outside
+             * the snapshot and therefore cannot be deleted. */
+            const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
+            if (
+              !liveJob ||
+              liveJob.createdAt !== this.jobCreatedAt ||
+              liveJob.status !== 'running'
+            ) {
+              throw new Error('Generation replaced before legacy checkpoint cleanup');
+            }
+            await deleteAgentCheckpoint(
+              this.conversationId,
+              agentsEConfig?.checkpointer,
+              checkpointGeneration,
+              { throwOnError: true },
+            );
+          });
+        }
+
+        const createRunPromise = createRun({
           agents,
           messages,
           // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
@@ -1770,6 +2531,7 @@ class AgentClient extends BaseClient {
           // boundary and inject them into graph state. The offset wrapper
           // shifts SDK content indices past any spliced steer parts.
           steering: this.buildSteerWiring(streamId),
+          activityLabel: this.buildActivityLabelWiring(streamId, abortController.signal),
           indexTokenCountMap,
           initialSummary,
           initialSessions,
@@ -1797,11 +2559,25 @@ class AgentClient extends BaseClient {
             this.collectedUsage,
             this.buildSubagentUsageEmitter(appConfig),
           ),
+        }).then((createdRun) => {
+          if (!createdRun) {
+            throw new Error('Failed to create run');
+          }
+          this.options.startupTelemetry?.mark('run_created');
+          return createdRun;
         });
 
-        if (!run) {
-          throw new Error('Failed to create run');
+        const [createRunResult, checkpointPruneResult] = await Promise.allSettled([
+          createRunPromise,
+          checkpointPrunePromise,
+        ]);
+        if (createRunResult.status === 'rejected') {
+          throw createRunResult.reason;
         }
+        if (checkpointPruneResult.status === 'rejected') {
+          throw checkpointPruneResult.reason;
+        }
+        run = createRunResult.value;
 
         this.run = run;
         if (this._resolveRun) {
@@ -1810,7 +2586,7 @@ class AgentClient extends BaseClient {
         }
 
         if (streamId && run.Graph) {
-          GenerationJobManager.setGraph(streamId, run.Graph);
+          GenerationJobManager.setGraph(streamId, run.Graph, this.jobCreatedAt);
         }
 
         if (userMCPAuthMap != null) {
@@ -1820,25 +2596,14 @@ class AgentClient extends BaseClient {
         /** @deprecated Agent Chain */
         config.configurable.last_agent_id = agents[agents.length - 1].id;
 
-        // HITL: clear any checkpoint orphaned by a prior paused turn in this
-        // conversation (one that expired or was aborted while paused) so this fresh
-        // turn starts clean instead of rehydrating a stale interrupt — thread_id is
-        // the stable conversationId. No-op when HITL is off or nothing is orphaned.
-        // Deliberately UNCONDITIONAL per HITL turn: any cheaper gate (job metadata,
-        // a Redis flag) can go stale across replicas/restarts and skip the prune
-        // exactly when an orphan exists, while these are two indexed, usually-empty
-        // deleteMany ops — correctness over a micro-optimization.
-        // The gate mirrors createRun's checkpointer condition: the approval policy
-        // OR an ask_user_question-capable agent (which attaches a checkpointer
-        // WITHOUT the approval policy) — an ask pause abandoned via job replacement
-        // or Stop would otherwise rehydrate here and silently duplicate context.
-        if (
-          streamId &&
-          (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion))
-        ) {
-          await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
+        this.options.startupTelemetry?.mark('stream_processing_started');
+        /** Flag durable BEFORE the run can claim a label: gap reconciliation
+         *  is gated on it, and ordering it here (one settled-on-failure
+         *  await) keeps the claim-time reservation emit immediate — see
+         *  `emitLabelEvent` in buildActivityLabelWiring. */
+        if (this.activityLabelsMarkedPromise != null) {
+          await this.activityLabelsMarkedPromise;
         }
-
         await run.processStream({ messages }, config, {
           callbacks: {
             [Callback.TOOL_ERROR]: logToolError,
@@ -1853,6 +2618,7 @@ class AgentClient extends BaseClient {
         config.signal = null;
       };
 
+      this.options.startupTelemetry?.mark('run_input_prepared');
       await runAgents(initialMessages);
 
       /**
@@ -1885,6 +2651,18 @@ class AgentClient extends BaseClient {
        * below the reply on finalize. Post-run unshift keeps the final
        * responseMessage.content in the right order.
        */
+      /**
+       * Settle in-flight label fills BEFORE the content is reshaped below.
+       * A fill emits its claim-time index; the skill-card unshift and the
+       * hide-sequential filter both shift positions, so a fill landing after
+       * either would emit a stale index — and a client that already synced
+       * the reshaped array applies it onto the wrong part. A paused turn
+       * never gets a final event to repair that. Costs nothing extra: these
+       * are the same promises the finalization settle would wait on, and
+       * that later call then sees an empty pending list.
+       */
+      await this.settleActivityLabels();
+
       const manualPrimed = this.options.agent?.manualSkillPrimes ?? [];
       if (manualPrimed.length > 0) {
         const runId = this.responseMessageId ?? 'skill-prime';
@@ -1904,9 +2682,16 @@ class AgentClient extends BaseClient {
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
           err,
         );
+        const videoError = resolveGoogleVideoError({
+          error: err,
+          provider: this.options.agent?.provider,
+          hasYouTubeVideo: this.injectedYouTubeVideo,
+        });
         this.contentParts.push({
           type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
+          [ContentTypes.ERROR]:
+            videoError ??
+            `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
         });
       }
     } finally {
@@ -1923,6 +2708,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      await this.settleActivityLabels();
 
       /** Flush subagent usage emits the sink fired without awaiting, so their
        *  persist/publish completes before we return and the job is cleaned up
@@ -1965,9 +2751,9 @@ class AgentClient extends BaseClient {
 
       // HITL: a non-paused turn deliberately prunes nothing here. The lazy checkpointer
       // (LazyMongoSaver) never persists a clean-exit checkpoint, so there is
-      // nothing this turn left to delete. A checkpoint orphaned by a PRIOR abandoned pause
-      // is cleared by the pre-run prune (before processStream) on the next turn, with the
-      // Mongo TTL as the backstop. Dropping this post-completion prune also removes its
+      // nothing this turn left to delete. Terminal HITL owners eagerly delete their exact
+      // saver scope, with the Mongo TTL as the backstop for a crashed owner. Dropping a
+      // generic post-completion prune also removes its
       // job-replacement race: an older run's late finally can no longer delete a newer
       // paused run's checkpoint, because there is no longer a clean-path prune to race.
 
@@ -1982,11 +2768,11 @@ class AgentClient extends BaseClient {
    *
    * The original run lives in a detached background task that exits when the run
    * pauses, so resume REBUILDS the run on a fresh graph bound to the same
-   * `thread_id` (= conversationId) and the durable checkpointer. LangGraph rehydrates
-   * the paused graph state from the checkpoint; `run.resume(value)` re-enters the
-   * interrupted node with the user's decision. State comes from the checkpoint, so
-   * no message history is rebuilt here — `createRun` only needs the agent(s) to
-   * reconstruct the graph structure.
+   * `thread_id` (= conversationId), immutable saver scope, and durable checkpointer.
+   * LangGraph rehydrates the paused graph state from that scoped checkpoint;
+   * `run.resume(value)` re-enters the interrupted node with the user's decision.
+   * State comes from the checkpoint, so no message history is rebuilt here —
+   * `createRun` only needs the agent(s) to reconstruct the graph structure.
    *
    * `seedContent` is the content streamed before the pause (the assistant message +
    * its tool call). In Redis mode the job store's append log already spans the pause,
@@ -2001,12 +2787,14 @@ class AgentClient extends BaseClient {
    * @param {object} params
    * @param {Agents.ToolApprovalDecisionMap | { answer: string }} params.resumeValue
    * @param {Array} [params.seedContent] - content aggregated before the pause
+   * @param {Array<import('@librechat/agents').RunStep>} [params.runSteps] - run steps emitted before the pause
    * @param {AbortController} [params.abortController]
    * @param {Pick<import('@langchain/langgraph').Command, 'update' | 'goto'>} [params.commandOptions]
    */
   async resumeCompletion({
     resumeValue,
     seedContent = [],
+    runSteps = [],
     abortController = null,
     commandOptions,
     userMCPAuthMap,
@@ -2031,6 +2819,8 @@ class AgentClient extends BaseClient {
         runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
+          checkpoint_ns: '',
+          [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
@@ -2100,10 +2890,12 @@ class AgentClient extends BaseClient {
         // Steering stays live across a pause/resume cycle: steers queued while
         // the resumed segment runs drain at its tool-batch boundaries.
         steering: this.buildSteerWiring(streamId),
+        // Activity labels likewise survive pause/resume: post-resume tool
+        // batches keep claiming slots and generating group headers.
+        activityLabel: this.buildActivityLabelWiring(streamId, abortController.signal),
         // Replay deferred tools discovered before the pause. With `messages: []` the
-        // discovery scan finds nothing, so a deferred tool the paused call targets
-        // would be absent from the rebuilt toolMap; these names (captured at pause)
-        // force it back in. Undefined/empty for non-deferred turns — a harmless no-op.
+        // discovery scan finds nothing, so these names restore the schemas to the
+        // rebuilt model binding. Undefined/empty for non-deferred turns is a no-op.
         discoveredToolNames,
         initialSessions,
         runId: this.responseMessageId,
@@ -2137,6 +2929,8 @@ class AgentClient extends BaseClient {
         throw new Error('Failed to create run for resume');
       }
 
+      hydrateResumeRunSteps(runSteps, this.stepMap, run.Graph, seedContent);
+
       this.run = run;
       if (this._resolveRun) {
         this._resolveRun(run);
@@ -2150,7 +2944,7 @@ class AgentClient extends BaseClient {
       // introspection fall back to the durable chunk reconstruction, which is complete.
       // `setContentParts` still points the in-memory store at the seeded client content.
       if (streamId && this.contentParts) {
-        GenerationJobManager.setContentParts(streamId, this.contentParts);
+        GenerationJobManager.setContentParts(streamId, this.contentParts, this.jobCreatedAt);
       }
 
       // Carry the user's MCP auth into the rebuilt run so an approved MCP tool executes
@@ -2162,6 +2956,10 @@ class AgentClient extends BaseClient {
       /** @deprecated Agent Chain */
       config.configurable.last_agent_id = agents[agents.length - 1].id;
 
+      /** Same flag-before-run ordering as chatCompletion's processStream. */
+      if (this.activityLabelsMarkedPromise != null) {
+        await this.activityLabelsMarkedPromise;
+      }
       await run.resume(
         resumeValue,
         config,
@@ -2175,7 +2973,11 @@ class AgentClient extends BaseClient {
       // question). Re-arm the same interrupt gate so the cycle can repeat.
       await this.handleRunInterrupt(run, streamId);
 
-      // Mirror chatCompletion: strip hidden intermediate sequential-agent content
+      // Mirror chatCompletion: settle label fills before the filter below can
+      // shift part positions out from under an in-flight fill's claimed index.
+      await this.settleActivityLabels();
+
+      // Strip hidden intermediate sequential-agent content
       // before resume finalize/re-pause persistence reads `this.contentParts`, so a
       // resumed sequential chain doesn't persist/emit outputs hide_sequential_outputs
       // is meant to hide.
@@ -2212,6 +3014,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      await this.settleActivityLabels();
 
       if (this.pendingSubagentEmits.length > 0) {
         await Promise.allSettled(this.pendingSubagentEmits);
@@ -2429,11 +3232,13 @@ class AgentClient extends BaseClient {
 
     /** Resolve request-based headers across provider-specific header locations:
      *  OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`
-     *  (preserved above), and Google `customHeaders`.
+     *  (preserved above), and Google `customHeaders`. Uses the `req` captured at
+     *  entry — `disposeClient` nulls `this.options.req` and can race this async
+     *  title flow, which would blank the user context mid-generation.
      */
     resolveConfigHeaders({
       llmConfig: clientOptions,
-      user: createSafeUser(this.options.req?.user),
+      user: createSafeUser(req?.user),
       body: {
         messageId: this.responseMessageId,
         conversationId: this.conversationId,

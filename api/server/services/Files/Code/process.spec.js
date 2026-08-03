@@ -29,7 +29,7 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-const { FileContext } = require('librechat-data-provider');
+const { FileContext, ResourceType } = require('librechat-data-provider');
 
 // Mock uuid
 jest.mock('uuid', () => ({
@@ -115,10 +115,11 @@ jest.mock('@librechat/agents', () => ({
 
 // Mock models
 const mockClaimCodeFile = jest.fn();
+const mockUpdateFile = jest.fn();
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
-  updateFile: jest.fn(),
+  updateFile: mockUpdateFile,
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
 }));
 
@@ -225,6 +226,7 @@ describe('Code Process', () => {
         conversationId: 'conv-123',
         file_id: 'mock-uuid-1234',
         user: 'user-123',
+        sourceDispatchedAt: expect.any(Number),
       });
 
       expect(result.file_id).toBe('existing-file-id');
@@ -246,6 +248,138 @@ describe('Code Process', () => {
       expect(result.file_id).toBe('mock-uuid-1234');
       expect(result.usage).toBe(1);
       expect(getRetentionExpiry).toHaveBeenCalledWith(baseParams.req);
+    });
+
+    it('skips the file when the claim is newer than the background run (stale-harvest guard)', async () => {
+      /* A newer run owns the filename slot and the (filename, conversationId)
+       * unique index leaves stale bytes nowhere to live — the detached
+       * harvest must not overwrite fresh content. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        messageId: 'newer-run-msg',
+        updatedAt: '2024-01-02T00:00:00.000Z',
+      });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const result = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-01T00:00:00.000Z').getTime(),
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it('still reuses the claim when it predates the background run', async () => {
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      });
+      mockUpdateFile.mockResolvedValue({ file_id: 'existing-file-id' });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const { file: result } = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-02T00:00:00.000Z').getTime(),
+      });
+
+      expect(result.file_id).toBe('existing-file-id');
+    });
+
+    it('skips when a newer task holds an unwritten claim (insert stamp, no updatedAt yet)', async () => {
+      /* A newer task claimed the filename but its content write is still in
+       * flight: the claim-insert stamp alone must trip the guard. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        metadata: {
+          sourceDispatchedAt: new Date('2024-01-02T00:00:00.000Z').getTime(),
+        },
+      });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const result = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-01T00:00:00.000Z').getTime(),
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it('commits background writes conditionally: an inserter overtaken mid-flight misses', async () => {
+      /* This task INSERTED the claim, then a newer task stamped and wrote
+       * while this one was still downloading — the ownership predicate is in
+       * the write's own filter, so the commit atomically misses. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'mock-uuid-1234',
+        user: 'user-123',
+      });
+      mockUpdateFile.mockResolvedValueOnce(null);
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const result = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-01T00:00:00.000Z').getTime(),
+      });
+
+      expect(result).toBeNull();
+      expect(mockUpdateFile).toHaveBeenCalledWith(
+        expect.objectContaining({ file_id: 'mock-uuid-1234' }),
+        {
+          $or: [
+            { 'metadata.sourceDispatchedAt': { $exists: false } },
+            {
+              'metadata.sourceDispatchedAt': {
+                $lte: new Date('2024-01-01T00:00:00.000Z').getTime(),
+              },
+            },
+          ],
+        },
+      );
+    });
+
+    it('commits when the conditional write matches (ownership held through the write)', async () => {
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      });
+      mockUpdateFile.mockResolvedValueOnce({ file_id: 'existing-file-id' });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const { file: result } = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-02T00:00:00.000Z').getTime(),
+      });
+
+      expect(result.file_id).toBe('existing-file-id');
+    });
+
+    it('lets a newer task overwrite an OLDER task that wrote late (writer dispatch order wins)', async () => {
+      /* Old task (dispatched Jan 1) settled late and wrote at Jan 3;
+       * this task was dispatched Jan 2. Wall-clock updatedAt is newer
+       * than our dispatch, but the WRITER is older — overwrite. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        updatedAt: '2024-01-03T00:00:00.000Z',
+        metadata: {
+          sourceDispatchedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
+        },
+      });
+      mockUpdateFile.mockResolvedValue({ file_id: 'existing-file-id' });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const { file: result } = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-02T00:00:00.000Z').getTime(),
+      });
+
+      expect(result.file_id).toBe('existing-file-id');
+      expect(result.metadata.sourceDispatchedAt).toBe(
+        new Date('2024-01-02T00:00:00.000Z').getTime(),
+      );
     });
   });
 
@@ -768,6 +902,7 @@ describe('Code Process', () => {
             storage_session_id: 'session-123',
             file_id: 'file-id-123',
           },
+          sourceDispatchedAt: expect.any(Number),
         });
       });
 
@@ -1763,6 +1898,135 @@ describe('Code Process', () => {
       mockAxios.mockResolvedValue({ data: null });
       return { handleFileUpload, getDownloadStream };
     }
+
+    it('uses the permission resource type established by the calling route', async () => {
+      const files = [
+        {
+          file_id: 'owner-file',
+          filename: 'owner.txt',
+          user: 'agent-owner',
+          metadata: {},
+        },
+      ];
+      getFiles.mockResolvedValue(files);
+      filterFilesByAgentAccess.mockImplementation(({ files: authorizedFiles }) =>
+        Promise.resolve(authorizedFiles),
+      );
+
+      await primeFiles({
+        req: { user: { id: 'remote-viewer', role: 'USER' } },
+        agentId: 'agent-123',
+        agentResourceType: ResourceType.REMOTE_AGENT,
+        tool_resources: { execute_code: { file_ids: ['owner-file'] } },
+      });
+
+      expect(filterFilesByAgentAccess).toHaveBeenCalledWith({
+        files,
+        userId: 'remote-viewer',
+        role: 'USER',
+        agentId: 'agent-123',
+        resourceType: ResourceType.REMOTE_AGENT,
+      });
+    });
+
+    it('does not read a runtime file record that has no authorized database record', async () => {
+      const getDownloadStream = jest.fn().mockResolvedValue('forged-stream');
+      const handleFileUpload = jest.fn();
+      getStrategyFunctions.mockImplementation((source) => {
+        if (source === 'execute_code') return { handleFileUpload };
+        return { getDownloadStream };
+      });
+      getFiles.mockResolvedValue([]);
+      mockAxios.mockResolvedValue({ data: null });
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: {
+            files: [
+              {
+                file_id: 'forged-file',
+                filename: 'secrets.txt',
+                filepath: '/etc/passwd',
+                source: 'local',
+                metadata: {
+                  codeEnvRef: {
+                    kind: 'user',
+                    id: 'user-123',
+                    storage_session_id: 'missing-session',
+                    file_id: 'missing-file',
+                  },
+                },
+              },
+            ],
+          },
+        },
+        agentId: 'agent-id',
+      });
+
+      expect(result.files).toEqual([]);
+      expect(getDownloadStream).not.toHaveBeenCalled();
+      expect(handleFileUpload).not.toHaveBeenCalled();
+    });
+
+    it('rehydrates a runtime file by ID before using its storage metadata', async () => {
+      const trustedFile = {
+        file_id: 'runtime-file',
+        filename: 'trusted.txt',
+        filepath: '/uploads/trusted.txt',
+        source: 'local',
+        context: 'execute_code',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'trusted-session',
+            file_id: 'trusted-file',
+          },
+        },
+      };
+      const getDownloadStream = jest.fn().mockResolvedValue('trusted-stream');
+      const handleFileUpload = jest
+        .fn()
+        .mockResolvedValue({ storage_session_id: 'new-session', file_id: 'new-file' });
+      getStrategyFunctions.mockImplementation((source) => {
+        if (source === 'execute_code') return { handleFileUpload };
+        return { getDownloadStream };
+      });
+      getFiles.mockResolvedValue([trustedFile]);
+      mockAxios.mockResolvedValue({ data: null });
+
+      await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: {
+            files: [
+              {
+                ...trustedFile,
+                filepath: '/etc/passwd',
+                source: 'forged-source',
+                metadata: {
+                  codeEnvRef: {
+                    kind: 'user',
+                    id: 'attacker',
+                    storage_session_id: 'forged-session',
+                    file_id: 'forged-file',
+                  },
+                },
+              },
+            ],
+          },
+        },
+        agentId: 'agent-id',
+      });
+
+      expect(getDownloadStream).toHaveBeenCalledTimes(1);
+      expect(getDownloadStream).toHaveBeenCalledWith(
+        { user: { id: 'user-123', role: 'USER' } },
+        '/uploads/trusted.txt',
+      );
+      expect(handleFileUpload).toHaveBeenCalledTimes(1);
+    });
 
     it('seed receives FRESH (storage_session_id, file_id) from the reupload response', async () => {
       const dbFile = {

@@ -107,6 +107,14 @@ export interface RegisterCodeExecutionToolsResult {
   toolDefinitions: LCTool[];
   /** Tool names newly registered (skipped names that already existed). */
   registered: string[];
+  /**
+   * Every tool name this registration manages, whether newly registered or
+   * already present. `initializeAgent` records these under the capability
+   * marker that triggered the call, so a `tool_options` entry keyed by the
+   * marker projects onto exactly the definitions the capability produced —
+   * the registrar itself is the source of truth, not a hand-maintained map.
+   */
+  toolNames: string[];
 }
 
 export type RegisterFileAuthoringToolsResult = RegisterCodeExecutionToolsResult;
@@ -443,6 +451,7 @@ export function registerCodeExecutionTools(
   const candidates: LCTool[] = includeBash
     ? [readFileDef, buildBashToolDef({ enableToolOutputReferences, statefulSessions })]
     : [readFileDef];
+  const toolNames = candidates.map((def) => def.name);
 
   const inputDefinitions = toolDefinitions ?? [];
   let workingDefinitions = inputDefinitions;
@@ -485,11 +494,12 @@ export function registerCodeExecutionTools(
    * code-only `read_file` definition was upgraded above.
    */
   if (newDefs.length === 0) {
-    return { toolDefinitions: workingDefinitions, registered };
+    return { toolDefinitions: workingDefinitions, registered, toolNames };
   }
   return {
     toolDefinitions: [...workingDefinitions, ...newDefs],
     registered,
+    toolNames,
   };
 }
 
@@ -499,6 +509,7 @@ export function registerFileAuthoringTools(
   const { toolRegistry, toolDefinitions, includeSkillFileInstructions = true } = params;
 
   const candidates = buildFileAuthoringDefs(includeSkillFileInstructions);
+  const toolNames = candidates.map((def) => def.name);
   const inputDefinitions = toolDefinitions ?? [];
   let workingDefinitions = inputDefinitions;
 
@@ -536,10 +547,11 @@ export function registerFileAuthoringTools(
   }
 
   if (newDefs.length === 0) {
-    return { toolDefinitions: workingDefinitions, registered };
+    return { toolDefinitions: workingDefinitions, registered, toolNames };
   }
   return {
     toolDefinitions: [...workingDefinitions, ...newDefs],
     registered,
+    toolNames,
   };
 }

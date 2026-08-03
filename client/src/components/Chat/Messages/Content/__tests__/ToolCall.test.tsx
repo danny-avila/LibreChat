@@ -33,9 +33,13 @@ jest.mock('~/hooks', () => ({
   }),
 }));
 
-jest.mock('~/hooks/MCP', () => ({
-  useMCPIconMap: () => new Map(),
-}));
+jest.mock('~/hooks/MCP', () => {
+  const mcpServerNames: string[] = [];
+  return {
+    useMCPIconMap: () => new Map(),
+    useMCPServerNames: () => mcpServerNames,
+  };
+});
 
 jest.mock('~/components/Chat/Messages/Content/MessageContent', () => ({
   __esModule: true,
@@ -113,6 +117,40 @@ describe('ToolCall', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('intent label', () => {
+    it('renders a streaming intent as the live label before args are complete', () => {
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          args={'{"intent":"Searching for OAuth handling in the callbac'}
+          output={null}
+          initialProgress={0.5}
+          isSubmitting={true}
+        />,
+      );
+      expect(
+        screen.getAllByText(/Searching for OAuth handling in the callbac/).length,
+      ).toBeGreaterThan(0);
+      /** The aria-live region keeps its STABLE generic value while the intent
+       *  streams — an atomic polite region would otherwise re-announce the
+       *  whole growing sentence on every delta. */
+      expect(screen.getByText('Running testFunction')).toBeInTheDocument();
+    });
+
+    it('keeps the intent as the settled label instead of the generic completion text', () => {
+      renderWithRecoil(
+        <ToolCall {...mockProps} args={'{"intent":"Looking up the customer record","q":"acme"}'} />,
+      );
+      expect(screen.getAllByText('Looking up the customer record').length).toBeGreaterThan(0);
+      expect(screen.queryByText('Completed testFunction')).not.toBeInTheDocument();
+    });
+
+    it('falls back to the generic labels when args carry no intent', () => {
+      renderWithRecoil(<ToolCall {...mockProps} />);
+      expect(screen.getAllByText('Completed testFunction').length).toBeGreaterThan(0);
+    });
   });
 
   describe('attachments prop passing', () => {

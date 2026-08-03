@@ -2,6 +2,7 @@ const { Constants: AgentConstants } = require('@librechat/agents');
 const {
   Tools,
   Constants,
+  ResourceType,
   EModelEndpoint,
   isActionTool,
   actionDelimiter,
@@ -45,6 +46,7 @@ const mockCreateActionTool = jest.fn();
 const mockGetServerConfig = jest.fn();
 const mockFlowManager = { getFlowState: jest.fn() };
 const mockResolveConfigServers = jest.fn();
+const mockResolveMcpServerNames = jest.fn();
 const mockUserCanUseMCPServers = jest.fn().mockResolvedValue(true);
 jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn().mockResolvedValue({}),
@@ -86,6 +88,18 @@ jest.mock('~/config', () => ({
 }));
 jest.mock('~/server/services/MCP', () => ({
   resolveConfigServers: (...args) => mockResolveConfigServers(...args),
+  resolveMcpServerNames: (...args) => mockResolveMcpServerNames(...args),
+  resolveMcpServerContext: async (...args) => {
+    const configServers = (await mockResolveConfigServers(...args)) ?? {};
+    const serverNames = Object.keys(configServers);
+    return { configServers, serverNames, rawServerNames: serverNames };
+  },
+  /** Mirrors the real resolver's shape; these fixtures use safe names, so the
+   *  raw set is always the complete audit. */
+  resolveCollisionAuditNames: jest.fn(async ({ rawServerNames, accessibleServerNames }) => ({
+    names: accessibleServerNames?.length ? accessibleServerNames : rawServerNames,
+    complete: true,
+  })),
   createMCPPermissionContext: jest.fn((req) => ({
     canUseServers: (user) => mockUserCanUseMCPServers(user, req),
   })),
@@ -101,6 +115,7 @@ const {
   processRequiredActions,
   resolveAgentCapabilities,
 } = require('../ToolService');
+const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { PENDING_STALE_MS } = require('@librechat/api');
 
@@ -139,6 +154,7 @@ describe('ToolService - Action Capability Gating', () => {
     mockGetServerConfig.mockResolvedValue(undefined);
     mockFlowManager.getFlowState.mockResolvedValue(undefined);
     mockResolveConfigServers.mockResolvedValue({});
+    mockResolveMcpServerNames.mockResolvedValue([]);
   });
 
   describe('resolveAgentCapabilities', () => {
@@ -215,6 +231,40 @@ describe('ToolService - Action Capability Gating', () => {
   describe('loadAgentTools (definitionsOnly=true) — action tool filtering', () => {
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = 'calculator';
+
+    it('should preserve the remote-agent permission boundary while priming files', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.file_search,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const tool_resources = {
+        file_search: { file_ids: ['search-file'] },
+        execute_code: { file_ids: ['code-file'] },
+      };
+      const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
+      const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.file_search, Tools.execute_code] },
+        tool_resources,
+        agentResourceType: ResourceType.REMOTE_AGENT,
+        definitionsOnly: true,
+      });
+
+      const expectedParams = {
+        req,
+        tool_resources,
+        agentId: 'agent_123',
+        agentResourceType: ResourceType.REMOTE_AGENT,
+      };
+      expect(primeSearchFiles).toHaveBeenCalledWith(expectedParams);
+      expect(primeCodeFiles).toHaveBeenCalledWith(expectedParams);
+    });
 
     it('should exclude action tools from definitions when actions capability is disabled', async () => {
       const capabilities = [AgentCapabilities.tools, AgentCapabilities.web_search];
@@ -425,6 +475,66 @@ describe('ToolService - Action Capability Gating', () => {
       ]);
     });
 
+    it('fences resumable MCP OAuth definition events to the owning job epoch', async () => {
+      const req = createMockReq([AgentCapabilities.tools]);
+      const res = { writableEnded: false };
+      const serverName = 'Epoch-Server';
+      const streamId = 'stream-epoch';
+      const jobCreatedAt = 1234;
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig([AgentCapabilities.tools]));
+      mockResolveConfigServers.mockResolvedValue({
+        [serverName]: {
+          type: 'streamable-http',
+          url: `https://mcp.example.com/${serverName}`,
+          requiresOAuth: true,
+        },
+      });
+      mockLoadToolDefinitions
+        .mockImplementationOnce(async (_args, deps) => {
+          await deps.getOrFetchMCPServerTools(req.user.id, serverName);
+          return {
+            toolDefinitions: [],
+            toolRegistry: new Map(),
+            hasDeferredTools: false,
+          };
+        })
+        .mockResolvedValue({
+          toolDefinitions: [mcpTool],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        });
+      reinitMCPServer.mockImplementation(async ({ returnOnOAuth, oauthStart, oauthEnd }) => {
+        await oauthStart(`https://auth.example.com/${serverName}`);
+        if (returnOnOAuth === false) {
+          await oauthEnd();
+          return { availableTools: { [mcpTool]: {} } };
+        }
+        return { availableTools: null };
+      });
+
+      await loadAgentTools({
+        req,
+        res,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+        streamId,
+        jobCreatedAt,
+      });
+
+      expect(mockSendEvent).not.toHaveBeenCalled();
+      expect(mockEmitChunk).toHaveBeenCalledTimes(3);
+      expect(mockEmitChunk.mock.calls.map(([, event]) => event.event)).toEqual([
+        'on_run_step',
+        'on_run_step_delta',
+        'on_run_step_completed',
+      ]);
+      for (const [emittedStreamId, , options] of mockEmitChunk.mock.calls) {
+        expect(emittedStreamId).toBe(streamId);
+        expect(options).toEqual({ expectedCreatedAt: jobCreatedAt });
+      }
+    });
+
     it('should not expose cached MCP tool definitions when the registry lookup fails', async () => {
       const serverName = 'private-server';
       const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
@@ -618,6 +728,9 @@ describe('ToolService - Action Capability Gating', () => {
       const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
       const capabilities = [AgentCapabilities.tools];
       const req = createMockReq(capabilities);
+      /** A server whose own name contains the delimiter is only resolvable
+       *  against the configured set, so the key boundary is unambiguous. */
+      mockResolveConfigServers.mockResolvedValue({ [serverName]: {} });
       const res = { writableEnded: false };
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
       mockFlowManager.getFlowState.mockResolvedValue({
@@ -968,6 +1081,24 @@ describe('ToolService - Action Capability Gating', () => {
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = 'calculator';
 
+    it('threads the owning job epoch into web-search attachment callbacks', async () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.web_search];
+      const req = createMockReq(capabilities);
+      const res = {};
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res,
+        streamId: 'conversation-1',
+        jobCreatedAt: 1234,
+        agent: { id: 'agent_123', tools: [Tools.web_search] },
+        definitionsOnly: false,
+      });
+
+      expect(createOnSearchResults).toHaveBeenCalledWith(res, 'conversation-1', 1234);
+    });
+
     it('should not load action sets when actions capability is disabled', async () => {
       const capabilities = [AgentCapabilities.tools, AgentCapabilities.web_search];
       const req = createMockReq(capabilities);
@@ -1000,8 +1131,50 @@ describe('ToolService - Action Capability Gating', () => {
   });
 
   describe('loadToolsForExecution — action tool gating', () => {
+    it('should preserve the remote-agent permission boundary for deferred tool loading', async () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.file_search];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.file_search] },
+        toolNames: [Tools.file_search],
+        agentResourceType: ResourceType.REMOTE_AGENT,
+        actionsEnabled: false,
+      });
+
+      expect(mockLoadToolsUtil).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            agentResourceType: ResourceType.REMOTE_AGENT,
+          }),
+        }),
+      );
+    });
+
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = Tools.web_search;
+
+    it('threads the owning job epoch into web-search attachment callbacks', async () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.web_search];
+      const req = createMockReq(capabilities);
+      const res = {};
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadToolsForExecution({
+        req,
+        res,
+        streamId: 'conversation-1',
+        jobCreatedAt: 1234,
+        agent: { id: 'agent_123', tools: [Tools.web_search] },
+        toolNames: [Tools.web_search],
+        actionsEnabled: false,
+      });
+
+      expect(createOnSearchResults).toHaveBeenCalledWith(res, 'conversation-1', 1234);
+    });
 
     it('does not load code execution tools that were not registered for the agent', async () => {
       const capabilities = [

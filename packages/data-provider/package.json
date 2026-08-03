@@ -61,14 +61,14 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.12.4",
     "@types/react": "^18.2.18",
-    "@types/winston": "^2.4.4",
     "jest": "^30.2.0",
     "jest-junit": "^17.0.0",
     "openapi-types": "^12.1.3",
     "rimraf": "^6.1.3",
     "rollup": "^4.34.9",
     "tsdown": "^0.22.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "winston": "^3.17.0"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^4.28.0"

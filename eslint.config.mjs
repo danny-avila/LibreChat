@@ -169,7 +169,7 @@ export default [
     },
   },
   {
-    files: ['**/rollup.config.js', '**/.eslintrc.js', '**/jest.config.js', 'client/vite.config.ts'],
+    files: ['**/.eslintrc.js', '**/jest.config.js', 'client/vite.config.ts'],
     languageOptions: {
       globals: {
         ...globals.node,

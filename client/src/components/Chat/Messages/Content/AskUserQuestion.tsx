@@ -110,7 +110,9 @@ export default function AskUserQuestion({
   return (
     <div className="my-2 flex w-full flex-col gap-2 rounded-lg border border-border-light bg-surface-secondary p-3">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium text-text-primary">{question.question}</p>
+        <p className="min-w-0 text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
+          {question.question}
+        </p>
         {collapsed && isLivePause && (
           <button
             type="button"
@@ -123,7 +125,9 @@ export default function AskUserQuestion({
         )}
       </div>
       {question.description != null && question.description.length > 0 && (
-        <p className="text-sm text-text-secondary">{question.description}</p>
+        <p className="text-sm text-text-secondary [overflow-wrap:anywhere]">
+          {question.description}
+        </p>
       )}
 
       {choices.length > 0 && (
@@ -136,6 +140,7 @@ export default function AskUserQuestion({
               role={multiSelect ? 'checkbox' : undefined}
               aria-checked={multiSelect ? checkedIndices.includes(index) : undefined}
               disabled={locked}
+              className="h-auto min-h-9 max-w-full whitespace-normal py-1.5 text-left [overflow-wrap:anywhere]"
               onClick={() => (multiSelect ? toggleIndex(index) : submitSingle(index))}
             >
               {option.label}

@@ -7,11 +7,13 @@ import {
   dataService,
   actionDelimiter,
   actionDomainSeparator,
+  splitToolCallName,
 } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
-import { useMCPIconMap } from '~/hooks/MCP';
+import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
@@ -22,6 +24,7 @@ export default function ToolCall({
   initialProgress = 0.1,
   isLast = false,
   isSubmitting,
+  toolCallId,
   name,
   args: _args = '',
   output,
@@ -33,6 +36,7 @@ export default function ToolCall({
   initialProgress: number;
   isLast?: boolean;
   isSubmitting: boolean;
+  toolCallId?: string;
   name: string;
   args: string | Record<string, unknown>;
   output?: string | null;
@@ -64,14 +68,13 @@ export default function ToolCall({
     }
   }, [auth]);
 
+  const mcpServerNames = useMCPServerNames();
   const { function_name, domain, isMCPToolCall, mcpServerName } = useMemo(() => {
     if (typeof name !== 'string') {
       return { function_name: '', domain: null, isMCPToolCall: false, mcpServerName: '' };
     }
     if (name.includes(Constants.mcp_delimiter)) {
-      const parts = name.split(Constants.mcp_delimiter);
-      const func = parts[0];
-      const server = parts.slice(1).join(Constants.mcp_delimiter);
+      const [func, server = ''] = splitToolCallName(name, mcpServerNames);
       const displayName = func === 'oauth' ? server : func;
       return {
         function_name: displayName || '',
@@ -103,7 +106,7 @@ export default function ToolCall({
       isMCPToolCall: false,
       mcpServerName: '',
     };
-  }, [name, parsedAuthUrl]);
+  }, [name, parsedAuthUrl, mcpServerNames]);
 
   const toolIconType = useMemo(() => getToolIconType(name), [name]);
   const mcpIconMap = useMCPIconMap();
@@ -185,9 +188,17 @@ export default function ToolCall({
     return undefined;
   }, [isMCPToolCall, mcpServerName, domain, localize]);
 
+  /** Model-authored live label, streamed as the first args key (injected by
+   *  the `tool_intents` capability); persists as the settled label —
+   *  completion is a UI state, not a tense change. */
+  const intent = useToolCallIntent(_args);
+
   const getFinishedText = () => {
     if (cancelled) {
       return localize('com_ui_cancelled');
+    }
+    if (intent != null) {
+      return intent;
     }
     if (isMCPToolCall === true) {
       return localize('com_assistants_completed_function', { 0: function_name });
@@ -204,6 +215,10 @@ export default function ToolCall({
 
   return (
     <>
+      {/* The live region gets a STABLE in-progress value: the streaming
+          intent grows on every delta, and an atomic polite region would
+          re-announce the whole sentence each time. The settled intent is
+          announced once via getFinishedText. */}
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
           if (progress < 1 && !showCancelled) {
@@ -214,14 +229,19 @@ export default function ToolCall({
           return getFinishedText();
         })()}
       </span>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <div
+        className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5"
+        data-testid="tool-call"
+        data-tool-call-id={toolCallId}
+      >
         <ProgressText
           progress={progress}
           onClick={handleToggleInfo}
           inProgressText={
-            function_name
+            intent ??
+            (function_name
               ? localize('com_assistants_running_var', { 0: function_name })
-              : localize('com_assistants_running_action')
+              : localize('com_assistants_running_action'))
           }
           authText={
             !showCancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
@@ -241,7 +261,7 @@ export default function ToolCall({
           error={showCancelled}
         />
       </div>
-      <div style={expandStyle}>
+      <div style={expandStyle} data-tool-call-output-id={toolCallId}>
         <div className="overflow-hidden" ref={expandRef}>
           {hasInfo && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">

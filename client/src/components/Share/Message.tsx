@@ -1,5 +1,6 @@
 import { useAtomValue } from 'jotai';
 import type { TMessageProps } from '~/common';
+import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
@@ -86,6 +87,14 @@ export default function Message(props: TMessageProps) {
                         message={message}
                         attachments={attachments}
                         searchResults={searchResults}
+                        authorHeader={
+                          isCreatedByUser ? undefined : (
+                            <AuthorHeader
+                              icon={<Icon message={message} conversation={conversation} />}
+                              label={messageLabel}
+                            />
+                          )
+                        }
                       />
                     ) : (
                       <MessageContent

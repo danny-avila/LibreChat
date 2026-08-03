@@ -8,6 +8,7 @@
   "com_a11y_start": "L'IA a commencé sa réponse",
   "com_a11y_summarize_completed": "Contexte résumé.",
   "com_a11y_summarize_failed": "Le résumé a échoué, poursuite avec le contexte disponible.",
+  "com_a11y_summarize_started": "Résumé du contexte en cours",
   "com_agents_agent_card_label": "{{nom}} agent. {{description}}",
   "com_agents_all": "Tous les agents",
   "com_agents_all_category": "Tous",
