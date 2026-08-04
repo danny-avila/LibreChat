@@ -3,6 +3,7 @@ import type { TMessage, TSteerAppliedEvent } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
 import {
   isSameRunEpoch,
+  isSendableQueuedMessage,
   getSteerPart,
   applySteerPart,
   resolveRunEndTarget,
@@ -385,7 +386,21 @@ describe('isMergeableQueuedMessage', () => {
   });
 });
 
+describe('isSendableQueuedMessage', () => {
+  it('is the whole rule: a row with words is sendable, one without is not', () => {
+    expect(isSendableQueuedMessage(queued({ id: 'a', text: 'words' }))).toBe(true);
+    expect(isSendableQueuedMessage(queued({ id: 'b', text: '' }))).toBe(false);
+    expect(isSendableQueuedMessage(queued({ id: 'c', text: '   \n  ' }))).toBe(false);
+  });
+});
+
 describe('mergeQueuedMessages', () => {
+  it('refuses a batch containing a row being emptied, so a fold cannot bake in a blank', () => {
+    expect(
+      mergeQueuedMessages([queued({ id: 'a', text: 'kept' }), queued({ id: 'b', text: '  ' })]),
+    ).toBeNull();
+  });
+
   it('joins texts in drain order as paragraphs', () => {
     const merged = mergeQueuedMessages([
       queued({ id: 'a', text: 'first thought', createdAt: 1 }),

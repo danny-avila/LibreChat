@@ -16,6 +16,7 @@ import {
   insertQueuedOrigin,
   isMergeableQueuedMessage,
   isSameRunEpoch,
+  isSendableQueuedMessage,
   mergeQueuedMessages,
 } from '~/utils';
 import {
@@ -687,18 +688,23 @@ export default function useSteering({
   const updateQueuedText = useRecoilCallback(
     ({ snapshot, set }) =>
       (id: string, text: string): boolean => {
-        const trimmed = text.trim();
         const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
         const target = queue.find((item) => item.id === id);
-        if (trimmed.length === 0 || target == null || !isMergeableQueuedMessage(target)) {
+        if (target == null || !isMergeableQueuedMessage(target)) {
           return false;
         }
-        if (target.text === trimmed) {
+        /** Blank is recorded, not refused. Refusing it was the root of a whole
+         *  family of bugs: the queue kept words the screen no longer showed, and
+         *  every reader — the drain, Send now, the escalate shortcut, Merge,
+         *  Clear all, the trash — had to be taught about that disagreement.
+         *  Now the row simply is not sendable, which each reader can see for
+         *  itself via `isSendableQueuedMessage`. */
+        if (target.text === text) {
           return true;
         }
         set(
           store.queuedMessagesByConvoId(queueKey),
-          queue.map((item) => (item.id === id ? { ...item, text: trimmed } : item)),
+          queue.map((item) => (item.id === id ? { ...item, text } : item)),
         );
         return true;
       },
@@ -1466,6 +1472,10 @@ export default function useSteering({
        * there is no immediate path. Refuse before touching queue state so a
        * stale/direct caller cannot perform the old remove-and-restore no-op. */
       if (isSubmitting && (!duringRunActive || !canSteer || item.recoverySteerId != null)) {
+        return;
+      }
+      /** Nothing to send: the row is mid-edit and currently blank. */
+      if (!isSendableQueuedMessage(item)) {
         return;
       }
       /** UI callers always find the item; a stale/direct caller has no original

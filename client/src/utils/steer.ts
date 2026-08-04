@@ -198,6 +198,17 @@ export function compareQueuedMessages(a: QueuedMessage, b: QueuedMessage): numbe
   return a.createdAt - b.createdAt;
 }
 
+/**
+ * Whether a row can be sent as it stands. A row being edited holds exactly what
+ * the user has typed, blank included, so "there is nothing to send" is a fact
+ * about the row rather than a state every sender has to be told about
+ * separately. Blank rows exist only while their editor is open — closing it
+ * restores the pre-edit words — so this never describes a resting queue.
+ */
+export function isSendableQueuedMessage(item: QueuedMessage): boolean {
+  return item.text.trim().length > 0;
+}
+
 /** Queued texts are separate thoughts, so a join reads as paragraphs. */
 export const QUEUED_TEXT_SEPARATOR = '\n\n';
 
@@ -244,6 +255,11 @@ const dedupeStrings = (values: Array<string[] | undefined>): string[] | undefine
  */
 export function mergeQueuedMessages(items: QueuedMessage[]): QueuedMessage | null {
   if (items.length < 2 || items.some((item) => !isMergeableQueuedMessage(item))) {
+    return null;
+  }
+  /** Folding a row mid-edit would bake in whatever is on screen at that instant,
+   *  blank included. Self-protecting here so no caller has to remember. */
+  if (items.some((item) => !isSendableQueuedMessage(item))) {
     return null;
   }
   const [first] = items;

@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAtom } from 'jotai';
 import { useToastContext } from '@librechat/client';
-import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import {
   Zap,
   Send,
@@ -25,8 +25,8 @@ import {
   useDefaultToggleEntry,
   useInterruptToggleEntry,
 } from './SteerMenu';
-import { queueEmptyEditFamily, queueExpandedFamily } from '~/store/steer';
-import { isMergeableQueuedMessage } from '~/utils';
+import { isMergeableQueuedMessage, isSendableQueuedMessage } from '~/utils';
+import { queueExpandedFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -132,27 +132,9 @@ function QueuedRowBase({
    *  during the pause is exactly the discoverability gap this button fixes. */
   const showEscalate =
     !isRecovered && (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
-  /** An emptied editor is the one state where the queue and the screen disagree
-   *  by construction: the write-through refuses blank text, so the row still
-   *  holds the previous words. Sending from there would send what the user just
-   *  deleted, so the senders stand down until the edit resolves either way. */
-  const emptyEdit = draft != null && draft.trim().length === 0;
-  /** Published so the group's shortcut proxy can stand down too: it targets
-   *  this row but lives outside it, and the shortcut is allowed while a
-   *  textarea has focus. */
-  const setEmptyEditId = useSetAtom(queueEmptyEditFamily(steering.queueKey));
-  const claimEmptyEdit = useCallback(
-    (isEmpty: boolean) => {
-      setEmptyEditId((prev) => {
-        if (isEmpty) {
-          return message.id;
-        }
-        return prev === message.id ? null : prev;
-      });
-    },
-    [message.id, setEmptyEditId],
-  );
-  useEffect(() => () => claimEmptyEdit(false), [claimEmptyEdit]);
+  /** The queue holds exactly what is typed, so "nothing to send" is visible in
+   *  the row itself — no shared claim to publish, release, or leak. */
+  const sendable = isSendableQueuedMessage(message);
 
   /** Focus follows the explicit Edit action rather than mount, so the row can
    *  never steal focus from the composer on a re-render. */
@@ -161,6 +143,9 @@ function QueuedRowBase({
       editorRef.current?.focus();
     }
   }, [editing]);
+
+  const draftRef = useRef<string | null>(null);
+  draftRef.current = draft;
 
   const beginEdit = useCallback(() => {
     originalRef.current = message.text;
@@ -180,28 +165,37 @@ function QueuedRowBase({
   const editDraft = useCallback(
     (value: string) => {
       setDraft(value);
-      claimEmptyEdit(value.trim().length === 0);
       steering.updateQueuedText(message.id, value);
     },
-    [claimEmptyEdit, message.id, steering],
+    [message.id, steering],
   );
 
+  /** Leaving the editor settles the row: trimmed if there are words, and back to
+   *  the pre-edit text if there are not. That is what keeps a blank row from
+   *  ever outliving its editor, which is in turn why every reader can trust
+   *  `isSendableQueuedMessage` on a resting queue. */
   const closeEdit = useCallback(() => {
-    claimEmptyEdit(false);
+    const typed = draftRef.current;
+    if (typed == null) {
+      return;
+    }
+    steering.updateQueuedText(
+      message.id,
+      typed.trim().length === 0 ? originalRef.current : typed.trim(),
+    );
     setDraft(null);
-  }, [claimEmptyEdit]);
+  }, [message.id, steering]);
 
   const abandonEdit = useCallback(() => {
     steering.updateQueuedText(message.id, originalRef.current);
-    closeEdit();
-  }, [closeEdit, message.id, steering]);
+    setDraft(null);
+  }, [message.id, steering]);
 
-  const emptyEditRef = useRef(false);
-  emptyEditRef.current = emptyEdit;
   const closeEditRef = useRef(closeEdit);
   closeEditRef.current = closeEdit;
-  const abandonEditRef = useRef(abandonEdit);
-  abandonEditRef.current = abandonEdit;
+  /** An editor removed by a remount fires no blur, so it settles on the way out
+   *  — otherwise a blank row could survive the group collapsing around it. */
+  useEffect(() => () => closeEditRef.current(), []);
 
   /** A row whose send is pending closes its editor: the words are already
    *  written, and a countdown is no moment to keep typing into. An EMPTY editor
@@ -209,14 +203,9 @@ function QueuedRowBase({
    *  closing it alone would leave the queue holding words the screen no longer
    *  shows, and the drain would send those. */
   useEffect(() => {
-    if (!sendPending) {
-      return;
+    if (sendPending) {
+      closeEditRef.current();
     }
-    if (emptyEditRef.current) {
-      abandonEditRef.current();
-      return;
-    }
-    closeEditRef.current();
   }, [sendPending]);
 
   /** An ordinary row is a living draft: it is rewritten in place. A recovered
@@ -317,8 +306,8 @@ function QueuedRowBase({
         <button
           type="button"
           className={PRIMARY_BTN_CLASS}
-          disabled={actionPending || emptyEdit}
-          title={emptyEdit ? localize('com_ui_queue_edit_empty') : undefined}
+          disabled={actionPending || !sendable}
+          title={sendable ? undefined : localize('com_ui_queue_edit_empty')}
           onClick={() => steering.sendQueuedNow(message)}
         >
           {canSteerNow ? (
@@ -338,7 +327,7 @@ function QueuedRowBase({
         <EscalateNowButton
           surface="queued"
           messageText={message.text}
-          disabled={steering.pausedOnApproval || interruptPending || actionPending || emptyEdit}
+          disabled={steering.pausedOnApproval || interruptPending || actionPending || !sendable}
           onClick={() => steering.sendQueuedNow(message, { preempt: true })}
         />
       )}
@@ -356,7 +345,7 @@ function QueuedRowBase({
              * pre-edit words, so handing them back would resurrect text the
              * user had visibly deleted. Emptying a row and then removing it
              * reads as "delete this", and there is nothing to return. */
-            if (!emptyEdit) {
+            if (sendable) {
               onRestoreToComposer(
                 message.text,
                 message.files,
@@ -463,7 +452,10 @@ function QueuedOutboxBase({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [expanded, setExpanded] = useAtom(queueExpandedFamily(steering.queueKey));
-  const emptyEditId = useAtomValue(queueEmptyEditFamily(steering.queueKey));
+  /** Every gate below reads the rows this component already holds. That is the
+   *  whole point of recording blank text instead of refusing it: sendability is
+   *  a property of the data, so there is no shared claim to keep in step. */
+  const allSendable = useMemo(() => queued.every(isSendableQueuedMessage), [queued]);
   const mergeable = useMemo(() => queued.every(isMergeableQueuedMessage), [queued]);
   /** Folding reads the queue, so an unresolved empty edit would carry the words
    *  the user just deleted into the merged message. Same standdown the senders
@@ -472,12 +464,12 @@ function QueuedOutboxBase({
     if (!mergeable) {
       return localize('com_ui_queue_merge_blocked');
     }
-    return emptyEditId != null ? localize('com_ui_queue_edit_empty') : undefined;
+    return allSendable ? undefined : localize('com_ui_queue_edit_empty');
   })();
   /** Clear all folds the queue the same way Merge does, so an unresolved empty
    *  edit would hand words the user deleted back to the composer. Uniform with
    *  every other reader rather than an exception worth remembering. */
-  const clearBlockedReason = emptyEditId != null ? localize('com_ui_queue_edit_empty') : undefined;
+  const clearBlockedReason = allSendable ? undefined : localize('com_ui_queue_edit_empty');
   /** The shortcut's promise is the NEWEST waiting message, which is not the
    *  last array slot once a promotion has reordered the queue — so pick by
    *  stamp. Recovery-bound rows are skipped because steering refuses them
@@ -649,7 +641,7 @@ function QueuedOutboxBase({
              *  user deleted. Disabled rather than absent: the shortcut skips
              *  unavailable controls, so it falls through instead of sending
              *  them. */
-            disabled={emptyEditId === escalatable.id}
+            disabled={!isSendableQueuedMessage(escalatable)}
             className="sr-only"
             data-escalate-steer="queued"
             data-testid="queued-escalate-newest"

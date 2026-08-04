@@ -5,7 +5,7 @@ import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import type { PendingSteer, QueuedMessage, QueueDrainHold } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
-import { escalatingSteerFamily, queueEmptyEditFamily, queueExpandedFamily } from '~/store/steer';
+import { escalatingSteerFamily, queueExpandedFamily } from '~/store/steer';
 import PendingSteerChips from '../PendingSteerChips';
 import store from '~/store';
 
@@ -76,7 +76,6 @@ const steeringStub = (overrides: Partial<SteeringControls> = {}) =>
 beforeEach(() => {
   act(() => {
     getDefaultStore().set(queueExpandedFamily(CONVO_ID), false);
-    getDefaultStore().set(queueEmptyEditFamily(CONVO_ID), null);
   });
 });
 
@@ -564,7 +563,14 @@ describe('PendingSteerChips — queued interrupt-now', () => {
 });
 
 const mockBumpQueued = jest.fn();
-const mockUpdateQueuedText = jest.fn(() => true);
+/** Mirrors the real writer: records what is typed, blank included, so the rows
+ *  under test see the same queue the app would. */
+const mockUpdateQueuedText = jest.fn((id: string, text: string) => {
+  updateQueueForTest?.((current) =>
+    current.map((item) => (item.id === id ? { ...item, text } : item)),
+  );
+  return true;
+});
 const mockMergeQueued = jest.fn(() => true);
 const mockCancelQueueDrain = jest.fn();
 const mockEnqueue = jest.fn();
@@ -1183,6 +1189,33 @@ describe('PendingSteerChips — queued row editing', () => {
     // Escape restores the original words, so nothing is held back any more.
     fireEvent.keyDown(editor, { key: 'Escape' });
     expect(screen.getByTestId('queued-escalate-newest')).not.toBeDisabled();
+  });
+
+  /** The invariant that lets every reader trust the data: a blank row cannot
+   *  outlive its editor, so a resting queue never holds one. */
+  it('restores the original when an emptied editor is closed rather than abandoned', () => {
+    renderChips([twoQueued[0]], { steering: outboxSteering() });
+
+    fireEvent.click(screen.getByText('first thought'));
+    const editor = screen.getByTestId('queued-message-edit');
+    fireEvent.change(editor, { target: { value: '' } });
+    // Blank while the editor is open, which is what the senders read.
+    expect(JSON.parse(screen.getByTestId('queue-state').textContent ?? '[]')[0].text).toBe('');
+
+    fireEvent.blur(editor);
+    expect(mockUpdateQueuedText).toHaveBeenLastCalledWith('q1', 'first thought');
+    expect(screen.queryByTestId('queued-message-edit')).toBeNull();
+  });
+
+  it('trims the words it settles', () => {
+    renderChips([twoQueued[0]], { steering: outboxSteering() });
+
+    fireEvent.click(screen.getByText('first thought'));
+    const editor = screen.getByTestId('queued-message-edit');
+    fireEvent.change(editor, { target: { value: '  spaced out  ' } });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+
+    expect(mockUpdateQueuedText).toHaveBeenLastCalledWith('q1', 'spaced out');
   });
 
   it('puts the original words back on Escape', () => {

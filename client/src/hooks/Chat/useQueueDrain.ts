@@ -3,7 +3,7 @@ import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { DrainAfterAbort, QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
 import type { TAskFunction } from '~/common';
-import { compareQueuedMessages, isSameRunEpoch } from '~/utils';
+import { compareQueuedMessages, isSameRunEpoch, isSendableQueuedMessage } from '~/utils';
 import { useMarkFilesUsageMutation } from '~/data-provider';
 import store from '~/store';
 
@@ -311,7 +311,12 @@ export default function useQueueDrain(
           });
           return null;
         }
-        const next = shouldDrain ? (merged[0] ?? null) : null;
+        /** A row mid-edit can be blank, and blank is not a message. Skipping to
+         *  the row behind it would send out of order, so this epoch simply
+         *  drains nothing — consumed above, so the effect cannot spin — and the
+         *  next run end picks the queue up again. */
+        const front = merged[0] ?? null;
+        const next = shouldDrain && front != null && isSendableQueuedMessage(front) ? front : null;
         const remainder = next ? merged.slice(1) : merged;
 
         if (shouldMigrate && newConvoQueue.length > 0) {

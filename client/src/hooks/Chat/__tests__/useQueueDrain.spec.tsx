@@ -97,6 +97,39 @@ describe('useQueueDrain', () => {
     expect(ask).toHaveBeenCalledWith({ text: 'first follow-up' }, emptyOverrides);
   });
 
+  /** A row being edited holds exactly what is typed, blank included. Blank is
+   *  not a message, and skipping to the row behind it would send out of order —
+   *  so this epoch drains nothing and the next run end picks the queue up. */
+  it('drains nothing when the front row is mid-edit and blank', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'q1', text: '   ', createdAt: 1 },
+        queuedMessage('q2', 'behind it'),
+      ]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(ask).not.toHaveBeenCalled();
+
+    // The epoch was consumed, so the effect is not spinning; a later run end
+    // drains normally once the row has words again.
+    act(() => {
+      setters.setQueue!([
+        queuedMessage('q1', 'now it has words'),
+        queuedMessage('q2', 'behind it'),
+      ]);
+    });
+    act(() => {
+      setters.setRunEnd!(runEnd({ generationCreatedAt: 77 }));
+    });
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: 'now it has words' }, emptyOverrides);
+  });
+
   it('parks a mismatched signal instead of draining into the wrong conversation', async () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'stay put')]);
