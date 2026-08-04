@@ -1,7 +1,7 @@
 import path from 'path';
 import * as fs from 'fs';
 import JSZip from 'jszip';
-import { parseDocument } from './crud';
+import { parseDocument, annotateMissingPages } from './crud';
 
 describe('Document Parser', () => {
   test('parseDocument() parses text from docx', async () => {
@@ -236,5 +236,27 @@ describe('Document Parser', () => {
     const { read, utils } = await import('xlsx');
     expect(typeof read).toBe('function');
     expect(typeof utils?.sheet_to_csv).toBe('function');
+  });
+
+  describe('annotateMissingPages()', () => {
+    test('returns text unchanged when no pages are missing', () => {
+      expect(annotateMissingPages('body', undefined)).toBe('body');
+      expect(annotateMissingPages('body', [])).toBe('body');
+    });
+
+    test('names a single missing page in the singular', () => {
+      const annotated = annotateMissingPages('body', [3]);
+
+      expect(annotated).toContain('[Page 3 of this document contains no extractable text');
+      expect(annotated).toContain('requires an OCR service');
+      expect(annotated.startsWith('body')).toBe(true);
+    });
+
+    test('names every missing page', () => {
+      const annotated = annotateMissingPages('body', [2, 5, 9]);
+
+      expect(annotated).toContain('Pages 2, 5, 9');
+      expect(annotated).toContain('require an OCR service');
+    });
   });
 });

@@ -79,4 +79,6 @@ export interface MistralOCRUploadResult {
   filepath: string;
   text: string;
   images: string[];
+  /** 1-indexed pages whose text could not be extracted and would need an OCR service. */
+  pagesNeedingOcr?: number[];
 }

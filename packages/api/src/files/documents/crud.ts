@@ -5,10 +5,35 @@ import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { MistralOCRUploadResult } from '~/types';
 import { assertSafeZipSize } from './zipSafety';
 
-type FileParseFn = (file: Express.Multer.File) => Promise<string>;
+interface ParsedDocument {
+  text: string;
+  /** 1-indexed pages whose text could not be extracted, when the parser can tell. */
+  pagesNeedingOcr?: number[];
+}
+
+type FileParseFn = (file: Express.Multer.File) => Promise<ParsedDocument>;
 
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
 const ODT_MAX_DECOMPRESSED_SIZE = 50 * megabyte;
+
+/**
+ * Appends a visible notice naming the pages that hold no extractable text.
+ *
+ * A part-scanned document otherwise yields partial text with nothing to signal the
+ * omission, leaving both the user and the model to treat an incomplete document as
+ * complete. Returns `text` unchanged when every page was extracted.
+ */
+export function annotateMissingPages(text: string, pagesNeedingOcr?: number[]): string {
+  if (!pagesNeedingOcr?.length) {
+    return text;
+  }
+  const pages = pagesNeedingOcr.join(', ');
+  const notice =
+    pagesNeedingOcr.length === 1
+      ? `Page ${pages} of this document contains no extractable text and was omitted. It is image-based and requires an OCR service to read.`
+      : `Pages ${pages} of this document contain no extractable text and were omitted. They are image-based and require an OCR service to read.`;
+  return `${text}\n\n[${notice}]\n`;
+}
 
 /**
  * Parses an uploaded document and extracts its text content and metadata.
@@ -35,7 +60,7 @@ export async function parseDocument({
     );
   }
 
-  const text = await parseFn(file);
+  const { text, pagesNeedingOcr } = await parseFn(file);
 
   if (!text?.trim()) {
     throw new Error('No text found in document');
@@ -47,6 +72,7 @@ export async function parseDocument({
     filepath: FileSources.document_parser,
     text,
     images: [],
+    pagesNeedingOcr,
   };
 }
 
@@ -71,12 +97,16 @@ function getParserForMimeType(mimetype: string): FileParseFn | undefined {
 }
 
 /** Parses PDF, returns text inside. */
-async function pdfToText(file: Express.Multer.File): Promise<string> {
+async function pdfToText(file: Express.Multer.File): Promise<ParsedDocument> {
+  const data = await fs.promises.readFile(file.path);
+  return { text: await pdfToTextLegacy(data) };
+}
+
+async function pdfToTextLegacy(data: Buffer): Promise<string> {
   // Imported inline so that Jest can test other routes without failing due to loading ESM
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
-  const data = new Uint8Array(await fs.promises.readFile(file.path));
-  const pdf = await getDocument({ data }).promise;
+  const pdf = await getDocument({ data: new Uint8Array(data) }).promise;
 
   let fullText = '';
   for (let i = 1; i <= pdf.numPages; i++) {
@@ -93,7 +123,7 @@ async function pdfToText(file: Express.Multer.File): Promise<string> {
 }
 
 /** Parses Word document, returns text inside. */
-async function wordDocToText(file: Express.Multer.File): Promise<string> {
+async function wordDocToText(file: Express.Multer.File): Promise<ParsedDocument> {
   const buffer = await fs.promises.readFile(file.path);
   /* Reject zip-bomb DOCX before mammoth's internal extractor runs.
    * mammoth has no decompressed-size cap of its own; without this, a
@@ -102,11 +132,11 @@ async function wordDocToText(file: Express.Multer.File): Promise<string> {
   await assertSafeZipSize(buffer, { name: file.originalname ?? 'docx' });
   const { extractRawText } = await import('mammoth');
   const rawText = await extractRawText({ buffer });
-  return rawText.value;
+  return { text: rawText.value };
 }
 
 /** Parses Excel sheet, returns text inside. */
-async function excelSheetToText(file: Express.Multer.File): Promise<string> {
+async function excelSheetToText(file: Express.Multer.File): Promise<ParsedDocument> {
   // xlsx CDN build (0.20.x) does not bind fs internally when dynamically imported;
   // readFile() fails with "Cannot access file". read() takes a pre-loaded Buffer instead.
   const { read, utils } = await import('xlsx');
@@ -126,7 +156,7 @@ async function excelSheetToText(file: Express.Multer.File): Promise<string> {
     text += `${sheetName}:\n${worksheetAsCsvString}\n`;
   }
 
-  return text;
+  return { text };
 }
 
 /**
@@ -136,13 +166,13 @@ async function excelSheetToText(file: Express.Multer.File): Promise<string> {
  * five standard XML entities are decoded. Complex elements such as frames,
  * text boxes, and annotations are stripped without replacement.
  */
-async function odtToText(file: Express.Multer.File): Promise<string> {
+async function odtToText(file: Express.Multer.File): Promise<ParsedDocument> {
   const xml = await extractOdtContentXml(file.path);
   const bodyMatch = xml.match(/<office:body[^>]*>([\s\S]*?)<\/office:body>/);
   if (!bodyMatch) {
-    return '';
+    return { text: '' };
   }
-  return bodyMatch[1]
+  const text = bodyMatch[1]
     .replace(/<\/text:p>/g, '\n')
     .replace(/<\/text:h>/g, '\n')
     .replace(/<text:line-break\/>/g, '\n')
@@ -159,6 +189,8 @@ async function odtToText(file: Express.Multer.File): Promise<string> {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  return { text };
 }
 
 /**
