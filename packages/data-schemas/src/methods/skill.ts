@@ -962,6 +962,55 @@ function extractBodyFrontmatterBlock(body: string | undefined): string | null {
   return after.slice(0, closingIdx);
 }
 
+function indentWidth(line: string): number {
+  let width = 0;
+  while (width < line.length && (line[width] === ' ' || line[width] === '\t')) {
+    width++;
+  }
+  return width;
+}
+
+/**
+ * Indentation of the frontmatter mapping's own keys, taken from its first
+ * content line. Usually zero, but a block whose every key is indented is still
+ * valid YAML and its keys are still top-level.
+ */
+function findMappingIndent(lines: string[]): number | null {
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith('#')) {
+      continue;
+    }
+    return indentWidth(line);
+  }
+  return null;
+}
+
+/**
+ * Read a flag value that YAML continues on a following line, as in
+ * `user-invocable:` followed by an indented `false`. Only a lone indented
+ * scalar qualifies — anything carrying its own `:` is a nested mapping, which
+ * makes the flag a mapping rather than a boolean.
+ */
+function readContinuedFlagValue(
+  lines: string[],
+  keyIndex: number,
+  baseIndent: number,
+): BodyAlwaysApplyResult | null {
+  for (let i = keyIndex + 1; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith('#')) {
+      continue;
+    }
+    if (indentWidth(line) <= baseIndent || trimmed.includes(':')) {
+      return null;
+    }
+    return readBodyFlagValue(trimmed);
+  }
+  return null;
+}
+
 function readBodyFlagValue(rawValue: string): BodyAlwaysApplyResult {
   /* Strip the YAML inline comment BEFORE unquoting — a line like
      `always-apply: "true" # note` has both, and handling whole-line quoting
@@ -1009,9 +1058,12 @@ function readBodyFlagValue(rawValue: string): BodyAlwaysApplyResult {
  *    from what the saved SKILL.md text says.
  *
  * The first canonical spelling wins; a legacy alias (`alwaysApply`) is only
- * consulted when the canonical key never appears. Indented lines are skipped:
- * a nested mapping that reuses a flag name (`metadata:` → `  user-invocable:`)
- * is not a top-level declaration and must not be read as one.
+ * consulted when the canonical key never appears. Only keys at the mapping's
+ * own indentation are read, so a nested mapping reusing a flag name
+ * (`metadata:` → `  user-invocable:`) is not mistaken for a declaration, while
+ * a frontmatter block that is indented as a whole still parses. A flag whose
+ * value YAML continues onto the following line is read from there rather than
+ * being treated as an unwritten placeholder.
  */
 function extractBooleanFlagsFromBody(body: string | undefined): BodyFlagResults {
   const results: BodyFlagResults = {
@@ -1023,22 +1075,32 @@ function extractBooleanFlagsFromBody(body: string | undefined): BodyFlagResults 
   if (block === null) {
     return results;
   }
+  const lines = block.split('\n');
+  const baseIndent = findMappingIndent(lines);
+  if (baseIndent === null) {
+    return results;
+  }
   const canonical = new Map<SkillBooleanColumn, BodyAlwaysApplyResult>();
   const aliased = new Map<SkillBooleanColumn, BodyAlwaysApplyResult>();
-  for (const line of block.split('\n')) {
-    if (line.length === 0 || line[0] === ' ' || line[0] === '\t') {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith('#') || indentWidth(line) !== baseIndent) {
       continue;
     }
-    const colon = line.indexOf(':');
+    const colon = trimmed.indexOf(':');
     if (colon === -1) {
       continue;
     }
-    const key = line.slice(0, colon).trim().toLowerCase();
+    const key = trimmed.slice(0, colon).trim().toLowerCase();
     const flag = BODY_FLAG_BY_KEY.get(key);
     if (!flag) {
       continue;
     }
-    const result = readBodyFlagValue(line.slice(colon + 1));
+    let result = readBodyFlagValue(trimmed.slice(colon + 1));
+    if (result.status === 'absent') {
+      result = readContinuedFlagValue(lines, i, baseIndent) ?? result;
+    }
     if (key === flag.key) {
       if (!canonical.has(flag.column)) {
         canonical.set(flag.column, result);
@@ -1786,6 +1848,22 @@ export function createSkillMethods(
         setPayload[column] = resolved;
       } else if (declaresColumns) {
         unsetPayload[column] = '';
+      }
+    }
+    /**
+     * A body-only edit rewrites the SKILL.md text without sending a bag, so the
+     * stored bag would keep flag keys the edited text no longer declares — and
+     * `backfillDerivedFromFrontmatter` reads those back over an unset column on
+     * the next lookup, resurrecting a restriction the author just removed.
+     * Hand flag authority to the columns resolved above by clearing the bag's
+     * copies; the SKILL.md body still carries the declarations, so nothing is
+     * lost, and the next save that does send a bag repopulates them.
+     */
+    if (update.frontmatter === undefined && bodyFlags) {
+      for (const flag of SKILL_BOOLEAN_FLAGS) {
+        for (const key of [flag.key, ...flag.aliases]) {
+          unsetPayload[`frontmatter.${key}`] = '';
+        }
       }
     }
     if (update.category !== undefined) setPayload.category = update.category;
