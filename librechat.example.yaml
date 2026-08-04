@@ -413,6 +413,11 @@ endpoints:
   #   # (optional) Abort a run once a single model generation emits more than this many stream events.
   #   # Defense in depth against looping provider streams. Disabled by default.
   #   maxDeltaEventsPerTurn: 100000
+  #   # (optional) Per-tool overrides for maxToolCallArgBytes, keyed by tool name; 0 disables that
+  #   # tool's guard. LibreChat ships { create_file: 131072 } so document-sized file writes are not
+  #   # cut off; entries here merge over (and can replace) that default.
+  #   maxToolCallArgBytesByTool:
+  #     create_file: 131072
   #   # (optional) Disable the builder interface for agents
   #   disableBuilder: false
   #   # (optional) When conversation titles are generated:
