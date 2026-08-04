@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import yauzl from 'yauzl';
+import { logger } from '@librechat/data-schemas';
 import { megabyte, excelMimeTypes, FileSources } from 'librechat-data-provider';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { MistralOCRUploadResult } from '~/types';
@@ -96,10 +97,59 @@ function getParserForMimeType(mimetype: string): FileParseFn | undefined {
   return undefined;
 }
 
-/** Parses PDF, returns text inside. */
+/**
+ * Parses PDF, returns text inside.
+ *
+ * Primary path is pdf-inspector, which recovers layout (headings, tables, reading order
+ * across columns) and reports which pages are image-based. pdfjs is kept as a real
+ * fallback rather than a platform guard: it reconstructs damaged xref tables that
+ * pdf-inspector rejects outright, so documents that parse today keep parsing.
+ */
 async function pdfToText(file: Express.Multer.File): Promise<ParsedDocument> {
   const data = await fs.promises.readFile(file.path);
+
+  try {
+    return await pdfToTextInspector(data);
+  } catch (error) {
+    logger.warn(
+      `[parseDocument] pdf-inspector failed for "${file.originalname}", falling back to pdfjs:`,
+      error,
+    );
+  }
+
   return { text: await pdfToTextLegacy(data) };
+}
+
+/** The one OCR reason that actually means "this page holds no extractable text". */
+const SCANNED_PAGE_REASON = 'scanned';
+
+async function pdfToTextInspector(data: Buffer): Promise<ParsedDocument> {
+  // Imported inline so that Jest can test other routes without loading the native binding
+  const { processPdf } = await import('@firecrawl/pdf-inspector');
+  const result = processPdf(data);
+  const scannedPages = getScannedPages(result.ocrReasonsByPage);
+
+  return {
+    text: result.markdown ?? '',
+    pagesNeedingOcr: scannedPages.length ? scannedPages : undefined,
+  };
+}
+
+/**
+ * Narrows the parser's `pagesNeedingOcr` to genuinely image-based pages.
+ *
+ * The raw list also carries a `suspected_garbled_text` quality heuristic that
+ * false-positives on dense punctuation, a page of table-of-contents dot leaders
+ * being enough to trip it. Those pages keep their text in the markdown, so
+ * reporting them would tell the user content was dropped when none was.
+ */
+function getScannedPages(ocrReasonsByPage: { page: number; reasons: string[] }[]): number[] {
+  if (!ocrReasonsByPage?.length) {
+    return [];
+  }
+  return ocrReasonsByPage
+    .filter((entry) => entry.reasons?.includes(SCANNED_PAGE_REASON))
+    .map((entry) => entry.page);
 }
 
 async function pdfToTextLegacy(data: Buffer): Promise<string> {
