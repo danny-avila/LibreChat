@@ -2,8 +2,8 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
-  inspectContent,
   isActionDomainAllowed,
+  inspectContentWithTraversal,
   extractAssistantActionContent,
   validateActionOAuthMetadata,
   contentFilterBlockResponse,
@@ -19,6 +19,22 @@ const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const db = require('~/models');
 
 const router = express.Router();
+
+function blockFilteredActionProjection(req, res, action) {
+  const { finding, traversalError } = inspectContentWithTraversal(
+    () => extractAssistantActionContent(action),
+    { filters: req.config?.filters },
+  );
+  if (finding != null) {
+    res.status(400).json(contentFilterBlockResponse(finding));
+    return true;
+  }
+  if (traversalError != null) {
+    res.status(traversalError.statusCode).json(traversalError.body);
+    return true;
+  }
+  return false;
+}
 
 /**
  * Adds or updates actions for a specific assistant.
@@ -40,12 +56,8 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(400).json({ message: 'No functions provided' });
     }
 
-    const contentFinding = inspectContent(
-      extractAssistantActionContent({ functions, metadata: _metadata }),
-      { filters: req.config?.filters },
-    );
-    if (contentFinding != null) {
-      return res.status(400).json(contentFilterBlockResponse(contentFinding));
+    if (blockFilteredActionProjection(req, res, { functions, metadata: _metadata })) {
+      return;
     }
 
     let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
@@ -134,15 +146,13 @@ router.post('/:assistant_id', async (req, res) => {
         })),
       );
 
-    const finalContentFinding = inspectContent(
-      extractAssistantActionContent({
+    if (
+      blockFilteredActionProjection(req, res, {
         functions: tools,
         metadata: await decryptMetadata(metadata),
-      }),
-      { filters: req.config?.filters },
-    );
-    if (finalContentFinding != null) {
-      return res.status(400).json(contentFilterBlockResponse(finalContentFinding));
+      })
+    ) {
+      return;
     }
 
     let updatedAssistant = await openai.beta.assistants.update(assistant_id, { tools });

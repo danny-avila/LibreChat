@@ -37,6 +37,7 @@ jest.mock('~/server/middleware', () => ({
 
 const router = require('./actions');
 const db = require('~/models');
+const { CONTENT_TRAVERSAL_MAX_DEPTH } = require('@librechat/api');
 
 function createApp(filters) {
   const app = express();
@@ -48,6 +49,17 @@ function createApp(filters) {
   });
   app.use(router);
   return app;
+}
+
+function createOverflowingValue(visible) {
+  const root = { visible };
+  let current = root;
+  for (let depth = 0; depth < CONTENT_TRAVERSAL_MAX_DEPTH; depth++) {
+    current.nested = {};
+    current = current.nested;
+  }
+  current.nested = { hidden: 'BLOCK-HIDDEN' };
+  return root;
 }
 
 describe('agent action content filters', () => {
@@ -63,6 +75,190 @@ describe('agent action content filters', () => {
       author: 'owner-id',
     });
     db.getActions.mockResolvedValue([]);
+    db.updateAgent.mockResolvedValue({ id: 'agent-id' });
+    db.updateAction.mockResolvedValue({ metadata: { domain: 'example.test' } });
+  });
+
+  it('blocks an inspected partial parameter fragment before reporting traversal exhaustion', async () => {
+    const app = createApp({
+      toolArguments: {
+        pii: {
+          fields: ['arguments'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'partial-content',
+              label: 'partial content',
+              regex: 'BLOCK-VISIBLE',
+            },
+          ],
+        },
+      },
+    });
+
+    const response = await request(app)
+      .post('/agent-id')
+      .send({
+        functions: [
+          {
+            type: 'function',
+            function: {
+              name: 'lookup',
+              description: 'Lookup',
+              parameters: createOverflowingValue('BLOCK-VISIBLE'),
+            },
+          },
+        ],
+        metadata: { domain: 'example.test' },
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        error: 'content_filter_block',
+        source: 'tool_argument',
+        field: 'arguments',
+      }),
+    );
+    expect(mockEncryptMetadata).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a selected action parameter scope cannot be fully inspected', async () => {
+    const app = createApp({
+      toolArguments: {
+        pii: {
+          fields: ['arguments'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-content',
+              label: 'protected content',
+              regex: 'BLOCK-NOT-PRESENT',
+            },
+          ],
+        },
+      },
+    });
+
+    const response = await request(app)
+      .post('/agent-id')
+      .send({
+        functions: [
+          {
+            type: 'function',
+            function: {
+              name: 'lookup',
+              description: 'Lookup',
+              parameters: createOverflowingValue('safe visible value'),
+            },
+          },
+        ],
+        metadata: { domain: 'example.test' },
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: 'content_filter_uninspectable',
+      message: 'Submitted content could not be completely inspected before processing.',
+      source: 'tool_argument',
+      field: 'arguments',
+    });
+    expect(mockEncryptMetadata).not.toHaveBeenCalled();
+  });
+
+  it('does not fail closed when only an unrelated action field is selected', async () => {
+    const app = createApp({
+      toolArguments: {
+        pii: {
+          fields: ['name'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-name',
+              label: 'protected name',
+              regex: 'BLOCK-NOT-PRESENT',
+            },
+          ],
+        },
+      },
+    });
+
+    const response = await request(app)
+      .post('/agent-id')
+      .send({
+        functions: [
+          {
+            type: 'function',
+            function: {
+              name: 'lookup',
+              description: 'Lookup',
+              parameters: createOverflowingValue('safe visible value'),
+            },
+          },
+        ],
+        metadata: { domain: 'example.test' },
+      });
+
+    expect(response.status).toBe(200);
+    expect(db.updateAgent).toHaveBeenCalledTimes(1);
+    expect(db.updateAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when merged stored action metadata exhausts the final projection', async () => {
+    const app = createApp({
+      toolArguments: {
+        pii: {
+          fields: ['arguments'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-spec',
+              label: 'protected spec',
+              regex: 'BLOCK-NOT-PRESENT',
+            },
+          ],
+        },
+      },
+    });
+    db.getActions.mockResolvedValue([
+      {
+        action_id: 'action-1',
+        agent_id: 'agent-id',
+        metadata: { domain: 'example.test' },
+      },
+    ]);
+    mockDecryptMetadata.mockResolvedValueOnce({
+      domain: 'example.test',
+      raw_spec: createOverflowingValue('safe visible value'),
+    });
+
+    const response = await request(app)
+      .post('/agent-id')
+      .send({
+        action_id: 'action-1',
+        functions: [
+          {
+            type: 'function',
+            function: {
+              name: 'lookup',
+              description: 'Lookup',
+              parameters: { type: 'object' },
+            },
+          },
+        ],
+        metadata: { domain: 'example.test' },
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        error: 'content_filter_uninspectable',
+        source: 'tool_argument',
+        field: 'arguments',
+      }),
+    );
+    expect(mockEncryptMetadata).toHaveBeenCalledTimes(1);
+    expect(db.updateAgent).not.toHaveBeenCalled();
   });
 
   it('blocks nested authorization metadata before encryption or persistence', async () => {

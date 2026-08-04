@@ -95,7 +95,11 @@ const {
   getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
 
-const { mergeDeploymentSkillIds, refreshS3Url } = require('@librechat/api');
+const {
+  CONTENT_TRAVERSAL_MAX_DEPTH,
+  mergeDeploymentSkillIds,
+  refreshS3Url,
+} = require('@librechat/api');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -115,6 +119,17 @@ const createOwner = (overrides = {}) =>
     emailVerified: true,
     ...overrides,
   });
+
+const createOverflowingActionValue = () => {
+  const root = { visible: 'safe visible value' };
+  let current = root;
+  for (let depth = 0; depth < CONTENT_TRAVERSAL_MAX_DEPTH; depth++) {
+    current.nested = {};
+    current = current.nested;
+  }
+  current.nested = { hidden: 'BLOCK-HIDDEN' };
+  return root;
+};
 
 const grantAgentOwner = ({ agent, owner, grantedAt = new Date() }) =>
   AclEntry.create({
@@ -1917,6 +1932,62 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       );
       expect(JSON.stringify(response)).not.toContain('BLOCK-AUTH');
       expect(JSON.stringify(response)).not.toContain('REMOVED-BEFORE-INSPECTION');
+      expect(updateActionSpy).not.toHaveBeenCalled();
+      expect(createAgentSpy).not.toHaveBeenCalled();
+      await expect(Agent.countDocuments()).resolves.toBe(1);
+    });
+
+    test('duplicateAgentHandler should fail closed on oversized protected action metadata', async () => {
+      const sourceAuthorId = new mongoose.Types.ObjectId();
+      const cloneAuthorId = new mongoose.Types.ObjectId();
+      const sourceAgent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Source Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: sourceAuthorId,
+      });
+      const db = require('~/models');
+      jest.spyOn(db, 'getActions').mockResolvedValueOnce([
+        {
+          action_id: 'source-action',
+          metadata: {
+            domain: 'api.example.com',
+            raw_spec: createOverflowingActionValue(),
+          },
+        },
+      ]);
+      const updateActionSpy = jest.spyOn(db, 'updateAction');
+      const createAgentSpy = jest.spyOn(db, 'createAgent');
+
+      mockReq.config = {
+        filters: {
+          actionMetadata: {
+            pii: {
+              fields: ['raw_spec'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'protected-content',
+                  label: 'protected content',
+                  regex: 'BLOCK-NOT-PRESENT',
+                },
+              ],
+            },
+          },
+        },
+      };
+      mockReq.user.id = cloneAuthorId.toString();
+      mockReq.params.id = sourceAgent.id;
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'content_filter_uninspectable',
+        }),
+      );
       expect(updateActionSpy).not.toHaveBeenCalled();
       expect(createAgentSpy).not.toHaveBeenCalled();
       await expect(Agent.countDocuments()).resolves.toBe(1);

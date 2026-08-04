@@ -37,7 +37,25 @@ export interface SerializedSharedFile extends FileContentInput {
 
 interface SerializedSharedMessagePart {
   readonly type?: string;
+  readonly audio_url?: string | SerializedSharedFile | null;
+  readonly data?: unknown;
+  readonly document?: Readonly<Record<string, unknown>> | null;
+  readonly document_url?: string | SerializedSharedFile | null;
+  readonly file?: SerializedSharedFile | null;
+  readonly fileData?: SerializedSharedFile | null;
+  readonly file_data?: unknown;
+  readonly file_id?: string;
+  readonly fileUri?: string;
+  readonly file_uri?: string;
+  readonly filename?: string;
+  readonly image_file?: SerializedSharedFile | null;
+  readonly image_url?: string | SerializedSharedFile | null;
+  readonly inlineData?: SerializedSharedFile | null;
+  readonly input_audio?: SerializedSharedFile | null;
+  readonly source?: string | Readonly<Record<string, unknown>> | null;
+  readonly video_url?: string | SerializedSharedFile | null;
   readonly files?: readonly (SerializedSharedFile | null | undefined)[];
+  readonly [key: string]: unknown;
 }
 
 export interface SerializedSharedMessage {
@@ -65,8 +83,26 @@ export interface SharedFileMetadataPolicyInput {
   readonly includeFiles?: boolean;
 }
 
-const SERIALIZED_LOCATOR_KEYS = ['uri', 'filepath', 'url', 'preview'] as const;
-const URI_LIKE_KEYS = new Set(['filepath', 'href', 'link', 'preview', 'uri', 'url']);
+const SERIALIZED_LOCATOR_KEYS = [
+  'uri',
+  'filepath',
+  'url',
+  'preview',
+  'fileUri',
+  'file_uri',
+  'document_url',
+] as const;
+const URI_LIKE_KEYS = new Set([
+  'filepath',
+  'fileuri',
+  'file_uri',
+  'document_url',
+  'href',
+  'link',
+  'preview',
+  'uri',
+  'url',
+]);
 const MAX_DECODED_TEXT_BYTES = 256 * 1024;
 const MAX_BASE64_TEXT_CHARS = Math.ceil((MAX_DECODED_TEXT_BYTES * 4) / 3) + 4;
 const BASE64_TEXT = /^[A-Za-z0-9+/]*={0,2}$/;
@@ -89,6 +125,66 @@ const ALL_DERIVED_FILE_FIELDS = [
   'extracted_text',
   'transcript',
 ] as const satisfies readonly FileFilterField[];
+const FILE_CONTENT_PART_TYPES = new Set([
+  'audio',
+  'audio_url',
+  'document',
+  'document_url',
+  'file',
+  'image',
+  'image_file',
+  'image_url',
+  'input_audio',
+  'input_file',
+  'input_image',
+  'input_video',
+  'media',
+  'video',
+  'video_url',
+]);
+const FILE_CONTENT_PART_KEYS = [
+  'audio_url',
+  'document',
+  'document_url',
+  'file',
+  'fileData',
+  'file_data',
+  'file_id',
+  'fileUri',
+  'file_uri',
+  'image_file',
+  'image_url',
+  'inlineData',
+  'input_audio',
+  'video_url',
+] as const;
+const TOP_LEVEL_FILE_CONTENT_KEYS = [
+  'bytes',
+  'content',
+  'data',
+  'document_url',
+  'extractedText',
+  'file_data',
+  'file_id',
+  'fileUri',
+  'file_uri',
+  'filename',
+  'filepath',
+  'name',
+  'originalname',
+  'preview',
+  'text',
+  'transcript',
+  'uri',
+  'url',
+] as const;
+const TOP_LEVEL_FILE_CONTEXT_KEYS = [
+  'format',
+  'media_type',
+  'mime_type',
+  'mimeType',
+  'type',
+] as const;
 
 type StandardSerializedScalarShape = 'date' | 'number' | 'string';
 
@@ -100,7 +196,10 @@ const STANDARD_SERIALIZED_FILE_SHAPES = new Map<string, StandardSerializedScalar
   ['createdAt', 'date'],
   ['expiresAt', 'date'],
   ['extractedText', 'string'],
+  ['document_url', 'string'],
   ['file_id', 'string'],
+  ['fileUri', 'string'],
+  ['file_uri', 'string'],
   ['filename', 'string'],
   ['filepath', 'string'],
   ['height', 'number'],
@@ -127,8 +226,11 @@ const STANDARD_SERIALIZED_FILE_SHAPES = new Map<string, StandardSerializedScalar
 
 const FILE_FIELD_BY_STANDARD_KEY = new Map<string, FileFilterField>([
   ['content', 'content'],
+  ['document_url', 'uri'],
   ['extractedText', 'extracted_text'],
   ['filename', 'name'],
+  ['fileUri', 'uri'],
+  ['file_uri', 'uri'],
   ['filepath', 'uri'],
   ['name', 'name'],
   ['originalname', 'name'],
@@ -172,6 +274,47 @@ function isSharedAssistantMessage(message: SerializedSharedMessage): boolean {
   return message.isCreatedByUser === false || message.role === 'assistant' || message.role === 'ai';
 }
 
+function hasSerializedFileContentPartType(
+  part: SerializedSharedMessagePart | null | undefined,
+): boolean {
+  return typeof part?.type === 'string' && FILE_CONTENT_PART_TYPES.has(part.type.toLowerCase());
+}
+
+function getSerializedFileContentPart(
+  part: SerializedSharedMessagePart | null | undefined,
+): SerializedSharedFile | null {
+  if (part == null || typeof part !== 'object') {
+    return null;
+  }
+  const recognizedType = hasSerializedFileContentPartType(part);
+  const hasFileCarrier = FILE_CONTENT_PART_KEYS.some((key) =>
+    Object.prototype.hasOwnProperty.call(part, key),
+  );
+  if (!recognizedType && !hasFileCarrier) {
+    return null;
+  }
+  const payloadKeys = TOP_LEVEL_FILE_CONTENT_KEYS.filter(
+    (key) =>
+      Object.prototype.hasOwnProperty.call(part, key) &&
+      (key !== 'file_data' || getSerializedFileObject(part.file_data) == null) &&
+      (key !== 'document_url' || getSerializedFileObject(part.document_url) == null),
+  );
+  if (payloadKeys.length === 0) {
+    return null;
+  }
+  const projection: Record<string, unknown> = {};
+  for (const key of [...TOP_LEVEL_FILE_CONTEXT_KEYS, ...payloadKeys]) {
+    if (Object.prototype.hasOwnProperty.call(part, key)) {
+      projection[key] = part[key];
+    }
+  }
+  return projection as SerializedSharedFile;
+}
+
+function getSerializedFileObject(value: unknown): SerializedSharedFile | null {
+  return value != null && typeof value === 'object' ? (value as SerializedSharedFile) : null;
+}
+
 function isEntireMessageSubmitted(
   message: SerializedSharedMessage,
   filters: FiltersConfig | undefined,
@@ -200,6 +343,24 @@ function collectSerializedFiles(
   filters: FiltersConfig | undefined,
 ): CollectedSerializedFile[] {
   const files: CollectedSerializedFile[] = [];
+  const appendFile = (
+    file: SerializedSharedFile | null | undefined,
+    location: SerializedFileLocation,
+    path: JsonPointer,
+    localPath: JsonPointer,
+    entireMessageSubmitted: boolean,
+    submittedPaths: readonly string[],
+  ) => {
+    if (file == null) {
+      return;
+    }
+    files.push({
+      file,
+      location,
+      path,
+      userSubmitted: entireMessageSubmitted || isSubmittedPath(localPath, submittedPaths),
+    });
+  };
   const append = (
     values: readonly (SerializedSharedFile | null | undefined)[] | undefined,
     location: SerializedFileLocation,
@@ -211,13 +372,14 @@ function collectSerializedFiles(
     let index = 0;
     for (const file of values ?? []) {
       if (file != null) {
-        const itemLocalPath = `${localPath}/${index}`;
-        files.push({
+        appendFile(
           file,
           location,
-          path: `${path}/${index}` as JsonPointer,
-          userSubmitted: entireMessageSubmitted || isSubmittedPath(itemLocalPath, submittedPaths),
-        });
+          `${path}/${index}` as JsonPointer,
+          `${localPath}/${index}` as JsonPointer,
+          entireMessageSubmitted,
+          submittedPaths,
+        );
       }
       index++;
     }
@@ -246,12 +408,65 @@ function collectSerializedFiles(
     );
     for (let partIndex = 0; partIndex < (message.content?.length ?? 0); partIndex++) {
       const part = message.content?.[partIndex];
+      const partPath = `/messages/${messageIndex}/content/${partIndex}` as JsonPointer;
+      const partLocalPath = `/content/${partIndex}` as JsonPointer;
+      const partIsSubmitted = entireMessageSubmitted || part?.type === 'steer';
+      appendFile(
+        getSerializedFileContentPart(part),
+        'file',
+        partPath,
+        partLocalPath,
+        partIsSubmitted,
+        submittedPaths,
+      );
       append(
         part?.files,
         'file',
-        `/messages/${messageIndex}/content/${partIndex}/files`,
-        `/content/${partIndex}/files`,
-        entireMessageSubmitted || part?.type === 'steer',
+        `${partPath}/files` as JsonPointer,
+        `${partLocalPath}/files` as JsonPointer,
+        partIsSubmitted,
+        submittedPaths,
+      );
+      for (const [key, file] of [
+        ['file', part?.file],
+        ['fileData', part?.fileData],
+        ['file_data', part?.file_data],
+        ['image_file', part?.image_file],
+        ['inlineData', part?.inlineData],
+        ['input_audio', part?.input_audio],
+        ['document', part?.document],
+      ] as const) {
+        appendFile(
+          getSerializedFileObject(file),
+          'file',
+          `${partPath}/${key}` as JsonPointer,
+          `${partLocalPath}/${key}` as JsonPointer,
+          partIsSubmitted,
+          submittedPaths,
+        );
+      }
+      for (const [key, locator] of [
+        ['audio_url', part?.audio_url],
+        ['document_url', part?.document_url],
+        ['image_url', part?.image_url],
+        ['video_url', part?.video_url],
+      ] as const) {
+        appendFile(
+          typeof locator === 'string' ? { url: locator } : locator,
+          'file',
+          `${partPath}/${key}` as JsonPointer,
+          `${partLocalPath}/${key}` as JsonPointer,
+          partIsSubmitted,
+          submittedPaths,
+        );
+      }
+      const source = hasSerializedFileContentPartType(part) ? part?.source : undefined;
+      appendFile(
+        getSerializedFileObject(source),
+        'file',
+        `${partPath}/source` as JsonPointer,
+        `${partLocalPath}/source` as JsonPointer,
+        partIsSubmitted,
         submittedPaths,
       );
     }
@@ -605,6 +820,10 @@ function rememberUninspectableFields(
   }
 }
 
+function isOpaqueSerializedBytes(key: string, value: unknown): boolean {
+  return key.toLowerCase() === 'bytes' && value != null && typeof value === 'object';
+}
+
 function getNormalizedMimeType(parent: object | undefined): string {
   if (parent == null) {
     return '';
@@ -774,10 +993,13 @@ function decodeEncodedText(
     return text == null ? { status: 'uninspectable', fields } : { status: 'decoded', text, fields };
   }
 
-  if (!isLikelyEncodedPayload(value, key, parent)) {
+  const mimeType = getNormalizedMimeType(parent);
+  if (
+    !isLikelyEncodedPayload(value, key, parent) &&
+    !(key.toLowerCase() === 'data' && mimeType.length > 0)
+  ) {
     return { status: 'not_encoded' };
   }
-  const mimeType = getNormalizedMimeType(parent);
   const fields = getEncodedFileFields(key, parent, mimeType, false);
   const buffer = decodeStrictBase64(value);
   if (buffer == null) {
@@ -897,6 +1119,10 @@ function extractNestedSerializedPayloadFragments(
       );
       const inspectionClassifications =
         activeClassifications.length > 0 ? activeClassifications : [classifications[0]];
+      if (isOpaqueSerializedBytes(key, value)) {
+        rememberUninspectableFields(state, ALL_DERIVED_FILE_FIELDS);
+        continue;
+      }
       if (hasExpectedStandardScalarShape(key, value)) {
         if (typeof value === 'string') {
           if (SERIALIZED_LOCATOR_KEYS.includes(key as (typeof SERIALIZED_LOCATOR_KEYS)[number])) {
@@ -1027,6 +1253,10 @@ function extractNestedSerializedPayloadFragments(
       }
       for (let nestedIndex = scheduledNodes - 1; nestedIndex >= 0; nestedIndex--) {
         const [key, value] = nestedEntries[nestedIndex];
+        if (isOpaqueSerializedBytes(key, value)) {
+          rememberUninspectableFields(state, ALL_DERIVED_FILE_FIELDS);
+          continue;
+        }
         pending.push({
           value,
           path: `${current.path}/${escapeJsonPointer(key)}` as JsonPointer,
@@ -1058,8 +1288,14 @@ function projectPolicyMetadata(
     if (typeof fileId !== 'string' || typeof shareId !== 'string') {
       return metadata;
     }
-    delete metadata.file_id;
     const sharedFileRoute = `/api/share/${shareId}/files/${encodeURIComponent(fileId)}`;
+    const hasSharedFileRoute = SERIALIZED_LOCATOR_KEYS.some(
+      (key) => metadata[key] === sharedFileRoute,
+    );
+    if (!hasSharedFileRoute) {
+      return metadata;
+    }
+    delete metadata.file_id;
     for (const key of SERIALIZED_LOCATOR_KEYS) {
       if (metadata[key] === sharedFileRoute) {
         delete metadata[key];

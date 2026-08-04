@@ -359,7 +359,6 @@ class STTService {
         }
         const uninspectableField = getBlockedUninspectableFileField(req.config.filters, [
           'content',
-          'transcript',
         ]);
         if (uninspectableField != null) {
           res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
@@ -367,20 +366,32 @@ class STTService {
         }
       }
 
-      const audioBuffer = await fs.readFile(req.file.path);
-      const audioFile = {
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-      };
-      const [provider, sttSchema, allowedAddresses] = await this.getProviderSchema(req);
-      const language = req.body?.language || '';
-      const text = await this.sttRequest(
-        provider,
-        sttSchema,
-        { audioBuffer, audioFile, language },
-        allowedAddresses,
-      );
+      let text;
+      try {
+        const audioBuffer = await fs.readFile(req.file.path);
+        const audioFile = {
+          originalname: req.file.originalname,
+          mimetype: req.file.mimetype,
+          size: req.file.size,
+        };
+        const [provider, sttSchema, allowedAddresses] = await this.getProviderSchema(req);
+        const language = req.body?.language || '';
+        text = await this.sttRequest(
+          provider,
+          sttSchema,
+          { audioBuffer, audioFile, language },
+          allowedAddresses,
+        );
+      } catch (error) {
+        const uninspectableField = getBlockedUninspectableFileField(req.config?.filters, [
+          'transcript',
+        ]);
+        if (uninspectableField != null) {
+          res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
+          return;
+        }
+        throw error;
+      }
       if (hasActiveFileFieldPolicy(req.config?.filters, ['transcript'])) {
         const finding = inspectContent(extractFileContent({ transcript: text }), {
           filters: req.config.filters,

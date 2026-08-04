@@ -2,7 +2,12 @@ import { FILTER_PII_STARTER_PATTERNS } from 'librechat-data-provider';
 import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
 import { RE2JS } from 're2js';
 import type { ContentFieldMap, ContentSource, TextContentFragment } from './types';
-import { createConfiguredContentInspector, inspectContent } from './runtime';
+import {
+  createConfiguredContentInspector,
+  inspectContent,
+  inspectContentWithTraversal,
+} from './runtime';
+import { ContentTraversalLimitError } from './adapters/nested';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
@@ -41,6 +46,82 @@ describe('configured content inspection', () => {
   it('does no work when neither the generic nor legacy filter is configured', () => {
     expect(createConfiguredContentInspector({})).toBeNull();
     expect(inspectContent([fragment('message', 'text')], {})).toBeNull();
+  });
+
+  it('blocks a partial fragment before returning its traversal failure', () => {
+    const filters: FiltersConfig = {
+      skills: {
+        pii: {
+          fields: ['frontmatter'],
+          starterPatterns: [],
+          customPatterns: [BLOCK_PATTERN],
+        },
+      },
+    };
+    const error = new ContentTraversalLimitError(
+      [fragment('skill', 'frontmatter')],
+      [{ source: 'skill', fields: ['frontmatter'] }],
+    );
+
+    const result = inspectContentWithTraversal(
+      () => {
+        throw error;
+      },
+      { filters },
+    );
+
+    expect(result.finding).toMatchObject({ source: 'skill', field: 'frontmatter' });
+    expect(result.traversalError).toBeNull();
+  });
+
+  it('returns a traversal failure when its incomplete scope remains protected', () => {
+    const filters: FiltersConfig = {
+      skills: {
+        pii: {
+          fields: ['frontmatter'],
+          starterPatterns: [],
+          customPatterns: [BLOCK_PATTERN],
+        },
+      },
+    };
+    const error = new ContentTraversalLimitError(
+      [fragment('skill', 'frontmatter', 'safe visible value')],
+      [{ source: 'skill', fields: ['frontmatter'] }],
+    );
+
+    const result = inspectContentWithTraversal(
+      () => {
+        throw error;
+      },
+      { filters },
+    );
+
+    expect(result).toEqual({ finding: null, traversalError: error });
+  });
+
+  it('ignores a traversal failure outside the selected policy fields', () => {
+    const filters: FiltersConfig = {
+      skills: {
+        pii: {
+          fields: ['description'],
+          starterPatterns: [],
+          customPatterns: [BLOCK_PATTERN],
+        },
+      },
+    };
+    const error = new ContentTraversalLimitError(
+      [fragment('skill', 'frontmatter')],
+      [{ source: 'skill', fields: ['frontmatter'] }],
+    );
+
+    const result = inspectContentWithTraversal(
+      () => {
+        throw error;
+      },
+      { filters },
+    );
+
+    expect(result).toEqual({ finding: null, traversalError: null });
   });
 
   it('selects generic rules by both source and field and returns raw-free metadata', () => {

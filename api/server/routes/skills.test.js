@@ -31,6 +31,7 @@ const {
   PrincipalType,
   PermissionBits,
 } = require('librechat-data-provider');
+const { CONTENT_TRAVERSAL_MAX_DEPTH } = require('@librechat/api');
 
 let mockFileConfig;
 let mockFilters;
@@ -242,6 +243,17 @@ async function createSkillAsOwner(overrides = {}) {
   return res;
 }
 
+function createOverflowingFrontmatter(visible) {
+  const root = { visible };
+  let current = root;
+  for (let depth = 0; depth < CONTENT_TRAVERSAL_MAX_DEPTH; depth++) {
+    current.nested = {};
+    current = current.nested;
+  }
+  current.nested = { hidden: 'PRIVATE-HIDDEN' };
+  return root;
+}
+
 describe('Skill routes', () => {
   let errSpy;
   beforeEach(() => {
@@ -367,6 +379,87 @@ describe('Skill routes', () => {
           source: 'skill',
           field: 'instructions',
         }),
+      );
+      expect(await Skill.countDocuments()).toBe(0);
+    });
+
+    it('blocks an inspected partial frontmatter fragment before traversal exhaustion', async () => {
+      mockFilters = {
+        skills: {
+          pii: {
+            fields: ['frontmatter'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'partial_content', label: 'partial content', regex: 'PRIVATE-VISIBLE' },
+            ],
+          },
+        },
+      };
+
+      const res = await createSkillAsOwner({
+        frontmatter: createOverflowingFrontmatter('PRIVATE-VISIBLE'),
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'skill',
+          field: 'frontmatter',
+        }),
+      );
+      expect(await Skill.countDocuments()).toBe(0);
+    });
+
+    it('fails closed when selected skill frontmatter cannot be fully inspected', async () => {
+      mockFilters = {
+        skills: {
+          pii: {
+            fields: ['frontmatter'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'protected_content', label: 'protected content', regex: 'PRIVATE-NOT-PRESENT' },
+            ],
+          },
+        },
+      };
+
+      const res = await createSkillAsOwner({
+        frontmatter: createOverflowingFrontmatter('safe visible value'),
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted content could not be completely inspected before processing.',
+        source: 'skill',
+        field: 'frontmatter',
+      });
+      expect(await Skill.countDocuments()).toBe(0);
+    });
+
+    it('does not fail closed on oversized frontmatter when only another field is selected', async () => {
+      mockFilters = {
+        skills: {
+          pii: {
+            fields: ['description'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'protected_description', label: 'protected description', regex: 'PRIVATE' },
+            ],
+          },
+        },
+      };
+
+      const res = await createSkillAsOwner({
+        description: 'A safe skill description used for traversal coverage.',
+        frontmatter: createOverflowingFrontmatter('PRIVATE-VISIBLE'),
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).not.toBe('content_filter_uninspectable');
+      expect(res.body.issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: 'UNKNOWN_KEY' })]),
       );
       expect(await Skill.countDocuments()).toBe(0);
     });

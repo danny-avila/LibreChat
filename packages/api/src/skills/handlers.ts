@@ -32,8 +32,8 @@ import type {
 import type { Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ServerRequest, StrategyFunctions } from '~/types';
+import { extractSkillContent, inspectContentWithTraversal } from '~/protection';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
-import { extractSkillContent, inspectContent } from '~/protection';
 import { resolveSkillFilePathParam } from './path';
 import { parseSkillMarkdown } from './parse';
 import { isBinaryBuffer } from './binary';
@@ -277,25 +277,30 @@ function blockFilteredSkillContent(
   }
   const inlineFrontmatter =
     typeof input.body === 'string' ? parseSkillMarkdown(input.body).frontmatter : undefined;
-  const finding = inspectContent(
-    extractSkillContent({
-      name: input.name,
-      displayTitle: input.displayTitle,
-      description: input.description,
-      body: input.body,
-      frontmatter: {
-        ...inlineFrontmatter,
-        ...(input.frontmatter as Record<string, unknown> | undefined),
-      },
-      category: input.category,
-    }),
+  const { finding, traversalError } = inspectContentWithTraversal(
+    () =>
+      extractSkillContent({
+        name: input.name,
+        displayTitle: input.displayTitle,
+        description: input.description,
+        body: input.body,
+        frontmatter: {
+          ...inlineFrontmatter,
+          ...(input.frontmatter as Record<string, unknown> | undefined),
+        },
+        category: input.category,
+      }),
     { filters: req.config?.filters },
   );
-  if (finding == null) {
-    return false;
+  if (finding != null) {
+    res.status(400).json(contentFilterBlockResponse(finding));
+    return true;
   }
-  res.status(400).json(contentFilterBlockResponse(finding));
-  return true;
+  if (traversalError != null) {
+    res.status(traversalError.statusCode).json(traversalError.body);
+    return true;
+  }
+  return false;
 }
 
 /**

@@ -23,6 +23,7 @@ const {
   normalizeToolResourceFiles,
   stripFileIdsFromToolResources,
   inspectContent,
+  inspectContentWithTraversal,
   extractAgentContent,
   extractAssistantActionContent,
   extractFileContent,
@@ -140,14 +141,22 @@ const blockFilteredActionContent = (req, res, actions) => {
       return action;
     }
   });
-  const finding = inspectContent(filterableActions.flatMap(extractAssistantActionContent), {
-    filters,
-  });
-  if (finding == null) {
-    return false;
+  let traversalError;
+  for (const action of filterableActions) {
+    const inspection = inspectContentWithTraversal(() => extractAssistantActionContent(action), {
+      filters,
+    });
+    if (inspection.finding != null) {
+      res.status(400).json(contentFilterBlockResponse(inspection.finding));
+      return true;
+    }
+    traversalError ??= inspection.traversalError ?? undefined;
   }
-  res.status(400).json(contentFilterBlockResponse(finding));
-  return true;
+  if (traversalError != null) {
+    res.status(traversalError.statusCode).json(traversalError.body);
+    return true;
+  }
+  return false;
 };
 
 const blockFilteredAgentContent = async (req, res, agentData) => {

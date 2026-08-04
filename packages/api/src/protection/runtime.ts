@@ -1,6 +1,12 @@
 import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
 import type { PatternContentInspectorConfig } from './detectors/pattern';
+import type { ContentTraversalLimitError } from './adapters/nested';
 import type { ContentSource, ProtectionFinding, TextContentFragment } from './types';
+import {
+  getContentTraversalFragments,
+  isContentTraversalLimitError,
+  isContentTraversalProtected,
+} from './adapters/nested';
 import { createPatternContentInspector } from './detectors/pattern';
 import { createLegacyPiiInspector, isLegacyPiiFragment } from './legacy';
 
@@ -21,6 +27,15 @@ export interface ContentInspectionConfig {
 
 export interface ConfiguredContentInspector {
   inspect(fragments: Iterable<TextContentFragment>): ProtectionFinding | null;
+}
+
+export interface TraversalAwareContentInspectionConfig extends ContentInspectionConfig {
+  readonly roles?: readonly (string | undefined)[];
+}
+
+export interface TraversalAwareContentInspectionResult {
+  readonly finding: ProtectionFinding | null;
+  readonly traversalError: ContentTraversalLimitError | null;
 }
 
 const FILTER_CACHE = new WeakMap<object, readonly CompiledFilter[]>();
@@ -197,4 +212,36 @@ export function inspectContent(
   config: ContentInspectionConfig,
 ): ProtectionFinding | null {
   return createConfiguredContentInspector(config)?.inspect(fragments) ?? null;
+}
+
+/** Inspects bounded extraction fragments before enforcing a protected traversal failure. */
+export function inspectContentWithTraversal(
+  extract: () => Iterable<TextContentFragment>,
+  config: TraversalAwareContentInspectionConfig,
+): TraversalAwareContentInspectionResult {
+  const inspector = createConfiguredContentInspector(config);
+  if (inspector == null) {
+    return { finding: null, traversalError: null };
+  }
+
+  try {
+    return { finding: inspector.inspect(extract()), traversalError: null };
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    const finding = inspector.inspect(getContentTraversalFragments(error));
+    if (finding != null) {
+      return { finding, traversalError: null };
+    }
+    const traversalError = isContentTraversalProtected({
+      error,
+      filters: config.filters,
+      legacyPii: config.legacyPii,
+      roles: config.roles,
+    })
+      ? error
+      : null;
+    return { finding: null, traversalError };
+  }
 }

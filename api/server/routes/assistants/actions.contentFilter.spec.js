@@ -30,6 +30,7 @@ jest.mock('~/models', () => ({
 
 const router = require('./actions');
 const db = require('~/models');
+const { CONTENT_TRAVERSAL_MAX_DEPTH } = require('@librechat/api');
 
 function createApp(filters) {
   const app = express();
@@ -41,6 +42,17 @@ function createApp(filters) {
   });
   app.use(router);
   return app;
+}
+
+function createOverflowingParameters() {
+  const root = { visible: 'safe visible value' };
+  let current = root;
+  for (let depth = 0; depth < CONTENT_TRAVERSAL_MAX_DEPTH; depth++) {
+    current.nested = {};
+    current = current.nested;
+  }
+  current.nested = { hidden: 'BLOCK-HIDDEN' };
+  return root;
 }
 
 describe('assistant action content filters', () => {
@@ -60,6 +72,50 @@ describe('assistant action content filters', () => {
       },
     });
     db.getAssistant.mockResolvedValue({ actions: [], user: 'owner-id' });
+  });
+
+  it('fails closed when selected assistant action parameters cannot be fully inspected', async () => {
+    const app = createApp({
+      toolArguments: {
+        pii: {
+          fields: ['arguments'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-content',
+              label: 'protected content',
+              regex: 'BLOCK-NOT-PRESENT',
+            },
+          ],
+        },
+      },
+    });
+
+    const response = await request(app)
+      .post('/assistant-id')
+      .send({
+        functions: [
+          {
+            type: 'function',
+            function: {
+              name: 'lookup',
+              description: 'Lookup',
+              parameters: createOverflowingParameters(),
+            },
+          },
+        ],
+        metadata: { domain: 'example.test' },
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: 'content_filter_uninspectable',
+      message: 'Submitted content could not be completely inspected before processing.',
+      source: 'tool_argument',
+      field: 'arguments',
+    });
+    expect(mockEncryptMetadata).not.toHaveBeenCalled();
+    expect(mockGetOpenAIClient).not.toHaveBeenCalled();
   });
 
   it('blocks submitted function definitions before encryption or external work', async () => {

@@ -9,7 +9,7 @@ const {
   validateActionOAuthMetadata,
   ACTION_CREDENTIAL_REFRESH_MESSAGE,
   buildActionOAuthTokenDeleteQueries,
-  inspectContent,
+  inspectContentWithTraversal,
   extractAssistantActionContent,
   contentFilterBlockResponse,
 } = require('@librechat/api');
@@ -46,6 +46,22 @@ const checkAgentCreate = generateCheckAccess({
   permissions: [Permissions.USE, Permissions.CREATE],
   getRoleByName: db.getRoleByName,
 });
+
+function blockFilteredActionProjection(req, res, action) {
+  const { finding, traversalError } = inspectContentWithTraversal(
+    () => extractAssistantActionContent(action),
+    { filters: req.config?.filters },
+  );
+  if (finding != null) {
+    res.status(400).json(contentFilterBlockResponse(finding));
+    return true;
+  }
+  if (traversalError != null) {
+    res.status(traversalError.statusCode).json(traversalError.body);
+    return true;
+  }
+  return false;
+}
 
 /**
  * Retrieves all user's actions
@@ -106,12 +122,8 @@ router.post(
         return res.status(400).json({ message: 'No functions provided' });
       }
 
-      const contentFinding = inspectContent(
-        extractAssistantActionContent({ functions, metadata: _metadata }),
-        { filters: req.config?.filters },
-      );
-      if (contentFinding != null) {
-        return res.status(400).json(contentFilterBlockResponse(contentFinding));
+      if (blockFilteredActionProjection(req, res, { functions, metadata: _metadata })) {
+        return;
       }
 
       const metadata = await encryptMetadata(removeNullishValues(_metadata, true));
@@ -196,15 +208,13 @@ router.post(
         storedAction,
       });
 
-      const finalContentFinding = inspectContent(
-        extractAssistantActionContent({
+      if (
+        blockFilteredActionProjection(req, res, {
           functions: plannedUpdate.tools.map((name) => ({ function: { name } })),
           metadata: await decryptMetadata(plannedUpdate.metadata),
-        }),
-        { filters: req.config?.filters },
-      );
-      if (finalContentFinding != null) {
-        return res.status(400).json(contentFilterBlockResponse(finalContentFinding));
+        })
+      ) {
+        return;
       }
 
       if (plannedUpdate.requiresCredentialRefresh) {

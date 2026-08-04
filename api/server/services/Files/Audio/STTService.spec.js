@@ -347,21 +347,75 @@ describe('STT transcript content filtering', () => {
     const filters = {
       files: {
         pii: {
-          fields: ['transcript'],
+          fields: ['content'],
           uninspectable: 'block',
         },
       },
     };
-    getBlockedUninspectableFileField.mockReturnValueOnce('transcript');
+    getBlockedUninspectableFileField.mockReturnValueOnce('content');
     const service = createService('submitted transcript');
     const res = createResponse();
 
     await service.processSpeechToText(createRequest({ filters }), res);
 
-    expect(getBlockedUninspectableFileField).toHaveBeenCalledWith(filters, [
-      'content',
-      'transcript',
-    ]);
+    expect(getBlockedUninspectableFileField).toHaveBeenCalledWith(filters, ['content']);
+    expect(contentFilterUninspectableResponse).toHaveBeenCalledWith('content');
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'content_filter_uninspectable',
+      source: 'file',
+      field: 'content',
+    });
+    expect(readFileSpy).not.toHaveBeenCalled();
+    expect(service.getProviderSchema).not.toHaveBeenCalled();
+    expect(service.sttRequest).not.toHaveBeenCalled();
+    expect(unlinkSpy).toHaveBeenCalledWith('/tmp/audio.webm');
+  });
+
+  it('transcribes and inspects audio when only transcript fail-close is configured', async () => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['transcript'],
+          uninspectable: 'block',
+        },
+      },
+    };
+    getBlockedUninspectableFileField.mockImplementation((_filters, fields) =>
+      fields.includes('transcript') ? 'transcript' : null,
+    );
+    const service = createService('submitted transcript');
+    const res = createResponse();
+
+    await service.processSpeechToText(createRequest({ filters }), res);
+
+    expect(getBlockedUninspectableFileField).toHaveBeenCalledWith(filters, ['content']);
+    expect(service.sttRequest).toHaveBeenCalledTimes(1);
+    expect(extractFileContent).toHaveBeenCalledWith({ transcript: 'submitted transcript' });
+    expect(res.json).toHaveBeenCalledWith({ text: 'submitted transcript' });
+    expect(contentFilterUninspectableResponse).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a selected transcript cannot be produced', async () => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['transcript'],
+          uninspectable: 'block',
+        },
+      },
+    };
+    getBlockedUninspectableFileField.mockImplementation((_filters, fields) =>
+      fields.includes('transcript') ? 'transcript' : null,
+    );
+    const service = createService('');
+    service.sttRequest.mockRejectedValueOnce(new Error('provider failed'));
+    const res = createResponse();
+
+    await service.processSpeechToText(createRequest({ filters }), res);
+
+    expect(getBlockedUninspectableFileField).toHaveBeenCalledWith(filters, ['content']);
+    expect(getBlockedUninspectableFileField).toHaveBeenCalledWith(filters, ['transcript']);
     expect(contentFilterUninspectableResponse).toHaveBeenCalledWith('transcript');
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({
@@ -369,10 +423,7 @@ describe('STT transcript content filtering', () => {
       source: 'file',
       field: 'transcript',
     });
-    expect(readFileSpy).not.toHaveBeenCalled();
-    expect(service.getProviderSchema).not.toHaveBeenCalled();
-    expect(service.sttRequest).not.toHaveBeenCalled();
-    expect(unlinkSpy).toHaveBeenCalledWith('/tmp/audio.webm');
+    expect(res.sendStatus).not.toHaveBeenCalled();
   });
 
   it('preserves the default-off transcript response path', async () => {

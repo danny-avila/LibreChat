@@ -122,6 +122,347 @@ describe('shared file metadata protection', () => {
 
   it.each([
     [
+      'image_file names',
+      {
+        files: {
+          pii: {
+            fields: ['name'],
+            starterPatterns: [],
+            customPatterns: [BLOCK_PATTERN],
+          },
+        },
+      } satisfies FiltersConfig,
+      { type: 'image_file', image_file: { filename: 'PRIVATE-SENTINEL.png' } },
+      'name',
+    ],
+    [
+      'input_file names',
+      {
+        files: {
+          pii: {
+            fields: ['name'],
+            starterPatterns: [],
+            customPatterns: [BLOCK_PATTERN],
+          },
+        },
+      } satisfies FiltersConfig,
+      { type: 'input_file', filename: 'PRIVATE-SENTINEL.pdf', file_data: 'safe' },
+      'name',
+    ],
+    [
+      'file URIs',
+      fileUriFilters,
+      { type: 'file', file: { url: 'https://example.test/PRIVATE-SENTINEL' } },
+      'uri',
+    ],
+    [
+      'input_image URLs',
+      fileUriFilters,
+      { type: 'input_image', image_url: 'https://example.test/PRIVATE-SENTINEL' },
+      'uri',
+    ],
+    [
+      'input_audio payloads',
+      fileContentFilters,
+      { type: 'input_audio', input_audio: { data: 'PRIVATE-SENTINEL', format: 'wav' } },
+      'content',
+    ],
+    [
+      'Google media payloads',
+      fileContentFilters,
+      { type: 'media', mimeType: 'text/plain', data: 'PRIVATE-SENTINEL' },
+      'content',
+    ],
+    [
+      'Google inlineData payloads',
+      fileContentFilters,
+      {
+        type: 'image_url',
+        inlineData: {
+          mimeType: 'text/plain',
+          data: Buffer.from('PRIVATE-SENTINEL '.repeat(10)).toString('base64'),
+        },
+      },
+      'content',
+    ],
+    [
+      'Google fileData URIs',
+      fileUriFilters,
+      {
+        fileData: {
+          fileUri: 'gs://private-bucket/PRIVATE-SENTINEL',
+          mimeType: 'video/mp4',
+        },
+      },
+      'uri',
+    ],
+    [
+      'Google snake-case file_data URIs',
+      fileUriFilters,
+      {
+        file_data: {
+          file_uri: 'gs://private-bucket/PRIVATE-SENTINEL',
+          mime_type: 'video/mp4',
+        },
+      },
+      'uri',
+    ],
+    [
+      'Google top-level fileUri values',
+      fileUriFilters,
+      {
+        type: 'media',
+        fileUri: 'https://example.test/PRIVATE-SENTINEL',
+        mimeType: 'video/mp4',
+      },
+      'uri',
+    ],
+    [
+      'Mistral document_url values',
+      fileUriFilters,
+      {
+        type: 'document_url',
+        document_url: 'https://example.test/PRIVATE-SENTINEL',
+      },
+      'uri',
+    ],
+    [
+      'nested Mistral document_url values',
+      fileUriFilters,
+      {
+        type: 'document_url',
+        document_url: { url: 'https://example.test/PRIVATE-SENTINEL' },
+      },
+      'uri',
+    ],
+    [
+      'Anthropic document sources',
+      fileContentFilters,
+      {
+        type: 'document',
+        source: {
+          type: 'base64',
+          media_type: 'text/plain',
+          data: 'PRIVATE-SENTINEL',
+        },
+      },
+      'content',
+    ],
+    [
+      'Bedrock document names',
+      {
+        files: {
+          pii: {
+            fields: ['name'],
+            starterPatterns: [],
+            customPatterns: [BLOCK_PATTERN],
+          },
+        },
+      } satisfies FiltersConfig,
+      {
+        type: 'document',
+        document: {
+          name: 'PRIVATE-SENTINEL',
+          format: 'pdf',
+          source: { bytes: Buffer.from('safe') },
+        },
+      },
+      'name',
+    ],
+  ])('checks non-steer content-part %s under file policy', (_label, filters, part, field) => {
+    const error = capturePolicyError(() =>
+      assertSharedFileMetadataAllowed({
+        filters,
+        messages: [{ isCreatedByUser: false, isUserSubmitted: false, content: [part] }],
+        shareId: 'share-123',
+      }),
+    );
+
+    expect(error).toBeInstanceOf(ContentFilterError);
+    expect(error.body).toMatchObject({
+      error: 'content_filter_block',
+      source: 'file',
+      field,
+    });
+    expect(JSON.stringify(error.body)).not.toContain('PRIVATE-SENTINEL');
+  });
+
+  it.each([
+    ['OpenAI input files', { type: 'input_file', file_data: 'opaque-file-data' }],
+    ['OpenAI input images', { type: 'input_image', file_id: 'unsnapshotted-file' }],
+    ['OpenAI image files', { type: 'image_file', file_id: 'unsnapshotted-file' }],
+    ['Google media', { type: 'media', mimeType: 'application/pdf', data: 'opaque-media' }],
+    [
+      'Google inlineData',
+      {
+        type: 'image_url',
+        inlineData: { mimeType: 'image/png', data: 'opaque-inline-image' },
+      },
+    ],
+    [
+      'Google fileData',
+      {
+        fileData: { fileUri: 'gs://private-bucket/video', mimeType: 'video/mp4' },
+      },
+    ],
+    [
+      'Mistral document_url',
+      {
+        type: 'document_url',
+        document_url: 'https://example.test/private-report.pdf',
+      },
+    ],
+    [
+      'Anthropic sources',
+      {
+        type: 'document',
+        source: {
+          type: 'base64',
+          media_type: 'application/pdf',
+          data: 'opaque-document',
+        },
+      },
+    ],
+    [
+      'Bedrock document bytes',
+      {
+        type: 'document',
+        document: {
+          name: 'report',
+          format: 'pdf',
+          source: { bytes: Buffer.from('opaque-document') },
+        },
+      },
+    ],
+  ])('applies fail-close file policy to non-steer content-part %s', (_label, part) => {
+    const error = capturePolicyError(() =>
+      assertSharedFileMetadataAllowed({
+        filters: {
+          files: {
+            pii: {
+              fields: ['content'],
+              starterPatterns: [],
+              customPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+        messages: [
+          {
+            isCreatedByUser: false,
+            isUserSubmitted: false,
+            content: [part],
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    );
+
+    expect(error).toBeInstanceOf(UninspectableFileError);
+    expect(error.body).toMatchObject({
+      error: 'content_filter_uninspectable',
+      source: 'file',
+      field: 'content',
+    });
+  });
+
+  it('preserves explicit content-part provenance for attachment-reference policy', () => {
+    const part = {
+      type: 'input_file',
+      filename: 'PRIVATE-SENTINEL.pdf',
+      file_data: 'safe',
+    };
+
+    expect(() =>
+      assertSharedFileMetadataAllowed({
+        filters: attachmentFilters,
+        messages: [{ isCreatedByUser: false, isUserSubmitted: false, content: [part] }],
+        shareId: 'share-123',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertSharedFileMetadataAllowed({
+        filters: attachmentFilters,
+        messages: [
+          {
+            isCreatedByUser: false,
+            isUserSubmitted: false,
+            userSubmittedPaths: ['/content/0'],
+            content: [part],
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    ).toThrow(ContentFilterError);
+  });
+
+  it('preserves nested file field granularity in provider content parts', () => {
+    expect(() =>
+      assertSharedFileMetadataAllowed({
+        filters: fileContentFilters,
+        messages: [
+          {
+            isCreatedByUser: false,
+            isUserSubmitted: false,
+            content: [
+              {
+                type: 'file',
+                file: { filename: 'PRIVATE-SENTINEL.pdf', file_data: 'safe' },
+              },
+              {
+                type: 'input_file',
+                filename: 'safe.pdf',
+                file_id: 'safe-file-id',
+                vendor_metadata: 'PRIVATE-SENTINEL',
+              },
+              {
+                fileData: {
+                  fileUri: 'gs://private-bucket/PRIVATE-SENTINEL',
+                  mimeType: 'video/mp4',
+                },
+              },
+              {
+                file_data: {
+                  file_uri: 'gs://private-bucket/PRIVATE-SENTINEL',
+                  mime_type: 'video/mp4',
+                },
+              },
+              {
+                type: 'document_url',
+                document_url: 'https://example.test/PRIVATE-SENTINEL',
+              },
+            ],
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    ).not.toThrow();
+  });
+
+  it('does not treat generic content-part source metadata as a file carrier', () => {
+    expect(() =>
+      assertSharedFileMetadataAllowed({
+        filters: fileContentFilters,
+        messages: [
+          {
+            isCreatedByUser: false,
+            isUserSubmitted: false,
+            content: [
+              {
+                type: 'tool_call',
+                source: { data: 'PRIVATE-SENTINEL' },
+              },
+            ],
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    [
       'iconURL',
       attachmentFilters,
       { iconURL: 'https://example.test/PRIVATE-SENTINEL' },
