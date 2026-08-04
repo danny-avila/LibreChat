@@ -155,24 +155,17 @@ describe('resolveStreamLimits', () => {
   });
 
   it('merges yaml per-tool entries over the shipped create_file default', () => {
-    const config = {
-      maxToolCallArgBytesByTool: { my_mcp_tool: 32768 },
-    } as TAgentsEndpoint;
-    expect(resolveStreamLimits(config)).toEqual({
+    expect(resolveStreamLimits({ maxToolCallArgBytesByTool: { my_mcp_tool: 32768 } })).toEqual({
       maxToolCallArgBytesByTool: { create_file: 131072, my_mcp_tool: 32768 },
     });
   });
 
   it('lets a yaml create_file entry replace the shipped default, including 0 to disable', () => {
-    expect(
-      resolveStreamLimits({
-        maxToolCallArgBytesByTool: { create_file: 262144 },
-      } as TAgentsEndpoint),
-    ).toEqual({ maxToolCallArgBytesByTool: { create_file: 262144 } });
-    expect(
-      resolveStreamLimits({
-        maxToolCallArgBytesByTool: { create_file: 0 },
-      } as TAgentsEndpoint),
-    ).toEqual({ maxToolCallArgBytesByTool: { create_file: 0 } });
+    expect(resolveStreamLimits({ maxToolCallArgBytesByTool: { create_file: 262144 } })).toEqual({
+      maxToolCallArgBytesByTool: { create_file: 262144 },
+    });
+    expect(resolveStreamLimits({ maxToolCallArgBytesByTool: { create_file: 0 } })).toEqual({
+      maxToolCallArgBytesByTool: { create_file: 0 },
+    });
   });
 });
