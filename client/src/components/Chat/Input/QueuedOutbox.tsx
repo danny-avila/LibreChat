@@ -467,6 +467,10 @@ function QueuedOutboxBase({
     }
     return emptyEditId != null ? localize('com_ui_queue_edit_empty') : undefined;
   })();
+  /** Clear all folds the queue the same way Merge does, so an unresolved empty
+   *  edit would hand words the user deleted back to the composer. Uniform with
+   *  every other reader rather than an exception worth remembering. */
+  const clearBlockedReason = emptyEditId != null ? localize('com_ui_queue_edit_empty') : undefined;
   /** The shortcut's promise is the NEWEST waiting message, which is not the
    *  last array slot once a promotion has reordered the queue — so pick by
    *  stamp. Recovery-bound rows are skipped because steering refuses them
@@ -572,8 +576,15 @@ function QueuedOutboxBase({
       {expanded && (
         <div
           role="list"
-          aria-label={localize('com_ui_queued_messages')}
-          className="flex flex-col gap-1.5"
+          /* Named by its own count rather than repeating the outer stack's
+           * label, which would nest two identically named lists. */
+          aria-label={localize('com_ui_queue_count', { 0: String(queued.length) })}
+          data-testid="queue-rows"
+          /* The composer box is `overflow-hidden`, so a deep queue would clip
+           * rows with no way to reach them. Cap the ROWS only: the disclosure
+           * above and the actions below must stay put. Same ceiling the
+           * in-flight overlay uses. */
+          className="flex max-h-[35vh] flex-col gap-1.5 overflow-y-auto"
         >
           {queued.map((message, position) => (
             <QueuedRow
@@ -610,6 +621,8 @@ function QueuedOutboxBase({
             type="button"
             className={PRIMARY_BTN_CLASS}
             data-testid="queue-clear-all"
+            disabled={clearBlockedReason != null}
+            title={clearBlockedReason}
             onClick={clearAll}
           >
             <Trash2 className="h-4 w-4" aria-hidden="true" />

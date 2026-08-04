@@ -637,6 +637,12 @@ export default function useSteering({
         if (held == null) {
           return;
         }
+        /** Already neutralized and waiting for its parked epoch to be consumed.
+         *  Clearing it here would expose that epoch again, so a second queue
+         *  action must leave the tombstone standing. */
+        if (held.status === 'cancelled') {
+          return;
+        }
         set(
           store.queueDrainHoldByConvoId(queueKey),
           held.status === 'released' ? { ...held, status: 'cancelled' } : null,
@@ -725,36 +731,6 @@ export default function useSteering({
    *  rows simply stay put for a manual send. */
   const cancelQueueDrain = retireDrainHold;
 
-  /** Once a parked source is discarded it must never be retried as a recovery
-   * attempt. Downgrade the row in place so a guarded Edit that finds a newer
-   * draft can leave the same words, context, identity, and queue position as
-   * an ordinary local follow-up. */
-  const downgradeQueuedRecovery = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (id: string): boolean => {
-        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
-        let found = false;
-        const next = queue.map((item) => {
-          if (item.id !== id) {
-            return item;
-          }
-          found = true;
-          const {
-            clientRequestId: _clientRequestId,
-            recoverySteerId: _recoverySteerId,
-            recoveryClientSteerId: _recoveryClientSteerId,
-            ...ordinary
-          } = item;
-          return ordinary;
-        });
-        if (found) {
-          set(store.queuedMessagesByConvoId(queueKey), next);
-        }
-        return found;
-      },
-    [queueKey],
-  );
-
   /** Settle a queued row's terminal recovery source before an Edit/Remove.
    * Ordinary rows have no server copy. A v2 leftover first uses its durable
    * receipt to atomically discard the parked copy, then becomes an ordinary
@@ -790,17 +766,6 @@ export default function useSteering({
       }
     },
     [cancelSteer, conversationId, hasRealConvoId, localize, showToast],
-  );
-
-  const discardQueued = useCallback(
-    async (item: QueuedMessage): Promise<boolean> => {
-      if (item.recoverySteerId == null) {
-        return true;
-      }
-      const cancelled = await cancelParkedSource(item);
-      return cancelled ? downgradeQueuedRecovery(item.id) : false;
-    },
-    [cancelParkedSource, downgradeQueuedRecovery],
   );
 
   /** Empties the queue and hands back what it held. Removing up front is the
@@ -956,6 +921,40 @@ export default function useSteering({
         set(store.queuedMessagesByConvoId(queueKey), (prev) => insertQueuedOrigin(prev, origin));
       },
     [queueKey, releaseQueuedOrigin],
+  );
+
+  /**
+   * Settles a row's parked source for an Edit or Remove, holding the row OUT of
+   * the queue for the round trip. Leaving it in place let a run completing
+   * mid-cancellation drain and send the very message being removed — the same
+   * hazard clear-all avoids by taking its rows up front. Cancellation refused:
+   * the row returns to its original slot untouched. Cancellation settled: it
+   * returns already downgraded, so what the caller does next (hand the words to
+   * the composer, remove it) sees an ordinary local row with no parked copy.
+   */
+  const discardQueued = useCallback(
+    async (item: QueuedMessage): Promise<boolean> => {
+      if (item.recoverySteerId == null) {
+        return true;
+      }
+      const origin = takeQueued(item.id);
+      if (origin == null) {
+        return false;
+      }
+      if (!(await cancelParkedSource(item))) {
+        restoreQueued(origin);
+        return false;
+      }
+      const {
+        clientRequestId: _clientRequestId,
+        recoverySteerId: _recoverySteerId,
+        recoveryClientSteerId: _recoveryClientSteerId,
+        ...ordinary
+      } = origin.item;
+      restoreQueued({ ...origin, item: ordinary });
+      return true;
+    },
+    [cancelParkedSource, restoreQueued, takeQueued],
   );
 
   /**

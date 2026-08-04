@@ -813,6 +813,46 @@ describe('PendingSteerChips — queued outbox group', () => {
     expect(screen.getByTestId('queue-merge')).not.toBeDisabled();
   });
 
+  /** Clear all folds the queue exactly as Merge does, so it takes the same
+   *  standdown rather than being a documented exception. */
+  it('refuses to clear all while an inline edit is empty', () => {
+    renderChips(twoQueued, { steering: outboxSteering() });
+    fireEvent.click(screen.getByTestId('queue-group-toggle'));
+
+    const rows = screen.getAllByTestId('queued-message-row');
+    fireEvent.click(rows[1].querySelector('span[title]') as HTMLElement);
+    fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: '' } });
+
+    const clear = screen.getByTestId('queue-clear-all');
+    expect(clear).toBeDisabled();
+    fireEvent.click(clear);
+    expect(mockClearQueued).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: 'kept' } });
+    expect(screen.getByTestId('queue-clear-all')).not.toBeDisabled();
+  });
+
+  /** The composer box clips, so a deep queue needs its own scroll — and the
+   *  disclosure and the actions must stay outside it to remain reachable. */
+  it('scrolls the expanded rows without clipping the header or the actions', () => {
+    renderChips(
+      Array.from({ length: 8 }, (_, i) => ({ id: `q${i}`, text: `queued ${i}`, createdAt: i })),
+      { steering: outboxSteering() },
+    );
+    fireEvent.click(screen.getByTestId('queue-group-toggle'));
+
+    const list = screen.getByTestId('queue-rows');
+    // Named by its own count, so it does not duplicate the outer stack's label.
+    expect(list).toHaveAttribute('role', 'list');
+    expect(list).toHaveAccessibleName('com_ui_queue_count');
+    expect(list.className).toContain('overflow-y-auto');
+    expect(list.className).toContain('max-h-[35vh]');
+    // Outside the scroll container, so they cannot be clipped away.
+    expect(list).not.toContainElement(screen.getByTestId('queue-group-toggle'));
+    expect(list).not.toContainElement(screen.getByTestId('queue-merge'));
+    expect(list).not.toContainElement(screen.getByTestId('queue-clear-all'));
+  });
+
   /** Collapsing unmounts the rows, so the disclosure's own text is the queue's
    *  only description — an aria-label would overwrite it. */
   it('announces the count and next-up preview as the disclosure name', () => {
