@@ -291,9 +291,7 @@ Paths starting with "skills/" write skill files:
 
 For SKILL.md, frontmatter name must match {skillName}; create skills/{newName}/SKILL.md to rename. Put large runnable artifacts in bundled files such as references/template.html, and have SKILL.md tell the agent when to read or reuse them.
 
-Non-skills paths target the code-execution sandbox when enabled. Prefer /mnt/data/{file}.
-
-Very long content can exceed the streamed tool-argument limit (64 KB by default) and fail the call. For large files, create the file with its first section, then extend it with edit_file.`;
+Non-skills paths target the code-execution sandbox when enabled. Prefer /mnt/data/{file}.`;
 
 const CODE_CREATE_FILE_DESCRIPTION = `Create a new file, or overwrite an existing file with explicit intent.
 
