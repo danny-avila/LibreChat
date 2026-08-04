@@ -568,6 +568,7 @@ const mockUpdateQueuedText = jest.fn(() => true);
 const mockMergeQueued = jest.fn(() => true);
 const mockCancelQueueDrain = jest.fn();
 const mockEnqueue = jest.fn();
+const mockRequeueCleared = jest.fn();
 let mockClearQueued = jest.fn(async (): Promise<QueuedMessage | null> => null);
 
 const outboxSteering = (overrides: Partial<SteeringControls> = {}) => ({
@@ -577,6 +578,7 @@ const outboxSteering = (overrides: Partial<SteeringControls> = {}) => ({
   clearQueued: mockClearQueued,
   cancelQueueDrain: mockCancelQueueDrain,
   enqueue: mockEnqueue,
+  requeueCleared: mockRequeueCleared,
   ...overrides,
 });
 
@@ -813,6 +815,34 @@ describe('PendingSteerChips — queued outbox group', () => {
     expect(screen.getByTestId('queue-merge')).not.toBeDisabled();
   });
 
+  /** The queue still holds the pre-edit words, so handing them back would
+   *  resurrect text the user visibly deleted. Emptying a row and removing it
+   *  reads as "delete this". */
+  it('does not return stale words to the composer when removing an emptied row', () => {
+    renderChips([twoQueued[0]], { steering: outboxSteering() });
+
+    fireEvent.click(screen.getByText('first thought'));
+    fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: '' } });
+    fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+    expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+  });
+
+  it('still returns the words when removing a row that was not being emptied', () => {
+    renderChips([twoQueued[0]], { steering: outboxSteering() });
+
+    fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+
+    expect(mockRestoreToComposer).toHaveBeenCalledWith(
+      'first thought',
+      undefined,
+      { quotes: undefined, manualSkills: undefined },
+      CONVO_ID,
+    );
+    expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+  });
+
   /** Clear all folds the queue exactly as Merge does, so it takes the same
    *  standdown rather than being a documented exception. */
   it('refuses to clear all while an inline edit is empty', () => {
@@ -904,6 +934,8 @@ describe('PendingSteerChips — queued outbox group', () => {
       text: 'not lost',
       createdAt: 1,
       expectedPredecessorCreatedAt: 4242,
+      priority: true,
+      bumpedAt: 99,
     };
     mockClearQueued = jest.fn(async () => folded);
     mockRestoreToComposer.mockReturnValueOnce(false);
@@ -912,18 +944,12 @@ describe('PendingSteerChips — queued outbox group', () => {
     fireEvent.click(screen.getByTestId('queue-clear-all'));
 
     await waitFor(() => {
-      expect(mockEnqueue).toHaveBeenCalledWith(
-        'not lost',
-        expect.objectContaining({
-          id: 'q1',
-          createdAt: 1,
-          skipUsageMark: true,
-          /** An idle chat has no active epoch to substitute, so an unfenced
-           *  requeue could replace a newer generation from another tab. */
-          expectedPredecessorCreatedAt: 4242,
-        }),
-      );
+      /** The ITEM goes back whole, so no field can be quietly dropped — the
+       *  fence and the interrupt tier were each lost once when this path
+       *  rebuilt a row from parts. */
+      expect(mockRequeueCleared).toHaveBeenCalledWith([folded]);
     });
+    expect(mockEnqueue).not.toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'com_ui_steer_edit_queued' }),
     );

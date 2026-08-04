@@ -784,7 +784,13 @@ export default function useSteering({
     [queueKey],
   );
 
-  /** Puts rows back without clobbering anything queued in the meantime. */
+  /**
+   * Puts rows back without clobbering anything queued in the meantime. Also the
+   * public requeue path for a cleared payload the composer refused: passing the
+   * ITEM back preserves every field it carries, where rebuilding one from parts
+   * has twice now lost a field that mattered (the predecessor fence, then the
+   * interrupt tier).
+   */
   const restoreQueuedBatch = useRecoilCallback(
     ({ set }) =>
       (items: QueuedMessage[]) => {
@@ -1647,6 +1653,7 @@ export default function useSteering({
       convertSteerToQueue,
       queueReclaimedSteer,
       enqueue,
+      requeueCleared: restoreQueuedBatch,
       removeQueued,
       discardQueued,
       bumpQueued,
@@ -1678,6 +1685,7 @@ export default function useSteering({
       convertSteerToQueue,
       queueReclaimedSteer,
       enqueue,
+      restoreQueuedBatch,
       removeQueued,
       discardQueued,
       bumpQueued,

@@ -350,13 +350,20 @@ function QueuedRowBase({
           const remove = () => {
             /* Same safety net as the in-flight cancel: once removal is safely
              * settled, return the words to the composer when it is free (the
-             * gated restore refuses rather than clobber a draft). */
-            onRestoreToComposer(
-              message.text,
-              message.files,
-              { quotes: message.quotes, manualSkills: message.manualSkills },
-              conversationId,
-            );
+             * gated restore refuses rather than clobber a draft).
+             *
+             * Skipped when the editor was left empty: the queue still holds the
+             * pre-edit words, so handing them back would resurrect text the
+             * user had visibly deleted. Emptying a row and then removing it
+             * reads as "delete this", and there is nothing to return. */
+            if (!emptyEdit) {
+              onRestoreToComposer(
+                message.text,
+                message.files,
+                { quotes: message.quotes, manualSkills: message.manualSkills },
+                conversationId,
+              );
+            }
             steering.removeQueued(message.id);
             return true;
           };
@@ -511,20 +518,12 @@ function QueuedOutboxBase({
       );
       /** The gated restore refuses rather than clobber a draft the user has
        *  since staged. Hand the words back to the queue instead of dropping
-       *  them — one row now, since they were folded on the way out. */
+       *  them — one row now, since they were folded on the way out. The ITEM
+       *  goes back whole: rebuilding one from parts dropped its predecessor
+       *  fence once and its interrupt tier once, and the next field would be
+       *  just as quiet. */
       if (!restored) {
-        steering.enqueue(cleared.text, {
-          files: cleared.files,
-          quotes: cleared.quotes,
-          manualSkills: cleared.manualSkills,
-          skipUsageMark: true,
-          id: cleared.id,
-          createdAt: cleared.createdAt,
-          /** Kept explicitly: an idle chat has no active epoch for `enqueue` to
-           *  substitute, and an unfenced row can replace a newer generation
-           *  instead of taking the predecessor-mismatch recovery path. */
-          expectedPredecessorCreatedAt: cleared.expectedPredecessorCreatedAt,
-        });
+        steering.requeueCleared([cleared]);
         showToast({ message: localize('com_ui_steer_edit_queued'), status: 'info' });
       }
     })();
