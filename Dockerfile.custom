@@ -70,6 +70,9 @@ ENV BUILD_DATE=${BUILD_DATE}
 # ===== CUSTOM: Add MCP servers =====
 USER root
 
+# Install system dependencies for PDF rendering (file-reader MCP)
+RUN apk add --no-cache poppler-utils
+
 # Copy MCP servers
 COPY mcp-servers/image/package.json /app/mcp-servers/image/package.json
 COPY mcp-servers/image/index.js /app/mcp-servers/image/index.js

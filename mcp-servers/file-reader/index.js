@@ -5,7 +5,9 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { execSync } from 'child_process';
 
 const UPLOADS_ROOT = process.env.UPLOADS_ROOT || '/app/uploads';
 const IMAGES_ROOT = process.env.IMAGES_ROOT || '/app/client/public/images';
@@ -82,6 +84,40 @@ async function readPdfText(filepath) {
   }
 
   return pages.join('\n\n');
+}
+
+async function readPdfAsImages(filepath) {
+  const sharp = (await import('sharp')).default;
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-pages-'));
+
+  try {
+    execSync(`pdftoppm -png -r 120 "${filepath}" "${tmpDir}/page"`, { timeout: 120000 });
+
+    const files = fs.readdirSync(tmpDir)
+      .filter(f => f.startsWith('page-') && f.endsWith('.png'))
+      .sort((a, b) => {
+        const na = parseInt(a.match(/-(\d+)/)?.[1] || '0', 10);
+        const nb = parseInt(b.match(/-(\d+)/)?.[1] || '0', 10);
+        return na - nb;
+      });
+
+    const images = [];
+    for (const file of files) {
+      const imgPath = path.join(tmpDir, file);
+      const buffer = await sharp(imgPath)
+        .resize(1200, null, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 60 })
+        .toBuffer();
+      images.push({
+        data: buffer.toString('base64'),
+        mimeType: 'image/jpeg',
+      });
+    }
+
+    return images;
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
 }
 
 async function readDocxText(filepath) {
@@ -295,7 +331,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'extract_content',
-        description: 'Extracts text content from a file. Supports PDF, DOCX, XLSX, ODT, PPTX, images (returns base64), and plain text files. Use this to read documents that the model cannot parse natively.',
+        description: 'Extracts content from a file. Supports PDF (text or rendered images at reduced size), DOCX, XLSX, ODT, PPTX, images (base64), and plain text. Use this to read documents that the model cannot parse natively. For image-based/scanned PDFs, pages are rendered as compressed JPEG images (1200px, 60% quality).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -344,13 +380,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       switch (type) {
       case 'pdf': {
         const text = await readPdfText(resolvedPath);
-        const pageEstimate = text ? text.split('\n').filter(l => l.trim()).length : 0;
-        content = [{
-          type: 'text',
-          text: text
-            ? `[PDF: ${filename}]\n\n${text}`
-            : `[PDF: ${filename}]\n\nThis PDF contains no extractable text. It may be scanned or image-based. Use a vision-enabled model or OCR to process it.`,
-        }];
+
+        if (text.trim().length > 100) {
+          content = [{
+            type: 'text',
+            text: `[PDF: ${filename}]\n\n${text}`,
+          }];
+        } else {
+          try {
+            const images = await readPdfAsImages(resolvedPath);
+            content = images.map(img => ({
+              type: 'image',
+              data: img.data,
+              mimeType: img.mimeType,
+            }));
+            content.push({
+              type: 'text',
+              text: `[PDF: ${filename}] ${images.length} page(s) rendered as images (1200px, JPEG 60%).`,
+            });
+          } catch (imgErr) {
+            console.error('PDF image rendering failed:', imgErr);
+            content = [{
+              type: 'text',
+              text: text.trim()
+                ? `[PDF: ${filename}]\n\n${text}`
+                : `[PDF: ${filename}]\n\nNo extractable text and image rendering failed: ${imgErr.message}`,
+            }];
+          }
+        }
         break;
       }
 
