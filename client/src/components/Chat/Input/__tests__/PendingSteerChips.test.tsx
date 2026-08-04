@@ -5,7 +5,7 @@ import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import type { PendingSteer, QueuedMessage, QueueDrainHold } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
-import { escalatingSteerFamily, queueExpandedFamily } from '~/store/steer';
+import { escalatingSteerFamily, queueEmptyEditFamily, queueExpandedFamily } from '~/store/steer';
 import PendingSteerChips from '../PendingSteerChips';
 import store from '~/store';
 
@@ -76,6 +76,7 @@ const steeringStub = (overrides: Partial<SteeringControls> = {}) =>
 beforeEach(() => {
   act(() => {
     getDefaultStore().set(queueExpandedFamily(CONVO_ID), false);
+    getDefaultStore().set(queueEmptyEditFamily(CONVO_ID), null);
   });
 });
 
@@ -978,6 +979,39 @@ describe('PendingSteerChips — queued row editing', () => {
     // Resolving the edit brings them back.
     fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: 'rewritten' } });
     expect(screen.getByText('com_ui_steer').closest('button')).not.toBeDisabled();
+  });
+
+  /** The shortcut proxy targets this row but lives in the group, and the
+   *  shortcut fires even while a textarea has focus — so emptying the editor has
+   *  to reach it too, or Ctrl/Cmd+Shift+. sends the deleted words. */
+  it('stands the shortcut proxy down for an empty edit, and brings it back', () => {
+    renderChips(twoQueued, { steering: outboxSteering({ duringRunActive: true, canSteer: true }) });
+    fireEvent.click(screen.getByTestId('queue-group-toggle'));
+
+    // The newest row is the proxy's target.
+    const rows = screen.getAllByTestId('queued-message-row');
+    fireEvent.click(rows[1].querySelector('span[title]') as HTMLElement);
+    fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: '' } });
+
+    expect(screen.getByTestId('queued-escalate-newest')).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: 'rewritten' } });
+    expect(screen.getByTestId('queued-escalate-newest')).not.toBeDisabled();
+  });
+
+  it('releases the empty-edit claim when the editor closes', () => {
+    renderChips(twoQueued, { steering: outboxSteering({ duringRunActive: true, canSteer: true }) });
+    fireEvent.click(screen.getByTestId('queue-group-toggle'));
+
+    const rows = screen.getAllByTestId('queued-message-row');
+    fireEvent.click(rows[1].querySelector('span[title]') as HTMLElement);
+    const editor = screen.getByTestId('queued-message-edit');
+    fireEvent.change(editor, { target: { value: '' } });
+    expect(screen.getByTestId('queued-escalate-newest')).toBeDisabled();
+
+    // Escape restores the original words, so nothing is held back any more.
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    expect(screen.getByTestId('queued-escalate-newest')).not.toBeDisabled();
   });
 
   it('puts the original words back on Escape', () => {

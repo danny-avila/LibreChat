@@ -28,3 +28,13 @@ export const escalatingSteerFamily = atomFamily((_conversationId: string) => ato
  * not survive a reload, so persisting the disclosure would outlive its subject.
  */
 export const queueExpandedFamily = atomFamily((_queueKey: string) => atom<boolean>(false));
+
+/**
+ * Id of the queued row whose inline editor is currently empty, if any. The
+ * write-through refuses blank text, so that row still holds words the user has
+ * visibly deleted and nothing may send it. The row owns its editor state but
+ * the group owns the shortcut proxy, so the fact has to live where both can
+ * see it. At most one editor is open at a time — opening another blurs the
+ * first — so a single id is enough.
+ */
+export const queueEmptyEditFamily = atomFamily((_queueKey: string) => atom<string | null>(null));

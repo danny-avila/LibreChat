@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useAtom } from 'jotai';
 import { useToastContext } from '@librechat/client';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import {
   Zap,
   Send,
@@ -25,7 +25,7 @@ import {
   useDefaultToggleEntry,
   useInterruptToggleEntry,
 } from './SteerMenu';
-import { queueExpandedFamily } from '~/store/steer';
+import { queueEmptyEditFamily, queueExpandedFamily } from '~/store/steer';
 import { isMergeableQueuedMessage } from '~/utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -137,6 +137,22 @@ function QueuedRowBase({
    *  holds the previous words. Sending from there would send what the user just
    *  deleted, so the senders stand down until the edit resolves either way. */
   const emptyEdit = draft != null && draft.trim().length === 0;
+  /** Published so the group's shortcut proxy can stand down too: it targets
+   *  this row but lives outside it, and the shortcut is allowed while a
+   *  textarea has focus. */
+  const setEmptyEditId = useSetAtom(queueEmptyEditFamily(steering.queueKey));
+  const claimEmptyEdit = useCallback(
+    (isEmpty: boolean) => {
+      setEmptyEditId((prev) => {
+        if (isEmpty) {
+          return message.id;
+        }
+        return prev === message.id ? null : prev;
+      });
+    },
+    [message.id, setEmptyEditId],
+  );
+  useEffect(() => () => claimEmptyEdit(false), [claimEmptyEdit]);
 
   /** Focus follows the explicit Edit action rather than mount, so the row can
    *  never steal focus from the composer on a re-render. */
@@ -164,23 +180,29 @@ function QueuedRowBase({
   const editDraft = useCallback(
     (value: string) => {
       setDraft(value);
+      claimEmptyEdit(value.trim().length === 0);
       steering.updateQueuedText(message.id, value);
     },
-    [message.id, steering],
+    [claimEmptyEdit, message.id, steering],
   );
+
+  const closeEdit = useCallback(() => {
+    claimEmptyEdit(false);
+    setDraft(null);
+  }, [claimEmptyEdit]);
 
   const abandonEdit = useCallback(() => {
     steering.updateQueuedText(message.id, originalRef.current);
-    setDraft(null);
-  }, [message.id, steering]);
+    closeEdit();
+  }, [closeEdit, message.id, steering]);
 
   /** A row whose send is pending closes its editor: the words are already
    *  written, and a countdown is no moment to keep typing into. */
   useEffect(() => {
     if (sendPending) {
-      setDraft(null);
+      closeEdit();
     }
-  }, [sendPending]);
+  }, [closeEdit, sendPending]);
 
   /** An ordinary row is a living draft: it is rewritten in place. A recovered
    *  row's words are bound to a parked server source matched by exact text, so
@@ -231,7 +253,7 @@ function QueuedRowBase({
           data-testid="queued-message-edit"
           className="min-w-0 flex-1 resize-none bg-transparent text-sm text-text-primary outline-none"
           onChange={(event) => editDraft(event.target.value)}
-          onBlur={() => setDraft(null)}
+          onBlur={closeEdit}
           onKeyDown={(event) => {
             /** An IME candidate confirmation arrives as an unshifted Enter
              *  while composition is still active; committing there would save
@@ -241,7 +263,7 @@ function QueuedRowBase({
             }
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
-              setDraft(null);
+              closeEdit();
               return;
             }
             if (event.key === 'Escape') {
@@ -419,6 +441,7 @@ function QueuedOutboxBase({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [expanded, setExpanded] = useAtom(queueExpandedFamily(steering.queueKey));
+  const emptyEditId = useAtomValue(queueEmptyEditFamily(steering.queueKey));
   const mergeable = useMemo(() => queued.every(isMergeableQueuedMessage), [queued]);
   /** The shortcut's promise is the NEWEST waiting message, which is not the
    *  last array slot once a promotion has reordered the queue — so pick by
@@ -572,6 +595,11 @@ function QueuedOutboxBase({
              *  no sequential focus — and an invisible tab stop with no focus
              *  presentation is worse than none. */
             tabIndex={-1}
+            /** Its target's editor is empty, so the row still holds words the
+             *  user deleted. Disabled rather than absent: the shortcut skips
+             *  unavailable controls, so it falls through instead of sending
+             *  them. */
+            disabled={emptyEditId === escalatable.id}
             className="sr-only"
             data-escalate-steer="queued"
             data-testid="queued-escalate-newest"
