@@ -774,6 +774,16 @@ type BodyAlwaysApplyResult =
 /** Body-derived state for every boolean flag mirrored onto a column. */
 type BodyFlagResults = Record<SkillBooleanColumn, BodyAlwaysApplyResult>;
 
+type BodyFlagScan = {
+  /**
+   * Whether the body carried a YAML frontmatter block at all. A body without
+   * one declares nothing, so it must not be read as declaring the *absence* of
+   * a restriction — see `updateSkill`.
+   */
+  hasBlock: boolean;
+  flags: BodyFlagResults;
+};
+
 const BODY_FLAG_BY_KEY = new Map<string, SkillBooleanFlag>(
   SKILL_BOOLEAN_FLAGS.flatMap((flag) =>
     [flag.key, ...flag.aliases].map((key) => [key.toLowerCase(), flag] as const),
@@ -900,7 +910,7 @@ function readBodyFlagValue(rawValue: string): BodyAlwaysApplyResult {
  * value YAML continues onto the following line is read from there rather than
  * being treated as an unwritten placeholder.
  */
-function extractBooleanFlagsFromBody(body: string | undefined): BodyFlagResults {
+function extractBooleanFlagsFromBody(body: string | undefined): BodyFlagScan {
   const results: BodyFlagResults = {
     alwaysApply: { status: 'absent' },
     userInvocable: { status: 'absent' },
@@ -908,12 +918,12 @@ function extractBooleanFlagsFromBody(body: string | undefined): BodyFlagResults 
   };
   const block = extractBodyFrontmatterBlock(body);
   if (block === null) {
-    return results;
+    return { hasBlock: false, flags: results };
   }
   const lines = block.split('\n');
   const baseIndent = findMappingIndent(lines);
   if (baseIndent === null) {
-    return results;
+    return { hasBlock: true, flags: results };
   }
   const canonical = new Map<SkillBooleanColumn, BodyAlwaysApplyResult>();
   const aliased = new Map<SkillBooleanColumn, BodyAlwaysApplyResult>();
@@ -950,11 +960,11 @@ function extractBooleanFlagsFromBody(body: string | undefined): BodyFlagResults 
       results[flag.column] = resolved;
     }
   }
-  return results;
+  return { hasBlock: true, flags: results };
 }
 
 function extractAlwaysApplyFromBody(body: string | undefined): BodyAlwaysApplyResult {
-  return extractBooleanFlagsFromBody(body).alwaysApply;
+  return extractBooleanFlagsFromBody(body).flags.alwaysApply;
 }
 
 /**
@@ -1247,8 +1257,8 @@ export function createSkillMethods(
     /* Parse the body's flag declarations once — reused for validation (below)
        and for the derivation cascades. Avoids parsing the same YAML
        frontmatter block twice per create. */
-    const bodyFlags = data.body !== undefined ? extractBooleanFlagsFromBody(data.body) : undefined;
-    const bodyAlwaysApply = bodyFlags?.alwaysApply;
+    const bodyScan = data.body !== undefined ? extractBooleanFlagsFromBody(data.body) : undefined;
+    const bodyAlwaysApply = bodyScan?.flags.alwaysApply;
     const issues: ValidationIssue[] = [
       ...validateSkillName(data.name),
       ...validateSkillDescription(data.description),
@@ -1256,7 +1266,7 @@ export function createSkillMethods(
       ...validateSkillDisplayTitle(data.displayTitle),
       ...validateSkillFrontmatter(data.frontmatter),
       ...validateAlwaysApply(data.alwaysApply),
-      ...validateBodyDerivedColumns(data.frontmatter, bodyFlags),
+      ...validateBodyDerivedColumns(data.frontmatter, bodyScan?.flags),
     ];
     /* Body-level `always-apply:` only needs to be well-formed when a
        higher-precedence source won't override it (see
@@ -1314,7 +1324,7 @@ export function createSkillMethods(
      */
     const bodyDerived: { userInvocable?: boolean; disableModelInvocation?: boolean } = {};
     for (const column of BODY_DERIVED_COLUMNS) {
-      const resolved = resolveBodyDerivedColumn(column, derived, bodyFlags);
+      const resolved = resolveBodyDerivedColumn(column, derived, bodyScan?.flags);
       if (resolved !== undefined) {
         bodyDerived[column] = resolved;
       }
@@ -1585,9 +1595,9 @@ export function createSkillMethods(
     /* Parse the body's flag declarations once — reused for validation
        (precedence-aware, below) and the derivation cascades further down.
        Avoids parsing the same YAML frontmatter block twice per update. */
-    const bodyFlags =
+    const bodyScan =
       update.body !== undefined ? extractBooleanFlagsFromBody(update.body) : undefined;
-    const bodyAlwaysApply = bodyFlags?.alwaysApply;
+    const bodyAlwaysApply = bodyScan?.flags.alwaysApply;
     const issues: ValidationIssue[] = [];
     if (update.name !== undefined) issues.push(...validateSkillName(update.name));
     if (update.description !== undefined)
@@ -1598,7 +1608,7 @@ export function createSkillMethods(
     if (update.frontmatter !== undefined)
       issues.push(...validateSkillFrontmatter(update.frontmatter));
     if (update.alwaysApply !== undefined) issues.push(...validateAlwaysApply(update.alwaysApply));
-    issues.push(...validateBodyDerivedColumns(update.frontmatter, bodyFlags));
+    issues.push(...validateBodyDerivedColumns(update.frontmatter, bodyScan?.flags));
     /* Body-level `always-apply:` only needs to be well-formed when a
        higher-precedence source won't override it (see
        `resolveAlwaysApplyFromInput` for precedence). Rejecting a typo
@@ -1661,10 +1671,20 @@ export function createSkillMethods(
      * `disable-model-invocation:` from a SKILL.md re-enables model invocation,
      * mirroring how a removed `always-apply:` line stops auto-priming. Updates
      * touching neither `frontmatter` nor `body` leave the columns alone.
+     *
+     * A body carrying no frontmatter block at all declares nothing and so does
+     * not count: skills whose flags live only in the bag (the legacy shape
+     * `backfillDerivedFromFrontmatter` exists for, and what a caller setting
+     * flags through the API alone produces) would otherwise have a restriction
+     * silently lifted by an unrelated body edit. Losing a restriction that way
+     * is worse than keeping one a step longer, so it takes an explicit
+     * frontmatter block — with the key removed from it — to release.
      */
-    const declaresColumns = update.frontmatter !== undefined || update.body !== undefined;
+    const declaresColumns =
+      update.frontmatter !== undefined ||
+      (update.body !== undefined && bodyScan?.hasBlock === true);
     for (const column of BODY_DERIVED_COLUMNS) {
-      const resolved = resolveBodyDerivedColumn(column, bagDerived, bodyFlags);
+      const resolved = resolveBodyDerivedColumn(column, bagDerived, bodyScan?.flags);
       if (resolved !== undefined) {
         setPayload[column] = resolved;
       } else if (declaresColumns) {
@@ -1680,7 +1700,7 @@ export function createSkillMethods(
      * copies; the SKILL.md body still carries the declarations, so nothing is
      * lost, and the next save that does send a bag repopulates them.
      */
-    if (update.frontmatter === undefined && bodyFlags) {
+    if (update.frontmatter === undefined && bodyScan?.hasBlock === true) {
       for (const flag of SKILL_BOOLEAN_FLAGS) {
         for (const key of [flag.key, ...flag.aliases]) {
           unsetPayload[`frontmatter.${key}`] = '';
