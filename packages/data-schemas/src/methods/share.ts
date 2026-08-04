@@ -80,6 +80,19 @@ function sanitizeSharedUIResource(resource: unknown): unknown {
   return rest;
 }
 
+/** ui_resources is stored either as a bare array or as the `{ data: UIResource[] }` artifact
+ * shape; redact resultMeta in both so it never reaches a shared transcript. */
+function sanitizeSharedUIResources(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeSharedUIResource);
+  }
+  if (value && typeof value === 'object' && Array.isArray((value as { data?: unknown }).data)) {
+    const obj = value as { data: unknown[] };
+    return { ...obj, data: obj.data.map(sanitizeSharedUIResource) };
+  }
+  return value;
+}
+
 /**
  * Strip storage/identity-internal fields from a file or attachment while keeping
  * render-relevant data (including tool-call payloads keyed by tool name).
@@ -94,10 +107,7 @@ function sanitizeSharedFile(value: unknown): t.SharedFile | null {
     if (SENSITIVE_SHARED_FILE_FIELDS.has(key)) {
       continue;
     }
-    result[key] =
-      key === 'ui_resources' && Array.isArray(fieldValue)
-        ? fieldValue.map(sanitizeSharedUIResource)
-        : fieldValue;
+    result[key] = key === 'ui_resources' ? sanitizeSharedUIResources(fieldValue) : fieldValue;
   }
 
   return Object.keys(result).length > 0 ? result : null;

@@ -16,6 +16,7 @@ import {
   readMCPResource,
   listMCPResources,
   listMCPResourceTemplates,
+  decodeBase64Utf8,
 } from '~/utils/mcpApps';
 import { useOptionalMessagesOperations, useIsMessagesViewReadOnly } from '~/Providers';
 import { logger } from '~/utils';
@@ -189,9 +190,19 @@ export function useAppBridge(
           return;
         }
         sandboxReadyHandled = true;
+        // Inline HTML may arrive as `text` or as a base64 `blob`; decode the blob so blob-embedded
+        // apps are treated as persisted (rendered in read-only) rather than resourceUri-only.
+        let inlineHtml = resource.text;
+        if (!inlineHtml && typeof resource.blob === 'string' && resource.blob) {
+          try {
+            inlineHtml = decodeBase64Utf8(resource.blob);
+          } catch {
+            inlineHtml = undefined;
+          }
+        }
         // Read-only views must not resolve app HTML from the viewer's MCP server, so only inline
         // (persisted) HTML renders here.
-        if (!resource.text && readOnlyRef.current) {
+        if (!inlineHtml && readOnlyRef.current) {
           logger.debug(
             '[MCP App] Read-only view: skipping server HTML fetch for resourceUri-only app',
           );
@@ -200,8 +211,8 @@ export function useAppBridge(
         try {
           // Inline mcp-app resources already carry their HTML, so use it directly instead of a
           // resources/read round trip; resourceUri-only apps are fetched from the server.
-          const { html, csp, permissions } = resource.text
-            ? { html: resource.text, csp: resource.csp, permissions: resource.permissions }
+          const { html, csp, permissions } = inlineHtml
+            ? { html: inlineHtml, csp: resource.csp, permissions: resource.permissions }
             : await queryClient.fetchQuery({
                 queryKey: [
                   QueryKeys.mcpAppResourceHtml,

@@ -105,6 +105,12 @@ type ResourceUiMeta = {
   };
 };
 
+/** Decode a base64 resource blob as UTF-8 so non-ASCII HTML is not mojibake (atob yields Latin-1). */
+export function decodeBase64Utf8(b64: string): string {
+  const bytes = Uint8Array.from(atob(b64), (char) => char.charCodeAt(0));
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
 export async function fetchMCPResourceHtml(
   serverName: string,
   uri: string,
@@ -121,10 +127,7 @@ export async function fetchMCPResourceHtml(
   let html = item?.text ?? '';
   if (!html && typeof item?.blob === 'string' && item.blob) {
     try {
-      // Decode base64 as UTF-8 so non-ASCII HTML (localized text, inline JSON) is not mojibake;
-      // atob alone yields a Latin-1 string.
-      const bytes = Uint8Array.from(atob(item.blob), (char) => char.charCodeAt(0));
-      html = new TextDecoder('utf-8').decode(bytes);
+      html = decodeBase64Utf8(item.blob);
     } catch {
       html = '';
     }
