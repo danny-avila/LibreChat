@@ -87,10 +87,11 @@ function compile(config: MessageFilterPiiConfig): CompiledConfig {
     }
   }
   const patterns = [...starter, ...custom];
-  // Fail closed when a config declared patterns but every one failed to compile (e.g. a DB or
-  // admin override carrying RE2-incompatible syntax that never hit load-time validation): with
-  // nothing left to enforce, block rather than pass.
-  const result: CompiledConfig = { patterns, failClosed: patterns.length === 0 && dropped > 0 };
+  // Fail closed when any declared custom pattern fails to compile (e.g. a DB or admin override
+  // carrying RE2-incompatible syntax that never hit load-time validation): a silently dropped
+  // pattern would let the text it was meant to catch pass even when other patterns survive, so
+  // block rather than enforce an unintended subset.
+  const result: CompiledConfig = { patterns, failClosed: dropped > 0 };
   COMPILE_CACHE.set(config, result);
   return result;
 }

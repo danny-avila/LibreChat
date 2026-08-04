@@ -249,7 +249,7 @@ describe('messageFilterPii middleware', () => {
     expect(b.nextCalls).toBe(1);
   });
 
-  it('drops an invalid customPattern regex without throwing and keeps other patterns active', () => {
+  it('fails closed when a custom pattern fails to compile, blocking even benign text', () => {
     const config = {
       starterPatterns: [],
       customPatterns: [
@@ -257,9 +257,11 @@ describe('messageFilterPii middleware', () => {
         { id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' },
       ],
     } as unknown as MessageFilterPiiConfig;
+    // A dropped pattern means the config no longer enforces what the operator declared, so
+    // every request is blocked rather than silently enforcing only the surviving subset.
     const benign = runMiddleware(config, { text: 'plain text' });
-    expect(benign.nextCalls).toBe(1);
-    expect(benign.capturedRes.status).toBeUndefined();
+    expect(benign.nextCalls).toBe(0);
+    expect(benign.capturedRes.status).toBe(400);
     const matching = runMiddleware(config, { text: 'token ORG-DEADBEEF here' });
     expect(matching.nextCalls).toBe(0);
     expect(matching.capturedRes.status).toBe(400);
@@ -291,7 +293,7 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
-  it('drops a customPattern using engine-unsupported syntax and keeps others active', () => {
+  it('fails closed when a custom pattern uses engine-unsupported syntax', () => {
     const config: MessageFilterPiiConfig = {
       starterPatterns: [],
       customPatterns: [
@@ -299,9 +301,32 @@ describe('messageFilterPii middleware', () => {
         { id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' },
       ],
     };
+    const benign = runMiddleware(config, { text: 'plain text' });
+    expect(benign.nextCalls).toBe(0);
+    expect(benign.capturedRes.status).toBe(400);
     const matching = runMiddleware(config, { text: 'token ORG-DEADBEEF here' });
     expect(matching.nextCalls).toBe(0);
     expect(matching.capturedRes.status).toBe(400);
+  });
+
+  it('fails closed on a dropped custom pattern even when default starters remain', () => {
+    // The partial-drop case: with starterPatterns omitted the three defaults survive, so the
+    // pattern set is non-empty; failing closed must key off the drop, not an empty set, or the
+    // dropped rule's target passes silently.
+    const config = {
+      customPatterns: [{ id: 'dup', label: 'Duplicate', regex: '(a)\\1' }],
+    } as unknown as MessageFilterPiiConfig;
+    const { capturedRes, nextCalls } = runMiddleware(config, { text: 'aa' });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
+  it('findPiiMatchInMessages flags misconfigured on a dropped pattern under default starters', () => {
+    const hit = findPiiMatchInMessages([{ role: 'user', content: 'aa' }], {
+      customPatterns: [{ id: 'dup', label: 'Duplicate', regex: '(a)\\1' }],
+    } as unknown as MessageFilterPiiConfig);
+    expect(hit?.misconfigured).toBe(true);
   });
 });
 
