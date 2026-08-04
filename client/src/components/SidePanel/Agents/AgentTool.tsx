@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Wrench } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
 import {
@@ -73,8 +74,8 @@ export default function AgentTool({
         }}
       >
         <div className="flex grow items-center">
-          {currentTool.icon && (
-            <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
+            {currentTool.icon ? (
               <div
                 className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-center bg-no-repeat dark:bg-white/20"
                 style={{
@@ -82,8 +83,12 @@ export default function AgentTool({
                   backgroundSize: 'cover',
                 }}
               />
-            </div>
-          )}
+            ) : (
+              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-secondary text-text-secondary">
+                <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
+              </div>
+            )}
+          </div>
           <div
             className="grow px-2 py-1.5"
             style={{ textOverflow: 'ellipsis', wordBreak: 'break-all', overflow: 'hidden' }}

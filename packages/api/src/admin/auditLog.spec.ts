@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { EventEmitter } from 'events';
-import { MAX_AUDIT_EXPORT_ROWS } from '@librechat/data-schemas';
+import { MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_VERIFY_ROWS } from '@librechat/data-schemas';
 import type {
   AdminAuditLogEntry,
   AuditChainVerification,
@@ -64,11 +64,20 @@ function createReqRes(
     user: 'user' in overrides ? overrides.user : { _id: new Types.ObjectId(), role: 'admin' },
   } as unknown as ServerRequest;
 
+  const emitter = new EventEmitter();
+  const reqEmitter = new EventEmitter();
   const json = jest.fn();
   const status = jest.fn().mockReturnValue({ json });
-  const res = { status, json } as unknown as Response;
+  const res = Object.assign(emitter, {
+    status,
+    json,
+    removeListener: emitter.removeListener.bind(emitter),
+  }) as unknown as Response;
+  const eventReq = Object.assign(reqEmitter, req, {
+    removeListener: reqEmitter.removeListener.bind(reqEmitter),
+  }) as unknown as ServerRequest;
 
-  return { req, res, status, json };
+  return { req: eventReq, res, status, json, emitter, reqEmitter };
 }
 
 interface CsvCaptureContext {
@@ -351,8 +360,27 @@ describe('createAdminAuditLogHandlers', () => {
       });
       await handlers.verifyAuditLog(req, res);
       expect((deps.verifyAuditChain as jest.Mock).mock.calls[0][0]).toBe('real-tenant');
+      expect((deps.verifyAuditChain as jest.Mock).mock.calls[0][1].maxRows).toBe(
+        MAX_AUDIT_VERIFY_ROWS,
+      );
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith(verification);
+    });
+
+    it('threads cancellation into verification and skips the response after client close', async () => {
+      const ctx = createReqRes();
+      const deps = createDeps({
+        verifyAuditChain: jest.fn(async (_tenantId, options) => {
+          ctx.emitter.emit('close');
+          options?.isCancelled?.();
+          return mockVerification({ ok: false, reason: 'verification cancelled' });
+        }),
+      });
+      const handlers = createAdminAuditLogHandlers(deps);
+      await handlers.verifyAuditLog(ctx.req, ctx.res);
+      const optionsArg = (deps.verifyAuditChain as jest.Mock).mock.calls[0][1];
+      expect(optionsArg.isCancelled()).toBe(true);
+      expect(ctx.status).not.toHaveBeenCalled();
     });
 
     it('returns 500 when verification throws', async () => {

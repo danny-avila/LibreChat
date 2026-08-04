@@ -428,6 +428,9 @@ endpoints:
   #     maxCatalogSkills: 20
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
+  #   # Off-by-default capabilities you can add to the list above:
+  #   # - "run_in_background": opted-in tools gain a `run_in_background` param so the model can dispatch them detached and poll via `check_background_task`.
+  #   # - "tool_intents": opted-in tools (native tools by default) gain an `intent` param — one model-written sentence per call, streamed into the tool-call arguments. Backend groundwork today: the chat UI renders it as each call's live status label in an upcoming release; opt tools in per agent via `tool_options[tool].describe_intent`.
 
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy
@@ -465,6 +468,9 @@ endpoints:
   #     # Vertex AI region (optional, defaults to 'us-east5')
   #     # Available regions: us-east5, us-central1, europe-west1, europe-west4, asia-southeast1
   #     # Multi-region endpoints: us, eu, global
+  #     # IMPORTANT: specific regional endpoints only serve Claude Sonnet 4.6 and earlier. Newer
+  #     # models (Opus 4.7+, Opus 5, Sonnet 5, Fable 5) require "global" or a multi-region value
+  #     # ("us"/"eu") and will 404 on a specific region. "global" also avoids the 10% regional premium.
   #     region: "us-east5"
   #     # Path to Google service account key file (optional)
   #     # If not specified, uses GOOGLE_SERVICE_KEY_FILE env var or default path (api/data/auth.json)
@@ -483,6 +489,7 @@ endpoints:
   #     # Use this if you want the technical model IDs to show in the UI
   #     # models:
   #     #   - "claude-fable-5"
+  #     #   - "claude-opus-5"
   #     #   - "claude-opus-4-8"
   #     #   - "claude-sonnet-4-6"
   #     #   - "claude-3-7-sonnet-20250219"
@@ -496,6 +503,8 @@ endpoints:
   #     models:
   #       claude-fable-5:
   #         deploymentName: claude-fable-5
+  #       claude-opus-5:
+  #         deploymentName: claude-opus-5
   #       claude-opus-4.8:
   #         deploymentName: claude-opus-4-8
   #       claude-opus-4.5:
@@ -539,6 +548,14 @@ endpoints:
         fetch: false
       titleConvo: true
       titleModel: 'claude-sonnet-4-5'
+      # Agent activity groups: collapse each block of reasoning + tool calls
+      # under a generated one-line header. Same shape as the title options.
+      activityLabel: true
+      activityModel: 'claude-3-5-haiku'
+      # activityEndpoint: 'anthropic'   # run labels on another endpoint's credentials
+      # activityPrompt: 'Write a 5-9 word past-tense label...'
+      # activityMaxPerRun: 20           # cost cap per response
+      # activityCharLimit: 600          # per-entry prompt truncation
       modelDisplayLabel: 'Claude (Compatible)'
 
     # Groq Example

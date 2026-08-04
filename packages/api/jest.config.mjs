@@ -4,6 +4,13 @@ const esModules = [
   '@langchain/langgraph-sdk',
   '@mistralai/mistralai',
   '@modelcontextprotocol/ext-apps',
+  'domelementtype',
+  'domhandler',
+  'dom-serializer',
+  'domutils',
+  'entities',
+  'htmlparser2',
+  'sanitize-html',
   'uuid',
 ].join('|');
 

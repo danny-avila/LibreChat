@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import axios, { AxiosRequestConfig } from 'axios';
+import axios from 'axios';
+import type { AxiosRequestConfig } from 'axios';
 import type * as t from './types';
 import { setTokenHeader } from './headers-helpers';
 import * as endpoints from './api-endpoints';
@@ -83,6 +84,7 @@ const refreshToken = (retry?: boolean): Promise<t.TRefreshTokenResponse | undefi
 
 const SHARE_PAGE_PATH_REGEX = /^\/share\/[^/]+\/?$/;
 const SHARED_MESSAGES_PATH_REGEX = /^\/api\/share\/[^/]+$/;
+const SHARE_FORK_PATH_REGEX = /^\/api\/share\/[^/]+\/fork$/;
 
 const normalizePathname = (pathname: string) =>
   pathname.startsWith('/') ? pathname : `/${pathname}`;
@@ -120,6 +122,14 @@ const getRequestPathname = (url?: string) => {
 const isSharedMessagesRequest = (url?: string, method?: string) =>
   method?.toLowerCase() === 'get' &&
   SHARED_MESSAGES_PATH_REGEX.test(stripBasePath(getRequestPathname(url)));
+
+/** The "continue this chat" fork is a deliberate authenticated action initiated
+ *  from a share page, so it must reach auth recovery/redirect like the shared
+ *  data request — otherwise a logged-out (or cold-loaded) viewer's 401 is
+ *  rejected silently instead of routing them through login. */
+const isShareForkRequest = (url?: string, method?: string) =>
+  method?.toLowerCase() === 'post' &&
+  SHARE_FORK_PATH_REGEX.test(stripBasePath(getRequestPathname(url)));
 
 const dispatchTokenUpdatedEvent = (token: string) => {
   setTokenHeader(token);
@@ -271,22 +281,63 @@ const shouldRefreshBeforeRequest = (url?: string) => {
   return timeUntilExpiry > 0 && timeUntilExpiry <= TOKEN_REFRESH_BUFFER_MS;
 };
 
+const refreshBeforeRequest = async (url?: string) => {
+  const state = getAuthRecoveryState();
+  if (state.refreshPromise && !isAuthRecoveryEndpoint(url)) {
+    return state.refreshPromise.catch(() => null);
+  }
+
+  if (!shouldRefreshBeforeRequest(url)) {
+    return null;
+  }
+
+  return startAuthRecovery(false).catch(() => null);
+};
+
+const withAuthorization = (options: RequestInit | undefined, token: string | null): RequestInit => {
+  const headers = new Headers(options?.headers);
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  return { ...options, headers };
+};
+
+async function _authenticatedFetch(url: string, options?: RequestInit): Promise<Response> {
+  if (typeof window === 'undefined') {
+    return fetch(url, options);
+  }
+
+  const token = (await refreshBeforeRequest(url)) ?? getBearerToken();
+  const response = await fetch(url, withAuthorization(options, token));
+  if (
+    response.status !== 401 ||
+    isAuthRecoveryEndpoint(url) ||
+    isAuthRedirectInProgress() ||
+    !getBearerToken()
+  ) {
+    return response;
+  }
+
+  let refreshedToken: string | null;
+  try {
+    refreshedToken = await startAuthRecovery(false);
+  } catch {
+    redirectToLoginOnce();
+    return response;
+  }
+
+  if (!refreshedToken) {
+    redirectToLoginOnce();
+    return response;
+  }
+
+  await response.body?.cancel().catch(() => undefined);
+  return fetch(url, withAuthorization(options, refreshedToken));
+}
+
 if (typeof window !== 'undefined') {
   axios.interceptors.request.use(async (config) => {
-    const state = getAuthRecoveryState();
-    if (state.refreshPromise && !isAuthRecoveryEndpoint(config.url)) {
-      const token = await state.refreshPromise.catch(() => null);
-      if (token) {
-        setRequestAuthorizationHeader(config, token);
-      }
-      return config;
-    }
-
-    if (!shouldRefreshBeforeRequest(config.url)) {
-      return config;
-    }
-
-    const token = await startAuthRecovery(false).catch(() => null);
+    const token = await refreshBeforeRequest(config.url);
     if (token) {
       setRequestAuthorizationHeader(config, token);
     }
@@ -318,7 +369,11 @@ if (typeof window !== 'undefined') {
        *  recover auth/redirect without unrelated share-page queries forcing login. */
       if (
         !axios.defaults.headers.common['Authorization'] &&
-        !(isSharePage() && isSharedMessagesRequest(originalRequest.url, originalRequest.method))
+        !(
+          isSharePage() &&
+          (isSharedMessagesRequest(originalRequest.url, originalRequest.method) ||
+            isShareForkRequest(originalRequest.url, originalRequest.method))
+        )
       ) {
         return Promise.reject(error);
       }
@@ -347,8 +402,12 @@ if (typeof window !== 'undefined') {
 
           redirectToLoginOnce();
           return Promise.reject(error);
-        } catch (err) {
-          return Promise.reject(err);
+        } catch {
+          /** A rejected refresh (stale/invalid session → 401/403) must route to
+           *  login just like an empty-token refresh, otherwise the original 401
+           *  surfaces to the caller (e.g. the share fork button) with no redirect. */
+          redirectToLoginOnce();
+          return Promise.reject(error);
         }
       }
 
@@ -367,6 +426,7 @@ export default {
   delete: _delete,
   deleteWithOptions: _deleteWithOptions,
   patch: _patch,
+  authenticatedFetch: _authenticatedFetch,
   refreshToken,
   dispatchTokenUpdatedEvent,
 };

@@ -42,8 +42,12 @@ jest.mock('~/auth', () => ({
 jest.mock('~/mcp/mcpConfig', () => ({
   mcpConfig: {
     CONNECTION_CHECK_TTL: 0,
+    OAUTH_HANDLING_TIMEOUT: 10 * 60 * 1000,
     USER_CONNECTION_IDLE_TIMEOUT: 30 * 60 * 1000,
     TOOLS_LIST_MAX_PAGES: 50,
+    TOOLS_LIST_MAX_TOOLS: 1000,
+    TOOLS_LIST_MAX_BYTES: 5 * 1024 * 1024,
+    TOOLS_LIST_TIMEOUT_MS: 30000,
   },
 }));
 
@@ -135,6 +139,8 @@ async function storeTokens(
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none'],
     scopes_supported: scope.split(/\s+/).filter(Boolean),
+    server_url: server.url,
+    client_source: 'dynamic',
     resource: server.resourceUrl,
   };
 

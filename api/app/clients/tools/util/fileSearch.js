@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { tool } = require('@librechat/agents/langchain/tools');
-const { generateShortLivedToken } = require('@librechat/api');
+const { generateShortLivedToken, logAxiosError } = require('@librechat/api');
 const { Tools, EToolResources } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getFiles } = require('~/models');
@@ -24,13 +24,14 @@ const fileSearchJsonSchema = {
  * @param {ServerRequest} options.req
  * @param {Agent['tool_resources']} options.tool_resources
  * @param {string} [options.agentId] - The agent ID for file access control
+ * @param {string} [options.agentResourceType] - Permission resource type for the authorized agent route
  * @returns {Promise<{
  *   files: Array<{ file_id: string; filename: string; fromAgent: boolean }>,
  *   toolContext: string
  * }>}
  */
 const primeFiles = async (options) => {
-  const { tool_resources, req, agentId } = options;
+  const { tool_resources, req, agentId, agentResourceType } = options;
   const file_ids = tool_resources?.[EToolResources.file_search]?.file_ids ?? [];
   const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.file_search]?.files ?? [];
@@ -46,6 +47,7 @@ const primeFiles = async (options) => {
       userId: req.user.id,
       role: req.user.role,
       agentId,
+      resourceType: agentResourceType,
     });
   } else {
     dbFiles = allFiles;
@@ -131,7 +133,10 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
             },
           })
           .catch((error) => {
-            logger.error('Error encountered in `file_search` while querying file:', error);
+            logAxiosError({
+              message: 'Error encountered in `file_search` while querying file',
+              error,
+            });
             return null;
           }),
       );

@@ -84,7 +84,9 @@ test.describe('conversation management', () => {
     await expect(page.getByTestId('convo-item').filter({ hasText: renamedTitle })).toBeVisible();
   });
 
-  test('deletes a conversation from the sidebar and blocks direct URL access', async ({ page }) => {
+  test('deletes a conversation, clears its messages, and blocks direct URL access', async ({
+    page,
+  }) => {
     const label = uniqueLabel('sidebar-delete');
     const renamedTitle = `Delete ${label}`;
 
@@ -111,6 +113,8 @@ test.describe('conversation management', () => {
 
     await expect(page).toHaveURL(/\/c\/new$/);
     await expect(page.getByTestId('convo-item').filter({ hasText: renamedTitle })).toHaveCount(0);
+    await expect(messagesView(page).getByText(turn.prompt)).toHaveCount(0);
+    await expect(messagesView(page).getByText(turn.reply)).toHaveCount(0);
 
     await page.goto(conversationUrl, { timeout: 10000 });
     await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();

@@ -1,0 +1,11 @@
+/* Shared Input/Textarea (.lc-field): show the focus ring for keyboard users
+   only. Text inputs match :focus-visible on pointer focus too (a UA heuristic
+   CSS cannot distinguish), so the ring is gated on the input modality tracked
+   by useInputModality (mount it once near the app root). Without the hook the
+   attribute is absent and the ring always shows — the safe fallback. */
+html[data-input-modality='pointer'] .lc-field:focus,
+html[data-input-modality='pointer'] .lc-field:focus-visible {
+  border-color: var(--border-light);
+  box-shadow: none;
+  outline: none;
+}

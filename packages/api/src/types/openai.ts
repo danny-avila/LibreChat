@@ -16,6 +16,8 @@ export interface OpenAIConfigOptions {
   modelOptions?: OpenAIModelOptions;
   directEndpoint?: boolean;
   reverseProxyUrl?: string | null;
+  baseURLIsUserProvided?: boolean;
+  allowedAddresses?: string[] | null;
   defaultQuery?: Record<string, string | undefined>;
   headers?: Record<string, string>;
   proxy?: string | null;

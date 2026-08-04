@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { observeRedisOperation, RedisUseCases } from '~/cache/redisTelemetry';
 import { cacheConfig as cache } from '~/cache/cacheConfig';
 import { keyvRedisClient } from '~/cache/redisClients';
 import { clusterConfig as cluster } from './config';
@@ -79,10 +80,12 @@ export class LeaderElection {
         end
       `;
 
-      await keyvRedisClient!.eval(script, {
-        keys: [LeaderElection.LEADER_KEY],
-        arguments: [this.UUID],
-      });
+      await observeRedisOperation('keyv', RedisUseCases.LEADER_ELECTION, 'eval', () =>
+        keyvRedisClient!.eval(script, {
+          keys: [LeaderElection.LEADER_KEY],
+          arguments: [this.UUID],
+        }),
+      );
     } catch (error) {
       logger.error('Failed to release leadership lock:', error);
     }
@@ -95,7 +98,9 @@ export class LeaderElection {
    */
   public static async getLeaderUUID(): Promise<string | null> {
     if (!cache.USE_REDIS) return null;
-    return await keyvRedisClient!.get(LeaderElection.LEADER_KEY);
+    return await observeRedisOperation('keyv', RedisUseCases.LEADER_ELECTION, 'get', () =>
+      keyvRedisClient!.get(LeaderElection.LEADER_KEY),
+    );
   }
 
   /**
@@ -115,10 +120,12 @@ export class LeaderElection {
    */
   private async electSelf(): Promise<boolean> {
     try {
-      const result = await keyvRedisClient!.set(LeaderElection.LEADER_KEY, this.UUID, {
-        NX: true,
-        EX: cluster.LEADER_LEASE_DURATION,
-      });
+      const result = await observeRedisOperation('keyv', RedisUseCases.LEADER_ELECTION, 'set', () =>
+        keyvRedisClient!.set(LeaderElection.LEADER_KEY, this.UUID, {
+          NX: true,
+          EX: cluster.LEADER_LEASE_DURATION,
+        }),
+      );
 
       if (result !== 'OK') return false;
 
@@ -152,10 +159,16 @@ export class LeaderElection {
         end
       `;
 
-      const result = await keyvRedisClient!.eval(script, {
-        keys: [LeaderElection.LEADER_KEY],
-        arguments: [this.UUID, cluster.LEADER_LEASE_DURATION.toString()],
-      });
+      const result = await observeRedisOperation(
+        'keyv',
+        RedisUseCases.LEADER_ELECTION,
+        'eval',
+        () =>
+          keyvRedisClient!.eval(script, {
+            keys: [LeaderElection.LEADER_KEY],
+            arguments: [this.UUID, cluster.LEADER_LEASE_DURATION.toString()],
+          }),
+      );
 
       if (result === 0) {
         logger.warn('Lost leadership, clearing refresh timer');

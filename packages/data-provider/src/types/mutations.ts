@@ -207,6 +207,11 @@ export type DuplicateConvoOptions = MutationOptions<
 
 export type ForkConvoOptions = MutationOptions<types.TForkConvoResponse, types.TForkConvoRequest>;
 
+export type ForkSharedConvoOptions = MutationOptions<
+  types.TForkConvoResponse,
+  types.TForkSharedConvoRequest
+>;
+
 export type CreateSharedLinkOptions = MutationOptions<
   types.TSharedLink,
   Partial<types.TSharedLink>

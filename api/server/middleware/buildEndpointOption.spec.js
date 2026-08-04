@@ -484,6 +484,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
 
     expect(updateFilesUsage).toHaveBeenCalledWith(req.body.files, undefined, {
       user: 'user-1',
+      tenantId: undefined,
     });
     expect(req.body.endpointOption.attachments).toBe(attachments);
   });

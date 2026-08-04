@@ -44,3 +44,18 @@ export const setDraft = ({ id, value }: { id: string; value?: string }) => {
 
 export const getDraft = (id?: string): string | null =>
   decodeBase64((localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`) ?? '') || '');
+
+/**
+ * Draft-key prefix for a live `ask_user_question` answer phase. While the
+ * composer doubles as the free-form answer box, its autosave switches to a key
+ * derived from the pause's action id — so the conversation's own draft is left
+ * untouched and comes back once the question resolves, and a half-typed answer
+ * survives reloads/navigation for as long as its question stays live.
+ */
+export const ASK_ANSWER_DRAFT_PREFIX = 'ask-answer:';
+
+export const getAskAnswerDraftId = (actionId: string): string =>
+  `${ASK_ANSWER_DRAFT_PREFIX}${actionId}`;
+
+export const isAskAnswerDraftId = (id?: string | null): boolean =>
+  typeof id === 'string' && id.startsWith(ASK_ANSWER_DRAFT_PREFIX);

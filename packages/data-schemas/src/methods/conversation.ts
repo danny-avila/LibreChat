@@ -64,7 +64,7 @@ export interface ConversationMethods {
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
-  ): Promise<DeleteResult & { messages: DeleteResult }>;
+  ): Promise<DeleteResult & { messages: DeleteResult; conversationIds: string[] }>;
 }
 
 export function createConversationMethods(
@@ -793,10 +793,21 @@ export function createConversationMethods(
         await decrementTagCounts(mongoose, user, tagDecrements);
       }
 
-      const deleteMessagesResult = await deleteMessages({
-        conversationId: { $in: conversationIds },
-        user,
-      });
+      /**
+       * Post-delete cleanup is best-effort: the conversations are already gone, so a
+       * thrown error here would hide the deletion from the caller — dropping the
+       * `conversationIds` that downstream cleanup (e.g. agent-checkpoint pruning)
+       * needs, with no way to recover them on retry (the query finds nothing).
+       */
+      let deleteMessagesResult: DeleteResult = { acknowledged: false, deletedCount: 0 };
+      try {
+        deleteMessagesResult = await deleteMessages({
+          conversationId: { $in: conversationIds },
+          user,
+        });
+      } catch (error) {
+        logger.error('[deleteConvos] Conversations deleted but message cleanup failed', error);
+      }
 
       /**
        * Refresh project stats after message cleanup so a stats-refresh error cannot
@@ -804,14 +815,21 @@ export function createConversationMethods(
        * conversations' messages.
        */
       if (deleted && projectIds.size > 0) {
-        await Promise.all(
-          [...projectIds].map((projectId) =>
-            refreshChatProjectStatsForUser(mongoose, user, projectId),
-          ),
-        );
+        try {
+          await Promise.all(
+            [...projectIds].map((projectId) =>
+              refreshChatProjectStatsForUser(mongoose, user, projectId),
+            ),
+          );
+        } catch (error) {
+          logger.error('[deleteConvos] Conversations deleted but stats refresh failed', error);
+        }
       }
 
-      return { ...deleteConvoResult, messages: deleteMessagesResult };
+      // conversationIds lets callers run sibling cleanup that lives in higher layers
+      // (e.g. pruning the conversations' durable agent checkpoints) without re-querying
+      // documents that no longer exist.
+      return { ...deleteConvoResult, messages: deleteMessagesResult, conversationIds };
     } catch (error) {
       logger.error('[deleteConvos] Error deleting conversations and messages', error);
       throw error;

@@ -141,6 +141,36 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
       candidates.push(...quotes);
       candidates.push(mergeQuotedText(text, quotes));
     }
+    /**
+     * The shared `/agents/chat/resume` route carries user-authored text in different
+     * fields than a typed message: an ask-user `answer`, and a tool-approval decision's
+     * `respond` text, `reject` reason, and edited tool arguments. Scan them too — else a
+     * blocked token could ride a resume payload straight back into the model/tool,
+     * bypassing the filter the typed path enforces.
+     */
+    if (typeof req.body?.answer === 'string' && req.body.answer.length > 0) {
+      candidates.push(req.body.answer);
+    }
+    if (Array.isArray(req.body?.decisions)) {
+      for (const decision of req.body.decisions) {
+        if (typeof decision?.responseText === 'string' && decision.responseText.length > 0) {
+          candidates.push(decision.responseText);
+        }
+        if (typeof decision?.reason === 'string' && decision.reason.length > 0) {
+          candidates.push(decision.reason);
+        }
+        if (decision?.editedArguments != null) {
+          try {
+            const edited = JSON.stringify(decision.editedArguments);
+            if (edited.length > 0) {
+              candidates.push(edited);
+            }
+          } catch {
+            /* ignore unstringifiable edited args */
+          }
+        }
+      }
+    }
     if (candidates.length === 0) {
       next();
       return;

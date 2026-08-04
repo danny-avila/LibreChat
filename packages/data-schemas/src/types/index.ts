@@ -2,6 +2,7 @@ import type { Types } from 'mongoose';
 
 export type ObjectId = Types.ObjectId;
 export * from './app';
+export * from './cache';
 export * from './user';
 export * from './token';
 export * from './convo';
@@ -22,6 +23,7 @@ export * from './share';
 export * from './pluginAuth';
 /* Memories */
 export * from './memory';
+export * from './favorite';
 /* Prompts */
 export * from './prompts';
 /* Skills */

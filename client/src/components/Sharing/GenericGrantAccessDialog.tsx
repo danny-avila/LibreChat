@@ -26,6 +26,7 @@ import UnifiedPeopleSearch from './PeoplePicker/UnifiedPeopleSearch';
 import PeoplePickerAdminSettings from './PeoplePickerAdminSettings';
 import PublicSharingToggle from './PublicSharingToggle';
 import { SelectedPrincipalsList } from './PeoplePicker';
+import { computeShareChanges } from './shareChanges';
 import { cn } from '~/utils';
 
 export default function GenericGrantAccessDialog({
@@ -162,26 +163,10 @@ export default function GenericGrantAccessDialog({
     }
 
     try {
-      // Calculate changes for unified list
-      const originalSharesMap = new Map(
-        currentShares.map((share) => [`${share.type}-${share.idOnTheSource}`, share]),
-      );
-      const allSharesMap = new Map(
-        allShares.map((share) => [`${share.type}-${share.idOnTheSource}`, share]),
-      );
-
-      // Find newly added and updated shares
-      const updated = allShares.filter((share) => {
-        const key = `${share.type}-${share.idOnTheSource}`;
-        const original = originalSharesMap.get(key);
-        return !original || original.accessRoleId !== share.accessRoleId;
-      });
-
-      // Find removed shares
-      const removed = currentShares.filter((share) => {
-        const key = `${share.type}-${share.idOnTheSource}`;
-        return !allSharesMap.has(key);
-      });
+      // Diff persisted shares against the working list. Keyed by stable `id`
+      // (falling back to idOnTheSource) so the same principal is never simultaneously
+      // granted and revoked — see computeShareChanges.
+      const { updated, removed } = computeShareChanges(currentShares, allShares);
 
       const publicChanged = isPublic !== currentIsPublic;
       const publicRoleChanged = isPublic && publicRole !== currentPublicRole;

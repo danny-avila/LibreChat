@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { TooltipAnchor, DropdownPopup, PinIcon, VectorIcon } from '@librechat/client';
-import { Globe, ScrollText, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
-import type { MenuItemProps } from '~/common';
+import { Brain, Globe, ScrollText, Settings, Settings2, TerminalSquareIcon } from 'lucide-react';
 import {
   AuthType,
   Permissions,
@@ -10,7 +9,14 @@ import {
   PermissionTypes,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
-import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
+import type { MenuItemProps } from '~/common';
+import {
+  useLocalize,
+  useHasAccess,
+  useAuthContext,
+  useHasMemoryAccess,
+  useAgentCapabilities,
+} from '~/hooks';
 import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { useGetStartupConfig } from '~/data-provider';
@@ -23,11 +29,18 @@ interface ToolsDropdownProps {
 
 const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const context = useBadgeRowContext();
   const { data: startupConfig } = useGetStartupConfig();
 
-  const { codeEnabled, webSearchEnabled, artifactsEnabled, fileSearchEnabled, skillsEnabled } =
-    useAgentCapabilities(context?.agentsConfig?.capabilities ?? defaultAgentCapabilities);
+  const {
+    codeEnabled,
+    memoryEnabled,
+    webSearchEnabled,
+    artifactsEnabled,
+    fileSearchEnabled,
+    skillsEnabled,
+  } = useAgentCapabilities(context?.agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
   const canUseWebSearch = useHasAccess({
     permissionType: PermissionTypes.WEB_SEARCH,
@@ -54,10 +67,14 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     permission: Permissions.USE,
   });
 
+  const canUseMemory = useHasMemoryAccess();
+  const showMemory = canUseMemory && memoryEnabled && user?.personalization?.memories !== false;
+
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const isDisabled = disabled ?? false;
   const {
     skills,
+    memory,
     webSearch,
     artifacts,
     fileSearch,
@@ -77,6 +94,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
   const { isPinned: isFileSearchPinned, setIsPinned: setIsFileSearchPinned } = fileSearch ?? {};
   const { isPinned: isArtifactsPinned, setIsPinned: setIsArtifactsPinned } = artifacts ?? {};
   const { isPinned: isSkillsPinned, setIsPinned: setIsSkillsPinned } = skills ?? {};
+  const { isPinned: isMemoryPinned, setIsPinned: setIsMemoryPinned } = memory ?? {};
 
   const showWebSearchSettings = useMemo(() => {
     const authTypes = webSearchAuthData?.authTypes ?? [];
@@ -130,6 +148,11 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     const newValue = !skills?.toggleState;
     skills?.debouncedChange({ value: newValue });
   }, [skills]);
+
+  const handleMemoryToggle = useCallback(() => {
+    const newValue = !memory?.toggleState;
+    memory?.debouncedChange({ value: newValue });
+  }, [memory]);
 
   const mcpPlaceholder = startupConfig?.interface?.mcpServers?.placeholder;
 
@@ -246,6 +269,38 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
           >
             <div className="h-4 w-4">
               <PinIcon unpin={isSkillsPinned} />
+            </div>
+          </button>
+        </div>
+      ),
+    });
+  }
+
+  if (showMemory) {
+    dropdownItems.push({
+      onClick: handleMemoryToggle,
+      hideOnClick: false,
+      render: (props) => (
+        <div {...props} data-testid="tools-menu-memory">
+          <div className="flex items-center gap-2">
+            <Brain className="icon-md" aria-hidden="true" />
+            <span>{localize('com_ui_memory')}</span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsMemoryPinned?.(!isMemoryPinned);
+            }}
+            className={cn(
+              'rounded p-1 transition-all duration-200',
+              'hover:bg-surface-secondary hover:shadow-sm',
+              !isMemoryPinned && 'text-text-secondary hover:text-text-primary',
+            )}
+            aria-label={isMemoryPinned ? localize('com_ui_unpin') : localize('com_ui_pin')}
+          >
+            <div className="h-4 w-4">
+              <PinIcon unpin={isMemoryPinned} />
             </div>
           </button>
         </div>

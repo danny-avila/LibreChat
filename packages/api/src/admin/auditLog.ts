@@ -7,6 +7,7 @@ import {
   AUDIT_ACTOR_TYPES,
   MAX_AUDIT_EXPORT_ROWS,
   MAX_AUDIT_LOG_LIMIT,
+  MAX_AUDIT_VERIFY_ROWS,
 } from '@librechat/data-schemas';
 import type {
   AdminAuditLogEntry,
@@ -59,7 +60,10 @@ export interface AdminAuditLogDeps {
     onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
     options?: { isCancelled?: () => boolean; maxRows?: number },
   ) => Promise<{ count: number; truncated: boolean }>;
-  verifyAuditChain: (tenantId: string | undefined) => Promise<AuditChainVerification>;
+  verifyAuditChain: (
+    tenantId: string | undefined,
+    options?: { isCancelled?: () => boolean; maxRows?: number },
+  ) => Promise<AuditChainVerification>;
 }
 
 interface CallerContext {
@@ -328,8 +332,25 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       const caller = resolveCaller(req);
       if (!caller) return res.status(401).json({ error: 'Authentication required' });
 
-      const result = await verifyAuditChain(caller.tenantId);
-      return res.status(200).json(result);
+      let clientAborted = false;
+      const markAborted = () => {
+        clientAborted = true;
+      };
+      res.once('close', markAborted);
+      req.once('aborted', markAborted);
+
+      try {
+        const result = await verifyAuditChain(caller.tenantId, {
+          isCancelled: () => clientAborted,
+          maxRows: MAX_AUDIT_VERIFY_ROWS,
+        });
+
+        if (clientAborted) return res;
+        return res.status(200).json(result);
+      } finally {
+        res.removeListener('close', markAborted);
+        req.removeListener('aborted', markAborted);
+      }
     } catch (err) {
       logger.error('[adminAuditLog] verify error:', err);
       return res.status(500).json({ error: 'Failed to verify audit log integrity' });

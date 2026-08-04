@@ -239,7 +239,8 @@ describe('registerCodeExecutionTools', () => {
       expect(readFile?.description).toContain('/mnt/data/');
       expect(readFile?.description).toContain('Do not run ls/find');
       expect(readFile?.description).toContain('/tmp is per-call scratch');
-      expect(readFile?.description).toContain('truncated around 256KB');
+      expect(readFile?.description).toContain('truncate around 256KB');
+      expect(readFile?.description).toContain('images (png, jpeg, gif, webp)');
       expect(readFile?.description).toContain('true filesystem discovery');
       expect(readFile?.description).not.toContain('{skillName}');
       expect(readFile?.description).not.toContain('SKILL.md');

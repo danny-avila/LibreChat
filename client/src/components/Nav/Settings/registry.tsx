@@ -18,12 +18,14 @@ import {
 import DisplayUsernameMessages from '../SettingsTabs/Account/DisplayUsernameMessages';
 import ConversationModeSwitch from '../SettingsTabs/Speech/ConversationModeSwitch';
 import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication';
+import LangfuseConnection from '../SettingsTabs/Integrations/LangfuseConnection';
 import ImportConversations from '../SettingsTabs/Data/ImportConversations';
 import { toggleControl, ThemeSetting, LangSetting } from './controls';
 import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
 import { EngineSTTSetting, EngineTTSSetting } from './SpeechControls';
 import FontSizeSelector from '../SettingsTabs/Chat/FontSizeSelector';
 import AdvancedPrompts from '../SettingsTabs/Chat/AdvancedPrompts';
+import DuringRunAction from '../SettingsTabs/Chat/DuringRunAction';
 import DeleteAccount from '../SettingsTabs/Account/DeleteAccount';
 import { ForkSettings } from '../SettingsTabs/Chat/ForkSettings';
 import ChatDirection from '../SettingsTabs/Chat/ChatDirection';
@@ -136,6 +138,27 @@ export const registry: SettingEntry[] = [
       localizationKey: 'com_nav_enter_to_send',
       switchId: 'enterToSend',
       hoverCardText: 'com_nav_info_enter_to_send',
+    }),
+  },
+  {
+    id: 'duringRunDefaultAction',
+    tab: CHAT,
+    section: 'sending',
+    labelKey: 'com_nav_during_run_action',
+    keywords: ['steer', 'queue', 'interrupt', 'generating'],
+    Component: DuringRunAction,
+  },
+  {
+    id: 'steerInterruptsByDefault',
+    tab: CHAT,
+    section: 'sending',
+    labelKey: 'com_ui_steer_interrupts_default',
+    keywords: ['steer', 'interrupt', 'preempt', 'generating', 'stop'],
+    Component: toggleControl({
+      stateAtom: store.steerInterruptsByDefault,
+      localizationKey: 'com_ui_steer_interrupts_default',
+      switchId: 'steerInterruptsByDefault',
+      hoverCardText: 'com_ui_steer_interrupts_default_info',
     }),
   },
   {
@@ -490,6 +513,16 @@ export const registry: SettingEntry[] = [
     section: 'apiKeys',
     labelKey: 'com_ui_settings_label_revoke_keys',
     Component: RevokeKeys,
+  },
+  // Langfuse
+  {
+    id: 'langfuseConnection',
+    tab: SettingsTabValues.LANGFUSE,
+    section: 'langfuse',
+    labelKey: 'com_ui_langfuse_title',
+    keywords: ['langfuse', 'observability', 'tracing', 'telemetry', 'traces'],
+    show: (ctx) => ctx.langfuseConnectionAccess,
+    Component: LangfuseConnection,
   },
   // Data controls · Danger zone
   {

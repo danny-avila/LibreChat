@@ -1,0 +1,627 @@
+diff --git a/api/server/middleware/roles/capabilities.js b/api/server/middleware/roles/capabilities.js
+index 6f2aa43e9..1867dfc16 100644
+--- a/api/server/middleware/roles/capabilities.js
++++ b/api/server/middleware/roles/capabilities.js
+@@ -1,8 +1,18 @@
+ const { generateCapabilityCheck, capabilityContextMiddleware } = require('@librechat/api');
+-const { getUserPrincipals, hasCapabilityForPrincipals } = require('~/models');
++const {
++  getUserPrincipals,
++  hasAnyConfigReadAccess,
++  hasCapabilityForPrincipals,
++} = require('~/models');
+ 
+-const { hasCapability, requireCapability, hasConfigCapability } = generateCapabilityCheck({
++const {
++  hasCapability,
++  requireCapability,
++  hasConfigCapability,
++  hasAnyConfigReadAccess: checkAnyConfigReadAccess,
++} = generateCapabilityCheck({
+   getUserPrincipals,
++  hasAnyConfigReadAccess,
+   hasCapabilityForPrincipals,
+ });
+ 
+@@ -11,4 +21,5 @@ module.exports = {
+   requireCapability,
+   hasConfigCapability,
+   capabilityContextMiddleware,
++  hasAnyConfigReadAccess: checkAnyConfigReadAccess,
+ };
+diff --git a/api/server/routes/admin/config.js b/api/server/routes/admin/config.js
+index ab7aa01a2..4f0eed2de 100644
+--- a/api/server/routes/admin/config.js
++++ b/api/server/routes/admin/config.js
+@@ -3,8 +3,9 @@ const { createAdminConfigHandlers } = require('@librechat/api');
+ const { SystemCapabilities } = require('@librechat/data-schemas');
+ const {
+   hasCapability,
+-  hasConfigCapability,
+   requireCapability,
++  hasConfigCapability,
++  hasAnyConfigReadAccess,
+ } = require('~/server/middleware/roles/capabilities');
+ const { getAppConfig, invalidateConfigCaches } = require('~/server/services/Config');
+ const { requireJwtAuth } = require('~/server/middleware');
+@@ -23,6 +24,7 @@ const handlers = createAdminConfigHandlers({
+   unsetConfigField: db.unsetConfigField,
+   deleteConfig: db.deleteConfig,
+   toggleConfigActive: db.toggleConfigActive,
++  hasAnyConfigReadAccess,
+   hasConfigCapability,
+   hasCapability,
+   getAppConfig,
+diff --git a/packages/api/src/admin/config.handler.spec.ts b/packages/api/src/admin/config.handler.spec.ts
+index d802c31f4..08963677f 100644
+--- a/packages/api/src/admin/config.handler.spec.ts
++++ b/packages/api/src/admin/config.handler.spec.ts
+@@ -70,6 +70,7 @@ function createHandlers(overrides = {}) {
+     deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
+     toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
+     hasConfigCapability: jest.fn().mockResolvedValue(true),
++    hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
+     hasCapability: jest.fn().mockResolvedValue(true),
+ 
+     getAppConfig: jest.fn().mockResolvedValue({ interface: { modelSelect: true } }),
+@@ -118,6 +119,7 @@ describe('createAdminConfigHandlers', () => {
+     it('returns 403 before DB lookup when user lacks READ_CONFIGS', async () => {
+       const { handlers, deps } = createHandlers({
+         hasConfigCapability: jest.fn().mockResolvedValue(false),
++        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(false),
+       });
+       const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+       const res = mockRes();
+@@ -178,6 +180,149 @@ describe('createAdminConfigHandlers', () => {
+     });
+   });
+ 
++  describe('read handlers: section-scoped-only caller (no broad read:configs)', () => {
++    function sectionOnlyDeps(section: string, overrides: Record<string, unknown> = {}) {
++      return {
++        hasConfigCapability: jest.fn(
++          async (_user: unknown, s: string | null, verb = 'manage') =>
++            verb === 'read' && s === section,
++        ),
++        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
++        ...overrides,
++      };
++    }
++
++    it('getConfig: returns 200 with only the held section, other sections stripped', async () => {
++      const config = {
++        _id: 'c1',
++        principalType: 'role',
++        principalId: 'admin',
++        overrides: { memory: { charLimit: 500 }, endpoints: { allowedAddresses: ['10.0.0.1'] } },
++        tombstones: ['memory.tokenLimit', 'endpoints.allowedAddresses'],
++      };
++      const { handlers } = createHandlers(
++        sectionOnlyDeps('memory', { findConfigByPrincipal: jest.fn().mockResolvedValue(config) }),
++      );
++      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
++      const res = mockRes();
++
++      await handlers.getConfig(req, res);
++
++      expect(res.statusCode).toBe(200);
++      const body = res.body!.config as { overrides: Record<string, unknown>; tombstones: string[] };
++      expect(body.overrides.memory).toEqual({ charLimit: 500 });
++      expect(body.overrides.endpoints).toBeUndefined();
++      expect(body.tombstones).toEqual(['memory.tokenLimit']);
++    });
++
++    it('listConfigs: strips non-held sections from every listed config', async () => {
++      const configs = [
++        { _id: 'c1', principalType: 'role', principalId: 'admin', overrides: { memory: {} } },
++        {
++          _id: 'c2',
++          principalType: 'user',
++          principalId: 'u1',
++          overrides: { endpoints: {}, memory: { charLimit: 10 } },
++        },
++      ];
++      const { handlers } = createHandlers(
++        sectionOnlyDeps('memory', { listAllConfigs: jest.fn().mockResolvedValue(configs) }),
++      );
++      const req = mockReq();
++      const res = mockRes();
++
++      await handlers.listConfigs(req, res);
++
++      expect(res.statusCode).toBe(200);
++      const body = res.body!.configs as Array<{ overrides: Record<string, unknown> }>;
++      expect(body[0].overrides).toEqual({ memory: {} });
++      expect(body[1].overrides).toEqual({ memory: { charLimit: 10 } });
++    });
++
++    it('getBaseConfig: strips top-level sections and the nested config field to only the held section', async () => {
++      const appConfig = {
++        memory: { charLimit: 500 },
++        endpoints: { allowedAddresses: ['10.0.0.1'] },
++        fileStrategy: 's3',
++        config: { memory: { charLimit: 500 }, endpoints: { allowedAddresses: ['10.0.0.1'] } },
++        paths: { uploads: '/tmp' },
++        availableTools: { foo: {} },
++      };
++      const { handlers } = createHandlers(
++        sectionOnlyDeps('memory', { getAppConfig: jest.fn().mockResolvedValue(appConfig) }),
++      );
++      const req = mockReq();
++      const res = mockRes();
++
++      await handlers.getBaseConfig(req, res);
++
++      expect(res.statusCode).toBe(200);
++      const body = res.body!.config as Record<string, unknown>;
++      expect(body.memory).toEqual({ charLimit: 500 });
++      expect(body.endpoints).toBeUndefined();
++      expect(body.fileStrategy).toBeUndefined();
++      expect((body.config as Record<string, unknown>).memory).toEqual({ charLimit: 500 });
++      expect((body.config as Record<string, unknown>).endpoints).toBeUndefined();
++      expect(body.paths).toEqual({ uploads: '/tmp' });
++      expect(body.availableTools).toEqual({ foo: {} });
++    });
++
++    it('getBaseConfig: returns fileStrategy only to a caller holding read:configs:fileStrategy', async () => {
++      const appConfig = {
++        fileStrategy: 's3',
++        memory: { charLimit: 500 },
++        paths: { uploads: '/tmp' },
++        availableTools: {},
++      };
++      const { handlers } = createHandlers(
++        sectionOnlyDeps('fileStrategy', { getAppConfig: jest.fn().mockResolvedValue(appConfig) }),
++      );
++      const req = mockReq();
++      const res = mockRes();
++
++      await handlers.getBaseConfig(req, res);
++
++      expect(res.statusCode).toBe(200);
++      const body = res.body!.config as Record<string, unknown>;
++      expect(body.fileStrategy).toBe('s3');
++      expect(body.memory).toBeUndefined();
++    });
++
++    it('getBaseConfig: normalizes renamed top-level fields to their canonical section before checking read access', async () => {
++      // getAppConfig renames interface -> interfaceConfig, turnstile -> turnstileConfig,
++      // and mcpServers -> mcpConfig in the resolved payload. A caller holding
++      // read:configs:interface and read:configs:turnstile (but not mcpServers) must
++      // still see interfaceConfig/turnstileConfig, since checking the raw field name
++      // against a nonexistent "interfaceConfig"/"turnstileConfig" section would wrongly
++      // strip them.
++      const appConfig = {
++        interfaceConfig: { modelSelect: true },
++        turnstileConfig: { siteKey: 'abc' },
++        mcpConfig: { docs: {} },
++        paths: { uploads: '/tmp' },
++        availableTools: {},
++      };
++      const { handlers } = createHandlers({
++        hasConfigCapability: jest.fn(
++          async (_user: unknown, s: string | null, verb = 'manage') =>
++            verb === 'read' && (s === 'interface' || s === 'turnstile'),
++        ),
++        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
++        getAppConfig: jest.fn().mockResolvedValue(appConfig),
++      });
++      const req = mockReq();
++      const res = mockRes();
++
++      await handlers.getBaseConfig(req, res);
++
++      expect(res.statusCode).toBe(200);
++      const body = res.body!.config as Record<string, unknown>;
++      expect(body.interfaceConfig).toEqual({ modelSelect: true });
++      expect(body.turnstileConfig).toEqual({ siteKey: 'abc' });
++      expect(body.mcpConfig).toBeUndefined();
++    });
++  });
++
+   describe('upsertConfigOverrides', () => {
+     it('returns 201 when creating a new config (configVersion === 1)', async () => {
+       const { handlers } = createHandlers({
+@@ -2031,6 +2176,7 @@ describe('createAdminConfigHandlers', () => {
+       it(`${name} returns 403 when user lacks capability`, async () => {
+         const { handlers } = createHandlers({
+           hasConfigCapability: jest.fn().mockResolvedValue(false),
++          hasAnyConfigReadAccess: jest.fn().mockResolvedValue(false),
+         });
+         const req = mockReq(reqOverrides);
+         const res = mockRes();
+@@ -2075,6 +2221,7 @@ describe('createAdminConfigHandlers', () => {
+     it('returns 403 when user lacks READ_CONFIGS', async () => {
+       const { handlers } = createHandlers({
+         hasConfigCapability: jest.fn().mockResolvedValue(false),
++        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(false),
+       });
+       const req = mockReq();
+       const res = mockRes();
+diff --git a/packages/api/src/admin/config.ts b/packages/api/src/admin/config.ts
+index f1e3558f0..859268be6 100644
+--- a/packages/api/src/admin/config.ts
++++ b/packages/api/src/admin/config.ts
+@@ -131,6 +131,8 @@ export interface AdminConfigDeps {
+     section: ConfigSection | null,
+     verb?: 'manage' | 'read',
+   ) => Promise<boolean>;
++  /** Pre-flight-only: whether the caller holds any config-read capability at all (broad or any section), so a zero-access caller 403s before a DB fetch. */
++  hasAnyConfigReadAccess?: (user: CapabilityUser) => Promise<boolean>;
+   hasCapability?: (user: CapabilityUser, capability: SystemCapability) => Promise<boolean>;
+   getAppConfig?: (options?: {
+     role?: string;
+@@ -183,6 +185,125 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
+   };
+ }
+ 
++/**
++ * `AppConfig` keys exempt from per-section read filtering, for two distinct
++ * reasons:
++ * - `paths` and `availableTools` are server-computed constants (resolved at
++ *   module load / from a filesystem scan), identical for every caller. They
++ *   are not `TCustomConfig` sections, so no `read:configs:<section>` grant
++ *   exists that could apply to them.
++ * - `config` is the nested container whose contents are filtered separately
++ *   below; checking the outer key against a nonexistent `read:configs:config`
++ *   grant would always fail and strip the whole object, including sections
++ *   the caller legitimately holds.
++ * Real `TCustomConfig` sections (e.g. `fileStrategy`) must never be added
++ * here: exempting one would return it to every caller regardless of grants.
++ */
++const STRUCTURAL_APP_CONFIG_KEYS = new Set(['paths', 'availableTools', 'config']);
++
++/**
++ * Top-level `AppConfig` response field → canonical `ConfigSection` name.
++ * `getAppConfig` renames a few sections in the resolved payload
++ * (`interface` → `interfaceConfig`, `turnstile` → `turnstileConfig`,
++ * `mcpServers` → `mcpConfig`). The read-grant capability is keyed by the
++ * canonical section name, so the top-level filter must normalize through
++ * this map before calling `canRead`. Otherwise a caller holding
++ * `read:configs:interface` gets `interfaceConfig` incorrectly stripped
++ * because no section named "interfaceConfig" exists to grant.
++ */
++const APP_CONFIG_FIELD_TO_SECTION: Readonly<Record<string, string>> = {
++  interfaceConfig: 'interface',
++  turnstileConfig: 'turnstile',
++  mcpConfig: 'mcpServers',
++};
++
++/** Memoizes `hasConfigCapability` per section for one request's filtering pass. */
++function createSectionReadChecker(
++  hasConfigCapability: AdminConfigDeps['hasConfigCapability'],
++  user: CapabilityUser,
++): (section: string) => Promise<boolean> {
++  let broad: Promise<boolean> | undefined;
++  const perSection = new Map<string, Promise<boolean>>();
++
++  return async function canRead(section: string): Promise<boolean> {
++    if (await (broad ??= hasConfigCapability(user, null, 'read'))) {
++      return true;
++    }
++    let result = perSection.get(section);
++    if (!result) {
++      result = hasConfigCapability(user, section as ConfigSection, 'read');
++      perSection.set(section, result);
++    }
++    return result;
++  };
++}
++
++/** Strips every top-level key not in `preserveKeys` that `canRead` rejects. */
++async function filterSectionsByReadAccess<T extends Record<string, unknown>>(
++  obj: T,
++  canRead: (section: string) => Promise<boolean>,
++  preserveKeys: Set<string> = new Set(),
++): Promise<T> {
++  const keys = Object.keys(obj).filter((key) => !preserveKeys.has(key));
++  const allowed = await Promise.all(keys.map((key) => canRead(key)));
++  const result: Record<string, unknown> = { ...obj };
++  keys.forEach((key, i) => {
++    if (!allowed[i]) {
++      delete result[key];
++    }
++  });
++  return result as T;
++}
++
++async function filterConfigDocForReadAccess(
++  config: IConfig,
++  canRead: (section: string) => Promise<boolean>,
++): Promise<IConfig> {
++  const filteredOverrides = await filterSectionsByReadAccess(
++    (config.overrides ?? {}) as Record<string, unknown>,
++    canRead,
++  );
++
++  let filteredTombstones = config.tombstones;
++  if (config.tombstones?.length) {
++    const sections = config.tombstones.map((path) => getTopLevelSection(path));
++    const uniqueSections = [...new Set(sections)];
++    const readableEntries = await Promise.all(
++      uniqueSections.map(async (section) => [section, await canRead(section)] as const),
++    );
++    const readable = new Map(readableEntries);
++    filteredTombstones = config.tombstones.filter((_, i) => readable.get(sections[i]));
++  }
++
++  return {
++    ...config,
++    overrides: filteredOverrides as Partial<TCustomConfig>,
++    tombstones: filteredTombstones,
++  } as IConfig;
++}
++
++async function filterAppConfigForReadAccess(
++  appConfig: AppConfig,
++  canRead: (section: string) => Promise<boolean>,
++): Promise<AppConfig> {
++  const canReadTopLevelField = (field: string): Promise<boolean> =>
++    canRead(APP_CONFIG_FIELD_TO_SECTION[field] ?? field);
++
++  const filtered = await filterSectionsByReadAccess(
++    appConfig as unknown as Record<string, unknown>,
++    canReadTopLevelField,
++    STRUCTURAL_APP_CONFIG_KEYS,
++  );
++  const nestedConfig = (filtered as { config?: Record<string, unknown> }).config;
++  if (nestedConfig != null && typeof nestedConfig === 'object') {
++    (filtered as { config?: unknown }).config = await filterSectionsByReadAccess(
++      nestedConfig,
++      canRead,
++    );
++  }
++  return filtered as unknown as AppConfig;
++}
++
+ function redactConfigForResponse(config: IConfig): IConfig {
+   const safeConfig = JSON.parse(JSON.stringify(config)) as IConfig;
+   if (safeConfig.overrides) {
+@@ -245,6 +366,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
+     deleteConfig,
+     toggleConfigActive,
+     hasConfigCapability,
++    hasAnyConfigReadAccess = async () => false,
+     hasCapability = async () => false,
+     getAppConfig,
+     invalidateConfigCaches,
+@@ -260,12 +382,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
+         return res.status(401).json({ error: 'Authentication required' });
+       }
+ 
+-      if (!(await hasConfigCapability(user, null, 'read'))) {
++      if (!(await hasAnyConfigReadAccess(user))) {
+         return res.status(403).json({ error: 'Insufficient permissions' });
+       }
+ 
++      const canRead = createSectionReadChecker(hasConfigCapability, user);
+       const configs = await listAllConfigs();
+-      const safeConfigs = configs.map(redactConfigForResponse);
++      const filtered = await Promise.all(
++        configs.map((config) => filterConfigDocForReadAccess(config, canRead)),
++      );
++
++      const safeConfigs = filtered.map(redactConfigForResponse);
+       return res.status(200).json({ configs: safeConfigs });
+     } catch (error) {
+       logger.error('[adminConfig] listConfigs error:', error);
+@@ -284,20 +411,23 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
+         return res.status(401).json({ error: 'Authentication required' });
+       }
+ 
+-      if (!(await hasConfigCapability(user, null, 'read'))) {
+-        return res.status(403).json({ error: 'Insufficient permissions' });
+-      }
+-
+       if (!getAppConfig) {
+         return res.status(501).json({ error: 'Base config endpoint not configured' });
+       }
+ 
++      if (!(await hasAnyConfigReadAccess(user))) {
++        return res.status(403).json({ error: 'Insufficient permissions' });
++      }
++
++      const canRead = createSectionReadChecker(hasConfigCapability, user);
+       const baseOnly = (req.query as Record<string, unknown>).baseOnly === 'true';
+       const appConfig = await getAppConfig({
+         tenantId: user.tenantId,
+         baseOnly,
+       });
+-      return res.status(200).json({ config: redactAppConfigForResponse(appConfig) });
++      const filteredAppConfig = await filterAppConfigForReadAccess(appConfig, canRead);
++
++      return res.status(200).json({ config: redactAppConfigForResponse(filteredAppConfig) });
+     } catch (error) {
+       logger.error('[adminConfig] getBaseConfig error:', error);
+       return res.status(500).json({ error: 'Failed to get base config' });
+@@ -323,7 +453,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
+         return res.status(401).json({ error: 'Authentication required' });
+       }
+ 
+-      if (!(await hasConfigCapability(user, null, 'read'))) {
++      if (!(await hasAnyConfigReadAccess(user))) {
+         return res.status(403).json({ error: 'Insufficient permissions' });
+       }
+ 
+@@ -334,7 +464,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
+         return res.status(404).json({ error: 'Config not found' });
+       }
+ 
+-      return res.status(200).json({ config: redactConfigForResponse(config) });
++      const canRead = createSectionReadChecker(hasConfigCapability, user);
++      const filteredConfig = await filterConfigDocForReadAccess(config, canRead);
++
++      return res.status(200).json({ config: redactConfigForResponse(filteredConfig) });
+     } catch (error) {
+       logger.error('[adminConfig] getConfig error:', error);
+       return res.status(500).json({ error: 'Failed to get config' });
+diff --git a/packages/api/src/middleware/capabilities.ts b/packages/api/src/middleware/capabilities.ts
+index 0135f2c77..ef392be34 100644
+--- a/packages/api/src/middleware/capabilities.ts
++++ b/packages/api/src/middleware/capabilities.ts
+@@ -26,6 +26,10 @@ interface CapabilityDeps {
+     capability: SystemCapability;
+     tenantId?: string;
+   }) => Promise<boolean>;
++  hasAnyConfigReadAccess?: (params: {
++    principals: ResolvedPrincipal[];
++    tenantId?: string;
++  }) => Promise<boolean>;
+ }
+ 
+ export interface CapabilityUser {
+@@ -127,11 +131,38 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
+   hasCapability: HasCapabilityFn;
+   requireCapability: RequireCapabilityFn;
+   hasConfigCapability: HasConfigCapabilityFn;
++  hasAnyConfigReadAccess: (user: CapabilityUser) => Promise<boolean>;
+ } {
+-  const { getUserPrincipals, hasCapabilityForPrincipals } = deps;
++  const {
++    getUserPrincipals,
++    hasCapabilityForPrincipals,
++    hasAnyConfigReadAccess: checkAny = async () => false,
++  } = deps;
+ 
+   let workerWarned = false;
+ 
++  async function resolvePrincipals(user: CapabilityUser): Promise<ResolvedPrincipal[]> {
++    const store = capabilityStore.getStore();
++    const principalKey = `${user.id}:${user.role}:${user.tenantId ?? ''}`;
++    const cached = store?.principals.get(principalKey);
++    if (cached) {
++      return cached;
++    }
++    const principals = await getUserPrincipals({
++      userId: user.id,
++      role: user.role,
++      idOnTheSource: user.idOnTheSource,
++    });
++    store?.principals.set(principalKey, principals);
++    return principals;
++  }
++
++  /** Whether the user holds any config-read capability at all, broad or section-scoped. */
++  async function hasAnyConfigReadAccess(user: CapabilityUser): Promise<boolean> {
++    const principals = await resolvePrincipals(user);
++    return checkAny({ principals, tenantId: user.tenantId });
++  }
++
+   async function hasCapability(
+     user: CapabilityUser,
+     capability: SystemCapability,
+@@ -153,20 +184,7 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
+       return cached;
+     }
+ 
+-    const principalKey = `${user.id}:${user.role}:${user.tenantId ?? ''}`;
+-    let principals: ResolvedPrincipal[];
+-    const cachedPrincipals = store?.principals.get(principalKey);
+-    if (cachedPrincipals) {
+-      principals = cachedPrincipals;
+-    } else {
+-      principals = await getUserPrincipals({
+-        userId: user.id,
+-        role: user.role,
+-        idOnTheSource: user.idOnTheSource,
+-      });
+-      store?.principals.set(principalKey, principals);
+-    }
+-
++    const principals = await resolvePrincipals(user);
+     const result = await hasCapabilityForPrincipals({
+       principals,
+       capability,
+@@ -237,5 +255,5 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
+     };
+   }
+ 
+-  return { hasCapability, requireCapability, hasConfigCapability };
++  return { hasCapability, requireCapability, hasConfigCapability, hasAnyConfigReadAccess };
+ }
+diff --git a/packages/data-schemas/src/methods/systemGrant.ts b/packages/data-schemas/src/methods/systemGrant.ts
+index 6d82e9cd5..13b3f15ef 100644
+--- a/packages/data-schemas/src/methods/systemGrant.ts
++++ b/packages/data-schemas/src/methods/systemGrant.ts
+@@ -87,6 +87,13 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
+     capability: SystemCapability;
+     tenantId?: string;
+   }) => Promise<boolean>;
++  hasAnyConfigReadAccess: ({
++    principals,
++    tenantId,
++  }: {
++    principals: Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>;
++    tenantId?: string;
++  }) => Promise<boolean>;
+   getHeldCapabilities: ({
+     principals,
+     capabilities,
+@@ -134,6 +141,59 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
+       : { tenantId: { $exists: false } };
+   }
+ 
++  const READ_CONFIGS_SECTION_PATTERN = /^read:configs:\w+$/;
++
++  /**
++   * Whether any of the given principals holds *some* config-read
++   * capability, the broad `read:configs` or any `read:configs:<section>`,
++   * without needing to know which sections in advance. Used to gate a
++   * cheap pre-flight 403 before fetching a config document, so a caller
++   * with zero read access never triggers a DB lookup, while a
++   * section-scoped-only caller still passes through to have the response
++   * filtered to what they actually hold.
++   *
++   * @param principals - Resolved principal list from getUserPrincipals
++   * @param tenantId - If present, checks tenant-scoped grant; if absent, checks platform-level
++   */
++  async function hasAnyConfigReadAccess({
++    principals,
++    tenantId,
++  }: {
++    principals: Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>;
++    tenantId?: string;
++  }): Promise<boolean> {
++    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
++    const principalsQuery = principals
++      .filter(
++        (p): p is typeof p & { principalId: string | Types.ObjectId } =>
++          p.principalType !== PrincipalType.PUBLIC && p.principalId != null,
++      )
++      .map((p) => ({
++        principalType: p.principalType,
++        principalId: normalizePrincipalId(p.principalId, p.principalType),
++      }));
++
++    if (!principalsQuery.length) {
++      return false;
++    }
++
++    const query: FilterQuery<ISystemGrant> = {
++      $and: [
++        { $or: principalsQuery },
++        {
++          $or: [
++            { capability: SystemCapabilities.READ_CONFIGS },
++            { capability: READ_CONFIGS_SECTION_PATTERN },
++          ],
++        },
++        tenantCondition(tenantId),
++      ],
++    };
++
++    const doc = await SystemGrant.exists(query);
++    return doc != null;
++  }
++
+   /**
+    * Check if any of the given principals holds a specific capability.
+    * Follows the same principal-resolution pattern as AclEntry:
+@@ -534,6 +594,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
+     seedSystemGrants,
+     revokeCapability,
+     hasCapabilityForPrincipals,
++    hasAnyConfigReadAccess,
+     getHeldCapabilities,
+     listGrants,
+     countGrants,

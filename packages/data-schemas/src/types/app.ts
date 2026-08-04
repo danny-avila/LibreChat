@@ -65,6 +65,8 @@ export interface AppConfig {
   webSearch?: TCustomConfig['webSearch'];
   /** Message filter configuration (PII and future filter types) */
   messageFilter?: TCustomConfig['messageFilter'];
+  /** Langfuse tracing configuration */
+  langfuse?: TCustomConfig['langfuse'];
   /** Skill sync configuration */
   skillSync?: SkillSyncConfig;
   /** File storage strategy ('local', 's3', 'firebase', 'azure_blob', 'cloudfront') */

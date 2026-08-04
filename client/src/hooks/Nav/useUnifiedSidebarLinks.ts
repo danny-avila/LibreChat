@@ -13,8 +13,9 @@ import store from '~/store';
 const defaultInterface = getConfigDefaults().interface;
 
 export default function useUnifiedSidebarLinks() {
-  const conversation = useRecoilValue(store.conversationByIndex(0));
-  const endpoint = conversation?.endpoint;
+  /** Selector instead of the full conversation atom: the links only depend on
+   * the endpoint, so parameter edits and other conversation writes stay out. */
+  const endpoint = useRecoilValue(store.conversationEndpointByIndex(0)) ?? undefined;
   const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 

@@ -10,10 +10,14 @@ const {
   checkAccess,
   isUserSourced,
   MCPErrorCodes,
+  splitMCPToolKey,
+  normalizeServerName,
+  findShadowedServerNames,
   redactServerSecrets,
   redactAllServerSecrets,
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
+  isMCPOAuthSecretReentryRequiredError,
 } = require('@librechat/api');
 const {
   Constants,
@@ -56,6 +60,13 @@ function handleMCPError(error, res) {
     });
   }
 
+  if (isMCPOAuthSecretReentryRequiredError(error)) {
+    return res.status(error.statusCode).json({
+      error: error.code,
+      message: error.message,
+    });
+  }
+
   // Fallback for legacy string-based error handling (backwards compatibility)
   if (error.message?.startsWith(MCPErrorCodes.DOMAIN_NOT_ALLOWED)) {
     return res.status(403).json({
@@ -67,6 +78,13 @@ function handleMCPError(error, res) {
   if (error.message?.startsWith(MCPErrorCodes.INSPECTION_FAILED)) {
     return res.status(400).json({
       error: MCPErrorCodes.INSPECTION_FAILED,
+      message: error.message,
+    });
+  }
+
+  if (error.message?.startsWith(MCPErrorCodes.OAUTH_SECRET_REENTRY_REQUIRED)) {
+    return res.status(400).json({
+      error: MCPErrorCodes.OAUTH_SECRET_REENTRY_REQUIRED,
       message: error.message,
     });
   }
@@ -86,7 +104,21 @@ const getMCPTools = async (req, res) => {
     }
 
     const mcpConfig = await resolveAllMcpConfigs(userId, req.user);
-    const configuredServers = Object.keys(mcpConfig);
+    /**
+     * A server whose normalized name is claimed by an earlier server produces
+     * IDENTICAL model-facing tool keys — selecting its tools would silently
+     * execute against the first server's config (alias resolution is
+     * first-wins). Fail closed: never publish a shadowed server's tools.
+     */
+    const shadowedServers = findShadowedServerNames(Object.keys(mcpConfig));
+    for (const shadowedName of shadowedServers) {
+      logger.warn(
+        `[getMCPTools] Skipping MCP server "${shadowedName}": its normalized name collides with an earlier configured server, making tool keys ambiguous. Rename one server to expose both.`,
+      );
+    }
+    const configuredServers = Object.keys(mcpConfig).filter(
+      (serverName) => !shadowedServers.has(serverName),
+    );
 
     if (!configuredServers.length) {
       return res.status(200).json({ servers: {} });
@@ -177,7 +209,10 @@ const getMCPTools = async (req, res) => {
               continue;
             }
 
-            const toolName = toolKey.split(Constants.mcp_delimiter)[0];
+            const [toolName] = splitMCPToolKey(toolKey, [
+              serverName,
+              normalizeServerName(serverName),
+            ]);
             server.tools.push({
               name: toolName,
               pluginKey: toolKey,
@@ -201,9 +236,27 @@ const getMCPTools = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-/** Mirrors canAccessResource's capability bypass plus per-resource ACL EDIT check. */
-async function computeCanEditByServer(req, serverConfigs) {
+/**
+ * Mirrors canAccessResource's capability bypass plus per-resource ACL EDIT check.
+ * `skipCapabilityWithoutDbIds` lets the list path skip the MANAGE_MCP_SERVERS probe
+ * when no DB-backed server is present; no list consumer reads the edit-gated fields
+ * the bypass would disclose. The detail route must not set it.
+ */
+async function computeCanEditByServer(req, serverConfigs, { skipCapabilityWithoutDbIds } = {}) {
   const canEditByServer = new Map();
+  const dbIdsToCheck = [];
+  const dbIdToServerName = new Map();
+  for (const [name, config] of Object.entries(serverConfigs)) {
+    if (config.dbId) {
+      dbIdsToCheck.push(config.dbId);
+      dbIdToServerName.set(String(config.dbId), name);
+      continue;
+    }
+    canEditByServer.set(name, isUserSourced(config));
+  }
+  if (skipCapabilityWithoutDbIds === true && dbIdsToCheck.length === 0) {
+    return canEditByServer;
+  }
   let bypass = false;
   try {
     bypass = await hasCapability(req.user, SystemCapabilities.MANAGE_MCP_SERVERS);
@@ -215,16 +268,6 @@ async function computeCanEditByServer(req, serverConfigs) {
       canEditByServer.set(name, true);
     }
     return canEditByServer;
-  }
-  const dbIdsToCheck = [];
-  const dbIdToServerName = new Map();
-  for (const [name, config] of Object.entries(serverConfigs)) {
-    if (config.dbId) {
-      dbIdsToCheck.push(config.dbId);
-      dbIdToServerName.set(String(config.dbId), name);
-      continue;
-    }
-    canEditByServer.set(name, isUserSourced(config));
   }
   if (dbIdsToCheck.length > 0) {
     try {
@@ -262,7 +305,9 @@ const getMCPServersList = async (req, res) => {
     }
 
     const serverConfigs = await resolveAllMcpConfigs(userId, req.user);
-    const canEditByServer = await computeCanEditByServer(req, serverConfigs);
+    const canEditByServer = await computeCanEditByServer(req, serverConfigs, {
+      skipCapabilityWithoutDbIds: true,
+    });
     return res.json(redactAllServerSecrets(serverConfigs, { canEditByServer }));
   } catch (error) {
     logger.error('[getMCPServersList]', error);
@@ -351,7 +396,13 @@ const createMCPServerController = async (req, res) => {
         .status(403)
         .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
     }
-    const reservedServerNames = await resolveMcpConfigNames(req);
+    /** Reserve both spellings: a generated slug must not collide with a raw
+     *  config name OR the normalized form its tool keys actually carry
+     *  (deduped — the spellings coincide for safe names). */
+    const configNames = await resolveMcpConfigNames(req);
+    const reservedServerNames = [
+      ...new Set([...configNames, ...configNames.map(normalizeServerName)]),
+    ];
     const result = await getMCPServersRegistry().addServer(
       'temp_server_name',
       validation.data,

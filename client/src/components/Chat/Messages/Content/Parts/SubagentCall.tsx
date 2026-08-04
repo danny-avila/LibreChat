@@ -3,21 +3,22 @@ import { useRecoilValue } from 'recoil';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
 import { ArrowDown, ChevronRight, Maximize2, Minimize2, Users } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
-
-import type { TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type { Agents, TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
-
 import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
+import ToolApproval from '~/components/Chat/Messages/Content/ToolApproval';
 import { cn, groupSequentialToolCalls, parseToolName } from '~/utils';
 import Container from '~/components/Chat/Messages/Content/Container';
 import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
 import { MessageContext } from '~/Providers/MessageContext';
-import { subagentProgressByToolCallId } from '~/store';
 import MessageIcon from '~/components/Share/MessageIcon';
+import { subagentProgressByToolCallId } from '~/store';
 import { useAgentsMapContext } from '~/Providers';
+import { useMCPServerNames } from '~/hooks/MCP';
 import { AttachmentGroup } from './Attachment';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import Reasoning from './Reasoning';
 import Text from './Text';
@@ -252,9 +253,13 @@ export default function SubagentCall({
   /** Base verb-only label ("Running agent" / "Ran agent"). The agent name
    *  is rendered separately as a muted sub-label so "agent" stays a
    *  constant visual anchor regardless of name length. */
+  /** Model-authored live label (subagent carries `intent` natively); wins
+   *  over the generic verb, never over error/cancellation framing. */
+  const intent = useToolCallIntent(args);
   const getHeaderText = () => {
     if (hasError) return localize('com_ui_subagent_errored');
     if (cancelled) return localize('com_ui_subagent_cancelled');
+    if (intent != null) return intent;
     if (running) return localize('com_ui_subagent_running');
     return localize('com_ui_subagent_complete');
   };
@@ -484,7 +489,9 @@ export default function SubagentCall({
               <Users size={14} />
             )}
           </div>
-          <span className="shrink-0">{headerText}</span>
+          <span className="min-w-0 truncate" title={headerText}>
+            {headerText}
+          </span>
           {subagentNameLabel ? (
             <span
               className="min-w-0 flex-1 truncate font-normal text-text-secondary"
@@ -705,11 +712,13 @@ function ToolNameBadge({ name }: { name: string }): JSX.Element {
 function ToolIdentifier({
   rawName,
   localize,
+  mcpServerNames,
 }: {
   rawName: string;
   localize: ReturnType<typeof useLocalize>;
+  mcpServerNames?: readonly string[];
 }): JSX.Element {
-  const parsed = parseToolName(rawName);
+  const parsed = parseToolName(rawName, mcpServerNames);
   if (parsed.mcpServer) {
     return (
       <span className="inline-flex min-w-0 shrink items-baseline gap-1">
@@ -741,6 +750,7 @@ function ToolIdentifier({
  */
 function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
   const localize = useLocalize();
+  const mcpServerNames = useMCPServerNames();
   if (line.kind === 'writing' || line.kind === 'reasoning') {
     const prefix =
       line.kind === 'writing'
@@ -767,7 +777,7 @@ function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
           {line.toolNames.map((name, i) => (
             <span key={`${i}-${name}`} className="flex min-w-0 items-baseline gap-1">
               {i > 0 && <span className="shrink-0 text-text-tertiary">,</span>}
-              <ToolIdentifier rawName={name} localize={localize} />
+              <ToolIdentifier rawName={name} localize={localize} mcpServerNames={mcpServerNames} />
             </span>
           ))}
           {line.argsSnippet && (
@@ -780,7 +790,11 @@ function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
   if (line.kind === 'tool_complete') {
     return (
       <li className="flex w-full items-baseline gap-1 overflow-hidden whitespace-nowrap">
-        <ToolIdentifier rawName={line.toolName} localize={localize} />
+        <ToolIdentifier
+          rawName={line.toolName}
+          localize={localize}
+          mcpServerNames={mcpServerNames}
+        />
         <span className="shrink-0 text-text-tertiary">→</span>
         <span
           dir="rtl"
@@ -841,25 +855,41 @@ function SubagentDialogPart({
     const tc = (
       part as {
         [ContentTypes.TOOL_CALL]?: {
+          id?: string;
           args?: string | Record<string, unknown>;
           output?: string;
           name?: string;
           progress?: number;
+          approval?: Agents.ToolCall['approval'];
         };
       }
     )[ContentTypes.TOOL_CALL];
     if (!tc) return null;
-    return (
+    const toolCall = (
       <ToolCall
         args={tc.args ?? ''}
         output={tc.output ?? ''}
         initialProgress={tc.progress ?? 0.1}
         isSubmitting={isSubmitting}
         isLast={isLast}
+        toolCallId={tc.id}
         name={tc.name ?? ''}
         onExpand={onToolExpand}
       />
     );
+    // Surface approve/reject/edit controls for a tool paused INSIDE this subagent —
+    // its tool_call lives in subagent_content, not as a top-level message part, so the
+    // top-level Part.tsx render never sees it. Only while unresolved (no output yet).
+    // The dialog portals but React context still flows, so ToolApproval resolves here.
+    if (tc.approval != null && (tc.output?.length ?? 0) === 0) {
+      return (
+        <>
+          {toolCall}
+          <ToolApproval approval={tc.approval} toolCallId={tc.id ?? ''} args={tc.args} />
+        </>
+      );
+    }
+    return toolCall;
   }
   return null;
 }

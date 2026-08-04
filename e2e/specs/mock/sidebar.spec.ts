@@ -1,5 +1,9 @@
+import { randomUUID } from 'crypto';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { getE2EUser } from '../../setup/user';
+import { clearUserConversations, deleteConversations, seedConversations } from './db';
+import type { SeedConvo } from './db';
 
 /** Size of the virtualized chat list grid vs. its measured container. */
 const sizes = (page: Page) =>
@@ -78,5 +82,103 @@ test.describe('sidebar chat list', () => {
     await page.setViewportSize({ width: 1280, height: 540 });
     const shrunken = await settledSizes(page);
     expect(shrunken.gridH).toBeLessThan(reopened.gridH);
+  });
+});
+
+/**
+ * Regression: expanding the sidebar from a collapsed reload first measured the
+ * virtualized conversation rows mid-animation (narrow width), so date-group headers
+ * ("Previous 7 days", ...) wrapped and cached oversized heights. With `fixedWidth`
+ * the cache never re-measured at full width, leaving a gap between each header's
+ * text and the row beneath it.
+ */
+const DAY_MS = 24 * 60 * 60 * 1000;
+const userEmail = getE2EUser().email;
+
+/**
+ * The header `<h2>` is single-line; its row wrapper should hug it (just the small
+ * top margin). A stale wrapped measurement inflates the wrapper well past this.
+ */
+const MAX_HEADER_PADDING = 24;
+
+const GROUPS = [
+  { label: 'Today', offsetDays: 0 },
+  { label: 'Previous 7 days', offsetDays: 3 },
+  { label: 'Previous 30 days', offsetDays: 15 },
+] as const;
+
+function buildSeed(): SeedConvo[] {
+  // Anchor on local noon so the zero-day group stays inside "today" even when the
+  // spec runs right after midnight; second-level offsets keep ordering within a day.
+  const noon = new Date();
+  noon.setHours(12, 0, 0, 0);
+  const base = noon.getTime();
+  return GROUPS.flatMap((group, groupIndex) =>
+    [0, 1].map((n) => ({
+      conversationId: randomUUID(),
+      title: `E2E ${group.label} #${n}`,
+      updatedAt: new Date(base - group.offsetDays * DAY_MS - (groupIndex + n) * 1000),
+    })),
+  );
+}
+
+// The DateLabel <h2> exposes an aria-label ("Chats from {date}"), so its accessible
+// name is the full phrase, not the visible group label.
+const heading = (page: Page, label: string) =>
+  page.getByRole('heading', { name: `Chats from ${label}`, exact: true });
+
+const headerRow = (page: Page, label: string) =>
+  page.getByTestId('convo-list-row').filter({ has: heading(page, label) });
+
+test.describe('sidebar conversation grouping', () => {
+  let seeded: SeedConvo[] = [];
+
+  test.afterEach(async () => {
+    if (seeded.length) {
+      await deleteConversations(seeded.map((c) => c.conversationId));
+      seeded = [];
+    }
+  });
+
+  test('keeps date-group spacing tight after expanding from a collapsed reload', async ({
+    page,
+  }) => {
+    test.setTimeout(60000);
+    // Isolate from rows other specs leave on the shared user, which could otherwise
+    // push the later date-group headers below the virtualized viewport.
+    await clearUserConversations(userEmail);
+    seeded = buildSeed();
+    await seedConversations(userEmail, seeded);
+
+    // Default load is expanded: confirm the seeded conversations render at all.
+    await page.goto('/c/new', { timeout: 10000 });
+    await expect(page.getByTestId('convo-item').first()).toBeVisible({ timeout: 15000 });
+
+    // Force the collapsed start state, then reload so the list mounts collapsed.
+    await page.evaluate(() =>
+      localStorage.setItem('unifiedSidebarExpanded', JSON.stringify(false)),
+    );
+    await page.reload({ timeout: 10000 });
+    await expect(page.getByTestId('open-sidebar-button')).toBeVisible();
+
+    // Expand: rows first measure during the width animation — the regression window.
+    await page.getByTestId('open-sidebar-button').click();
+    await expect(page.getByTestId('close-sidebar-button')).toBeVisible();
+    await expect(page.getByTestId('convo-item').first()).toBeVisible({ timeout: 15000 });
+
+    // Each header row must hug its single-line text, not retain an inflated height.
+    for (const { label } of GROUPS) {
+      const row = headerRow(page, label);
+      await expect(row).toBeVisible({ timeout: 10000 });
+      const rowBox = await row.boundingBox();
+      const textBox = await heading(page, label).boundingBox();
+      expect(rowBox, `row "${label}" should have a bounding box`).not.toBeNull();
+      expect(textBox, `heading "${label}" should have a bounding box`).not.toBeNull();
+      const padding = rowBox!.height - textBox!.height;
+      expect(
+        padding,
+        `header "${label}" row (${rowBox!.height}px) should hug its text (${textBox!.height}px)`,
+      ).toBeLessThan(MAX_HEADER_PADDING);
+    }
   });
 });

@@ -8,11 +8,16 @@ import {
 } from 'librechat-data-provider';
 import type {
   AgentModelParameters,
+  AgentToolOptions,
   TEphemeralAgent,
   TModelSpec,
   Agent,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
+import { synthesizeBackgroundToolOptions } from '~/agents/background';
+import { mergeSynthesizedToolOptions } from '~/agents/selection';
+import { synthesizeIntentToolOptions } from '~/agents/intent';
 import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { getCustomEndpointConfig } from '~/app/config';
 
@@ -72,6 +77,15 @@ export async function loadEphemeralAgent(
   }
   if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
+  }
+  if (ephemeralAgent?.memory === true || modelSpec?.memory === true) {
+    tools.push(Tools.memory);
+  }
+  /** Same downstream gating as persisted agents applies: `createRun` only
+   *  equips the tool when the request is HITL-capable, the agent is not a
+   *  subagent, and the admin hasn't excluded it (filteredTools/includedTools). */
+  if (ephemeralAgent?.ask_user_question === true || modelSpec?.askUserQuestion === true) {
+    tools.push(ASK_USER_QUESTION_TOOL_NAME);
   }
 
   const addedServers = new Set<string>();
@@ -138,6 +152,21 @@ export async function loadEphemeralAgent(
     model,
     tools,
   };
+
+  const backgroundToolOptions: AgentToolOptions | undefined = synthesizeBackgroundToolOptions({
+    ephemeralAgent,
+    modelSpec,
+  });
+  if (backgroundToolOptions) {
+    result.tool_options = backgroundToolOptions;
+  }
+  const intentToolOptions: AgentToolOptions | undefined = synthesizeIntentToolOptions({
+    ephemeralAgent,
+    modelSpec,
+  });
+  if (intentToolOptions) {
+    result.tool_options = mergeSynthesizedToolOptions(result.tool_options, intentToolOptions);
+  }
 
   if (ephemeralAgent?.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;

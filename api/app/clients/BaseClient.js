@@ -6,15 +6,20 @@ const {
   checkBalance,
   getBalanceConfig,
   buildMessageFiles,
+  sanitizeFileForTransmit,
   extractFileContext,
   getReferencedQuotes,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   encodeAndFormatDocuments,
+  getLangfuseTraceDestinationIds,
+  isLangfuseTraceSampled,
+  traceIdForMessage,
 } = require('@librechat/api');
 const {
   Constants,
   FileSources,
+  Tools,
   ContentTypes,
   excludedKeys,
   EModelEndpoint,
@@ -30,6 +35,125 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
 const db = require('~/models');
+
+const collectHistoricalFileRefs = (message) => {
+  const refs = [];
+  if (Array.isArray(message.files)) {
+    refs.push(...message.files);
+  }
+  if (Array.isArray(message.attachments)) {
+    refs.push(...message.attachments);
+  }
+  /** Steer parts carry their own attachment refs inside assistant content;
+   *  collecting them here folds the steer replay stamp's lookup into this
+   *  single per-turn query (see `stampSteerPartMedia`). */
+  if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      if (part?.type === ContentTypes.STEER && Array.isArray(part.files)) {
+        refs.push(...part.files);
+      }
+    }
+  }
+  return refs;
+};
+
+const collectHistoricalFileIds = (messages) => {
+  const fileIds = new Set();
+  for (const message of messages) {
+    for (const ref of collectHistoricalFileRefs(message)) {
+      if (ref?.file_id) {
+        fileIds.add(ref.file_id);
+      }
+    }
+  }
+  return Array.from(fileIds);
+};
+
+const buildOwnerFileFilter = (fileIds, user) => {
+  if (!user?.id || fileIds.length === 0) {
+    return null;
+  }
+
+  const filter = {
+    file_id: { $in: fileIds },
+    user: user.id,
+  };
+  if (user.tenantId) {
+    filter.tenantId = user.tenantId;
+  }
+  return filter;
+};
+
+const TOOL_ATTACHMENT_KEYS = [
+  Tools.file_search,
+  Tools.web_search,
+  Tools.ui_resources,
+  Tools.memory,
+];
+const DISPLAY_ATTACHMENT_FIELDS = [
+  'filename',
+  'filepath',
+  'expiresAt',
+  'conversationId',
+  'messageId',
+  'toolCallId',
+  'name',
+];
+const PER_MESSAGE_FILE_ATTACHMENT_FIELDS = ['messageId', 'toolCallId'];
+
+const pickFields = (source, fields) => {
+  const picked = {};
+  for (const field of fields) {
+    if (source?.[field] !== undefined) {
+      picked[field] = source[field];
+    }
+  }
+  return picked;
+};
+
+const sanitizeDisplayOnlyAttachment = (ref) => {
+  if (!ref || ref.file_id) {
+    return undefined;
+  }
+
+  const attachment = pickFields(ref, DISPLAY_ATTACHMENT_FIELDS);
+  if (TOOL_ATTACHMENT_KEYS.includes(ref.type)) {
+    attachment.type = ref.type;
+  }
+  for (const key of TOOL_ATTACHMENT_KEYS) {
+    if (ref[key] !== undefined) {
+      attachment[key] = ref[key];
+    }
+  }
+
+  return Object.keys(attachment).length > 0 ? attachment : undefined;
+};
+
+const rehydrateMessageFileRefs = (refs, filesById, { preserveDisplayOnly = false } = {}) => {
+  if (!Array.isArray(refs)) {
+    return undefined;
+  }
+
+  const files = [];
+  for (const ref of refs) {
+    const file = filesById.get(ref?.file_id);
+    if (file) {
+      files.push({
+        ...sanitizeFileForTransmit(file),
+        ...pickFields(ref, PER_MESSAGE_FILE_ATTACHMENT_FIELDS),
+      });
+      continue;
+    }
+
+    if (preserveDisplayOnly) {
+      const displayOnlyAttachment = sanitizeDisplayOnlyAttachment(ref);
+      if (displayOnlyAttachment) {
+        files.push(displayOnlyAttachment);
+      }
+    }
+  }
+  return files.length > 0 ? files : undefined;
+};
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -268,6 +392,7 @@ class BaseClient {
       parentMessageId,
       responseMessageId,
     } = await this.setMessageOptions(opts);
+    this.options.startupTelemetry?.mark('history_loaded');
 
     const userMessage = opts.isEdited
       ? this.currentMessages[this.currentMessages.length - 2]
@@ -489,6 +614,7 @@ class BaseClient {
       this.getBuildMessagesOptions(opts),
       opts,
     );
+    this.options.startupTelemetry?.mark('messages_built');
 
     if (tokenCountMap && tokenCountMap[userMessage.messageId]) {
       userMessage.tokenCount = tokenCountMap[userMessage.messageId];
@@ -589,12 +715,25 @@ class BaseClient {
       this.abortController.requestCompleted = true;
     }
 
+    const isAgentResponse = isAgentsEndpoint(this.options.endpoint);
+    const langfuseTraceId = isAgentResponse ? traceIdForMessage(responseMessageId) : undefined;
+    const langfuseSampled =
+      langfuseTraceId != null ? isLangfuseTraceSampled(langfuseTraceId) : undefined;
+
     /** @type {TMessage} */
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
+      ...(isAgentResponse && {
+        langfuseSampled,
+        langfuseDestinationIds: await getLangfuseTraceDestinationIds(
+          appConfig,
+          langfuseTraceId,
+          langfuseSampled,
+        ),
+      }),
       isEdited,
       model: this.getResponseModel(),
       sender: this.sender,
@@ -708,6 +847,19 @@ class BaseClient {
 
     if (this.contextMeta) {
       responseMessage.contextMeta = this.contextMeta;
+    }
+
+    /** Resumable generation controllers must win the generation's terminal
+     * CAS before this outcome-defining `unfinished:false` write can begin.
+     * The hook is deliberately narrow: ordinary clients omit it, and `false`
+     * means another terminal owner (for example Stop) already won, so this
+     * stale completion must return without writing the response row. */
+    if (typeof opts.beforeResponsePersistence === 'function') {
+      const ownsTerminalPersistence = await opts.beforeResponsePersistence(responseMessage);
+      if (ownsTerminalPersistence === false) {
+        responseMessage.databasePromise = Promise.resolve({ persistenceSkipped: true });
+        return responseMessage;
+      }
     }
 
     responseMessage.databasePromise = this.saveMessageToDatabase(
@@ -1048,6 +1200,8 @@ class BaseClient {
             !item.type ||
             item.type === ContentTypes.THINK ||
             item.type === ContentTypes.ERROR ||
+            // UI-only progress headers — never model input, never billed output
+            item.type === ContentTypes.ACTIVITY_LABEL ||
             item.type === ContentTypes.IMAGE_URL
           ) {
             continue;
@@ -1324,14 +1478,31 @@ class BaseClient {
       return _messages;
     }
 
-    const seen = new Set();
+    const contextSeen = new Set();
     const attachmentsProcessed =
       this.options.attachments && !(this.options.attachments instanceof Promise);
     if (attachmentsProcessed) {
       for (const attachment of this.options.attachments) {
-        seen.add(attachment.file_id);
+        if (attachment?.file_id) {
+          contextSeen.add(attachment.file_id);
+        }
       }
     }
+
+    const historicalFileIds = collectHistoricalFileIds(_messages);
+    const fileFilter = buildOwnerFileFilter(historicalFileIds, this.options.req?.user);
+    const authorizedFilesById = new Map();
+    if (fileFilter) {
+      const files = (await db.getFiles(fileFilter, {}, {})) ?? [];
+      for (const file of files) {
+        if (file?.file_id) {
+          authorizedFilesById.set(file.file_id, file);
+        }
+      }
+    }
+    /** Owner-scoped docs for THIS turn, including steer-part refs — the steer
+     *  replay stamp consumes this instead of issuing a second query. */
+    this.authorizedHistoricalFiles = authorizedFilesById;
 
     /**
      *
@@ -1343,38 +1514,59 @@ class BaseClient {
         this.message_file_map = {};
       }
 
-      const fileIds = [];
-      for (const file of message.files) {
-        if (seen.has(file.file_id)) {
-          continue;
+      delete message.fileContext;
+
+      const contextFiles = [];
+      if (Array.isArray(message.files)) {
+        for (const file of message.files) {
+          if (!file?.file_id || contextSeen.has(file.file_id)) {
+            continue;
+          }
+          const authorizedFile = authorizedFilesById.get(file.file_id);
+          if (authorizedFile) {
+            contextFiles.push(authorizedFile);
+            contextSeen.add(file.file_id);
+          }
         }
-        fileIds.push(file.file_id);
-        seen.add(file.file_id);
       }
 
-      if (fileIds.length === 0) {
+      const rehydratedFiles = rehydrateMessageFileRefs(message.files, authorizedFilesById);
+      if (rehydratedFiles) {
+        message.files = rehydratedFiles;
+      } else {
+        delete message.files;
+      }
+
+      const rehydratedAttachments = rehydrateMessageFileRefs(
+        message.attachments,
+        authorizedFilesById,
+        {
+          preserveDisplayOnly: true,
+        },
+      );
+      if (rehydratedAttachments) {
+        message.attachments = rehydratedAttachments;
+      } else {
+        delete message.attachments;
+      }
+
+      if (contextFiles.length === 0) {
         return message;
       }
 
-      const files = await db.getFiles(
-        {
-          file_id: { $in: fileIds },
-        },
-        {},
-        {},
-      );
+      await Promise.all([
+        this.addFileContextToMessage(message, contextFiles),
+        this.processAttachments(message, contextFiles),
+      ]);
 
-      await this.addFileContextToMessage(message, files);
-      await this.processAttachments(message, files);
-
-      this.message_file_map[message.messageId] = files;
+      this.message_file_map[message.messageId] = contextFiles;
       return message;
     };
 
     const promises = [];
 
     for (const message of _messages) {
-      if (!message.files) {
+      if (!message.files && !message.attachments) {
         promises.push(message);
         continue;
       }

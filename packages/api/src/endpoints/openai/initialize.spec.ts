@@ -86,6 +86,15 @@ describe('initializeOpenAI – SSRF guard wiring', () => {
       EModelEndpoint.openAI,
       undefined,
     );
+    expect(mockGetOpenAIConfig).toHaveBeenCalledWith(
+      'sk-test',
+      expect.objectContaining({
+        reverseProxyUrl: 'https://user-proxy.example.com/v1',
+        baseURLIsUserProvided: true,
+        allowedAddresses: undefined,
+      }),
+      EModelEndpoint.openAI,
+    );
   });
 
   it('should NOT call validateEndpointURL when OPENAI_REVERSE_PROXY is a system URL', async () => {
@@ -134,6 +143,48 @@ describe('initializeOpenAI – SSRF guard wiring', () => {
     }
 
     expect(mockGetOpenAIConfig).not.toHaveBeenCalled();
+  });
+
+  it('should not validate a stale user Azure URL when an admin model group baseURL is selected', async () => {
+    const params = createParams({
+      AZURE_API_KEY: 'az-env-key',
+      AZURE_OPENAI_BASEURL: AuthType.USER_PROVIDED,
+    });
+    params.endpoint = EModelEndpoint.azureOpenAI;
+    params.model_parameters = { model: 'gpt-4o' };
+    params.req.config = {
+      endpoints: {
+        [EModelEndpoint.azureOpenAI]: {
+          modelGroupMap: {
+            'gpt-4o': { group: 'serverless-group' },
+          },
+          groupMap: {
+            'serverless-group': {
+              apiKey: 'az-admin-key',
+              baseURL: 'https://admin-azure.example.com/openai/deployments/gpt-4o',
+              version: '2024-10-21',
+              serverless: true,
+            },
+          },
+        },
+      },
+    } as unknown as BaseInitializeParams['req']['config'];
+
+    try {
+      await initializeOpenAI(params);
+    } finally {
+      (params as unknown as { _restore: () => void })._restore();
+    }
+
+    expect(mockValidateEndpointURL).not.toHaveBeenCalled();
+    expect(mockGetOpenAIConfig).toHaveBeenCalledWith(
+      'az-admin-key',
+      expect.objectContaining({
+        reverseProxyUrl: 'https://admin-azure.example.com/openai/deployments/gpt-4o',
+        baseURLIsUserProvided: false,
+      }),
+      EModelEndpoint.azureOpenAI,
+    );
   });
 });
 

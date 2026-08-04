@@ -11,6 +11,7 @@ import {
   SKILL_SYNC_MAX_INTERVAL_MINUTES,
   summarizationTriggerSchema,
   summarizationConfigSchema,
+  retainRecentConfigSchema,
   MAX_SUBAGENTS,
 } from '../src/config';
 import {
@@ -1113,6 +1114,35 @@ describe('summarizationTriggerSchema', () => {
   });
 });
 
+describe('retainRecentConfigSchema', () => {
+  it('accepts turn and token retention limits', () => {
+    const result = retainRecentConfigSchema.safeParse({
+      turns: 5,
+      tokens: 40000,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid turn and token retention limits', () => {
+    expect(retainRecentConfigSchema.safeParse({ turns: -1 }).success).toBe(false);
+    expect(retainRecentConfigSchema.safeParse({ turns: 21 }).success).toBe(false);
+    expect(retainRecentConfigSchema.safeParse({ tokens: 0 }).success).toBe(false);
+  });
+
+  it('parses inside the full summarization config', () => {
+    const result = summarizationConfigSchema.safeParse({
+      enabled: true,
+      retainRecent: { turns: 5, tokens: 40000 },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.retainRecent).toEqual({ turns: 5, tokens: 40000 });
+    }
+  });
+});
+
 describe('specsConfigSchema', () => {
   it('accepts an empty list (defaults applied)', () => {
     const result = specsConfigSchema.safeParse({ list: [] });
@@ -1176,5 +1206,32 @@ describe('specsConfigSchema', () => {
       ],
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('configSchema langfuse', () => {
+  it('accepts tenant Langfuse connection config', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-lf-tenant',
+        secretKey: 'sk-lf-tenant',
+        destination: 'eu',
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an explicit tenant Langfuse opt-out', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        enabled: false,
+      },
+    });
+
+    expect(result.success).toBe(true);
   });
 });

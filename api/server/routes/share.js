@@ -7,6 +7,7 @@ const {
   ensureLinkPermissions,
   isFileSnapshotEnabled,
   isFileSnapshotKillSwitchActive,
+  buildSharedLinkStartupPayload,
   deleteSharedLinkWithCleanup,
   updateSharedLinkPermissionsExpiration,
   isActiveExpirationDate,
@@ -14,8 +15,10 @@ const {
 } = require('@librechat/api');
 const {
   logger,
+  getTenantId,
   runAsSystem,
   tenantStorage,
+  SYSTEM_TENANT_ID,
   createTempChatExpirationDate,
 } = require('@librechat/data-schemas');
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
@@ -34,10 +37,13 @@ const {
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const canAccessSharedLink = require('~/server/middleware/canAccessSharedLink');
+const { forkSharedConversation } = require('~/server/utils/import/fork');
+const { createForkLimiters } = require('~/server/middleware/limiters');
 const optionalShareFileAuth = require('~/server/middleware/optionalShareFileAuth');
 const optionalJwtAuth = require('~/server/middleware/optionalJwtAuth');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const configMiddleware = require('~/server/middleware/config/app');
+const { getAppConfig } = require('~/server/services/Config/app');
 const router = express.Router();
 
 const checkSharedLinksAccess = generateCheckAccess({
@@ -75,6 +81,14 @@ const runWithTenant = (tenantId, fn) =>
 /** Mirrors the owner preview route: pending records older than this are swept to
  * 'failed' on the next poll so the client poller terminates. */
 const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
+
+const getShareStartupPayload = async () => {
+  const tenantId = getTenantId();
+  const appConfig = await getAppConfig(
+    tenantId && tenantId !== SYSTEM_TENANT_ID ? { tenantId } : { baseOnly: true },
+  );
+  return buildSharedLinkStartupPayload(appConfig);
+};
 
 /**
  * MIME types that are safe to render inline. Everything else (text/html, SVG,
@@ -212,6 +226,19 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
 };
 
 if (allowSharedLinks) {
+  const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
+
+  router.get('/:shareId/config', optionalJwtAuth, canAccessSharedLink, async (_req, res) => {
+    try {
+      const payload = await getShareStartupPayload();
+      res.set('Cache-Control', 'private, no-store');
+      res.status(200).json(payload);
+    } catch (error) {
+      logger.error('Error getting shared startup config:', error);
+      res.status(500).json({ message: 'Error getting shared startup config' });
+    }
+  });
+
   router.get(
     '/:shareId',
     optionalJwtAuth,
@@ -233,6 +260,36 @@ if (allowSharedLinks) {
       } catch (error) {
         logger.error('Error getting shared messages:', error);
         res.status(500).json({ message: 'Error getting shared messages' });
+      }
+    },
+  );
+
+  router.post(
+    '/:shareId/fork',
+    requireJwtAuth,
+    forkIpLimiter,
+    forkUserLimiter,
+    canAccessSharedLink,
+    async (req, res) => {
+      try {
+        const result = await forkSharedConversation({
+          shareId: req.params.shareId,
+          shareResourceId: req.shareResourceId,
+          requestUserId: req.user.id,
+          userRole: req.user.role,
+          userTenantId: req.user.tenantId,
+          targetMessageIndex: req.body?.targetMessageIndex,
+          // Viewer-independent: honor the global shared-file kill switch, matching
+          // the GET share route so disabled file snapshots aren't copied into forks.
+          snapshotFiles: !isFileSnapshotKillSwitchActive(),
+        });
+        if (!result) {
+          return res.status(404).json({ message: 'Shared conversation not found' });
+        }
+        res.status(201).json(result);
+      } catch (error) {
+        logger.error('Error forking shared conversation:', error);
+        res.status(500).json({ message: 'Error forking shared conversation' });
       }
     },
   );

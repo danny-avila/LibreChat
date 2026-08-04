@@ -37,7 +37,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean },
   ) => Promise<IConfig | null>;
   patchConfigFields: (
     principalType: PrincipalType,
@@ -149,7 +149,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean },
+    options?: { expectEmpty?: boolean; preservePriority?: boolean },
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
 
@@ -168,9 +168,10 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       $set: {
         principalModel,
         overrides,
-        priority,
+        ...(options?.preservePriority ? {} : { priority }),
         isActive: true,
       },
+      ...(options?.preservePriority ? { $setOnInsert: { priority } } : {}),
       $inc: { configVersion: 1 },
     };
 

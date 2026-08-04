@@ -27,6 +27,11 @@ export const MAX_AUDIT_LOG_LIMIT = 500;
  * should be sliced by `from`/`to`.
  */
 export const MAX_AUDIT_EXPORT_ROWS = 100_000;
+/**
+ * Upper bound on rows verified in a single HTTP-triggered integrity check. Full
+ * offline jobs can pass a larger value explicitly when needed.
+ */
+export const MAX_AUDIT_VERIFY_ROWS = 100_000;
 /** Record-format version stamped on every new entry. */
 export const AUDIT_SCHEMA_VERSION = 1;
 const MAX_SEARCH_LENGTH = 200;
@@ -516,6 +521,8 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
       .cursor({ batchSize: 500 });
 
     const trustedCheckpoint = options?.trustedCheckpoint;
+    const isCancelled = options?.isCancelled;
+    const maxRows = options?.maxRows;
     let prevHash = GENESIS_HASH;
     let expectedSeq: number | null = null;
     let firstSeq: number | null = null;
@@ -524,6 +531,28 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
 
     try {
       for await (const doc of cursor) {
+        if (isCancelled?.()) {
+          await cursor.close();
+          return {
+            ok: false,
+            chainKey,
+            checked,
+            reason: 'verification cancelled',
+            range: firstSeq !== null ? { firstSeq, lastSeq } : undefined,
+          };
+        }
+        if (maxRows != null && checked >= maxRows) {
+          await cursor.close();
+          return {
+            ok: false,
+            chainKey,
+            checked,
+            brokenAt: doc.seq,
+            reason: `verification row limit exceeded (${maxRows})`,
+            range:
+              firstSeq !== null ? { firstSeq, lastSeq } : { firstSeq: doc.seq, lastSeq: doc.seq },
+          };
+        }
         if (firstSeq === null) {
           firstSeq = doc.seq;
           expectedSeq = doc.seq;

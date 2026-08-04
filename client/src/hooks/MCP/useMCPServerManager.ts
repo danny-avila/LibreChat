@@ -27,6 +27,7 @@ import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useHasAccess, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
 import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
+import { getMCPReinitializeErrorMessage } from './errors';
 
 export interface MCPServerDefinition {
   serverName: string;
@@ -345,12 +346,20 @@ export function useMCPServerManager({
 
   const initializeServer = useCallback(
     async (serverName: string, autoOpenOAuth: boolean = true) => {
-      updateServerInitState(serverName, { isInitializing: true });
+      /** connectionDeferred is reset up front so a stale value from a previous
+       * attempt can never be mistaken for this attempt's outcome. */
+      updateServerInitState(serverName, { isInitializing: true, connectionDeferred: false });
       try {
         const response = await reinitializeMutation.mutateAsync(serverName);
+        /** Record whether this attempt deferred to a chat turn (request-scoped
+         * server) so consumers that didn't await this call — e.g. the agent
+         * builder behind the customUserVars config dialog — can react to it. */
+        updateServerInitState(serverName, {
+          connectionDeferred: Boolean(response.connectionDeferred),
+        });
         if (!response.success) {
           showToast({
-            message: localize('com_ui_mcp_init_failed', { 0: serverName }),
+            message: getMCPReinitializeErrorMessage(response, localize),
             status: 'error',
           });
           cleanupServerState(serverName);
@@ -454,6 +463,23 @@ export function useMCPServerManager({
       return getServerInitState(serverInitStates, serverName).isCancellable;
     },
     [serverInitStates],
+  );
+
+  const isConnectionDeferred = useCallback(
+    (serverName: string) => {
+      return getServerInitState(serverInitStates, serverName).connectionDeferred;
+    },
+    [serverInitStates],
+  );
+
+  /** Clear a recorded deferred outcome without starting a new attempt — used
+   * before routing into the customUserVars config dialog so a stale flag from
+   * an earlier attempt can't trigger consumers while the dialog is open. */
+  const resetConnectionDeferred = useCallback(
+    (serverName: string) => {
+      updateServerInitState(serverName, { connectionDeferred: false });
+    },
+    [updateServerInitState],
   );
 
   const getOAuthUrl = useCallback(
@@ -678,6 +704,8 @@ export function useMCPServerManager({
     cancelOAuthFlow,
     isInitializing,
     isCancellable,
+    isConnectionDeferred,
+    resetConnectionDeferred,
     getOAuthUrl,
     mcpValues,
     setMCPValues,

@@ -9,6 +9,7 @@ on:
       - 'api/**'
       - 'packages/client/**'
       - 'packages/api/**'
+      - '!**.md'
 
 jobs:
   detect-unused-packages:

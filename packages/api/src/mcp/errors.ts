@@ -5,6 +5,7 @@
 export const MCPErrorCodes = {
   DOMAIN_NOT_ALLOWED: 'MCP_DOMAIN_NOT_ALLOWED',
   INSPECTION_FAILED: 'MCP_INSPECTION_FAILED',
+  OAUTH_SECRET_REENTRY_REQUIRED: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
 } as const;
 
 export type MCPErrorCode = (typeof MCPErrorCodes)[keyof typeof MCPErrorCodes];
@@ -46,6 +47,24 @@ export class MCPInspectionFailedError extends Error {
   }
 }
 
+/** Raised when an update would move a retained OAuth client secret across trust boundaries. */
+export class MCPOAuthSecretReentryRequiredError extends Error {
+  public readonly code: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED' =
+    MCPErrorCodes.OAUTH_SECRET_REENTRY_REQUIRED;
+
+  public readonly statusCode = 400;
+  public readonly changedFields: readonly string[];
+
+  constructor(changedFields: readonly string[]) {
+    super(
+      `Re-enter oauth.client_secret when changing OAuth credential binding fields: ${changedFields.join(', ')}`,
+    );
+    this.name = 'MCPOAuthSecretReentryRequiredError';
+    this.changedFields = changedFields;
+    Object.setPrototypeOf(this, MCPOAuthSecretReentryRequiredError.prototype);
+  }
+}
+
 /**
  * Type guard to check if an error is an MCPDomainNotAllowedError
  */
@@ -58,4 +77,11 @@ export function isMCPDomainNotAllowedError(error: unknown): error is MCPDomainNo
  */
 export function isMCPInspectionFailedError(error: unknown): error is MCPInspectionFailedError {
   return error instanceof MCPInspectionFailedError;
+}
+
+/** Type guard for OAuth client-secret binding violations. */
+export function isMCPOAuthSecretReentryRequiredError(
+  error: unknown,
+): error is MCPOAuthSecretReentryRequiredError {
+  return error instanceof MCPOAuthSecretReentryRequiredError;
 }

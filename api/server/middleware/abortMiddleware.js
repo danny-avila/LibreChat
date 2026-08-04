@@ -16,6 +16,36 @@ const { abortRun } = require('./abortRun');
 const db = require('~/models');
 
 /**
+ * @param {Error | unknown} error
+ * @returns {boolean}
+ */
+const isAbortError = (error) => {
+  const visited = new Set();
+  let current = error;
+
+  while (current && typeof current === 'object' && !visited.has(current)) {
+    visited.add(current);
+
+    const errorName = current.name;
+    const errorCode = current.code;
+    const errorMessage = typeof current.message === 'string' ? current.message : '';
+
+    if (
+      errorName === 'AbortError' ||
+      errorCode === 'ABORT_ERR' ||
+      errorMessage.includes('AbortError') ||
+      /(?:operation|request|stream) was aborted/i.test(errorMessage)
+    ) {
+      return true;
+    }
+
+    current = current.cause;
+  }
+
+  return false;
+};
+
+/**
  * Spend tokens for all models from collected usage.
  * This handles both sequential and parallel agent execution.
  *
@@ -200,18 +230,26 @@ const handleAbort = function () {
  * @returns {Promise<void>}
  */
 const handleAbortError = async (res, req, error, data) => {
+  const { sender, conversationId, messageId, parentMessageId, userMessageId, partialText } = data;
+
   if (error?.message?.includes('base64')) {
     logger.error('[handleAbortError] Error in base64 encoding', {
       ...error,
       stack: smartTruncateText(error?.stack, 1000),
       message: truncateText(error.message, 350),
     });
+  } else if (isAbortError(error)) {
+    logger.debug('[handleAbortError] AI response aborted by user', {
+      conversationId,
+      code: error?.code,
+      name: error?.name,
+      message: truncateText(error?.message ?? 'AbortError', 350),
+    });
   } else {
     logger.error('[handleAbortError] AI response error; aborting request:', error);
   }
-  const { sender, conversationId, messageId, parentMessageId, userMessageId, partialText } = data;
 
-  if (error.stack && error.stack.includes('google')) {
+  if (error?.stack && error.stack.includes('google')) {
     logger.warn(
       `AI Response error for conversation ${conversationId} likely caused by Google censor/filter`,
     );

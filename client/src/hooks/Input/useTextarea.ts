@@ -1,6 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react';
 import debounce from 'lodash/debounce';
+import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilState } from 'recoil';
+import { EToolResources, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import {
@@ -11,12 +13,16 @@ import {
   checkIfScrollable,
 } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
-import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
+import { useLatestMessageMeta } from '~/hooks/Messages/useLatestMessage';
+import useComposerBindings from '~/hooks/Input/useComposerBindings';
+import useFileUploadRouter from '~/hooks/Files/useFileUploadRouter';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
-import useFileHandling from '~/hooks/Files/useFileHandling';
+import useUploadOptions from '~/hooks/Files/useUploadOptions';
 import { useInteractionHealthCheck } from '~/data-provider';
+import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useChatContext } from '~/Providers/ChatContext';
+import { useUploadModalContext } from '~/Providers';
 import { globalAudioId } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -29,24 +35,35 @@ export default function useTextarea({
   setIsScrollable,
   disabled = false,
   placeholder,
+  allowSubmitWhileGenerating = false,
+  onDuringRunModifier,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
   setIsScrollable: React.Dispatch<React.SetStateAction<boolean>>;
   disabled?: boolean;
   placeholder?: string;
+  /** Lets Enter submit during a run (during-run steering/queuing routes it). */
+  allowSubmitWhileGenerating?: boolean;
+  /** During-run modifier chords: ⌘/Ctrl+Enter = the non-default action,
+   *  ⌥/Alt+Enter = interrupt & send. Enter itself submits the default. */
+  onDuringRunModifier?: (kind: 'other' | 'interrupt' | 'preempt') => void;
 }) {
   const localize = useLocalize();
   const getSender = useGetSender();
   const isComposing = useRef(false);
   const agentsMap = useAgentsMapContext();
-  const { handleFiles } = useFileHandling();
+  const { showToast } = useToastContext();
+  const { getOptions: getUploadOptions, uploadsDisabled } = useUploadOptions();
+  const routeFiles = useFileUploadRouter();
+  const { openModal } = useUploadModalContext();
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
+  const { submitOverride, yieldedChords } = useComposerBindings();
 
-  const { index, conversation, isSubmitting, filesLoading, setFilesLoading } = useChatContext();
-  const latestMessage = useLatestMessage(index);
+  const { index, conversation, isSubmitting, setFilesLoading } = useChatContext();
+  const latestMessage = useLatestMessageMeta(index);
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
   const { endpoint = '' } = conversation || {};
@@ -153,53 +170,56 @@ export default function useTextarea({
         const scrollable = checkIfScrollable(textAreaRef.current);
         scrollable && setIsScrollable(scrollable);
       }
-      if (e.key === 'Enter' && isSubmitting) {
+      if (e.key === 'Enter' && isSubmitting && !allowSubmitWhileGenerating) {
         return;
       }
 
       checkHealth();
 
-      const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
-      const isCtrlEnter = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
-
       // NOTE: isComposing and e.key behave differently in Safari compared to other browsers, forcing us to use e.keyCode instead
       const isComposingInput = isComposing.current || e.key === 'Process' || e.keyCode === 229;
 
-      if (isNonShiftEnter && filesLoading) {
-        e.preventDefault();
-      }
+      const action = resolveComposerKeyDown(e.nativeEvent, {
+        isComposing: isComposingInput,
+        isSubmitting,
+        allowSubmitWhileGenerating,
+        hasDuringRunModifier: onDuringRunModifier != null,
+        enterToSend,
+        submitOverride,
+        yieldedChords,
+      });
 
-      if (isNonShiftEnter) {
-        e.preventDefault();
+      if (action === 'none') {
+        return;
       }
-
-      if (
-        e.key === 'Enter' &&
-        !enterToSend &&
-        !isCtrlEnter &&
-        textAreaRef.current &&
-        !isComposingInput
-      ) {
-        e.preventDefault();
+      e.preventDefault();
+      if (action === 'interrupt' || action === 'preempt' || action === 'other') {
+        onDuringRunModifier?.(action);
+        return;
+      }
+      if (action === 'newline' && textAreaRef.current) {
         insertTextAtCursor(textAreaRef.current, '\n');
         forceResize(textAreaRef.current);
         return;
       }
-
-      if ((isNonShiftEnter || isCtrlEnter) && !isComposingInput) {
-        const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | undefined;
-        if (globalAudio) {
-          console.log('Unmuting global audio');
-          globalAudio.muted = false;
-        }
-        submitButtonRef.current?.click();
+      if (action !== 'submit') {
+        return;
       }
+      const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | undefined;
+      if (globalAudio) {
+        console.log('Unmuting global audio');
+        globalAudio.muted = false;
+      }
+      submitButtonRef.current?.click();
     },
     [
       isSubmitting,
+      allowSubmitWhileGenerating,
+      onDuringRunModifier,
+      yieldedChords,
       checkHealth,
-      filesLoading,
       enterToSend,
+      submitOverride,
       setIsScrollable,
       textAreaRef,
       submitButtonRef,
@@ -235,10 +255,47 @@ export default function useTextarea({
           });
           timestampedFiles.push(newFile);
         }
-        handleFiles(timestampedFiles);
+
+        if (uploadsDisabled) {
+          showToast({ message: localize('com_ui_attach_error_disabled'), status: 'error' });
+          setFilesLoading(false);
+          return;
+        }
+
+        /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
+        if (isAssistantsEndpoint(conversation?.endpoint)) {
+          routeFiles(timestampedFiles);
+          return;
+        }
+
+        const options = getUploadOptions(timestampedFiles);
+        if (options.length === 0) {
+          showToast({ message: localize('com_error_files_unsupported'), status: 'error' });
+          setFilesLoading(false);
+          return;
+        }
+        if (options.length === 1) {
+          routeFiles(timestampedFiles, options[0]);
+          if (options[0] === EToolResources.context) {
+            showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
+          }
+          return;
+        }
+        setFilesLoading(false);
+        openModal(timestampedFiles);
       }
     },
-    [handleFiles, setFilesLoading, textAreaRef],
+    [
+      localize,
+      showToast,
+      openModal,
+      routeFiles,
+      conversation,
+      textAreaRef,
+      uploadsDisabled,
+      setFilesLoading,
+      getUploadOptions,
+    ],
   );
 
   return {
