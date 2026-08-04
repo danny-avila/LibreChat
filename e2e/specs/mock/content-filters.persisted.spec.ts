@@ -1364,9 +1364,23 @@ test.describe('persisted source-aware content filters', () => {
         });
       });
 
-      await test.step('memories stay visible, reject resubmission, and fail closed at runtime', async () => {
+      await test.step('memories redact blocked fields, reject resubmission, and fail closed at runtime', async () => {
         const visible = await requestResult(request, { path: '/api/memories', token });
-        expectStoredMarker(visible, markers.memories);
+        expectSuccess(visible);
+        expect(visible.text).not.toContain(markers.memories);
+        const visibleMemoryItems = Array.isArray(asObject(visible.body).memories)
+          ? (asObject(visible.body).memories as unknown[]).map(asObject)
+          : [];
+        expect(visibleMemoryItems).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              key: fixtures.memoryKey,
+              value: '',
+              agentId: fixtures.memoryAgentId,
+              contentFilterBlocked: true,
+            }),
+          ]),
+        );
         const blocked = await expectNoMongoSideEffects(['memoryentries'], () =>
           requestResult(request, {
             path: `/api/memories/${encodeURIComponent(
