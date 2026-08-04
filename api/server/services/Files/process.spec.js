@@ -49,6 +49,12 @@ jest.mock('@librechat/api', () => {
       res.status(200).json({ message, ...result });
     }),
     getStorageMetadata: jest.fn(() => ({})),
+    /* Stub, deliberately not the production wording: the notice text is covered by
+     * packages/api's own tests. What matters here is that process.js forwards the
+     * pages it was given, so assertions target the call, not the string. */
+    annotateMissingPages: jest.fn((text, pages) =>
+      pages?.length ? `${text}\n[omitted:${pages.join(',')}]` : text,
+    ),
     getRetentionExpiry,
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
       const interfaceConfig = req?.config?.interfaceConfig;
@@ -135,6 +141,7 @@ jest.mock('~/server/services/Files/Audio/STTService', () => ({
 const {
   getRetentionExpiry,
   getAgentFileRetentionExpiry,
+  annotateMissingPages,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -253,6 +260,42 @@ describe('processAgentFileUpload', () => {
 
       expect(checkCapability).not.toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
       expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+    });
+
+    test('annotates the stored text when the parser reports pages needing OCR', async () => {
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockResolvedValue({
+          text: 'page one text',
+          bytes: 13,
+          filepath: 'doc://result',
+          pagesNeedingOcr: [2, 3],
+        }),
+      });
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(annotateMissingPages).toHaveBeenCalledWith('page one text', [2, 3]);
+      /* A part-scanned document must not be stored as if it were complete: the
+       * persisted text carries the notice and bytes are recounted to match. */
+      const created = db.createFile.mock.calls[0][0];
+      expect(created.text).toBe('page one text\n[omitted:2,3]');
+      expect(created.bytes).toBe(Buffer.byteLength(created.text, 'utf8'));
+    });
+
+    test('leaves text and byte count untouched when every page was extracted', async () => {
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest
+          .fn()
+          .mockResolvedValue({ text: 'complete text', bytes: 42, filepath: 'doc://result' }),
+      });
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      const created = db.createFile.mock.calls[0][0];
+      expect(created.text).toBe('complete text');
+      expect(created.bytes).toBe(42);
     });
 
     test('uses the configured OCR strategy when OCR is set up for the file type', async () => {

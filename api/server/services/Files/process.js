@@ -27,6 +27,7 @@ const {
   processAudioFile,
   sendUploadSuccess,
   getStorageMetadata,
+  annotateMissingPages,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -854,8 +855,18 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     if (shouldUseOCR) {
       const ocrResult = await resolveDocumentText();
       if (ocrResult) {
-        const { text, bytes, filepath: ocrFileURL } = ocrResult;
-        return await createTextFile({ text, bytes, filepath: ocrFileURL });
+        const { text, bytes, filepath: ocrFileURL, pagesNeedingOcr } = ocrResult;
+        if (pagesNeedingOcr?.length) {
+          logger.warn(
+            `[processAgentFileUpload] "${file.originalname}" has no extractable text on page(s) ${pagesNeedingOcr.join(', ')}; those pages were omitted.`,
+          );
+        }
+        const annotated = annotateMissingPages(text, pagesNeedingOcr);
+        return await createTextFile({
+          text: annotated,
+          bytes: annotated === text ? bytes : Buffer.byteLength(annotated, 'utf8'),
+          filepath: ocrFileURL,
+        });
       }
       throw new Error(
         `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
