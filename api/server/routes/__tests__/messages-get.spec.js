@@ -114,11 +114,14 @@ describe('message route conversation ownership filters', () => {
     const urlConversationId = '11111111-1111-4111-8111-111111111111';
     const bodyConversationId = '22222222-2222-4222-8222-222222222222';
     const savedMessage = {
+      _id: 'message-object-id',
       messageId: 'message-1',
       conversationId: urlConversationId,
       text: 'hello',
       user: authenticatedUserId,
     };
+    const messageForConversation = { ...savedMessage };
+    delete messageForConversation._id;
 
     saveMessage.mockResolvedValue(savedMessage);
     saveConvo.mockResolvedValue({ conversationId: urlConversationId });
@@ -143,7 +146,7 @@ describe('message route conversation ownership filters', () => {
     expect(saveMessage.mock.calls[0][1].conversationId).not.toBe(bodyConversationId);
     expect(saveConvo).toHaveBeenCalledWith(
       expect.objectContaining({ userId: authenticatedUserId }),
-      savedMessage,
+      messageForConversation,
       { context: 'POST /api/messages/:conversationId' },
     );
   });

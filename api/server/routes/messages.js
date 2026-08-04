@@ -324,7 +324,11 @@ router.post('/:conversationId', validateMessageReq, async (req, res) => {
     if (!savedMessage) {
       return res.status(400).json({ error: 'Message not saved' });
     }
-    await db.saveConvo(reqCtx, savedMessage, { context: 'POST /api/messages/:conversationId' });
+    const messageForConversation = { ...savedMessage };
+    delete messageForConversation._id;
+    await db.saveConvo(reqCtx, messageForConversation, {
+      context: 'POST /api/messages/:conversationId',
+    });
     res.status(201).json(savedMessage);
   } catch (error) {
     logger.error('Error saving message:', error);
