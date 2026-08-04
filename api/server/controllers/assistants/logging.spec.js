@@ -38,6 +38,9 @@ jest.mock('~/server/controllers/assistants/helpers', () => ({
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
 }));
+jest.mock('~/server/services/MCP', () => ({
+  healMcpToolNames: jest.fn(({ tools }) => tools),
+}));
 jest.mock('~/app/clients/tools', () => ({
   manifestToolMap: {},
   isAgentsOnlyTool: jest.fn((tool) => typeof tool === 'object'),
