@@ -12,9 +12,9 @@ import {
 } from 'librechat-data-provider';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 import { getMCPSandboxUrl, buildAppToolResult, isMcpAppResource } from '~/utils/mcpApps';
+import { useMCPIconMap, useAppBridge, useMCPServerNames } from '~/hooks/MCP';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
-import { useMCPIconMap, useAppBridge, useMCPServerNames } from '~/hooks/MCP';
 import { useIsMessagesViewReadOnly } from '~/Providers';
 import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
