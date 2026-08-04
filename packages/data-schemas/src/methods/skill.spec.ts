@@ -1208,7 +1208,13 @@ describe('Skill CRUD methods', () => {
       expect(viaName?.disableModelInvocation).toBeUndefined();
     });
 
-    it('keeps bag-only restrictions when a body edit declares no frontmatter block', async () => {
+    it.each([
+      ['a body with no frontmatter block', 'Still a plain body, just edited.'],
+      [
+        'a body whose frontmatter block never mentioned the flags',
+        '---\nname: bag-only-restricted\ndescription: A demo skill.\ncategory-ish: x\n---\n\nEdited.',
+      ],
+    ])('keeps bag-only restrictions across %s', async (_label, newBody) => {
       /* The legacy / API-only shape: flags live in the bag, and the body never
          declared them. A body edit there is not a statement about invocation
          channels, so it must not lift the restriction — silently opening a
@@ -1235,7 +1241,7 @@ describe('Skill CRUD methods', () => {
       const updated = await methods.updateSkill({
         id,
         expectedVersion: 1,
-        update: { body: 'Still a plain body, just edited.' },
+        update: { body: newBody },
       });
       expect(updated.status).toBe('updated');
 
@@ -1244,12 +1250,12 @@ describe('Skill CRUD methods', () => {
       expect(reloaded?.disableModelInvocation).toBe(true);
     });
 
-    it('releases a bag-only restriction once the body declares a frontmatter block without it', async () => {
-      /* The counterpart: an explicit block that omits the key IS a declaration,
-         which is what makes the release path in the UI work. */
+    it('releases a bag-only restriction when an explicit frontmatter bag drops it', async () => {
+      /* Structured callers keep the long-standing contract: a bag that omits the
+         key removes it. That is the escape hatch for flags the body never had. */
       const legacy = await Skill.create({
         name: 'bag-only-released',
-        description: 'Flags set through the API, then declared away.',
+        description: 'Flags set through the API, then dropped through the API.',
         body: 'Plain body, no frontmatter.',
         frontmatter: { 'user-invocable': false },
         author: owner._id,
@@ -1264,13 +1270,7 @@ describe('Skill CRUD methods', () => {
       );
       const id = (legacy._id as mongoose.Types.ObjectId).toString();
 
-      await methods.updateSkill({
-        id,
-        expectedVersion: 1,
-        update: {
-          body: '---\nname: bag-only-released\ndescription: A demo skill.\n---\n\nBody.',
-        },
-      });
+      await methods.updateSkill({ id, expectedVersion: 1, update: { frontmatter: {} } });
 
       const reloaded = await methods.getSkillByName('bag-only-released', [legacy._id]);
       expect(reloaded?.userInvocable).toBeUndefined();
@@ -1281,6 +1281,20 @@ describe('Skill CRUD methods', () => {
         makeSkillInput({
           name: 'continued-value',
           body: '---\nname: continued-value\ndescription: A demo skill.\nuser-invocable:\n  false\n---\n\nBody.',
+          frontmatter: undefined,
+        }),
+      );
+      expect(skill.userInvocable).toBe(false);
+    });
+
+    it('reads a flag written with a quoted key', async () => {
+      /* The importer honors a quoted key because js-yaml unquotes it; the body
+         reader has to strip the quotes itself or the same file would behave
+         differently depending on how it reached the server. */
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'quoted-key',
+          body: '---\nname: quoted-key\ndescription: A demo skill.\n"user-invocable": false\n---\n\nBody.',
           frontmatter: undefined,
         }),
       );

@@ -101,6 +101,17 @@ function stripInlineComment(value: string): string {
   return value.trim();
 }
 
+/** Strip one layer of matching YAML quotes, if present. */
+function unquoteScalar(value: string): string {
+  if (
+    value.length >= 2 &&
+    ((value[0] === '"' && value[value.length - 1] === '"') ||
+      (value[0] === "'" && value[value.length - 1] === "'"))
+  ) {
+    return value.slice(1, -1).trim();
+  }
+  return value;
+}
 function parseBoolean(value: unknown, rawValue?: string): boolean | undefined {
   const raw = rawValue === undefined ? undefined : stripInlineComment(rawValue).toLowerCase();
   if (typeof value === 'boolean') {
@@ -128,8 +139,17 @@ function parseBoolean(value: unknown, rawValue?: string): boolean | undefined {
   return undefined;
 }
 
+/**
+ * Whether a flag line carries no value yet — `user-invocable:`, a
+ * comment-only value, or empty quotes. All are mid-edit states rather than
+ * malformed booleans, so they are treated as if the key were absent.
+ */
 function hasBooleanPlaceholder(rawValue?: string): boolean {
-  return rawValue !== undefined && stripInlineComment(rawValue).length === 0;
+  if (rawValue === undefined) {
+    return false;
+  }
+  const stripped = stripInlineComment(rawValue);
+  return stripped.length === 0 || unquoteScalar(stripped).length === 0;
 }
 
 type ResolvedBooleanFlag = { value?: boolean; invalidKey?: string };
@@ -147,11 +167,18 @@ function readPresentBooleanFlag(
   key: string,
 ): ResolvedBooleanFlag {
   const rawValue = getRawFrontmatterValue(block, key);
-  const value = parseBoolean(getCaseInsensitive(frontmatter, key), rawValue);
-  if (value === undefined && !hasBooleanPlaceholder(rawValue)) {
-    return { invalidKey: key };
+  const parsedValue = getCaseInsensitive(frontmatter, key);
+  const value = parseBoolean(parsedValue, rawValue);
+  if (value !== undefined) {
+    return { value };
   }
-  return { value };
+  if (rawValue === undefined) {
+    /* No line to cross-check — the key is quoted, or the mapping is indented.
+       Judge by the parsed shape instead: an empty value is a placeholder, while
+       anything else present is a value that failed to read as a boolean. */
+    return parsedValue == null ? {} : { invalidKey: key };
+  }
+  return hasBooleanPlaceholder(rawValue) ? {} : { invalidKey: key };
 }
 
 function resolveBooleanFlag(
