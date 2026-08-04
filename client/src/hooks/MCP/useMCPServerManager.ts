@@ -195,7 +195,7 @@ export function useMCPServerManager({
   );
 
   const startServerPolling = useCallback(
-    (serverName: string, flowId?: string) => {
+    (serverName: string, flowId?: string, initialOAuthTimeout?: number) => {
       // Prevent duplicate polling for the same server
       if (pollIntervalsRef.current[serverName]) {
         console.debug(`[MCP Manager] Polling already active for ${serverName}, skipping duplicate`);
@@ -216,14 +216,13 @@ export function useMCPServerManager({
         return 7500; // Thereafter: every 7.5s
       };
 
-      /** Honor the server's configured MCP_OAUTH_HANDLING_TIMEOUT (surfaced on the
-       * connection-status response) so a tuned deadline isn't capped at the default.
-       * The cache may be empty at start, so this is refreshed from the first status
-       * refetch below rather than captured once. */
+      /** Honor the server's configured MCP_OAUTH_HANDLING_TIMEOUT from the
+       * reinitialize response. The connection-status cache remains a fallback for
+       * rolling deployments where the backend does not yet return a flow ID. */
       const connectionData = queryClient.getQueryData<MCPConnectionStatusResponse>([
         QueryKeys.mcpConnectionStatus,
       ]);
-      let oauthTimeoutMs = connectionData?.oauthTimeout ?? 600000; // default 10 minutes
+      let oauthTimeoutMs = initialOAuthTimeout ?? connectionData?.oauthTimeout ?? 600000;
       // Backstop only; the elapsed-time guard governs. Sized above the worst-case poll count.
       let maxAttempts = Math.ceil(oauthTimeoutMs / 5000) + 5;
 
@@ -395,7 +394,7 @@ export function useMCPServerManager({
             window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
           }
 
-          startServerPolling(serverName, response.flowId);
+          startServerPolling(serverName, response.flowId, response.oauthTimeout);
         } else {
           await Promise.all([
             queryClient.invalidateQueries([QueryKeys.mcpServers]),

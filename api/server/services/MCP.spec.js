@@ -285,11 +285,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       expect(mockGetLogStores).toHaveBeenCalledWith(CacheKeys.FLOWS);
       expect(MCPOAuthHandler.generateFlowId).toHaveBeenCalledWith(mockUserId, mockServerName);
       expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(mockFlowId, 'mcp_oauth');
-      expect(result).toEqual({
-        hasActiveFlow: false,
-        hasFailedFlow: false,
-        hasCompletedFlow: false,
-      });
+      expect(result).toEqual({ hasActiveFlow: false, hasFailedFlow: false });
     });
 
     it('should detect failed flow when status is FAILED', async () => {
@@ -303,11 +299,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       const result = await checkOAuthFlowStatus(mockUserId, mockServerName);
 
-      expect(result).toEqual({
-        hasActiveFlow: false,
-        hasFailedFlow: true,
-        hasCompletedFlow: false,
-      });
+      expect(result).toEqual({ hasActiveFlow: false, hasFailedFlow: true });
       expect(logger.debug).toHaveBeenCalledWith(
         expect.stringContaining('Found failed OAuth flow'),
         expect.objectContaining({
@@ -328,11 +320,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       const result = await checkOAuthFlowStatus(mockUserId, mockServerName);
 
-      expect(result).toEqual({
-        hasActiveFlow: false,
-        hasFailedFlow: true,
-        hasCompletedFlow: false,
-      });
+      expect(result).toEqual({ hasActiveFlow: false, hasFailedFlow: true });
       expect(logger.debug).toHaveBeenCalledWith(
         expect.stringContaining('Found failed OAuth flow'),
         expect.objectContaining({
@@ -352,11 +340,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       const result = await checkOAuthFlowStatus(mockUserId, mockServerName);
 
-      expect(result).toEqual({
-        hasActiveFlow: false,
-        hasFailedFlow: true,
-        hasCompletedFlow: false,
-      });
+      expect(result).toEqual({ hasActiveFlow: false, hasFailedFlow: true });
     });
 
     it('should detect active flow when status is PENDING and within TTL', async () => {
@@ -370,11 +354,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       const result = await checkOAuthFlowStatus(mockUserId, mockServerName);
 
-      expect(result).toEqual({
-        hasActiveFlow: true,
-        hasFailedFlow: false,
-        hasCompletedFlow: false,
-      });
+      expect(result).toEqual({ hasActiveFlow: true, hasFailedFlow: false });
       expect(logger.debug).toHaveBeenCalledWith(
         expect.stringContaining('Found active OAuth flow'),
         expect.objectContaining({
@@ -402,14 +382,10 @@ describe('tests for the new helper functions used by the MCP connection status e
         'tenant/a',
       );
       expect(mockFlowManager.getFlowState).toHaveBeenCalledWith('tenant-flow-id', 'mcp_oauth');
-      expect(result).toEqual({
-        hasActiveFlow: true,
-        hasFailedFlow: false,
-        hasCompletedFlow: false,
-      });
+      expect(result).toEqual({ hasActiveFlow: true, hasFailedFlow: false });
     });
 
-    it('should detect a completed flow', async () => {
+    it('should not treat a completed flow as durable authorization', async () => {
       const mockFlowState = {
         status: 'COMPLETED',
         createdAt: Date.now() - 60000,
@@ -420,11 +396,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       const result = await checkOAuthFlowStatus(mockUserId, mockServerName);
 
-      expect(result).toEqual({
-        hasActiveFlow: false,
-        hasFailedFlow: false,
-        hasCompletedFlow: true,
-      });
+      expect(result).toEqual({ hasActiveFlow: false, hasFailedFlow: false });
     });
 
     it('should handle errors gracefully', async () => {
@@ -438,11 +410,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       const result = await checkOAuthFlowStatus(mockUserId, mockServerName);
 
-      expect(result).toEqual({
-        hasActiveFlow: false,
-        hasFailedFlow: false,
-        hasCompletedFlow: false,
-      });
+      expect(result).toEqual({ hasActiveFlow: false, hasFailedFlow: false });
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Error checking OAuth flows'),
         mockError,
@@ -672,7 +640,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       });
     });
 
-    it('should report durable readiness from a completed OAuth flow on another pod', async () => {
+    it('should require bound token storage after a completed OAuth flow on another pod', async () => {
       const appConnections = new Map();
       const userConnections = new Map();
       const oauthServers = new Set([mockServerName]);
@@ -685,6 +653,8 @@ describe('tests for the new helper functions used by the MCP connection status e
         })),
       });
       mockGetLogStores.mockReturnValue({});
+      const { findToken } = require('~/models');
+      findToken.mockResolvedValue(null);
 
       const result = await getServerConnectionStatus(
         mockUserId,
@@ -697,8 +667,8 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       expect(result).toEqual({
         requiresOAuth: true,
-        connectionState: 'connected',
-        authorizationState: 'authorized',
+        connectionState: 'disconnected',
+        authorizationState: 'needs_authorization',
       });
     });
 

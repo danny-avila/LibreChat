@@ -110,6 +110,7 @@ describe('FlowStateManager', () => {
       const shortTimeoutManager = new FlowStateManager(store as unknown as Keyv, {
         ttl: 5000,
         monitorTimeout: 100,
+        retainedFailureTypes: ['mcp_oauth'],
         ci: true,
       });
 
@@ -196,8 +197,25 @@ describe('FlowStateManager', () => {
       await flowManager.failFlow(flowId, type, new Error('failure'));
 
       await expect(flowPromise).rejects.toThrow('failure');
-      await expect(flowManager.getFlowState(flowId, type)).resolves.toEqual(
-        expect.objectContaining({ status: 'FAILED', error: 'failure' }),
+      await expect(flowManager.getFlowState(flowId, type)).resolves.toBeUndefined();
+    }, 15000);
+
+    it('should retain configured failed flow types for status polling', async () => {
+      const flowId = 'retained-failure-flow';
+      const type = 'mcp_oauth';
+      const retainedManager = new FlowStateManager(store as unknown as Keyv, {
+        ttl: 5000,
+        retainedFailureTypes: [type],
+        ci: true,
+      });
+      const flowPromise = retainedManager.createFlow(flowId, type);
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await retainedManager.failFlow(flowId, type, new Error('provider rejected request'));
+
+      await expect(flowPromise).rejects.toThrow('provider rejected request');
+      await expect(retainedManager.getFlowState(flowId, type)).resolves.toEqual(
+        expect.objectContaining({ status: 'FAILED', error: 'provider rejected request' }),
       );
     }, 15000);
 

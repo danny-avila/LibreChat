@@ -61,6 +61,9 @@ jest.mock('@librechat/api', () => {
       getTokens: jest.fn(),
       deleteUserTokens: jest.fn(),
     },
+    MCPConnection: {
+      clearCooldown: jest.fn(),
+    },
     getUserMCPAuthMap: jest.fn(),
     generateCheckAccess: jest.fn(({ permissionType, permissions }) => (req, res, next) => {
       const { PermissionTypes, Permissions } = require('librechat-data-provider');
@@ -2206,6 +2209,7 @@ describe('MCP Routes', () => {
         oauthRequired: true,
         oauthUrl: 'https://oauth.example.com/auth',
         flowId: 'test-user-id:oauth-server',
+        oauthTimeout: expect.any(Number),
       });
     });
 
@@ -3038,6 +3042,8 @@ describe('MCP Routes', () => {
   });
 
   describe('POST /servers', () => {
+    const { MCPConnection } = require('@librechat/api');
+
     it('should create MCP server with valid SSE config', async () => {
       const validConfig = {
         type: 'sse',
@@ -3068,6 +3074,8 @@ describe('MCP Routes', () => {
         'test-user-id',
         [],
       );
+      const inspectionServerName = mockRegistryInstance.addServer.mock.calls[0][0];
+      expect(MCPConnection.clearCooldown).toHaveBeenCalledWith(inspectionServerName);
     });
 
     it('should reserve config-managed server names when creating MCP server', async () => {
@@ -3252,6 +3260,8 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ message: 'Database connection failed' });
+      const inspectionServerName = mockRegistryInstance.addServer.mock.calls[0][0];
+      expect(MCPConnection.clearCooldown).toHaveBeenCalledWith(inspectionServerName);
     });
 
     describe('OBO permission gate', () => {

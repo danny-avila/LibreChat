@@ -62,6 +62,8 @@ export interface MCPReinitializeResponse {
   oauthUrl?: string | null;
   /** Shared OAuth attempt identifier used to poll durable flow state. */
   flowId?: string;
+  /** Server-configured OAuth completion window in milliseconds. */
+  oauthTimeout?: number;
   failureReason?: MCPReinitializeFailureReason;
   missingUserVars?: string[];
   /** True when the server uses request-scoped placeholders and the connection

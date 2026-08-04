@@ -791,6 +791,7 @@ router.post(
         message,
         oauthUrl,
         flowId,
+        oauthTimeout: oauthRequired ? mcpSettings.OAUTH_HANDLING_TIMEOUT : undefined,
         serverName,
         oauthRequired,
         failureReason,

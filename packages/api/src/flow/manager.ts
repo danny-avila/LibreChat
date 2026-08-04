@@ -29,13 +29,14 @@ export class FlowStateManager<T = unknown> {
   private keyv: Keyv;
   private ttl: number;
   private monitorTimeout: number;
+  private retainedFailureTypes: Set<string>;
   private intervals: Set<NodeJS.Timeout>;
 
   constructor(store: Keyv, options?: FlowManagerOptions) {
     if (!options) {
       options = { ttl: 60000 * 3 };
     }
-    const { ci = false, ttl, monitorTimeout = ttl } = options;
+    const { ci = false, ttl, monitorTimeout = ttl, retainedFailureTypes = [] } = options;
 
     if (!ci && !(store instanceof Keyv)) {
       throw new Error('Invalid store provided to FlowStateManager');
@@ -43,6 +44,7 @@ export class FlowStateManager<T = unknown> {
 
     this.ttl = ttl;
     this.monitorTimeout = monitorTimeout;
+    this.retainedFailureTypes = new Set(retainedFailureTypes);
     this.keyv = store;
     this.intervals = new Set();
 
@@ -231,6 +233,9 @@ export class FlowStateManager<T = unknown> {
             if (flowState.status === 'COMPLETED' && flowState.result !== undefined) {
               resolve(flowState.result);
             } else if (flowState.status === 'FAILED') {
+              if (!this.retainedFailureTypes.has(type)) {
+                await this.keyv.delete(flowKey);
+              }
               reject(new Error(flowState.error ?? `${type} flow failed`));
             }
             return;
@@ -243,14 +248,18 @@ export class FlowStateManager<T = unknown> {
               `[${flowKey}] Flow timed out | Elapsed time: ${elapsedTime} | Timeout: ${this.monitorTimeout}`,
             );
             const message = `${type} flow timed out`;
-            const remainingTtl = Math.max(1, this.ttl - elapsedTime);
-            const timedOutState: FlowState<T> = {
-              ...flowState,
-              status: 'FAILED',
-              error: message,
-              failedAt: Date.now(),
-            };
-            await this.keyv.set(flowKey, timedOutState, remainingTtl);
+            if (this.retainedFailureTypes.has(type)) {
+              const remainingTtl = Math.max(1, this.ttl - elapsedTime);
+              const timedOutState: FlowState<T> = {
+                ...flowState,
+                status: 'FAILED',
+                error: message,
+                failedAt: Date.now(),
+              };
+              await this.keyv.set(flowKey, timedOutState, remainingTtl);
+            } else {
+              await this.keyv.delete(flowKey);
+            }
             reject(new Error(message));
             return;
           }

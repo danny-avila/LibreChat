@@ -26,6 +26,7 @@ function getFlowStateManager(flowsCache) {
     flowManager = new FlowStateManager(flowsCache, {
       ttl: mcpConfig.OAUTH_FLOW_TTL,
       monitorTimeout: mcpConfig.OAUTH_HANDLING_TIMEOUT,
+      retainedFailureTypes: ['mcp_oauth'],
     });
   }
   return flowManager;
