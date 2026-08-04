@@ -514,7 +514,7 @@ const requestMemoriesCache = new WeakMap<object, Map<string, Promise<FormattedMe
 /** Cache key for a partition; both dimensions participate, so an agent's
  *  memories inside a project never alias the project's own. */
 const requestPartitionKey = (agentId?: string, chatProjectId?: string): string =>
-  `${agentId ?? ''}:${chatProjectId ?? ''}`;
+  `${encodeURIComponent(agentId ?? '')}:${encodeURIComponent(chatProjectId ?? '')}`;
 
 export function getRequestMemories({
   req,
