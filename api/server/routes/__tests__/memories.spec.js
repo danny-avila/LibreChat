@@ -104,6 +104,23 @@ describe('memories routes', () => {
       expect(createMemory).not.toHaveBeenCalled();
     });
 
+    it('trims the new key before validating and renaming', async () => {
+      const { deleteMemory } = require('~/models');
+      getUserMemories
+        .mockResolvedValueOnce([{ key: 'my_key', value: 'old value', tokenCount: 5 }])
+        .mockResolvedValueOnce([{ key: 'new_key', value: 'updated value', tokenCount: 5 }]);
+      createMemory.mockResolvedValue({ ok: true });
+      deleteMemory.mockResolvedValue({ ok: true });
+
+      const response = await request(app)
+        .patch('/api/memories/my_key')
+        .send({ key: '  new_key  ', value: 'updated value' });
+
+      expect(response.status).toBe(200);
+      expect(createMemory).toHaveBeenCalledWith(expect.objectContaining({ key: 'new_key' }));
+      expect(deleteMemory).toHaveBeenCalledWith(expect.objectContaining({ key: 'my_key' }));
+    });
+
     it('updates the value when the key is unchanged', async () => {
       getUserMemories
         .mockResolvedValueOnce([{ key: 'my_key', value: 'old value', tokenCount: 5 }])
