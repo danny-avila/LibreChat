@@ -196,13 +196,28 @@ function QueuedRowBase({
     closeEdit();
   }, [closeEdit, message.id, steering]);
 
+  const emptyEditRef = useRef(false);
+  emptyEditRef.current = emptyEdit;
+  const closeEditRef = useRef(closeEdit);
+  closeEditRef.current = closeEdit;
+  const abandonEditRef = useRef(abandonEdit);
+  abandonEditRef.current = abandonEdit;
+
   /** A row whose send is pending closes its editor: the words are already
-   *  written, and a countdown is no moment to keep typing into. */
+   *  written, and a countdown is no moment to keep typing into. An EMPTY editor
+   *  is resolved the way Escape resolves it — the blank was never written, so
+   *  closing it alone would leave the queue holding words the screen no longer
+   *  shows, and the drain would send those. */
   useEffect(() => {
-    if (sendPending) {
-      closeEdit();
+    if (!sendPending) {
+      return;
     }
-  }, [closeEdit, sendPending]);
+    if (emptyEditRef.current) {
+      abandonEditRef.current();
+      return;
+    }
+    closeEditRef.current();
+  }, [sendPending]);
 
   /** An ordinary row is a living draft: it is rewritten in place. A recovered
    *  row's words are bound to a parked server source matched by exact text, so
@@ -547,7 +562,10 @@ function QueuedOutboxBase({
               steering={steering}
               conversationId={conversationId}
               interruptPending={interruptPending}
-              canBump={position > 0}
+              /** A promotion lifts a row to the top of the promotions tier,
+               *  which is still below every interrupt — so offering it when
+               *  only interrupts sit ahead would advertise a no-op. */
+              canBump={queued.slice(0, position).some((ahead) => ahead.priority !== true)}
               sendPending={sendPending}
               onRestoreToComposer={onRestoreToComposer}
             />

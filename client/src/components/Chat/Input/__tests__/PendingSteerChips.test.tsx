@@ -732,6 +732,41 @@ describe('PendingSteerChips — queued outbox group', () => {
     expect(mockBumpQueued).toHaveBeenCalledWith('q2');
   });
 
+  /** A promotion lifts a row to the top of the promotions tier, which is still
+   *  below every interrupt — so with only interrupts ahead the button would
+   *  advertise a no-op. */
+  it('offers no Send next when only an unmovable interrupt is ahead', () => {
+    renderChips(
+      [
+        { id: 'armed', text: 'interrupt', createdAt: 2, priority: true },
+        { id: 'plain', text: 'ordinary', createdAt: 1 },
+      ],
+      { steering: outboxSteering() },
+    );
+    fireEvent.click(screen.getByTestId('queue-group-toggle'));
+
+    expect(screen.queryByTestId('queued-send-next')).toBeNull();
+  });
+
+  it('still offers Send next past a movable row that sits behind an interrupt', () => {
+    renderChips(
+      [
+        { id: 'armed', text: 'interrupt', createdAt: 3, priority: true },
+        { id: 'first', text: 'ordinary one', createdAt: 1 },
+        { id: 'second', text: 'ordinary two', createdAt: 2 },
+      ],
+      { steering: outboxSteering() },
+    );
+    fireEvent.click(screen.getByTestId('queue-group-toggle'));
+
+    // Only the last row: it can overtake `first`, while `first` can overtake
+    // nothing but the interrupt.
+    const bumps = screen.getAllByTestId('queued-send-next');
+    expect(bumps).toHaveLength(1);
+    fireEvent.click(bumps[0]);
+    expect(mockBumpQueued).toHaveBeenCalledWith('second');
+  });
+
   it('merges the batch into one turn', () => {
     renderChips(twoQueued, { steering: outboxSteering() });
     fireEvent.click(screen.getByTestId('queue-group-toggle'));
@@ -979,6 +1014,26 @@ describe('PendingSteerChips — queued row editing', () => {
     // Resolving the edit brings them back.
     fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: 'rewritten' } });
     expect(screen.getByText('com_ui_steer').closest('button')).not.toBeDisabled();
+  });
+
+  /** The blank was never written, so closing the editor alone would leave the
+   *  queue holding words the screen no longer shows — and the drain sends the
+   *  queue. Resolve it the way Escape does. */
+  it('restores the original when a send arrives on an emptied editor', () => {
+    renderChips([twoQueued[0]], { steering: outboxSteering() });
+
+    fireEvent.click(screen.getByText('first thought'));
+    fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: '' } });
+
+    act(() => {
+      setHoldForTest!({
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 4_000_000_000_000,
+      });
+    });
+
+    expect(mockUpdateQueuedText).toHaveBeenLastCalledWith('q1', 'first thought');
+    expect(screen.queryByTestId('queued-message-edit')).toBeNull();
   });
 
   /** The shortcut proxy targets this row but lives in the group, and the
