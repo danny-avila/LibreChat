@@ -767,12 +767,62 @@ describe('PendingSteerChips — queued outbox group', () => {
     expect(mockBumpQueued).toHaveBeenCalledWith('second');
   });
 
+  /** Promotion eligibility is computed in one pass, so verify the rule still
+   *  holds for a queue deep enough that the old per-row prefix scan mattered. */
+  it('offers Send next on every row past the first movable one, at depth', () => {
+    const deep = [
+      { id: 'armed', text: 'interrupt', createdAt: 9, priority: true },
+      ...Array.from({ length: 5 }, (_, i) => ({
+        id: `q${i}`,
+        text: `ordinary ${i}`,
+        createdAt: i,
+      })),
+    ];
+    renderChips(deep, { steering: outboxSteering() });
+    fireEvent.click(screen.getByTestId('queue-group-toggle'));
+
+    // The interrupt and the first ordinary row cannot overtake anything.
+    expect(screen.getAllByTestId('queued-send-next')).toHaveLength(4);
+  });
+
   it('merges the batch into one turn', () => {
     renderChips(twoQueued, { steering: outboxSteering() });
     fireEvent.click(screen.getByTestId('queue-group-toggle'));
     fireEvent.click(screen.getByTestId('queue-merge'));
 
     expect(mockMergeQueued).toHaveBeenCalledTimes(1);
+  });
+
+  /** Folding reads the queue, so an emptied editor would carry the words the
+   *  user just deleted into the merged message. */
+  it('refuses to merge while an inline edit is empty', () => {
+    renderChips(twoQueued, { steering: outboxSteering() });
+    fireEvent.click(screen.getByTestId('queue-group-toggle'));
+
+    const rows = screen.getAllByTestId('queued-message-row');
+    fireEvent.click(rows[1].querySelector('span[title]') as HTMLElement);
+    fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: '  ' } });
+
+    const merge = screen.getByTestId('queue-merge');
+    expect(merge).toBeDisabled();
+    fireEvent.click(merge);
+    expect(mockMergeQueued).not.toHaveBeenCalled();
+
+    // Resolving the edit releases it.
+    fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: 'rewritten' } });
+    expect(screen.getByTestId('queue-merge')).not.toBeDisabled();
+  });
+
+  /** Collapsing unmounts the rows, so the disclosure's own text is the queue's
+   *  only description — an aria-label would overwrite it. */
+  it('announces the count and next-up preview as the disclosure name', () => {
+    renderChips(twoQueued, { steering: outboxSteering() });
+
+    const toggle = screen.getByTestId('queue-group-toggle');
+    expect(toggle).not.toHaveAttribute('aria-label');
+    expect(toggle).toHaveAccessibleName(/com_ui_queue_count/);
+    expect(toggle).toHaveAccessibleName(/com_ui_queue_next_up/);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('refuses to merge while a recovered row holds a parked server source', () => {

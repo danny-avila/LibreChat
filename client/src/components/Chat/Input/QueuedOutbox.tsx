@@ -458,6 +458,15 @@ function QueuedOutboxBase({
   const [expanded, setExpanded] = useAtom(queueExpandedFamily(steering.queueKey));
   const emptyEditId = useAtomValue(queueEmptyEditFamily(steering.queueKey));
   const mergeable = useMemo(() => queued.every(isMergeableQueuedMessage), [queued]);
+  /** Folding reads the queue, so an unresolved empty edit would carry the words
+   *  the user just deleted into the merged message. Same standdown the senders
+   *  use — the row's own controls, the drain, and the shortcut proxy. */
+  const mergeBlockedReason = (() => {
+    if (!mergeable) {
+      return localize('com_ui_queue_merge_blocked');
+    }
+    return emptyEditId != null ? localize('com_ui_queue_edit_empty') : undefined;
+  })();
   /** The shortcut's promise is the NEWEST waiting message, which is not the
    *  last array slot once a promotion has reordered the queue — so pick by
    *  stamp. Recovery-bound rows are skipped because steering refuses them
@@ -475,6 +484,14 @@ function QueuedOutboxBase({
     return newest;
   }, [queued]);
   const [next] = queued;
+  /** Index of the first row a promotion could overtake. Computed once: the
+   *  per-row prefix scan it replaces allocated and walked a slice for every
+   *  row, and the write-through editor re-renders this list on every
+   *  keystroke. */
+  const firstOvertakeable = useMemo(
+    () => queued.findIndex((item) => item.priority !== true),
+    [queued],
+  );
 
   const clearAll = useCallback(() => {
     void (async () => {
@@ -528,7 +545,10 @@ function QueuedOutboxBase({
       <button
         type="button"
         aria-expanded={expanded}
-        aria-label={localize(expanded ? 'com_ui_queue_collapse' : 'com_ui_queue_expand')}
+        /* Deliberately unlabelled: the accessible name comes from the count and
+         * next-up preview inside, which is the only description of the queue
+         * while the rows are unmounted. `aria-expanded` carries the show/hide
+         * state, so a label would only overwrite that summary. */
         data-testid="queue-group-toggle"
         onClick={() => setExpanded((prev) => !prev)}
         className={cn(ROW_CLASS, 'relative text-left hover:bg-surface-hover')}
@@ -565,7 +585,7 @@ function QueuedOutboxBase({
               /** A promotion lifts a row to the top of the promotions tier,
                *  which is still below every interrupt — so offering it when
                *  only interrupts sit ahead would advertise a no-op. */
-              canBump={queued.slice(0, position).some((ahead) => ahead.priority !== true)}
+              canBump={firstOvertakeable !== -1 && position > firstOvertakeable}
               sendPending={sendPending}
               onRestoreToComposer={onRestoreToComposer}
             />
@@ -578,8 +598,8 @@ function QueuedOutboxBase({
             type="button"
             className={PRIMARY_BTN_CLASS}
             data-testid="queue-merge"
-            disabled={!mergeable}
-            title={mergeable ? undefined : localize('com_ui_queue_merge_blocked')}
+            disabled={mergeBlockedReason != null}
+            title={mergeBlockedReason}
             onClick={() => steering.mergeQueued()}
           >
             <Merge className="h-4 w-4" aria-hidden="true" />
