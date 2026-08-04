@@ -108,7 +108,7 @@ function findMatch(text: string, patterns: CompiledPattern[]): CompiledPattern |
 export interface PiiMatch {
   id: string;
   label: string;
-  /** Set when the filter is configured but every pattern failed to compile; block without a real matched label. */
+  /** Set when a configured custom pattern failed to compile; block without a real matched label. */
   misconfigured?: boolean;
 }
 

@@ -250,13 +250,13 @@ describe('messageFilterPii middleware', () => {
   });
 
   it('fails closed when a custom pattern fails to compile, blocking even benign text', () => {
-    const config = {
+    const config: MessageFilterPiiConfig = {
       starterPatterns: [],
       customPatterns: [
         { id: 'broken', label: 'Broken', regex: '(' },
         { id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' },
       ],
-    } as unknown as MessageFilterPiiConfig;
+    };
     // A dropped pattern means the config no longer enforces what the operator declared, so
     // every request is blocked rather than silently enforcing only the surviving subset.
     const benign = runMiddleware(config, { text: 'plain text' });
@@ -313,9 +313,9 @@ describe('messageFilterPii middleware', () => {
     // The partial-drop case: with starterPatterns omitted the three defaults survive, so the
     // pattern set is non-empty; failing closed must key off the drop, not an empty set, or the
     // dropped rule's target passes silently.
-    const config = {
+    const config: MessageFilterPiiConfig = {
       customPatterns: [{ id: 'dup', label: 'Duplicate', regex: '(a)\\1' }],
-    } as unknown as MessageFilterPiiConfig;
+    };
     const { capturedRes, nextCalls } = runMiddleware(config, { text: 'aa' });
     expect(nextCalls).toBe(0);
     expect(capturedRes.status).toBe(400);
@@ -323,9 +323,10 @@ describe('messageFilterPii middleware', () => {
   });
 
   it('findPiiMatchInMessages flags misconfigured on a dropped pattern under default starters', () => {
-    const hit = findPiiMatchInMessages([{ role: 'user', content: 'aa' }], {
+    const config: MessageFilterPiiConfig = {
       customPatterns: [{ id: 'dup', label: 'Duplicate', regex: '(a)\\1' }],
-    } as unknown as MessageFilterPiiConfig);
+    };
+    const hit = findPiiMatchInMessages([{ role: 'user', content: 'aa' }], config);
     expect(hit?.misconfigured).toBe(true);
   });
 });
