@@ -793,6 +793,21 @@ function filteredSkillResult(
   return filteredContentResult(tc, req, extractSkillContent(projected));
 }
 
+function isFilteredSkillProjection(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  input: Parameters<typeof extractSkillContent>[0],
+): boolean {
+  try {
+    return filteredSkillResult(tc, req, input) != null;
+  } catch (error) {
+    if (isContentTraversalLimitError(error)) {
+      return true;
+    }
+    throw error;
+  }
+}
+
 function filteredFileNameResult(
   tc: ToolCallRequest,
   req: ServerRequest | undefined,
@@ -808,7 +823,10 @@ function uninspectableFileResult(
   tc: ToolCallRequest,
   req: ServerRequest | undefined,
 ): ToolExecuteResult | null {
-  const field = getBlockedUninspectableFileField(req?.config?.filters, ['content']);
+  const field = getBlockedUninspectableFileField(req?.config?.filters, [
+    'content',
+    'extracted_text',
+  ]);
   return field == null ? null : errorResult(tc, contentFilterUninspectableResponse(field).message);
 }
 
@@ -827,20 +845,29 @@ function filteredFileResult(
   content: string,
 ): ToolExecuteResult | null {
   const filters = req?.config?.filters;
-  if (!hasActiveFileFieldPolicy(filters, ['name', 'content'])) {
+  if (!hasActiveFileFieldPolicy(filters, ['name', 'content', 'extracted_text'])) {
     return null;
   }
   const filteredName = filteredFileNameResult(tc, req, filename);
   if (filteredName != null) {
     return filteredName;
   }
-  if (!hasActiveFileFieldPolicy(filters, ['content'])) {
+  const inspectRawContent = hasActiveFileFieldPolicy(filters, ['content']);
+  const inspectExtractedText = hasActiveFileFieldPolicy(filters, ['extracted_text']);
+  if (!inspectRawContent && !inspectExtractedText) {
     return null;
   }
   if (looksBinary(content)) {
     return uninspectableFileResult(tc, req);
   }
-  return filteredContentResult(tc, req, extractFileContent({ content }));
+  return filteredContentResult(
+    tc,
+    req,
+    extractFileContent({
+      ...(inspectRawContent && { content }),
+      ...(inspectExtractedText && { extractedText: content }),
+    }),
+  );
 }
 
 function successResult(
@@ -2063,6 +2090,15 @@ async function writeSandboxTextForAuthoring({
   if (filtered != null) {
     return filtered;
   }
+  let diff =
+    oldContent !== undefined ? createUnifiedDiff(filePath, oldContent, content) : undefined;
+  if (
+    diff &&
+    (filteredFileResult(tc, req, filePath, oldContent ?? '') != null ||
+      filteredFileResult(tc, req, filePath, diff) != null)
+  ) {
+    diff = undefined;
+  }
   const ctx = sandboxSessionContext(tc, sandboxContext);
   let writeResult: Awaited<ReturnType<NonNullable<ToolExecuteOptions['writeSandboxFile']>>>;
   try {
@@ -2086,8 +2122,6 @@ async function writeSandboxTextForAuthoring({
     return errorResult(tc, `Failed to write "${filePath}" to the code-execution sandbox.`);
   }
 
-  const diff =
-    oldContent !== undefined ? createUnifiedDiff(filePath, oldContent, content) : undefined;
   const action = created ? 'Created' : 'Updated';
   const summary = `${action} ${filePath} (${content.length} chars).`;
   return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
@@ -2749,6 +2783,19 @@ async function writeSkillMd({
   if (!options.updateSkill) {
     return errorResult(tc, 'Skill updating is not configured.');
   }
+  let diff = createUnifiedDiff(`${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`, skill.body, content);
+  if (
+    diff &&
+    (isFilteredSkillProjection(tc, req, {
+      name: skill.name,
+      description: skill.description,
+      body: skill.body,
+      frontmatter: skill.frontmatter,
+    }) ||
+      isFilteredSkillProjection(tc, req, { body: diff }))
+  ) {
+    diff = '';
+  }
   const result = await options.updateSkill({
     id: skill._id.toString(),
     expectedVersion: skill.version,
@@ -2773,11 +2820,6 @@ async function writeSkillMd({
     return errorResult(tc, `Skill "${skillName}" not found or not accessible.`);
   }
 
-  const diff = createUnifiedDiff(
-    `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
-    skill.body,
-    content,
-  );
   const summary = `Updated ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`;
   const surfacedWarnings = surfaceSkillAuthoringWarnings(result.warnings);
   const summaryWithWarnings = `${summary}${surfacedWarnings?.contentSuffix ?? ''}`;
@@ -2843,6 +2885,22 @@ async function writeBundledSkillFile({
     return fileFiltered;
   }
 
+  let diff =
+    oldContent !== undefined ? createUnifiedDiff(displayPath, oldContent, content) : undefined;
+  if (
+    diff &&
+    (isFilteredSkillProjection(tc, req, {
+      files: [{ filename: displayPath, content: oldContent }],
+    }) ||
+      filteredFileResult(tc, req, displayPath, oldContent ?? '') != null ||
+      isFilteredSkillProjection(tc, req, {
+        files: [{ filename: displayPath, content: diff }],
+      }) ||
+      filteredFileResult(tc, req, displayPath, diff) != null)
+  ) {
+    diff = undefined;
+  }
+
   await options.saveSkillFileContent({
     req,
     skillId: skill._id,
@@ -2850,8 +2908,6 @@ async function writeBundledSkillFile({
     content,
     mimeType: guessMimeType(relativePath),
   });
-  const diff =
-    oldContent !== undefined ? createUnifiedDiff(displayPath, oldContent, content) : undefined;
   const action = created ? 'Created' : 'Updated';
   const summary = `${action} ${displayPath} (${content.length} chars).`;
   return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {

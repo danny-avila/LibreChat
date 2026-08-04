@@ -21,6 +21,7 @@ const {
   contentFilterBlockResponse,
   contentFilterUninspectableResponse,
   getBlockedUninspectableFileField,
+  canInspectUploadExtractedTextAfterProcessing,
   canInspectUploadTranscriptAfterProcessing,
 } = require('@librechat/api');
 const {
@@ -731,6 +732,17 @@ router.post('/', async (req, res) => {
     const inspectRawContent = hasActiveFileFieldPolicy(filters, ['content']);
     const inspectExtractedText = hasActiveFileFieldPolicy(filters, ['extracted_text']);
     const inspectTranscript = hasActiveFileFieldPolicy(filters, ['transcript']);
+    const canInspectExtractedTextAfterProcessing =
+      inspectExtractedText && typeof req.file?.mimetype === 'string'
+        ? canInspectUploadExtractedTextAfterProcessing({
+            endpoint: metadata.endpoint,
+            toolResource: metadata.tool_resource,
+            mimeType: req.file.mimetype,
+            fileConfig: mergeFileConfig(req.config?.fileConfig),
+            ocrConfigured: req.config?.ocr != null,
+            ragConfigured: !!process.env.RAG_API_URL,
+          })
+        : false;
     if (inspectTranscript && typeof req.file?.mimetype === 'string') {
       const fileConfig = mergeFileConfig(req.config?.fileConfig);
       const shouldTranscribe = fileConfig.checkType(
@@ -754,6 +766,8 @@ router.post('/', async (req, res) => {
         'content',
         'extracted_text',
       ]);
+      const deferExtractedTextFailClose =
+        uninspectableField === 'extracted_text' && canInspectExtractedTextAfterProcessing;
       if (req.file.size > MAX_FILTERABLE_TEXT_BYTES) {
         if (uninspectableField != null && isTextUpload(req.file)) {
           return res.status(413).json({
@@ -763,13 +777,13 @@ router.post('/', async (req, res) => {
             field: inspectRawContent ? 'content' : 'extracted_text',
           });
         }
-        if (uninspectableField != null) {
+        if (uninspectableField != null && !deferExtractedTextFailClose) {
           return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
         }
       } else {
         const buffer = await fs.readFile(req.file.path);
         if (isBinaryBuffer(buffer)) {
-          if (uninspectableField != null) {
+          if (uninspectableField != null && !deferExtractedTextFailClose) {
             return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
           }
         } else {

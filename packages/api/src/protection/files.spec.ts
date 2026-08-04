@@ -1,20 +1,141 @@
-import { EToolResources } from 'librechat-data-provider';
+import { EToolResources, mergeFileConfig } from 'librechat-data-provider';
 import type { FiltersConfig } from 'librechat-data-provider';
 import {
+  canInspectUploadExtractedTextAfterProcessing,
   canInspectUploadTranscriptAfterProcessing,
   isFileFilterFieldEnabled,
   contentFilterUninspectableResponse,
   getBlockedOpaqueFileField,
   getBlockedUninspectableFileField,
   getBlockedUninspectableSkillFileField,
+  getUploadExtractedTextPlan,
   hasActiveFileFieldPolicy,
   hasActiveFilePolicy,
   omitResolvedCanonicalFileLocators,
   resolveCanonicalFileReferences,
+  UPLOAD_EXTRACTED_TEXT_PLANS,
   UninspectableFileError,
 } from './files';
 
 describe('file content inspection policy', () => {
+  it('defers extracted-text fail-close only to supported agent context extraction paths', () => {
+    const noConfiguredExtraction = mergeFileConfig({
+      ocr: { supportedMimeTypes: [] },
+      text: { supportedMimeTypes: [] },
+    });
+    const baseInput = {
+      endpoint: 'agents',
+      toolResource: EToolResources.context,
+      fileConfig: noConfiguredExtraction,
+      ocrConfigured: false,
+      ragConfigured: false,
+    };
+
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        mimeType: 'application/pdf',
+      }),
+    ).toBe(true);
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    ).toBe(true);
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        endpoint: 'assistants',
+        mimeType: 'application/pdf',
+      }),
+    ).toBe(false);
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        toolResource: EToolResources.file_search,
+        mimeType: 'application/pdf',
+      }),
+    ).toBe(false);
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        mimeType: 'application/x-unsupported',
+      }),
+    ).toBe(false);
+
+    const configuredNonDocumentText = mergeFileConfig({
+      ocr: { supportedMimeTypes: [] },
+      text: { supportedMimeTypes: ['application/x-rag-document'] },
+    });
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        mimeType: 'application/x-rag-document',
+        fileConfig: configuredNonDocumentText,
+        ragConfigured: true,
+      }),
+    ).toBe(false);
+
+    const defaultExtraction = mergeFileConfig(undefined);
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        mimeType: 'application/octet-stream',
+        fileConfig: defaultExtraction,
+        ragConfigured: true,
+      }),
+    ).toBe(false);
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        mimeType: 'audio/mpeg',
+        fileConfig: defaultExtraction,
+        ragConfigured: true,
+      }),
+    ).toBe(false);
+
+    const configuredDocumentRAG = mergeFileConfig({
+      ocr: { supportedMimeTypes: [] },
+      text: { supportedMimeTypes: ['application/pdf'] },
+    });
+    expect(
+      getUploadExtractedTextPlan({
+        ...baseInput,
+        mimeType: 'application/pdf',
+        fileConfig: configuredDocumentRAG,
+        ragConfigured: true,
+      }),
+    ).toBe(UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG);
+    expect(
+      getUploadExtractedTextPlan({
+        ...baseInput,
+        mimeType: 'application/pdf',
+        fileConfig: configuredDocumentRAG,
+      }),
+    ).toBe(UPLOAD_EXTRACTED_TEXT_PLANS.documentParser);
+
+    const configuredOCR = mergeFileConfig({
+      ocr: { supportedMimeTypes: ['application/x-ocr-document'] },
+      text: { supportedMimeTypes: [] },
+    });
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        mimeType: 'application/x-ocr-document',
+        fileConfig: configuredOCR,
+      }),
+    ).toBe(false);
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        mimeType: 'application/x-ocr-document',
+        fileConfig: configuredOCR,
+        ocrConfigured: true,
+      }),
+    ).toBe(true);
+  });
+
   it('defers transcript fail-close only to STT-supported non-assistant context uploads', () => {
     expect(
       canInspectUploadTranscriptAfterProcessing({

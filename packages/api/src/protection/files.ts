@@ -1,11 +1,13 @@
 import {
   EToolResources,
   FILE_FILTER_FIELDS,
+  documentParserMimeTypes,
   hasActivePiiFields,
   hasActivePiiPatterns,
   isAssistantsEndpoint,
+  isPermissiveMimeConfig,
 } from 'librechat-data-provider';
-import type { FileFilterField, FiltersConfig } from 'librechat-data-provider';
+import type { FileConfig, FileFilterField, FiltersConfig } from 'librechat-data-provider';
 import {
   ContentTraversalLimitError,
   escapeJsonPointer,
@@ -171,17 +173,80 @@ export function getBlockedUninspectableFileField(
   return null;
 }
 
+function isAgentContextUpload(input: {
+  readonly endpoint?: string;
+  readonly toolResource?: string;
+}): boolean {
+  return !isAssistantsEndpoint(input.endpoint) && input.toolResource === EToolResources.context;
+}
+
 /** Whether a context upload has a downstream STT step that can inspect its transcript. */
 export function canInspectUploadTranscriptAfterProcessing(input: {
   readonly endpoint?: string;
   readonly toolResource?: string;
   readonly sttSupported: boolean;
 }): boolean {
-  return (
-    input.sttSupported &&
-    !isAssistantsEndpoint(input.endpoint) &&
-    input.toolResource === EToolResources.context
+  return input.sttSupported && isAgentContextUpload(input);
+}
+
+export const UPLOAD_EXTRACTED_TEXT_PLANS = {
+  configuredOCR: 'configured_ocr',
+  configuredRAG: 'configured_rag',
+  documentParser: 'document_parser',
+} as const;
+
+export type UploadExtractedTextPlan =
+  (typeof UPLOAD_EXTRACTED_TEXT_PLANS)[keyof typeof UPLOAD_EXTRACTED_TEXT_PLANS];
+
+interface UploadExtractedTextPlanInput {
+  readonly endpoint?: string;
+  readonly toolResource?: string;
+  readonly mimeType: string;
+  readonly fileConfig: FileConfig;
+  readonly ocrConfigured: boolean;
+  readonly ragConfigured: boolean;
+}
+
+/**
+ * Selects only extraction paths that produce meaningful derived text without
+ * falling back to decoding arbitrary binary bytes as UTF-8.
+ */
+export function getUploadExtractedTextPlan(
+  input: UploadExtractedTextPlanInput,
+): UploadExtractedTextPlan | null {
+  if (!isAgentContextUpload(input)) {
+    return null;
+  }
+  const checkType = input.fileConfig.checkType;
+  if (
+    checkType != null &&
+    input.ocrConfigured &&
+    checkType(input.mimeType, input.fileConfig.ocr?.supportedMimeTypes ?? [])
+  ) {
+    return UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
+  }
+  const isDocumentParserEligible = documentParserMimeTypes.some((mimePattern) =>
+    mimePattern.test(input.mimeType),
   );
+  if (!isDocumentParserEligible) {
+    return null;
+  }
+  if (
+    checkType != null &&
+    input.ragConfigured &&
+    !isPermissiveMimeConfig(input.fileConfig.text?.supportedMimeTypes) &&
+    checkType(input.mimeType, input.fileConfig.text?.supportedMimeTypes ?? [])
+  ) {
+    return UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
+  }
+  return UPLOAD_EXTRACTED_TEXT_PLANS.documentParser;
+}
+
+/** Whether a context upload has a downstream extraction step that can inspect derived text. */
+export function canInspectUploadExtractedTextAfterProcessing(
+  input: UploadExtractedTextPlanInput,
+): boolean {
+  return getUploadExtractedTextPlan(input) != null;
 }
 
 /**

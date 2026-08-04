@@ -15,6 +15,7 @@ import {
 import type { TUserMemory } from 'librechat-data-provider';
 import { useDeleteMemoryMutation } from '~/data-provider';
 import MemoryEditDialog from './MemoryEditDialog';
+import { getMemoryAddress } from './address';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -28,6 +29,7 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const memoryAddress = getMemoryAddress(memory);
 
   const { mutate: deleteMemory, isLoading: isDeleting } = useDeleteMemoryMutation();
 
@@ -40,8 +42,11 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
   );
 
   const confirmDelete = () => {
+    if (!memoryAddress) {
+      return;
+    }
     deleteMemory(
-      { key: memory.key, agentId: memory.agentId },
+      { ...memoryAddress, agentId: memory.agentId },
       {
         onSuccess: () => {
           showToast({ message: localize('com_ui_deleted'), status: 'success' });
@@ -53,6 +58,10 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
       },
     );
   };
+
+  if (!memoryAddress) {
+    return null;
+  }
 
   return (
     <div className="flex items-center gap-0.5">
@@ -114,7 +123,7 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
             <Label className="text-left text-sm font-medium">
               <Trans
                 i18nKey="com_ui_delete_confirm_strong"
-                values={{ title: memory.key }}
+                values={{ title: memory.key || localize('com_ui_memory') }}
                 components={{ strong: <strong /> }}
               />
             </Label>

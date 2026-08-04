@@ -558,6 +558,238 @@ describe('File Routes - Agent Files Endpoint', () => {
     });
 
     it.each([
+      ['PDF', 'report.pdf', 'application/pdf'],
+      [
+        'DOCX',
+        'report.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ],
+    ])(
+      'lets a supported binary %s context document reach extracted-text processing',
+      async (_label, originalname, mimetype) => {
+        await createAgent({
+          id: agentCustomId,
+          name: 'Test Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: authorId,
+        });
+        const readFile = jest
+          .spyOn(fs, 'readFile')
+          .mockResolvedValueOnce(Buffer.from([0, 255, 0, 80, 68, 70]));
+        const testApp = createAppWithUser(
+          authorId,
+          SystemRoles.USER,
+          {
+            filters: {
+              files: {
+                pii: {
+                  fields: ['extracted_text'],
+                  uninspectable: 'block',
+                },
+              },
+            },
+          },
+          { originalname, mimetype },
+        );
+
+        const response = await request(testApp).post('/files').send({
+          endpoint: 'agents',
+          agent_id: agentCustomId,
+          tool_resource: 'context',
+          file_id: uuidv4(),
+        });
+
+        expect(response.status).toBe(200);
+        expect(processAgentFileUpload).toHaveBeenCalledWith(
+          expect.objectContaining({
+            req: expect.objectContaining({
+              file: expect.objectContaining({ mimetype }),
+            }),
+            metadata: expect.objectContaining({ tool_resource: EToolResources.context }),
+          }),
+        );
+        readFile.mockRestore();
+      },
+    );
+
+    it('returns a raw-free policy error when deferred document extraction fails', async () => {
+      await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+      const readFile = jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValueOnce(Buffer.from([0, 255, 0, 80, 68, 70]));
+      const parserFailure = Object.assign(
+        new Error('PRIVATE parser response and document fragment'),
+        { response: { status: 502, data: 'PRIVATE extracted content' } },
+      );
+      const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+      getStrategyFunctions.mockReturnValueOnce({
+        handleFileUpload: jest.fn().mockRejectedValue(parserFailure),
+      });
+      const { processAgentFileUpload: processAgentFileUploadActual } = jest.requireActual(
+        '~/server/services/Files/process',
+      );
+      processAgentFileUpload.mockImplementationOnce(processAgentFileUploadActual);
+      const testApp = createAppWithUser(
+        authorId,
+        SystemRoles.USER,
+        {
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+        { originalname: 'report.pdf', mimetype: 'application/pdf' },
+      );
+      const filesBefore = await File.countDocuments();
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'extracted_text',
+      });
+      expect(JSON.stringify(response.body)).not.toContain('PRIVATE');
+      expect(await File.countDocuments()).toBe(filesBefore);
+      readFile.mockRestore();
+    });
+
+    it('does not defer raw content fail-close when extracted text is also selected', async () => {
+      const readFile = jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValueOnce(Buffer.from([0, 255, 0, 80, 68, 70]));
+      const testApp = createAppWithUser(
+        authorId,
+        SystemRoles.USER,
+        {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content', 'extracted_text'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+        { originalname: 'report.pdf', mimetype: 'application/pdf' },
+      );
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'content',
+      });
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+      readFile.mockRestore();
+    });
+
+    it('does not defer extracted-text fail-close for non-context agent resources', async () => {
+      const readFile = jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValueOnce(Buffer.from([0, 255, 0, 80, 68, 70]));
+      const testApp = createAppWithUser(
+        authorId,
+        SystemRoles.USER,
+        {
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+        { originalname: 'report.pdf', mimetype: 'application/pdf' },
+      );
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'file_search',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'extracted_text',
+      });
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+      readFile.mockRestore();
+    });
+
+    it.each([
+      ['an unsupported binary', 'archive.bin', 'application/octet-stream'],
+      ['audio handled as a transcript', 'recording.mp3', 'audio/mpeg'],
+    ])('does not defer extracted-text fail-close for %s', async (_, originalname, mimetype) => {
+      const readFile = jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValueOnce(Buffer.from([0, 255, 0, 80, 68, 70]));
+      const testApp = createAppWithUser(
+        authorId,
+        SystemRoles.USER,
+        {
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+        { originalname, mimetype },
+      );
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'extracted_text',
+      });
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+      readFile.mockRestore();
+    });
+
+    it.each([
       [
         'an inert content policy',
         {

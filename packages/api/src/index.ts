@@ -45,6 +45,8 @@ export * from './flow/manager';
 export * from './middleware';
 /* Content protection */
 export * from './protection';
+/* Imports */
+export * from './imports';
 /* Memory */
 export * from './memory';
 /* Model Specs */

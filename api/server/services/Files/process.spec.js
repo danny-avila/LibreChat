@@ -37,6 +37,11 @@ jest.mock('@librechat/api', () => {
   const actualDataProvider = jest.requireActual('librechat-data-provider');
   const RetentionMode = actualDataProvider.RetentionMode ?? { ALL: 'all', TEMPORARY: 'temporary' };
   const getRetentionExpiry = jest.fn(() => ({}));
+  const UPLOAD_EXTRACTED_TEXT_PLANS = {
+    configuredOCR: 'configured_ocr',
+    configuredRAG: 'configured_rag',
+    documentParser: 'document_parser',
+  };
   const hasActiveFileFieldPolicy = jest.fn((filters, candidates) => {
     const pii = filters?.files?.pii;
     if (pii == null) {
@@ -58,10 +63,54 @@ jest.mock('@librechat/api', () => {
       );
     return (hasPatterns && fieldSelected) || failClosed;
   });
+  const hasActiveFilePolicy = jest.fn((filters) =>
+    hasActiveFileFieldPolicy(filters, ['name', 'content', 'extracted_text', 'transcript']),
+  );
+  const getSafeErrorMetadata = jest.fn((error) => ({
+    type: error instanceof Error ? 'Error' : 'UnknownError',
+    ...(Number.isInteger(error?.response?.status) && { status: error.response.status }),
+  }));
+  const getFileExtractionLogDetails = jest.fn(({ filters, filename, fileId, error }) => {
+    const contentProtected = hasActiveFilePolicy(filters);
+    return {
+      contentProtected,
+      fileLabel: contentProtected ? `file_id=${fileId}` : `"${filename}"`,
+      errorMetadata: contentProtected ? getSafeErrorMetadata(error) : error,
+    };
+  });
+  const getUploadExtractedTextPlan = jest.fn(
+    ({ mimeType, fileConfig, ocrConfigured, ragConfigured }) => {
+      const checkType = fileConfig.checkType;
+      if (ocrConfigured && checkType(mimeType, fileConfig.ocr?.supportedMimeTypes ?? [])) {
+        return UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
+      }
+      const isDocumentParserEligible = actualDataProvider.documentParserMimeTypes.some((pattern) =>
+        pattern.test(mimeType),
+      );
+      if (!isDocumentParserEligible) {
+        return null;
+      }
+      if (
+        ragConfigured &&
+        !actualDataProvider.isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
+        checkType(mimeType, fileConfig.text?.supportedMimeTypes ?? [])
+      ) {
+        return UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
+      }
+      return UPLOAD_EXTRACTED_TEXT_PLANS.documentParser;
+    },
+  );
   return {
     sanitizeFilename: jest.fn((n) => n),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
+    extractInspectableFileText: jest.fn(async ({ extract }) => extract()),
+    assertExtractedTextInspectable: jest.fn(),
+    getUploadExtractedTextPlan,
+    UPLOAD_EXTRACTED_TEXT_PLANS,
+    getFileExtractionLogDetails,
+    getSafeErrorMetadata,
+    hasActiveFilePolicy,
     inspectContent: jest.fn(),
     extractFileContent: jest.fn((input) => [input]),
     hasActiveFileFieldPolicy,
@@ -179,6 +228,7 @@ const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadVectors } = require('./VectorDB/crud');
+const { logger } = require('@librechat/data-schemas');
 const db = require('~/models');
 const {
   processAgentFileUpload,
@@ -191,6 +241,8 @@ const {
   inspectContent,
   extractFileContent,
   processAudioFile,
+  extractInspectableFileText,
+  assertExtractedTextInspectable,
   contentFilterBlockResponse,
 } = require('@librechat/api');
 
@@ -202,6 +254,18 @@ const ODS_MIME = 'application/vnd.oasis.opendocument.spreadsheet';
 const ODT_MIME = 'application/vnd.oasis.opendocument.text';
 const ODP_MIME = 'application/vnd.oasis.opendocument.presentation';
 const ODG_MIME = 'application/vnd.oasis.opendocument.graphics';
+
+const makeUninspectableExtractedTextError = () =>
+  Object.assign(new Error('Submitted file content could not be inspected.'), {
+    code: 'content_filter_uninspectable',
+    statusCode: 400,
+    body: {
+      error: 'content_filter_uninspectable',
+      message: 'Submitted file content could not be inspected before processing.',
+      source: 'file',
+      field: 'extracted_text',
+    },
+  });
 
 const makeReq = ({
   mimetype = PDF_MIME,
@@ -561,6 +625,115 @@ describe('processAgentFileUpload', () => {
       expect(parseText).not.toHaveBeenCalled();
     });
 
+    test('fails closed without persistence when strict extracted text cannot be produced', async () => {
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockRejectedValue(new Error('PRIVATE parser failure')),
+      });
+      extractInspectableFileText.mockImplementationOnce(async ({ extract }) => {
+        await extract();
+        throw makeUninspectableExtractedTextError();
+      });
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: null,
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              uninspectable: 'block',
+            },
+          },
+        },
+      });
+      req.file.originalname = 'PRIVATE-report.pdf';
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toMatchObject({
+        code: 'content_filter_uninspectable',
+        body: {
+          error: 'content_filter_uninspectable',
+          source: 'file',
+          field: 'extracted_text',
+        },
+      });
+
+      expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+      expect(db.createFile).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('file_id=file-uuid-123'), {
+        type: 'Error',
+      });
+      expect(JSON.stringify(logger.error.mock.calls)).not.toContain('PRIVATE');
+    });
+
+    test('fails closed without persistence when strict extracted text is blank', async () => {
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest
+          .fn()
+          .mockResolvedValue({ text: '   ', bytes: 3, filepath: 'doc://empty' }),
+      });
+      assertExtractedTextInspectable.mockImplementationOnce(() => {
+        throw makeUninspectableExtractedTextError();
+      });
+      const req = makeReq({
+        mimetype: DOCX_MIME,
+        ocrConfig: null,
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              uninspectable: 'block',
+            },
+          },
+        },
+      });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toMatchObject({
+        code: 'content_filter_uninspectable',
+        body: { field: 'extracted_text' },
+      });
+
+      expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
+
+    test('fails closed when generic configured text extraction throws', async () => {
+      const customMime = 'application/x-private-document';
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: [customMime] }));
+      const { parseText } = require('@librechat/api');
+      parseText.mockRejectedValueOnce(new Error('PRIVATE native extraction failure'));
+      extractInspectableFileText.mockImplementationOnce(async ({ extract }) => {
+        try {
+          await extract();
+        } catch {
+          throw makeUninspectableExtractedTextError();
+        }
+      });
+      const req = makeReq({
+        mimetype: customMime,
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              uninspectable: 'block',
+            },
+          },
+        },
+      });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toMatchObject({
+        code: 'content_filter_uninspectable',
+        body: { field: 'extracted_text' },
+      });
+
+      expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
+
     test('falls back to document_parser when configured OCR fails for a document MIME type', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
       const failingUpload = jest.fn().mockRejectedValue(new Error('OCR API returned 500'));
@@ -676,6 +849,41 @@ describe('processAgentFileUpload', () => {
         expect.objectContaining({ allowNativeFallback: false }),
       );
       expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+    });
+
+    test('fails closed when RAG and its document-parser fallback cannot extract text', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: DOCX_TEXT_REGEX }));
+      const { parseText } = require('@librechat/api');
+      parseText.mockRejectedValueOnce(new Error('PRIVATE RAG failure'));
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockRejectedValue(new Error('PRIVATE parser failure')),
+      });
+      extractInspectableFileText.mockImplementationOnce(async ({ extract }) => {
+        await extract();
+        throw makeUninspectableExtractedTextError();
+      });
+      const req = makeReq({
+        mimetype: DOCX_MIME,
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              uninspectable: 'block',
+            },
+          },
+        },
+      });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toMatchObject({
+        code: 'content_filter_uninspectable',
+        body: { field: 'extracted_text' },
+      });
+
+      expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+      expect(db.createFile).not.toHaveBeenCalled();
     });
 
     test('surfaces a persistence failure without retrying via the document parser', async () => {

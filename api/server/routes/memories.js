@@ -4,6 +4,8 @@ const {
   generateCheckAccess,
   inspectContent,
   extractMemoryContent,
+  projectStoredMemories,
+  createMemoryManagementHandlers,
   contentFilterBlockResponse,
 } = require('@librechat/api');
 const {
@@ -21,6 +23,8 @@ const {
   createMemory,
   deleteMemory,
   setMemory,
+  setMemoryById,
+  deleteMemoryById,
   getAgents,
 } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
@@ -53,6 +57,12 @@ const checkMemoryOptOut = generateCheckAccess({
   permissionType: PermissionTypes.MEMORIES,
   permissions: [Permissions.USE, Permissions.OPT_OUT],
   getRoleByName,
+});
+const opaqueMemoryHandlers = createMemoryManagementHandlers({
+  setMemoryById,
+  deleteMemoryById,
+  projectStoredMemories,
+  countTokens: (value) => Tokenizer.getTokenCount(value, 'o200k_base'),
 });
 
 router.use(requireJwtAuth);
@@ -110,8 +120,9 @@ const withAgentNames = async (memories, user) => {
 router.get('/', checkMemoryRead, configMiddleware, async (req, res) => {
   try {
     const memories = await getAllUserMemories(req.user.id);
+    const projectedMemories = projectStoredMemories(memories, req.config?.filters);
 
-    const sortedMemories = (await withAgentNames(memories, req.user)).sort(
+    const sortedMemories = (await withAgentNames(projectedMemories, req.user)).sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     );
 
@@ -138,8 +149,8 @@ router.get('/', checkMemoryRead, configMiddleware, async (req, res) => {
       charLimit,
       usagePercentage,
     });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (_error) {
+    res.status(500).json({ error: 'Failed to retrieve memories.' });
   }
 });
 
@@ -257,6 +268,15 @@ router.patch('/preferences', checkMemoryOptOut, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+router.patch(
+  '/id/:id',
+  memoryPayloadLimit,
+  checkMemoryUpdate,
+  configMiddleware,
+  opaqueMemoryHandlers.updateById,
+);
+router.delete('/id/:id', checkMemoryDelete, opaqueMemoryHandlers.deleteById);
 
 /**
  * PATCH /memories/:key

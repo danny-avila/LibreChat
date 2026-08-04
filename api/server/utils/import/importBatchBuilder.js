@@ -1,21 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const {
-  ContentFilterError,
-  UninspectableFileError,
   assertModelBoundContent,
-  createConfiguredContentInspector,
-  extractConversationImportContent,
-  getBlockedOpaqueFileField,
-  getContentTraversalFragments,
-  getContentTraversalScopes,
-  getUserSubmittedMessageFieldPathState,
-  getUserSubmittedPathState,
-  hasActiveFilePolicy,
-  inspectContent,
-  isContentTraversalProtected,
-  isContentTraversalLimitError,
-  isNestedMessageTraversalProtected,
-  resolveCanonicalFileReferences,
+  assertConversationImportContentAllowed,
 } = require('@librechat/api');
 const {
   logger,
@@ -25,7 +11,6 @@ const {
 const {
   EModelEndpoint,
   Constants,
-  HITL_MESSAGE_FILTER_FIELDS,
   RetentionMode,
   openAISettings,
 } = require('librechat-data-provider');
@@ -58,149 +43,11 @@ function createImportBatchBuilder(requestUserId, interfaceConfig, filters, legac
  * @returns {Promise<void>}
  * @throws {ContentFilterError|UninspectableFileError|import('@librechat/api').ContentTraversalLimitError}
  */
-async function assertConversationContentAllowed(
-  filters,
-  { conversations, messages },
-  resolutionContext = {},
-) {
-  const { legacyPii } = resolutionContext;
-  if (filters == null && legacyPii == null) {
-    return;
-  }
-
-  if (filters != null) {
-    let conversationFragments;
-    let conversationTraversalError;
-    try {
-      conversationFragments = extractConversationImportContent({
-        conversations,
-        messages: [],
-      });
-      conversationFragments = [...conversationFragments];
-    } catch (error) {
-      if (!isContentTraversalLimitError(error)) {
-        throw error;
-      }
-      conversationFragments = getContentTraversalFragments(error);
-      conversationTraversalError = error;
-    }
-    const conversationFinding = inspectContent(conversationFragments, { filters });
-    if (conversationFinding != null) {
-      throw new ContentFilterError(conversationFinding);
-    }
-    if (
-      conversationTraversalError != null &&
-      isContentTraversalProtected({
-        error: conversationTraversalError,
-        filters,
-      })
-    ) {
-      throw conversationTraversalError;
-    }
-  }
-
-  /**
-   * Imports mark every external row `isUserSubmitted`, while native
-   * copy/fork/share snapshots retain durable whole-row/path provenance.
-   * Reuse the final model-bound invariant so copied model prose is not
-   * retroactively classified as caller-authored content.
-   */
-  let storedMessages = messages;
-  let resolvedFiles = [];
-  if (hasActiveFilePolicy(filters)) {
-    const fileInspection = await resolveCanonicalFileReferences({
-      filters,
-      input: messages,
-      user: resolutionContext.user,
-      trustedLiveFiles: resolutionContext.trustedLiveFiles,
-      getFiles: resolutionContext.getFiles ?? (async () => []),
-    });
-    storedMessages = fileInspection.sanitizedInput;
-    resolvedFiles = fileInspection.hydratedFiles;
-  }
-
-  if (resolvedFiles.length > 0) {
-    assertModelBoundContent({
-      filters,
-      resolvedFiles,
-    });
-  }
-
-  for (const message of storedMessages) {
-    try {
-      assertModelBoundContent({
-        filters,
-        legacyPii,
-        storedMessages: [message],
-      });
-    } catch (error) {
-      if (!isContentTraversalLimitError(error)) {
-        throw error;
-      }
-
-      const submittedPathState = getUserSubmittedPathState(message);
-      const submittedMessageFieldState = getUserSubmittedMessageFieldPathState(message);
-      const explicitPaths = submittedPathState.paths;
-      const exactMessageFields = submittedMessageFieldState.entries.map((entry) => entry.field);
-      const isExactMessageFieldTraversal = getContentTraversalScopes(error).some(
-        (scope) =>
-          scope.source === 'message' &&
-          scope.fields.some((field) => HITL_MESSAGE_FILTER_FIELDS.includes(field)),
-      );
-      if (isExactMessageFieldTraversal) {
-        throw error;
-      }
-      const isStrictUnattributedAssistant =
-        filters?.messages?.unattributedAssistantContent === 'inspect' &&
-        typeof message.isUserSubmitted !== 'boolean' &&
-        explicitPaths.length === 0 &&
-        exactMessageFields.length === 0 &&
-        (message.isCreatedByUser === false ||
-          message.role === 'assistant' ||
-          message.role === 'ai');
-      const isWholeMessageSubmitted =
-        message.isCreatedByUser === true ||
-        message.isUserSubmitted === true ||
-        submittedPathState.overflowed ||
-        isStrictUnattributedAssistant;
-      const relevantFragments = getContentTraversalFragments(error).filter(
-        (fragment) =>
-          isWholeMessageSubmitted ||
-          fragment.source === 'tool_argument' ||
-          explicitPaths.some(
-            (path) => fragment.path === path || fragment.path.startsWith(`${path}/`),
-          ),
-      );
-      const messageFinding = createConfiguredContentInspector({ filters, legacyPii })?.inspect(
-        relevantFragments,
-      );
-      if (messageFinding != null) {
-        throw new ContentFilterError(messageFinding);
-      }
-
-      if (isWholeMessageSubmitted) {
-        const uninspectableField = getBlockedOpaqueFileField(filters, message);
-        if (uninspectableField != null) {
-          throw new UninspectableFileError(uninspectableField);
-        }
-      }
-
-      let traversalFilters = filters;
-      if (!isWholeMessageSubmitted && explicitPaths.length === 0 && filters != null) {
-        traversalFilters = { ...filters, messages: undefined };
-      }
-      if (
-        isNestedMessageTraversalProtected({
-          filters: traversalFilters,
-          legacyPii: isWholeMessageSubmitted || explicitPaths.length > 0 ? legacyPii : undefined,
-          roles:
-            isWholeMessageSubmitted || explicitPaths.length > 0 ? ['user'] : [message.role, 'tool'],
-        })
-      ) {
-        throw error;
-      }
-    }
-  }
+async function assertConversationContentAllowed(filters, snapshot, resolutionContext = {}) {
+  return assertConversationImportContentAllowed(filters, snapshot, {
+    ...resolutionContext,
+    assertModelBoundContent,
+  });
 }
 
 /**

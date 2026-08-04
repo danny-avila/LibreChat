@@ -247,6 +247,7 @@ export function isContentTraversalProtected(params: {
     isScopedTraversalProtected(scopes, 'tool_argument', params.filters?.toolArguments?.pii) ||
     isScopedTraversalProtected(scopes, 'message', params.filters?.messages?.pii) ||
     isScopedTraversalProtected(scopes, 'assembled_context', params.filters?.messages?.pii) ||
+    isScopedTraversalProtected(scopes, 'memory', params.filters?.memories?.pii) ||
     isScopedTraversalProtected(
       scopes,
       'agent_instruction',

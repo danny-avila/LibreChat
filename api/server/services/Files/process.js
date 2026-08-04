@@ -17,14 +17,17 @@ const {
   removeNullishValues,
   isAssistantsEndpoint,
   getEndpointFileConfig,
-  documentParserMimeTypes,
-  isPermissiveMimeConfig,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   sanitizeFilename,
   parseText,
   processAudioFile,
+  extractInspectableFileText,
+  assertExtractedTextInspectable,
+  getFileExtractionLogDetails,
+  getUploadExtractedTextPlan,
+  UPLOAD_EXTRACTED_TEXT_PLANS,
   inspectContent,
   extractFileContent,
   hasActiveFileFieldPolicy,
@@ -748,6 +751,14 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     // Note: File search processing continues to dual storage logic below
   } else if (tool_resource === EToolResources.context) {
     const { file_id, temp_file_id = null } = metadata;
+    const getExtractionLogDetails = (error) =>
+      getFileExtractionLogDetails({
+        filters: appConfig?.filters,
+        filename: file.originalname,
+        fileId: file_id,
+        error,
+      });
+    const { fileLabel: extractionFileLabel } = getExtractionLogDetails(undefined);
 
     /**
      * @param {object} params
@@ -765,6 +776,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       type = 'text/plain',
       isTranscript = false,
     }) => {
+      if (!isTranscript) {
+        assertExtractedTextInspectable({
+          filters: appConfig?.filters,
+          text,
+        });
+      }
       const textBytes = Buffer.byteLength(text, 'utf8');
       if (textBytes > 15 * megabyte) {
         throw new Error(
@@ -832,30 +849,18 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     };
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
-
-    const shouldUseConfiguredOCR =
-      appConfig?.ocr != null &&
-      fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
-
-    const isDocumentParserEligible = documentParserMimeTypes.some((regex) =>
-      regex.test(file.mimetype),
-    );
-
-    /**
-     * When an admin narrows `fileConfig.text.supportedMimeTypes` to a non-permissive allowlist that
-     * includes a document type and a RAG API is configured, honor that intent by sending the file to
-     * RAG `/text` instead of the built-in document parser. The permissive default catch-all is
-     * excluded via `isPermissiveMimeConfig`, so RAG deployments that never customized text handling
-     * keep the built-in parser introduced in #11900.
-     */
-    const shouldUseConfiguredText =
-      !!process.env.RAG_API_URL &&
-      isDocumentParserEligible &&
-      !isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
-      fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || []);
-
+    const extractedTextPlan = getUploadExtractedTextPlan({
+      endpoint: metadata.endpoint,
+      toolResource: tool_resource,
+      mimeType: file.mimetype,
+      fileConfig,
+      ocrConfigured: appConfig?.ocr != null,
+      ragConfigured: !!process.env.RAG_API_URL,
+    });
+    const shouldUseConfiguredOCR = extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
+    const shouldUseConfiguredText = extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
     const shouldUseDocumentParser =
-      !shouldUseConfiguredOCR && !shouldUseConfiguredText && isDocumentParserEligible;
+      extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.documentParser;
 
     const shouldUseOCR = shouldUseConfiguredOCR || shouldUseDocumentParser;
 
@@ -866,9 +871,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
           return await handleFileUpload({ req, file, loadAuthValues });
         } catch (err) {
+          const { errorMetadata } = getExtractionLogDetails(err);
           logger.error(
-            `[processAgentFileUpload] Configured OCR failed for "${file.originalname}", falling back to document_parser:`,
-            err,
+            `[processAgentFileUpload] Configured OCR failed for ${extractionFileLabel}, falling back to document_parser:`,
+            errorMetadata,
           );
         }
       }
@@ -876,9 +882,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
         return await handleFileUpload({ req, file, loadAuthValues });
       } catch (err) {
+        const { errorMetadata } = getExtractionLogDetails(err);
         logger.error(
-          `[processAgentFileUpload] Document parser failed for "${file.originalname}":`,
-          err,
+          `[processAgentFileUpload] Document parser failed for ${extractionFileLabel}:`,
+          errorMetadata,
         );
       }
     };
@@ -888,7 +895,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     }
 
     if (shouldUseOCR) {
-      const ocrResult = await resolveDocumentText();
+      const ocrResult = await extractInspectableFileText({
+        filters: appConfig?.filters,
+        extract: resolveDocumentText,
+      });
       if (ocrResult) {
         const { text, bytes, filepath: ocrFileURL } = ocrResult;
         return await createTextFile({ text, bytes, filepath: ocrFileURL });
@@ -930,11 +940,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       try {
         configuredText = await parseText({ req, file, file_id, allowNativeFallback: false });
       } catch (err) {
+        const { errorMetadata } = getExtractionLogDetails(err);
         logger.warn(
-          `[processAgentFileUpload] Configured RAG text extraction unavailable for "${file.originalname}", using built-in document parser:`,
-          err,
+          `[processAgentFileUpload] Configured RAG text extraction unavailable for ${extractionFileLabel}, using built-in document parser:`,
+          errorMetadata,
         );
-        const documentText = await resolveDocumentText();
+        const documentText = await extractInspectableFileText({
+          filters: appConfig?.filters,
+          extract: resolveDocumentText,
+        });
         if (!documentText) {
           throw new Error(
             `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
@@ -950,7 +964,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       });
     }
 
-    const { text, bytes } = await parseText({ req, file, file_id });
+    const { text, bytes } = await extractInspectableFileText({
+      filters: appConfig?.filters,
+      extract: () => parseText({ req, file, file_id }),
+    });
     return await createTextFile({ text, bytes, type: file.mimetype });
   }
 

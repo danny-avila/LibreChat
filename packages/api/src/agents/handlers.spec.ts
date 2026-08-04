@@ -2620,6 +2620,80 @@ describe('createToolExecuteHandler', () => {
       );
     });
 
+    it('repairs protected bundled file text without echoing removed lines in the diff', async () => {
+      const protectedValue = 'PROTECTED-BUNDLED-DIFF';
+      const saveSkillFileContent = jest.fn(async () => ({
+        bytes: 10,
+        relativePath: 'references/private.md',
+      }));
+      const filteredReq = {
+        user: {
+          id: 'user-1',
+          _id: new Types.ObjectId(),
+          role: 'USER',
+          name: 'Test User',
+        },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                starterPatterns: [],
+                customPatterns: [
+                  {
+                    id: 'protected-bundled-diff',
+                    label: 'protected bundled diff',
+                    regex: 'PROTECTED-BUNDLED-DIFF',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeAuthoringHandler(
+        {
+          getSkillByName: jest.fn(async () => ({
+            _id: SKILL_ID,
+            name: 'repair-skill',
+            body: '# Existing',
+            fileCount: 1,
+            version: 1,
+          })),
+          getSkillFileByPath: jest.fn(async () => ({
+            content: `${protectedValue}\nsafe line\n`,
+            isBinary: false,
+            mimeType: 'text/markdown',
+            bytes: protectedValue.length + 11,
+            filepath: '/tmp/private.md',
+            source: 'local',
+            relativePath: 'references/private.md',
+          })),
+          saveSkillFileContent,
+        },
+        { req: filteredReq },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_repair_bundled_diff',
+          name: 'edit_file',
+          args: {
+            path: 'skills/repair-skill/references/private.md',
+            old_text: protectedValue,
+            new_text: 'removed',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(saveSkillFileContent).toHaveBeenCalledWith(
+        expect.objectContaining({ content: 'removed\nsafe line\n' }),
+      );
+      expect(JSON.stringify(result)).not.toContain(protectedValue);
+      expect(result.artifact).not.toHaveProperty('diff');
+    });
+
     it('coerces a stringified edits array (JSON-in-JSON) so the edit still applies', async () => {
       const saveSkillFileContent = jest.fn();
       const handler = makeAuthoringHandler({
@@ -2904,6 +2978,76 @@ describe('createToolExecuteHandler', () => {
           }),
         ],
       });
+    });
+
+    it('repairs protected SKILL.md instructions without echoing removed lines', async () => {
+      const protectedValue = 'PROTECTED-SKILL-DIFF';
+      const oldBody = `---\nname: repair-skill\ndescription: Repair test\n---\n# Body\n${protectedValue}\n`;
+      const updateSkill = jest.fn(async () => ({
+        status: 'updated',
+        skill: {
+          _id: SKILL_ID,
+          name: 'repair-skill',
+          body: oldBody.replace(protectedValue, 'removed'),
+          version: 2,
+        },
+      }));
+      const filteredReq = {
+        user: {
+          id: 'user-1',
+          _id: new Types.ObjectId(),
+          role: 'USER',
+          name: 'Test User',
+        },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['instructions'],
+                starterPatterns: [],
+                customPatterns: [
+                  {
+                    id: 'protected-skill-diff',
+                    label: 'protected skill diff',
+                    regex: 'PROTECTED-SKILL-DIFF',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeAuthoringHandler(
+        {
+          getSkillByName: jest.fn(async () => ({
+            _id: SKILL_ID,
+            name: 'repair-skill',
+            description: 'Repair test',
+            body: oldBody,
+            fileCount: 0,
+            version: 1,
+          })),
+          updateSkill: updateSkill as unknown as ToolExecuteOptions['updateSkill'],
+        },
+        { req: filteredReq },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_repair_skill_diff',
+          name: 'edit_file',
+          args: {
+            path: 'skills/repair-skill/SKILL.md',
+            old_text: protectedValue,
+            new_text: 'removed',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(updateSkill).toHaveBeenCalled();
+      expect(JSON.stringify(result)).not.toContain(protectedValue);
+      expect(result.artifact).not.toHaveProperty('diff');
     });
 
     it('preserves block-scalar SKILL.md descriptions when editing skills', async () => {
@@ -3414,6 +3558,106 @@ describe('createToolExecuteHandler', () => {
       expect(writeSandboxFile).not.toHaveBeenCalled();
     });
 
+    it('blocks filtered extracted text before writing to the sandbox', async () => {
+      const protectedValue = 'PROTECTED-EXTRACTED-AUTHORING';
+      const writeSandboxFile = jest.fn();
+      const filteredReq = {
+        user: {
+          id: 'user-1',
+        },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                starterPatterns: [],
+                customPatterns: [
+                  {
+                    id: 'protected-extracted-authoring',
+                    label: 'protected extracted authoring',
+                    regex: 'PROTECTED-EXTRACTED-AUTHORING',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeSandboxAuthoringHandler(
+        {
+          readSandboxFile: jest.fn(async () => {
+            throw new Error('cat: /mnt/data/extracted.txt: No such file or directory');
+          }),
+          writeSandboxFile,
+        },
+        { req: filteredReq },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_extracted_authoring',
+          name: 'create_file',
+          args: {
+            path: '/mnt/data/extracted.txt',
+            content: protectedValue,
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(JSON.parse(result.errorMessage ?? '')).toMatchObject({
+        error: 'content_filter_block',
+        source: 'file',
+        field: 'extracted_text',
+      });
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(writeSandboxFile).not.toHaveBeenCalled();
+    });
+
+    it('fails closed for binary-like sandbox content selected as extracted text', async () => {
+      const writeSandboxFile = jest.fn();
+      const filteredReq = {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                starterPatterns: [],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeSandboxAuthoringHandler(
+        {
+          readSandboxFile: jest.fn(async () => {
+            throw new Error('cat: /mnt/data/opaque: No such file or directory');
+          }),
+          writeSandboxFile,
+        },
+        { req: filteredReq },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_uninspectable_extracted_sandbox',
+          name: 'create_file',
+          args: {
+            path: '/mnt/data/opaque',
+            content: `${'a'.repeat(8192)}\0opaque`,
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toBe(
+        'Submitted file content could not be inspected before processing.',
+      );
+      expect(writeSandboxFile).not.toHaveBeenCalled();
+    });
+
     it('filters sandbox authoring read failures before logging details', async () => {
       const protectedValue = 'PROTECTED-SANDBOX-AUTHORING-READ';
       const sandboxError = Object.assign(new Error(protectedValue), {
@@ -3606,6 +3850,63 @@ describe('createToolExecuteHandler', () => {
           content: 'alpha new\n',
         }),
       );
+    });
+
+    it('repairs protected sandbox text without echoing removed lines in the diff', async () => {
+      const protectedValue = 'PROTECTED-SANDBOX-DIFF';
+      const writeSandboxFile = jest.fn(async () => ({
+        stdout: 'WROTE file\n',
+        session_id: 'sess-repair',
+        files: [{ id: 'file-repair', name: 'repair.txt', storage_session_id: 'sess-repair' }],
+      }));
+      const filteredReq = {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                starterPatterns: [],
+                customPatterns: [
+                  {
+                    id: 'protected-sandbox-diff',
+                    label: 'protected sandbox diff',
+                    regex: 'PROTECTED-SANDBOX-DIFF',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeSandboxAuthoringHandler(
+        {
+          readSandboxFile: jest.fn(async () => ({
+            content: `${protectedValue}\nsafe line\n`,
+          })),
+          writeSandboxFile,
+        },
+        { req: filteredReq },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_repair_sandbox_diff',
+          name: 'edit_file',
+          args: {
+            path: '/mnt/data/repair.txt',
+            old_text: protectedValue,
+            new_text: 'removed',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(writeSandboxFile).toHaveBeenCalledWith(
+        expect.objectContaining({ content: 'removed\nsafe line\n' }),
+      );
+      expect(JSON.stringify(result)).not.toContain(protectedValue);
+      expect(result.artifact).not.toHaveProperty('diff');
     });
 
     it('propagates newly created sandbox sessions to queued same-path authoring calls', async () => {
@@ -4544,6 +4845,53 @@ describe('createToolExecuteHandler', () => {
 
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('content_filter_block');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(result.content).toBe('');
+    });
+
+    it('filters sandbox text selected as extracted_text before returning it to the model', async () => {
+      const protectedValue = 'PROTECTED-EXTRACTED-READ';
+      const readSandboxFile = jest.fn(async () => ({ content: protectedValue }));
+      const handler = makeReadFileHandler({
+        req: {
+          user: { id: 'user-1' },
+          config: {
+            filters: {
+              files: {
+                pii: {
+                  fields: ['extracted_text'],
+                  starterPatterns: [],
+                  customPatterns: [
+                    {
+                      id: 'protected-extracted-read',
+                      label: 'protected extracted read',
+                      regex: 'PROTECTED-EXTRACTED-READ',
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_extracted_read',
+          name: Constants.READ_FILE,
+          args: { path: '/mnt/data/extracted.txt' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(JSON.parse(result.errorMessage ?? '')).toMatchObject({
+        error: 'content_filter_block',
+        source: 'file',
+        field: 'extracted_text',
+      });
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.content).toBe('');
     });
