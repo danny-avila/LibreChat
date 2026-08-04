@@ -491,7 +491,7 @@ export function createContentIndexOffsetHandlers(
  * already carry their answers).
  */
 function findAskPartIndex<
-  TPart extends { type?: string; tool_call?: { id?: string; name?: string } },
+  TPart extends { type?: string; tool_call?: { id?: unknown; name?: unknown } },
 >(content: TPart[], toolCallId: string | undefined, isStampable: (part: TPart) => boolean): number {
   for (let i = content.length - 1; i >= 0; i--) {
     const part = content[i];
@@ -564,7 +564,7 @@ export function findAskUserQuestionContentIndex<
  * array when nothing matched.
  */
 export function attachAskUserQuestionAnswer<
-  TPart extends { type?: string; tool_call?: { id?: string; name?: string; output?: unknown } },
+  TPart extends { type?: string; tool_call?: { id?: unknown; name?: unknown; output?: unknown } },
 >(
   content: TPart[],
   request: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest,

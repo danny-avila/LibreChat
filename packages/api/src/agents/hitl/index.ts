@@ -1,6 +1,7 @@
 export * from './policy';
 export * from './runtime';
 export * from './resume';
+export * from './preflight';
 export * from './inspection';
 export * from './protection';
 export * from './hooks';

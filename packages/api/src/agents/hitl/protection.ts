@@ -14,7 +14,6 @@ import {
   openapiToFunction,
   validateAndParseOpenAPISpec,
 } from 'librechat-data-provider';
-import type { ToolApprovalDecisionMap, AskUserQuestionResolution } from '@librechat/agents';
 import type {
   Agent,
   Action,
@@ -26,35 +25,36 @@ import type {
   MessageFilterPiiConfig,
   UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
+import type { ToolApprovalDecisionMap, AskUserQuestionResolution } from '@librechat/agents';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
-import type { TextContentFragment } from '~/protection/types';
-import type { CheckAccessParams } from '~/middleware/access';
 import type {
   AgentContentInput,
   MemoryContentInput,
   AssistantActionContentInput,
 } from '~/protection/adapters/submissions';
 import type { ResumeContentInspectionInput, ResumeSnapshotAgent } from './inspection';
-import {
-  ContentTraversalLimitError,
-  getContentTraversalFragments,
-  isContentTraversalProtected,
-} from '~/protection/adapters/nested';
-import { extractStoredMessageContent } from '~/protection/adapters/submissions';
+import type { TextContentFragment } from '~/protection/types';
+import type { CheckAccessParams } from '~/middleware/access';
 import {
   assertModelBoundContent,
   hasModelBoundContentProtection,
   type ModelBoundContentInput,
 } from '~/middleware/modelBoundContent';
-import { ContentFilterError } from '~/middleware/contentFilter';
-import { inspectContent } from '~/protection/runtime';
-import { hasActiveFilePolicy } from '~/protection/files';
-import { agentHasInlineMemoryTools, getMemoryAgentId } from '../memory';
-import { parseSkillMarkdown } from '../../skills/parse';
-import { LIBRECHAT_CHECKPOINT_NAMESPACE_KEY } from '../checkpointer';
-import { isSkillPrimeMessage } from '../skills';
+import {
+  ContentTraversalLimitError,
+  getContentTraversalFragments,
+  isContentTraversalProtected,
+} from '~/protection/adapters/nested';
 import { getResumeAgentSnapshot, getResumeContentInspection } from './inspection';
+import { extractStoredMessageContent } from '~/protection/adapters/submissions';
+import { agentHasInlineMemoryTools, getMemoryAgentId } from '../memory';
+import { LIBRECHAT_CHECKPOINT_NAMESPACE_KEY } from '../checkpointer';
 import { ASK_USER_QUESTION_TOOL_NAME } from './askUserQuestionTool';
+import { ContentFilterError } from '~/middleware/contentFilter';
+import { hasActiveFilePolicy } from '~/protection/files';
+import { parseSkillMarkdown } from '../../skills/parse';
+import { inspectContent } from '~/protection/runtime';
+import { isSkillPrimeMessage } from '../skills';
 
 const GENERIC_RESUME_ERROR = 'Resume failed';
 

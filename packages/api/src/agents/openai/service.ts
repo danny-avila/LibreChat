@@ -64,11 +64,11 @@ import {
   writeSSE,
 } from './handlers';
 import { createMCPRuntimeRequestBody } from '~/mcp/request';
-import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/contentFilter';
 import {
   assertModelBoundContent,
   hasModelBoundContentProtection,
 } from '~/middleware/modelBoundContent';
+import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/contentFilter';
 import { contentFilterUninspectableResponse } from '~/protection/files';
 import { collectReachableAgents } from '../traversal';
 import { getDynamicToolContexts } from '../hitl';

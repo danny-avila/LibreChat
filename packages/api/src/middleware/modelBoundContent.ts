@@ -17,19 +17,9 @@ import type {
   SkillContentInput,
   StoredMessageContentInput,
 } from '../protection/adapters/submissions';
-import { ContentTraversalLimitError } from '../protection/adapters/nested';
 import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type { ExternalChatMessage } from '../protection/adapters/messages';
 import type { CanonicalFileInspectionFile } from '../protection/files';
-import {
-  extractAgentContent,
-  extractAssistantActionContent,
-  extractAssistantContent,
-  extractFileContent,
-  extractMemoryContent,
-  extractSkillContent,
-  extractStoredMessageContent,
-} from '../protection/adapters/submissions';
 import {
   allowHydratedFileReferences,
   assertHydratedFileInspectable,
@@ -39,6 +29,15 @@ import {
   omitResolvedCanonicalFileLocators,
   UninspectableFileError,
 } from '../protection/files';
+import {
+  extractAgentContent,
+  extractAssistantActionContent,
+  extractAssistantContent,
+  extractFileContent,
+  extractMemoryContent,
+  extractSkillContent,
+  extractStoredMessageContent,
+} from '../protection/adapters/submissions';
 import {
   getContentTraversalFragments,
   isContentTraversalProtected,
@@ -50,6 +49,7 @@ import {
   getUserSubmittedMessageFieldPathState,
   getUserSubmittedPathState,
 } from '../protection/provenance';
+import { ContentTraversalLimitError } from '../protection/adapters/nested';
 import { createConfiguredContentInspector } from '../protection/runtime';
 import { extractMessageContent } from '../protection/adapters/messages';
 import { ContentFilterError } from './contentFilter';
