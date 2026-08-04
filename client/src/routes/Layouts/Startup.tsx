@@ -4,6 +4,7 @@ import type { TStartupConfig } from 'librechat-data-provider';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import AuthLayout from '~/components/Auth/AuthLayout';
+import { useIsExodeEmbed } from '~/components/Exode';
 import { REDIRECT_PARAM, SESSION_KEY } from '~/utils';
 
 const headerMap: Record<string, TranslationKeys> = {
@@ -28,6 +29,7 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   const localize = useLocalize();
   const navigate = useNavigate();
   const location = useLocation();
+  const isExodeEmbed = useIsExodeEmbed();
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -61,6 +63,17 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
     startupConfig,
     isFetching,
   };
+
+  /**
+   * No credential UI inside the exode embed — login, register, and password reset all render
+   * through here. The embed's session is established by the host's bootstrap token
+   * (`ExodeBridge`); landing on one of these routes means that exchange failed, and offering a
+   * form would invite a second, unlinked LibreChat account. Render nothing and let the host
+   * handle the error it was posted.
+   */
+  if (isExodeEmbed && !isAuthenticated) {
+    return null;
+  }
 
   return (
     <AuthLayout
