@@ -17,6 +17,7 @@ import {
   normalizeSkillFrontmatterKeys,
   validateAlwaysApply,
   validateRelativePath,
+  pickValidFrontmatter,
   inferSkillFileCategory,
   filterExistingSkillIds,
   deriveStructuredFrontmatterFields,
@@ -467,6 +468,71 @@ describe('skill validation helpers', () => {
           (i) => i.code === 'INVALID_TYPE' && i.field === 'frontmatter.alwaysApply',
         ),
       ).toBe(true);
+    });
+  });
+
+  describe('pickValidFrontmatter', () => {
+    it('keeps every entry the strict validator accepts', () => {
+      const frontmatter = {
+        'when-to-use': 'When the user needs a demo.',
+        'allowed-tools': ['read', 'write'],
+        'user-invocable': false,
+        'disable-model-invocation': true,
+        'always-apply': true,
+        metadata: { owner: 'data-team' },
+      };
+      expect(pickValidFrontmatter(frontmatter)).toEqual(frontmatter);
+      expect(validateSkillFrontmatter(pickValidFrontmatter(frontmatter))).toEqual([]);
+    });
+
+    it('drops unknown keys instead of rejecting the whole bag', () => {
+      expect(pickValidFrontmatter({ 'user-invocable': false, icon: '🚀', tags: ['a'] })).toEqual({
+        'user-invocable': false,
+      });
+    });
+
+    it('drops recognized keys whose value fails its declared kind', () => {
+      expect(
+        pickValidFrontmatter({
+          'user-invocable': false,
+          version: 1.0,
+          effort: ['high'],
+          'allowed-tools': [1, 2],
+        }),
+      ).toEqual({ 'user-invocable': false });
+    });
+
+    it('drops hooks / metadata that are not plain JSON-safe objects', () => {
+      expect(pickValidFrontmatter({ hooks: 'echo hi' })).toEqual({});
+      expect(
+        pickValidFrontmatter({ metadata: { a: { b: { c: { d: { e: { f: 'deep' } } } } } } }),
+      ).toEqual({});
+    });
+
+    it('returns an empty bag for non-object input', () => {
+      expect(pickValidFrontmatter(undefined)).toEqual({});
+      expect(pickValidFrontmatter(null)).toEqual({});
+      expect(pickValidFrontmatter([])).toEqual({});
+      expect(pickValidFrontmatter('name: demo')).toEqual({});
+    });
+
+    it('never yields a bag the strict validator would reject', () => {
+      const messy = {
+        name: 'demo-skill',
+        'user-invocable': 'yes',
+        'disable-model-invocation': null,
+        unknown: 1,
+        hooks: [],
+        license: 'MIT',
+      };
+      expect(validateSkillFrontmatter(pickValidFrontmatter(messy))).toEqual([]);
+      expect(pickValidFrontmatter(messy)).toEqual({ name: 'demo-skill', license: 'MIT' });
+    });
+
+    it('preserves key order so serialized-bag drift checks stay stable', () => {
+      expect(
+        Object.keys(pickValidFrontmatter({ license: 'MIT', icon: 'x', 'user-invocable': true })),
+      ).toEqual(['license', 'user-invocable']);
     });
   });
 
@@ -985,6 +1051,186 @@ describe('Skill CRUD methods', () => {
     expect(updated.skill.disableModelInvocation).toBeUndefined();
     expect(updated.skill.userInvocable).toBe(true);
     expect(updated.skill.allowedTools).toBeUndefined();
+  });
+
+  /**
+   * The shipping create/edit forms send `body` with no structured
+   * `frontmatter`, so the SKILL.md text is the only place a user can declare
+   * these flags. Before this cascade existed only `always-apply` was read out
+   * of the body and the other two silently kept their defaults.
+   */
+  describe('invocation-mode columns derived from the SKILL.md body', () => {
+    const bodyWithFlags = [
+      '---',
+      'name: body-flags',
+      'description: A skill that restricts its invocation channels.',
+      'always-apply: true',
+      'user-invocable: false',
+      'disable-model-invocation: true',
+      '---',
+      'Body.',
+    ].join('\n');
+
+    it('createSkill honors flags declared only in the body', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({ name: 'body-flags', body: bodyWithFlags, frontmatter: undefined }),
+      );
+      expect(skill.alwaysApply).toBe(true);
+      expect(skill.userInvocable).toBe(false);
+      expect(skill.disableModelInvocation).toBe(true);
+
+      const reloaded = await methods.getSkillById(skill._id);
+      expect(reloaded?.userInvocable).toBe(false);
+      expect(reloaded?.disableModelInvocation).toBe(true);
+    });
+
+    it('createSkill lets an explicit frontmatter bag win over the body', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'bag-wins',
+          body: bodyWithFlags,
+          frontmatter: { 'user-invocable': true },
+        }),
+      );
+      expect(skill.userInvocable).toBe(true);
+      /* Not declared in the bag, so the body still supplies it. */
+      expect(skill.disableModelInvocation).toBe(true);
+    });
+
+    it('createSkill rejects a non-boolean flag in the body', async () => {
+      await expect(
+        methods.createSkill(
+          makeSkillInput({
+            name: 'body-typo',
+            body: '---\nname: body-typo\ndescription: A demo skill.\nuser-invocable: yes\n---\n\nBody.',
+            frontmatter: undefined,
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: 'SKILL_VALIDATION_FAILED',
+        issues: expect.arrayContaining([
+          expect.objectContaining({ field: 'body.frontmatter.user-invocable' }),
+        ]),
+      });
+    });
+
+    it('createSkill accepts a body typo the frontmatter bag overrides', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'body-typo-overridden',
+          body: '---\nname: body-typo-overridden\ndescription: A demo skill.\nuser-invocable: yes\n---\n\nBody.',
+          frontmatter: { 'user-invocable': false },
+        }),
+      );
+      expect(skill.userInvocable).toBe(false);
+    });
+
+    it('createSkill ignores a flag nested under another frontmatter key', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'nested-flag',
+          body: '---\nname: nested-flag\ndescription: A demo skill.\nmetadata:\n  user-invocable: nonsense\n---\n\nBody.',
+          frontmatter: undefined,
+        }),
+      );
+      expect(skill.userInvocable).toBe(true);
+    });
+
+    it('updateSkill picks up flags added to the body', async () => {
+      const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-add-flags' }));
+      expect(skill.userInvocable).toBe(true);
+
+      const updated = await methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: {
+          body: '---\nname: body-add-flags\ndescription: A demo skill.\nuser-invocable: false\n---\n\nBody.',
+        },
+      });
+      expect(updated.status).toBe('updated');
+      if (updated.status !== 'updated') return;
+      expect(updated.skill.userInvocable).toBe(false);
+    });
+
+    it('updateSkill releases a restriction when the body drops the flag line', async () => {
+      /* Regression for the sticky-column trap: an imported skill restricted to
+         manual-only had no way back — the edit UI sends `body` only, so the
+         column stayed `false` while the SKILL.md text no longer said so. */
+      const { skill } = await methods.createSkill(
+        makeSkillInput({ name: 'body-release', body: bodyWithFlags, frontmatter: undefined }),
+      );
+      expect(skill.userInvocable).toBe(false);
+      expect(skill.disableModelInvocation).toBe(true);
+
+      const updated = await methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: {
+          body: '---\nname: body-release\ndescription: A demo skill.\n---\n\nBody.',
+        },
+      });
+      expect(updated.status).toBe('updated');
+      if (updated.status !== 'updated') return;
+      /* Unset, which every runtime gate reads as the schema default. */
+      expect(updated.skill.userInvocable).toBeUndefined();
+      expect(updated.skill.disableModelInvocation).toBeUndefined();
+    });
+
+    it('updateSkill leaves the columns alone when the update touches neither body nor frontmatter', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({ name: 'untouched-columns', body: bodyWithFlags, frontmatter: undefined }),
+      );
+
+      const updated = await methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: { category: 'research' },
+      });
+      expect(updated.status).toBe('updated');
+      if (updated.status !== 'updated') return;
+      expect(updated.skill.userInvocable).toBe(false);
+      expect(updated.skill.disableModelInvocation).toBe(true);
+    });
+
+    it('updateSkill keeps allowedTools when only the body changes', async () => {
+      /* The body scan reads booleans, not YAML sequences, so a body-only update
+         must not drop a tool list it cannot re-read. */
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'keeps-tools',
+          frontmatter: { 'allowed-tools': ['execute_code'] },
+        }),
+      );
+      expect(skill.allowedTools).toEqual(['execute_code']);
+
+      const updated = await methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: { body: '---\nname: keeps-tools\ndescription: A demo skill.\n---\n\nBody.' },
+      });
+      expect(updated.status).toBe('updated');
+      if (updated.status !== 'updated') return;
+      expect(updated.skill.allowedTools).toEqual(['execute_code']);
+    });
+
+    it('updateSkill rejects a non-boolean flag introduced by a body edit', async () => {
+      const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-edit-typo' }));
+
+      await expect(
+        methods.updateSkill({
+          id: skill._id.toString(),
+          expectedVersion: skill.version,
+          update: {
+            body: '---\nname: body-edit-typo\ndescription: A demo skill.\ndisable-model-invocation: 1\n---\n\nBody.',
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: 'SKILL_VALIDATION_FAILED',
+        issues: expect.arrayContaining([
+          expect.objectContaining({ field: 'body.frontmatter.disable-model-invocation' }),
+        ]),
+      });
+    });
   });
 
   it('backfills legacy skills from frontmatter when columns are unset (getSkillByName)', async () => {
