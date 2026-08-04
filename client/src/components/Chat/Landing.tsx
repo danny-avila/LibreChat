@@ -37,7 +37,7 @@ function getTextSizeClass(text: string | undefined | null) {
     return 'text-xl sm:text-2xl';
   }
 
-  return 'text-lg sm:text-md';
+  return 'text-lg sm:text-base';
 }
 
 export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: boolean }) {

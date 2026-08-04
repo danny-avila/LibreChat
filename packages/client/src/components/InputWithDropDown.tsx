@@ -97,7 +97,7 @@ const InputWithDropdown: React.ForwardRefExoticComponent<
           />
           <button
             type="button"
-            className="text-tertiary absolute inset-y-0 right-0 flex items-center rounded-md px-2 hover:text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring-primary"
+            className="absolute inset-y-0 right-0 flex items-center rounded-md px-2 text-text-tertiary hover:text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring-primary"
             onClick={() => setIsOpen(!isOpen)}
             aria-label={isOpen ? 'Close dropdown' : 'Open dropdown'}
           >

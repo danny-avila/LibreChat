@@ -37,7 +37,7 @@ export default function VectorStoreListItem({
       </div>
       <div className="flex w-1/6 flex-col justify-around sm:flex-row">
         <Button className="m-0 w-full content-center bg-transparent p-0 text-text-tertiary hover:bg-surface-hover sm:w-min">
-          <DotsIcon className="text-grey-100 m-0 p-0" />
+          <DotsIcon className="m-0 p-0 text-text-tertiary" />
         </Button>
         <Button
           className="m-0 w-full bg-transparent p-0 text-text-destructive hover:bg-surface-hover sm:w-fit"

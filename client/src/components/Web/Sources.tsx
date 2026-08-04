@@ -757,7 +757,7 @@ export default function Sources(props: SourcesProps) {
         variant="outline"
         size="sm"
         onClick={() => window.location.reload()}
-        className="hover:bg-surface-primary-hover rounded-md bg-surface-primary px-3 py-1 text-sm text-text-primary"
+        className="rounded-md bg-surface-primary px-3 py-1 text-sm text-text-primary hover:bg-surface-hover"
         aria-label={localize('com_sources_reload_page')}
       >
         {localize('com_ui_refresh')}

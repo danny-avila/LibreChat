@@ -87,7 +87,7 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
         <div className="inline-block">
           <button
             className={cn(
-              'outline-hidden my-1 flex items-center gap-1 text-sm font-semibold transition-colors',
+              'my-1 flex items-center gap-1 text-sm font-semibold transition-colors',
               hasErrors ? 'text-status-error' : 'text-text-secondary-alt hover:text-text-primary',
             )}
             type="button"

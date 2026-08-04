@@ -58,7 +58,7 @@ export default function SelectedPrincipalsList({
           return (
             <div
               key={share.idOnTheSource + '-principalList'}
-              className="bg-surface flex items-center justify-between rounded-2xl border border-border-light p-3"
+              className="flex items-center justify-between rounded-2xl border border-border-light bg-surface-primary p-3"
             >
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <PrincipalAvatar principal={share} size="md" />
