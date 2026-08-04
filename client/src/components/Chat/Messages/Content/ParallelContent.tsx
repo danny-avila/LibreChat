@@ -1,5 +1,11 @@
 import { memo, useMemo } from 'react';
+import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, SearchResultData, TAttachment } from 'librechat-data-provider';
+import {
+  getActivityLabelPart,
+  getActivityLabelText,
+  lastVisibleContentIdx,
+} from '~/utils/activityLabels';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import { SearchContext } from '~/Providers';
@@ -159,7 +165,17 @@ export const ParallelColumns = memo(function ParallelColumns({
 }: ParallelColumnsProps) {
   return (
     <div className={cn('flex w-full flex-col gap-3 md:flex-row', 'sibling-content-group')}>
-      {columns.map(({ agentId, parts: columnParts }, colIdx) => {
+      {columns.map(({ agentId, parts: allColumnParts }, colIdx) => {
+        /** Lanes render raw parts, so an activity label cannot become a
+         *  collapsible header here (tracked separately). An UNFILLED one has
+         *  nothing to render at all, and every batch now publishes its
+         *  reservation immediately — so drop empty labels rather than emit a
+         *  blank line into the column while generation is pending. */
+        const columnParts = allColumnParts.filter(
+          ({ part }) =>
+            part?.type !== ContentTypes.ACTIVITY_LABEL ||
+            getActivityLabelText(getActivityLabelPart(part)).length > 0,
+        );
         // Show loading cursor if column has no content parts yet (empty array from placeholder)
         const showLoadingCursor = isSubmitting && columnParts.length === 0;
 
@@ -202,6 +218,13 @@ type ParallelContentRendererProps = {
   searchResults?: { [key: string]: SearchResultData };
   isSubmitting: boolean;
   renderPart: (part: TMessageContentParts, idx: number, isLastPart: boolean) => React.ReactNode;
+  /**
+   * Author re-attribution for a part that resumes after an inline steer —
+   * returns the header node to render before that part, or null. Only the
+   * sequential before/after stretches consult it: column content already
+   * carries per-agent identity.
+   */
+  renderResumeAttribution?: (idx: number) => React.ReactNode;
 };
 
 /**
@@ -217,13 +240,17 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   searchResults,
   isSubmitting,
   renderPart,
+  renderResumeAttribution,
 }: ParallelContentRendererProps) {
   const { parallelSections, sequentialParts } = useMemo(
     () => groupParallelContent(content),
     [content],
   );
 
-  const lastContentIdx = (content?.length ?? 0) - 1;
+  /** Same walk-back as `ContentParts`: a trailing BLANK label reservation is
+   *  filtered out of every lane, so counting it as last would leave NO
+   *  rendered part with the last-part cursor until the label fills. */
+  const lastContentIdx = lastVisibleContentIdx(content);
 
   // Split sequential parts into before/after parallel sections
   const { before, after } = useMemo(() => {
@@ -249,7 +276,11 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
       <Sources messageId={messageId} conversationId={conversationId || undefined} />
 
       {/* Sequential content BEFORE parallel sections */}
-      {before.map(({ part, idx }) => renderPart(part, idx, false))}
+      {before.flatMap(({ part, idx }) => {
+        const attribution = renderResumeAttribution?.(idx);
+        const rendered = renderPart(part, idx, false);
+        return attribution != null ? [attribution, rendered] : [rendered];
+      })}
 
       {/* Parallel sections - each group renders as columns */}
       {parallelSections.map(({ groupId, columns }) => (
@@ -267,7 +298,11 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
       ))}
 
       {/* Sequential content AFTER parallel sections */}
-      {after.map(({ part, idx }) => renderPart(part, idx, idx === lastContentIdx))}
+      {after.flatMap(({ part, idx }) => {
+        const attribution = renderResumeAttribution?.(idx);
+        const rendered = renderPart(part, idx, idx === lastContentIdx);
+        return attribution != null ? [attribution, rendered] : [rendered];
+      })}
     </SearchContext.Provider>
   );
 });

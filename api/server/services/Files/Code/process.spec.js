@@ -29,7 +29,7 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-const { FileContext } = require('librechat-data-provider');
+const { FileContext, ResourceType } = require('librechat-data-provider');
 
 // Mock uuid
 jest.mock('uuid', () => ({
@@ -1898,6 +1898,135 @@ describe('Code Process', () => {
       mockAxios.mockResolvedValue({ data: null });
       return { handleFileUpload, getDownloadStream };
     }
+
+    it('uses the permission resource type established by the calling route', async () => {
+      const files = [
+        {
+          file_id: 'owner-file',
+          filename: 'owner.txt',
+          user: 'agent-owner',
+          metadata: {},
+        },
+      ];
+      getFiles.mockResolvedValue(files);
+      filterFilesByAgentAccess.mockImplementation(({ files: authorizedFiles }) =>
+        Promise.resolve(authorizedFiles),
+      );
+
+      await primeFiles({
+        req: { user: { id: 'remote-viewer', role: 'USER' } },
+        agentId: 'agent-123',
+        agentResourceType: ResourceType.REMOTE_AGENT,
+        tool_resources: { execute_code: { file_ids: ['owner-file'] } },
+      });
+
+      expect(filterFilesByAgentAccess).toHaveBeenCalledWith({
+        files,
+        userId: 'remote-viewer',
+        role: 'USER',
+        agentId: 'agent-123',
+        resourceType: ResourceType.REMOTE_AGENT,
+      });
+    });
+
+    it('does not read a runtime file record that has no authorized database record', async () => {
+      const getDownloadStream = jest.fn().mockResolvedValue('forged-stream');
+      const handleFileUpload = jest.fn();
+      getStrategyFunctions.mockImplementation((source) => {
+        if (source === 'execute_code') return { handleFileUpload };
+        return { getDownloadStream };
+      });
+      getFiles.mockResolvedValue([]);
+      mockAxios.mockResolvedValue({ data: null });
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: {
+            files: [
+              {
+                file_id: 'forged-file',
+                filename: 'secrets.txt',
+                filepath: '/etc/passwd',
+                source: 'local',
+                metadata: {
+                  codeEnvRef: {
+                    kind: 'user',
+                    id: 'user-123',
+                    storage_session_id: 'missing-session',
+                    file_id: 'missing-file',
+                  },
+                },
+              },
+            ],
+          },
+        },
+        agentId: 'agent-id',
+      });
+
+      expect(result.files).toEqual([]);
+      expect(getDownloadStream).not.toHaveBeenCalled();
+      expect(handleFileUpload).not.toHaveBeenCalled();
+    });
+
+    it('rehydrates a runtime file by ID before using its storage metadata', async () => {
+      const trustedFile = {
+        file_id: 'runtime-file',
+        filename: 'trusted.txt',
+        filepath: '/uploads/trusted.txt',
+        source: 'local',
+        context: 'execute_code',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'trusted-session',
+            file_id: 'trusted-file',
+          },
+        },
+      };
+      const getDownloadStream = jest.fn().mockResolvedValue('trusted-stream');
+      const handleFileUpload = jest
+        .fn()
+        .mockResolvedValue({ storage_session_id: 'new-session', file_id: 'new-file' });
+      getStrategyFunctions.mockImplementation((source) => {
+        if (source === 'execute_code') return { handleFileUpload };
+        return { getDownloadStream };
+      });
+      getFiles.mockResolvedValue([trustedFile]);
+      mockAxios.mockResolvedValue({ data: null });
+
+      await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: {
+            files: [
+              {
+                ...trustedFile,
+                filepath: '/etc/passwd',
+                source: 'forged-source',
+                metadata: {
+                  codeEnvRef: {
+                    kind: 'user',
+                    id: 'attacker',
+                    storage_session_id: 'forged-session',
+                    file_id: 'forged-file',
+                  },
+                },
+              },
+            ],
+          },
+        },
+        agentId: 'agent-id',
+      });
+
+      expect(getDownloadStream).toHaveBeenCalledTimes(1);
+      expect(getDownloadStream).toHaveBeenCalledWith(
+        { user: { id: 'user-123', role: 'USER' } },
+        '/uploads/trusted.txt',
+      );
+      expect(handleFileUpload).toHaveBeenCalledTimes(1);
+    });
 
     it('seed receives FRESH (storage_session_id, file_id) from the reupload response', async () => {
       const dbFile = {

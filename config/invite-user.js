@@ -1,10 +1,10 @@
 const path = require('path');
 const mongoose = require('mongoose');
-const { checkEmailConfig } = require('@librechat/api');
+const { checkEmailConfig, createInvite } = require('@librechat/api');
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
-const { createInvite } = require('~/models/inviteUser');
+const { createToken, findToken } = require('~/models');
 const { sendEmail } = require('~/server/utils');
 const connect = require('./connect');
 
@@ -35,6 +35,9 @@ const connect = require('./connect');
   if (!email) {
     email = await askQuestion('Email:');
   }
+  /** `findToken` lowercases its email query, but the Token schema has no setter, so an
+   * un-normalized address here is written verbatim and can never be looked up again. */
+  email = email.trim().toLowerCase();
   // Validate the email
   if (!email.includes('@')) {
     console.red('Error: Invalid email address!');
@@ -48,7 +51,12 @@ const connect = require('./connect');
     silentExit(1);
   }
 
-  const token = await createInvite(email);
+  const token = await createInvite(email, { createToken, findToken });
+  if (typeof token !== 'string') {
+    console.red('Error: Failed to create the invite token!');
+    silentExit(1);
+  }
+
   const inviteLink = `${process.env.DOMAIN_CLIENT}/register?token=${token}`;
 
   const appName = process.env.APP_TITLE || 'LibreChat';

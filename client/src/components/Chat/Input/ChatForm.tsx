@@ -26,6 +26,7 @@ import PendingManualSkillsChips from './PendingManualSkillsChips';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
+import InterruptSteerButton from './InterruptSteerButton';
 import DuringRunSendButton from './DuringRunSendButton';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
@@ -198,6 +199,10 @@ const ChatForm = memo(function ChatForm({
         overrideFiles,
         overrideQuotes: context?.quotes ?? [],
         overrideManualSkills: context?.manualSkills ?? [],
+        overrideClientRequestId: context?.clientRequestId,
+        overrideRecoverySteerId: context?.recoverySteerId,
+        overrideExpectedPredecessorCreatedAt: context?.expectedPredecessorCreatedAt,
+        overrideQueuedMessageOrigin: context?.queuedMessageOrigin,
       }),
     [submitMessage],
   );
@@ -344,13 +349,16 @@ const ChatForm = memo(function ChatForm({
   );
 
   /** ⌘/Ctrl+Enter = the non-default during-run action, ⌥/Alt+Enter =
-   *  interrupt & send — the counterpart of Enter's `submitDuringRun`. */
+   *  interrupt & send (discards the answer), ⌘/Ctrl+Shift+Enter = interrupt &
+   *  steer (keeps it) — all counterparts of Enter's `submitDuringRun`. */
   const handleDuringRunModifier = useCallback(
-    (kind: 'other' | 'interrupt') => {
+    (kind: 'other' | 'interrupt' | 'preempt') => {
       const text = methods.getValues('text');
       let consumed = false;
       if (kind === 'interrupt') {
         consumed = steering.interruptAndSend(text);
+      } else if (kind === 'preempt') {
+        consumed = steering.interruptSteer(text);
       } else if (steering.effectiveAction === 'steer') {
         consumed = steering.queueFromComposer(text);
       } else {
@@ -432,19 +440,24 @@ const ChatForm = memo(function ChatForm({
   /** One button slot while a run is generating: with composer text the send
    *  button takes over (Enter steers/queues; hover reveals all actions);
    *  clearing the text restores Stop. */
-  const duringRunSlot =
-    steering.duringRunActive && (textValue?.trim() ?? '') !== '' ? (
-      <DuringRunSendButton
-        ref={submitButtonRef}
-        control={methods.control}
-        steering={steering}
-        getText={() => methods.getValues('text')}
-        onConsumed={() => methods.reset()}
-        disabled={filesLoading}
-      />
-    ) : (
-      <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
-    );
+  const duringRunSlot = (() => {
+    if (steering.duringRunActive && (textValue?.trim() ?? '') !== '') {
+      return (
+        <DuringRunSendButton
+          ref={submitButtonRef}
+          control={methods.control}
+          steering={steering}
+          getText={() => methods.getValues('text')}
+          onConsumed={() => methods.reset()}
+          disabled={filesLoading}
+        />
+      );
+    }
+    if (showStopButton) {
+      return <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />;
+    }
+    return null;
+  })();
 
   const baseClasses = useMemo(
     () =>
@@ -661,8 +674,22 @@ const ChatForm = memo(function ChatForm({
                     isSubmitting={isSubmitting}
                   />
                 )}
+                {steering.duringRunActive &&
+                  steering.canControlGeneration &&
+                  (textValue?.trim() ?? '') !== '' && (
+                    <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
+                      <InterruptSteerButton
+                        steering={steering}
+                        getText={() => methods.getValues('text')}
+                        onConsumed={() => methods.reset()}
+                        disabled={filesLoading}
+                      />
+                    </div>
+                  )}
                 <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                  {isSubmitting && showStopButton && !answerMode.active
+                  {isSubmitting &&
+                  (showStopButton || steering.duringRunActive) &&
+                  !answerMode.active
                     ? duringRunSlot
                     : endpoint && (
                         <SendButton

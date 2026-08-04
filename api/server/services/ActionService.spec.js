@@ -1,14 +1,51 @@
 const { Constants, actionDelimiter, actionDomainSeparator } = require('librechat-data-provider');
-const { domainParser, legacyDomainEncode, validateAndUpdateTool } = require('./ActionService');
+
+const mockEmitChunk = jest.fn();
+const mockFindToken = jest.fn();
+const mockActionFlowManager = {
+  createFlowWithHandler: jest.fn(),
+  createFlow: jest.fn(),
+};
 
 jest.mock('keyv');
 
+jest.mock('jsonwebtoken', () => ({
+  sign: jest.fn(() => 'signed-state'),
+}));
+
+jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
+  sleep: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  validateActionOAuthMetadata: jest.fn().mockResolvedValue(undefined),
+  GenerationJobManager: {
+    emitChunk: (...args) => mockEmitChunk(...args),
+  },
+}));
+
 jest.mock('~/models', () => ({
   getActions: jest.fn(),
+  findToken: (...args) => mockFindToken(...args),
+  updateToken: jest.fn(),
+  createToken: jest.fn(),
   deleteActions: jest.fn(),
+  deleteAssistant: jest.fn(),
+}));
+
+jest.mock('~/config', () => ({
+  getActionFlowStateManager: jest.fn(() => mockActionFlowManager),
 }));
 
 const { getActions } = require('~/models');
+const {
+  createActionTool,
+  domainParser,
+  legacyDomainEncode,
+  validateAndUpdateTool,
+} = require('./ActionService');
 
 let mockDomainCache = {};
 jest.mock('~/cache/getLogStores', () => {
@@ -24,6 +61,10 @@ jest.mock('~/cache/getLogStores', () => {
 beforeEach(() => {
   mockDomainCache = {};
   getActions.mockReset();
+  mockEmitChunk.mockReset();
+  mockFindToken.mockReset();
+  mockActionFlowManager.createFlowWithHandler.mockReset();
+  mockActionFlowManager.createFlow.mockReset();
 });
 
 const SEP = actionDomainSeparator;
@@ -199,6 +240,78 @@ describe('legacyDomainEncode', () => {
   it('produces same result as new domainParser for short bare hostnames', async () => {
     const domain = 'swapi.tech';
     expect(legacyDomainEncode(domain)).toBe(await domainParser(domain, true));
+  });
+});
+
+describe('createActionTool OAuth events', () => {
+  it('fences resumable login and completion deltas to the owning job epoch', async () => {
+    const streamId = 'action-oauth-stream';
+    const jobCreatedAt = 1234;
+    const preparedExecutor = {
+      setAuth: jest.fn().mockResolvedValue(undefined),
+      execute: jest.fn().mockResolvedValue({ data: { ok: true } }),
+    };
+    const requestBuilder = {
+      createExecutor: jest.fn(() => ({
+        setParams: jest.fn(() => preparedExecutor),
+      })),
+    };
+    mockFindToken.mockResolvedValue(null);
+    mockActionFlowManager.createFlowWithHandler.mockImplementation(
+      async (_flowId, _type, handler) => handler(),
+    );
+    mockActionFlowManager.createFlow.mockResolvedValue({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      expires_in: 3600,
+    });
+
+    const actionTool = await createActionTool({
+      userId: 'action-user',
+      res: {},
+      action: {
+        action_id: 'action-1',
+        metadata: {
+          domain: 'https://api.example.com',
+          oauth_client_id: 'client-id',
+          auth: {
+            type: 'oauth',
+            authorization_url: 'https://auth.example.com/authorize',
+            client_url: 'https://auth.example.com/token',
+            scope: 'read',
+          },
+        },
+      },
+      requestBuilder,
+      encrypted: {
+        oauth_client_id: 'encrypted-client-id',
+        oauth_client_secret: 'encrypted-client-secret',
+      },
+      streamId,
+      jobCreatedAt,
+    });
+
+    await actionTool._call(
+      {},
+      {
+        metadata: {
+          thread_id: 'thread-1',
+          run_id: 'run-1',
+        },
+        toolCall: {
+          id: 'tool-call-1',
+          stepId: 'step-1',
+          name: 'action-tool',
+          type: 'tool_call',
+        },
+      },
+    );
+
+    expect(mockEmitChunk).toHaveBeenCalledTimes(2);
+    for (const [emittedStreamId, , options] of mockEmitChunk.mock.calls) {
+      expect(emittedStreamId).toBe(streamId);
+      expect(options).toEqual({ expectedCreatedAt: jobCreatedAt });
+    }
   });
 });
 

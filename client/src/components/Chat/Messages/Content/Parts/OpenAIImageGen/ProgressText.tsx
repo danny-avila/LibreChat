@@ -6,16 +6,22 @@ export default function ProgressText({
   progress,
   error,
   toolName = '',
+  intent,
 }: {
   progress: number;
   error?: boolean;
   toolName?: string;
+  /** Model-authored label; wins over the phase texts (error state excepted). */
+  intent?: string;
 }) {
   const localize = useLocalize();
 
   const getText = () => {
     if (error) {
       return localize('com_ui_image_gen_failed');
+    }
+    if (intent != null) {
+      return intent;
     }
 
     if (toolName === 'image_edit_oai') {
@@ -77,7 +83,7 @@ export default function ProgressText({
   return (
     <span
       className={cn(
-        'progress-text-content tool-status-text whitespace-nowrap font-medium',
+        'progress-text-content tool-status-text min-w-0 truncate font-medium',
         progress < 1 && 'shimmer',
       )}
     >

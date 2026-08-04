@@ -10,21 +10,20 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
   apiNotFound,
   ErrorController,
-  GenerationJobManager,
   QUERY_DEVTOOLS_HEADER,
   performStartupChecks,
   handleJsonParseError,
-  deleteAgentCheckpoint,
   initializeFileStorage,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
+  configureServerTimeouts,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -313,22 +312,6 @@ if (cluster.isMaster) {
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
       basePath: path.resolve(__dirname, '../..'),
     });
-    // Prune the paused run's durable checkpoint when its approval EXPIRES (a stale submit —
-    // this startup never runs the periodic sweeper) instead of leaving it until the Mongo
-    // TTL. Mirrors api/server/index.js's configureGenerationStreams wiring; safe here even
-    // though this startup runs the manager on constructor defaults (the setter never resets
-    // services). streamId === conversationId === the LangGraph thread_id.
-    GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
-      // Resolve config in the PAUSED JOB's tenant/user scope (mirrors index.js): enter the
-      // tenant ALS context — getAppConfig args alone only key the cache.
-      await tenantStorage.run({ tenantId: job?.tenantId, userId: job?.userId }, async () => {
-        const currentConfig = await getAppConfig({
-          userId: job?.userId,
-          tenantId: job?.tenantId,
-        });
-        await deleteAgentCheckpoint(conversationId, currentConfig?.endpoints?.agents?.checkpointer);
-      });
-    });
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
     await performStartupChecks(appConfig);
@@ -468,7 +451,7 @@ if (cluster.isMaster) {
     app.use(ErrorController);
 
     /** Start listening on shared port (cluster will distribute connections) */
-    app.listen(port, host, async (err) => {
+    const server = app.listen(port, host, async (err) => {
       if (err) {
         logger.error(`Worker ${process.pid} failed to start server:`, err);
         process.exit(1);
@@ -496,6 +479,14 @@ if (cluster.isMaster) {
         logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
         process.exit(1);
       }
+    });
+
+    configureServerTimeouts(server);
+    logger.info(`Worker ${process.pid} HTTP server timeout configuration`, {
+      keepAliveTimeout: server.keepAliveTimeout,
+      keepAliveTimeoutBuffer: server.keepAliveTimeoutBuffer,
+      headersTimeout: server.headersTimeout,
+      requestTimeout: server.requestTimeout,
     });
   };
 

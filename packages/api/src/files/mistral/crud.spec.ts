@@ -40,6 +40,11 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
+jest.mock('~/admin/secrets', () => ({
+  decryptConfigSecret: jest.fn(),
+  isEncryptedSecretPayload: jest.fn(),
+}));
+
 jest.mock('~/utils/axios', () => ({
   createAxiosInstance: () => jest.requireMock('axios'),
   logAxiosError: jest.fn(({ message }) => message || 'Error'),
@@ -60,6 +65,7 @@ import type {
   OCRResult,
 } from '~/types';
 import { logger as mockLogger } from '@librechat/data-schemas';
+import { decryptConfigSecret, isEncryptedSecretPayload } from '~/admin/secrets';
 import { readFileAsBuffer } from '~/utils/files';
 import {
   uploadDocumentToMistral,
@@ -1071,6 +1077,100 @@ describe('MistralOCR Service', () => {
 
       // Verify loadAuthValues was never called since we used direct values
       expect(mockLoadAuthValues).not.toHaveBeenCalled();
+    });
+
+    it('should fail closed to env-var loading instead of sending a corrupted ciphertext as the apiKey', async () => {
+      // Simulates a stored v3 ciphertext that fails to decrypt (e.g. corrupted at rest).
+      const corruptedCiphertext = 'v3:corrupted-ciphertext';
+      (isEncryptedSecretPayload as jest.Mock).mockReturnValueOnce(true);
+      (decryptConfigSecret as jest.Mock).mockReturnValueOnce(undefined);
+
+      mockLoadAuthValues.mockResolvedValue({ OCR_API_KEY: 'env-fallback-key' });
+
+      mockAxios.post!.mockClear();
+      mockAxios.get!.mockClear();
+
+      mockAxios.post!.mockImplementationOnce(() =>
+        Promise.resolve({
+          data: {
+            id: 'file-456',
+            object: 'file',
+            bytes: 1024,
+            created_at: Date.now(),
+            filename: 'corrupted-key.pdf',
+            purpose: 'ocr',
+          } as MistralFileUploadResponse,
+        }),
+      );
+      mockAxios.get!.mockImplementationOnce(() =>
+        Promise.resolve({
+          data: {
+            url: 'https://signed-url.com',
+            expires_at: Date.now() + 86400000,
+          } as MistralSignedUrlResponse,
+        }),
+      );
+      mockAxios.post!.mockImplementationOnce(() =>
+        Promise.resolve({
+          data: {
+            model: 'mistral-ocr-latest',
+            pages: [
+              {
+                index: 0,
+                markdown: 'Processed with the env-fallback key',
+                images: [],
+                dimensions: { dpi: 300, height: 1100, width: 850 },
+              },
+            ],
+            document_annotation: '',
+            usage_info: { pages_processed: 1, doc_size_bytes: 1024 },
+          },
+        }),
+      );
+
+      const req = {
+        user: { id: 'user123' },
+        config: {
+          ocr: {
+            apiKey: corruptedCiphertext,
+            baseURL: 'https://api.mistral.ai/v1',
+            mistralModel: 'mistral-ocr-latest',
+          },
+        },
+      } as unknown as ServerRequest;
+
+      const file = {
+        path: '/tmp/upload/file.pdf',
+        originalname: 'corrupted-key.pdf',
+        mimetype: 'application/pdf',
+      } as Express.Multer.File;
+
+      await uploadMistralOCR({ req, file, loadAuthValues: mockLoadAuthValues });
+
+      // The corrupted ciphertext must never be sent as the credential.
+      expect(mockAxios.post).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: expect.stringContaining(corruptedCiphertext),
+          }),
+        }),
+      );
+
+      // Treated as empty, so it fails over to loading OCR_API_KEY from the environment.
+      expect(mockLoadAuthValues).toHaveBeenCalledWith(
+        expect.objectContaining({ authFields: expect.arrayContaining(['OCR_API_KEY']) }),
+      );
+      expect(mockAxios.post).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(Object),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer env-fallback-key',
+          }),
+        }),
+      );
     });
 
     it('should handle empty configuration values and use defaults', async () => {

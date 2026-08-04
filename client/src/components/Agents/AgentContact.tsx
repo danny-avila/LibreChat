@@ -12,12 +12,11 @@ export default function AgentContact({ agent, className = '' }: AgentContactProp
   const supportName = agent?.support_contact?.name?.trim() ?? '';
   const supportEmail = agent?.support_contact?.email?.trim() ?? '';
   const ownerName = agent?.owner_contact?.name?.trim() ?? '';
-  const ownerEmail = agent?.owner_contact?.email?.trim() ?? '';
   let contact: { name: string; email: string } | null = null;
   if (supportName || supportEmail) {
     contact = { name: supportName, email: supportEmail };
-  } else if (ownerName || ownerEmail) {
-    contact = { name: ownerName, email: ownerEmail };
+  } else if (ownerName) {
+    contact = { name: ownerName, email: '' };
   }
 
   const label = contact?.name || contact?.email || localize('com_agents_no_contact_available');

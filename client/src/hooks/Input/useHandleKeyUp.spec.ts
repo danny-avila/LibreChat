@@ -177,6 +177,15 @@ describe('useHandleKeyUp', () => {
 
       expect(setShowSkillsPopover).toHaveBeenCalledWith(true);
     });
+
+    it('triggers $ skill command when $ is inserted before an existing draft', () => {
+      const ref = makeTextAreaRef('$Keep this draft', 1);
+      const { handleKeyUp, setShowSkillsPopover } = renderUseHandleKeyUp(ref);
+
+      act(() => handleKeyUp(makeKeyEvent('$')));
+
+      expect(setShowSkillsPopover).toHaveBeenCalledWith(true);
+    });
   });
 
   describe('fast typing — cursor past position 1 but text is short', () => {

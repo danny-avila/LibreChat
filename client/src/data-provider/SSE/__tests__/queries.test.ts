@@ -35,7 +35,20 @@ jest.mock('../../Endpoints', () => ({
   useGetStartupConfig: jest.fn(() => ({ data: undefined })),
 }));
 
-import { genTitleQueryKey, queueTitleGeneration } from '../queries';
+import { request } from 'librechat-data-provider';
+import { fetchStreamStatus, genTitleQueryKey, queueTitleGeneration } from '../queries';
+
+describe('fetchStreamStatus generation protocol advertisement', () => {
+  it('sends v2 in both the query and header', async () => {
+    (request.get as jest.Mock).mockResolvedValueOnce({ active: false });
+
+    await expect(fetchStreamStatus('conversation-1')).resolves.toEqual({ active: false });
+    expect(request.get).toHaveBeenCalledWith(
+      '/api/agents/chat/status/conversation-1?generationProtocolVersion=2',
+      { headers: { 'X-LibreChat-Generation-Protocol': '2' } },
+    );
+  });
+});
 
 /** Build a minimal Axios-shaped error with a given HTTP status. */
 function makeAxiosError(status: number): Error {

@@ -1,4 +1,4 @@
-import reactRouter from 'react-router-dom';
+import * as reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { getByTestId, render, waitFor } from 'test/layout-test-utils';
@@ -114,6 +114,7 @@ const setup = ({
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
+  __esModule: true,
   useOutletContext: () => ({
     startupConfig: mockStartupConfig,
   }),

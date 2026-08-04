@@ -10,7 +10,8 @@ const {
 const { isEphemeralAgentId } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getMCPServerTools } = require('~/server/services/Config');
-const { canAuthorSkillFiles } = require('./skillDeps');
+const { getAccessibleMcpServerNames } = require('~/server/services/MCP');
+const { getSkillDbMethods, canAuthorSkillFiles } = require('./skillDeps');
 const db = require('~/models');
 
 const loadAddedAgent = (params) =>
@@ -82,6 +83,7 @@ const processAddedConvo = async ({
   defaultActiveOnShare,
   codeEnvAvailable,
   backgroundToolsAvailable,
+  toolIntentsAvailable,
   statefulSessionsAvailable,
   memoryAvailable,
 }) => {
@@ -97,6 +99,7 @@ const processAddedConvo = async ({
   });
 
   try {
+    const skillDbMethods = getSkillDbMethods();
     const addedAgent = await loadAddedAgent({ req, conversation: addedConvo, primaryAgent });
     if (!addedAgent) {
       return { userMCPAuthMap };
@@ -138,7 +141,7 @@ const processAddedConvo = async ({
         const resolvedSkillIds = await resolveModelSpecSkillIds({
           names: selectedModelSpec.skills,
           accessibleSkillIds,
-          getSkillByName: db.getSkillByName,
+          getSkillByName: skillDbMethods.getSkillByName,
         });
         addedAgent.skills_enabled = true;
         addedAgent.skills = resolvedSkillIds.map((id) => id.toString());
@@ -179,6 +182,7 @@ const processAddedConvo = async ({
         }),
         codeEnvAvailable,
         backgroundToolsAvailable,
+        toolIntentsAvailable,
         statefulSessionsAvailable,
         memoryAvailable,
         skillStates,
@@ -189,15 +193,16 @@ const processAddedConvo = async ({
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
         getConvoFiles: db.getConvoFiles,
+        getAccessibleMcpServerNames,
         updateFilesUsage: db.updateFilesUsage,
         getUserCodeFiles: db.getUserCodeFiles,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
-        listSkillsByAccess: db.listSkillsByAccess,
-        listAlwaysApplySkills: db.listAlwaysApplySkills,
-        getSkillByName: db.getSkillByName,
+        listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+        listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+        getSkillByName: skillDbMethods.getSkillByName,
       },
     );
 

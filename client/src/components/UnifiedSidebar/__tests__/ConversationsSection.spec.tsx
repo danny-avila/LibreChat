@@ -110,6 +110,31 @@ function TickController() {
 
 const createQueryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
+const renderCount = () =>
+  mockUseFavorites.mock.calls.length +
+  mockUseGetConversationTags.mock.calls.length +
+  mockUseTitleGeneration.mock.calls.length;
+
+/**
+ * Yield a full event-loop turn inside act. The lazy BookmarkNav's Suspense commit
+ * lands during waitFor's polling, outside act, so its follow-up work sits in the real
+ * scheduler as a macrotask that a microtask-only `await act(async () => {})` misses.
+ */
+const flushEventLoopTurn = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+/** Flush event-loop turns until two consecutive turns add no renders (bounded). */
+const settleRenders = async () => {
+  let stableTurns = 0;
+  for (let turn = 0; turn < 20 && stableTurns < 2; turn++) {
+    const before = renderCount();
+    await flushEventLoopTurn();
+    stableTurns = renderCount() === before ? stableTurns + 1 : 0;
+  }
+};
+
 const renderSection = () =>
   render(
     <QueryClientProvider client={createQueryClient()}>
@@ -144,11 +169,10 @@ describe('ConversationsSection streaming re-renders', () => {
     // data hook firing is the deterministic signal that the chunk resolved).
     await waitFor(() => expect(mockUseGetConversationTags).toHaveBeenCalled());
 
-    // waitFor resolves as soon as the hook has fired once, but the Suspense
-    // resolution commit can still have a trailing render pass pending on slow
-    // runners (Windows CI shards). Flush it before capturing baselines so the
-    // first stream tick doesn't carry it and inflate the children's counts.
-    await act(async () => {});
+    // waitFor resolves once the hook first fires, but on loaded Windows shards the
+    // Suspense resolution can leave a trailing pass pending in the real scheduler,
+    // which the first stream tick's act would flush into the children's counts.
+    await settleRenders();
 
     expect(mockUseFavorites.mock.calls.length).toBeGreaterThan(0);
     expect(mockUseGetConversationTags.mock.calls.length).toBeGreaterThan(0);

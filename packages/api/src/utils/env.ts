@@ -2,7 +2,12 @@ import { extractEnvVariable } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody } from '~/types';
-import { extractOpenIDTokenInfo, processOpenIDPlaceholders, isOpenIDTokenValid } from './oidc';
+import {
+  OPENID_TOKEN_FIELDS,
+  isOpenIDTokenValid,
+  extractOpenIDTokenInfo,
+  processOpenIDPlaceholders,
+} from './oidc';
 
 /**
  * List of allowed user fields that can be used in MCP environment variables.
@@ -123,6 +128,36 @@ export function createSafeUser(
  * These are common fields from the request body that are safe to expose in headers.
  */
 const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messageId'] as const;
+
+/**
+ * Matches every placeholder this module knows how to resolve: the enumerated
+ * `{{LIBRECHAT_USER_*}}`, `{{LIBRECHAT_BODY_*}}`, and `{{LIBRECHAT_OPENID_*}}`
+ * names. Deliberately excludes unknown names (a typo'd placeholder staying
+ * literal is diagnosable) and `{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}`, which is
+ * resolved asynchronously via the OBO flow outside this pipeline.
+ */
+const RESOLVABLE_PLACEHOLDER_PATTERN = new RegExp(
+  [
+    `LIBRECHAT_USER_(?:${ALLOWED_USER_FIELDS.map((field) => field.toUpperCase()).join('|')})`,
+    `LIBRECHAT_BODY_(?:${ALLOWED_BODY_FIELDS.map((field) => field.toUpperCase()).join('|')})`,
+    `LIBRECHAT_OPENID_(?:${OPENID_TOKEN_FIELDS.join('|')}|TOKEN)`,
+  ]
+    .map((names) => `\\{\\{(?:${names})\\}\\}`)
+    .join('|'),
+  'g',
+);
+
+/**
+ * Replaces resolvable-but-unresolved placeholders with an empty string so
+ * LibreChat's internal template syntax is never sent upstream as if it were
+ * real user data (e.g. a gateway trusting a literal
+ * `{{LIBRECHAT_USER_OPENIDID}}` as an account identity would pool unrelated
+ * users under that one string). Only for final resolution passes — staged
+ * flows that resolve again later with more context must not strip.
+ */
+function stripUnresolvedPlaceholders(value: string): string {
+  return value.replace(RESOLVABLE_PLACEHOLDER_PATTERN, '');
+}
 
 /**
  * Processes a string value to replace user field placeholders.
@@ -520,6 +555,10 @@ export function resolveNestedObject<T = unknown>(options?: {
  * @param options.user - Optional user object for replacing user field placeholders (can be partial with just id)
  * @param options.body - Optional request body object for replacing body field placeholders
  * @param options.customUserVars - Optional custom user variables to replace placeholders
+ * @param options.stripUnresolved - When true (final resolution passes only), replaces any
+ *   remaining resolvable placeholders with an empty string so internal template syntax is
+ *   never forwarded upstream. Leave unset for staged flows whose values are resolved again
+ *   later with more context.
  * @returns The processed headers with all placeholders replaced
  */
 export function resolveHeaders(options?: {
@@ -527,21 +566,23 @@ export function resolveHeaders(options?: {
   user?: Partial<IUser> | { id: string };
   body?: RequestBody;
   customUserVars?: Record<string, string>;
+  stripUnresolved?: boolean;
 }): Record<string, string> {
-  const { headers, user, body, customUserVars } = options ?? {};
+  const { headers, user, body, customUserVars, stripUnresolved = false } = options ?? {};
   const inputHeaders = headers ?? {};
 
   const resolvedHeaders: Record<string, string> = { ...inputHeaders };
 
   if (inputHeaders && typeof inputHeaders === 'object' && !Array.isArray(inputHeaders)) {
     Object.keys(inputHeaders).forEach((key) => {
-      resolvedHeaders[key] = processSingleValue({
+      const processed = processSingleValue({
         originalValue: inputHeaders[key],
         customUserVars,
         user: user as IUser,
         body,
         isHeader: true, // Important: Enable header encoding
       });
+      resolvedHeaders[key] = stripUnresolved ? stripUnresolvedPlaceholders(processed) : processed;
     });
   }
 

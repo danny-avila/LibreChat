@@ -1,14 +1,34 @@
+const mockSubmitAskAnswer = jest.fn();
+const mockResetComposer = jest.fn();
+const mockGetComposerText = jest.fn(() => 'answer from A');
+const mockSetSelected = jest.fn();
+const mockSetChecked = jest.fn();
+let mockSaveDrafts = false;
+
 jest.mock('~/data-provider', () => ({ useGetMessagesByConvoId: jest.fn() }));
 jest.mock('~/components/Chat/Messages/Content/ApprovalContext', () => ({
   useAskSubmitStatus: () => ({ getAskStatus: () => 'idle' }),
-  useResumeSubmit: () => ({ submitAskAnswer: jest.fn() }),
+  useResumeSubmit: () => ({ submitAskAnswer: mockSubmitAskAnswer }),
 }));
-jest.mock('~/Providers', () => ({ useOptionalChatFormContext: () => undefined }));
+jest.mock('~/Providers', () => ({
+  useOptionalChatFormContext: () => ({
+    reset: mockResetComposer,
+    getValues: mockGetComposerText,
+  }),
+}));
 jest.mock('~/utils', () => ({ getAskAnswerDraftId: (id: string) => `draft-${id}` }));
 jest.mock('recoil', () => ({
   atom: (cfg: unknown) => cfg,
-  useRecoilState: () => [[], jest.fn()],
-  useRecoilValue: () => false,
+  useRecoilState: (state: { key?: string }) => {
+    if (state.key === 'askAnswerModeSelection') {
+      return [null, mockSetSelected];
+    }
+    if (state.key === 'askAnswerModeChecked') {
+      return [[], mockSetChecked];
+    }
+    return [[], jest.fn()];
+  },
+  useRecoilValue: () => mockSaveDrafts,
 }));
 jest.mock('~/store', () => ({ __esModule: true, default: { saveDrafts: 'saveDrafts' } }));
 
@@ -25,7 +45,11 @@ const liveAsk = {
 } as unknown as ReturnType<typeof findLiveAskUserQuestion>;
 
 describe('useAskAnswerMode', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSaveDrafts = false;
+    mockGetComposerText.mockReturnValue('answer from A');
+  });
 
   it('projects the live ask via the findLiveAskUserQuestion select over the conversation cache', () => {
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
@@ -70,5 +94,103 @@ describe('useAskAnswerMode', () => {
     const { result } = renderHook(() => useAskAnswerMode(null));
 
     expect(result.current.liveAsk).toBeNull();
+  });
+
+  it('does not let a delayed answer success clear the composer or selection after navigation', () => {
+    let finishAnswer: (() => void) | undefined;
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    mockSubmitAskAnswer.mockImplementation(
+      (_actionId: string, _answer: string, options?: { onSuccess?: () => void }) => {
+        finishAnswer = options?.onSuccess;
+      },
+    );
+    const { result, rerender } = renderHook(
+      ({ conversationId }) => useAskAnswerMode(conversationId),
+      { initialProps: { conversationId: 'conversation-A' } },
+    );
+
+    expect(result.current.submitText('answer from A')).toBe(true);
+    expect(mockSubmitAskAnswer).toHaveBeenCalledWith(
+      'a1',
+      'answer from A',
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+
+    const nextAsk = {
+      ...liveAsk,
+      actionId: 'b1',
+    } as typeof liveAsk;
+    mockUseGetMessages.mockReturnValue({ data: nextAsk });
+    mockGetComposerText.mockReturnValue('draft typed in B');
+    rerender({ conversationId: 'conversation-B' });
+    mockSetSelected.mockClear();
+    mockSetChecked.mockClear();
+
+    finishAnswer?.();
+
+    expect(mockResetComposer).not.toHaveBeenCalled();
+    expect(mockSetSelected).not.toHaveBeenCalled();
+    expect(mockSetChecked).not.toHaveBeenCalled();
+  });
+
+  it('keeps newer composer text when the answer settles on the same question', () => {
+    let finishAnswer: (() => void) | undefined;
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    mockSubmitAskAnswer.mockImplementation(
+      (_actionId: string, _answer: string, options?: { onSuccess?: () => void }) => {
+        finishAnswer = options?.onSuccess;
+      },
+    );
+    const { result } = renderHook(() => useAskAnswerMode('conversation-A'));
+
+    expect(result.current.submitText('answer from A')).toBe(true);
+    mockGetComposerText.mockReturnValue('new text typed while resuming');
+    mockSetSelected.mockClear();
+    mockSetChecked.mockClear();
+
+    finishAnswer?.();
+
+    expect(mockResetComposer).not.toHaveBeenCalled();
+    expect(mockSetSelected).toHaveBeenCalledWith(null);
+    expect(mockSetChecked).toHaveBeenCalledWith([]);
+  });
+
+  it('clears the consumed answer when the same question and composer value still own it', () => {
+    let finishAnswer: (() => void) | undefined;
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    mockSubmitAskAnswer.mockImplementation(
+      (_actionId: string, _answer: string, options?: { onSuccess?: () => void }) => {
+        finishAnswer = options?.onSuccess;
+      },
+    );
+    const { result } = renderHook(() => useAskAnswerMode('conversation-A'));
+
+    expect(result.current.submitText('answer from A')).toBe(true);
+    finishAnswer?.();
+
+    expect(mockResetComposer).toHaveBeenCalledTimes(1);
+    expect(mockSetSelected).toHaveBeenCalledWith(null);
+    expect(mockSetChecked).toHaveBeenCalledWith([]);
+  });
+
+  it('ignores a delayed answer success after its answer-mode owner unmounts', () => {
+    let finishAnswer: (() => void) | undefined;
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    mockSubmitAskAnswer.mockImplementation(
+      (_actionId: string, _answer: string, options?: { onSuccess?: () => void }) => {
+        finishAnswer = options?.onSuccess;
+      },
+    );
+    const { result, unmount } = renderHook(() => useAskAnswerMode('conversation-A'));
+
+    expect(result.current.submitText('answer from A')).toBe(true);
+    unmount();
+    mockSetSelected.mockClear();
+    mockSetChecked.mockClear();
+    finishAnswer?.();
+
+    expect(mockResetComposer).not.toHaveBeenCalled();
+    expect(mockSetSelected).not.toHaveBeenCalled();
+    expect(mockSetChecked).not.toHaveBeenCalled();
   });
 });

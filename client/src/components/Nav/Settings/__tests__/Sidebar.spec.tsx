@@ -18,6 +18,7 @@ const ctx: SettingsContextValue = {
   allowAccountDeletion: true,
   aboutEnabled: false,
   engineTTS: 'browser',
+  langfuseConnectionAccess: false,
 };
 
 function setup(extra: Partial<SettingsContextValue> = {}, query = '') {
@@ -44,6 +45,16 @@ describe('Sidebar', () => {
   it('shows the About tab when build info is enabled', () => {
     setup({ aboutEnabled: true });
     expect(screen.getByText('About')).toBeInTheDocument();
+  });
+
+  it('shows the Langfuse tab when Langfuse is available to the user', () => {
+    setup({ langfuseConnectionAccess: true });
+    expect(screen.getByText('Langfuse')).toBeInTheDocument();
+  });
+
+  it('hides the Langfuse tab without Langfuse connection access', () => {
+    setup({ langfuseConnectionAccess: false });
+    expect(screen.queryByText('Langfuse')).not.toBeInTheDocument();
   });
 
   it('forwards typing to onQueryChange', async () => {

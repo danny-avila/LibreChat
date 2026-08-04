@@ -46,6 +46,31 @@ describe('createMCPToolCacheService', () => {
       expect(deps.setCachedTools).not.toHaveBeenCalled();
     });
 
+    it('builds MODEL-FACING keys with the normalized server name, store keyed raw', async () => {
+      /** Tool keys become builder tool ids, agent.tools entries, tool_options
+       *  keys, and definition names, and must equal the runtime instance name,
+       *  which embeds `normalizeServerName(serverName)`. */
+      const deps = createMockDeps();
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+      const tools: MCPToolInput[] = [
+        { name: 'search', description: 'Search', inputSchema: { type: 'object', properties: {} } },
+      ];
+
+      const result = await updateMCPServerTools({
+        userId: 'u1',
+        serverName: 'Connector: Company',
+        tools,
+      });
+
+      const expectedKey = `search${Constants.mcp_delimiter}Connector__Company`;
+      expect(result[expectedKey]).toBeDefined();
+      expect(result[expectedKey]['function'].name).toBe(expectedKey);
+      expect(deps.setCachedTools).toHaveBeenCalledWith(result, {
+        userId: 'u1',
+        serverName: 'Connector: Company',
+      });
+    });
+
     it('constructs tool names with mcp_delimiter and caches them', async () => {
       const deps = createMockDeps();
       const { updateMCPServerTools } = createMCPToolCacheService(deps);
@@ -299,6 +324,46 @@ describe('createMCPToolCacheService', () => {
 
       expect(result).toEqual(cachedTools);
       expect(deps.getCachedTools).toHaveBeenCalledWith({ userId: 'u1', serverName: 'brave' });
+    });
+
+    it('heals stale raw-keyed cache entries to the normalized key format at read time', async () => {
+      /** Entries written before keys embedded the normalized server name would
+       *  otherwise make the server's tools vanish for up to the cache TTL —
+       *  the definitions-only loader treats this map as authoritative and
+       *  never reconnects on a per-key miss. */
+      const staleTools: LCAvailableTools = {
+        [`search${Constants.mcp_delimiter}Connector: Company`]: {
+          type: 'function',
+          ['function']: {
+            name: `search${Constants.mcp_delimiter}Connector: Company`,
+            description: 'Search',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(staleTools),
+        getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
+      });
+      const { getMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await getMCPServerTools('u1', 'Connector: Company');
+
+      const healedKey = `search${Constants.mcp_delimiter}Connector__Company`;
+      expect(Object.keys(result ?? {})).toEqual([healedKey]);
+      expect(result?.[healedKey]['function'].name).toBe(healedKey);
+    });
+
+    it('returns the same reference for safe server names (no heal pass)', async () => {
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(cachedTools),
+        getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
+      });
+      const { getMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await getMCPServerTools('u1', 'brave');
+
+      expect(result).toBe(cachedTools);
     });
 
     it('returns null for request-scoped servers without reading the cache', async () => {

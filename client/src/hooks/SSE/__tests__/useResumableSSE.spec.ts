@@ -1,6 +1,7 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import {
   Constants,
+  ContentTypes,
   LocalStorageKeys,
   QueryKeys,
   StepEvents,
@@ -11,6 +12,7 @@ import type { TMessage, TSubmission } from 'librechat-data-provider';
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
 
 interface MockSSEInstance {
+  _url: string;
   addEventListener: jest.Mock;
   stream: jest.Mock;
   close: jest.Mock;
@@ -22,31 +24,36 @@ interface MockSSEInstance {
 const mockSSEInstances: MockSSEInstance[] = [];
 
 jest.mock('sse.js', () => ({
-  SSE: jest.fn().mockImplementation(() => {
-    const listeners: Record<string, SSEEventListener> = {};
-    const instance: MockSSEInstance = {
-      addEventListener: jest.fn((event: string, cb: SSEEventListener) => {
-        listeners[event] = cb;
-      }),
-      stream: jest.fn(),
-      close: jest.fn(),
-      headers: {},
-      _listeners: listeners,
-      _emit: (event, data = {}) => listeners[event]?.(data as MessageEvent),
-    };
-    mockSSEInstances.push(instance);
-    return instance;
-  }),
+  SSE: jest
+    .fn()
+    .mockImplementation((url: string, options?: { headers?: Record<string, string> }) => {
+      const listeners: Record<string, SSEEventListener> = {};
+      const instance: MockSSEInstance = {
+        _url: url,
+        addEventListener: jest.fn((event: string, cb: SSEEventListener) => {
+          listeners[event] = cb;
+        }),
+        stream: jest.fn(),
+        close: jest.fn(),
+        headers: { ...options?.headers },
+        _listeners: listeners,
+        _emit: (event, data = {}) => listeners[event]?.(data as MessageEvent),
+      };
+      mockSSEInstances.push(instance);
+      return instance;
+    }),
 }));
 
 const mockSetQueryData = jest.fn();
 const mockGetQueryData = jest.fn();
+const mockFetchQuery = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockRemoveQueries = jest.fn();
 const mockFindAll = jest.fn((): Array<{ queryKey: unknown[] }> => []);
 const mockQueryClient = {
   setQueryData: mockSetQueryData,
   getQueryData: mockGetQueryData,
+  fetchQuery: mockFetchQuery,
   invalidateQueries: mockInvalidateQueries,
   removeQueries: mockRemoveQueries,
   getQueryCache: () => ({
@@ -59,6 +66,7 @@ const mockAbortScrollAtom = { key: 'abortScroll' };
 const mockSubmissionAtom = { key: 'submission' };
 const mockShowStopButtonAtom = { key: 'showStopButton' };
 const mockRunEndAtom = { key: 'runEnd' };
+const mockDrainAfterAbortAtom = { key: 'drainAfterAbort' };
 const mockPendingSteersAtom = { key: 'pendingSteers' };
 const mockQueuedMessagesAtom = { key: 'queuedMessages' };
 const mockSetActiveRun = jest.fn();
@@ -66,6 +74,27 @@ const mockSetAbortScroll = jest.fn();
 const mockSetSubmission = jest.fn();
 const mockSetShowStopButton = jest.fn();
 const mockSetRunEnd = jest.fn();
+const mockSetDrainAfterAbort = jest.fn();
+const mockResolveSteerChip = jest.fn();
+const mockUpdateSteerChips = jest.fn();
+const mockSeedSteerChips = jest.fn();
+const mockSettleAppliedSteerParts = jest.fn();
+const mockConvertLocalSteersToQueued = jest.fn();
+const mockUpdateGenerationEpoch = jest.fn();
+const mockRestoreQueuedSubmission = jest.fn();
+let mockRecoilCallbackIndex = 0;
+const mockRecoilCallbacks = [
+  mockRestoreQueuedSubmission,
+  mockResolveSteerChip,
+  mockUpdateSteerChips,
+  mockSeedSteerChips,
+  mockSettleAppliedSteerParts,
+  mockConvertLocalSteersToQueued,
+  mockUpdateGenerationEpoch,
+];
+function mockUseRecoilCallback() {
+  return mockRecoilCallbacks[mockRecoilCallbackIndex++ % mockRecoilCallbacks.length];
+}
 const mockUseSetRecoilStateMock = jest.fn((atom: unknown) => {
   if (atom === mockActiveRunAtom) {
     return mockSetActiveRun;
@@ -82,11 +111,33 @@ const mockUseSetRecoilStateMock = jest.fn((atom: unknown) => {
   if (atom === mockRunEndAtom) {
     return mockSetRunEnd;
   }
+  if (atom === mockDrainAfterAbortAtom) {
+    return mockSetDrainAfterAbort;
+  }
   return jest.fn();
 });
 function mockUseSetRecoilState(atom: unknown) {
   return mockUseSetRecoilStateMock(atom);
 }
+
+type DrainAfterAbortState =
+  | false
+  | {
+      conversationId: string;
+      generationCreatedAt: number;
+    };
+
+const applyLastDrainAfterAbortUpdate = (current: DrainAfterAbortState): DrainAfterAbortState => {
+  const calls = mockSetDrainAfterAbort.mock.calls;
+  const update = calls[calls.length - 1]?.[0] as
+    | DrainAfterAbortState
+    | ((armed: DrainAfterAbortState) => DrainAfterAbortState)
+    | undefined;
+  if (typeof update !== 'function') {
+    throw new Error('Expected a functional drain-after-abort update');
+  }
+  return update(current);
+};
 
 jest.mock('@tanstack/react-query', () => ({
   ...jest.requireActual('@tanstack/react-query'),
@@ -96,9 +147,9 @@ jest.mock('@tanstack/react-query', () => ({
 jest.mock('recoil', () => ({
   ...jest.requireActual('recoil'),
   useSetRecoilState: mockUseSetRecoilState,
-  // The hook's steer-chip/queue callbacks need a RecoilRoot; these tests
-  // render bare, so return inert callbacks (chip state is not under test here).
-  useRecoilCallback: () => jest.fn(),
+  // The hook's steer-chip/queue callbacks need a RecoilRoot; these tests render
+  // bare, so return stable named spies in the hook's declaration order.
+  useRecoilCallback: mockUseRecoilCallback,
 }));
 
 jest.mock('~/store', () => ({
@@ -109,6 +160,7 @@ jest.mock('~/store', () => ({
     submissionByIndex: jest.fn(() => mockSubmissionAtom),
     showStopButtonByIndex: jest.fn(() => mockShowStopButtonAtom),
     runEndByIndex: jest.fn(() => mockRunEndAtom),
+    drainAfterAbortByIndex: jest.fn(() => mockDrainAfterAbortAtom),
     pendingSteersByConvoId: jest.fn(() => mockPendingSteersAtom),
     queuedMessagesByConvoId: jest.fn(() => mockQueuedMessagesAtom),
   },
@@ -119,7 +171,9 @@ jest.mock('~/hooks/AuthContext', () => ({
 }));
 
 const mockFetchStreamStatus = jest.fn();
+const mockGetConversationById = jest.fn();
 const mockConvertSteersToQueued = jest.fn();
+const mockPostGenerationRequest = jest.fn();
 
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => ({ data: { balance: { enabled: false } } }),
@@ -127,6 +181,19 @@ jest.mock('~/data-provider', () => ({
   queueTitleGeneration: jest.fn(),
   streamStatusQueryKey: (conversationId: string) => ['streamStatus', conversationId],
   fetchStreamStatus: (conversationId: string) => mockFetchStreamStatus(conversationId),
+  GENERATION_PROTOCOL_VERSION: 2,
+  generationProtocolHeaders: () => ({ 'X-LibreChat-Generation-Protocol': '2' }),
+  getGenerationProtocolVersion: (value: unknown) =>
+    value != null &&
+    typeof value === 'object' &&
+    (value as { generationProtocolVersion?: unknown }).generationProtocolVersion === 2
+      ? 2
+      : 1,
+  supportsGenerationProtocolV2: (value: unknown) =>
+    value != null &&
+    typeof value === 'object' &&
+    (value as { generationProtocolVersion?: unknown }).generationProtocolVersion === 2,
+  postGenerationRequest: (...args: unknown[]) => mockPostGenerationRequest(...args),
 }));
 
 jest.mock('~/hooks/Chat/useSteerConvert', () => ({
@@ -170,6 +237,10 @@ jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
   return {
     ...actual,
+    dataService: {
+      ...actual.dataService,
+      getConversationById: (...args: unknown[]) => mockGetConversationById(...args),
+    },
     createPayload: jest.fn(() => ({
       payload: { model: 'gpt-4o' },
       server: '/api/agents/chat',
@@ -177,7 +248,10 @@ jest.mock('librechat-data-provider', () => {
     removeNullishValues: jest.fn((v: unknown) => v),
     apiBaseUrl: jest.fn(() => ''),
     request: {
-      post: jest.fn().mockResolvedValue({ streamId: 'stream-123' }),
+      post: jest.fn().mockResolvedValue({
+        streamId: 'stream-123',
+        generationCreatedAt: 1000,
+      }),
       refreshToken: jest.fn(),
       dispatchTokenUpdatedEvent: jest.fn(),
     },
@@ -190,6 +264,10 @@ const CONV_ID = 'conv-abc-123';
 
 type PartialSubmission = {
   conversation: { conversationId?: string };
+  clientRequestId?: string;
+  recoverySteerId?: string;
+  expectedPredecessorCreatedAt?: number;
+  queuedMessageOrigin?: unknown;
   userMessage: Record<string, unknown>;
   messages: TMessage[];
   isTemporary: boolean;
@@ -271,7 +349,11 @@ describe('useResumableSSE', () => {
     mockClearStepMaps.mockClear();
     mockSetIsSubmitting.mockClear();
     mockSetQueryData.mockClear();
-    mockGetQueryData.mockClear();
+    mockGetQueryData.mockReset();
+    mockFetchQuery.mockReset();
+    mockFetchQuery.mockImplementation(({ queryKey }: { queryKey: unknown[] }) =>
+      Promise.resolve(mockGetQueryData(queryKey) ?? []),
+    );
     mockInvalidateQueries.mockClear();
     mockRemoveQueries.mockClear();
     mockFindAll.mockClear();
@@ -281,15 +363,39 @@ describe('useResumableSSE', () => {
     mockSetSubmission.mockClear();
     mockSetShowStopButton.mockClear();
     mockSetRunEnd.mockClear();
+    mockSetDrainAfterAbort.mockClear();
+    mockResolveSteerChip.mockClear();
+    mockUpdateSteerChips.mockClear();
+    mockSeedSteerChips.mockClear();
+    mockSettleAppliedSteerParts.mockClear();
+    mockConvertLocalSteersToQueued.mockClear();
+    mockUpdateGenerationEpoch.mockClear();
+    mockRestoreQueuedSubmission.mockClear();
+    mockRecoilCallbackIndex = 0;
     mockConvertSteersToQueued.mockClear();
     mockFetchStreamStatus.mockReset();
     mockFetchStreamStatus.mockResolvedValue({ active: false });
+    mockGetConversationById.mockReset();
+    mockGetConversationById.mockResolvedValue({
+      conversationId: CONV_ID,
+      endpoint: 'agents',
+    });
     (request.post as jest.Mock).mockReset();
-    (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-123' });
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: 'stream-123',
+      generationCreatedAt: 1000,
+    });
+    (request.refreshToken as jest.Mock).mockReset();
+    (request.dispatchTokenUpdatedEvent as jest.Mock).mockReset();
+    mockPostGenerationRequest.mockReset();
+    mockPostGenerationRequest.mockImplementation((url: string, body: Record<string, unknown>) =>
+      request.post(url, { ...body, generationProtocolVersion: 2 }),
+    );
   });
 
   afterEach(() => {
     jest.useRealTimers();
+    jest.restoreAllMocks();
   });
 
   const seedDraft = (conversationId: string) => {
@@ -297,8 +403,14 @@ describe('useResumableSSE', () => {
     localStorage.setItem(`${LocalStorageKeys.FILES_DRAFT}${conversationId}`, '[]');
   };
 
-  const render404Scenario = async (conversationId = CONV_ID) => {
-    const submission = buildSubmission({ conversation: { conversationId } });
+  const render404Scenario = async (
+    conversationId = CONV_ID,
+    submissionOverrides: Partial<PartialSubmission> = {},
+  ) => {
+    const submission = buildSubmission({
+      ...submissionOverrides,
+      conversation: { conversationId },
+    });
     const chatHelpers = buildChatHelpers();
 
     const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
@@ -334,6 +446,7 @@ describe('useResumableSSE', () => {
     expect(mockErrorHandler).not.toHaveBeenCalled();
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: ['messages', CONV_ID],
+      refetchType: 'none',
     });
     expect(mockRemoveQueries).toHaveBeenCalledWith({
       queryKey: ['streamStatus', CONV_ID],
@@ -403,6 +516,7 @@ describe('useResumableSSE', () => {
 
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: [QueryKeys.messages, 'stream-123'],
+      refetchType: 'none',
     });
     expect(mockRemoveQueries).toHaveBeenCalledWith({
       queryKey: ['streamStatus', 'stream-123'],
@@ -481,6 +595,47 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('preserves and reattaches a generation when status proves a 404 stream is still active', async () => {
+    jest.useFakeTimers();
+    const pendingSteers = [{ steerId: 'still-active', text: 'keep me', createdAt: 1 }];
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      streamId: 'stream-123',
+      status: 'running',
+      createdAt: 1000,
+      resumeState: { pendingSteers, aggregatedContent: [] },
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    const initialSSE = getLastSSE();
+
+    await act(async () => {
+      initialSSE._emit('error', { responseCode: 404 });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['streamStatus', CONV_ID],
+      expect.objectContaining({ active: true, createdAt: 1000 }),
+    );
+    expect(mockSeedSteerChips).toHaveBeenCalledWith(CONV_ID, pendingSteers, 1000, 1);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetSubmission).not.toHaveBeenCalledWith(null);
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(true);
+    expect(mockSetShowStopButton).toHaveBeenLastCalledWith(true);
+
+    await advanceRetryTimer(1_000);
+    expect(mockSSEInstances).toHaveLength(2);
+    expect(getLastSSE()._url).toBe(
+      '/api/agents/chat/stream/stream-123?resume=true&generationCreatedAt=1000&generationProtocolVersion=2',
+    );
+    unmount();
+  });
+
   it('claims parked steers and writes a non-completed run end on 404', async () => {
     const parked = [{ steerId: 'p1', text: 'parked words', createdAt: 1 }];
     mockFetchStreamStatus.mockResolvedValue({ active: false, unrecoveredSteers: parked });
@@ -492,7 +647,9 @@ describe('useResumableSSE', () => {
 
     expect(mockFetchStreamStatus).toHaveBeenCalledTimes(1);
     expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
-    expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONV_ID, parked);
+    expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONV_ID, parked, {
+      generationProtocolVersion: 1,
+    });
     // The true outcome is unknown — the run-end signal must release parked
     // interrupt flags WITHOUT auto-sending queued messages.
     expect(mockSetRunEnd).toHaveBeenCalledWith(
@@ -500,6 +657,80 @@ describe('useResumableSSE', () => {
     );
     expect(mockSetRunEnd).not.toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'completed' }),
+    );
+    unmount();
+  });
+
+  it('authorizes only the exact failed recovery source past the conversion tombstone', async () => {
+    const parked = [
+      { steerId: 'failed-source', text: 'retry these words', createdAt: 1 },
+      { steerId: 'unrelated-source', text: 'dedupe this snapshot', createdAt: 2 },
+    ];
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: 'stream-123',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      generationProtocolVersion: 2,
+      unrecoveredSteers: parked,
+    });
+
+    const { unmount } = await render404Scenario(CONV_ID, {
+      clientRequestId: 'steer-recovery:failed-source',
+    });
+    await flushMicrotasks();
+
+    expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONV_ID, parked, {
+      generationProtocolVersion: 2,
+      allowPreviouslyConvertedIds: ['failed-source'],
+    });
+    unmount();
+  });
+
+  it('suppresses persisted-applied and parked steer ids from local 404 recovery', async () => {
+    const persisted = [
+      {
+        messageId: 'persisted-response',
+        parentMessageId: 'persisted-user',
+        conversationId: CONV_ID,
+        isCreatedByUser: false,
+        text: 'already applied',
+        content: [
+          {
+            type: ContentTypes.STEER,
+            steerId: 'persisted-steer',
+            clientSteerId: 'persisted-client-steer',
+            steer: 'already applied',
+          },
+        ],
+      },
+    ] as TMessage[];
+    const parked = [
+      {
+        steerId: 'parked-steer',
+        clientSteerId: 'parked-client-steer',
+        text: 'recover exactly once',
+        createdAt: 1,
+      },
+    ];
+    mockGetQueryData.mockReturnValue(persisted);
+    mockFetchStreamStatus.mockResolvedValue({ active: false, unrecoveredSteers: parked });
+
+    const { unmount } = await render404Scenario(CONV_ID);
+    await flushMicrotasks();
+
+    expect(mockSettleAppliedSteerParts).toHaveBeenCalledWith(CONV_ID, persisted);
+    expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONV_ID, parked, {
+      generationProtocolVersion: 1,
+    });
+    expect(mockConvertLocalSteersToQueued).toHaveBeenCalledTimes(1);
+    const recoveryOptions = mockConvertLocalSteersToQueued.mock.calls[0][1] as {
+      excludeSteerIds: Iterable<string>;
+    };
+    expect(new Set(recoveryOptions.excludeSteerIds)).toEqual(
+      new Set(['persisted-steer', 'persisted-client-steer', 'parked-steer', 'parked-client-steer']),
     );
     unmount();
   });
@@ -1039,6 +1270,1222 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('carries the generation epoch on the initial SSE URL and every reconnect', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: 'stream-epoch',
+      status: 'started',
+      generationCreatedAt: 1000,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const initialSSE = getLastSSE();
+    expect(initialSSE._url).toBe(
+      '/api/agents/chat/stream/stream-epoch?generationCreatedAt=1000&generationProtocolVersion=2',
+    );
+    expect(initialSSE.headers).toEqual({
+      Authorization: 'Bearer test-token',
+      'X-LibreChat-Generation-Protocol': '2',
+    });
+    expect(request.post).toHaveBeenCalledWith(
+      '/api/agents/chat',
+      expect.objectContaining({ generationProtocolVersion: 2 }),
+    );
+
+    await act(async () => {
+      initialSSE._emit('error', { responseCode: 0 });
+    });
+    await advanceRetryTimer(1000);
+
+    expect(getLastSSE()._url).toBe(
+      '/api/agents/chat/stream/stream-epoch?resume=true&generationCreatedAt=1000&generationProtocolVersion=2',
+    );
+    unmount();
+  });
+
+  it('preserves the generation protocol header across a 401 token refresh', async () => {
+    (request.refreshToken as jest.Mock).mockResolvedValueOnce({ token: 'refreshed-token' });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    const sse = getLastSSE();
+
+    await act(async () => {
+      sse._emit('error', { responseCode: 401 });
+      await Promise.resolve();
+    });
+
+    expect(sse.headers).toEqual({
+      Authorization: 'Bearer refreshed-token',
+      'X-LibreChat-Generation-Protocol': '2',
+    });
+    expect(request.dispatchTokenUpdatedEvent).toHaveBeenCalledWith('refreshed-token');
+    expect(sse.stream).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('withholds live Stop until the start response installs a generation epoch', async () => {
+    let resolveStart: ((value: { streamId: string; generationCreatedAt: number }) => void) | null =
+      null;
+    (request.post as jest.Mock).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(mockSetShowStopButton).toHaveBeenCalledWith(false);
+    expect(mockSetShowStopButton).not.toHaveBeenCalledWith(true);
+
+    await act(async () => {
+      resolveStart?.({ streamId: 'stream-epoch', generationCreatedAt: 1000 });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(getLastSSE()._url).toContain('generationCreatedAt=1000');
+    expect(mockUpdateGenerationEpoch).toHaveBeenCalledWith('stream-epoch', 1000, undefined, 1);
+    expect(mockSetShowStopButton).toHaveBeenLastCalledWith(true);
+    unmount();
+  });
+
+  it('keeps live controls hidden across reconnects when a malformed start omits the epoch', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-without-epoch' });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    await act(async () => {
+      getLastSSE()._emit('error');
+    });
+
+    expect(mockSetShowStopButton).not.toHaveBeenCalledWith(true);
+    expect(mockSetShowStopButton).toHaveBeenLastCalledWith(false);
+    unmount();
+  });
+
+  it('adopts an authoritative replacement epoch for an epoch-less attachment', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      streamId: CONV_ID,
+      status: 'running',
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+      resumeState: { pendingSteers: [], aggregatedContent: [] },
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    const epochlessSSE = getLastSSE();
+
+    await act(async () => {
+      epochlessSSE._emit('error', { responseCode: 409 });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['streamStatus', CONV_ID],
+      expect.objectContaining({ createdAt: 2000, generationHandoff: true }),
+    );
+    expect(mockUpdateGenerationEpoch).toHaveBeenCalledWith(CONV_ID, 2000, undefined, 2);
+    expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('refetches a settled duplicate without opening an SSE stream', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      conversationId: CONV_ID,
+      status: 'settled',
+      generationProtocolVersion: 2,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await waitFor(() => {
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    });
+
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.messages, CONV_ID],
+      refetchType: 'all',
+    });
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'aborted' }),
+    );
+    unmount();
+  });
+
+  it.each(['settled', 'replaced'] as const)(
+    'rejects an unnegotiated %s start control response',
+    async (status) => {
+      (request.post as jest.Mock).mockResolvedValue({
+        status,
+        streamId: CONV_ID,
+        conversationId: CONV_ID,
+        generationCreatedAt: 1000,
+      });
+      const submission = buildSubmission();
+      const chatHelpers = buildChatHelpers();
+
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+
+      expect(mockSSEInstances).toHaveLength(0);
+      expect(mockErrorHandler).toHaveBeenCalledWith(expect.objectContaining({ submission }));
+      unmount();
+    },
+  );
+
+  it('returns a settled first turn to new chat only after an authoritative 404', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      conversationId: CONV_ID,
+      status: 'settled',
+      generationProtocolVersion: 2,
+    });
+    mockGetConversationById.mockRejectedValueOnce({ response: { status: 404 } });
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(chatHelpers.newConversation).toHaveBeenCalledWith({
+      template: { conversationId: String(Constants.NEW_CONVO) },
+    });
+    expect(mockRemoveQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.conversation, CONV_ID],
+    });
+    expect(mockRemoveQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.messages, CONV_ID],
+    });
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'aborted' }),
+    );
+    unmount();
+  });
+
+  it('preserves a settled first turn when conversation lookup fails transiently', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      conversationId: CONV_ID,
+      status: 'settled',
+      generationProtocolVersion: 2,
+    });
+    mockGetConversationById.mockRejectedValueOnce({ response: { status: 503 } });
+    const submission = buildSubmission({ conversation: {} });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(chatHelpers.newConversation).not.toHaveBeenCalled();
+    expect(mockRemoveQueries).not.toHaveBeenCalled();
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.messages, CONV_ID],
+      refetchType: 'all',
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.allConversations],
+    });
+    /** The settled response carries no epoch, so it cannot authorize clearing
+     * whichever conversation/generation may now own this pane's arm. */
+    expect(mockSetDrainAfterAbort).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'error' }),
+    );
+    unmount();
+  });
+
+  it('drops an awaited settled-start callback after conversation B starts', async () => {
+    const conversationB = 'conv-b-settled-race';
+    (request.post as jest.Mock)
+      .mockResolvedValueOnce({
+        conversationId: CONV_ID,
+        status: 'settled',
+        generationProtocolVersion: 2,
+      })
+      .mockResolvedValueOnce({
+        streamId: conversationB,
+        status: 'started',
+        generationCreatedAt: 2000,
+        generationProtocolVersion: 2,
+      });
+    let resolveConversation!: (value: { conversationId: string; endpoint: string }) => void;
+    mockGetConversationById.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveConversation = resolve;
+        }),
+    );
+    const submissionA = buildSubmission({ clientRequestId: 'settled-request-a' });
+    const submissionB = buildSubmission({
+      conversation: { conversationId: conversationB },
+      clientRequestId: 'request-b',
+      userMessage: {
+        ...submissionA.userMessage,
+        messageId: 'msg-b',
+        conversationId: conversationB,
+      },
+      initialResponse: {
+        ...submissionA.initialResponse,
+        messageId: 'resp-b',
+        conversationId: conversationB,
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+    const { rerender, unmount } = renderHook(
+      ({ current }: { current: TSubmission }) => useResumableSSE(current, chatHelpers),
+      { initialProps: { current: submissionA } },
+    );
+    await waitFor(() => expect(mockGetConversationById).toHaveBeenCalledWith(CONV_ID));
+
+    rerender({ current: submissionB });
+    await waitFor(() => expect(mockSSEInstances).toHaveLength(1));
+    const generationB = getLastSSE();
+    chatHelpers.setConversation.mockClear();
+    mockSetSubmission.mockClear();
+    mockSetRunEnd.mockClear();
+    mockSetIsSubmitting.mockClear();
+    mockSetShowStopButton.mockClear();
+
+    await act(async () => {
+      resolveConversation({ conversationId: CONV_ID, endpoint: 'agents' });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(chatHelpers.setConversation).not.toHaveBeenCalled();
+    expect(mockSetSubmission).not.toHaveBeenCalledWith(null);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+    expect(mockSetShowStopButton).not.toHaveBeenCalledWith(false);
+    expect(generationB.close).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('hands a stale SSE attachment to the active replacement generation', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      status: 'started',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      streamId: CONV_ID,
+      status: 'running',
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+      resumeState: {
+        conversationId: CONV_ID,
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'replacement content' }],
+        pendingSteers: [],
+      },
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const staleSSE = getLastSSE();
+    await act(async () => {
+      staleSSE._emit('error', { responseCode: 409 });
+      await Promise.resolve();
+    });
+
+    expect(staleSSE.close).toHaveBeenCalled();
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['streamStatus', CONV_ID],
+      expect.objectContaining({
+        active: true,
+        createdAt: 2000,
+        generationHandoff: true,
+      }),
+    );
+    expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+    unmount();
+  });
+
+  it('does not let a delayed FINAL from generation A idle active generation B', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      status: 'started',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      streamId: CONV_ID,
+      status: 'running',
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+      resumeState: {
+        conversationId: CONV_ID,
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'generation B content' }],
+        pendingSteers: [],
+      },
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const generationA = getLastSSE();
+    await act(async () => {
+      generationA._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          generationProtocolVersion: 2,
+          conversation: { conversationId: CONV_ID },
+          requestMessage: submission.userMessage,
+          responseMessage: submission.initialResponse,
+        }),
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['streamStatus', CONV_ID],
+      expect.objectContaining({
+        active: true,
+        createdAt: 2000,
+        generationHandoff: true,
+      }),
+    );
+    expect(mockFinalHandler).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+    unmount();
+  });
+
+  it('drops an awaited FINAL callback after navigation installs conversation B', async () => {
+    const conversationB = 'conv-b-456';
+    (request.post as jest.Mock)
+      .mockResolvedValueOnce({
+        streamId: CONV_ID,
+        status: 'started',
+        generationCreatedAt: 1000,
+        generationProtocolVersion: 2,
+      })
+      .mockResolvedValueOnce({
+        streamId: conversationB,
+        status: 'started',
+        generationCreatedAt: 2000,
+        generationProtocolVersion: 2,
+      });
+    let resolveTerminalStatus!: (value: { active: false; generationProtocolVersion: 2 }) => void;
+    mockFetchStreamStatus.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveTerminalStatus = resolve;
+        }),
+    );
+    const submissionA = buildSubmission({ clientRequestId: 'request-a' });
+    const submissionB = buildSubmission({
+      conversation: { conversationId: conversationB },
+      clientRequestId: 'request-b',
+      userMessage: {
+        ...submissionA.userMessage,
+        messageId: 'msg-b',
+        conversationId: conversationB,
+      },
+      initialResponse: {
+        ...submissionA.initialResponse,
+        messageId: 'resp-b',
+        conversationId: conversationB,
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+    const { rerender, unmount } = renderHook(
+      ({ current }: { current: TSubmission }) => useResumableSSE(current, chatHelpers),
+      { initialProps: { current: submissionA } },
+    );
+    await flushMicrotasks();
+
+    const generationA = getLastSSE();
+    act(() => {
+      generationA._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          generationProtocolVersion: 2,
+          conversation: { conversationId: CONV_ID },
+          requestMessage: submissionA.userMessage,
+          responseMessage: submissionA.initialResponse,
+        }),
+      });
+    });
+    await waitFor(() => expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID));
+
+    rerender({ current: submissionB });
+    await waitFor(() => expect(mockSSEInstances).toHaveLength(2));
+    const generationB = getLastSSE();
+    mockFinalHandler.mockClear();
+    mockSetSubmission.mockClear();
+    mockSetRunEnd.mockClear();
+    mockSetIsSubmitting.mockClear();
+    mockSetShowStopButton.mockClear();
+
+    await act(async () => {
+      resolveTerminalStatus({ active: false, generationProtocolVersion: 2 });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockFinalHandler).not.toHaveBeenCalled();
+    expect(mockSetSubmission).not.toHaveBeenCalledWith(null);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+    expect(mockSetShowStopButton).not.toHaveBeenCalledWith(false);
+    expect(generationB.close).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('drops an awaited synthesized reconciliation after conversation B starts', async () => {
+    const conversationB = 'conv-b-789';
+    (request.post as jest.Mock)
+      .mockResolvedValueOnce({
+        streamId: CONV_ID,
+        status: 'started',
+        generationCreatedAt: 1000,
+        generationProtocolVersion: 2,
+      })
+      .mockResolvedValueOnce({
+        streamId: conversationB,
+        status: 'started',
+        generationCreatedAt: 2000,
+        generationProtocolVersion: 2,
+      });
+    let resolveMessages!: (value: TMessage[]) => void;
+    mockFetchQuery.mockImplementationOnce(
+      () =>
+        new Promise<TMessage[]>((resolve) => {
+          resolveMessages = resolve;
+        }),
+    );
+    const submissionA = buildSubmission({ clientRequestId: 'request-a' });
+    const submissionB = buildSubmission({
+      conversation: { conversationId: conversationB },
+      clientRequestId: 'request-b',
+      userMessage: {
+        ...submissionA.userMessage,
+        messageId: 'msg-b',
+        conversationId: conversationB,
+      },
+      initialResponse: {
+        ...submissionA.initialResponse,
+        messageId: 'resp-b',
+        conversationId: conversationB,
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+    const { rerender, unmount } = renderHook(
+      ({ current }: { current: TSubmission }) => useResumableSSE(current, chatHelpers),
+      { initialProps: { current: submissionA } },
+    );
+    await flushMicrotasks();
+
+    act(() => {
+      getLastSSE()._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          reconcile: true,
+          reconcileReason: 'abort_persistence_failed',
+          terminalStatus: 'aborted',
+          generationCreatedAt: 1000,
+          generationProtocolVersion: 2,
+          conversation: { conversationId: CONV_ID },
+        }),
+      });
+    });
+    await waitFor(() => expect(mockFetchQuery).toHaveBeenCalled());
+
+    rerender({ current: submissionB });
+    await waitFor(() => expect(mockSSEInstances).toHaveLength(2));
+    const generationB = getLastSSE();
+    mockFetchStreamStatus.mockClear();
+    mockFinalHandler.mockClear();
+    mockSetSubmission.mockClear();
+    mockSetRunEnd.mockClear();
+    mockSetDrainAfterAbort.mockClear();
+    mockSetIsSubmitting.mockClear();
+    mockSetShowStopButton.mockClear();
+    mockSettleAppliedSteerParts.mockClear();
+
+    await act(async () => {
+      resolveMessages([]);
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+    expect(mockFinalHandler).not.toHaveBeenCalled();
+    expect(mockSettleAppliedSteerParts).not.toHaveBeenCalled();
+    expect(mockSetSubmission).not.toHaveBeenCalledWith(null);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetDrainAfterAbort).not.toHaveBeenCalled();
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+    expect(mockSetShowStopButton).not.toHaveBeenCalledWith(false);
+    expect(generationB.close).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('does not let a delayed error from generation A idle active generation B', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      status: 'started',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      streamId: CONV_ID,
+      status: 'running',
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+      resumeState: {
+        conversationId: CONV_ID,
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'generation B content' }],
+        pendingSteers: [],
+      },
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const generationA = getLastSSE();
+    await act(async () => {
+      generationA._emit('error', {
+        data: JSON.stringify({
+          error: 'generation A failed late',
+          generationProtocolVersion: 2,
+        }),
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['streamStatus', CONV_ID],
+      expect.objectContaining({
+        active: true,
+        createdAt: 2000,
+        generationHandoff: true,
+      }),
+    );
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+    unmount();
+  });
+
+  it('retries the exact fenced generation when FINAL races an active status', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      status: 'started',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      streamId: CONV_ID,
+      status: 'running',
+      createdAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const generationSSE = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+    await act(async () => {
+      generationSSE._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          generationProtocolVersion: 2,
+          conversation: { conversationId: CONV_ID },
+          requestMessage: submission.userMessage,
+          responseMessage: submission.initialResponse,
+        }),
+      });
+      await Promise.resolve();
+    });
+
+    expect(generationSSE.close).toHaveBeenCalled();
+    expect(mockFinalHandler).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+
+    await advanceRetryTimer(250);
+
+    expect(mockSSEInstances).toHaveLength(sseCount + 1);
+    expect(getLastSSE()._url).toContain('resume=true');
+    expect(getLastSSE()._url).toContain('generationCreatedAt=1000');
+    unmount();
+  });
+
+  it('retries the exact fenced generation when error status is inconclusive', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      status: 'started',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockRejectedValue(new Error('status unavailable'));
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const generationSSE = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+    await act(async () => {
+      generationSSE._emit('error', {
+        data: JSON.stringify({
+          error: 'generation failed',
+          generationProtocolVersion: 2,
+        }),
+      });
+      await Promise.resolve();
+    });
+
+    expect(generationSSE.close).toHaveBeenCalled();
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+
+    await advanceRetryTimer(250);
+
+    expect(mockSSEInstances).toHaveLength(sseCount + 1);
+    expect(getLastSSE()._url).toContain('resume=true');
+    expect(getLastSSE()._url).toContain('generationCreatedAt=1000');
+    unmount();
+  });
+
+  it('hands a replaced start to the authoritative generation without attaching the stale submission', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      status: 'replaced',
+      streamId: CONV_ID,
+      conversationId: CONV_ID,
+      generationCreatedAt: 2000,
+      generationProtocolVersion: 2,
+    });
+    const pendingSteers = [{ steerId: 'replacement-steer', text: 'new epoch', createdAt: 2 }];
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      streamId: CONV_ID,
+      status: 'running',
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+      resumeState: {
+        conversationId: CONV_ID,
+        runSteps: [],
+        aggregatedContent: [{ type: 'text', text: 'replacement content' }],
+        pendingSteers,
+      },
+    });
+    mockGetQueryData.mockImplementation((queryKey: unknown[]) =>
+      queryKey[0] === QueryKeys.conversation
+        ? { conversationId: CONV_ID, endpoint: 'agents' }
+        : undefined,
+    );
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['streamStatus', CONV_ID],
+      expect.objectContaining({
+        active: true,
+        createdAt: 2000,
+        generationHandoff: true,
+      }),
+    );
+    expect(mockSeedSteerChips).toHaveBeenCalledWith(CONV_ID, pendingSteers, 2000, 2);
+    expect(mockUpdateGenerationEpoch).toHaveBeenCalledWith(CONV_ID, 2000, undefined, 2);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('only disarms the replacement epoch when replacement status cannot be confirmed', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      status: 'replaced',
+      streamId: CONV_ID,
+      conversationId: CONV_ID,
+      generationCreatedAt: 2000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+    });
+
+    const { unmount } = renderHook(() => useResumableSSE(buildSubmission(), buildChatHelpers()));
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+
+    expect(mockSetDrainAfterAbort).toHaveBeenCalledWith(expect.any(Function));
+    const conversationBArm = {
+      conversationId: 'conv-b',
+      generationCreatedAt: 3000,
+    };
+    const newerSameConversationArm = {
+      conversationId: CONV_ID,
+      generationCreatedAt: 3000,
+    };
+    expect(applyLastDrainAfterAbortUpdate(conversationBArm)).toBe(conversationBArm);
+    expect(applyLastDrainAfterAbortUpdate(newerSameConversationArm)).toBe(newerSameConversationArm);
+    expect(
+      applyLastDrainAfterAbortUpdate({
+        conversationId: CONV_ID,
+        generationCreatedAt: 2000,
+      }),
+    ).toBe(false);
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, generationCreatedAt: 2000 }),
+    );
+    unmount();
+  });
+
+  it('never treats an incomplete replaced response as an ordinary stream start', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      status: 'replaced',
+      streamId: CONV_ID,
+      conversationId: CONV_ID,
+      generationProtocolVersion: 2,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(mockErrorHandler).toHaveBeenCalledWith(expect.objectContaining({ submission }));
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('reconciles a synthesized terminal frame without rendering a bogus final or error', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      status: 'started',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    const persisted = [
+      {
+        messageId: 'persisted-response',
+        conversationId: CONV_ID,
+        isCreatedByUser: false,
+        text: 'Persisted answer',
+      },
+    ] as TMessage[];
+    mockGetQueryData.mockReturnValue(persisted);
+    mockFetchStreamStatus.mockResolvedValue({ active: false, generationProtocolVersion: 2 });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          reconcile: true,
+          reconcileReason: 'terminal_payload_missing',
+          terminalStatus: 'complete',
+          generationCreatedAt: 1000,
+          generationProtocolVersion: 2,
+          conversation: { conversationId: CONV_ID },
+        }),
+      });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockFinalHandler).not.toHaveBeenCalled();
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.messages, CONV_ID],
+      refetchType: 'none',
+    });
+    expect(mockSettleAppliedSteerParts).toHaveBeenCalledWith(CONV_ID, persisted);
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'completed' }),
+    );
+    expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    expect(mockUpdateGenerationEpoch).toHaveBeenCalledWith(CONV_ID, null, 1000);
+    unmount();
+  });
+
+  it('ignores v2-only lifecycle reconciliation on a legacy generation', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      status: 'started',
+      generationCreatedAt: 1000,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    const sse = getLastSSE();
+    mockInvalidateQueries.mockClear();
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          reconcile: true,
+          reconcileReason: 'terminal_payload_missing',
+          generationProtocolVersion: 2,
+          generationCreatedAt: 1000,
+          conversation: { conversationId: CONV_ID },
+        }),
+      });
+      await Promise.resolve();
+    });
+
+    expect(mockFinalHandler).not.toHaveBeenCalled();
+    expect(mockInvalidateQueries).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(sse.close).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('does not publish a completed run when synthesized persistence cannot be fetched', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      status: 'started',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchQuery.mockRejectedValueOnce(new Error('message refetch failed'));
+    mockFetchStreamStatus.mockResolvedValue({ active: false, generationProtocolVersion: 2 });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    await act(async () => {
+      getLastSSE()._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          reconcile: true,
+          reconcileReason: 'terminal_payload_missing',
+          terminalStatus: 'complete',
+          generationCreatedAt: 1000,
+          generationProtocolVersion: 2,
+          conversation: { conversationId: CONV_ID },
+        }),
+      });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockFinalHandler).not.toHaveBeenCalled();
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'error' }),
+    );
+    expect(mockSetRunEnd).not.toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'completed' }),
+    );
+    expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('disarms interrupt drain before publishing an abort persistence failure', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      status: 'started',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchQuery.mockResolvedValueOnce([]);
+    mockFetchStreamStatus.mockResolvedValue({ active: false, generationProtocolVersion: 2 });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    await act(async () => {
+      getLastSSE()._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          reconcile: true,
+          reconcileReason: 'abort_persistence_failed',
+          terminalStatus: 'aborted',
+          generationCreatedAt: 1000,
+          generationProtocolVersion: 2,
+          conversation: { conversationId: CONV_ID },
+        }),
+      });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetDrainAfterAbort).toHaveBeenCalledWith(expect.any(Function));
+    const conversationBArm = {
+      conversationId: 'conv-b',
+      generationCreatedAt: 2000,
+    };
+    const newerSameConversationArm = {
+      conversationId: CONV_ID,
+      generationCreatedAt: 2000,
+    };
+    expect(applyLastDrainAfterAbortUpdate(conversationBArm)).toBe(conversationBArm);
+    expect(applyLastDrainAfterAbortUpdate(newerSameConversationArm)).toBe(newerSameConversationArm);
+    expect(
+      applyLastDrainAfterAbortUpdate({
+        conversationId: CONV_ID,
+        generationCreatedAt: 1000,
+      }),
+    ).toBe(false);
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'aborted' }),
+    );
+    expect(mockSetDrainAfterAbort.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSetRunEnd.mock.invocationCallOrder[0],
+    );
+    unmount();
+  });
+
+  it('hands a synthesized generation-replaced frame to the newer active epoch', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: CONV_ID,
+      status: 'started',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      streamId: CONV_ID,
+      status: 'running',
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+      resumeState: { runSteps: [], aggregatedContent: [] },
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          reconcile: true,
+          reconcileReason: 'generation_replaced',
+          generationCreatedAt: 1000,
+          generationProtocolVersion: 2,
+          conversation: { conversationId: CONV_ID },
+        }),
+      });
+      await Promise.resolve();
+    });
+
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['streamStatus', CONV_ID],
+      expect.objectContaining({ createdAt: 2000, generationHandoff: true }),
+    );
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockFinalHandler).not.toHaveBeenCalled();
+    expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    expect(mockUpdateGenerationEpoch).toHaveBeenCalledWith(CONV_ID, 2000, undefined, 2);
+    unmount();
+  });
+
+  it('settles every applied steer immediately and cancels all render retries at terminal', async () => {
+    let nextFrameId = 0;
+    const requestFrame = jest
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation(() => ++nextFrameId);
+    const cancelFrame = jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    const sse = getLastSSE();
+
+    for (const [steerId, clientSteerId] of [
+      ['server-1', 'client-1'],
+      ['server-2', 'client-2'],
+    ]) {
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            event: 'on_steer_applied',
+            data: {
+              steerId,
+              clientSteerId,
+              conversationId: CONV_ID,
+              index: 0,
+              part: {
+                type: ContentTypes.STEER,
+                [ContentTypes.STEER]: steerId,
+                steerId,
+                clientSteerId,
+              },
+            },
+          }),
+        });
+      });
+    }
+
+    expect(mockResolveSteerChip).toHaveBeenNthCalledWith(1, CONV_ID, 'server-1', 'client-1');
+    expect(mockResolveSteerChip).toHaveBeenNthCalledWith(2, CONV_ID, 'server-2', 'client-2');
+    expect(requestFrame).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          conversation: { conversationId: CONV_ID },
+          requestMessage: { messageId: 'msg-1', conversationId: CONV_ID },
+          responseMessage: { messageId: 'resp-1', conversationId: CONV_ID },
+        }),
+      });
+    });
+
+    expect(cancelFrame).toHaveBeenCalledTimes(2);
+    expect(cancelFrame).toHaveBeenNthCalledWith(1, 1);
+    expect(cancelFrame).toHaveBeenNthCalledWith(2, 2);
+    unmount();
+    requestFrame.mockRestore();
+    cancelFrame.mockRestore();
+  });
+
+  it('does not publish a completed run when the ordinary final cannot be applied', async () => {
+    mockFinalHandler.mockImplementationOnce(() => {
+      throw new Error('final application failed');
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    await act(async () => {
+      getLastSSE()._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          conversation: { conversationId: CONV_ID },
+          requestMessage: { messageId: 'msg-1', conversationId: CONV_ID },
+          responseMessage: {
+            messageId: 'resp-1',
+            conversationId: CONV_ID,
+            unfinished: false,
+          },
+        }),
+      });
+    });
+
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'error' }),
+    );
+    expect(mockSetRunEnd).not.toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'completed' }),
+    );
+    unmount();
+  });
+
+  it('completes an applied authoritative final without requiring a client persistence refetch', async () => {
+    mockFetchQuery.mockRejectedValue(new Error('a reconciliation fetch would fail'));
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    const finalPayload = {
+      final: true,
+      conversation: { conversationId: CONV_ID },
+      requestMessage: { messageId: 'msg-1', conversationId: CONV_ID },
+      responseMessage: {
+        messageId: 'resp-1',
+        conversationId: CONV_ID,
+        unfinished: false,
+      },
+    };
+
+    await act(async () => {
+      getLastSSE()._emit('message', { data: JSON.stringify(finalPayload) });
+    });
+
+    expect(mockFinalHandler).toHaveBeenCalledWith(
+      finalPayload,
+      expect.objectContaining(submission),
+    );
+    expect(mockFetchQuery).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'completed' }),
+    );
+    unmount();
+  });
+
   it('continues retrying chat start while the server reports startup readiness pending', async () => {
     jest.useFakeTimers();
     for (let i = 0; i < 9; i++) {
@@ -1114,8 +2561,175 @@ describe('useResumableSSE', () => {
     );
     expect(mockSetIsSubmitting).toHaveBeenCalledWith(true);
     expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
-    expect(mockSetShowStopButton).toHaveBeenCalledWith(true);
+    expect(mockSetShowStopButton).not.toHaveBeenCalledWith(true);
     expect(mockSetShowStopButton).toHaveBeenCalledWith(false);
+    unmount();
+  });
+
+  it('restores an exact queued row after a definitive pre-create rejection', async () => {
+    (request.post as jest.Mock).mockRejectedValueOnce({
+      response: { status: 429, data: { message: 'too many requests' } },
+    });
+    const queuedMessageOrigin = {
+      item: { id: 'queued-1', text: 'try later', createdAt: 1 },
+      beforeIds: [],
+      afterIds: ['queued-2'],
+    };
+    const submission = buildSubmission({ queuedMessageOrigin });
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+
+    expect(mockRestoreQueuedSubmission).toHaveBeenCalledWith(submission);
+    expect(mockSSEInstances).toHaveLength(0);
+    unmount();
+  });
+
+  it('restores queued C and hands off to B when B wins the predecessor status window', async () => {
+    (request.post as jest.Mock).mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: {
+          status: 'predecessor_mismatch',
+          code: 'GENERATION_PREDECESSOR_MISMATCH',
+          streamId: CONV_ID,
+          conversationId: CONV_ID,
+          generationCreatedAt: 2000,
+          active: true,
+        },
+      },
+    });
+    // The atomic admission response can beat status publication. Its active
+    // replacement identity must still win over retrying C against stale A.
+    mockFetchStreamStatus.mockRejectedValueOnce(new Error('status publication lag'));
+    const queuedMessageOrigin = {
+      item: {
+        id: 'queued-c',
+        text: 'send C after B',
+        createdAt: 3,
+        expectedPredecessorCreatedAt: 1000,
+      },
+      beforeIds: [],
+      afterIds: ['queued-d'],
+    };
+    const submission = buildSubmission({
+      expectedPredecessorCreatedAt: 1000,
+      queuedMessageOrigin,
+    });
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+
+    expect(request.post).toHaveBeenCalledTimes(1);
+    expect(mockRestoreQueuedSubmission).toHaveBeenNthCalledWith(1, submission);
+    expect(mockRestoreQueuedSubmission).toHaveBeenLastCalledWith(submission, 2000);
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['streamStatus', CONV_ID],
+      expect.objectContaining({
+        active: true,
+        streamId: CONV_ID,
+        createdAt: 2000,
+        generationProtocolVersion: 2,
+        generationHandoff: true,
+      }),
+    );
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.messages, CONV_ID],
+      refetchType: 'all',
+    });
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+    unmount();
+  });
+
+  it('keeps the rejected row queued when predecessor mismatch finds no active replacement', async () => {
+    (request.post as jest.Mock).mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: {
+          status: 'predecessor_mismatch',
+          code: 'GENERATION_PREDECESSOR_MISMATCH',
+          streamId: CONV_ID,
+          conversationId: CONV_ID,
+          generationCreatedAt: 2000,
+          active: false,
+        },
+      },
+    });
+    mockFetchStreamStatus.mockResolvedValueOnce({
+      active: false,
+      generationProtocolVersion: 2,
+      createdAt: 2000,
+    });
+    const queuedMessageOrigin = {
+      item: {
+        id: 'queued-c',
+        text: 'keep C queued',
+        createdAt: 3,
+        expectedPredecessorCreatedAt: 1000,
+      },
+      beforeIds: [],
+      afterIds: [],
+    };
+    const submission = buildSubmission({
+      expectedPredecessorCreatedAt: 1000,
+      queuedMessageOrigin,
+    });
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+
+    expect(request.post).toHaveBeenCalledTimes(1);
+    expect(mockRestoreQueuedSubmission).toHaveBeenNthCalledWith(1, submission);
+    expect(mockRestoreQueuedSubmission).toHaveBeenLastCalledWith(submission, 2000);
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.messages, CONV_ID],
+      refetchType: 'all',
+    });
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(mockSetDrainAfterAbort).toHaveBeenCalledWith(expect.any(Function));
+    const replacementArm = {
+      conversationId: CONV_ID,
+      generationCreatedAt: 2000,
+    };
+    expect(applyLastDrainAfterAbortUpdate(replacementArm)).toBe(replacementArm);
+    expect(
+      applyLastDrainAfterAbortUpdate({
+        conversationId: CONV_ID,
+        generationCreatedAt: 1000,
+      }),
+    ).toBe(false);
+    unmount();
+  });
+
+  it('re-queues a released recovery source after an ambiguous start failure', async () => {
+    (request.post as jest.Mock).mockRejectedValueOnce({
+      response: { status: 500, data: { message: 'failed to start' } },
+    });
+    const released = { steerId: 'source-steer', text: 'recover again', createdAt: 1 };
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      generationProtocolVersion: 2,
+      unrecoveredSteers: [released],
+    });
+    const submission = buildSubmission({
+      clientRequestId: 'attempt-uuid',
+      recoverySteerId: 'source-steer',
+    });
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+
+    expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONV_ID, [released], {
+      generationProtocolVersion: 2,
+      allowPreviouslyConvertedIds: ['source-steer'],
+    });
+    expect(mockRestoreQueuedSubmission).not.toHaveBeenCalled();
     unmount();
   });
 
@@ -1857,6 +3471,159 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('keeps an active job locked and resubscribes after the reconnect retry ceiling', async () => {
+    jest.useFakeTimers();
+    const pendingSteers = [
+      { steerId: 'still-running-steer', text: 'wait for boundary', createdAt: 1 },
+    ];
+    const aggregatedContent = [{ type: 'text', text: 'partial answer' }];
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      status: 'running',
+      streamId: CONV_ID,
+      createdAt: 1000,
+      resumeState: { pendingSteers, aggregatedContent },
+    });
+    const submission = {
+      ...buildSubmission(),
+      resumeStreamId: CONV_ID,
+      resumeGenerationCreatedAt: 1000,
+    } as TSubmission & { resumeStreamId: string; resumeGenerationCreatedAt: number };
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+      const current = getLastSSE();
+      await act(async () => {
+        current._emit('error');
+        await Promise.resolve();
+      });
+      await advanceRetryTimer(delay);
+    }
+    expect(mockSSEInstances).toHaveLength(6);
+
+    const retryCeilingSSE = getLastSSE();
+    const countAtCeiling = mockSSEInstances.length;
+    await act(async () => {
+      retryCeilingSSE._emit('error');
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
+    expect(mockSeedSteerChips).toHaveBeenCalledWith(CONV_ID, pendingSteers, 1000, 1);
+    expect(mockSettleAppliedSteerParts).toHaveBeenCalledWith(CONV_ID, aggregatedContent);
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(true);
+    expect(mockSetShowStopButton).toHaveBeenLastCalledWith(true);
+    expect(mockSetSubmission).not.toHaveBeenCalledWith(null);
+    expect(mockSSEInstances).toHaveLength(countAtCeiling);
+
+    await advanceRetryTimer(30_000);
+    expect(mockSSEInstances).toHaveLength(countAtCeiling + 1);
+    expect(getLastSSE().stream).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('hands off to a newer epoch discovered at the reconnect retry ceiling', async () => {
+    jest.useFakeTimers();
+    const pendingSteers = [
+      { steerId: 'replacement-steer', text: 'belongs to replacement', createdAt: 2 },
+    ];
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      status: 'running',
+      streamId: CONV_ID,
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+      resumeState: { pendingSteers, aggregatedContent: [] },
+    });
+    const submission = {
+      ...buildSubmission(),
+      resumeStreamId: CONV_ID,
+      resumeGenerationCreatedAt: 1000,
+      resumeGenerationProtocolVersion: 2,
+    } as TSubmission & {
+      resumeStreamId: string;
+      resumeGenerationCreatedAt: number;
+      resumeGenerationProtocolVersion: 2;
+    };
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+      await act(async () => {
+        getLastSSE()._emit('error');
+        await Promise.resolve();
+      });
+      await advanceRetryTimer(delay);
+    }
+    const countAtCeiling = mockSSEInstances.length;
+
+    await act(async () => {
+      getLastSSE()._emit('error');
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['streamStatus', CONV_ID],
+      expect.objectContaining({ createdAt: 2000, generationHandoff: true }),
+    );
+    expect(mockSeedSteerChips).toHaveBeenCalledWith(CONV_ID, pendingSteers, 2000, 2);
+    expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    await advanceRetryTimer(30_000);
+    expect(mockSSEInstances).toHaveLength(countAtCeiling);
+    unmount();
+  });
+
+  it('does not complete a terminal retry-ceiling status when persisted messages cannot be fetched', async () => {
+    jest.useFakeTimers();
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      status: 'complete',
+      streamId: CONV_ID,
+      createdAt: 1000,
+      resumeState: { pendingSteers: [], aggregatedContent: [] },
+    });
+    mockFetchQuery.mockRejectedValueOnce(new Error('message refetch failed'));
+    const submission = {
+      ...buildSubmission(),
+      resumeStreamId: CONV_ID,
+      resumeGenerationCreatedAt: 1000,
+    } as TSubmission & { resumeStreamId: string; resumeGenerationCreatedAt: number };
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+      await act(async () => {
+        getLastSSE()._emit('error');
+        await Promise.resolve();
+      });
+      await advanceRetryTimer(delay);
+    }
+    await act(async () => {
+      getLastSSE()._emit('error');
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'error' }),
+    );
+    expect(mockSetRunEnd).not.toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'completed' }),
+    );
+    expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
+    unmount();
+  });
+
   it.each([undefined, 500, 503])(
     'does not call errorHandler for responseCode %s (reconnect path)',
     async (responseCode) => {
@@ -1977,6 +3744,50 @@ describe('useResumableSSE', () => {
     });
 
     expect(mockErrorHandler).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('re-queues the exact recovery source released by a post-start terminal error', async () => {
+    const released = { steerId: 'failed-source', text: 'retry these words', createdAt: 1 };
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: 'stream-123',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      generationProtocolVersion: 2,
+      unrecoveredSteers: [
+        released,
+        { steerId: 'unrelated-source', text: 'leave deduped', createdAt: 2 },
+      ],
+    });
+    const submission = buildSubmission({
+      clientRequestId: 'steer-recovery:failed-source',
+    });
+    const chatHelpers = buildChatHelpers();
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    await act(async () => {
+      getLastSSE()._emit('error', {
+        data: JSON.stringify({
+          error: 'initialization failed',
+          generationProtocolVersion: 2,
+        }),
+      });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
+    expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONV_ID, [released], {
+      generationProtocolVersion: 2,
+      allowPreviouslyConvertedIds: ['failed-source'],
+    });
+    expect(mockSetRunEnd).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: CONV_ID, outcome: 'error' }),
+    );
     unmount();
   });
 
