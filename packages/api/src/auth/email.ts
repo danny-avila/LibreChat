@@ -66,7 +66,7 @@ export interface EmailChangeDeps {
   updateUser: (
     userId: string,
     update: Pick<EmailChangeUser, 'email'> & { emailVerified: boolean },
-    expectedState: Pick<EmailChangeUser, 'email' | 'password'>,
+    expectedState: Pick<EmailChangeUser, 'email' | 'password' | 'provider'>,
     tenantId?: string,
   ) => Promise<EmailChangeUser | null>;
   findToken: (query: TokenQuery, tenantId?: string) => Promise<EmailChangeToken | null>;
@@ -377,6 +377,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
     if (
       !user ||
       userIdOf(user) !== userId ||
+      user.provider !== 'local' ||
       !user.password ||
       typeof passwordFingerprint !== 'string' ||
       !(await tokenMatches(user.password, passwordFingerprint)) ||
@@ -420,7 +421,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       const updatedUser = await deps.updateUser(
         userId,
         { email, emailVerified: true },
-        { email: oldEmail, password: user.password },
+        { email: oldEmail, password: user.password, provider: 'local' },
         tenantId,
       );
       if (!updatedUser) {

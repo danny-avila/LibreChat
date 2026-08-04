@@ -31,7 +31,7 @@ export function useSettingsContext(): SettingsContextValue {
   const adminPanelURL = startupConfig?.adminPanelURL ?? '';
   const isLocalProvider = user?.provider === 'local';
   const emailEnabled = startupConfig?.emailEnabled === true;
-  const allowEmailChange = startupConfig?.allowEmailChange !== false;
+  const allowEmailChange = startupConfig?.allowEmailChange === true;
   const twoFactorEnabled = user?.twoFactorEnabled === true;
   const allowAccountDeletion = startupConfig?.allowAccountDeletion !== false;
   const aboutEnabled = startupConfig?.interface?.buildInfo !== false;

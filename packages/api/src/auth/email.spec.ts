@@ -290,7 +290,7 @@ describe('email change service', () => {
       expect(deps.updateUser).toHaveBeenCalledWith(
         '507f1f77bcf86cd799439011',
         { email: 'new@example.com', emailVerified: true },
-        { email: 'old@example.com', password: 'password-hash' },
+        { email: 'old@example.com', password: 'password-hash', provider: 'local' },
         'tenant-1',
       );
       expect(deps.sendEmail).toHaveBeenCalledTimes(2);
@@ -306,6 +306,24 @@ describe('email change service', () => {
           template: 'emailChanged.handlebars',
         }),
       );
+    });
+
+    it('rejects confirmation when the account moved to a federated provider', async () => {
+      const { deps, service } = createDeps({
+        findToken: jest.fn().mockResolvedValue(await pendingToken()),
+        getUserById: jest.fn().mockResolvedValue({ ...user, provider: 'openid' }),
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'raw-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toMatchObject({ status: 400, code: 'invalid_token' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
     });
 
     it('rejects an invalid token without updating the user', async () => {
