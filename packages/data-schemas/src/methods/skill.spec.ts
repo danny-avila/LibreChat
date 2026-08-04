@@ -1208,6 +1208,74 @@ describe('Skill CRUD methods', () => {
       expect(viaName?.disableModelInvocation).toBeUndefined();
     });
 
+    it('keeps bag-only restrictions when a body edit declares no frontmatter block', async () => {
+      /* The legacy / API-only shape: flags live in the bag, and the body never
+         declared them. A body edit there is not a statement about invocation
+         channels, so it must not lift the restriction — silently opening a
+         model-disabled skill is far worse than releasing one edit later. */
+      const legacy = await Skill.create({
+        name: 'bag-only-restricted',
+        description: 'Flags set through the API, never written into the body.',
+        body: 'Plain body, no frontmatter.',
+        frontmatter: { 'user-invocable': false, 'disable-model-invocation': true },
+        author: owner._id,
+        authorName: owner.name ?? 'Skill Owner',
+        version: 1,
+        source: 'inline',
+        fileCount: 0,
+      });
+      /* `Skill.create` applies the schema defaults, so strip the columns to get
+         the real pre-Phase-6 shape: flags in the bag, columns absent. */
+      await Skill.collection.updateOne(
+        { _id: legacy._id },
+        { $unset: { disableModelInvocation: '', userInvocable: '' } },
+      );
+      const id = (legacy._id as mongoose.Types.ObjectId).toString();
+
+      const updated = await methods.updateSkill({
+        id,
+        expectedVersion: 1,
+        update: { body: 'Still a plain body, just edited.' },
+      });
+      expect(updated.status).toBe('updated');
+
+      const reloaded = await methods.getSkillByName('bag-only-restricted', [legacy._id]);
+      expect(reloaded?.userInvocable).toBe(false);
+      expect(reloaded?.disableModelInvocation).toBe(true);
+    });
+
+    it('releases a bag-only restriction once the body declares a frontmatter block without it', async () => {
+      /* The counterpart: an explicit block that omits the key IS a declaration,
+         which is what makes the release path in the UI work. */
+      const legacy = await Skill.create({
+        name: 'bag-only-released',
+        description: 'Flags set through the API, then declared away.',
+        body: 'Plain body, no frontmatter.',
+        frontmatter: { 'user-invocable': false },
+        author: owner._id,
+        authorName: owner.name ?? 'Skill Owner',
+        version: 1,
+        source: 'inline',
+        fileCount: 0,
+      });
+      await Skill.collection.updateOne(
+        { _id: legacy._id },
+        { $unset: { disableModelInvocation: '', userInvocable: '' } },
+      );
+      const id = (legacy._id as mongoose.Types.ObjectId).toString();
+
+      await methods.updateSkill({
+        id,
+        expectedVersion: 1,
+        update: {
+          body: '---\nname: bag-only-released\ndescription: A demo skill.\n---\n\nBody.',
+        },
+      });
+
+      const reloaded = await methods.getSkillByName('bag-only-released', [legacy._id]);
+      expect(reloaded?.userInvocable).toBeUndefined();
+    });
+
     it('reads a flag whose YAML value continues on the next line', async () => {
       const { skill } = await methods.createSkill(
         makeSkillInput({
