@@ -19,6 +19,15 @@ const EXPANDED_MIN = 360;
 const TRANSITION_MS = 300;
 const EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 
+/**
+ * Exode embed only. The sidebar is closed by default and opens on hover, so collapsed is a
+ * narrow strip to aim at rather than the icon rail's width (the rail is hidden in the embed).
+ * Expanded is well under `EXPANDED_MIN`: the assistant iframe is ~26vw of the host page, and
+ * 360px there would leave no room for the conversation it overlays.
+ */
+const EMBED_HOVER_STRIP = 12;
+const EMBED_EXPANDED_WIDTH = 260;
+
 function getInitialWidth(): number {
   const saved = localStorage.getItem('side:width');
   return saved ? Math.max(Number(saved), EXPANDED_MIN) : EXPANDED_MIN;
@@ -44,13 +53,18 @@ function UnifiedSidebar() {
   const localize = useLocalize();
   const mediaQueryIsSmallScreen = useMediaQuery('(max-width: 768px)');
   const [storedExpanded, setExpanded] = useRecoilState(store.sidebarExpanded);
-  /**
-   * The embed hides the icon rail — and with it the only control that can
-   * re-expand the sidebar — so a stored `false` would strand the user with an
-   * invisible, unrecoverable conversation list. Pin it open there.
-   */
   const isExodeEmbed = useIsExodeEmbed();
-  const expanded = isExodeEmbed ? true : storedExpanded;
+  /**
+   * In the embed the sidebar starts closed and opens on hover.
+   *
+   * The iframe is a fraction of the host page (the assistant panel is ~26vw), so a
+   * permanently docked conversation list costs more width than the chat can spare. Hover
+   * is also the only affordance available: the embed hides the icon rail, and with it the
+   * toggle that would otherwise re-open a collapsed sidebar — which is why this cannot
+   * simply reuse the stored collapsed state.
+   */
+  const [hoverExpanded, setHoverExpanded] = useState(false);
+  const expanded = isExodeEmbed ? hoverExpanded : storedExpanded;
   /**
    * The embed's own viewport (an iframe sized to a fraction of the host page, e.g. the exode
    * assistant panel at ~26vw) is narrow enough to trip this media query even on a desktop host
@@ -196,15 +210,33 @@ function UnifiedSidebar() {
     <SidebarChatProvider>
       <ActivePanelProvider>
         <aside
-          className="relative flex h-full flex-shrink-0 overflow-hidden"
-          style={{
-            width: expanded ? sidebarWidth : COLLAPSED_WIDTH,
-            minWidth: expanded ? EXPANDED_MIN : COLLAPSED_WIDTH,
-            maxWidth: expanded ? '40%' : COLLAPSED_WIDTH,
-            transition: isResizing
-              ? 'none'
-              : `width ${TRANSITION_MS}ms ${EASING}, min-width ${TRANSITION_MS}ms ${EASING}, max-width ${TRANSITION_MS}ms ${EASING}`,
-          }}
+          className={cn(
+            'relative flex h-full flex-shrink-0 overflow-hidden',
+            /* Overlays the chat instead of displacing it: in a narrow iframe, reserving
+               the expanded width would squeeze the conversation to nothing every time
+               the pointer crossed the edge. */
+            isExodeEmbed && 'absolute left-0 top-0 z-[60]',
+            isExodeEmbed && expanded && 'shadow-lg',
+          )}
+          style={
+            isExodeEmbed
+              ? {
+                  /* Collapsed is a thin hover target, not the 52px icon rail — the rail is
+                     hidden here, so a wider strip would just be empty space. */
+                  width: expanded ? EMBED_EXPANDED_WIDTH : EMBED_HOVER_STRIP,
+                  transition: `width ${TRANSITION_MS}ms ${EASING}`,
+                }
+              : {
+                  width: expanded ? sidebarWidth : COLLAPSED_WIDTH,
+                  minWidth: expanded ? EXPANDED_MIN : COLLAPSED_WIDTH,
+                  maxWidth: expanded ? '40%' : COLLAPSED_WIDTH,
+                  transition: isResizing
+                    ? 'none'
+                    : `width ${TRANSITION_MS}ms ${EASING}, min-width ${TRANSITION_MS}ms ${EASING}, max-width ${TRANSITION_MS}ms ${EASING}`,
+                }
+          }
+          onMouseEnter={isExodeEmbed ? () => setHoverExpanded(true) : undefined}
+          onMouseLeave={isExodeEmbed ? () => setHoverExpanded(false) : undefined}
           aria-label={localize('com_nav_control_panel')}
         >
           <Sidebar

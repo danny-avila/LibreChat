@@ -37,6 +37,17 @@ function Sidebar({
             onExpand={onExpand}
           />
         )}
+        {/* Collapsed hover affordance for the embed: without it the closed sidebar is a
+            blank strip with no hint that the history is behind it. The <aside> owns the
+            hover handler, so this only has to be visible, never interactive. */}
+        {isExodeEmbed && !expanded && (
+          <div
+            className="pointer-events-none absolute inset-y-0 left-0 flex w-full items-center justify-center"
+            aria-hidden="true"
+          >
+            <div className="h-10 w-1 rounded-full bg-border-medium" />
+          </div>
+        )}
         <nav
           className={cn(
             'min-h-0 flex-1 overflow-hidden bg-surface-primary-alt',
@@ -48,14 +59,16 @@ function Sidebar({
           <SidePanelNav links={links} />
         </nav>
       </div>
+      {/* No resize in the embed: its width is fixed by the hover-open behaviour, so a drag
+          handle would only fight it (and the pointer leaving mid-drag closes the sidebar). */}
       <div
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize sidebar"
-        tabIndex={expanded ? 0 : -1}
+        tabIndex={expanded && !isExodeEmbed ? 0 : -1}
         className={cn(
           'absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-border-medium active:bg-border-heavy',
-          expanded ? 'opacity-100' : 'pointer-events-none opacity-0',
+          expanded && !isExodeEmbed ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
         style={{ transition: expanded ? 'opacity 200ms ease 80ms' : 'opacity 150ms ease' }}
         onMouseDown={onResizeStart}
