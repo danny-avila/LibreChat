@@ -98,6 +98,23 @@ function mockMarkdownRequest(
   } as unknown as ImportRequest;
 }
 
+function deeplyNestedFrontmatterMarkdown(marker: string): string {
+  const nestedFrontmatter = Array.from(
+    { length: 80 },
+    (_, index) => `${'  '.repeat(index + 1)}level_${index}:`,
+  );
+  nestedFrontmatter.push(`${'  '.repeat(81)}value: ${marker}`);
+  return [
+    '---',
+    'name: scoped-skill',
+    'description: A field-scoped import regression.',
+    'metadata:',
+    ...nestedFrontmatter,
+    '---',
+    'Safe instructions.',
+  ].join('\n');
+}
+
 function importSummary(body: unknown): ImportSummary {
   return (body as { _importSummary: ImportSummary })._importSummary;
 }
@@ -570,6 +587,69 @@ describe('createImportHandler', () => {
     expect(deps.createSkill).not.toHaveBeenCalled();
   });
 
+  it('does not traverse unselected nested frontmatter for a name-only policy', async () => {
+    const deps = mockImportDeps();
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+    const config = mockAppConfig({
+      skills: {
+        pii: {
+          fields: ['name'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private_token', label: 'private token', regex: 'PRIVATE-DEEP' }],
+        },
+      },
+    });
+
+    await handler(
+      mockMarkdownRequest(
+        deeplyNestedFrontmatterMarkdown('PRIVATE-DEEP'),
+        'scoped-skill.md',
+        config,
+      ),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(deps.createSkill).toHaveBeenCalledTimes(1);
+    expect(deps.grantPermission).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when selected frontmatter exceeds the traversal budget', async () => {
+    const deps = mockImportDeps();
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+    const config = mockAppConfig({
+      skills: {
+        pii: {
+          fields: ['frontmatter'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private_token', label: 'private token', regex: 'PRIVATE-DEEP' }],
+        },
+      },
+    });
+
+    await handler(
+      mockMarkdownRequest(
+        deeplyNestedFrontmatterMarkdown('PRIVATE-DEEP'),
+        'scoped-skill.md',
+        config,
+      ),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        error: 'content_filter_uninspectable',
+        source: 'skill',
+        field: 'frontmatter',
+      }),
+    );
+    expect(JSON.stringify(res.body)).not.toContain('PRIVATE-DEEP');
+    expect(deps.createSkill).not.toHaveBeenCalled();
+  });
+
   it('fails closed for oversized Markdown selected by the skill file_text policy', async () => {
     const deps = mockImportDeps({ maxContentInspectionBytes: 64 });
     const handler = createImportHandler(deps);
@@ -814,6 +894,50 @@ describe('createImportHandler', () => {
       streamSpy.mockRestore();
     }
   });
+
+  it.each([
+    [
+      'skill',
+      {
+        skills: {
+          pii: {
+            fields: ['file_text'],
+            starterPatterns: [],
+          },
+        },
+      },
+    ],
+    [
+      'file',
+      {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+          },
+        },
+      },
+    ],
+  ] as Array<[string, FiltersConfig]>)(
+    'keeps archive files on one persistence pass for an inactive %s policy',
+    async (_source, filters) => {
+      const deps = mockImportDeps();
+      const handler = createImportHandler(deps);
+      const buffer = await zipWithAdditionalFiles(3, 128);
+      const streamSpy = spyOnZipEntryStreams();
+      const res = mockResponse();
+
+      try {
+        await handler(mockZipRequest(buffer, mockAppConfig(filters)), res);
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(streamSpy).toHaveBeenCalledTimes(4);
+        expect(deps.saveBuffer).toHaveBeenCalledTimes(3);
+      } finally {
+        streamSpy.mockRestore();
+      }
+    },
+  );
 
   it('does not decode binary archive file bytes for filtering', async () => {
     const deps = mockImportDeps();

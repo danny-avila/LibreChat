@@ -1,4 +1,13 @@
-import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
+import {
+  HITL_MESSAGE_FILTER_FIELDS,
+  hasActivePiiFields,
+  hasActivePiiPatterns,
+} from 'librechat-data-provider';
+import type {
+  FiltersConfig,
+  MessageFilterPiiConfig,
+  UserSubmittedMessageFieldPath,
+} from 'librechat-data-provider';
 import type {
   AgentContentInput,
   AssistantActionContentInput,
@@ -8,7 +17,7 @@ import type {
   SkillContentInput,
   StoredMessageContentInput,
 } from '../protection/adapters/submissions';
-import type { ContentTraversalLimitError } from '../protection/adapters/nested';
+import { ContentTraversalLimitError } from '../protection/adapters/nested';
 import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type { ExternalChatMessage } from '../protection/adapters/messages';
 import type { CanonicalFileInspectionFile } from '../protection/files';
@@ -24,6 +33,7 @@ import {
 import {
   allowHydratedFileReferences,
   assertHydratedFileInspectable,
+  hasActiveFilePolicy,
   getBlockedOpaqueFileField,
   getBlockedUninspectableFileField,
   omitResolvedCanonicalFileLocators,
@@ -37,6 +47,7 @@ import {
 } from '../protection/adapters/nested';
 import {
   getSafeUserSubmittedPathSegments,
+  getUserSubmittedMessageFieldPathState,
   getUserSubmittedPathState,
 } from '../protection/provenance';
 import { createConfiguredContentInspector } from '../protection/runtime';
@@ -48,9 +59,11 @@ type ModelBoundMessage = ExternalChatMessage & {
 };
 
 type StoredModelBoundMessage = StoredMessageContentInput & {
+  readonly messageId?: string;
   readonly isCreatedByUser?: boolean;
   readonly isUserSubmitted?: boolean;
   readonly userSubmittedPaths?: readonly string[];
+  readonly userSubmittedMessageFieldPaths?: readonly UserSubmittedMessageFieldPath[];
 };
 
 type ModelBoundCanonicalFile = FileContentInput & CanonicalFileInspectionFile;
@@ -76,7 +89,32 @@ export interface ModelBoundContentInput {
   readonly resolvedFiles?: readonly (ModelBoundCanonicalFile | null | undefined)[];
 }
 
-function normalizeRole(message: ModelBoundMessage): string | undefined {
+/**
+ * Whether a policy can inspect content at a model/provider boundary.
+ * Management-only sources and attribution behavior do not activate this gate.
+ */
+export function hasModelBoundContentProtection(
+  filters: FiltersConfig | null | undefined,
+  legacyPii?: MessageFilterPiiConfig | null,
+): boolean {
+  return (
+    hasActivePiiPatterns(legacyPii) ||
+    hasActivePiiPatterns(filters?.messages?.pii) ||
+    hasActivePiiPatterns(filters?.agentInstructions?.pii) ||
+    hasActivePiiPatterns(filters?.conversationStarters?.pii) ||
+    hasActivePiiPatterns(filters?.skills?.pii) ||
+    hasActivePiiPatterns(filters?.memories?.pii) ||
+    hasActiveFilePolicy(filters ?? undefined) ||
+    hasActivePiiPatterns(filters?.toolArguments?.pii) ||
+    hasActivePiiPatterns(filters?.modelParameters?.pii) ||
+    hasActivePiiPatterns(filters?.actionMetadata?.pii)
+  );
+}
+
+function normalizeRole(message: {
+  readonly role?: string;
+  readonly _getType?: () => string;
+}): string | undefined {
   const rawRole = message.role ?? message._getType?.();
   switch (rawRole) {
     case 'human':
@@ -149,6 +187,40 @@ function asUserSubmittedMessageFragment(
     field: 'content_part',
     treatment: 'inspect_only',
   };
+}
+
+function getExactUserSubmittedMessageFragments(
+  fragments: readonly TextContentFragment[],
+  entries: readonly UserSubmittedMessageFieldPath[],
+): Array<Extract<TextContentFragment, { source: 'message' }>> {
+  const exact: Array<Extract<TextContentFragment, { source: 'message' }>> = [];
+  const seen = new Set<string>();
+  for (let entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+    const entry = entries[entryIndex];
+    const path = entry.path as JsonPointer;
+    for (const fragment of fragments) {
+      if (
+        (fragment.source !== 'message' && fragment.source !== 'tool_argument') ||
+        !isFragmentWithinPath(fragment, path)
+      ) {
+        continue;
+      }
+      const key = `${entry.field}:${fragment.path}:${fragment.text}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      exact.push({
+        ...fragment,
+        id: `${fragment.id}.user-submitted-${entry.field}.${entryIndex}`,
+        source: 'message',
+        field: entry.field,
+        treatment: 'inspect_only',
+        provenance: 'user',
+      });
+    }
+  }
+  return exact;
 }
 
 /**
@@ -240,6 +312,37 @@ function projectUserSubmittedPaths(
   }
 
   return projected ? projection : undefined;
+}
+
+function extractExactUserSubmittedMessageFragments(
+  message: StoredModelBoundMessage,
+  entries: readonly UserSubmittedMessageFieldPath[],
+): {
+  fragments: Array<Extract<TextContentFragment, { source: 'message' }>>;
+  traversalError: ContentTraversalLimitError | null;
+} {
+  const projectedMessage = projectUserSubmittedPaths(
+    message,
+    entries.map((entry) => entry.path as JsonPointer),
+  );
+  if (projectedMessage == null) {
+    return { fragments: [], traversalError: null };
+  }
+  let projectedFragments: readonly TextContentFragment[];
+  let traversalError: ContentTraversalLimitError | null = null;
+  try {
+    projectedFragments = extractStoredMessageContent(projectedMessage);
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    traversalError = error;
+    projectedFragments = getContentTraversalFragments(error);
+  }
+  return {
+    fragments: getExactUserSubmittedMessageFragments(projectedFragments, entries),
+    traversalError,
+  };
 }
 
 /**
@@ -337,7 +440,13 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
   const storedUserMessages: StoredModelBoundMessage[] = [];
   for (const message of input.storedMessages ?? []) {
     const submittedPathState = getUserSubmittedPathState(message);
-    const effectiveUserSubmittedPaths = submittedPathState.paths;
+    const submittedMessageFieldState = getUserSubmittedMessageFieldPathState(message);
+    const semanticUserSubmittedPaths = submittedMessageFieldState.entries.map(
+      (entry) => entry.path as JsonPointer,
+    );
+    const effectiveUserSubmittedPaths = [
+      ...new Set([...submittedPathState.paths, ...semanticUserSubmittedPaths]),
+    ];
     const isUnattributedAssistant =
       input.filters?.messages?.unattributedAssistantContent === 'inspect' &&
       typeof message.isUserSubmitted !== 'boolean' &&
@@ -359,9 +468,38 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
       traversalError = error;
       messageFragments = getContentTraversalFragments(error);
     }
+    const exactMessageInspection = extractExactUserSubmittedMessageFragments(
+      message,
+      submittedMessageFieldState.entries,
+    );
+    const exactMessageFragments = exactMessageInspection.fragments;
+    const exactMessageFields = [
+      ...new Set(submittedMessageFieldState.entries.map((entry) => entry.field)),
+    ];
+    if (
+      exactMessageInspection.traversalError != null &&
+      (hasActivePiiPatterns(input.legacyPii) ||
+        hasActivePiiFields(input.filters?.messages?.pii, exactMessageFields))
+    ) {
+      traversalErrors.push(
+        new ContentTraversalLimitError([], [{ source: 'message', fields: exactMessageFields }]),
+      );
+    }
+    if (
+      submittedMessageFieldState.overflowed &&
+      (hasActivePiiPatterns(input.legacyPii) ||
+        hasActivePiiFields(input.filters?.messages?.pii, HITL_MESSAGE_FILTER_FIELDS))
+    ) {
+      traversalErrors.push(
+        new ContentTraversalLimitError(
+          [],
+          [{ source: 'message', fields: [...HITL_MESSAGE_FILTER_FIELDS] }],
+        ),
+      );
+    }
     if (!isEntireMessageUserSubmitted) {
-      const userSubmittedPaths = effectiveUserSubmittedPaths;
-      const projectedMessage = projectUserSubmittedPaths(message, userSubmittedPaths);
+      const userSubmittedPaths = submittedPathState.paths;
+      const projectedMessage = projectUserSubmittedPaths(message, effectiveUserSubmittedPaths);
       if (projectedMessage != null) {
         assertInspectableFileInput(
           input.filters,
@@ -386,6 +524,7 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
               fragment.source === 'tool_argument' && fragment.field === 'output',
           )
           .map(asUserSubmittedMessageFragment),
+        ...exactMessageFragments,
       );
       if (userSubmittedAssembledContext != null) {
         fragments.push(userSubmittedAssembledContext);
@@ -409,7 +548,7 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
       continue;
     }
     storedUserMessages.push(message);
-    fragments.push(...messageFragments);
+    fragments.push(...messageFragments, ...exactMessageFragments);
     if (
       traversalError != null &&
       isContentTraversalProtected({

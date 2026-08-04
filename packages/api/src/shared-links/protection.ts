@@ -3,6 +3,7 @@ import {
   hasActivePiiPatterns,
   type FileFilterField,
   type FiltersConfig,
+  type UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
 import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type { FileContentInput } from '../protection/adapters/submissions';
@@ -43,6 +44,7 @@ export interface SerializedSharedMessage {
   readonly isCreatedByUser?: boolean;
   readonly isUserSubmitted?: boolean;
   readonly userSubmittedPaths?: readonly string[];
+  readonly userSubmittedMessageFieldPaths?: readonly UserSubmittedMessageFieldPath[];
   readonly role?: string;
   readonly iconURL?: string;
   readonly finish_reason?: string;

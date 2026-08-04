@@ -2,7 +2,13 @@ import path from 'path';
 import JSZip from 'jszip';
 import crypto from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
+import {
+  ResourceType,
+  AccessRoleIds,
+  PrincipalType,
+  hasActivePiiFields,
+  hasActivePiiPatterns,
+} from 'librechat-data-provider';
 import type {
   AppConfig,
   ISkill,
@@ -13,7 +19,11 @@ import type {
 } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { Types } from 'mongoose';
-import type { SkillContentInput, TextContentFragment } from '~/protection';
+import type {
+  ContentTraversalLimitError,
+  TextContentFragment,
+  SkillContentInput,
+} from '~/protection';
 import type { ImportLimits } from './limits';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
@@ -21,6 +31,11 @@ import {
   inspectContent,
   extractFileContent,
   extractSkillContent,
+  getContentTraversalFragments,
+  hasActiveFilePolicy,
+  hasActiveFileFieldPolicy,
+  isContentTraversalProtected,
+  isContentTraversalLimitError,
   contentFilterUninspectableResponse,
   getBlockedUninspectableSkillFileField,
 } from '~/protection';
@@ -166,27 +181,83 @@ function blockFilteredImportContent(
   skill: SkillContentInput,
   files: readonly FilterableSkillFile[],
 ): boolean {
-  if (req.config?.filters == null) {
+  const filters = req.config?.filters;
+  const skillPii = filters?.skills?.pii;
+  const skillPolicyActive = hasActivePiiPatterns(skillPii);
+  const filePolicyActive = hasActiveFilePolicy(filters);
+  if (!skillPolicyActive && !filePolicyActive) {
     return false;
   }
-  const fragments: TextContentFragment[] = [
-    ...extractSkillContent({
-      ...skill,
-      files,
-    }),
-  ];
-  for (const file of files) {
-    fragments.push(
-      ...extractFileContent({
-        originalname: file.filename,
-        content: file.text,
-        text: file.text,
-      }),
-    );
+
+  const fragments: TextContentFragment[] = [];
+  let traversalError: ContentTraversalLimitError | undefined;
+  if (skillPolicyActive) {
+    const skillFileNamesActive = hasActivePiiFields(skillPii, ['file_name']);
+    const skillFileTextActive = hasActivePiiFields(skillPii, ['file_text']);
+    try {
+      fragments.push(
+        ...extractSkillContent({
+          name: hasActivePiiFields(skillPii, ['name']) ? skill.name : undefined,
+          displayTitle: hasActivePiiFields(skillPii, ['display_title'])
+            ? skill.displayTitle
+            : undefined,
+          description: hasActivePiiFields(skillPii, ['description'])
+            ? skill.description
+            : undefined,
+          category: hasActivePiiFields(skillPii, ['category']) ? skill.category : undefined,
+          body: hasActivePiiFields(skillPii, ['instructions']) ? skill.body : undefined,
+          instructions: hasActivePiiFields(skillPii, ['instructions'])
+            ? skill.instructions
+            : undefined,
+          importedText: hasActivePiiFields(skillPii, ['imported_text'])
+            ? skill.importedText
+            : undefined,
+          frontmatter: hasActivePiiFields(skillPii, ['frontmatter'])
+            ? skill.frontmatter
+            : undefined,
+          ...(skillFileNamesActive || skillFileTextActive
+            ? {
+                files: files.map((file) => ({
+                  filename: skillFileNamesActive ? file.filename : undefined,
+                  text: skillFileTextActive ? file.text : undefined,
+                })),
+              }
+            : {}),
+        }),
+      );
+    } catch (error) {
+      if (!isContentTraversalLimitError(error)) {
+        throw error;
+      }
+      fragments.push(...getContentTraversalFragments(error));
+      traversalError = error;
+    }
   }
-  const finding = inspectContent(fragments, { filters: req.config?.filters });
+
+  if (filePolicyActive) {
+    const fileNamesActive = hasActiveFileFieldPolicy(filters, ['name']);
+    const fileContentActive = hasActiveFileFieldPolicy(filters, ['content']);
+    const fileTextActive = hasActiveFileFieldPolicy(filters, ['extracted_text']);
+    for (const file of files) {
+      fragments.push(
+        ...extractFileContent({
+          originalname: fileNamesActive ? file.filename : undefined,
+          content: fileContentActive ? file.text : undefined,
+          text: fileTextActive ? file.text : undefined,
+        }),
+      );
+    }
+  }
+  const finding = inspectContent(fragments, { filters });
   if (finding == null) {
-    return false;
+    if (
+      traversalError == null ||
+      !isContentTraversalProtected({ error: traversalError, filters })
+    ) {
+      return false;
+    }
+    res.status(traversalError.statusCode).json(traversalError.body);
+    return true;
   }
   res.status(400).json(contentFilterBlockResponse(finding));
   return true;
@@ -310,11 +381,9 @@ async function handleMarkdown(
 ) {
   const limits = getImportLimits(resolveImportLimits(deps.limits, req));
   const skillPii = req.config?.filters?.skills?.pii;
-  const filePii = req.config?.filters?.files?.pii;
   const inspectFileText =
-    hasFilterField(skillPii, 'file_text') ||
-    hasFilterField(filePii, 'content') ||
-    hasFilterField(filePii, 'extracted_text');
+    hasActivePiiFields(skillPii, ['file_text']) ||
+    hasActiveFileFieldPolicy(req.config?.filters, ['content', 'extracted_text']);
   const contentInspectionLimit = Math.min(
     limits.maxContentInspectionBytes,
     limits.maxDecompressedBytes,
@@ -564,13 +633,6 @@ function preflightArchiveNames(
   return false;
 }
 
-function hasFilterField(
-  config: { readonly fields?: readonly string[] } | undefined,
-  field: string,
-): boolean {
-  return config != null && (config.fields == null || config.fields.includes(field));
-}
-
 interface ArchivePersistenceContext {
   readonly userId: string;
   readonly skillId: Types.ObjectId;
@@ -790,14 +852,14 @@ async function handleZip(
   }
 
   const skillPii = req.config?.filters?.skills?.pii;
-  const filePii = req.config?.filters?.files?.pii;
-  const hasRelevantFilters = skillPii != null || filePii != null;
+  const hasRelevantFilters =
+    hasActivePiiPatterns(skillPii) || hasActiveFilePolicy(req.config?.filters);
   const inspectArchiveNames =
-    hasFilterField(skillPii, 'file_name') || hasFilterField(filePii, 'name');
+    hasActivePiiFields(skillPii, ['file_name']) ||
+    hasActiveFileFieldPolicy(req.config?.filters, ['name']);
   const inspectArchiveText =
-    hasFilterField(skillPii, 'file_text') ||
-    hasFilterField(filePii, 'content') ||
-    hasFilterField(filePii, 'extracted_text');
+    hasActivePiiFields(skillPii, ['file_text']) ||
+    hasActiveFileFieldPolicy(req.config?.filters, ['content', 'extracted_text']);
   const contentInspectionLimit = Math.min(
     limits.maxContentInspectionBytes,
     limits.maxDecompressedBytes,

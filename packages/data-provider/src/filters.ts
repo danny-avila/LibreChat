@@ -22,6 +22,19 @@ export const MESSAGE_FILTER_FIELDS = [
   'assembled_context',
 ] as const;
 
+export const HITL_MESSAGE_FILTER_FIELDS = [
+  'answer',
+  'decision_response',
+  'decision_reason',
+] as const;
+
+const REQUEST_ONLY_MESSAGE_FILTER_FIELDS = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
+
+/** Message fields structurally recoverable without exact semantic provenance. */
+export const STORED_MESSAGE_FILTER_FIELDS = MESSAGE_FILTER_FIELDS.filter(
+  (field) => !REQUEST_ONLY_MESSAGE_FILTER_FIELDS.has(field),
+);
+
 export const PROMPT_FILTER_FIELDS = [
   'name',
   'description',
@@ -133,9 +146,22 @@ export type ToolArgumentFilterField = z.infer<typeof toolArgumentFilterFieldSche
 export type ModelParameterFilterField = z.infer<typeof modelParameterFilterFieldSchema>;
 export type ActionMetadataFilterField = z.infer<typeof actionMetadataFilterFieldSchema>;
 
+export const userSubmittedMessageFieldPathSchema = z
+  .object({
+    path: z.string().startsWith('/').max(2048),
+    field: z.enum(HITL_MESSAGE_FILTER_FIELDS),
+  })
+  .strict();
+
+export type UserSubmittedMessageFieldPath = z.infer<typeof userSubmittedMessageFieldPathSchema>;
+
 type PiiPatternSelection = {
   readonly starterPatterns?: readonly unknown[];
   readonly customPatterns?: readonly unknown[];
+};
+
+type PiiFieldSelection = PiiPatternSelection & {
+  readonly fields?: readonly string[];
 };
 
 const UNINSPECTABLE_FILE_FIELDS = new Set<FileFilterField>([
@@ -156,6 +182,17 @@ export function hasActivePiiPatterns(config: PiiPatternSelection | null | undefi
     (config.starterPatterns == null ||
       config.starterPatterns.length > 0 ||
       (config.customPatterns?.length ?? 0) > 0)
+  );
+}
+
+/** Returns whether an active PII rule can inspect at least one candidate field. */
+export function hasActivePiiFields(
+  config: PiiFieldSelection | null | undefined,
+  candidates: readonly string[],
+): boolean {
+  return (
+    hasActivePiiPatterns(config) &&
+    (config?.fields == null || candidates.some((field) => config.fields?.includes(field)))
   );
 }
 

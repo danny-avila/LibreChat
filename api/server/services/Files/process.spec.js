@@ -37,12 +37,34 @@ jest.mock('@librechat/api', () => {
   const actualDataProvider = jest.requireActual('librechat-data-provider');
   const RetentionMode = actualDataProvider.RetentionMode ?? { ALL: 'all', TEMPORARY: 'temporary' };
   const getRetentionExpiry = jest.fn(() => ({}));
+  const hasActiveFileFieldPolicy = jest.fn((filters, candidates) => {
+    const pii = filters?.files?.pii;
+    if (pii == null) {
+      return false;
+    }
+    const fieldSelected = candidates.some(
+      (field) => pii.fields == null || pii.fields.includes(field),
+    );
+    const hasPatterns =
+      pii.starterPatterns == null ||
+      pii.starterPatterns.length > 0 ||
+      (pii.customPatterns?.length ?? 0) > 0;
+    const failClosed =
+      pii.uninspectable === 'block' &&
+      candidates.some(
+        (field) =>
+          ['content', 'extracted_text', 'transcript'].includes(field) &&
+          (pii.fields == null || pii.fields.includes(field)),
+      );
+    return (hasPatterns && fieldSelected) || failClosed;
+  });
   return {
     sanitizeFilename: jest.fn((n) => n),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
     inspectContent: jest.fn(),
     extractFileContent: jest.fn((input) => [input]),
+    hasActiveFileFieldPolicy,
     contentFilterBlockResponse: jest.fn((finding) => ({
       error: 'content_filter_block',
       message: 'Submitted content contains a protected value. Remove it and try again.',
@@ -359,6 +381,21 @@ describe('processAgentFileUpload', () => {
 
     it('preserves the default-off path without inspecting extracted text', async () => {
       const req = makeReq();
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(inspectContent).not.toHaveBeenCalled();
+      expect(db.addAgentResourceFile).toHaveBeenCalledTimes(1);
+      expect(db.createFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves extracted text when the selected file policy has no active patterns', async () => {
+      const inactiveFilters = {
+        files: {
+          pii: { fields: ['extracted_text'], starterPatterns: [], customPatterns: [] },
+        },
+      };
+      const req = makeReq({ filters: inactiveFilters });
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
 

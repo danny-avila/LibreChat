@@ -715,7 +715,10 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
         createdEventEmitted: true,
         responseMessageId: 'response-1',
         userMessage: { messageId: 'user-1' },
-        userSubmittedPaths: ['/content/0/tool_call/output'],
+        userSubmittedPaths: ['/content/0/tool_call/args'],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'decision_response' },
+        ],
       });
       manager.setContentParts(streamId, [
         {
@@ -728,10 +731,21 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       const result = await manager.abortJob(streamId);
 
       expect(
-        (result.finalEvent as { responseMessage?: { userSubmittedPaths?: string[] } } | undefined)
-          ?.responseMessage,
+        (
+          result.finalEvent as
+            | {
+                responseMessage?: {
+                  userSubmittedPaths?: string[];
+                  userSubmittedMessageFieldPaths?: Array<{ path: string; field: string }>;
+                };
+              }
+            | undefined
+        )?.responseMessage,
       ).toMatchObject({
-        userSubmittedPaths: ['/content/0/tool_call/output', '/content/1'],
+        userSubmittedPaths: ['/content/0/tool_call/args', '/content/1'],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'decision_response' },
+        ],
       });
     });
   });

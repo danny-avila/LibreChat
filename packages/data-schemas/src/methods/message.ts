@@ -1,4 +1,5 @@
-import { RetentionMode } from 'librechat-data-provider';
+import { HITL_MESSAGE_FILTER_FIELDS, RetentionMode } from 'librechat-data-provider';
+import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import type { AppConfig, IMessage } from '~/types';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
@@ -10,6 +11,7 @@ import logger from '~/config/winston';
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_STORED_USER_SUBMITTED_PATHS = 257;
 const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
+const HITL_MESSAGE_FILTER_FIELD_SET = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
 
 function normalizeUserSubmittedPaths(paths: unknown): string[] {
   if (!Array.isArray(paths)) {
@@ -28,6 +30,39 @@ function normalizeUserSubmittedPaths(paths: unknown): string[] {
     }
     seen.add(path);
     normalized.push(path);
+    if (normalized.length >= MAX_STORED_USER_SUBMITTED_PATHS) {
+      break;
+    }
+  }
+  return normalized;
+}
+
+function normalizeUserSubmittedMessageFieldPaths(values: unknown): UserSubmittedMessageFieldPath[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  const normalized: UserSubmittedMessageFieldPath[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (value == null || typeof value !== 'object') {
+      continue;
+    }
+    const { path, field } = value as { path?: unknown; field?: unknown };
+    if (
+      typeof path !== 'string' ||
+      !path.startsWith('/') ||
+      path.length > MAX_USER_SUBMITTED_PATH_LENGTH ||
+      typeof field !== 'string' ||
+      !HITL_MESSAGE_FILTER_FIELD_SET.has(field)
+    ) {
+      continue;
+    }
+    const key = `${field}:${path}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push({ path, field: field as UserSubmittedMessageFieldPath['field'] });
     if (normalized.length >= MAX_STORED_USER_SUBMITTED_PATHS) {
       break;
     }
@@ -272,15 +307,30 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         ...(Array.isArray(params.userSubmittedPaths) ? params.userSubmittedPaths : []),
         ...getSteerUserSubmittedPaths(params.content),
       ]);
+      const userSubmittedMessageFieldPaths = normalizeUserSubmittedMessageFieldPaths(
+        params.userSubmittedMessageFieldPaths,
+      );
       delete update.userSubmittedPaths;
+      delete update.userSubmittedMessageFieldPaths;
       const stampModelOutputOnInsert =
         params.isCreatedByUser === false && params.isUserSubmitted === undefined;
       const messageUpdate =
-        userSubmittedPaths.length > 0 || stampModelOutputOnInsert
+        userSubmittedPaths.length > 0 ||
+        userSubmittedMessageFieldPaths.length > 0 ||
+        stampModelOutputOnInsert
           ? {
               $set: update,
-              ...(userSubmittedPaths.length > 0 && {
-                $addToSet: { userSubmittedPaths: { $each: userSubmittedPaths } },
+              ...((userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0) && {
+                $addToSet: {
+                  ...(userSubmittedPaths.length > 0 && {
+                    userSubmittedPaths: { $each: userSubmittedPaths },
+                  }),
+                  ...(userSubmittedMessageFieldPaths.length > 0 && {
+                    userSubmittedMessageFieldPaths: {
+                      $each: userSubmittedMessageFieldPaths,
+                    },
+                  }),
+                },
               }),
               ...(stampModelOutputOnInsert && {
                 $setOnInsert: { isUserSubmitted: false },
@@ -348,14 +398,31 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const bulkOps = messages.map((message) => ({
-        updateOne: {
-          filter: { messageId: message.messageId },
-          update: message,
-          timestamps: !overrideTimestamp,
-          upsert: true,
-        },
-      }));
+      const bulkOps = messages.map((message) => {
+        const normalizedMessage = { ...message };
+        const submittedPaths = normalizeUserSubmittedPaths(message.userSubmittedPaths);
+        const submittedMessageFields = normalizeUserSubmittedMessageFieldPaths(
+          message.userSubmittedMessageFieldPaths,
+        );
+        if (submittedPaths.length > 0) {
+          normalizedMessage.userSubmittedPaths = submittedPaths;
+        } else {
+          delete normalizedMessage.userSubmittedPaths;
+        }
+        if (submittedMessageFields.length > 0) {
+          normalizedMessage.userSubmittedMessageFieldPaths = submittedMessageFields;
+        } else {
+          delete normalizedMessage.userSubmittedMessageFieldPaths;
+        }
+        return {
+          updateOne: {
+            filter: { messageId: message.messageId },
+            update: normalizedMessage,
+            timestamps: !overrideTimestamp,
+            upsert: true,
+          },
+        };
+      });
       const result = await tenantSafeBulkWrite(Message, bulkOps);
       return result;
     } catch (err) {
@@ -384,13 +451,26 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
+      const submittedPaths = normalizeUserSubmittedPaths(rest.userSubmittedPaths);
+      const submittedMessageFields = normalizeUserSubmittedMessageFieldPaths(
+        rest.userSubmittedMessageFieldPaths,
+      );
+      const {
+        userSubmittedPaths: _userSubmittedPaths,
+        userSubmittedMessageFieldPaths: _userSubmittedMessageFieldPaths,
+        ...safeRest
+      } = rest;
       const message = {
         user,
         endpoint,
         messageId,
         conversationId,
         parentMessageId,
-        ...rest,
+        ...safeRest,
+        ...(submittedPaths.length > 0 && { userSubmittedPaths: submittedPaths }),
+        ...(submittedMessageFields.length > 0 && {
+          userSubmittedMessageFieldPaths: submittedMessageFields,
+        }),
       };
       const update =
         rest.isCreatedByUser === false && rest.isUserSubmitted === undefined
@@ -602,12 +682,23 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const Message = mongoose.models.Message as Model<IMessage>;
       const { messageId, ...update } = message;
       const submittedPaths = normalizeUserSubmittedPaths(update.userSubmittedPaths);
+      const submittedMessageFields = normalizeUserSubmittedMessageFieldPaths(
+        update.userSubmittedMessageFieldPaths,
+      );
       delete update.userSubmittedPaths;
+      delete update.userSubmittedMessageFieldPaths;
       const messageUpdate =
-        submittedPaths.length > 0
+        submittedPaths.length > 0 || submittedMessageFields.length > 0
           ? {
               $set: update,
-              $addToSet: { userSubmittedPaths: { $each: submittedPaths } },
+              $addToSet: {
+                ...(submittedPaths.length > 0 && {
+                  userSubmittedPaths: { $each: submittedPaths },
+                }),
+                ...(submittedMessageFields.length > 0 && {
+                  userSubmittedMessageFieldPaths: { $each: submittedMessageFields },
+                }),
+              },
             }
           : update;
       const updatedMessage = await Message.findOneAndUpdate(
@@ -629,6 +720,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         isCreatedByUser: updatedMessage.isCreatedByUser,
         isUserSubmitted: updatedMessage.isUserSubmitted,
         userSubmittedPaths: updatedMessage.userSubmittedPaths,
+        userSubmittedMessageFieldPaths: updatedMessage.userSubmittedMessageFieldPaths,
         tokenCount: updatedMessage.tokenCount,
         feedback: updatedMessage.feedback,
         endpoint: updatedMessage.endpoint,

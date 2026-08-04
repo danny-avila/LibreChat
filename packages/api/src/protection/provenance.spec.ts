@@ -1,4 +1,4 @@
-import { getUserSubmittedPathState } from './provenance';
+import { getUserSubmittedMessageFieldPathState, getUserSubmittedPathState } from './provenance';
 
 describe('getUserSubmittedPathState', () => {
   it('keeps only pointers that resolve through safe own properties and expands steer parts', () => {
@@ -67,5 +67,22 @@ describe('getUserSubmittedPathState', () => {
         userSubmittedPaths: [overlong, '/text'],
       }),
     ).toEqual({ paths: ['/text'], overflowed: false });
+  });
+
+  it('keeps exact HITL field identity separate from generic provenance paths', () => {
+    const message = {
+      content: [{ tool_call: { output: 'submitted answer' } }],
+      userSubmittedMessageFieldPaths: [
+        { path: '/content/0/tool_call/output', field: 'answer' },
+        { path: '/content/0/tool_call/output', field: 'content_part' },
+        { path: '/missing', field: 'decision_reason' },
+      ],
+    };
+
+    expect(getUserSubmittedPathState(message)).toEqual({ paths: [], overflowed: false });
+    expect(getUserSubmittedMessageFieldPathState(message)).toEqual({
+      entries: [{ path: '/content/0/tool_call/output', field: 'answer' }],
+      overflowed: false,
+    });
   });
 });

@@ -527,6 +527,8 @@ describe('File Routes - Agent Files Endpoint', () => {
             files: {
               pii: {
                 fields: ['content'],
+                starterPatterns: [],
+                customPatterns: [],
                 uninspectable: 'block',
               },
             },
@@ -550,6 +552,40 @@ describe('File Routes - Agent Files Endpoint', () => {
         field: 'content',
       });
       expect(processAgentFileUpload).not.toHaveBeenCalled();
+      readFile.mockRestore();
+    });
+
+    it.each([
+      [
+        'an inert content policy',
+        {
+          fields: ['content'],
+          starterPatterns: [],
+          customPatterns: [],
+        },
+      ],
+      [
+        'an active name-only policy',
+        {
+          fields: ['name'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private', regex: 'PRIVATE-\\d+' }],
+        },
+      ],
+    ])('does not read uploaded bytes for %s', async (_label, pii) => {
+      const readFile = jest.spyOn(fs, 'readFile');
+      const testApp = createAppWithUser(otherUserId, SystemRoles.USER, {
+        filters: { files: { pii } },
+      });
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(200);
+      expect(readFile).not.toHaveBeenCalled();
+      expect(processAgentFileUpload).toHaveBeenCalled();
       readFile.mockRestore();
     });
 
@@ -836,6 +872,54 @@ describe('File Routes - Agent Files Endpoint', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ message: legacyMessage });
+    });
+
+    it.each([
+      [
+        'file policy',
+        {
+          filters: {
+            files: {
+              pii: { fields: ['name'], starterPatterns: [], customPatterns: [] },
+            },
+          },
+        },
+      ],
+      [
+        'legacy message policy',
+        { messageFilter: { pii: { starterPatterns: [], customPatterns: [] } } },
+      ],
+    ])('preserves upload error details for an inert %s', async (_label, config) => {
+      const legacyMessage = 'Invalid file format: .legacy';
+      processAgentFileUpload.mockRejectedValueOnce(
+        Object.assign(new Error(legacyMessage), { userErrorStatusCode: 400 }),
+      );
+      const testApp = createAppWithUser(otherUserId, SystemRoles.USER, config);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ message: legacyMessage });
+    });
+
+    it('normalizes upload errors when the legacy message policy is active', async () => {
+      const rawProviderDetail = 'Invalid file format: PRIVATE-UPLOAD.legacy';
+      processAgentFileUpload.mockRejectedValueOnce(new Error(rawProviderDetail));
+      const testApp = createAppWithUser(otherUserId, SystemRoles.USER, {
+        messageFilter: { pii: {} },
+      });
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ message: 'Invalid file format' });
+      expect(JSON.stringify(response.body)).not.toContain(rawProviderDetail);
     });
 
     it('should allow file upload with agent_id but no tool_resource (message attachment)', async () => {

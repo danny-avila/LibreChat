@@ -1,6 +1,7 @@
 import {
   filtersConfigSchema,
   MESSAGE_FILTER_FIELDS,
+  STORED_MESSAGE_FILTER_FIELDS,
   PROMPT_FILTER_FIELDS,
   AGENT_INSTRUCTION_FILTER_FIELDS,
   CONVERSATION_STARTER_FILTER_FIELDS,
@@ -13,6 +14,7 @@ import {
   MODEL_PARAMETER_FILTER_FIELDS,
   ACTION_METADATA_FILTER_FIELDS,
   hasActiveFiltersConfig,
+  hasActivePiiFields,
   hasActivePiiPatterns,
 } from './filters';
 import { configSchema, messageFilterPiiSchema } from './config';
@@ -53,6 +55,17 @@ describe('filtersConfigSchema', () => {
         skills: { pii: { fields: ['file_text'], starterPatterns: [] } },
       }),
     ).toBe(false);
+  });
+
+  it('combines active-pattern and selected-field checks', () => {
+    expect(hasActivePiiFields({}, ['arguments'])).toBe(true);
+    expect(hasActivePiiFields({ fields: ['name'] }, ['arguments'])).toBe(false);
+    expect(hasActivePiiFields({ fields: ['arguments'], starterPatterns: [] }, ['arguments'])).toBe(
+      false,
+    );
+    expect(STORED_MESSAGE_FILTER_FIELDS).not.toEqual(
+      expect.arrayContaining(['answer', 'decision_response', 'decision_reason']),
+    );
   });
 
   it('accepts an explicit attribution policy for legacy assistant content', () => {

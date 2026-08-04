@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   inspectContent,
   extractFileContent,
+  hasActiveFileFieldPolicy,
   contentFilterBlockResponse,
   contentFilterUninspectableResponse,
   getBlockedUninspectableFileField,
@@ -351,7 +352,7 @@ const uploadAssistantAvatar = async (req, res) => {
   try {
     const appConfig = req.config;
     filterFile({ req, file: req.file, image: true, isAvatar: true });
-    if (req.config?.filters?.files?.pii != null) {
+    if (hasActiveFileFieldPolicy(req.config?.filters, ['name', 'content'])) {
       const finding = inspectContent(extractFileContent({ name: req.file.originalname }), {
         filters: req.config.filters,
       });

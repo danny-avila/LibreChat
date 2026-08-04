@@ -1,9 +1,12 @@
+import { HITL_MESSAGE_FILTER_FIELDS } from 'librechat-data-provider';
+import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { JsonPointer } from './types';
 
 export const MAX_USER_SUBMITTED_PATHS = 256;
 export const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
 
 const BLOCKED_POINTER_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+const HITL_MESSAGE_FILTER_FIELD_SET = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
 const STORED_MESSAGE_SUBMITTED_ROOTS = new Set([
   'attachments',
   'content',
@@ -36,8 +39,15 @@ export interface UserSubmittedPathOptions {
 
 type UserSubmittedPathCarrier = object & {
   readonly userSubmittedPaths?: readonly unknown[];
+  readonly userSubmittedMessageFieldPaths?: readonly unknown[];
   readonly content?: readonly unknown[];
+  readonly text?: unknown;
 };
+
+export interface UserSubmittedMessageFieldPathState {
+  readonly entries: UserSubmittedMessageFieldPath[];
+  readonly overflowed: boolean;
+}
 
 function decodeJsonPointerSegment(segment: string): string {
   return segment.replace(/~1/g, '/').replace(/~0/g, '~');
@@ -137,4 +147,52 @@ export function getUserSubmittedPathState(
     }
   }
   return { paths, overflowed: false };
+}
+
+/**
+ * Resolves exact HITL message-field identities against the stored row. Invalid,
+ * stale, or unsafe metadata is ignored; excessive distinct entries retain a
+ * fail-closed overflow signal without broadening any individual field label.
+ */
+export function getUserSubmittedMessageFieldPathState(
+  message: UserSubmittedPathCarrier,
+  options: UserSubmittedPathOptions = {},
+): UserSubmittedMessageFieldPathState {
+  if (!Array.isArray(message.userSubmittedMessageFieldPaths)) {
+    return { entries: [], overflowed: false };
+  }
+  const entries: UserSubmittedMessageFieldPath[] = [];
+  const seen = new Set<string>();
+  for (const value of message.userSubmittedMessageFieldPaths) {
+    if (value == null || typeof value !== 'object') {
+      continue;
+    }
+    const { path, field } = value as { readonly path?: unknown; readonly field?: unknown };
+    if (
+      typeof path !== 'string' ||
+      !path.startsWith('/') ||
+      path.length > MAX_USER_SUBMITTED_PATH_LENGTH ||
+      typeof field !== 'string' ||
+      !HITL_MESSAGE_FILTER_FIELD_SET.has(field)
+    ) {
+      continue;
+    }
+    const key = `${field}:${path}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    if (seen.size > MAX_USER_SUBMITTED_PATHS) {
+      return { entries, overflowed: true };
+    }
+    const pointer = path as JsonPointer;
+    if (!isEffectiveUserSubmittedPath(message, pointer, options.scope ?? 'stored_message')) {
+      continue;
+    }
+    entries.push({
+      path,
+      field: field as UserSubmittedMessageFieldPath['field'],
+    });
+  }
+  return { entries, overflowed: false };
 }

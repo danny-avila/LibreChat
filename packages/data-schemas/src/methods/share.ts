@@ -567,6 +567,9 @@ function anonymizeMessages(
       ...(Array.isArray(message.userSubmittedPaths) && {
         userSubmittedPaths: message.userSubmittedPaths,
       }),
+      ...(Array.isArray(message.userSubmittedMessageFieldPaths) && {
+        userSubmittedMessageFieldPaths: message.userSubmittedMessageFieldPaths,
+      }),
       createdAt: message.createdAt,
       updatedAt: message.updatedAt,
       tokenCount: message.tokenCount,

@@ -565,8 +565,15 @@ describe('BaseClient', () => {
           isCreatedByUser: false,
           messageId: 'assistant-message',
           parentMessageId: 'user-message',
-          userSubmittedPaths: ['/content/0/think'],
+          userSubmittedPaths: ['/content/1/think'],
+          userSubmittedMessageFieldPaths: [
+            { path: '/content/0/tool_call/output', field: 'answer' },
+          ],
           content: [
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { name: 'ask_user_question', output: 'Prior answer' },
+            },
             { type: ContentTypes.THINK, [ContentTypes.THINK]: 'Prior user-edited reasoning' },
             { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Original model response' },
           ],
@@ -589,13 +596,17 @@ describe('BaseClient', () => {
         isEdited: true,
         isContinued: true,
         editedContent: {
-          index: 1,
+          index: 2,
           text: 'User replacement',
           type: ContentTypes.TEXT,
         },
       });
 
       expect(response.content).toEqual([
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: { name: 'ask_user_question', output: 'Prior answer' },
+        },
         { type: ContentTypes.THINK, [ContentTypes.THINK]: 'Prior user-edited reasoning' },
         {
           type: ContentTypes.TEXT,
@@ -604,9 +615,12 @@ describe('BaseClient', () => {
         { type: ContentTypes.STEER, [ContentTypes.STEER]: 'User steer' },
       ]);
       expect(response.userSubmittedPaths).toEqual([
-        '/content/2',
-        '/content/0/think',
-        '/content/1/text',
+        '/content/3',
+        '/content/1/think',
+        '/content/2/text',
+      ]);
+      expect(response.userSubmittedMessageFieldPaths).toEqual([
+        { path: '/content/0/tool_call/output', field: 'answer' },
       ]);
       expect(response).not.toHaveProperty('isUserSubmitted');
     });
@@ -2126,6 +2140,44 @@ describe('BaseClient', () => {
       expect(message.attachments).toBeUndefined();
       expect(JSON.stringify(message)).not.toContain('victim');
       expect(JSON.stringify(message)).not.toContain('forged owner text');
+    });
+
+    test('preserves owner-scoped historical attachments when file patterns are inactive', async () => {
+      TestClient.options.req.config = {
+        filters: {
+          files: {
+            pii: {
+              starterPatterns: [],
+              customPatterns: [],
+            },
+          },
+        },
+      };
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-inactive-file-policy',
+          files: [{ file_id: 'owner-file', filename: 'forged-input.txt' }],
+          attachments: [{ file_id: 'owner-file', filename: 'forged-output.txt' }],
+        },
+      ]);
+
+      expect(getFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['owner-file'] },
+          user: 'user-1',
+          tenantId: 'tenant-a',
+        },
+        {},
+        {},
+      );
+      expect(message.files).toEqual([
+        expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
+      ]);
+      expect(message.attachments).toEqual([
+        expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
+      ]);
     });
 
     test('fails closed before processing an unresolved historical file reference', async () => {

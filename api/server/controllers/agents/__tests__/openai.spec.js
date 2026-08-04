@@ -26,6 +26,36 @@ const mockGetSafeErrorMetadata = jest.fn((error) => {
     ...(Number.isInteger(status) && status >= 100 && status <= 599 && { status }),
   };
 });
+const mockHasActivePiiPatterns = (config) =>
+  config != null &&
+  (config.starterPatterns == null ||
+    config.starterPatterns.length > 0 ||
+    (config.customPatterns?.length ?? 0) > 0);
+const mockHasModelBoundContentProtection = (filters, legacyPii) => {
+  const sourcePolicies = [
+    legacyPii,
+    filters?.messages?.pii,
+    filters?.agentInstructions?.pii,
+    filters?.conversationStarters?.pii,
+    filters?.skills?.pii,
+    filters?.memories?.pii,
+    filters?.files?.pii,
+    filters?.toolArguments?.pii,
+    filters?.modelParameters?.pii,
+    filters?.actionMetadata?.pii,
+  ];
+  if (sourcePolicies.some(mockHasActivePiiPatterns)) {
+    return true;
+  }
+  const filePolicy = filters?.files?.pii;
+  return (
+    filePolicy?.uninspectable === 'block' &&
+    (filePolicy.fields == null ||
+      filePolicy.fields.some((field) =>
+        ['content', 'extracted_text', 'transcript'].includes(field),
+      ))
+  );
+};
 class MockAgentRunEnvelopeError extends TypeError {
   constructor(message) {
     super(message);
@@ -215,6 +245,7 @@ jest.mock('@librechat/api', () => ({
   isContentTraversalProtected: jest.fn().mockReturnValue(true),
   isContentTraversalLimitError: jest.fn((error) => error?.code === 'content_filter_uninspectable'),
   assertModelBoundContent: jest.fn(),
+  hasModelBoundContentProtection: mockHasModelBoundContentProtection,
   isContentFilterError: jest.fn((error) => error?.code === 'content_filter_block'),
   getSafeErrorMetadata: mockGetSafeErrorMetadata,
   contentFilterBlockResponse: jest.fn().mockReturnValue({
@@ -867,6 +898,20 @@ describe('OpenAIChatCompletionController', () => {
     it('preserves the legacy provider error when protection is inactive', async () => {
       const api = require('@librechat/api');
       const rawValue = 'LEGACY-OPENAI-PROVIDER-ERROR';
+      mockProcessStream.mockRejectedValueOnce(new Error(rawValue));
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(api.createErrorResponse).toHaveBeenCalledWith(rawValue, 'server_error', null);
+    });
+
+    it.each([
+      ['a management-only prompt', { prompts: { pii: {} } }],
+      ['an inert message', { messages: { pii: { starterPatterns: [] } } }],
+    ])('preserves the legacy provider error for %s policy', async (_policy, filters) => {
+      const api = require('@librechat/api');
+      const rawValue = 'LEGACY-OPENAI-CONFIGURED-PROVIDER-ERROR';
+      req.config.filters = filters;
       mockProcessStream.mockRejectedValueOnce(new Error(rawValue));
 
       await OpenAIChatCompletionController(req, res);

@@ -11,6 +11,7 @@ import {
   EModelEndpoint,
   PermissionTypes,
   AgentCapabilities,
+  hasActivePiiPatterns,
   stripAgentIdSuffix,
 } from 'librechat-data-provider';
 import type {
@@ -743,6 +744,7 @@ export async function processMemory({
   setMemory,
   deleteMemory,
   messages,
+  inspectionMessages,
   memory,
   memoryEntries,
   messageId,
@@ -767,6 +769,7 @@ export async function processMemory({
   messageId: string;
   conversationId: string;
   messages: BaseMessage[];
+  inspectionMessages?: BaseMessage[];
   validKeys?: string[];
   instructions: string;
   /** Canonical rows preserve key/value granularity for field-scoped policy. */
@@ -784,7 +787,9 @@ export async function processMemory({
   user?: IUser;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
-    const submittedMessages = messages.filter((message) => message._getType() !== 'ai');
+    const submittedMessages = (inspectionMessages ?? messages).filter(
+      (message) => message._getType() !== 'ai',
+    );
     let memories = memoryEntries ?? [];
     if (memoryEntries == null && memory) {
       /**
@@ -1027,7 +1032,15 @@ export async function createMemoryProcessor({
   streamId?: string | null;
   jobCreatedAt?: number;
   user?: IUser;
-}): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
+}): Promise<
+  [
+    string,
+    (
+      messages: BaseMessage[],
+      inspectionMessages?: BaseMessage[],
+    ) => Promise<(TAttachment | null)[] | undefined>,
+  ]
+> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
 
@@ -1036,20 +1049,24 @@ export async function createMemoryProcessor({
       userId,
       agentId,
     }),
-    filters?.memories?.pii == null
-      ? Promise.resolve(undefined)
-      : memoryMethods.getUserMemories({ userId, agentId }),
+    hasActivePiiPatterns(filters?.memories?.pii)
+      ? memoryMethods.getUserMemories({ userId, agentId })
+      : Promise.resolve(undefined),
   ]);
 
   return [
     withoutKeys,
-    async function (messages: BaseMessage[]): Promise<(TAttachment | null)[] | undefined> {
+    async function (
+      messages: BaseMessage[],
+      inspectionMessages?: BaseMessage[],
+    ): Promise<(TAttachment | null)[] | undefined> {
       try {
         return await processMemory({
           res,
           userId,
           agentId,
           messages,
+          inspectionMessages,
           validKeys,
           llmConfig,
           messageId,

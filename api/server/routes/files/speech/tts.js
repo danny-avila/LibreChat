@@ -7,7 +7,7 @@ const {
   restoreTenantContextFromReq,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, hasActivePiiFields } = require('librechat-data-provider');
 const { getVoices, streamAudio, textToSpeech } = require('~/server/services/Files/Audio');
 const { getLogStores } = require('~/cache');
 
@@ -20,7 +20,7 @@ router.post(
   restoreTenantContextFromReq,
   (req, res, next) => {
     const filters = req.config?.filters;
-    if (filters?.messages?.pii == null) {
+    if (!hasActivePiiFields(filters?.messages?.pii, ['text'])) {
       next();
       return;
     }

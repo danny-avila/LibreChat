@@ -8,6 +8,27 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   inspectContent: jest.fn(),
   extractFileContent: jest.fn((input) => [input]),
+  hasActiveFileFieldPolicy: jest.fn((filters, candidates) => {
+    const pii = filters?.files?.pii;
+    if (pii == null) {
+      return false;
+    }
+    const fieldSelected = candidates.some(
+      (field) => pii.fields == null || pii.fields.includes(field),
+    );
+    const hasPatterns =
+      pii.starterPatterns == null ||
+      pii.starterPatterns.length > 0 ||
+      (pii.customPatterns?.length ?? 0) > 0;
+    const failClosed =
+      pii.uninspectable === 'block' &&
+      candidates.some(
+        (field) =>
+          ['content', 'extracted_text', 'transcript'].includes(field) &&
+          (pii.fields == null || pii.fields.includes(field)),
+      );
+    return (hasPatterns && fieldSelected) || failClosed;
+  }),
   genAzureEndpoint: jest.fn(),
   getSafeErrorMetadata: jest.fn((error) => ({
     type: error instanceof Error ? 'Error' : 'UnknownError',
@@ -359,6 +380,21 @@ describe('STT transcript content filtering', () => {
     const res = createResponse();
 
     await service.processSpeechToText(createRequest({}), res);
+
+    expect(inspectContent).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ text: 'submitted transcript' });
+  });
+
+  it('preserves the transcript path when the selected file policy has no active patterns', async () => {
+    const filters = {
+      files: {
+        pii: { fields: ['transcript'], starterPatterns: [], customPatterns: [] },
+      },
+    };
+    const service = createService('submitted transcript');
+    const res = createResponse();
+
+    await service.processSpeechToText(createRequest({ filters }), res);
 
     expect(inspectContent).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ text: 'submitted transcript' });

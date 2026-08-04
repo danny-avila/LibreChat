@@ -3561,6 +3561,24 @@ describe('AgentClient - titleConvo', () => {
       expect(processedMessage.content).toContain('That is great to hear.');
     });
 
+    it('should keep original roles separate for content policy inspection', async () => {
+      const { HumanMessage, AIMessage } = require('@librechat/agents/langchain/messages');
+      const messages = [new HumanMessage('Safe user input'), new AIMessage('PRIVATE-MODEL-OUTPUT')];
+
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const [flattenedMessages, inspectionMessages] = mockProcessMemory.mock.calls[0];
+      expect(flattenedMessages).toHaveLength(1);
+      expect(flattenedMessages[0].constructor.name).toBe('HumanMessage');
+      expect(flattenedMessages[0].content).toContain('PRIVATE-MODEL-OUTPUT');
+      expect(inspectionMessages).toHaveLength(2);
+      expect(inspectionMessages[0].constructor.name).toBe('HumanMessage');
+      expect(inspectionMessages[0].content).toBe('Safe user input');
+      expect(inspectionMessages[1].constructor.name).toBe('AIMessage');
+      expect(inspectionMessages[1].content).toBe('PRIVATE-MODEL-OUTPUT');
+    });
+
     it('should handle mixed content types correctly', async () => {
       const { HumanMessage } = require('@librechat/agents/langchain/messages');
       const { ContentTypes } = require('librechat-data-provider');
@@ -5443,7 +5461,14 @@ describe('AgentClient - resumeCompletion content protection', () => {
         response: { status: 422, data: { prompt: privateValue } },
       }),
     );
-    const context = makeContext({});
+    const context = makeContext({
+      messages: {
+        pii: {
+          fields: ['text'],
+          starterPatterns: ['email'],
+        },
+      },
+    });
 
     await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
 

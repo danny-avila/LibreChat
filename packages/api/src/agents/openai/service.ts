@@ -65,7 +65,10 @@ import {
 } from './handlers';
 import { createMCPRuntimeRequestBody } from '~/mcp/request';
 import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/contentFilter';
-import { assertModelBoundContent } from '~/middleware/modelBoundContent';
+import {
+  assertModelBoundContent,
+  hasModelBoundContentProtection,
+} from '~/middleware/modelBoundContent';
 import { contentFilterUninspectableResponse } from '~/protection/files';
 import { collectReachableAgents } from '../traversal';
 import { getDynamicToolContexts } from '../hitl';
@@ -855,7 +858,10 @@ export async function createAgentChatCompletion(
       );
       return;
     }
-    const errorMessage = getUserFacingProviderError(error, filters != null || legacyPii != null);
+    const errorMessage = getUserFacingProviderError(
+      error,
+      hasModelBoundContentProtection(filters, legacyPii),
+    );
     // Check if we already started streaming (headers sent)
     if (res.headersSent) {
       // Headers already sent, try to send error in stream format

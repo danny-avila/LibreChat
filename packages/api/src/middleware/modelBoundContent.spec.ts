@@ -1,5 +1,5 @@
 import type { FiltersConfig } from 'librechat-data-provider';
-import { assertModelBoundContent } from './modelBoundContent';
+import { assertModelBoundContent, hasModelBoundContentProtection } from './modelBoundContent';
 
 const filters: FiltersConfig = {
   messages: {
@@ -25,6 +25,55 @@ const makeDeepModelParameter = () => {
   }
   return value;
 };
+
+describe('hasModelBoundContentProtection', () => {
+  it.each([
+    undefined,
+    { prompts: { pii: {} } },
+    { conversationTitles: { pii: {} } },
+    { feedback: { pii: {} } },
+    {
+      messages: {
+        pii: { starterPatterns: [] },
+        unattributedAssistantContent: 'inspect' as const,
+      },
+    },
+  ])('does not activate for management-only or inert config %#', (candidate) => {
+    expect(hasModelBoundContentProtection(candidate)).toBe(false);
+  });
+
+  it.each([
+    'messages',
+    'agentInstructions',
+    'conversationStarters',
+    'skills',
+    'memories',
+    'toolArguments',
+    'modelParameters',
+    'actionMetadata',
+  ] as const)('activates for the %s source', (source) => {
+    expect(
+      hasModelBoundContentProtection({
+        [source]: { pii: {} },
+      }),
+    ).toBe(true);
+  });
+
+  it('activates for legacy patterns and fail-close file inspection', () => {
+    expect(hasModelBoundContentProtection(undefined, {})).toBe(true);
+    expect(
+      hasModelBoundContentProtection({
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      }),
+    ).toBe(true);
+  });
+});
 
 describe('assertModelBoundContent', () => {
   it('does not traverse model-bound content for a zero-rule configuration', () => {
@@ -231,7 +280,7 @@ describe('assertModelBoundContent', () => {
     ).not.toThrow();
   });
 
-  it('restores message policy semantics for user-authored HITL tool outputs', () => {
+  it('keeps legacy generic HITL provenance compatible with content_part policy', () => {
     const hitlMessage = {
       isCreatedByUser: false,
       content: [
@@ -280,6 +329,181 @@ describe('assertModelBoundContent', () => {
         ],
       }),
     ).not.toThrow();
+  });
+
+  it.each([
+    {
+      field: 'answer' as const,
+      selectedIndex: 0,
+      siblingIndex: 1,
+    },
+    {
+      field: 'decision_response' as const,
+      selectedIndex: 1,
+      siblingIndex: 2,
+    },
+    {
+      field: 'decision_reason' as const,
+      selectedIndex: 2,
+      siblingIndex: 0,
+    },
+  ])(
+    'restores exact persisted $field policy without blocking sibling HITL fields',
+    ({ field, selectedIndex, siblingIndex }) => {
+      const semanticFields = ['answer', 'decision_response', 'decision_reason'] as const;
+      const makeMessage = (privateIndex: number) => ({
+        isCreatedByUser: false,
+        role: 'assistant',
+        content: semanticFields.map((semanticField, index) => ({
+          type: 'tool_call',
+          tool_call: {
+            output: index === privateIndex ? 'PRIVATE-HITL' : `safe-${semanticField}`,
+          },
+        })),
+        userSubmittedMessageFieldPaths: semanticFields.map((semanticField, index) => ({
+          path: `/content/${index}/tool_call/output`,
+          field: semanticField,
+        })),
+      });
+      const fieldFilters: FiltersConfig = {
+        messages: {
+          pii: {
+            fields: [field],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-HITL' }],
+          },
+        },
+      };
+
+      expect(() =>
+        assertModelBoundContent({
+          filters: fieldFilters,
+          storedMessages: [makeMessage(selectedIndex)],
+        }),
+      ).toThrow('Submitted content contains a private value');
+
+      expect(() =>
+        assertModelBoundContent({
+          filters: fieldFilters,
+          storedMessages: [makeMessage(siblingIndex)],
+        }),
+      ).not.toThrow();
+    },
+  );
+
+  it('does not reclassify exact persisted HITL fields as content_part or assembled_context', () => {
+    const semanticMessage = {
+      isCreatedByUser: false,
+      role: 'assistant',
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: { output: 'PRIVATE-HITL' },
+        },
+      ],
+      userSubmittedMessageFieldPaths: [
+        { path: '/content/0/tool_call/output', field: 'answer' as const },
+      ],
+    };
+    const genericFilters = (field: 'content_part' | 'assembled_context'): FiltersConfig => ({
+      messages: {
+        pii: {
+          fields: [field],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-HITL' }],
+        },
+      },
+    });
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: genericFilters('content_part'),
+        storedMessages: [semanticMessage],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertModelBoundContent({
+        filters: genericFilters('assembled_context'),
+        storedMessages: [semanticMessage],
+      }),
+    ).not.toThrow();
+  });
+
+  it('fails closed for uninspectable exact persisted HITL content under legacy policy', () => {
+    expect(() =>
+      assertModelBoundContent({
+        legacyPii: {
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-HITL' }],
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            role: 'assistant',
+            content: makeTraversalOverflowContent(),
+            userSubmittedMessageFieldPaths: [{ path: '/content/0', field: 'answer' }],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
+  it('fails closed only when the uninspectable exact HITL field is selected', () => {
+    const makeFilters = (field: 'answer' | 'decision_reason'): FiltersConfig => ({
+      messages: {
+        pii: {
+          fields: [field],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-HITL' }],
+        },
+      },
+    });
+    const storedMessages = [
+      {
+        isCreatedByUser: false,
+        role: 'assistant',
+        content: makeTraversalOverflowContent(),
+        userSubmittedMessageFieldPaths: [{ path: '/content/0', field: 'answer' as const }],
+      },
+    ];
+
+    expect(() =>
+      assertModelBoundContent({ filters: makeFilters('answer'), storedMessages }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+    expect(() =>
+      assertModelBoundContent({ filters: makeFilters('decision_reason'), storedMessages }),
+    ).not.toThrow();
+  });
+
+  it('retains toolArguments.output coverage for exact persisted HITL fields', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['output'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-HITL' }],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_call',
+                tool_call: { output: 'PRIVATE-HITL' },
+              },
+            ],
+            userSubmittedMessageFieldPaths: [
+              { path: '/content/0/tool_call/output', field: 'answer' },
+            ],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
   });
 
   it('applies fail-close file policy only to marked fields in mixed assistant responses', () => {

@@ -82,6 +82,7 @@ export type SharedMessage = Pick<
   | 'isCreatedByUser'
   | 'isUserSubmitted'
   | 'userSubmittedPaths'
+  | 'userSubmittedMessageFieldPaths'
   | 'createdAt'
   | 'updatedAt'
   | 'tokenCount'

@@ -168,6 +168,32 @@ describe('ImportBatchBuilder content filtering', () => {
     expect(bulkSaveMessages).not.toHaveBeenCalled();
   });
 
+  it('does not swallow exact HITL traversal failures in the import fallback', async () => {
+    const builder = createBuilder(filtersFor('messages', ['answer']), {
+      message: {
+        isCreatedByUser: false,
+        role: 'assistant',
+        content: [{ type: 'tool_call', tool_call: { output: 'safe answer' } }],
+        userSubmittedMessageFieldPaths: [{ path: '/content/0/tool_call/output', field: 'answer' }],
+      },
+    });
+    mockAssertModelBoundContent.mockImplementationOnce(() => {
+      throw new actualApi.ContentTraversalLimitError(
+        [],
+        [{ source: 'message', fields: ['answer'] }],
+      );
+    });
+
+    await expect(builder.saveBatch()).rejects.toMatchObject({
+      body: {
+        error: 'content_filter_uninspectable',
+        source: 'message',
+        field: 'answer',
+      },
+    });
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
+
   it('keeps legacy-only filtering active for explicitly submitted imported rows', async () => {
     const builder = new ImportBatchBuilder('user-123', undefined, undefined, {
       starterPatterns: [],

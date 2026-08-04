@@ -1,4 +1,8 @@
-import { FILE_FILTER_FIELDS, hasActivePiiPatterns } from 'librechat-data-provider';
+import {
+  FILE_FILTER_FIELDS,
+  hasActivePiiFields,
+  hasActivePiiPatterns,
+} from 'librechat-data-provider';
 import type { FileFilterField, FiltersConfig } from 'librechat-data-provider';
 import {
   ContentTraversalLimitError,
@@ -94,6 +98,7 @@ const MAX_OPAQUE_NODES = 4096;
 const CONTENT_FIELDS = ['content'] as const;
 const AUDIO_FIELDS = ['content', 'transcript'] as const;
 const DERIVED_FILE_FIELDS = ['content', 'extracted_text', 'transcript'] as const;
+const DERIVED_FILE_FIELD_SET = new Set<FileFilterField>(DERIVED_FILE_FIELDS);
 const TEXTUAL_APPLICATION_MIME_TYPES = new Set([
   'application/json',
   'application/javascript',
@@ -120,6 +125,24 @@ export function hasActiveFilePolicy(filters: FiltersConfig | undefined): boolean
     pii?.uninspectable === 'block' &&
     DERIVED_FILE_FIELDS.some((field) => pii.fields == null || pii.fields.includes(field))
   );
+}
+
+/** Whether a file policy can enforce on at least one requested field. */
+export function hasActiveFileFieldPolicy(
+  filters: FiltersConfig | undefined,
+  candidates: readonly FileFilterField[],
+): boolean {
+  const pii = getFilePii(filters);
+  if (!hasActivePiiFields(pii, candidates)) {
+    return (
+      pii?.uninspectable === 'block' &&
+      candidates.some(
+        (field) =>
+          DERIVED_FILE_FIELD_SET.has(field) && (pii.fields == null || pii.fields.includes(field)),
+      )
+    );
+  }
+  return true;
 }
 
 export function isFileFilterFieldEnabled(

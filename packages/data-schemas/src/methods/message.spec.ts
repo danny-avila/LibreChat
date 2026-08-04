@@ -181,6 +181,47 @@ describe('Message Operations', () => {
       expect(result?.userSubmittedPaths?.[256]).toBe('/content/256/text');
     });
 
+    it('validates and atomically preserves exact HITL field provenance', async () => {
+      const first = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: { id: 'tool-1', output: 'Human response' },
+          },
+        ],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'answer' },
+          { path: '/content/0/tool_call/output', field: 'answer' },
+          { path: 'not-a-pointer', field: 'decision_reason' },
+        ],
+      });
+
+      expect(first?.userSubmittedMessageFieldPaths).toEqual([
+        expect.objectContaining({ path: '/content/0/tool_call/output', field: 'answer' }),
+      ]);
+
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'decision_response' },
+        ],
+      });
+
+      const stored = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(stored?.userSubmittedMessageFieldPaths).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: '/content/0/tool_call/output', field: 'answer' }),
+          expect.objectContaining({
+            path: '/content/0/tool_call/output',
+            field: 'decision_response',
+          }),
+        ]),
+      );
+      expect(stored?.userSubmittedMessageFieldPaths).toHaveLength(2);
+    });
+
     it('adds semantic steer paths without replacing existing field provenance', async () => {
       await saveMessage(mockCtx, {
         ...mockMessageData,

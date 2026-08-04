@@ -73,4 +73,68 @@ describe('resume file inspection trust boundary', () => {
       ],
     });
   });
+
+  it('hydrates file references carried only by additional checkpoint structures', async () => {
+    const input = {
+      ...buildInput(),
+      fileReferenceInputs: [
+        {
+          tool_calls: [{ arguments: { file_id: 'checkpoint-only-file' } }],
+        },
+      ],
+    };
+    input.getFiles.mockResolvedValue([
+      {
+        file_id: 'owned-file',
+        filename: 'safe.txt',
+        type: 'text/plain',
+        source: 'local',
+        content: 'safe extracted content',
+        extractedText: 'safe extracted content',
+      },
+    ]);
+
+    await expect(getResumeContentInspection(input)).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'file', field: 'extracted_text' },
+    });
+    expect(input.getFiles).toHaveBeenCalledWith(
+      {
+        file_id: { $in: expect.arrayContaining(['owned-file', 'checkpoint-only-file']) },
+        user: 'user-1',
+      },
+      {},
+      {},
+    );
+  });
+
+  it('does not reload persisted history for an inert message sibling policy', async () => {
+    const getMessages = jest.fn().mockRejectedValue(new Error('history should not be loaded'));
+    const result = await getResumeContentInspection({
+      appConfig: {
+        filters: {
+          skills: {
+            pii: {
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+          messages: { pii: { starterPatterns: [] } },
+          toolArguments: { pii: { starterPatterns: [] } },
+        },
+      } as unknown as AppConfig,
+      conversationId: 'conversation-1',
+      targetMessageId: 'missing-message',
+      user: { id: 'user-1' },
+      supplementalMessages: [],
+      submittedMessages: [],
+      liveFiles: [],
+      isTemporary: false,
+      getMessages,
+      getFiles: jest.fn().mockResolvedValue([]),
+    });
+
+    expect(result.storedMessages).toEqual([]);
+    expect(getMessages).not.toHaveBeenCalled();
+  });
 });

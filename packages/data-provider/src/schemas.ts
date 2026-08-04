@@ -9,6 +9,7 @@ import type { SearchResultData } from './types/web';
 import type { TFile } from './types/files';
 import { TFeedback, feedbackSchema } from './feedback';
 import { Tools } from './types/assistants';
+import { userSubmittedMessageFieldPathSchema } from './filters';
 
 export const isUUID = z.string().uuid();
 
@@ -807,6 +808,8 @@ export const tMessageSchema = z.object({
   isUserSubmitted: z.boolean().optional(),
   /** JSON pointers to caller-authored fields in an otherwise mixed model response. */
   userSubmittedPaths: z.array(z.string().startsWith('/')).optional(),
+  /** Exact HITL message-field identity for caller-authored values stored in mixed responses. */
+  userSubmittedMessageFieldPaths: z.array(userSubmittedMessageFieldPathSchema).optional(),
   isTemporary: z.boolean().optional(),
   expiredAt: z.string().nullable().optional(),
   error: z.boolean().optional(),

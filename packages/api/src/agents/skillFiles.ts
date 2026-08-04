@@ -4,6 +4,7 @@ import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import {
   getCodeEnvRefForProfile,
+  hasActivePiiFields,
   type CodeEnvRef,
   type CodeEnvRefMap,
 } from 'librechat-data-provider';
@@ -14,6 +15,7 @@ import type { ServerRequest } from '~/types';
 import {
   extractFileContent,
   extractSkillContent,
+  hasActiveFileFieldPolicy,
   getBlockedUninspectableSkillFileField,
   inspectContent,
   UninspectableFileError,
@@ -43,6 +45,7 @@ export interface PrimeSkillFilesParams {
   skill: {
     body: string;
     name: string;
+    frontmatter?: Record<string, unknown>;
     _id: Types.ObjectId | string;
     /** Monotonic counter on the skill record. Bumped on every edit
      *  (frontmatter / body / file upsert). Threaded into `codeEnvRef.version`
@@ -213,17 +216,30 @@ function assertStoredSkillBodyAllowed(
   req: ServerRequest,
 ): void {
   const filters = req.config?.filters;
-  if (filters?.skills?.pii == null && filters?.files?.pii == null) {
+  const skillPii = filters?.skills?.pii;
+  const inspectSkill = hasActivePiiFields(skillPii, ['name', 'instructions', 'frontmatter']);
+  const inspectFile = hasActiveFileFieldPolicy(filters, ['name', 'content', 'extracted_text']);
+  if (!inspectSkill && !inspectFile) {
     return;
   }
   const finding = inspectContent(
     [
-      ...extractSkillContent({ name: skill.name, body: skill.body }),
-      ...extractFileContent({
-        filename: `${SKILL_FILE_PREFIX}${skill.name}/SKILL.md`,
-        content: skill.body,
-        extractedText: skill.body,
-      }),
+      ...(inspectSkill
+        ? extractSkillContent({
+            ...(hasActivePiiFields(skillPii, ['name']) && { name: skill.name }),
+            ...(hasActivePiiFields(skillPii, ['instructions']) && { body: skill.body }),
+            ...(hasActivePiiFields(skillPii, ['frontmatter']) && {
+              frontmatter: skill.frontmatter,
+            }),
+          })
+        : []),
+      ...(inspectFile
+        ? extractFileContent({
+            filename: `${SKILL_FILE_PREFIX}${skill.name}/SKILL.md`,
+            content: skill.body,
+            extractedText: skill.body,
+          })
+        : []),
     ],
     { filters },
   );
@@ -282,20 +298,20 @@ function assertStoredSkillFileNameAllowed(file: SkillFileRecord, req: ServerRequ
   }
 }
 
-function includesSelectedField(
-  fields: readonly string[] | undefined,
-  candidates: readonly string[],
-): boolean {
-  return fields == null || candidates.some((field) => fields.includes(field));
-}
-
 function shouldInspectStoredSkillFileContent(req: ServerRequest): boolean {
   const filters = req.config?.filters;
   const skillPii = filters?.skills?.pii;
-  const filePii = filters?.files?.pii;
   return (
-    (skillPii != null && includesSelectedField(skillPii.fields, SKILL_FILE_CONTENT_FIELDS)) ||
-    (filePii != null && includesSelectedField(filePii.fields, FILE_CONTENT_FIELDS))
+    hasActivePiiFields(skillPii, SKILL_FILE_CONTENT_FIELDS) ||
+    hasActiveFileFieldPolicy(filters, FILE_CONTENT_FIELDS)
+  );
+}
+
+function shouldInspectStoredSkillFileMetadata(req: ServerRequest): boolean {
+  const filters = req.config?.filters;
+  return (
+    hasActivePiiFields(filters?.skills?.pii, ['file_name']) ||
+    hasActiveFileFieldPolicy(filters, ['name'])
   );
 }
 
@@ -373,8 +389,7 @@ async function executePrimeSkillFiles(
     codeExecutionContext,
   } = params;
   const executionProfile = codeExecutionContext?.executionProfile ?? 'default';
-  const filters = req.config?.filters;
-  const inspectStoredMetadata = filters?.skills?.pii != null || filters?.files?.pii != null;
+  const inspectStoredMetadata = shouldInspectStoredSkillFileMetadata(req);
   const inspectBundledFileContent = shouldInspectStoredSkillFileContent(req);
   const inspectedBuffers = new Map<SkillFileRecord, Buffer>();
 
@@ -620,6 +635,7 @@ export interface PrimeInvokedSkillsDeps {
   ) => Promise<{
     body: string;
     name: string;
+    frontmatter?: Record<string, unknown>;
     _id: Types.ObjectId;
     version: number;
     fileCount: number;
@@ -678,6 +694,7 @@ export async function primeInvokedSkills(
   const resolvedSkills: Array<{
     body: string;
     name: string;
+    frontmatter?: Record<string, unknown>;
     _id: Types.ObjectId;
     version: number;
     fileCount: number;
@@ -697,8 +714,7 @@ export async function primeInvokedSkills(
   const skillsWithFiles = resolvedSkills.filter((s) => s.fileCount > 0);
 
   if (deps.codeEnvAvailable && skillsWithFiles.length > 0) {
-    const filters = deps.req.config?.filters;
-    const inspectStoredMetadata = filters?.skills?.pii != null || filters?.files?.pii != null;
+    const inspectStoredMetadata = shouldInspectStoredSkillFileMetadata(deps.req);
     const inspectStoredSkillFileContent = shouldInspectStoredSkillFileContent(deps.req);
     // Parallel file list lookups (R2 fix)
     const fileListResults = await Promise.all(

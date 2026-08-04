@@ -10,11 +10,12 @@ const {
   verifyAgentUploadPermission,
   inspectContent,
   extractFileContent,
+  hasActiveFilePolicy,
   contentFilterBlockResponse,
   contentFilterUninspectableResponse,
   getBlockedUninspectableFileField,
 } = require('@librechat/api');
-const { isAssistantsEndpoint } = require('librechat-data-provider');
+const { isAssistantsEndpoint, hasActivePiiPatterns } = require('librechat-data-provider');
 const {
   processAgentFileUpload,
   processImageFile,
@@ -80,7 +81,8 @@ router.post('/', async (req, res) => {
     logger.error('[/files/images] Error processing file:', getSafeErrorMetadata(error));
 
     const contentProtectionActive =
-      req.config?.filters?.files?.pii != null || req.config?.messageFilter?.pii != null;
+      hasActiveFilePolicy(req.config?.filters) ||
+      hasActivePiiPatterns(req.config?.messageFilter?.pii);
     const message = resolveUploadErrorMessage(
       error,
       'Error processing file',

@@ -1023,6 +1023,28 @@ describe('memory model-bound content preflight', () => {
     expect(Run.create).toHaveBeenCalledTimes(1);
   });
 
+  it('uses role-preserving inspection messages for a flattened memory prompt', async () => {
+    const rawValue = 'PRIVATE-MEMORY-MODEL-OUTPUT';
+    const filters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: rawValue }],
+        },
+      },
+    };
+
+    await processMemory({
+      ...baseArgs,
+      messages: [new HumanMessage(`# Current Chat:\n\nAI: ${rawValue}`)],
+      inspectionMessages: [new HumanMessage('Safe user input'), new AIMessage(rawValue)],
+      filters,
+    });
+
+    expect(Run.create).toHaveBeenCalledTimes(1);
+  });
+
   it('fails closed when canonical memory rows cannot be loaded under active policy', async () => {
     const getUserMemories = jest.fn().mockRejectedValue(new Error('database unavailable'));
 

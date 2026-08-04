@@ -5,6 +5,7 @@ import {
   getBlockedOpaqueFileField,
   getBlockedUninspectableFileField,
   getBlockedUninspectableSkillFileField,
+  hasActiveFileFieldPolicy,
   hasActiveFilePolicy,
   omitResolvedCanonicalFileLocators,
   resolveCanonicalFileReferences,
@@ -51,6 +52,34 @@ describe('file content inspection policy', () => {
           },
         },
       } as FiltersConfig),
+    ).toBe(true);
+  });
+
+  it('activates only the selected enforceable file fields', () => {
+    const nameOnly = {
+      files: {
+        pii: {
+          fields: ['name'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private', regex: 'PRIVATE' }],
+        },
+      },
+    } as FiltersConfig;
+    expect(hasActiveFileFieldPolicy(nameOnly, ['name'])).toBe(true);
+    expect(hasActiveFileFieldPolicy(nameOnly, ['content'])).toBe(false);
+    expect(
+      hasActiveFileFieldPolicy(
+        {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        } as FiltersConfig,
+        ['extracted_text'],
+      ),
     ).toBe(true);
   });
 

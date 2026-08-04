@@ -1,4 +1,8 @@
-import type { TFeedbackRating, TFeedbackTag } from 'librechat-data-provider';
+import type {
+  TFeedbackRating,
+  TFeedbackTag,
+  UserSubmittedMessageFieldPath,
+} from 'librechat-data-provider';
 import type { Document } from 'mongoose';
 
 // @ts-ignore
@@ -22,6 +26,8 @@ export interface IMessage extends Document {
   isUserSubmitted?: boolean;
   /** JSON pointers to caller-authored fields in an otherwise mixed model response. */
   userSubmittedPaths?: string[];
+  /** Exact HITL message fields stored at caller-authored paths in a mixed response. */
+  userSubmittedMessageFieldPaths?: UserSubmittedMessageFieldPath[];
   isTemporary?: boolean;
   unfinished?: boolean;
   error?: boolean;

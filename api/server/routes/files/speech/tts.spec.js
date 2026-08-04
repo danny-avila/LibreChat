@@ -21,6 +21,18 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('librechat-data-provider', () => ({
   CacheKeys: { AUDIO_RUNS: 'audio-runs' },
+  hasActivePiiFields: jest.fn((pii, candidates) => {
+    if (pii == null) {
+      return false;
+    }
+    const hasPatterns =
+      pii.starterPatterns == null ||
+      pii.starterPatterns.length > 0 ||
+      (pii.customPatterns?.length ?? 0) > 0;
+    return (
+      hasPatterns && candidates.some((field) => pii.fields == null || pii.fields.includes(field))
+    );
+  }),
 }));
 
 jest.mock('~/server/services/Files/Audio', () => ({
@@ -81,6 +93,22 @@ describe('manual TTS content filtering', () => {
 
   it('preserves the default-off path without inspecting the input', async () => {
     const response = await request(createApp({})).post('/manual').field('input', 'submitted text');
+
+    expect(response.status).toBe(200);
+    expect(inspectContent).not.toHaveBeenCalled();
+    expect(textToSpeech).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the input path when the selected message policy has no active patterns', async () => {
+    const filters = {
+      messages: {
+        pii: { fields: ['text'], starterPatterns: [], customPatterns: [] },
+      },
+    };
+
+    const response = await request(createApp({ filters }))
+      .post('/manual')
+      .field('input', 'submitted text');
 
     expect(response.status).toBe(200);
     expect(inspectContent).not.toHaveBeenCalled();

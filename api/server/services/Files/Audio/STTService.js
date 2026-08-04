@@ -6,6 +6,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   inspectContent,
   extractFileContent,
+  hasActiveFileFieldPolicy,
   genAzureEndpoint,
   getSafeErrorMetadata,
   applyAxiosProxyConfig,
@@ -348,7 +349,7 @@ class STTService {
     }
 
     try {
-      if (req.config?.filters?.files?.pii != null) {
+      if (hasActiveFileFieldPolicy(req.config?.filters, ['name', 'content', 'transcript'])) {
         const finding = inspectContent(extractFileContent({ name: req.file.originalname }), {
           filters: req.config.filters,
         });
@@ -380,7 +381,7 @@ class STTService {
         { audioBuffer, audioFile, language },
         allowedAddresses,
       );
-      if (req.config?.filters?.files?.pii != null) {
+      if (hasActiveFileFieldPolicy(req.config?.filters, ['transcript'])) {
         const finding = inspectContent(extractFileContent({ transcript: text }), {
           filters: req.config.filters,
         });

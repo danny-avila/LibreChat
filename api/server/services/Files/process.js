@@ -27,6 +27,7 @@ const {
   processAudioFile,
   inspectContent,
   extractFileContent,
+  hasActiveFileFieldPolicy,
   sendUploadSuccess,
   getStorageMetadata,
   contentFilterBlockResponse,
@@ -770,7 +771,11 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
         );
       }
-      if (appConfig?.filters?.files?.pii != null) {
+      if (
+        hasActiveFileFieldPolicy(appConfig?.filters, [
+          isTranscript ? 'transcript' : 'extracted_text',
+        ])
+      ) {
         const content = isTranscript ? { transcript: text } : { extractedText: text };
         const finding = inspectContent(extractFileContent(content), {
           filters: appConfig.filters,

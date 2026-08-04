@@ -777,6 +777,10 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
                 jobData.userSubmittedPaths.length > 0 && {
                   userSubmittedPaths: jobData.userSubmittedPaths,
                 }),
+              ...(Array.isArray(jobData.userSubmittedMessageFieldPaths) &&
+                jobData.userSubmittedMessageFieldPaths.length > 0 && {
+                  userSubmittedMessageFieldPaths: jobData.userSubmittedMessageFieldPaths,
+                }),
               user: userId,
             };
 

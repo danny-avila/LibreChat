@@ -70,6 +70,20 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: [String],
       default: undefined,
     },
+    userSubmittedMessageFieldPaths: {
+      type: [
+        {
+          _id: false,
+          path: { type: String, required: true },
+          field: {
+            type: String,
+            enum: ['answer', 'decision_response', 'decision_reason'],
+            required: true,
+          },
+        },
+      ],
+      default: undefined,
+    },
     isTemporary: {
       type: Boolean,
       default: false,

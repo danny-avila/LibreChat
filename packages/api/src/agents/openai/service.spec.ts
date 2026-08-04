@@ -403,6 +403,31 @@ describe('createAgentChatCompletion - provider error disclosure', () => {
     });
   });
 
+  it.each<{ filters: FiltersConfig; policy: string }>([
+    {
+      policy: 'a management-only prompt',
+      filters: { prompts: { pii: {} } },
+    },
+    {
+      policy: 'an inert message',
+      filters: { messages: { pii: { starterPatterns: [] } } },
+    },
+  ])('preserves the legacy provider error for $policy policy', async ({ filters }) => {
+    deps.appConfig = { filters };
+    const res = createMockRes();
+
+    await createAgentChatCompletion(createMockReq(), res, deps);
+
+    expect(getResponseMock(res, 'json')).toHaveBeenCalledWith({
+      error: {
+        code: null,
+        message: `Provider echoed ${rawValue}`,
+        param: null,
+        type: 'server_error',
+      },
+    });
+  });
+
   it('preserves the legacy streaming provider error when protection is inactive', async () => {
     deps.appConfig = undefined;
     const req = createMockReq(undefined, {

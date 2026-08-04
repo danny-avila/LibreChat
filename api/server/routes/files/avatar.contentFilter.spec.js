@@ -4,6 +4,27 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   inspectContent: jest.fn(),
   extractFileContent: jest.fn((input) => [input]),
+  hasActiveFileFieldPolicy: jest.fn((filters, candidates) => {
+    const pii = filters?.files?.pii;
+    if (pii == null) {
+      return false;
+    }
+    const fieldSelected = candidates.some(
+      (field) => pii.fields == null || pii.fields.includes(field),
+    );
+    const hasPatterns =
+      pii.starterPatterns == null ||
+      pii.starterPatterns.length > 0 ||
+      (pii.customPatterns?.length ?? 0) > 0;
+    const failClosed =
+      pii.uninspectable === 'block' &&
+      candidates.some(
+        (field) =>
+          ['content', 'extracted_text', 'transcript'].includes(field) &&
+          (pii.fields == null || pii.fields.includes(field)),
+      );
+    return (hasPatterns && fieldSelected) || failClosed;
+  }),
   contentFilterBlockResponse: jest.fn((finding) => ({
     error: 'content_filter_block',
     source: finding.source,
@@ -144,6 +165,23 @@ describe('profile avatar filename content filtering', () => {
 
   it('preserves the default-off upload path', async () => {
     const req = createRequest({});
+    const res = createResponse();
+
+    await uploadAvatar(req, res);
+
+    expect(inspectContent).not.toHaveBeenCalled();
+    expect(readFileSpy).toHaveBeenCalledWith('/tmp/avatar.png');
+    expect(processAvatar).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ url: 'https://example.com/avatar.png' });
+  });
+
+  it('preserves the upload path when the selected file policy has no active patterns', async () => {
+    const filters = {
+      files: {
+        pii: { fields: ['name'], starterPatterns: [], customPatterns: [] },
+      },
+    };
+    const req = createRequest({ filters });
     const res = createResponse();
 
     await uploadAvatar(req, res);

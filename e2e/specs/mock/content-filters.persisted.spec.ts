@@ -1,5 +1,7 @@
 import { randomUUID } from 'crypto';
+import { ObjectId } from 'mongodb';
 import { expect, test } from '@playwright/test';
+import type { Document, Filter } from 'mongodb';
 import type { FiltersConfig } from 'librechat-data-provider';
 import { withMongo } from './db';
 import { MOCK_ENDPOINTS, replyPrompt, replyText, selectMockEndpoint, sendMessage } from './helpers';
@@ -8,6 +10,7 @@ import {
   loginAdmin,
   requestResult,
   restoreRuntimeFilters,
+  setRuntimeMessageFilterPii,
   setRuntimeFilters,
 } from './content-filters.helpers';
 
@@ -19,6 +22,13 @@ const OPAQUE_PNG = Buffer.from(
 
 type JsonObject = Record<string, unknown>;
 type RequestResult = Awaited<ReturnType<typeof requestResult>>;
+type MongoSnapshotSelector = {
+  key: string;
+  collection: string;
+  filter: Filter<Document>;
+};
+type MongoSnapshot = Record<string, Document[]>;
+type CustomPattern = { id: string; label: string; regex: string };
 
 type StoredFixtures = {
   conversationIds: string[];
@@ -75,6 +85,112 @@ const requireNumber = (value: unknown, label: string): number => {
   expect(typeof value, `Expected ${label} to be a number`).toBe('number');
   return value as number;
 };
+
+const requireObjectId = (value: string, label: string): ObjectId => {
+  expect(ObjectId.isValid(value), `Expected ${label} to be a MongoDB ObjectId`).toBe(true);
+  return new ObjectId(value);
+};
+
+async function captureMongoSnapshot(selectors: MongoSnapshotSelector[]): Promise<MongoSnapshot> {
+  return withMongo(async (db) => {
+    const entries = await Promise.all(
+      selectors.map(async ({ key, collection, filter }) => [
+        key,
+        await db.collection(collection).find(filter).sort({ _id: 1 }).toArray(),
+      ]),
+    );
+    return Object.fromEntries(entries) as MongoSnapshot;
+  });
+}
+
+async function expectNoMongoSideEffects<T>(
+  collections: string[],
+  operation: () => Promise<T>,
+): Promise<T> {
+  const selectors = collections.map((collection) => ({
+    key: collection,
+    collection,
+    filter: {},
+  }));
+  const before = await captureMongoSnapshot(selectors);
+  const result = await operation();
+  expect(await captureMongoSnapshot(selectors)).toEqual(before);
+  return result;
+}
+
+function getFixtureSnapshotSelectors(fixtures: StoredFixtures): MongoSnapshotSelector[] {
+  const conversationIds = [...fixtures.conversationIds];
+  const agentIds = [...fixtures.agentIds];
+  const promptGroupIds = [fixtures.promptGroupId, fixtures.metadataPromptGroupId].map((id, index) =>
+    requireObjectId(requireString(id, `snapshot prompt group ${index + 1}`), 'id'),
+  );
+
+  return [
+    {
+      key: 'conversations',
+      collection: 'conversations',
+      filter: { conversationId: { $in: conversationIds } },
+    },
+    {
+      key: 'messages',
+      collection: 'messages',
+      filter: { conversationId: { $in: conversationIds } },
+    },
+    {
+      key: 'sharedlinks',
+      collection: 'sharedlinks',
+      filter: { shareId: requireString(fixtures.messageShareId, 'snapshot share id') },
+    },
+    {
+      key: 'prompts',
+      collection: 'prompts',
+      filter: { groupId: { $in: promptGroupIds } },
+    },
+    {
+      key: 'promptgroups',
+      collection: 'promptgroups',
+      filter: { _id: { $in: promptGroupIds } },
+    },
+    {
+      key: 'presets',
+      collection: 'presets',
+      filter: { presetId: requireString(fixtures.presetId, 'snapshot preset id') },
+    },
+    { key: 'agents', collection: 'agents', filter: { id: { $in: agentIds } } },
+    {
+      key: 'skills',
+      collection: 'skills',
+      filter: {
+        _id: requireObjectId(requireString(fixtures.skillId, 'snapshot skill id'), 'skill id'),
+      },
+    },
+    {
+      key: 'memoryentries',
+      collection: 'memoryentries',
+      filter: {
+        key: requireString(fixtures.memoryKey, 'snapshot memory key'),
+        agentId: requireString(fixtures.memoryAgentId, 'snapshot memory agent id'),
+      },
+    },
+    {
+      key: 'files',
+      collection: 'files',
+      filter: {
+        file_id: {
+          $in: [
+            requireString(fixtures.file?.file_id, 'snapshot text file id'),
+            requireString(fixtures.opaqueFile?.file_id, 'snapshot opaque file id'),
+          ],
+        },
+      },
+    },
+    {
+      key: 'actions',
+      collection: 'actions',
+      filter: { action_id: requireString(fixtures.actionId, 'snapshot action id') },
+    },
+  ];
+}
 
 const createAgentPayload = (suffix: string, overrides: JsonObject = {}): JsonObject => ({
   name: `E2E persisted-filter agent ${suffix}`,
@@ -732,9 +848,12 @@ test.describe('persisted source-aware content filters', () => {
         );
       });
 
+      const fixtureSnapshotSelectors = getFixtureSnapshotSelectors(fixtures);
+      const preActivationSnapshot = await captureMongoSnapshot(fixtureSnapshotSelectors);
       filtersAttempted = true;
       filtersActive = true;
       await setRuntimeFilters(request, token, filters);
+      expect(await captureMongoSnapshot(fixtureSnapshotSelectors)).toEqual(preActivationSnapshot);
 
       await test.step('messages remain manageable but old shares are blocked on read', async () => {
         const visible = await requestResult(request, {
@@ -751,36 +870,44 @@ test.describe('persisted source-aware content filters', () => {
           });
         };
 
-        const blockedShareRead = await requestResult(request, {
-          path: `/api/share/${encodeURIComponent(fixtures.messageShareId!)}`,
-        });
+        const blockedShareRead = await expectNoMongoSideEffects(
+          ['conversations', 'messages', 'sharedlinks'],
+          () =>
+            requestResult(request, {
+              path: `/api/share/${encodeURIComponent(fixtures.messageShareId!)}`,
+            }),
+        );
         expectMessageBlock(blockedShareRead);
 
-        const blockedDuplicate = await duplicateConversation(
-          request,
-          token,
-          fixtures.messageConversationId!,
+        const blockedDuplicate = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+          duplicateConversation(request, token, fixtures.messageConversationId!),
         );
         expectMessageBlock(blockedDuplicate);
 
-        const blockedFork = await requestResult(request, {
-          path: '/api/convos/fork',
-          token,
-          method: 'POST',
-          data: {
-            conversationId: fixtures.messageConversationId,
-            messageId: fixtures.messageId,
-            option: 'directPath',
-          },
-        });
+        const blockedFork = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+          requestResult(request, {
+            path: '/api/convos/fork',
+            token,
+            method: 'POST',
+            data: {
+              conversationId: fixtures.messageConversationId,
+              messageId: fixtures.messageId,
+              option: 'directPath',
+            },
+          }),
+        );
         expectMessageBlock(blockedFork);
 
-        const blockedSharedFork = await requestResult(request, {
-          path: `/api/share/${encodeURIComponent(fixtures.messageShareId!)}/fork`,
-          token,
-          method: 'POST',
-          data: {},
-        });
+        const blockedSharedFork = await expectNoMongoSideEffects(
+          ['conversations', 'messages', 'sharedlinks'],
+          () =>
+            requestResult(request, {
+              path: `/api/share/${encodeURIComponent(fixtures.messageShareId!)}/fork`,
+              token,
+              method: 'POST',
+              data: {},
+            }),
+        );
         expectMessageBlock(blockedSharedFork);
       });
 
@@ -882,11 +1009,13 @@ test.describe('persisted source-aware content filters', () => {
         expect(reusable.text).not.toContain(markers.prompts);
         expect(reusable.text).not.toContain(markers.promptGroupName);
 
-        const blocked = await requestResult(request, {
-          path: `/api/prompts/${encodeURIComponent(fixtures.promptId!)}/tags/production`,
-          token,
-          method: 'PATCH',
-        });
+        const blocked = await expectNoMongoSideEffects(['prompts', 'promptgroups'], () =>
+          requestResult(request, {
+            path: `/api/prompts/${encodeURIComponent(fixtures.promptId!)}/tags/production`,
+            token,
+            method: 'PATCH',
+          }),
+        );
         expectContentFilterBlock(blocked, {
           source: 'prompt',
           field: 'text',
@@ -925,7 +1054,9 @@ test.describe('persisted source-aware content filters', () => {
           data: { description: 'Safe remediation metadata edit.' },
         });
         expectSuccess(safeEdit, 200);
-        const blocked = await duplicateAgent(request, token, fixtures.instructionAgentId!);
+        const blocked = await expectNoMongoSideEffects(['agents', 'actions'], () =>
+          duplicateAgent(request, token, fixtures.instructionAgentId!),
+        );
         expectContentFilterBlock(blocked, {
           source: 'agent_instruction',
           field: 'instructions',
@@ -939,7 +1070,9 @@ test.describe('persisted source-aware content filters', () => {
           token,
         });
         expectStoredMarker(visible, markers.conversationStarters);
-        const blocked = await duplicateAgent(request, token, fixtures.starterAgentId!);
+        const blocked = await expectNoMongoSideEffects(['agents', 'actions'], () =>
+          duplicateAgent(request, token, fixtures.starterAgentId!),
+        );
         expectContentFilterBlock(blocked, {
           source: 'conversation_starter',
           field: 'text',
@@ -967,12 +1100,14 @@ test.describe('persisted source-aware content filters', () => {
           ),
         );
 
-        const blocked = await requestResult(request, {
-          path: '/api/convos/duplicate',
-          token,
-          method: 'POST',
-          data: { conversationId: fixtures.titleConversationId },
-        });
+        const blocked = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+          requestResult(request, {
+            path: '/api/convos/duplicate',
+            token,
+            method: 'POST',
+            data: { conversationId: fixtures.titleConversationId },
+          }),
+        );
         expectContentFilterBlock(blocked, {
           source: 'conversation_title',
           field: 'title',
@@ -986,10 +1121,8 @@ test.describe('persisted source-aware content filters', () => {
           token,
         });
         expectStoredMarker(visible, markers.feedback);
-        const blocked = await duplicateConversation(
-          request,
-          token,
-          fixtures.feedbackConversationId!,
+        const blocked = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+          duplicateConversation(request, token, fixtures.feedbackConversationId!),
         );
         expectContentFilterBlock(blocked, {
           source: 'feedback',
@@ -1023,12 +1156,14 @@ test.describe('persisted source-aware content filters', () => {
           token,
         });
         expectStoredMarker(stillVisible, markers.skills);
-        const blocked = await requestResult(request, {
-          path: `/api/skills/${encodeURIComponent(fixtures.skillId!)}`,
-          token,
-          method: 'PATCH',
-          data: { expectedVersion: fixtures.skillVersion, body: markers.skills },
-        });
+        const blocked = await expectNoMongoSideEffects(['skills'], () =>
+          requestResult(request, {
+            path: `/api/skills/${encodeURIComponent(fixtures.skillId!)}`,
+            token,
+            method: 'PATCH',
+            data: { expectedVersion: fixtures.skillVersion, body: markers.skills },
+          }),
+        );
         expectContentFilterBlock(blocked, {
           source: 'skill',
           field: 'instructions',
@@ -1072,6 +1207,13 @@ test.describe('persisted source-aware content filters', () => {
             markers.skills,
           ),
         );
+        await withMongo(async (db) => {
+          expect(
+            await db.collection('messages').countDocuments({
+              messageId: { $in: [skillMessageId, `${skillMessageId}_response`] },
+            }),
+          ).toBe(0);
+        });
       });
 
       await test.step('message continuation rechecks stored history before model use', async () => {
@@ -1145,7 +1287,9 @@ test.describe('persisted source-aware content filters', () => {
           }),
         );
         expectStoredMarker(visible, markers.files);
-        const blocked = await duplicateAgent(request, token, fixtures.fileAgentId!);
+        const blocked = await expectNoMongoSideEffects(['agents', 'actions'], () =>
+          duplicateAgent(request, token, fixtures.fileAgentId!),
+        );
         expectContentFilterBlock(blocked, {
           source: 'file',
           field: 'extracted_text',
@@ -1162,7 +1306,9 @@ test.describe('persisted source-aware content filters', () => {
           status: 'ready',
         });
 
-        const opaqueBlocked = await duplicateAgent(request, token, fixtures.opaqueFileAgentId!);
+        const opaqueBlocked = await expectNoMongoSideEffects(['agents', 'actions'], () =>
+          duplicateAgent(request, token, fixtures.opaqueFileAgentId!),
+        );
         expect(opaqueBlocked.status).toBe(400);
         expect(opaqueBlocked.body).toEqual({
           error: 'content_filter_uninspectable',
@@ -1179,7 +1325,9 @@ test.describe('persisted source-aware content filters', () => {
           token,
         });
         expectStoredMarker(visible, markers.toolArguments);
-        const blocked = await duplicateConversation(request, token, fixtures.toolConversationId!);
+        const blocked = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+          duplicateConversation(request, token, fixtures.toolConversationId!),
+        );
         expectContentFilterBlock(blocked, {
           source: 'tool_argument',
           field: 'arguments',
@@ -1193,7 +1341,9 @@ test.describe('persisted source-aware content filters', () => {
           token,
         });
         expectStoredMarker(visible, markers.modelParameters);
-        const blocked = await duplicateAgent(request, token, fixtures.modelParameterAgentId!);
+        const blocked = await expectNoMongoSideEffects(['agents', 'actions'], () =>
+          duplicateAgent(request, token, fixtures.modelParameterAgentId!),
+        );
         expectContentFilterBlock(blocked, {
           source: 'model_parameter',
           field: 'stop',
@@ -1204,7 +1354,9 @@ test.describe('persisted source-aware content filters', () => {
       await test.step('action metadata stays manageable but prevents agent reuse', async () => {
         const visible = await requestResult(request, { path: '/api/agents/actions', token });
         expectStoredMarker(visible, markers.actionMetadata);
-        const blocked = await duplicateAgent(request, token, fixtures.actionAgentId!);
+        const blocked = await expectNoMongoSideEffects(['agents', 'actions'], () =>
+          duplicateAgent(request, token, fixtures.actionAgentId!),
+        );
         expectContentFilterBlock(blocked, {
           source: 'action_metadata',
           field: 'privacy_policy_url',
@@ -1215,14 +1367,16 @@ test.describe('persisted source-aware content filters', () => {
       await test.step('memories stay visible, reject resubmission, and fail closed at runtime', async () => {
         const visible = await requestResult(request, { path: '/api/memories', token });
         expectStoredMarker(visible, markers.memories);
-        const blocked = await requestResult(request, {
-          path: `/api/memories/${encodeURIComponent(
-            fixtures.memoryKey!,
-          )}?agentId=${encodeURIComponent(fixtures.memoryAgentId!)}`,
-          token,
-          method: 'PATCH',
-          data: { value: markers.memories },
-        });
+        const blocked = await expectNoMongoSideEffects(['memoryentries'], () =>
+          requestResult(request, {
+            path: `/api/memories/${encodeURIComponent(
+              fixtures.memoryKey!,
+            )}?agentId=${encodeURIComponent(fixtures.memoryAgentId!)}`,
+            token,
+            method: 'PATCH',
+            data: { value: markers.memories },
+          }),
+        );
         expectContentFilterBlock(blocked, {
           source: 'memory',
           field: 'value',
@@ -1260,11 +1414,22 @@ test.describe('persisted source-aware content filters', () => {
             markers.memories,
           ),
         );
+        await withMongo(async (db) => {
+          expect(
+            await db.collection('messages').countDocuments({
+              messageId: { $in: [memoryMessageId, `${memoryMessageId}_response`] },
+            }),
+          ).toBe(0);
+        });
       });
 
       await test.step('deactivation restores stored values without destructive mutation', async () => {
+        const preDeactivationSnapshot = await captureMongoSnapshot(fixtureSnapshotSelectors);
         await restoreRuntimeFilters(request, token);
         filtersActive = false;
+        expect(await captureMongoSnapshot(fixtureSnapshotSelectors)).toEqual(
+          preDeactivationSnapshot,
+        );
 
         const trackConversation = (
           result: RequestResult,
@@ -1593,6 +1758,428 @@ test.describe('persisted source-aware content filters', () => {
         });
         trackConversation(restoredSharedFork, 'post-deactivation shared-message fork id', 201);
       });
+    } finally {
+      try {
+        if (filtersAttempted || filtersActive) {
+          await restoreRuntimeFilters(request, token);
+          filtersActive = false;
+        }
+      } finally {
+        await cleanupFixtures(request, token, fixtures);
+      }
+    }
+  });
+
+  test('changes one message field or pattern without weakening other active sources', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(240000);
+
+    const token = await loginAdmin(request);
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const firstMessageMarker = `E2E-GRANULAR-MESSAGE-ONE-${suffix}`;
+    const secondMessageMarker = `E2E-GRANULAR-MESSAGE-TWO-${suffix}`;
+    const instructionMarker = `E2E-GRANULAR-INSTRUCTION-${suffix}`;
+    const fixtures: StoredFixtures = { conversationIds: [], agentIds: [] };
+    let firstConversationId: string | undefined;
+    let secondConversationId: string | undefined;
+    let firstMessageId: string | undefined;
+    let instructionAgentId: string | undefined;
+    let filtersAttempted = false;
+    let filtersActive = false;
+
+    const pattern = (id: string, label: string, regex: string): CustomPattern => ({
+      id,
+      label,
+      regex,
+    });
+    const filtersFor = (
+      field: 'text' | 'summary',
+      messagePattern: CustomPattern,
+    ): FiltersConfig => ({
+      messages: {
+        pii: {
+          fields: [field],
+          starterPatterns: [],
+          customPatterns: [messagePattern],
+        },
+      },
+      agentInstructions: {
+        pii: {
+          fields: ['instructions'],
+          starterPatterns: [],
+          customPatterns: [
+            pattern(
+              `e2e-granular-instruction-${suffix}`,
+              'E2E granular agent instruction',
+              `^${instructionMarker}$`,
+            ),
+          ],
+        },
+      },
+    });
+    const firstPattern = pattern(
+      `e2e-granular-message-one-${suffix}`,
+      'E2E granular first message',
+      `^${firstMessageMarker}$`,
+    );
+    const secondPattern = pattern(
+      `e2e-granular-message-two-${suffix}`,
+      'E2E granular second message',
+      `^${secondMessageMarker}$`,
+    );
+    const applyFilters = async (filters: FiltersConfig): Promise<void> => {
+      filtersAttempted = true;
+      await setRuntimeFilters(request, token, filters);
+      filtersActive = true;
+    };
+    const expectInstructionStillBlocked = async (): Promise<void> => {
+      const blocked = await expectNoMongoSideEffects(['agents', 'actions'], () =>
+        duplicateAgent(request, token, instructionAgentId!),
+      );
+      expectContentFilterBlock(blocked, {
+        source: 'agent_instruction',
+        field: 'instructions',
+        marker: instructionMarker,
+      });
+    };
+    const trackConversationCopy = (result: RequestResult, label: string): void => {
+      expectSuccess(result, 201);
+      fixtures.conversationIds.push(
+        requireString(asObject(asObject(result.body).conversation).conversationId, label),
+      );
+    };
+
+    try {
+      await restoreRuntimeFilters(request, token);
+
+      await page.goto('/c/new', { timeout: 10000 });
+      await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+      const seedResponse = await sendMessage(page, replyPrompt(`granular-filter-seed-${suffix}`));
+      expect(seedResponse.ok()).toBe(true);
+      await expect(
+        page
+          .getByTestId('messages-view')
+          .getByText(replyText(`granular-filter-seed-${suffix}`), { exact: true }),
+      ).toBeVisible({ timeout: 30000 });
+      await expect(page).toHaveURL(/\/c\/(?!new)[0-9a-fA-F-]{36}$/);
+      firstConversationId = requireString(
+        new URL(page.url()).pathname.match(/^\/c\/([0-9a-fA-F-]{36})$/)?.[1],
+        'granular first conversation id',
+      );
+      fixtures.conversationIds.push(firstConversationId);
+
+      const secondConversation = await duplicateConversation(request, token, firstConversationId);
+      expectSuccess(secondConversation, 201);
+      secondConversationId = requireString(
+        asObject(asObject(secondConversation.body).conversation).conversationId,
+        'granular second conversation id',
+      );
+      fixtures.conversationIds.push(secondConversationId);
+
+      const firstMessage = await createStoredMessage(request, token, firstConversationId, {
+        text: firstMessageMarker,
+      });
+      firstMessageId = requireString(firstMessage.messageId, 'granular first message id');
+      await createStoredMessage(request, token, secondConversationId, {
+        text: secondMessageMarker,
+      });
+
+      const instructionAgent = await createAgent(
+        request,
+        token,
+        fixtures,
+        `${suffix}-granular-instruction`,
+        { instructions: instructionMarker },
+      );
+      instructionAgentId = requireString(instructionAgent.id, 'granular instruction agent id');
+
+      const persistedSelectors: MongoSnapshotSelector[] = [
+        {
+          key: 'conversations',
+          collection: 'conversations',
+          filter: { conversationId: { $in: [firstConversationId, secondConversationId] } },
+        },
+        {
+          key: 'messages',
+          collection: 'messages',
+          filter: { conversationId: { $in: [firstConversationId, secondConversationId] } },
+        },
+        {
+          key: 'agents',
+          collection: 'agents',
+          filter: { id: instructionAgentId },
+        },
+      ];
+      const originalSnapshot = await captureMongoSnapshot(persistedSelectors);
+
+      await applyFilters(filtersFor('text', firstPattern));
+      expect(await captureMongoSnapshot(persistedSelectors)).toEqual(originalSnapshot);
+      const firstPatternBlock = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+        duplicateConversation(request, token, firstConversationId!),
+      );
+      expectContentFilterBlock(firstPatternBlock, {
+        source: 'message',
+        field: 'text',
+        marker: firstMessageMarker,
+      });
+      await expectInstructionStillBlocked();
+
+      await applyFilters(filtersFor('summary', firstPattern));
+      expect(await captureMongoSnapshot(persistedSelectors)).toEqual(originalSnapshot);
+      trackConversationCopy(
+        await duplicateConversation(request, token, firstConversationId),
+        'field-transition conversation copy id',
+      );
+      await expectInstructionStillBlocked();
+
+      await applyFilters(filtersFor('text', secondPattern));
+      expect(await captureMongoSnapshot(persistedSelectors)).toEqual(originalSnapshot);
+      trackConversationCopy(
+        await duplicateConversation(request, token, firstConversationId),
+        'pattern-transition conversation copy id',
+      );
+      const secondPatternBlock = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+        duplicateConversation(request, token, secondConversationId!),
+      );
+      expectContentFilterBlock(secondPatternBlock, {
+        source: 'message',
+        field: 'text',
+        marker: secondMessageMarker,
+      });
+      await expectInstructionStillBlocked();
+
+      const allowedFork = await requestResult(request, {
+        path: '/api/convos/fork',
+        token,
+        method: 'POST',
+        data: {
+          conversationId: firstConversationId,
+          messageId: firstMessageId,
+          option: 'directPath',
+        },
+      });
+      expectSuccess(allowedFork, 200);
+      fixtures.conversationIds.push(
+        requireString(
+          asObject(asObject(allowedFork.body).conversation).conversationId,
+          'pattern-transition fork id',
+        ),
+      );
+    } finally {
+      try {
+        if (filtersAttempted || filtersActive) {
+          await restoreRuntimeFilters(request, token);
+          filtersActive = false;
+        }
+      } finally {
+        await cleanupFixtures(request, token, fixtures);
+      }
+    }
+  });
+
+  test('rechecks persisted history when legacy messageFilter.pii is activated and deactivated', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(240000);
+
+    const token = await loginAdmin(request);
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const marker = `E2E-LEGACY-PERSISTED-MESSAGE-${suffix}`;
+    const fixtures: StoredFixtures = { conversationIds: [], agentIds: [] };
+    let filtersAttempted = false;
+    let filtersActive = false;
+
+    try {
+      await restoreRuntimeFilters(request, token);
+
+      await page.goto('/c/new', { timeout: 10000 });
+      await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+      const seedResponse = await sendMessage(page, replyPrompt(`legacy-filter-seed-${suffix}`));
+      expect(seedResponse.ok()).toBe(true);
+      await expect(
+        page
+          .getByTestId('messages-view')
+          .getByText(replyText(`legacy-filter-seed-${suffix}`), { exact: true }),
+      ).toBeVisible({ timeout: 30000 });
+      await expect(page).toHaveURL(/\/c\/(?!new)[0-9a-fA-F-]{36}$/);
+      fixtures.messageConversationId = requireString(
+        new URL(page.url()).pathname.match(/^\/c\/([0-9a-fA-F-]{36})$/)?.[1],
+        'legacy persisted conversation id',
+      );
+      fixtures.conversationIds.push(fixtures.messageConversationId);
+
+      const storedMessage = await createStoredMessage(
+        request,
+        token,
+        fixtures.messageConversationId,
+        { text: marker },
+      );
+      fixtures.messageId = requireString(storedMessage.messageId, 'legacy persisted message id');
+      const share = await requestResult(request, {
+        path: `/api/share/${encodeURIComponent(fixtures.messageConversationId)}`,
+        token,
+        method: 'POST',
+        data: {},
+      });
+      expectSuccess(share, 200);
+      fixtures.messageShareId = requireString(
+        asObject(share.body).shareId,
+        'legacy persisted share id',
+      );
+
+      const persistedSelectors: MongoSnapshotSelector[] = [
+        {
+          key: 'conversations',
+          collection: 'conversations',
+          filter: { conversationId: fixtures.messageConversationId },
+        },
+        {
+          key: 'messages',
+          collection: 'messages',
+          filter: { conversationId: fixtures.messageConversationId },
+        },
+        {
+          key: 'sharedlinks',
+          collection: 'sharedlinks',
+          filter: { shareId: fixtures.messageShareId },
+        },
+      ];
+      const preActivationSnapshot = await captureMongoSnapshot(persistedSelectors);
+
+      filtersAttempted = true;
+      await setRuntimeMessageFilterPii(request, token, {
+        starterPatterns: [],
+        customPatterns: [
+          {
+            id: `e2e-legacy-persisted-${suffix}`,
+            label: 'E2E legacy persisted message',
+            regex: `^${marker}$`,
+          },
+        ],
+      });
+      filtersActive = true;
+      expect(await captureMongoSnapshot(persistedSelectors)).toEqual(preActivationSnapshot);
+
+      const visible = await requestResult(request, {
+        path: `/api/messages/${encodeURIComponent(fixtures.messageConversationId)}`,
+        token,
+      });
+      expectStoredMarker(visible, marker);
+
+      const expectLegacyBlock = (result: RequestResult): void => {
+        expectContentFilterBlock(result, { source: 'message', field: 'text', marker });
+      };
+      const blockedShare = await expectNoMongoSideEffects(
+        ['conversations', 'messages', 'sharedlinks'],
+        () =>
+          requestResult(request, {
+            path: `/api/share/${encodeURIComponent(fixtures.messageShareId!)}`,
+          }),
+      );
+      expectLegacyBlock(blockedShare);
+
+      const blockedDuplicate = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+        duplicateConversation(request, token, fixtures.messageConversationId!),
+      );
+      expectLegacyBlock(blockedDuplicate);
+
+      const blockedFork = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+        requestResult(request, {
+          path: '/api/convos/fork',
+          token,
+          method: 'POST',
+          data: {
+            conversationId: fixtures.messageConversationId,
+            messageId: fixtures.messageId,
+            option: 'directPath',
+          },
+        }),
+      );
+      expectLegacyBlock(blockedFork);
+
+      const continuationMessageId = randomUUID();
+      const startedContinuation = await requestResult(request, {
+        path: `/api/agents/chat/${encodeURIComponent(MOCK_ENDPOINTS[0].label)}`,
+        token,
+        method: 'POST',
+        data: {
+          text: `Safe legacy persisted continuation ${suffix}`,
+          sender: 'User',
+          clientTimestamp: new Date().toISOString(),
+          isCreatedByUser: true,
+          parentMessageId: fixtures.messageId,
+          conversationId: fixtures.messageConversationId,
+          messageId: continuationMessageId,
+          responseMessageId: `${continuationMessageId}_response`,
+          endpoint: MOCK_ENDPOINTS[0].label,
+          endpointType: 'custom',
+          model: MOCK_ENDPOINTS[0].model,
+          isTemporary: false,
+          isRegenerate: false,
+          error: false,
+        },
+      });
+      expect(
+        await expectAsyncFilterStreamError(
+          request,
+          token,
+          startedContinuation,
+          'E2E legacy persisted message',
+          marker,
+        ),
+      ).toBe(fixtures.messageConversationId);
+      await withMongo(async (db) => {
+        expect(
+          await db.collection('messages').countDocuments({
+            messageId: { $in: [continuationMessageId, `${continuationMessageId}_response`] },
+          }),
+        ).toBe(0);
+      });
+      expect(await captureMongoSnapshot(persistedSelectors)).toEqual(preActivationSnapshot);
+
+      const preDeactivationSnapshot = await captureMongoSnapshot(persistedSelectors);
+      await restoreRuntimeFilters(request, token);
+      filtersActive = false;
+      expect(await captureMongoSnapshot(persistedSelectors)).toEqual(preDeactivationSnapshot);
+
+      const restoredShare = await requestResult(request, {
+        path: `/api/share/${encodeURIComponent(fixtures.messageShareId)}`,
+      });
+      expectStoredMarker(restoredShare, marker);
+
+      const restoredDuplicate = await duplicateConversation(
+        request,
+        token,
+        fixtures.messageConversationId,
+      );
+      expectSuccess(restoredDuplicate, 201);
+      fixtures.conversationIds.push(
+        requireString(
+          asObject(asObject(restoredDuplicate.body).conversation).conversationId,
+          'legacy post-deactivation duplicate id',
+        ),
+      );
+
+      const restoredFork = await requestResult(request, {
+        path: '/api/convos/fork',
+        token,
+        method: 'POST',
+        data: {
+          conversationId: fixtures.messageConversationId,
+          messageId: fixtures.messageId,
+          option: 'directPath',
+        },
+      });
+      expectSuccess(restoredFork, 200);
+      fixtures.conversationIds.push(
+        requireString(
+          asObject(asObject(restoredFork.body).conversation).conversationId,
+          'legacy post-deactivation fork id',
+        ),
+      );
     } finally {
       try {
         if (filtersAttempted || filtersActive) {
@@ -2088,6 +2675,485 @@ test.describe('persisted source-aware content filters', () => {
             });
           });
         }
+      }
+    }
+  });
+
+  test('rechecks every persisted message field across policy transitions', async ({ request }) => {
+    test.setTimeout(300000);
+
+    type PersistedMessageField =
+      | 'name'
+      | 'text'
+      | 'summary'
+      | 'quote'
+      | 'answer'
+      | 'decision_response'
+      | 'decision_reason'
+      | 'content_part'
+      | 'attachment_reference'
+      | 'assembled_context';
+    type PersistedMessageCase = {
+      field: PersistedMessageField;
+      source: 'message' | 'assembled_context';
+      marker: string;
+      label: string;
+      messageId: string;
+    };
+
+    const token = await loginAdmin(request);
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const assembledParts = [`E2E-ASSEMBLED-A-${suffix}`, `E2E-ASSEMBLED-B-${suffix}`] as const;
+    const semanticPath = '/content/0/tool_call/output';
+    const createdConversationIds = new Set<string>();
+    const attemptedRuntimeMessageIds: string[] = [];
+    let sourceConversationId: string | undefined;
+    let filtersAttempted = false;
+    let filtersActive = false;
+
+    const staticCases: (PersistedMessageCase & { body: JsonObject })[] = [
+      {
+        field: 'name',
+        source: 'message',
+        marker: `E2E-PERSISTED-NAME-${suffix}`,
+        label: 'E2E persisted message name',
+        messageId: randomUUID(),
+        body: { sender: `E2E-PERSISTED-NAME-${suffix}`, text: 'Safe persisted name row.' },
+      },
+      {
+        field: 'text',
+        source: 'message',
+        marker: `E2E-PERSISTED-TEXT-${suffix}`,
+        label: 'E2E persisted message text',
+        messageId: randomUUID(),
+        body: { text: `E2E-PERSISTED-TEXT-${suffix}` },
+      },
+      {
+        field: 'summary',
+        source: 'message',
+        marker: `E2E-PERSISTED-SUMMARY-${suffix}`,
+        label: 'E2E persisted message summary',
+        messageId: randomUUID(),
+        body: {
+          text: 'Safe persisted summary row.',
+          summary: `E2E-PERSISTED-SUMMARY-${suffix}`,
+        },
+      },
+      {
+        field: 'quote',
+        source: 'message',
+        marker: `E2E-PERSISTED-QUOTE-${suffix}`,
+        label: 'E2E persisted message quote',
+        messageId: randomUUID(),
+        body: {
+          text: 'Safe persisted quote row.',
+          quotes: [`E2E-PERSISTED-QUOTE-${suffix}`],
+        },
+      },
+      {
+        field: 'content_part',
+        source: 'message',
+        marker: `E2E-PERSISTED-CONTENT-PART-${suffix}`,
+        label: 'E2E persisted message content part',
+        messageId: randomUUID(),
+        body: {
+          text: '',
+          content: [{ type: 'text', text: `E2E-PERSISTED-CONTENT-PART-${suffix}` }],
+        },
+      },
+      {
+        field: 'attachment_reference',
+        source: 'message',
+        marker: `https://e2e.invalid/persisted-attachment-${suffix}`,
+        label: 'E2E persisted message attachment reference',
+        messageId: randomUUID(),
+        body: {
+          text: 'Safe persisted attachment row.',
+          content: [
+            {
+              type: 'image_url',
+              image_url: `https://e2e.invalid/persisted-attachment-${suffix}`,
+            },
+          ],
+        },
+      },
+      {
+        field: 'assembled_context',
+        source: 'assembled_context',
+        marker: assembledParts.join(''),
+        label: 'E2E persisted assembled context',
+        messageId: randomUUID(),
+        body: {
+          text: '',
+          content: assembledParts.map((text) => ({ type: 'text', text })),
+        },
+      },
+    ];
+    const semanticCases: PersistedMessageCase[] = [
+      {
+        field: 'answer',
+        source: 'message',
+        marker: `E2E-PERSISTED-ANSWER-${suffix}`,
+        label: 'E2E persisted HITL answer',
+        messageId: randomUUID(),
+      },
+      {
+        field: 'decision_response',
+        source: 'message',
+        marker: `E2E-PERSISTED-DECISION-RESPONSE-${suffix}`,
+        label: 'E2E persisted HITL decision response',
+        messageId: randomUUID(),
+      },
+      {
+        field: 'decision_reason',
+        source: 'message',
+        marker: `E2E-PERSISTED-DECISION-REASON-${suffix}`,
+        label: 'E2E persisted HITL decision reason',
+        messageId: randomUUID(),
+      },
+    ];
+    const allCases = [...staticCases, ...semanticCases];
+    const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const filtersFor = (
+      fields: readonly PersistedMessageField[],
+      cases: readonly PersistedMessageCase[],
+    ): FiltersConfig => ({
+      messages: {
+        pii: {
+          fields: [...fields],
+          starterPatterns: [],
+          customPatterns: cases.map(({ field, label, marker }) => ({
+            id: `e2e-persisted-${field}-${suffix}`,
+            label,
+            regex: `^${escapeRegex(marker)}$`,
+          })),
+        },
+      },
+    });
+    const applyFilters = async (filters: FiltersConfig): Promise<void> => {
+      filtersAttempted = true;
+      await setRuntimeFilters(request, token, filters);
+      filtersActive = true;
+    };
+    const forkBranch = (messageId: string): Promise<RequestResult> =>
+      requestResult(request, {
+        path: '/api/convos/fork',
+        token,
+        method: 'POST',
+        data: {
+          conversationId: sourceConversationId,
+          messageId,
+          option: 'directPath',
+        },
+      });
+    const trackFork = (result: RequestResult, label: string): JsonObject[] => {
+      expectSuccess(result, 200);
+      const body = asObject(result.body);
+      createdConversationIds.add(
+        requireString(asObject(body.conversation).conversationId, `${label} conversation id`),
+      );
+      return Array.isArray(body.messages) ? body.messages.map(asObject) : [];
+    };
+    const startContinuation = (parentMessageId: string, label: string): Promise<RequestResult> => {
+      const messageId = randomUUID();
+      const responseMessageId = randomUUID();
+      attemptedRuntimeMessageIds.push(messageId, responseMessageId);
+      return requestResult(request, {
+        path: `/api/agents/chat/${encodeURIComponent(MOCK_ENDPOINTS[0].label)}`,
+        token,
+        method: 'POST',
+        data: {
+          text: `Safe persisted ${label} continuation ${suffix}`,
+          sender: 'User',
+          clientTimestamp: new Date().toISOString(),
+          isCreatedByUser: true,
+          parentMessageId,
+          conversationId: sourceConversationId,
+          messageId,
+          responseMessageId,
+          endpoint: MOCK_ENDPOINTS[0].label,
+          endpointType: 'custom',
+          model: MOCK_ENDPOINTS[0].model,
+          isTemporary: false,
+          isRegenerate: false,
+          error: false,
+        },
+      });
+    };
+
+    try {
+      await restoreRuntimeFilters(request, token);
+
+      const seedMessageId = randomUUID();
+      const seedResponseMessageId = randomUUID();
+      sourceConversationId = await expectAsyncStreamCompleted(
+        request,
+        token,
+        await requestResult(request, {
+          path: `/api/agents/chat/${encodeURIComponent(MOCK_ENDPOINTS[0].label)}`,
+          token,
+          method: 'POST',
+          data: {
+            text: replyPrompt(`persisted-message-fields-seed-${suffix}`),
+            sender: 'User',
+            clientTimestamp: new Date().toISOString(),
+            isCreatedByUser: true,
+            parentMessageId: NO_PARENT,
+            conversationId: 'new',
+            messageId: seedMessageId,
+            responseMessageId: seedResponseMessageId,
+            endpoint: MOCK_ENDPOINTS[0].label,
+            endpointType: 'custom',
+            model: MOCK_ENDPOINTS[0].model,
+            isTemporary: false,
+            isRegenerate: false,
+            error: false,
+          },
+        }),
+      );
+      createdConversationIds.add(sourceConversationId);
+
+      for (const testCase of staticCases) {
+        const stored = await createStoredMessage(request, token, sourceConversationId, {
+          ...testCase.body,
+          messageId: testCase.messageId,
+        });
+        expect(stored.messageId).toBe(testCase.messageId);
+      }
+
+      await withMongo(async (db) => {
+        const owner = await db.collection('messages').findOne({
+          conversationId: sourceConversationId,
+          messageId: staticCases[0].messageId,
+        });
+        if (owner?.user == null) {
+          throw new Error('Expected the persisted message-field fixture to have an owner');
+        }
+        const ownership = {
+          user: owner.user,
+          ...(owner.tenantId == null ? {} : { tenantId: owner.tenantId }),
+        };
+        const now = Date.now();
+        await db.collection('messages').insertMany(
+          semanticCases.map((testCase, index) => ({
+            ...ownership,
+            conversationId: sourceConversationId,
+            messageId: testCase.messageId,
+            parentMessageId: NO_PARENT,
+            sender: 'Assistant',
+            endpoint: MOCK_ENDPOINTS[0].label,
+            endpointType: 'custom',
+            model: MOCK_ENDPOINTS[0].model,
+            text: '',
+            content: [
+              {
+                type: 'tool_call',
+                tool_call: {
+                  name: `e2e_${testCase.field}`,
+                  output: testCase.marker,
+                },
+              },
+            ],
+            isCreatedByUser: false,
+            isUserSubmitted: false,
+            userSubmittedMessageFieldPaths: [{ path: semanticPath, field: testCase.field }],
+            isTemporary: false,
+            unfinished: false,
+            error: false,
+            createdAt: new Date(now + index),
+            updatedAt: new Date(now + index),
+          })),
+        );
+      });
+
+      const sourceSelectors: MongoSnapshotSelector[] = [
+        {
+          key: 'conversation',
+          collection: 'conversations',
+          filter: { conversationId: sourceConversationId },
+        },
+        {
+          key: 'messages',
+          collection: 'messages',
+          filter: { conversationId: sourceConversationId },
+        },
+      ];
+      const preActivationSnapshot = await captureMongoSnapshot(sourceSelectors);
+      await withMongo(async (db) => {
+        const rows = await db
+          .collection('messages')
+          .find({ messageId: { $in: allCases.map(({ messageId }) => messageId) } })
+          .toArray();
+        expect(rows).toHaveLength(allCases.length);
+        for (const testCase of staticCases) {
+          const row = rows.find(({ messageId }) => messageId === testCase.messageId);
+          expect(row).toEqual(
+            expect.objectContaining({
+              conversationId: sourceConversationId,
+              isCreatedByUser: true,
+              isUserSubmitted: true,
+            }),
+          );
+          if (testCase.field === 'name') {
+            expect(row?.sender).toBe(testCase.marker);
+          } else if (testCase.field === 'text' || testCase.field === 'summary') {
+            expect(row?.[testCase.field]).toBe(testCase.marker);
+          } else if (testCase.field === 'quote') {
+            expect(row?.quotes).toEqual([testCase.marker]);
+          } else if (testCase.field === 'content_part') {
+            expect(row?.content).toEqual([{ type: 'text', text: testCase.marker }]);
+          } else if (testCase.field === 'attachment_reference') {
+            expect(row?.content).toEqual([{ type: 'image_url', image_url: testCase.marker }]);
+          } else {
+            expect(row?.content).toEqual(assembledParts.map((text) => ({ type: 'text', text })));
+          }
+        }
+        for (const testCase of semanticCases) {
+          const row = rows.find(({ messageId }) => messageId === testCase.messageId);
+          expect(row).toEqual(
+            expect.objectContaining({
+              conversationId: sourceConversationId,
+              isCreatedByUser: false,
+              isUserSubmitted: false,
+              userSubmittedMessageFieldPaths: [{ path: semanticPath, field: testCase.field }],
+            }),
+          );
+          expect(row).not.toHaveProperty('userSubmittedPaths');
+          expect(asObject(asObject((row?.content as unknown[])?.[0]).tool_call).output).toBe(
+            testCase.marker,
+          );
+        }
+      });
+
+      await applyFilters(
+        filtersFor(
+          staticCases.map(({ field }) => field),
+          staticCases,
+        ),
+      );
+      expect(await captureMongoSnapshot(sourceSelectors)).toEqual(preActivationSnapshot);
+      for (const testCase of staticCases) {
+        const blocked = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+          forkBranch(testCase.messageId),
+        );
+        expectContentFilterBlock(blocked, {
+          source: testCase.source,
+          field: testCase.field,
+          marker: testCase.marker,
+        });
+      }
+
+      await applyFilters(filtersFor(['content_part'], semanticCases));
+      trackFork(
+        await forkBranch(semanticCases.find(({ field }) => field === 'answer')!.messageId),
+        'semantic answer while only content_part is selected',
+      );
+      expect(await captureMongoSnapshot(sourceSelectors)).toEqual(preActivationSnapshot);
+
+      await applyFilters(
+        filtersFor(
+          semanticCases.map(({ field }) => field),
+          semanticCases,
+        ),
+      );
+      expect(await captureMongoSnapshot(sourceSelectors)).toEqual(preActivationSnapshot);
+      trackFork(
+        await forkBranch(staticCases.find(({ field }) => field === 'summary')!.messageId),
+        'static sibling while semantic fields are selected',
+      );
+      for (const testCase of semanticCases) {
+        const blocked = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+          forkBranch(testCase.messageId),
+        );
+        expectContentFilterBlock(blocked, {
+          source: 'message',
+          field: testCase.field,
+          marker: testCase.marker,
+        });
+      }
+
+      const beforeRuntimeBlocks = await captureMongoSnapshot(sourceSelectors);
+      for (const testCase of semanticCases) {
+        expect(
+          await expectAsyncFilterStreamError(
+            request,
+            token,
+            await startContinuation(testCase.messageId, testCase.field),
+            testCase.label,
+            testCase.marker,
+          ),
+        ).toBe(sourceConversationId);
+      }
+      await withMongo(async (db) => {
+        expect(
+          await db.collection('messages').countDocuments({
+            messageId: { $in: attemptedRuntimeMessageIds },
+          }),
+        ).toBe(0);
+      });
+      expect(await captureMongoSnapshot(sourceSelectors)).toEqual(beforeRuntimeBlocks);
+
+      await applyFilters(filtersFor(['answer'], semanticCases));
+      const answerCase = semanticCases.find(({ field }) => field === 'answer')!;
+      const answerBlocked = await expectNoMongoSideEffects(['conversations', 'messages'], () =>
+        forkBranch(answerCase.messageId),
+      );
+      expectContentFilterBlock(answerBlocked, {
+        source: 'message',
+        field: 'answer',
+        marker: answerCase.marker,
+      });
+      for (const testCase of semanticCases.filter(({ field }) => field !== 'answer')) {
+        trackFork(
+          await forkBranch(testCase.messageId),
+          `${testCase.field} sibling while only answer is selected`,
+        );
+      }
+      expect(await captureMongoSnapshot(sourceSelectors)).toEqual(preActivationSnapshot);
+
+      await restoreRuntimeFilters(request, token);
+      filtersActive = false;
+      expect(await captureMongoSnapshot(sourceSelectors)).toEqual(preActivationSnapshot);
+      for (const testCase of allCases) {
+        const copiedMessages = trackFork(
+          await forkBranch(testCase.messageId),
+          `post-deactivation ${testCase.field} fork`,
+        );
+        if (semanticCases.includes(testCase)) {
+          expect(copiedMessages).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                userSubmittedMessageFieldPaths: [{ path: semanticPath, field: testCase.field }],
+              }),
+            ]),
+          );
+          const semanticCopy = copiedMessages.find((message) =>
+            Array.isArray(message.userSubmittedMessageFieldPaths),
+          );
+          expect(semanticCopy).toBeDefined();
+          expect(semanticCopy).not.toHaveProperty('userSubmittedPaths');
+        }
+      }
+    } finally {
+      try {
+        if (filtersAttempted || filtersActive) {
+          await restoreRuntimeFilters(request, token);
+          filtersActive = false;
+        }
+      } finally {
+        for (const conversationId of createdConversationIds) {
+          await requestResult(request, {
+            path: '/api/convos',
+            token,
+            method: 'DELETE',
+            data: { arg: { conversationId } },
+          });
+        }
+        await withMongo(async (db) => {
+          await db.collection('messages').deleteMany({
+            messageId: { $in: allCases.map(({ messageId }) => messageId) },
+          });
+        });
       }
     }
   });

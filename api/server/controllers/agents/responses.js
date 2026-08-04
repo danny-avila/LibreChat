@@ -47,6 +47,7 @@ const {
   isContentTraversalLimitError,
   prependContentTraversalFragments,
   assertModelBoundContent,
+  hasModelBoundContentProtection,
   isContentFilterError,
   getSafeErrorMetadata,
   createToolExecuteHandler,
@@ -111,7 +112,7 @@ const filterFilesByRemoteAgentAccess = (params) =>
 const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
 
 function getUserFacingProviderError(error, appConfig) {
-  if (appConfig?.filters != null || appConfig?.messageFilter?.pii != null) {
+  if (hasModelBoundContentProtection(appConfig?.filters, appConfig?.messageFilter?.pii)) {
     return GENERIC_PROVIDER_ERROR;
   }
   return error instanceof Error ? error.message : 'An error occurred';
@@ -297,6 +298,9 @@ async function loadPreviousMessages(conversationId, userId) {
         }),
         ...(Array.isArray(msg.userSubmittedPaths) && {
           userSubmittedPaths: msg.userSubmittedPaths,
+        }),
+        ...(Array.isArray(msg.userSubmittedMessageFieldPaths) && {
+          userSubmittedMessageFieldPaths: msg.userSubmittedMessageFieldPaths,
         }),
       };
 

@@ -1,4 +1,9 @@
-import type { Agents, TFile, TPendingSteer } from 'librechat-data-provider';
+import type {
+  Agents,
+  TFile,
+  TPendingSteer,
+  UserSubmittedMessageFieldPath,
+} from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
@@ -82,6 +87,8 @@ export interface SerializableJobData {
   mcpRequestBody?: MCPRuntimeRequestBody;
   /** Exact assistant-message fields authored by the user during this running job. */
   userSubmittedPaths?: string[];
+  /** Exact request-only message fields embedded at caller-authored paths. */
+  userSubmittedMessageFieldPaths?: UserSubmittedMessageFieldPath[];
 
   /**
    * Whether this run has activity labels enabled (per-endpoint
@@ -304,6 +311,8 @@ export type JobMetadataPatch = Partial<
     | 'responseMessageId'
     | 'isRegenerate'
     | 'mcpRequestBody'
+    | 'userSubmittedPaths'
+    | 'userSubmittedMessageFieldPaths'
     | 'sender'
     | 'conversationId'
     | 'userMessage'

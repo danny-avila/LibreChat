@@ -106,15 +106,10 @@ const {
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
   assertModelBoundContent,
-  extractStoredMessageContent,
-  inspectContent,
-  ContentFilterError,
-  ContentTraversalLimitError,
-  getContentTraversalFragments,
-  isContentTraversalProtected,
+  hasModelBoundContentProtection,
+  assertResumeRuntimeContentAllowed,
   collectReachableAgents,
   getDynamicToolContexts,
-  getResumeContentInspection,
   getSafeErrorMetadata,
 } = require('@librechat/api');
 const {
@@ -138,6 +133,7 @@ const {
   EModelEndpoint,
   PermissionTypes,
   AgentCapabilities,
+  hasActivePiiPatterns,
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
@@ -156,124 +152,11 @@ const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMC
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
-function getCheckpointMessageRole(message) {
-  const type = message?._getType?.() ?? message?.role;
-  if (type === 'human') {
-    return 'user';
-  }
-  if (type === 'ai') {
-    return 'assistant';
-  }
-  return type;
-}
-
-function getCheckpointSkill(message) {
-  if (!isSkillPrimeMessage(message)) {
-    return null;
-  }
-  const content = message?.content;
-  let body = '';
-  if (typeof content === 'string') {
-    body = content;
-  } else if (Array.isArray(content)) {
-    body = content
-      .map((part) => {
-        if (typeof part === 'string') {
-          return part;
-        }
-        return typeof part?.text === 'string' ? part.text : '';
-      })
-      .join('');
-  }
-  return {
-    name: message?.additional_kwargs?.skillName,
-    body,
-  };
-}
-
-function normalizeCheckpointToolCalls(message) {
-  const calls = [
-    ...(Array.isArray(message?.tool_calls) ? message.tool_calls : []),
-    ...(Array.isArray(message?.additional_kwargs?.tool_calls)
-      ? message.additional_kwargs.tool_calls
-      : []),
-  ];
-  return calls.map((call) => ({
-    name: call?.name,
-    arguments: call?.args ?? call?.arguments,
-    output: call?.output,
-    function: call?.function,
-    code_interpreter: call?.code_interpreter,
-  }));
-}
-
-async function getResumeCheckpointMessages(appConfig, conversationId) {
-  const checkpointer = await getAgentCheckpointer(
-    appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
-  );
-  if (!checkpointer) {
-    return [];
-  }
-  const tuple = await checkpointer.getTuple({
-    configurable: {
-      thread_id: conversationId,
-      checkpoint_ns: '',
-    },
-  });
-  const messages = tuple?.checkpoint?.channel_values?.messages;
-  return Array.isArray(messages) ? messages : [];
-}
-
-function assertResumeToolContentAllowed(filters, messages, seedContent) {
-  if (filters?.toolArguments?.pii == null) {
-    return;
-  }
-  const fragments = [];
-  const traversalErrors = [];
-  const collectStoredMessage = (message) => {
-    try {
-      fragments.push(...extractStoredMessageContent(message));
-    } catch (error) {
-      if (!(error instanceof ContentTraversalLimitError)) {
-        throw error;
-      }
-      fragments.push(...getContentTraversalFragments(error));
-      traversalErrors.push({ error, role: message.role });
-    }
-  };
-  for (const message of messages) {
-    const content = message?.content;
-    collectStoredMessage({
-      role: getCheckpointMessageRole(message),
-      text: typeof content === 'string' ? content : undefined,
-      content: Array.isArray(content) ? content : undefined,
-      tool_calls: normalizeCheckpointToolCalls(message),
-    });
-  }
-  collectStoredMessage({
-    role: 'assistant',
-    content: Array.isArray(seedContent) ? seedContent : undefined,
-  });
-  const finding = inspectContent(fragments, {
-    filters: { toolArguments: filters.toolArguments },
-  });
-  if (finding != null) {
-    throw new ContentFilterError(finding);
-  }
-  const protectedTraversal = traversalErrors.find(({ error, role }) =>
-    isContentTraversalProtected({
-      error,
-      filters: { toolArguments: filters.toolArguments },
-      roles: [role],
-    }),
-  );
-  if (protectedTraversal != null) {
-    throw protectedTraversal.error;
-  }
-}
-
 function getUserFacingRequestError(baseMessage, error, appConfig) {
-  const protectionEnabled = appConfig?.filters != null || appConfig?.messageFilter?.pii != null;
+  const protectionEnabled = hasModelBoundContentProtection(
+    appConfig?.filters,
+    appConfig?.messageFilter?.pii,
+  );
   if (protectionEnabled || !error?.message) {
     return baseMessage;
   }
@@ -390,7 +273,7 @@ class AgentClient extends BaseClient {
      *  SDK-emitted indices that arrive after an injection land past it.
      *  @type {import('@librechat/api').SteerOffsetState} */
     this.steerOffsetState = { offset: 0 };
-    /** @type {(messages: BaseMessage[]) => Promise<void>} */
+    /** @type {(messages: BaseMessage[], inspectionMessages?: BaseMessage[]) => Promise<void>} */
     this.processMemory;
   }
 
@@ -1977,7 +1860,7 @@ class AgentClient extends BaseClient {
     };
     const canonicalMemoryCache = new Map();
     const getCanonicalAgentMemories = async (agent) => {
-      if (this.options.req.config?.filters?.memories?.pii == null) {
+      if (!hasActivePiiPatterns(this.options.req.config?.filters?.memories?.pii)) {
         return undefined;
       }
       if (typeof db.getUserMemories !== 'function') {
@@ -2533,7 +2416,7 @@ class AgentClient extends BaseClient {
         });
       }
       const bufferMessage = new HumanMessage(limitedMemoryInput);
-      return await this.processMemory([bufferMessage]);
+      return await this.processMemory([bufferMessage], filteredMessages);
     } catch (error) {
       logger.error('Memory Agent failed to process memory', getSafeErrorMetadata(error));
     }
@@ -3871,30 +3754,6 @@ class AgentClient extends BaseClient {
         ...(this.agentConfigs?.size > 0 ? this.agentConfigs.values() : []),
       ]);
       const dynamicToolContexts = getDynamicToolContexts(agents);
-      let checkpointMessages = [];
-      if (appConfig?.filters != null || appConfig?.messageFilter?.pii != null) {
-        try {
-          checkpointMessages = await getResumeCheckpointMessages(appConfig, this.conversationId);
-        } catch {
-          throw new ContentTraversalLimitError();
-        }
-      }
-      const checkpointUserMessages = [];
-      const checkpointSkills = [];
-      for (const message of checkpointMessages) {
-        const skill = getCheckpointSkill(message);
-        if (skill != null) {
-          checkpointSkills.push(skill);
-          continue;
-        }
-        if (getCheckpointMessageRole(message) === 'user') {
-          checkpointUserMessages.push({
-            ...message,
-            role: 'user',
-            content: message?.content ?? message?.text,
-          });
-        }
-      }
       const liveFiles = Array.isArray(this.options.attachments)
         ? [...this.options.attachments]
         : [];
@@ -3923,30 +3782,27 @@ class AgentClient extends BaseClient {
           modelBoundAgentFiles.push(...agent.agentContextAttachments);
         }
       }
-      const fileInspection = await getResumeContentInspection({
-        appConfig,
-        conversationId: this.conversationId,
-        targetMessageId: this.parentMessageId,
-        user: this.options.req.user,
-        supplementalMessages: storedMessages,
-        submittedMessages: checkpointUserMessages,
-        liveFiles,
-        trustLiveFileContent: true,
-        isTemporary: this.options.req.body?.isTemporary === true,
-        getMessages: db.getMessages,
-        getFiles: db.getFiles,
-      });
-      assertModelBoundContent({
-        filters: appConfig?.filters,
-        legacyPii: appConfig?.messageFilter?.pii,
-        submittedMessages: fileInspection.submittedMessages,
-        storedMessages: fileInspection.storedMessages,
-        agents,
-        skills: checkpointSkills,
-        files: [...modelBoundAgentFiles, ...dynamicToolContexts],
-        resolvedFiles: fileInspection.hydratedFiles,
-      });
-      assertResumeToolContentAllowed(appConfig?.filters, checkpointMessages, seedContent);
+      await assertResumeRuntimeContentAllowed(
+        {
+          appConfig,
+          conversationId: this.conversationId,
+          targetMessageId: this.parentMessageId,
+          user: this.options.req.user,
+          storedMessages,
+          seedContent,
+          resumeValue,
+          liveFiles,
+          isTemporary: this.options.req.body?.isTemporary === true,
+          checkpointNamespace: this.checkpointNamespace,
+          agents,
+          files: [...modelBoundAgentFiles, ...dynamicToolContexts],
+        },
+        {
+          getAgentCheckpointer,
+          getMessages: db.getMessages,
+          getFiles: db.getFiles,
+        },
+      );
 
       // Re-prime skill files invoked in the pre-pause segment (mirrors the normal path's
       // `primeInvokedSkills(payload)`), so an approved code/file-backed tool keeps the

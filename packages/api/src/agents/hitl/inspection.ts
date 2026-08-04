@@ -1,31 +1,54 @@
-import { Constants, MAX_SUBAGENT_GRAPH_NODES } from 'librechat-data-provider';
-import type { Agent, FiltersConfig, TMessage } from 'librechat-data-provider';
-import type { AppConfig, IMongoFile, IUser } from '@librechat/data-schemas';
+import {
+  Constants,
+  HITL_MESSAGE_FILTER_FIELDS,
+  MAX_SUBAGENT_GRAPH_NODES,
+  STORED_MESSAGE_FILTER_FIELDS,
+  hasActivePiiFields,
+  hasActivePiiPatterns,
+} from 'librechat-data-provider';
+import type { Agent, FiltersConfig, UserSubmittedMessageFieldPath } from 'librechat-data-provider';
+import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { StoredMessageContentInput } from '~/protection/adapters/submissions';
+import type { ExternalChatMessage } from '~/protection/adapters/messages';
 import {
   hasActiveFilePolicy,
   resolveCanonicalFileReferences,
   type GetCanonicalFilesForInspection,
+  type CanonicalFileInspectionFile,
 } from '~/protection/files';
 import { ContentTraversalLimitError } from '~/protection/adapters/nested';
 import { collectReachableAgents } from '../traversal';
 import { getEdgeParticipants } from '../edges';
 
-type ResumeMessage = TMessage & {
+type ResumeMessage = StoredMessageContentInput & {
   id?: string;
+  messageId?: string;
+  conversationId?: string | null;
+  parentMessageId?: string | null;
   isCreatedByUser?: boolean;
   isUserSubmitted?: boolean;
   userSubmittedPaths?: string[];
+  userSubmittedMessageFieldPaths?: UserSubmittedMessageFieldPath[];
 };
 
-type ResumeFile = Partial<IMongoFile> & {
-  content?: string;
-  extractedText?: string;
-  transcript?: string;
+type ResumeSubmittedMessage = ExternalChatMessage & {
+  readonly id?: string;
+  readonly messageId?: string;
+  readonly files?: readonly object[];
+  readonly attachments?: readonly object[];
+  readonly file_ids?: readonly string[];
 };
+
+type ResumeFile = CanonicalFileInspectionFile;
 
 interface DynamicToolContextAgent {
   readonly dynamicToolContextMap?: Readonly<Record<string, unknown>>;
 }
+
+const RESUME_STORED_MESSAGE_FILTER_FIELDS = [
+  ...STORED_MESSAGE_FILTER_FIELDS,
+  ...HITL_MESSAGE_FILTER_FIELDS,
+] as const;
 
 export interface ResumeSnapshotAgent extends Agent {
   subagentAgentConfigs?: ResumeSnapshotAgent[];
@@ -51,7 +74,9 @@ export interface ResumeContentInspectionInput {
   targetMessageId?: string | null;
   user?: Pick<IUser, 'id' | 'tenantId'>;
   supplementalMessages: ResumeMessage[];
-  submittedMessages: ResumeMessage[];
+  submittedMessages: ResumeSubmittedMessage[];
+  /** Additional checkpoint/runtime structures that may contain durable file references. */
+  fileReferenceInputs?: readonly object[];
   liveFiles: ResumeFile[];
   /** True only for files assembled from server-side attachment hydration.
    * Request/job metadata must leave this false. */
@@ -63,7 +88,7 @@ export interface ResumeContentInspectionInput {
 
 export interface ResumeContentInspection {
   storedMessages: ResumeMessage[];
-  submittedMessages: ResumeMessage[];
+  submittedMessages: ResumeSubmittedMessage[];
   originalStoredMessages: ResumeMessage[];
   hydratedFiles: ResumeFile[];
   hydratedFilters?: FiltersConfig;
@@ -186,9 +211,9 @@ export async function getResumeAgentSnapshot({
 
 function hasResumeHistoryPolicy(appConfig: AppConfig | undefined): boolean {
   return (
-    appConfig?.messageFilter?.pii != null ||
-    appConfig?.filters?.messages?.pii != null ||
-    appConfig?.filters?.toolArguments?.pii != null ||
+    hasActivePiiPatterns(appConfig?.messageFilter?.pii) ||
+    hasActivePiiFields(appConfig?.filters?.messages?.pii, RESUME_STORED_MESSAGE_FILTER_FIELDS) ||
+    hasActivePiiPatterns(appConfig?.filters?.toolArguments?.pii) ||
     hasActiveFilePolicy(appConfig?.filters)
   );
 }
@@ -343,7 +368,11 @@ async function getResumeFileInspection(
     };
   }
 
-  const originalInput = [...storedMessages, ...input.submittedMessages];
+  const originalInput = {
+    storedMessages,
+    submittedMessages: input.submittedMessages,
+    fileReferenceInputs: input.fileReferenceInputs ?? [],
+  };
   const fileInspection = await resolveCanonicalFileReferences({
     filters,
     input: originalInput,
@@ -353,13 +382,11 @@ async function getResumeFileInspection(
     }),
     getFiles: input.getFiles,
   });
-  const sanitizedMessages = fileInspection.sanitizedInput as ResumeMessage[];
-
   return {
-    storedMessages: sanitizedMessages.slice(0, storedMessages.length),
-    submittedMessages: sanitizedMessages.slice(storedMessages.length),
+    storedMessages: fileInspection.sanitizedInput.storedMessages,
+    submittedMessages: fileInspection.sanitizedInput.submittedMessages,
     originalStoredMessages: storedMessages,
-    hydratedFiles: fileInspection.hydratedFiles as ResumeFile[],
+    hydratedFiles: fileInspection.hydratedFiles,
     hydratedFilters: fileInspection.hydratedFilters,
   };
 }

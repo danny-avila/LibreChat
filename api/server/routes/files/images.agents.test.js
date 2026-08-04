@@ -178,6 +178,8 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
           files: {
             pii: {
               fields: [field],
+              starterPatterns: [],
+              customPatterns: [],
               uninspectable: 'block',
             },
           },
@@ -342,6 +344,52 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
 
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ message: legacyMessage });
+  });
+
+  it.each([
+    [
+      'file policy',
+      {
+        filters: {
+          files: {
+            pii: { fields: ['name'], starterPatterns: [], customPatterns: [] },
+          },
+        },
+      },
+    ],
+    [
+      'legacy message policy',
+      { messageFilter: { pii: { starterPatterns: [], customPatterns: [] } } },
+    ],
+  ])('preserves image error details for an inert %s', async (_label, config) => {
+    const legacyMessage = 'Invalid file format: .legacy';
+    processImageFile.mockRejectedValueOnce(new Error(legacyMessage));
+    const app = createAppWithUser(otherUserId, SystemRoles.USER, config);
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: legacyMessage });
+  });
+
+  it('normalizes image errors when the legacy message policy is active', async () => {
+    const rawProviderDetail = 'Invalid file format: PRIVATE-IMAGE.legacy';
+    processImageFile.mockRejectedValueOnce(new Error(rawProviderDetail));
+    const app = createAppWithUser(otherUserId, SystemRoles.USER, {
+      messageFilter: { pii: {} },
+    });
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: 'Invalid file format' });
+    expect(JSON.stringify(response.body)).not.toContain(rawProviderDetail);
   });
 
   it('should return 404 for non-existent agent', async () => {

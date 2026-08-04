@@ -7,7 +7,10 @@ const {
   extractConversationImportContent,
   getBlockedOpaqueFileField,
   getContentTraversalFragments,
+  getContentTraversalScopes,
+  getUserSubmittedMessageFieldPathState,
   getUserSubmittedPathState,
+  hasActiveFilePolicy,
   inspectContent,
   isContentTraversalProtected,
   isContentTraversalLimitError,
@@ -22,6 +25,7 @@ const {
 const {
   EModelEndpoint,
   Constants,
+  HITL_MESSAGE_FILTER_FIELDS,
   RetentionMode,
   openAISettings,
 } = require('librechat-data-provider');
@@ -103,7 +107,7 @@ async function assertConversationContentAllowed(
    */
   let storedMessages = messages;
   let resolvedFiles = [];
-  if (filters?.files?.pii != null) {
+  if (hasActiveFilePolicy(filters)) {
     const fileInspection = await resolveCanonicalFileReferences({
       filters,
       input: messages,
@@ -135,11 +139,22 @@ async function assertConversationContentAllowed(
       }
 
       const submittedPathState = getUserSubmittedPathState(message);
+      const submittedMessageFieldState = getUserSubmittedMessageFieldPathState(message);
       const explicitPaths = submittedPathState.paths;
+      const exactMessageFields = submittedMessageFieldState.entries.map((entry) => entry.field);
+      const isExactMessageFieldTraversal = getContentTraversalScopes(error).some(
+        (scope) =>
+          scope.source === 'message' &&
+          scope.fields.some((field) => HITL_MESSAGE_FILTER_FIELDS.includes(field)),
+      );
+      if (isExactMessageFieldTraversal) {
+        throw error;
+      }
       const isStrictUnattributedAssistant =
         filters?.messages?.unattributedAssistantContent === 'inspect' &&
         typeof message.isUserSubmitted !== 'boolean' &&
         explicitPaths.length === 0 &&
+        exactMessageFields.length === 0 &&
         (message.isCreatedByUser === false ||
           message.role === 'assistant' ||
           message.role === 'ai');
