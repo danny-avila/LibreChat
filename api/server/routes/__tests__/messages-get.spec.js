@@ -110,18 +110,19 @@ describe('message route conversation ownership filters', () => {
     });
   });
 
-  it('should save POST messages with the validated URL conversationId', async () => {
+  it('should pass only the validated URL conversationId to saveConvo', async () => {
     const urlConversationId = '11111111-1111-4111-8111-111111111111';
     const bodyConversationId = '22222222-2222-4222-8222-222222222222';
     const savedMessage = {
       _id: 'message-object-id',
+      __v: 0,
       messageId: 'message-1',
       conversationId: urlConversationId,
       text: 'hello',
+      model: null,
+      isTemporary: false,
       user: authenticatedUserId,
     };
-    const messageForConversation = { ...savedMessage };
-    delete messageForConversation._id;
 
     saveMessage.mockResolvedValue(savedMessage);
     saveConvo.mockResolvedValue({ conversationId: urlConversationId });
@@ -146,7 +147,7 @@ describe('message route conversation ownership filters', () => {
     expect(saveMessage.mock.calls[0][1].conversationId).not.toBe(bodyConversationId);
     expect(saveConvo).toHaveBeenCalledWith(
       expect.objectContaining({ userId: authenticatedUserId }),
-      messageForConversation,
+      { conversationId: urlConversationId },
       { context: 'POST /api/messages/:conversationId' },
     );
   });
