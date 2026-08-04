@@ -510,6 +510,31 @@ describe('parseFrontmatter', () => {
     },
   );
 
+  it('treats an empty flag value as a placeholder even when the mapping is indented', () => {
+    /* The line scan is anchored at column zero, so an indented key yields no raw
+       text to inspect. Judging by the parsed shape keeps a mid-edit placeholder
+       from being reported as a malformed value. */
+    const raw = `---\n  name: n\n  description: d\n  user-invocable:\n---\n\nbody`;
+    const result = parseFrontmatter(raw);
+
+    expect(result.userInvocable).toBeUndefined();
+    expect(result.invalidBooleans).toEqual([]);
+  });
+
+  it('still flags a malformed value when the mapping is indented', () => {
+    const raw = `---\n  name: n\n  description: d\n  user-invocable: tru\n---\n\nbody`;
+
+    expect(parseFrontmatter(raw).invalidBooleans).toEqual(['user-invocable']);
+  });
+
+  it.each(['"user-invocable"', "'user-invocable'"])('reads a %s quoted key', (key) => {
+    const raw = `---\nname: n\ndescription: d\n${key}: false\n---\n\nbody`;
+    const result = parseFrontmatter(raw);
+
+    expect(result.userInvocable).toBe(false);
+    expect(result.frontmatter).toEqual({ 'user-invocable': false });
+  });
+
   it('resolves flags when the whole frontmatter mapping is indented', () => {
     const raw = `---\n  name: n\n  description: d\n  user-invocable: false\n---\n\nbody`;
     const result = parseFrontmatter(raw);
