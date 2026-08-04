@@ -314,8 +314,8 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
               aria-hidden="true"
               style={{ left: centerOf(index) }}
               className={cn(
-                'absolute top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors',
-                index < activeIndex ? 'bg-white/50' : 'bg-text-secondary/50',
+                'absolute top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-50 transition-colors',
+                index < activeIndex ? 'bg-white' : 'bg-text-secondary',
               )}
             />
           ))}
