@@ -50,6 +50,102 @@ describe('MCPTokenStorage', () => {
     jest.clearAllMocks();
   });
 
+  describe('hasStoredAuthorization', () => {
+    async function storeClient(metadata = storedBindingMetadata) {
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:srv1:client',
+        token: 'enc:client-info',
+        expiresIn: 3600,
+        metadata,
+      });
+    }
+
+    it('accepts a current access token bound to its stored client generation', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:access-token',
+        expiresIn: 3600,
+      });
+      await storeClient();
+
+      await expect(
+        MCPTokenStorage.hasStoredAuthorization({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+        }),
+      ).resolves.toBe(true);
+    });
+
+    it('rejects legacy credentials without binding metadata', async () => {
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:legacy-access-token',
+        expiresIn: 3600,
+      });
+      await storeClient({});
+
+      await expect(
+        MCPTokenStorage.hasStoredAuthorization({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it('accepts an expired access token only when a bound refresh token remains usable', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:expired-access-token',
+        expiresIn: -60,
+      });
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:refresh-token',
+        expiresIn: 3600,
+      });
+      await storeClient();
+
+      await expect(
+        MCPTokenStorage.hasStoredAuthorization({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+        }),
+      ).resolves.toBe(true);
+    });
+
+    it('rejects an expired access token without a usable refresh token', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:expired-access-token',
+        expiresIn: -60,
+      });
+      await storeClient();
+
+      await expect(
+        MCPTokenStorage.hasStoredAuthorization({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+        }),
+      ).resolves.toBe(false);
+    });
+  });
+
   describe('isCurrentAccessToken', () => {
     it('rejects a flow-cached token after persistent storage has rotated it', async () => {
       await createBoundToken(store, {

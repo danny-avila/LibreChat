@@ -104,6 +104,28 @@ describe('FlowStateManager', () => {
       await expect(flowPromise).rejects.toThrow('test-type flow timed out');
     });
 
+    it('should retain a terminal timeout for the remaining storage TTL', async () => {
+      const flowId = 'retained-timeout-flow';
+      const type = 'mcp_oauth';
+      const shortTimeoutManager = new FlowStateManager(store as unknown as Keyv, {
+        ttl: 5000,
+        monitorTimeout: 100,
+        ci: true,
+      });
+
+      await expect(shortTimeoutManager.createFlow(flowId, type)).rejects.toThrow(
+        'mcp_oauth flow timed out',
+      );
+
+      await expect(shortTimeoutManager.getFlowState(flowId, type)).resolves.toEqual(
+        expect.objectContaining({
+          status: 'FAILED',
+          error: 'mcp_oauth flow timed out',
+          failedAt: expect.any(Number),
+        }),
+      );
+    });
+
     it('should maintain flow state consistency under high concurrency', async () => {
       const flowId = 'concurrent-flow';
       const type = 'test-type';
@@ -174,6 +196,9 @@ describe('FlowStateManager', () => {
       await flowManager.failFlow(flowId, type, new Error('failure'));
 
       await expect(flowPromise).rejects.toThrow('failure');
+      await expect(flowManager.getFlowState(flowId, type)).resolves.toEqual(
+        expect.objectContaining({ status: 'FAILED', error: 'failure' }),
+      );
     }, 15000);
 
     it('should not overwrite a completed flow with a late failure', async () => {

@@ -1968,6 +1968,28 @@ describe('MCP Routes', () => {
       });
     });
 
+    it('should return retained timeout failures as terminal status', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'FAILED',
+          error: 'mcp_oauth flow timed out',
+        }),
+      };
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const response = await request(app).get('/api/mcp/oauth/status/test-user-id:test-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        status: 'FAILED',
+        completed: false,
+        failed: true,
+        error: 'mcp_oauth flow timed out',
+      });
+    });
+
     it('should return flow status for a tenant-prefixed flow owned by the user', async () => {
       const { getTenantId } = require('@librechat/data-schemas');
       const mockFlowManager = {
@@ -2183,6 +2205,7 @@ describe('MCP Routes', () => {
         serverName: 'oauth-server',
         oauthRequired: true,
         oauthUrl: 'https://oauth.example.com/auth',
+        flowId: 'test-user-id:oauth-server',
       });
     });
 
@@ -2393,10 +2416,12 @@ describe('MCP Routes', () => {
         .mockResolvedValueOnce({
           connectionState: 'connected',
           requiresOAuth: false,
+          authorizationState: 'not_required',
         })
         .mockResolvedValueOnce({
           connectionState: 'disconnected',
           requiresOAuth: true,
+          authorizationState: 'needs_authorization',
         });
 
       const response = await request(app).get('/api/mcp/connection/status');
@@ -2409,10 +2434,12 @@ describe('MCP Routes', () => {
           server1: {
             connectionState: 'connected',
             requiresOAuth: false,
+            authorizationState: 'not_required',
           },
           server2: {
             connectionState: 'disconnected',
             requiresOAuth: true,
+            authorizationState: 'needs_authorization',
           },
         },
       });
@@ -2464,6 +2491,7 @@ describe('MCP Routes', () => {
       getServerConnectionStatus.mockResolvedValue({
         connectionState: 'requires_auth',
         requiresOAuth: true,
+        authorizationState: 'needs_authorization',
       });
 
       const response = await request(app).get('/api/mcp/connection/status/oauth-server');
@@ -2474,6 +2502,7 @@ describe('MCP Routes', () => {
         serverName: 'oauth-server',
         connectionStatus: 'requires_auth',
         requiresOAuth: true,
+        authorizationState: 'needs_authorization',
       });
     });
 
@@ -3030,7 +3059,7 @@ describe('MCP Routes', () => {
       expect(response.body.url).toBe('https://mcp-server.example.com/sse');
       expect(response.body.title).toBe('Test SSE Server');
       expect(mockRegistryInstance.addServer).toHaveBeenCalledWith(
-        'temp_server_name',
+        expect.stringMatching(/^temp_server_[0-9a-f-]{36}$/),
         expect.objectContaining({
           type: 'sse',
           url: 'https://mcp-server.example.com/sse',
@@ -3058,7 +3087,7 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(201);
       expect(mockRegistryInstance.addServer).toHaveBeenCalledWith(
-        'temp_server_name',
+        expect.stringMatching(/^temp_server_[0-9a-f-]{36}$/),
         expect.objectContaining({
           type: 'sse',
           url: 'https://mcp-server.example.com/sse',
@@ -3088,7 +3117,7 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(201);
       expect(mockRegistryInstance.addServer).toHaveBeenCalledWith(
-        'temp_server_name',
+        expect.stringMatching(/^temp_server_[0-9a-f-]{36}$/),
         expect.anything(),
         'DB',
         'test-user-id',

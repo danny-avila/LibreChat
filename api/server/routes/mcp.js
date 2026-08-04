@@ -375,12 +375,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     }
 
     logger.debug('[MCP OAuth] Completing OAuth flow');
-    if (!flowState.oauthHeaders) {
-      logger.warn(
-        '[MCP OAuth] oauthHeaders absent from flow state — config-source server oauth_headers will be empty',
-        { serverName, flowId },
-      );
-    }
     /**
      * Restore tenant context for the callback body. The callback is a cross-origin
      * redirect from the OAuth provider, so SameSite=Strict cookies (including the
@@ -786,8 +780,9 @@ router.post(
         connectionDeferred,
       } = result;
 
+      let flowId;
       if (oauthRequired) {
-        const flowId = getOAuthFlowId(user.id, serverName);
+        flowId = getOAuthFlowId(user.id, serverName);
         setOAuthCsrfCookie(res, flowId, OAUTH_CSRF_COOKIE_PATH);
       }
 
@@ -795,6 +790,7 @@ router.post(
         success,
         message,
         oauthUrl,
+        flowId,
         serverName,
         oauthRequired,
         failureReason,
@@ -842,6 +838,7 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
         connectionStatus[serverName] = {
           connectionState: 'error',
           requiresOAuth: oauthServers.has(serverName),
+          authorizationState: oauthServers.has(serverName) ? 'error' : 'not_required',
           error: message,
         };
       }
@@ -896,6 +893,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
       serverName,
       connectionStatus: serverStatus.connectionState,
       requiresOAuth: serverStatus.requiresOAuth,
+      authorizationState: serverStatus.authorizationState,
     });
   } catch (error) {
     logger.error(

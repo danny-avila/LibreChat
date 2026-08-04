@@ -28,19 +28,21 @@ export function normalizeExpiresAt(timestamp: number): number {
 export class FlowStateManager<T = unknown> {
   private keyv: Keyv;
   private ttl: number;
+  private monitorTimeout: number;
   private intervals: Set<NodeJS.Timeout>;
 
   constructor(store: Keyv, options?: FlowManagerOptions) {
     if (!options) {
       options = { ttl: 60000 * 3 };
     }
-    const { ci = false, ttl } = options;
+    const { ci = false, ttl, monitorTimeout = ttl } = options;
 
     if (!ci && !(store instanceof Keyv)) {
       throw new Error('Invalid store provided to FlowStateManager');
     }
 
     this.ttl = ttl;
+    this.monitorTimeout = monitorTimeout;
     this.keyv = store;
     this.intervals = new Set();
 
@@ -145,7 +147,6 @@ export class FlowStateManager<T = unknown> {
   private monitorFlow(flowKey: string, type: string, signal?: AbortSignal): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const checkInterval = 2000;
-      let elapsedTime = 0;
       let isCleanedUp = false;
       let intervalId: NodeJS.Timeout | null = null;
       let missingStateRetried = false;
@@ -230,20 +231,28 @@ export class FlowStateManager<T = unknown> {
             if (flowState.status === 'COMPLETED' && flowState.result !== undefined) {
               resolve(flowState.result);
             } else if (flowState.status === 'FAILED') {
-              await this.keyv.delete(flowKey);
               reject(new Error(flowState.error ?? `${type} flow failed`));
             }
             return;
           }
 
-          elapsedTime += checkInterval;
-          if (elapsedTime >= this.ttl) {
+          const elapsedTime = Date.now() - flowState.createdAt;
+          if (elapsedTime >= this.monitorTimeout) {
             cleanup();
             logger.error(
-              `[${flowKey}] Flow timed out | Elapsed time: ${elapsedTime} | TTL: ${this.ttl}`,
+              `[${flowKey}] Flow timed out | Elapsed time: ${elapsedTime} | Timeout: ${this.monitorTimeout}`,
             );
-            await this.keyv.delete(flowKey);
-            reject(new Error(`${type} flow timed out`));
+            const message = `${type} flow timed out`;
+            const remainingTtl = Math.max(1, this.ttl - elapsedTime);
+            const timedOutState: FlowState<T> = {
+              ...flowState,
+              status: 'FAILED',
+              error: message,
+              failedAt: Date.now(),
+            };
+            await this.keyv.set(flowKey, timedOutState, remainingTtl);
+            reject(new Error(message));
+            return;
           }
           logger.debug(`[${flowKey}] Flow state elapsed time: ${elapsedTime}, checking again...`);
         } catch (error) {

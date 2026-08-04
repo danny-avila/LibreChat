@@ -18,6 +18,8 @@ export interface FlowState<T = unknown> {
 
 export interface FlowManagerOptions {
   ttl: number;
+  /** Maximum time a flow may remain PENDING. Defaults to the storage TTL. */
+  monitorTimeout?: number;
   ci?: boolean;
   logger?: Logger;
 }

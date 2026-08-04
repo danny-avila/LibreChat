@@ -4,6 +4,7 @@ import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Constants,
+  dataService,
   QueryKeys,
   MCPOptions,
   Permissions,
@@ -28,6 +29,7 @@ import { useLocalize, useHasAccess, useMCPSelect, useMCPConnectionStatus } from 
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
 import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
 import { getMCPReinitializeErrorMessage } from './errors';
+import { getMCPOAuthPollingOutcome } from './polling';
 
 export interface MCPServerDefinition {
   serverName: string;
@@ -193,7 +195,7 @@ export function useMCPServerManager({
   );
 
   const startServerPolling = useCallback(
-    (serverName: string) => {
+    (serverName: string, flowId?: string) => {
       // Prevent duplicate polling for the same server
       if (pollIntervalsRef.current[serverName]) {
         console.debug(`[MCP Manager] Polling already active for ${serverName}, skipping duplicate`);
@@ -250,7 +252,11 @@ export function useMCPServerManager({
             return;
           }
 
-          await queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
+          const flowStatus = flowId ? await dataService.getMCPOAuthStatus(flowId) : null;
+          const flowOutcome = flowStatus ? getMCPOAuthPollingOutcome(flowStatus) : null;
+          if (!flowId) {
+            await queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
+          }
 
           const freshConnectionData = queryClient.getQueryData<MCPConnectionStatusResponse>([
             QueryKeys.mcpConnectionStatus,
@@ -265,7 +271,11 @@ export function useMCPServerManager({
 
           const serverStatus = freshConnectionStatus[serverName];
 
-          if (serverStatus?.connectionState === 'connected') {
+          if (
+            flowOutcome === 'completed' ||
+            serverStatus?.authorizationState === 'authorized' ||
+            serverStatus?.connectionState === 'connected'
+          ) {
             if (timeoutId) {
               clearTimeout(timeoutId);
             }
@@ -280,7 +290,12 @@ export function useMCPServerManager({
               setMCPValues([...currentValues, serverName]);
             }
 
-            await queryClient.invalidateQueries([QueryKeys.mcpTools]);
+            await Promise.all([
+              queryClient.invalidateQueries([QueryKeys.mcpServers]),
+              queryClient.invalidateQueries([QueryKeys.mcpTools]),
+              queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
+              queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
+            ]);
 
             // This delay is to ensure UI has updated with new connection status before cleanup
             // Otherwise servers will show as disconnected for a second after OAuth flow completes
@@ -303,7 +318,11 @@ export function useMCPServerManager({
             return;
           }
 
-          if (serverStatus?.connectionState === 'error') {
+          if (
+            flowOutcome === 'failed' ||
+            serverStatus?.authorizationState === 'error' ||
+            serverStatus?.connectionState === 'error'
+          ) {
             showToast({
               message: localize('com_ui_mcp_init_failed'),
               status: 'error',
@@ -328,12 +347,10 @@ export function useMCPServerManager({
           timeoutId = setTimeout(pollOnce, nextInterval);
           pollIntervalsRef.current[serverName] = timeoutId;
         } catch (error) {
-          console.error(`[MCP Manager] Error polling server ${serverName}:`, error);
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
-          cleanupServerState(serverName);
-          return;
+          console.warn(`[MCP Manager] Transient error polling server ${serverName}:`, error);
+          const nextInterval = getPollInterval(pollAttempts);
+          timeoutId = setTimeout(pollOnce, nextInterval);
+          pollIntervalsRef.current[serverName] = timeoutId;
         }
       };
 
@@ -378,7 +395,7 @@ export function useMCPServerManager({
             window.open(response.oauthUrl, '_blank', 'noopener,noreferrer');
           }
 
-          startServerPolling(serverName);
+          startServerPolling(serverName, response.flowId);
         } else {
           await Promise.all([
             queryClient.invalidateQueries([QueryKeys.mcpServers]),

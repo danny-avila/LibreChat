@@ -164,6 +164,51 @@ export class MCPTokenStorage {
       : `[MCP][User: ${userId}][${serverName}]`;
   }
 
+  /** Returns whether storage contains a currently usable, generation-bound authorization. */
+  static async hasStoredAuthorization({
+    userId,
+    serverName,
+    findToken,
+  }: {
+    userId: string;
+    serverName: string;
+    findToken: TokenMethods['findToken'];
+  }): Promise<boolean> {
+    const identifier = `mcp:${serverName}`;
+    try {
+      const [accessTokenData, clientInfoData] = await Promise.all([
+        findToken({ userId, type: 'mcp_oauth', identifier }),
+        findToken({ userId, type: 'mcp_oauth_client', identifier: `${identifier}:client` }),
+      ]);
+      const credentialSetId = getCredentialSetId(accessTokenData);
+      if (!credentialSetId || getCredentialSetId(clientInfoData) !== credentialSetId) {
+        return false;
+      }
+
+      if (!accessTokenData?.expiresAt || accessTokenData.expiresAt > new Date()) {
+        return true;
+      }
+
+      const refreshTokenData = await findToken({
+        userId,
+        type: 'mcp_oauth_refresh',
+        identifier: `${identifier}:refresh`,
+      });
+      return (
+        getCredentialSetId(refreshTokenData) === credentialSetId &&
+        (!refreshTokenData?.expiresAt || refreshTokenData.expiresAt > new Date())
+      );
+    } catch (error) {
+      logger.warn(
+        `${this.getLogPrefix(userId, serverName)} Failed to inspect stored authorization`,
+        {
+          error,
+        },
+      );
+      return false;
+    }
+  }
+
   /**
    * Confirms a flow-cached access token is still the token in persistent storage. This prevents
    * an old `mcp_get_tokens` result from being paired with newer client-binding metadata.

@@ -5,6 +5,7 @@ const {
   sendEvent,
   PENDING_STALE_MS,
   MCPOAuthHandler,
+  MCPTokenStorage,
   isMCPDomainAllowed,
   splitMCPToolKey,
   normalizeServerName,
@@ -27,6 +28,7 @@ const {
   getServerCustomUserVars,
   requiresEphemeralUserConnection,
   containsGraphTokenPlaceholder,
+  isOAuthServer,
 } = require('@librechat/api');
 const {
   Time,
@@ -1121,6 +1123,11 @@ function createToolInstance({
         error.message?.includes('Non-200 status code (401)');
 
       if (isOAuthError) {
+        if (capturedServerConfig && !isOAuthServer(capturedServerConfig)) {
+          throw new Error(
+            `[MCP][${serverName}][${toolName}] upstream authentication failed; MCP OAuth is not configured for this server.`,
+          );
+        }
         throw new Error(
           `[MCP][${serverName}][${toolName}] OAuth authentication required. Please check the server logs for the authentication URL.`,
         );
@@ -1206,7 +1213,7 @@ async function getMCPSetupData(userId, options = {}) {
  * @param {string} userId - The user ID
  * @param {string} serverName - The server name
  * @param {string} [tenantId] - The tenant ID for the current request.
- * @returns {Object} Object containing hasActiveFlow and hasFailedFlow flags
+ * @returns {Object} Object containing active, failed, and completed flow flags
  */
 async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()) {
   const flowsCache = getLogStores(CacheKeys.FLOWS);
@@ -1216,7 +1223,7 @@ async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()
   try {
     const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
     if (!flowState) {
-      return { hasActiveFlow: false, hasFailedFlow: false };
+      return { hasActiveFlow: false, hasFailedFlow: false, hasCompletedFlow: false };
     }
 
     const flowAge = Date.now() - flowState.createdAt;
@@ -1234,7 +1241,7 @@ async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()
           status: flowState.status,
           error: flowState.error,
         });
-        return { hasActiveFlow: false, hasFailedFlow: false };
+        return { hasActiveFlow: false, hasFailedFlow: false, hasCompletedFlow: false };
       } else {
         logger.debug(`[MCP Connection Status] Found failed OAuth flow for ${serverName}`, {
           flowId,
@@ -1244,7 +1251,7 @@ async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()
           timedOut: flowAge > flowTTL,
           error: flowState.error,
         });
-        return { hasActiveFlow: false, hasFailedFlow: true };
+        return { hasActiveFlow: false, hasFailedFlow: true, hasCompletedFlow: false };
       }
     }
 
@@ -1254,13 +1261,17 @@ async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()
         flowAge,
         flowTTL,
       });
-      return { hasActiveFlow: true, hasFailedFlow: false };
+      return { hasActiveFlow: true, hasFailedFlow: false, hasCompletedFlow: false };
     }
 
-    return { hasActiveFlow: false, hasFailedFlow: false };
+    return {
+      hasActiveFlow: false,
+      hasFailedFlow: false,
+      hasCompletedFlow: flowState.status === 'COMPLETED',
+    };
   } catch (error) {
     logger.error(`[MCP Connection Status] Error checking OAuth flows for ${serverName}:`, error);
-    return { hasActiveFlow: false, hasFailedFlow: false };
+    return { hasActiveFlow: false, hasFailedFlow: false, hasCompletedFlow: false };
   }
 }
 
@@ -1289,20 +1300,40 @@ async function getServerConnectionStatus(
     ? 'disconnected'
     : connection?.connectionState || 'disconnected';
   let finalConnectionState = baseConnectionState;
+  let authorizationState = oauthServers.has(serverName) ? 'needs_authorization' : 'not_required';
 
   // connection state overrides specific to OAuth servers
-  if (baseConnectionState === 'disconnected' && oauthServers.has(serverName)) {
+  if (oauthServers.has(serverName) && baseConnectionState === 'connected') {
+    authorizationState = 'authorized';
+  } else if (oauthServers.has(serverName) && baseConnectionState === 'connecting') {
+    authorizationState = 'authorizing';
+  } else if (oauthServers.has(serverName) && baseConnectionState === 'error') {
+    authorizationState = 'error';
+  } else if (baseConnectionState === 'disconnected' && oauthServers.has(serverName)) {
     // check if server is actively being reconnected
     const oauthReconnectionManager = getOAuthReconnectionManager();
     if (oauthReconnectionManager.isReconnecting(userId, serverName)) {
       finalConnectionState = 'connecting';
+      authorizationState = 'authorizing';
     } else {
-      const { hasActiveFlow, hasFailedFlow } = await checkOAuthFlowStatus(userId, serverName);
+      const { hasActiveFlow, hasFailedFlow, hasCompletedFlow } = await checkOAuthFlowStatus(
+        userId,
+        serverName,
+      );
 
       if (hasFailedFlow) {
         finalConnectionState = 'error';
+        authorizationState = 'error';
       } else if (hasActiveFlow) {
         finalConnectionState = 'connecting';
+        authorizationState = 'authorizing';
+      } else if (
+        hasCompletedFlow ||
+        (await MCPTokenStorage.hasStoredAuthorization({ userId, serverName, findToken }))
+      ) {
+        /** OAuth readiness is durable even when this pod has no live connection. */
+        finalConnectionState = 'connected';
+        authorizationState = 'authorized';
       }
     }
   }
@@ -1310,6 +1341,7 @@ async function getServerConnectionStatus(
   return {
     requiresOAuth: oauthServers.has(serverName),
     connectionState: finalConnectionState,
+    authorizationState,
   };
 }
 

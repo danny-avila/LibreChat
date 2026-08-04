@@ -5,6 +5,7 @@
  * @import { MCPServerRegistry } from '@librechat/api'
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
+const { randomUUID } = require('crypto');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   checkAccess,
@@ -403,8 +404,9 @@ const createMCPServerController = async (req, res) => {
     const reservedServerNames = [
       ...new Set([...configNames, ...configNames.map(normalizeServerName)]),
     ];
+    const inspectionServerName = `temp_server_${randomUUID()}`;
     const result = await getMCPServersRegistry().addServer(
-      'temp_server_name',
+      inspectionServerName,
       validation.data,
       'DB',
       userId,
