@@ -33,11 +33,11 @@ import { cn } from '~/utils';
 export const ROW_CLASS =
   'flex w-full items-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary';
 
-/** Depth cue for the collapsed stack. Kept INSIDE the row's own footprint (the
- *  wrapper reserves the peek height) because the composer box clips overflow. */
 /** Enough to show a merged row's paragraphs without the row eating the box. */
 const EDITOR_MAX_ROWS = 4;
 
+/** Depth cue for the collapsed stack. Kept INSIDE the row's own footprint (the
+ *  wrapper reserves the peek height) because the composer box clips overflow. */
 const PEEK_CLASS =
   'pointer-events-none absolute h-full rounded-xl border border-border-light bg-surface-tertiary';
 
@@ -132,6 +132,11 @@ function QueuedRowBase({
    *  during the pause is exactly the discoverability gap this button fixes. */
   const showEscalate =
     !isRecovered && (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
+  /** An emptied editor is the one state where the queue and the screen disagree
+   *  by construction: the write-through refuses blank text, so the row still
+   *  holds the previous words. Sending from there would send what the user just
+   *  deleted, so the senders stand down until the edit resolves either way. */
+  const emptyEdit = draft != null && draft.trim().length === 0;
 
   /** Focus follows the explicit Edit action rather than mount, so the row can
    *  never steal focus from the composer on a re-render. */
@@ -275,7 +280,8 @@ function QueuedRowBase({
         <button
           type="button"
           className={PRIMARY_BTN_CLASS}
-          disabled={actionPending}
+          disabled={actionPending || emptyEdit}
+          title={emptyEdit ? localize('com_ui_queue_edit_empty') : undefined}
           onClick={() => steering.sendQueuedNow(message)}
         >
           {canSteerNow ? (
@@ -295,7 +301,7 @@ function QueuedRowBase({
         <EscalateNowButton
           surface="queued"
           messageText={message.text}
-          disabled={steering.pausedOnApproval || interruptPending || actionPending}
+          disabled={steering.pausedOnApproval || interruptPending || actionPending || emptyEdit}
           onClick={() => steering.sendQueuedNow(message, { preempt: true })}
         />
       )}

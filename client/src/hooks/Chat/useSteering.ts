@@ -912,12 +912,12 @@ export default function useSteering({
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
           prev.filter((queued) => queued.id !== id),
         );
-        /** Expediting the last row is the user taking over from the automatic
-         *  send, so its window retires with it — otherwise a stale completion
-         *  could later drain a row queued under the manually started run. */
-        if (queue.length === 1) {
-          retireDrainHold();
-        }
+        /** A withheld epoch grants exactly ONE drain, and expediting a row is
+         *  the user spending it themselves — the manually started run's own
+         *  completion drains whatever comes next. Leaving the window armed for
+         *  any remaining rows would send twice for one run end, and would do it
+         *  even when that manual run was stopped or errored. */
+        retireDrainHold();
         return origin;
       },
     [queueKey, retireDrainHold],

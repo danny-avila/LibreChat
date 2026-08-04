@@ -2489,6 +2489,31 @@ describe('useSteering — clear all', () => {
     expect(result.current.drainHold).toMatchObject({ status: 'cancelled' });
   });
 
+  /** A withheld epoch grants ONE drain; expediting a row spends it, so leaving
+   *  the window armed for the remaining rows would send twice for one run end —
+   *  and would do it even if that manual run was stopped. */
+  it('retires the pending send when a row is expedited, rows remaining or not', () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'q1', text: 'sent by hand', createdAt: 1 },
+        { id: 'q2', text: 'still waiting', createdAt: 2 },
+      ]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 4_000_000_000_000,
+      });
+    });
+
+    act(() => {
+      result.current.steering.sendQueuedNow({ id: 'q1', text: 'sent by hand', createdAt: 1 });
+    });
+
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({ id: 'q2', text: 'still waiting' }),
+    ]);
+    expect(result.current.drainHold).toBeNull();
+  });
+
   it('keeps the pending send while other rows remain', () => {
     const { result } = setupClearAll(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [

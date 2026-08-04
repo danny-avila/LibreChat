@@ -962,6 +962,24 @@ describe('PendingSteerChips — queued row editing', () => {
     expect(screen.getByTestId('queued-message-edit')).toBeInTheDocument();
   });
 
+  /** The write-through refuses blank text, so an emptied editor is the one state
+   *  where the row still holds words the user has visibly deleted. */
+  it('stands the senders down while the editor is empty', () => {
+    renderChips([twoQueued[0]], {
+      steering: outboxSteering({ duringRunActive: true, canSteer: true }),
+    });
+
+    fireEvent.click(screen.getByText('first thought'));
+    fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: '   ' } });
+
+    expect(screen.getByText('com_ui_steer').closest('button')).toBeDisabled();
+    expect(screen.getByTestId('queued-interrupt-now')).toBeDisabled();
+
+    // Resolving the edit brings them back.
+    fireEvent.change(screen.getByTestId('queued-message-edit'), { target: { value: 'rewritten' } });
+    expect(screen.getByText('com_ui_steer').closest('button')).not.toBeDisabled();
+  });
+
   it('puts the original words back on Escape', () => {
     renderChips([twoQueued[0]], { steering: outboxSteering() });
 
