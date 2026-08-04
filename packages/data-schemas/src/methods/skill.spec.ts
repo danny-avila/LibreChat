@@ -968,6 +968,78 @@ describe('Skill CRUD methods', () => {
       expect(updated.skill.disableModelInvocation).toBeUndefined();
     });
 
+    it('releasing a restriction survives a lookup that backfills from frontmatter', async () => {
+      /* An imported skill carries the flags in BOTH its body and its stored
+         bag. A body-only edit unsets the column, but if the bag kept its copy
+         `backfillDerivedFromFrontmatter` would read the restriction back on the
+         next lookup and the release would silently undo itself. */
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'release-survives',
+          body: bodyWithFlags,
+          frontmatter: { 'user-invocable': false, 'disable-model-invocation': true },
+        }),
+      );
+      expect(skill.userInvocable).toBe(false);
+
+      await methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: {
+          body: '---\nname: release-survives\ndescription: A demo skill.\n---\n\nBody.',
+        },
+      });
+
+      const viaId = await methods.getSkillById(skill._id);
+      expect(viaId?.frontmatter).not.toHaveProperty('user-invocable');
+      expect(viaId?.frontmatter).not.toHaveProperty('disable-model-invocation');
+
+      /* getSkillByName runs the backfill; the restriction must stay released. */
+      const viaName = await methods.getSkillByName('release-survives', [skill._id]);
+      expect(viaName?.userInvocable).toBeUndefined();
+      expect(viaName?.disableModelInvocation).toBeUndefined();
+    });
+
+    it('reads a flag whose YAML value continues on the next line', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'continued-value',
+          body: '---\nname: continued-value\ndescription: A demo skill.\nuser-invocable:\n  false\n---\n\nBody.',
+          frontmatter: undefined,
+        }),
+      );
+      expect(skill.userInvocable).toBe(false);
+    });
+
+    it('reads flags from a frontmatter block that is indented as a whole', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({
+          name: 'indented-block',
+          body: '---\n  name: indented-block\n  description: A demo skill.\n  disable-model-invocation: true\n---\n\nBody.',
+          frontmatter: undefined,
+        }),
+      );
+      expect(skill.disableModelInvocation).toBe(true);
+    });
+
+    it('does not unset a column when the body still declares it on a continued line', async () => {
+      const { skill } = await methods.createSkill(
+        makeSkillInput({ name: 'continued-keeps', body: bodyWithFlags, frontmatter: undefined }),
+      );
+      expect(skill.userInvocable).toBe(false);
+
+      const updated = await methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: {
+          body: '---\nname: continued-keeps\ndescription: A demo skill.\nuser-invocable:\n  false\n---\n\nEdited.',
+        },
+      });
+      expect(updated.status).toBe('updated');
+      if (updated.status !== 'updated') return;
+      expect(updated.skill.userInvocable).toBe(false);
+    });
+
     it('updateSkill leaves the columns alone when the update touches neither body nor frontmatter', async () => {
       const { skill } = await methods.createSkill(
         makeSkillInput({ name: 'untouched-columns', body: bodyWithFlags, frontmatter: undefined }),

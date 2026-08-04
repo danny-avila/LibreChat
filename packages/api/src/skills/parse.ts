@@ -1,6 +1,20 @@
 import yaml from 'js-yaml';
-import { SKILL_BOOLEAN_FLAGS } from '@librechat/data-schemas';
 import type { SkillBooleanFlag, SkillBooleanColumn } from '@librechat/data-schemas';
+
+/**
+ * Boolean frontmatter flags mirrored onto first-class skill columns, declared
+ * locally on purpose. This module is pure text parsing and must stay loadable
+ * without `@librechat/data-schemas` initialized: several suites replace that
+ * module with a partial mock, and reading a value export from it at module
+ * scope resolves to `undefined` and throws before any test runs. The type is
+ * still imported (erased at compile time), and `parse.test.ts` asserts this
+ * table matches `SKILL_BOOLEAN_FLAGS` in data-schemas so the two cannot drift.
+ */
+export const SKILL_BOOLEAN_FLAGS: readonly SkillBooleanFlag[] = [
+  { column: 'alwaysApply', key: 'always-apply', aliases: ['alwaysApply'] },
+  { column: 'userInvocable', key: 'user-invocable', aliases: [] },
+  { column: 'disableModelInvocation', key: 'disable-model-invocation', aliases: [] },
+];
 
 export type ParsedSkillMarkdown = {
   name: string;
