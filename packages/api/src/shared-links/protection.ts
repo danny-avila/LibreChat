@@ -26,6 +26,7 @@ import {
   hasActiveFilePolicy,
   UninspectableFileError,
 } from '../protection/files';
+import { getUserSubmittedPathState } from '../protection/provenance';
 import { inspectContent } from '../protection/runtime';
 
 export interface SerializedSharedFile extends FileContentInput {
@@ -42,6 +43,7 @@ export interface SerializedSharedMessage {
   readonly isCreatedByUser?: boolean;
   readonly isUserSubmitted?: boolean;
   readonly userSubmittedPaths?: readonly string[];
+  readonly role?: string;
   readonly iconURL?: string;
   readonly finish_reason?: string;
   readonly manualSkills?: readonly (string | null | undefined)[];
@@ -164,16 +166,36 @@ function isSubmittedPath(path: string, submittedPaths: readonly string[]): boole
   );
 }
 
-function isEntireMessageSubmitted(message: SerializedSharedMessage): boolean {
+function isSharedAssistantMessage(message: SerializedSharedMessage): boolean {
+  return message.isCreatedByUser === false || message.role === 'assistant' || message.role === 'ai';
+}
+
+function isEntireMessageSubmitted(
+  message: SerializedSharedMessage,
+  filters: FiltersConfig | undefined,
+  submittedPaths: ReturnType<typeof getUserSubmittedPathState>,
+): boolean {
+  if (message.isCreatedByUser === true || message.isUserSubmitted === true) {
+    return true;
+  }
+  if (submittedPaths.overflowed) {
+    return true;
+  }
+  if (typeof message.isUserSubmitted === 'boolean' || submittedPaths.paths.length > 0) {
+    return false;
+  }
+  if (message.isCreatedByUser == null) {
+    return true;
+  }
   return (
-    message.isCreatedByUser === true ||
-    message.isUserSubmitted === true ||
-    (message.isCreatedByUser == null && message.isUserSubmitted == null)
+    isSharedAssistantMessage(message) &&
+    filters?.messages?.unattributedAssistantContent === 'inspect'
   );
 }
 
 function collectSerializedFiles(
   messages: readonly SerializedSharedMessage[],
+  filters: FiltersConfig | undefined,
 ): CollectedSerializedFile[] {
   const files: CollectedSerializedFile[] = [];
   const append = (
@@ -201,8 +223,9 @@ function collectSerializedFiles(
 
   for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
     const message = messages[messageIndex];
-    const entireMessageSubmitted = isEntireMessageSubmitted(message);
-    const submittedPaths = message.userSubmittedPaths ?? [];
+    const submittedPathState = getUserSubmittedPathState(message, { scope: 'shared_message' });
+    const submittedPaths = submittedPathState.paths;
+    const entireMessageSubmitted = isEntireMessageSubmitted(message, filters, submittedPathState);
     append(
       message.files,
       'file',
@@ -236,15 +259,22 @@ function collectSerializedFiles(
 
 function extractSharedMessageMetadataFragments(
   messages: readonly SerializedSharedMessage[],
+  filters: FiltersConfig | undefined,
 ): TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
     const message = messages[messageIndex];
-    const submittedPaths = message.userSubmittedPaths ?? [];
+    const submittedPathState = getUserSubmittedPathState(message, { scope: 'shared_message' });
+    const submittedPaths = submittedPathState.paths;
+    /** Shared response-only metadata predates message provenance markers and
+     *  can be authored by users or reusable configuration even on assistant
+     *  rows, so retain the existing conservative default for unmarked fields. */
     const legacyMetadataIsUnattributed =
-      message.isUserSubmitted == null && message.userSubmittedPaths == null;
+      message.isUserSubmitted == null &&
+      submittedPathState.paths.length === 0 &&
+      !submittedPathState.overflowed;
     const isSubmitted = (path: string) =>
-      isEntireMessageSubmitted(message) ||
+      isEntireMessageSubmitted(message, filters, submittedPathState) ||
       legacyMetadataIsUnattributed ||
       isSubmittedPath(path, submittedPaths);
     const appendMessageValue = (
@@ -400,7 +430,7 @@ function getNestedTarget(file: CollectedSerializedFile): NestedSerializedPayload
   if (file.userSubmitted) {
     return 'attachment';
   }
-  return isToolAttachment(file.file) ? 'tool' : 'attachment';
+  return isToolAttachment(file.file) ? 'tool' : 'file';
 }
 
 function getNestedClassification(
@@ -439,13 +469,14 @@ function getDistinctClassifications(
 function getNestedClassifications(
   target: NestedSerializedPayloadTarget,
   rootKey: string,
+  includeMessageClassification: boolean,
 ): NestedPayloadClassification[] {
   const classifications: NestedPayloadClassification[] = [getNestedClassification(target, rootKey)];
   const fileField = FILE_FIELD_BY_STANDARD_KEY.get(rootKey);
   if (fileField != null) {
     classifications.push({ source: 'file', field: fileField, provenance: 'user' });
   }
-  if (MESSAGE_ATTACHMENT_STANDARD_KEYS.has(rootKey)) {
+  if (includeMessageClassification && MESSAGE_ATTACHMENT_STANDARD_KEYS.has(rootKey)) {
     classifications.push({
       source: 'message',
       field: 'attachment_reference',
@@ -858,7 +889,7 @@ function extractNestedSerializedPayloadFragments(
     let visitedNodes = 0;
 
     for (const [key, value] of entries) {
-      const classifications = getNestedClassifications(target, key);
+      const classifications = getNestedClassifications(target, key, collectedFile.userSubmitted);
       const activeClassifications = classifications.filter((classification) =>
         isClassificationActive(filters, classification),
       );
@@ -1061,7 +1092,7 @@ function extractLocatorAliasFragments(
         field: 'uri',
         provenance: 'user',
       } as const;
-      if (isClassificationActive(filters, messageClassification)) {
+      if (collectedFile.userSubmitted && isClassificationActive(filters, messageClassification)) {
         appendClassifiedFragment(state, messageClassification, value, path, 'uri');
       }
       if (isClassificationActive(filters, fileClassification)) {
@@ -1082,7 +1113,7 @@ function extractLocatorAliasFragments(
       if (decodedUri == null || decodedUri === value) {
         continue;
       }
-      if (isClassificationActive(filters, messageClassification)) {
+      if (collectedFile.userSubmitted && isClassificationActive(filters, messageClassification)) {
         appendClassifiedFragment(state, messageClassification, decodedUri, path, 'uri');
       }
       if (isClassificationActive(filters, fileClassification)) {
@@ -1206,16 +1237,18 @@ export function assertSharedFileMetadataAllowed({
   if (filters == null) {
     return;
   }
-  const messageMetadataFragments = extractSharedMessageMetadataFragments(messages);
+  const messageMetadataFragments = extractSharedMessageMetadataFragments(messages, filters);
   const collectedFiles =
-    includeFiles && hasSerializedFilePolicy(filters) ? collectSerializedFiles(messages) : [];
+    includeFiles && hasSerializedFilePolicy(filters)
+      ? collectSerializedFiles(messages, filters)
+      : [];
   if (collectedFiles.length === 0 && messageMetadataFragments.length === 0) {
     return;
   }
   const files = collectedFiles.map(({ file }) => file);
 
   const attachmentFragments = extractStoredMessageContent({
-    files,
+    files: collectedFiles.filter(({ userSubmitted }) => userSubmitted).map(({ file }) => file),
   }).filter(
     (fragment) => fragment.source === 'message' && fragment.field === 'attachment_reference',
   );

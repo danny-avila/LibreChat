@@ -55,6 +55,34 @@ describe('filtersConfigSchema', () => {
     ).toBe(false);
   });
 
+  it('accepts an explicit attribution policy for legacy assistant content', () => {
+    expect(
+      filtersConfigSchema.parse({
+        messages: { unattributedAssistantContent: 'inspect' },
+      }),
+    ).toEqual({ messages: { unattributedAssistantContent: 'inspect' } });
+    expect(
+      filtersConfigSchema.parse({
+        messages: { unattributedAssistantContent: 'model_output' },
+      }),
+    ).toEqual({ messages: { unattributedAssistantContent: 'model_output' } });
+    expect(
+      filtersConfigSchema.safeParse({
+        messages: { unattributedAssistantContent: 'block' },
+      }).success,
+    ).toBe(false);
+    expect(
+      hasActiveFiltersConfig({
+        messages: { unattributedAssistantContent: 'inspect' },
+      }),
+    ).toBe(true);
+    expect(
+      hasActiveFiltersConfig({
+        messages: { unattributedAssistantContent: 'model_output' },
+      }),
+    ).toBe(false);
+  });
+
   it('keeps default patterns, custom patterns, and explicit file fail-close active', () => {
     expect(hasActivePiiPatterns({})).toBe(true);
     expect(

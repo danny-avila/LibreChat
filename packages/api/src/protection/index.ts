@@ -1,6 +1,7 @@
 export * from './types';
 export * from './runtime';
 export * from './legacy';
+export * from './provenance';
 export * from './files';
 export * from './adapters/chat';
 export * from './adapters/nested';

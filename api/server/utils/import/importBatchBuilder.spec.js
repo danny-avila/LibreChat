@@ -98,6 +98,91 @@ describe('ImportBatchBuilder content filtering', () => {
     expect(bulkSaveMessages).toHaveBeenCalledTimes(1);
   });
 
+  it('applies strict legacy attribution with a legacy-only message detector', async () => {
+    const builder = new ImportBatchBuilder(
+      'user-123',
+      undefined,
+      { messages: { unattributedAssistantContent: 'inspect' } },
+      {
+        starterPatterns: [],
+        customPatterns: [pattern],
+      },
+    );
+    builder.startConversation(EModelEndpoint.openAI);
+    builder.saveMessage({
+      sender: 'Assistant',
+      isCreatedByUser: false,
+      text: 'Legacy unattributed IMPORT-SECRET',
+    });
+    builder.finishConversation('safe title', new Date('2026-01-01T00:00:00.000Z'));
+
+    await expect(builder.saveBatch()).rejects.toMatchObject({
+      body: {
+        error: 'content_filter_block',
+        source: 'message',
+        field: 'text',
+      },
+    });
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
+
+  it('keeps strict attribution in the traversal fallback for ineffective provenance paths', async () => {
+    const builder = new ImportBatchBuilder('user-123', undefined, {
+      ...filtersFor('messages', ['text']),
+      messages: {
+        ...filtersFor('messages', ['text']).messages,
+        unattributedAssistantContent: 'inspect',
+      },
+    });
+    builder.startConversation(EModelEndpoint.openAI);
+    builder.saveMessage({
+      sender: 'Assistant',
+      role: 'assistant',
+      isCreatedByUser: false,
+      text: 'Legacy unattributed IMPORT-SECRET',
+      userSubmittedPaths: ['/messageId'],
+    });
+    builder.finishConversation('safe title', new Date('2026-01-01T00:00:00.000Z'));
+    mockAssertModelBoundContent.mockImplementationOnce(() => {
+      throw new actualApi.ContentTraversalLimitError([
+        {
+          id: 'stored-message.text',
+          path: '/text',
+          text: 'Legacy unattributed IMPORT-SECRET',
+          source: 'message',
+          field: 'text',
+          format: 'plain',
+          treatment: 'inspect_only',
+          provenance: 'user',
+        },
+      ]);
+    });
+
+    await expect(builder.saveBatch()).rejects.toMatchObject({
+      body: {
+        error: 'content_filter_block',
+        source: 'message',
+        field: 'text',
+      },
+    });
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
+
+  it('keeps legacy-only filtering active for explicitly submitted imported rows', async () => {
+    const builder = new ImportBatchBuilder('user-123', undefined, undefined, {
+      starterPatterns: [],
+      customPatterns: [pattern],
+    });
+    builder.startConversation(EModelEndpoint.openAI);
+    builder.addUserMessage('Imported IMPORT-SECRET');
+    builder.finishConversation('safe title', new Date('2026-01-01T00:00:00.000Z'));
+
+    await expect(builder.saveBatch()).rejects.toMatchObject({
+      body: expect.objectContaining({ source: 'message', field: 'text' }),
+    });
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
+
   it('blocks provenance-marked assistant content while ignoring adjacent model prose', async () => {
     const builder = new ImportBatchBuilder(
       'user-123',

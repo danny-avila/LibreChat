@@ -82,7 +82,8 @@ function cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder) {
  * @param {boolean} [params.splitAtTarget=false] - Optional flag for splitting the messages at the target message level.
  * @param {string} [params.latestMessageId] - latestMessageId - Required if splitAtTarget is true.
  * @param {object} [params.filters] - Source-aware content filters applied before cloned records are persisted.
- * @param {(userId: string, interfaceConfig?: object, filters?: object) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
+ * @param {object} [params.legacyPii] - Legacy messageFilter.pii applied before cloned records are persisted.
+ * @param {(userId: string, interfaceConfig?: object, filters?: object, legacyPii?: object) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
  * @returns {Promise<TForkConvoResponse>} The response after forking the conversation.
  */
 async function forkConversation({
@@ -95,6 +96,7 @@ async function forkConversation({
   splitAtTarget = false,
   latestMessageId,
   filters,
+  legacyPii,
   builderFactory = createImportBatchBuilder,
 }) {
   try {
@@ -112,7 +114,10 @@ async function forkConversation({
       targetMessageId = latestMessageId;
     }
 
-    const importBatchBuilder = builderFactory(requestUserId, undefined, filters);
+    const importBatchBuilder =
+      legacyPii == null
+        ? builderFactory(requestUserId, undefined, filters)
+        : builderFactory(requestUserId, undefined, filters, legacyPii);
     importBatchBuilder.startConversation(originalConvo.endpoint ?? EModelEndpoint.openAI);
 
     let messagesToClone = [];
@@ -403,7 +408,7 @@ function isSameRevision(storedUpdatedAt, clientRevision) {
  * @param {string} [params.shareRevision] - `updatedAt` of the payload the viewer is forking from. A shareId now survives an update, so an owner republishing between the GET and the fork would silently shift `targetMessageIndex` onto a different branch; a mismatch is rejected instead of cloning content the viewer never saw.
  * @param {boolean} [params.snapshotFiles] - When `false`, file/attachment metadata is omitted from the cloned messages, mirroring the GET share route so the global shared-file kill switch is honored.
  * @param {(snapshot: object) => Promise<void>} [params.sharedContentPreflight] - Reapplies current policy to the exact public projection before a legacy shared-file snapshot is persisted.
- * @param {(userId: string, interfaceConfig?: object, filters?: object) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
+ * @param {(userId: string, interfaceConfig?: object, filters?: object, legacyPii?: object) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
  * @param {(options: object) => Promise<object>} [params.loadAppConfig] - Resolves the app config; injectable for tests. Called inside the requesting user's tenant context so retention policy is read from the viewer's tenant, not the share owner's.
  * @returns {Promise<TForkConvoResponse | null>} The new conversation and messages, or null when the share is missing or empty.
  */
@@ -501,11 +506,15 @@ async function forkSharedConversation({
     // can actually use; hard-coding OpenAI breaks the first follow-up message on
     // deployments that don't expose it.
     const { endpoint, model } = await resolveImportDefaultEndpoint({ requestUserId, userRole });
-    const importBatchBuilder = builderFactory(
-      requestUserId,
-      appConfig?.interfaceConfig,
-      appConfig?.filters,
-    );
+    const importBatchBuilder =
+      appConfig?.messageFilter?.pii == null
+        ? builderFactory(requestUserId, appConfig?.interfaceConfig, appConfig?.filters)
+        : builderFactory(
+            requestUserId,
+            appConfig?.interfaceConfig,
+            appConfig?.filters,
+            appConfig.messageFilter.pii,
+          );
     importBatchBuilder.startConversation(endpoint);
 
     cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
@@ -538,7 +547,8 @@ async function forkSharedConversation({
  * @param {string} params.conversationId - The ID of the conversation to duplicate.
  * @param {string} [params.title] - Optional title override for the duplicate.
  * @param {object} [params.filters] - Source-aware content filters applied before cloned records are persisted.
- * @param {(userId: string, interfaceConfig?: object, filters?: object) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
+ * @param {object} [params.legacyPii] - Legacy messageFilter.pii applied before cloned records are persisted.
+ * @param {(userId: string, interfaceConfig?: object, filters?: object, legacyPii?: object) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
  * @returns {Promise<{ conversation: TConversation, messages: TMessage[] }>} The duplicated conversation and messages.
  */
 async function duplicateConversation({
@@ -546,6 +556,7 @@ async function duplicateConversation({
   conversationId,
   title,
   filters,
+  legacyPii,
   builderFactory = createImportBatchBuilder,
 }) {
   const originalConvo = await getConvo(userId, conversationId);
@@ -563,7 +574,10 @@ async function duplicateConversation({
     originalMessages[originalMessages.length - 1].messageId,
   );
 
-  const importBatchBuilder = builderFactory(userId, undefined, filters);
+  const importBatchBuilder =
+    legacyPii == null
+      ? builderFactory(userId, undefined, filters)
+      : builderFactory(userId, undefined, filters, legacyPii);
   importBatchBuilder.startConversation(originalConvo.endpoint ?? EModelEndpoint.openAI);
 
   cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);

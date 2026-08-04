@@ -51,6 +51,11 @@ describe('Convos Routes', () => {
     app.use((req, res, next) => {
       req.user = { id: 'test-user-123', role: 'USER' };
       req.config = {
+        messageFilter: {
+          pii: {
+            starterPatterns: ['sk_prefix'],
+          },
+        },
         filters: {
           messages: {
             pii: {
@@ -121,6 +126,9 @@ describe('Convos Routes', () => {
             },
           },
         },
+        legacyPii: {
+          starterPatterns: ['sk_prefix'],
+        },
       });
     });
 
@@ -174,6 +182,9 @@ describe('Convos Routes', () => {
               },
             },
           },
+          legacyPii: {
+            starterPatterns: ['sk_prefix'],
+          },
         }),
       );
     });
@@ -226,6 +237,9 @@ describe('Convos Routes', () => {
                 starterPatterns: ['sk_prefix'],
               },
             },
+          },
+          legacyPii: {
+            starterPatterns: ['sk_prefix'],
           },
         }),
       );

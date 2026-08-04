@@ -131,6 +131,34 @@ describe('assistant route content filters', () => {
     expect(mockCreateAssistantV1).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['V1', './v1', mockPatchAssistantV1],
+    ['V2', './v2', mockPatchAssistantV2],
+  ])(
+    'allows a safe partial assistant patch on %s while instruction filtering is active',
+    async (_version, route, controller) => {
+      const module = require(route);
+      const app = createApp(module.v1 ?? module, {
+        filters: {
+          agentInstructions: {
+            pii: {
+              fields: ['instructions'],
+              starterPatterns: [],
+              customPatterns: [customPattern],
+            },
+          },
+        },
+      });
+
+      const response = await request(app)
+        .patch('/assistant-id')
+        .send({ description: 'Safe remediation metadata edit.' });
+
+      expect(response.status).toBe(200);
+      expect(controller).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('blocks function parameter schemas on V2 patch before the controller', async () => {
     const app = createApp(require('./v2'), {
       filters: {

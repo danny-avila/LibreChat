@@ -181,6 +181,7 @@ const buildApp = ({
   retentionMode = RetentionMode.TEMPORARY,
   user = { id: 'user-123' },
   filters,
+  messageFilter,
 } = {}) => {
   const app = express();
   app.use(express.json());
@@ -189,6 +190,7 @@ const buildApp = ({
     req.config = {
       interfaceConfig: { retentionMode },
       ...(filters == null ? {} : { filters }),
+      ...(messageFilter == null ? {} : { messageFilter }),
     };
     next();
   });
@@ -372,6 +374,60 @@ describe('share routes', () => {
       messages: share.messages,
       shareId: 'share-123',
     });
+  });
+
+  it('threads a legacy-only detector into strict shared-content preflight', async () => {
+    const strictFilters = {
+      messages: { unattributedAssistantContent: 'inspect' },
+    };
+    const legacyPii = {
+      starterPatterns: [],
+      customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+    };
+    const share = {
+      shareId: 'share-123',
+      title: 'Protected Conversation',
+      messages: [{ isCreatedByUser: false, role: 'assistant', text: 'safe model output' }],
+    };
+    mockSharedMessagesResult(share);
+
+    const response = await request(
+      buildApp({ filters: strictFilters, messageFilter: { pii: legacyPii } }),
+    ).get('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(
+      strictFilters,
+      {
+        conversations: [{ title: share.title }],
+        messages: share.messages,
+      },
+      { legacyPii },
+    );
+  });
+
+  it('keeps shared-message preflight active with only legacy message filtering', async () => {
+    const legacyPii = { starterPatterns: ['sk_prefix'] };
+    const share = {
+      shareId: 'share-123',
+      title: 'Protected Conversation',
+      messages: [{ isCreatedByUser: true, text: 'safe user input' }],
+    };
+    mockSharedMessagesResult(share);
+
+    const response = await request(buildApp({ messageFilter: { pii: legacyPii } })).get(
+      '/api/share/share-123',
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(
+      undefined,
+      {
+        conversations: [{ title: share.title }],
+        messages: share.messages,
+      },
+      { legacyPii },
+    );
   });
 
   it('returns a raw-free 400 when existing shared metadata fails current policy', async () => {

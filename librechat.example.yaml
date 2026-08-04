@@ -1115,7 +1115,12 @@ endpoints:
 # Apply opt-in content filters to source-classified submitted and reusable content.
 # `filters` is base-config-only: database overrides and tombstones cannot add,
 # change, or remove this policy for individual users, groups, or roles.
-# Omit `filters`, a source, or its `pii` block to leave that scope disabled.
+# In multi-replica deployments, use a coordinated deploy or restart and verify
+# every replica loaded the same base config before considering policy active;
+# local cache invalidation is not a rollout barrier.
+# Omit `filters` or a source to leave that scope disabled. Omitting a source's
+# `pii` block disables its source-aware detectors; for messages, `inspect` can
+# still change how an enabled legacy `messageFilter.pii` attributes old rows.
 # Omit `fields` to filter every supported field for an enabled source.
 # `starterPatterns` and `customPatterns` can be configured independently
 # under any source so each input surface can use a different policy. Starter
@@ -1123,8 +1128,26 @@ endpoints:
 # linear-time syntax; unsupported constructs are rejected at config load.
 # Omit `starterPatterns` to enable the full starter catalog; set it to `[]`
 # to disable starters while retaining any configured custom patterns.
+# Enabling or changing this policy does not rewrite or delete stored records.
+# Current policy rechecks protected fields when they are resubmitted and when
+# records are copied, shared, or become model-bound. Safe partial metadata edits
+# can succeed so records remain repairable, but persisted protected fields remain
+# unusable on those paths until repaired. Protected prompt or preset fields may
+# be blanked with `contentFilterBlocked: true` in management views. Prompt-group
+# metadata blocked by policy returns an explicit error on direct GET, while
+# collection and reuse responses omit that group.
+# Automatic memory maintenance may log and skip a rejected background update
+# while allowing the main chat response to continue.
+# Legacy assistant rows without provenance default to `model_output`, preserving
+# legacy behavior. Inventory or migrate those records before relying on retroactive
+# enforcement. Opting into `inspect` treats otherwise unattributed assistant content,
+# including selected attachment projections, as submitted; explicit model provenance
+# remains exempt.
+# Roll out strict file inspection deliberately: `uninspectable: block` can make
+# older opaque files unavailable for reuse until inspectable text is present.
 # filters:
 #   messages:
+#     unattributedAssistantContent: model_output # `model_output` (default) or `inspect`
 #     pii:
 #       fields: [name, text, summary, quote, answer, decision_response, decision_reason, content_part, attachment_reference, assembled_context]
 #       starterPatterns: [sk_prefix, bearer_header, api_key_header]

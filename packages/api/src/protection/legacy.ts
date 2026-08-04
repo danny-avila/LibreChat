@@ -11,18 +11,34 @@ export interface LegacyPiiInspector {
   inspect(fragments: Iterable<TextContentFragment>): ProtectionFinding | null;
 }
 
+const LEGACY_STORED_MESSAGE_FIELDS = new Set([
+  'text',
+  'quote',
+  'answer',
+  'decision_response',
+  'decision_reason',
+  'content_part',
+]);
+
 const LEGACY_INSPECTOR_CACHE = new WeakMap<object, LegacyPiiInspector>();
 const INACTIVE_LEGACY_CONFIGS = new WeakSet<object>();
 
 export function isLegacyPiiFragment(fragment: TextContentFragment): boolean {
-  if (fragment.source === 'assembled_context' && fragment.id === 'chat.assembled.quote-text') {
-    return true;
+  if (fragment.source === 'assembled_context') {
+    return (
+      fragment.id === 'chat.assembled.quote-text' ||
+      fragment.id === 'stored-message.assembled' ||
+      fragment.id === 'stored-message.user-submitted-assembled'
+    );
   }
   if (fragment.source === 'tool_argument') {
     return /^chat\.decision\.\d+\.arguments$/.test(fragment.id);
   }
   if (fragment.source !== 'message') {
     return false;
+  }
+  if (fragment.id.startsWith('stored-message.')) {
+    return LEGACY_STORED_MESSAGE_FIELDS.has(fragment.field);
   }
   return (
     fragment.id === 'chat.text' ||

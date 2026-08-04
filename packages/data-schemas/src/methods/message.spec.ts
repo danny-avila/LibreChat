@@ -137,6 +137,32 @@ describe('Message Operations', () => {
       expect(savedMessage?.userSubmittedPaths).toEqual(['/content/0/text']);
     });
 
+    it('stamps native model output without overriding explicit provenance', async () => {
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+      });
+
+      expect(result?.isUserSubmitted).toBe(false);
+
+      const explicitlySubmitted = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        messageId: 'msg-explicit-submitted',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+      });
+      expect(explicitlySubmitted?.isUserSubmitted).toBe(true);
+
+      const pathScoped = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        messageId: 'msg-path-scoped',
+        isCreatedByUser: false,
+        userSubmittedPaths: ['/content/0/text'],
+      });
+      expect(pathScoped?.isUserSubmitted).toBe(false);
+      expect(pathScoped?.userSubmittedPaths).toEqual(['/content/0/text']);
+    });
+
     it('bounds and validates stored user-submitted provenance paths', async () => {
       const submittedPaths = [
         'not-a-pointer',
@@ -196,6 +222,100 @@ describe('Message Operations', () => {
       );
       expect(logger.info).not.toHaveBeenCalled();
     });
+  });
+
+  describe('bulkSaveMessages', () => {
+    it('preserves unknown provenance when cloning an unmarked assistant row', async () => {
+      const conversationId = uuidv4();
+      await bulkSaveMessages([
+        {
+          user: 'user123',
+          messageId: 'bulk-unmarked-assistant',
+          conversationId,
+          isCreatedByUser: false,
+        },
+        {
+          user: 'user123',
+          messageId: 'bulk-user-submitted',
+          conversationId,
+          isCreatedByUser: false,
+          isUserSubmitted: true,
+        },
+      ]);
+
+      const rows = await Message.find({ conversationId }).lean();
+      expect(
+        rows.find(({ messageId }) => messageId === 'bulk-unmarked-assistant'),
+      ).not.toHaveProperty('isUserSubmitted');
+      expect(
+        rows.find(({ messageId }) => messageId === 'bulk-user-submitted')?.isUserSubmitted,
+      ).toBe(true);
+    });
+  });
+
+  describe('recordMessage', () => {
+    it('stamps native model output without overriding explicit provenance', async () => {
+      const conversationId = uuidv4();
+      const modelOutput = await recordMessage({
+        user: 'user123',
+        messageId: 'record-model-output',
+        conversationId,
+        isCreatedByUser: false,
+      });
+      expect(modelOutput?.isUserSubmitted).toBe(false);
+
+      const explicitlySubmitted = await recordMessage({
+        user: 'user123',
+        messageId: 'record-user-submitted',
+        conversationId,
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+      });
+      expect(explicitlySubmitted?.isUserSubmitted).toBe(true);
+    });
+  });
+
+  it('preserves unknown provenance when message savers update legacy assistant rows', async () => {
+    const conversationId = uuidv4();
+    const messageIds = ['legacy-save', 'legacy-bulk', 'legacy-record'];
+    await Message.collection.insertMany(
+      messageIds.map((messageId) => ({
+        user: 'user123',
+        messageId,
+        conversationId,
+        isCreatedByUser: false,
+        text: 'Legacy assistant output',
+      })),
+    );
+
+    await saveMessage(mockCtx, {
+      messageId: 'legacy-save',
+      conversationId,
+      isCreatedByUser: false,
+      text: 'Updated assistant output',
+    });
+    await bulkSaveMessages([
+      {
+        user: 'user123',
+        messageId: 'legacy-bulk',
+        conversationId,
+        isCreatedByUser: false,
+        text: 'Updated assistant output',
+      },
+    ]);
+    await recordMessage({
+      user: 'user123',
+      messageId: 'legacy-record',
+      conversationId,
+      isCreatedByUser: false,
+      text: 'Updated assistant output',
+    });
+
+    const rows = await Message.find({ messageId: { $in: messageIds } }).lean();
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row).not.toHaveProperty('isUserSubmitted');
+    }
   });
 
   describe('updateMessageText', () => {

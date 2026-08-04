@@ -3,9 +3,11 @@ const {
   ContentFilterError,
   UninspectableFileError,
   assertModelBoundContent,
+  createConfiguredContentInspector,
   extractConversationImportContent,
   getBlockedOpaqueFileField,
   getContentTraversalFragments,
+  getUserSubmittedPathState,
   inspectContent,
   isContentTraversalProtected,
   isContentTraversalLimitError,
@@ -31,10 +33,11 @@ const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
  * @param {string} requestUserId - The ID of the user making the request.
  * @param {object} [interfaceConfig] - Runtime interface config for import retention.
  * @param {object} [filters] - Source-aware content filters for submitted imports.
+ * @param {object} [legacyPii] - Legacy messageFilter.pii configuration.
  * @returns {ImportBatchBuilder} - The newly created ImportBatchBuilder instance.
  */
-function createImportBatchBuilder(requestUserId, interfaceConfig, filters) {
-  return new ImportBatchBuilder(requestUserId, interfaceConfig, filters);
+function createImportBatchBuilder(requestUserId, interfaceConfig, filters, legacyPii) {
+  return new ImportBatchBuilder(requestUserId, interfaceConfig, filters, legacyPii);
 }
 
 /**
@@ -47,6 +50,7 @@ function createImportBatchBuilder(requestUserId, interfaceConfig, filters) {
  * @param {{ id?: string, tenantId?: string }} [resolutionContext.user] - Snapshot owner.
  * @param {Function} [resolutionContext.getFiles] - Canonical file lookup.
  * @param {object[]} [resolutionContext.trustedLiveFiles] - Server-hydrated canonical rows.
+ * @param {object} [resolutionContext.legacyPii] - Legacy messageFilter.pii configuration.
  * @returns {Promise<void>}
  * @throws {ContentFilterError|UninspectableFileError|import('@librechat/api').ContentTraversalLimitError}
  */
@@ -55,37 +59,40 @@ async function assertConversationContentAllowed(
   { conversations, messages },
   resolutionContext = {},
 ) {
-  if (filters == null) {
+  const { legacyPii } = resolutionContext;
+  if (filters == null && legacyPii == null) {
     return;
   }
 
-  let conversationFragments;
-  let conversationTraversalError;
-  try {
-    conversationFragments = extractConversationImportContent({
-      conversations,
-      messages: [],
-    });
-    conversationFragments = [...conversationFragments];
-  } catch (error) {
-    if (!isContentTraversalLimitError(error)) {
-      throw error;
+  if (filters != null) {
+    let conversationFragments;
+    let conversationTraversalError;
+    try {
+      conversationFragments = extractConversationImportContent({
+        conversations,
+        messages: [],
+      });
+      conversationFragments = [...conversationFragments];
+    } catch (error) {
+      if (!isContentTraversalLimitError(error)) {
+        throw error;
+      }
+      conversationFragments = getContentTraversalFragments(error);
+      conversationTraversalError = error;
     }
-    conversationFragments = getContentTraversalFragments(error);
-    conversationTraversalError = error;
-  }
-  const conversationFinding = inspectContent(conversationFragments, { filters });
-  if (conversationFinding != null) {
-    throw new ContentFilterError(conversationFinding);
-  }
-  if (
-    conversationTraversalError != null &&
-    isContentTraversalProtected({
-      error: conversationTraversalError,
-      filters,
-    })
-  ) {
-    throw conversationTraversalError;
+    const conversationFinding = inspectContent(conversationFragments, { filters });
+    if (conversationFinding != null) {
+      throw new ContentFilterError(conversationFinding);
+    }
+    if (
+      conversationTraversalError != null &&
+      isContentTraversalProtected({
+        error: conversationTraversalError,
+        filters,
+      })
+    ) {
+      throw conversationTraversalError;
+    }
   }
 
   /**
@@ -96,7 +103,7 @@ async function assertConversationContentAllowed(
    */
   let storedMessages = messages;
   let resolvedFiles = [];
-  if (filters.files?.pii != null) {
+  if (filters?.files?.pii != null) {
     const fileInspection = await resolveCanonicalFileReferences({
       filters,
       input: messages,
@@ -119,6 +126,7 @@ async function assertConversationContentAllowed(
     try {
       assertModelBoundContent({
         filters,
+        legacyPii,
         storedMessages: [message],
       });
     } catch (error) {
@@ -126,22 +134,20 @@ async function assertConversationContentAllowed(
         throw error;
       }
 
-      const explicitPaths = Array.isArray(message.userSubmittedPaths)
-        ? message.userSubmittedPaths.filter(
-            (path) => typeof path === 'string' && path.startsWith('/'),
-          )
-        : [];
-      if (Array.isArray(message.content)) {
-        for (let index = 0; index < message.content.length; index++) {
-          if (message.content[index]?.type === 'steer') {
-            explicitPaths.push(`/content/${index}`);
-          }
-        }
-      }
+      const submittedPathState = getUserSubmittedPathState(message);
+      const explicitPaths = submittedPathState.paths;
+      const isStrictUnattributedAssistant =
+        filters?.messages?.unattributedAssistantContent === 'inspect' &&
+        typeof message.isUserSubmitted !== 'boolean' &&
+        explicitPaths.length === 0 &&
+        (message.isCreatedByUser === false ||
+          message.role === 'assistant' ||
+          message.role === 'ai');
       const isWholeMessageSubmitted =
         message.isCreatedByUser === true ||
         message.isUserSubmitted === true ||
-        new Set(explicitPaths).size > 256;
+        submittedPathState.overflowed ||
+        isStrictUnattributedAssistant;
       const relevantFragments = getContentTraversalFragments(error).filter(
         (fragment) =>
           isWholeMessageSubmitted ||
@@ -150,7 +156,9 @@ async function assertConversationContentAllowed(
             (path) => fragment.path === path || fragment.path.startsWith(`${path}/`),
           ),
       );
-      const messageFinding = inspectContent(relevantFragments, { filters });
+      const messageFinding = createConfiguredContentInspector({ filters, legacyPii })?.inspect(
+        relevantFragments,
+      );
       if (messageFinding != null) {
         throw new ContentFilterError(messageFinding);
       }
@@ -162,13 +170,14 @@ async function assertConversationContentAllowed(
         }
       }
 
-      const traversalFilters =
-        isWholeMessageSubmitted || explicitPaths.length > 0
-          ? filters
-          : { ...filters, messages: undefined };
+      let traversalFilters = filters;
+      if (!isWholeMessageSubmitted && explicitPaths.length === 0 && filters != null) {
+        traversalFilters = { ...filters, messages: undefined };
+      }
       if (
         isNestedMessageTraversalProtected({
           filters: traversalFilters,
+          legacyPii: isWholeMessageSubmitted || explicitPaths.length > 0 ? legacyPii : undefined,
           roles:
             isWholeMessageSubmitted || explicitPaths.length > 0 ? ['user'] : [message.role, 'tool'],
         })
@@ -188,11 +197,13 @@ class ImportBatchBuilder {
    * @param {string} requestUserId - The ID of the user making the import request.
    * @param {object} [interfaceConfig] - Runtime interface config for import retention.
    * @param {object} [filters] - Source-aware content filters for submitted imports.
+   * @param {object} [legacyPii] - Legacy messageFilter.pii configuration.
    */
-  constructor(requestUserId, interfaceConfig, filters) {
+  constructor(requestUserId, interfaceConfig, filters, legacyPii) {
     this.requestUserId = requestUserId;
     this.interfaceConfig = interfaceConfig;
     this.filters = filters;
+    this.legacyPii = legacyPii;
     this.conversations = [];
     this.messages = [];
     this.retentionFields = undefined;
@@ -313,6 +324,7 @@ class ImportBatchBuilder {
       {
         user: { id: this.requestUserId },
         getFiles,
+        ...(this.legacyPii == null ? {} : { legacyPii: this.legacyPii }),
       },
     );
 

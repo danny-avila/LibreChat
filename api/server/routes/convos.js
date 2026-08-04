@@ -449,6 +449,9 @@ router.post(
         userRole: req.user.role,
         interfaceConfig: req.config?.interfaceConfig,
         filters: req.config?.filters,
+        ...(req.config?.messageFilter?.pii == null
+          ? {}
+          : { legacyPii: req.config.messageFilter.pii }),
       });
       res.status(201).json({ message: 'Conversation(s) imported successfully' });
     } catch (error) {
@@ -482,6 +485,9 @@ router.post('/fork', forkIpLimiter, forkUserLimiter, configMiddleware, async (re
       splitAtTarget,
       option,
       filters: req.config?.filters,
+      ...(req.config?.messageFilter?.pii == null
+        ? {}
+        : { legacyPii: req.config.messageFilter.pii }),
     });
 
     res.json(result);
@@ -509,6 +515,9 @@ router.post(
         conversationId,
         title,
         filters: req.config?.filters,
+        ...(req.config?.messageFilter?.pii == null
+          ? {}
+          : { legacyPii: req.config.messageFilter.pii }),
       });
       res.status(201).json(result);
     } catch (error) {

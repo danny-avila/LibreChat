@@ -321,6 +321,38 @@ describe('forkConversation', () => {
     expect(bulkSaveMessages).not.toHaveBeenCalled();
     expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
   });
+
+  test('blocks unattributed assistant prose with strict legacy-only policy before forking', async () => {
+    getMessages.mockResolvedValue([
+      {
+        messageId: 'private-assistant-message',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: false,
+        text: 'Legacy unattributed PRIVATE-SENTINEL',
+        createdAt: '2021-01-01',
+      },
+    ]);
+
+    await expect(
+      forkConversation({
+        originalConvoId: 'abc123',
+        targetMessageId: 'private-assistant-message',
+        requestUserId: 'user1',
+        option: ForkOptions.DIRECT_PATH,
+        filters: { messages: { unattributedAssistantContent: 'inspect' } },
+        legacyPii: {
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: expect.objectContaining({ source: 'message', field: 'text' }),
+    });
+
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
 });
 
 describe('duplicateConversation', () => {
@@ -763,6 +795,25 @@ describe('forkSharedConversation', () => {
       tenantId: 'tenant-viewer',
     });
     expect(builderFactory).toHaveBeenCalledWith('user1', interfaceConfig, undefined);
+  });
+
+  test('passes strict attribution and legacy message policy to the shared-fork builder', async () => {
+    const filters = { messages: { unattributedAssistantContent: 'inspect' } };
+    const legacyPii = { starterPatterns: [] };
+    const loadAppConfig = jest.fn().mockResolvedValue({
+      filters,
+      messageFilter: { pii: legacyPii },
+    });
+    const builderFactory = jest.fn((...args) => createImportBatchBuilder(...args));
+
+    await forkSharedConversation({
+      shareId: 'share123',
+      requestUserId: 'user1',
+      loadAppConfig,
+      builderFactory,
+    });
+
+    expect(builderFactory).toHaveBeenCalledWith('user1', undefined, filters, legacyPii);
   });
 
   test('should resolve the app config under the requesting user tenant', async () => {

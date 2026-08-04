@@ -273,11 +273,18 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         ...getSteerUserSubmittedPaths(params.content),
       ]);
       delete update.userSubmittedPaths;
+      const stampModelOutputOnInsert =
+        params.isCreatedByUser === false && params.isUserSubmitted === undefined;
       const messageUpdate =
-        userSubmittedPaths.length > 0
+        userSubmittedPaths.length > 0 || stampModelOutputOnInsert
           ? {
               $set: update,
-              $addToSet: { userSubmittedPaths: { $each: userSubmittedPaths } },
+              ...(userSubmittedPaths.length > 0 && {
+                $addToSet: { userSubmittedPaths: { $each: userSubmittedPaths } },
+              }),
+              ...(stampModelOutputOnInsert && {
+                $setOnInsert: { isUserSubmitted: false },
+              }),
             }
           : update;
       const message = await Message.findOneAndUpdate(
@@ -385,8 +392,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         parentMessageId,
         ...rest,
       };
+      const update =
+        rest.isCreatedByUser === false && rest.isUserSubmitted === undefined
+          ? { $set: message, $setOnInsert: { isUserSubmitted: false } }
+          : message;
 
-      return await Message.findOneAndUpdate({ user, messageId }, message, {
+      return await Message.findOneAndUpdate({ user, messageId }, update, {
         upsert: true,
         new: true,
       });

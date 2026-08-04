@@ -117,6 +117,8 @@ export const toolArgumentFilterFieldSchema = z.enum(TOOL_ARGUMENT_FILTER_FIELDS)
 export const modelParameterFilterFieldSchema = z.enum(MODEL_PARAMETER_FILTER_FIELDS);
 export const filterPiiStarterPatternSchema = z.enum(FILTER_PII_STARTER_PATTERNS);
 export const actionMetadataFilterFieldSchema = z.enum(ACTION_METADATA_FILTER_FIELDS);
+export const unattributedAssistantContentSchema = z.enum(['model_output', 'inspect']);
+export type UnattributedAssistantContent = z.infer<typeof unattributedAssistantContentSchema>;
 
 export type MessageFilterField = z.infer<typeof messageFilterFieldSchema>;
 export type PromptFilterField = z.infer<typeof promptFilterFieldSchema>;
@@ -164,6 +166,9 @@ export function hasActivePiiPatterns(config: PiiPatternSelection | null | undefi
 export function hasActiveFiltersConfig(filters: FiltersConfig | null | undefined): boolean {
   if (filters == null) {
     return false;
+  }
+  if (filters.messages?.unattributedAssistantContent === 'inspect') {
+    return true;
   }
   const sourcePatterns = [
     filters.messages?.pii,
@@ -233,6 +238,13 @@ function createSourceFilterSchema<Field extends z.ZodTypeAny>(fieldSchema: Field
     .strict();
 }
 
+const messageSourceFilterSchema = z
+  .object({
+    pii: createPiiFilterSchema(messageFilterFieldSchema).optional(),
+    unattributedAssistantContent: unattributedAssistantContentSchema.optional(),
+  })
+  .strict();
+
 const fileSourceFilterSchema = z
   .object({
     pii: createPiiFilterSchema(fileFilterFieldSchema)
@@ -245,7 +257,7 @@ const fileSourceFilterSchema = z
 
 export const filtersConfigSchema = z
   .object({
-    messages: createSourceFilterSchema(messageFilterFieldSchema).optional(),
+    messages: messageSourceFilterSchema.optional(),
     prompts: createSourceFilterSchema(promptFilterFieldSchema).optional(),
     agentInstructions: createSourceFilterSchema(agentInstructionFilterFieldSchema).optional(),
     conversationStarters: createSourceFilterSchema(conversationStarterFilterFieldSchema).optional(),

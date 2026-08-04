@@ -49,6 +49,63 @@ describe('legacy content protection', () => {
     });
   });
 
+  it('applies legacy message rules to provenance-selected stored message prose', () => {
+    const config: MessageFilterPiiConfig = {
+      starterPatterns: [],
+      customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-VALUE' }],
+    };
+
+    expect(
+      inspectLegacyPii([fragment('stored-message.text', 'PRIVATE-VALUE')], config),
+    ).toMatchObject({
+      ruleId: 'private',
+      source: 'message',
+      field: 'text',
+    });
+    expect(
+      inspectLegacyPii(
+        [
+          {
+            ...fragment('stored-message.name.sender', 'PRIVATE-VALUE'),
+            field: 'name',
+          },
+        ],
+        config,
+      ),
+    ).toBeNull();
+  });
+
+  it.each(['stored-message.assembled', 'stored-message.user-submitted-assembled'])(
+    'applies legacy rules to split submitted prose through %s',
+    (id) => {
+      const config: MessageFilterPiiConfig = {
+        starterPatterns: [],
+        customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-VALUE' }],
+      };
+      const assembled: TextContentFragment = {
+        ...fragment(id, 'PRIVATE-VALUE'),
+        source: 'assembled_context',
+        field: 'assembled_context',
+        treatment: 'inspect_only',
+      };
+
+      expect(
+        inspectLegacyPii(
+          [
+            fragment('stored-message.part.0', 'PRIVATE-'),
+            fragment('stored-message.part.1', 'VALUE'),
+          ],
+          config,
+        ),
+      ).toBeNull();
+      expect(inspectLegacyPii([assembled], config)).toMatchObject({
+        ruleId: 'private',
+        source: 'assembled_context',
+        field: 'assembled_context',
+      });
+    },
+  );
+
   it('preserves candidate-first ordering when different rules match different fields', () => {
     const config: MessageFilterPiiConfig = {
       starterPatterns: [],

@@ -167,6 +167,28 @@ describe('assertModelBoundContent', () => {
     ).not.toThrow();
   });
 
+  it('applies legacy-only rules across adjacent persisted submitted content parts', () => {
+    expect(() =>
+      assertModelBoundContent({
+        legacyPii: {
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-VALUE' }],
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            content: [
+              { type: 'text', text: 'Model output' },
+              { type: 'text', text: 'PRIVATE-' },
+              { type: 'text', text: 'VALUE' },
+            ],
+            userSubmittedPaths: ['/content/1/text', '/content/2/text'],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
   it('treats persisted steer parts as user-submitted without classifying neighboring model prose', () => {
     const mixedFilters: FiltersConfig = {
       messages: {
@@ -346,6 +368,154 @@ describe('assertModelBoundContent', () => {
       }),
     ).not.toThrow();
   });
+
+  it('keeps explicit model_output attribution compatible with omission', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          ...filters,
+          messages: {
+            ...filters.messages,
+            unattributedAssistantContent: 'model_output',
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            role: 'assistant',
+            text: 'Legacy model output PRIVATE-VALUE',
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('inspects unattributed assistant rows when strict legacy attribution is enabled', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          ...filters,
+          messages: {
+            ...filters.messages,
+            unattributedAssistantContent: 'inspect',
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            role: 'assistant',
+            text: 'Legacy unattributed PRIVATE-VALUE',
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('recognizes an assistant role as unattributed even without an author flag', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          ...filters,
+          messages: {
+            ...filters.messages,
+            unattributedAssistantContent: 'inspect',
+          },
+        },
+        storedMessages: [
+          {
+            role: 'assistant',
+            text: 'Legacy unattributed PRIVATE-VALUE',
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('honors explicit model attribution and path-scoped user attribution in strict mode', () => {
+    const strictFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['text', 'content_part'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+        },
+        unattributedAssistantContent: 'inspect',
+      },
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: strictFilters,
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            isUserSubmitted: false,
+            role: 'assistant',
+            text: 'Explicit model output PRIVATE-VALUE',
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: strictFilters,
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            isUserSubmitted: false,
+            role: 'assistant',
+            text: 'Model output PRIVATE-MODEL',
+            content: [{ type: 'text', text: 'Safe user edit' }],
+            userSubmittedPaths: ['/content/0/text'],
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: strictFilters,
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            role: 'assistant',
+            text: 'Model output PRIVATE-MODEL',
+            content: [
+              { type: 'text', text: 'Model content' },
+              { type: 'steer', steer: 'Safe user steer' },
+            ],
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it.each(['not-a-json-pointer', '/missing', '/messageId', '/__proto__/polluted'])(
+    'treats ineffective provenance path %s as unattributed in strict mode',
+    (userSubmittedPath) => {
+      expect(() =>
+        assertModelBoundContent({
+          filters: {
+            ...filters,
+            messages: {
+              ...filters.messages,
+              unattributedAssistantContent: 'inspect',
+            },
+          },
+          storedMessages: [
+            {
+              isCreatedByUser: false,
+              role: 'assistant',
+              messageId: 'legacy-message',
+              text: 'Legacy unattributed PRIVATE-VALUE',
+              userSubmittedPaths: [userSubmittedPath],
+            },
+          ],
+        }),
+      ).toThrow('Submitted content contains a private value');
+    },
+  );
 
   it('re-inspects structured historical tool output without treating assistant prose as a message', () => {
     expect(() =>

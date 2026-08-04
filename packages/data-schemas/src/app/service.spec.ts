@@ -103,6 +103,23 @@ describe('loadFiltersConfig', () => {
     ).toBeUndefined();
   });
 
+  it('retains strict legacy attribution without source-aware PII patterns', () => {
+    expect(
+      loadFiltersConfig({
+        filters: {
+          messages: { unattributedAssistantContent: 'inspect' },
+        },
+      }),
+    ).toEqual({ messages: { unattributedAssistantContent: 'inspect' } });
+    expect(
+      loadFiltersConfig({
+        filters: {
+          messages: { unattributedAssistantContent: 'model_output' },
+        },
+      }),
+    ).toBeUndefined();
+  });
+
   it('returns a validated source-aware filter config', () => {
     const result = loadFiltersConfig({
       filters: {

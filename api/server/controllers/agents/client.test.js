@@ -3679,6 +3679,28 @@ describe('AgentClient - titleConvo', () => {
       expect(result).toBeUndefined();
       expect(mockProcessMemory).not.toHaveBeenCalled();
     });
+
+    it('should contain automatic memory rejection and log only bounded metadata', async () => {
+      const { HumanMessage } = require('@librechat/agents/langchain/messages');
+      const { logger } = require('@librechat/data-schemas');
+      const sensitiveValue = 'PRIVATE-MEMORY-REJECTION-CONTENT';
+      const contentFilterError = new Error(sensitiveValue);
+      contentFilterError.code = 'content_filter_block';
+      mockProcessMemory.mockRejectedValueOnce(contentFilterError);
+      const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+
+      try {
+        await expect(client.runMemory([new HumanMessage('Safe message')])).resolves.toBeUndefined();
+
+        expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+        expect(errorSpy).toHaveBeenCalledWith('Memory Agent failed to process memory', {
+          type: 'Error',
+        });
+        expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(sensitiveValue);
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
   });
 
   describe('getMessagesForConversation - mapMethod and mapCondition', () => {

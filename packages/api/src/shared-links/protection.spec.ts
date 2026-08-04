@@ -179,8 +179,29 @@ describe('shared file metadata protection', () => {
     });
   });
 
-  it('treats legacy model metadata conservatively but honors explicit server provenance', () => {
-    const legacyError = capturePolicyError(() =>
+  it('does not let ineffective provenance paths suppress conservative shared metadata checks', () => {
+    const error = capturePolicyError(() =>
+      assertSharedFileMetadataAllowed({
+        filters: attachmentFilters,
+        messages: [
+          {
+            isCreatedByUser: false,
+            userSubmittedPaths: ['/missing'],
+            iconURL: 'https://example.test/PRIVATE-SENTINEL',
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    );
+
+    expect(error.body).toMatchObject({
+      source: 'message',
+      field: 'attachment_reference',
+    });
+  });
+
+  it('applies the configured attribution policy to legacy assistant metadata', () => {
+    const compatibilityError = capturePolicyError(() =>
       assertSharedFileMetadataAllowed({
         filters: attachmentFilters,
         messages: [
@@ -192,14 +213,41 @@ describe('shared file metadata protection', () => {
         shareId: 'share-123',
       }),
     );
-    expect(legacyError.body).toMatchObject({
+    expect(compatibilityError.body).toMatchObject({
+      source: 'message',
+      field: 'attachment_reference',
+    });
+
+    const strictError = capturePolicyError(() =>
+      assertSharedFileMetadataAllowed({
+        filters: {
+          messages: {
+            ...attachmentFilters.messages,
+            unattributedAssistantContent: 'inspect',
+          },
+        },
+        messages: [
+          {
+            isCreatedByUser: false,
+            iconURL: 'https://example.test/PRIVATE-SENTINEL',
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    );
+    expect(strictError.body).toMatchObject({
       source: 'message',
       field: 'attachment_reference',
     });
 
     expect(() =>
       assertSharedFileMetadataAllowed({
-        filters: attachmentFilters,
+        filters: {
+          messages: {
+            ...attachmentFilters.messages,
+            unattributedAssistantContent: 'inspect',
+          },
+        },
         messages: [
           {
             isCreatedByUser: false,
@@ -213,7 +261,12 @@ describe('shared file metadata protection', () => {
 
     const error = capturePolicyError(() =>
       assertSharedFileMetadataAllowed({
-        filters: attachmentFilters,
+        filters: {
+          messages: {
+            ...attachmentFilters.messages,
+            unattributedAssistantContent: 'inspect',
+          },
+        },
         messages: [
           {
             isCreatedByUser: false,
@@ -229,6 +282,103 @@ describe('shared file metadata protection', () => {
       field: 'attachment_reference',
     });
   });
+
+  it('applies legacy attribution to shared assistant attachment projections', () => {
+    const legacyAttachment = {
+      reference: { label: 'PRIVATE-SENTINEL' },
+    };
+    const strictFilters: FiltersConfig = {
+      messages: {
+        ...attachmentFilters.messages,
+        unattributedAssistantContent: 'inspect',
+      },
+    };
+
+    expect(() =>
+      assertSharedFileMetadataAllowed({
+        filters: attachmentFilters,
+        messages: [{ isCreatedByUser: false, attachments: [legacyAttachment] }],
+        shareId: 'share-123',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertSharedFileMetadataAllowed({
+        filters: strictFilters,
+        messages: [{ isCreatedByUser: false, attachments: [legacyAttachment] }],
+        shareId: 'share-123',
+      }),
+    ).toThrow(ContentFilterError);
+
+    expect(() =>
+      assertSharedFileMetadataAllowed({
+        filters: strictFilters,
+        messages: [
+          {
+            isCreatedByUser: false,
+            isUserSubmitted: false,
+            attachments: [legacyAttachment],
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertSharedFileMetadataAllowed({
+        filters: strictFilters,
+        messages: [
+          {
+            isCreatedByUser: false,
+            isUserSubmitted: false,
+            userSubmittedPaths: ['/attachments/0'],
+            attachments: [legacyAttachment],
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    ).toThrow(ContentFilterError);
+  });
+
+  it('preserves conservative attachment attribution for role-only legacy rows', () => {
+    expect(() =>
+      assertSharedFileMetadataAllowed({
+        filters: attachmentFilters,
+        messages: [
+          {
+            role: 'assistant',
+            attachments: [{ reference: { label: 'PRIVATE-SENTINEL' } }],
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    ).toThrow(ContentFilterError);
+  });
+
+  it.each(['/missing', '/role', '/__proto__/polluted'])(
+    'does not let ineffective shared provenance path %s suppress strict attribution',
+    (userSubmittedPath) => {
+      expect(() =>
+        assertSharedFileMetadataAllowed({
+          filters: {
+            messages: {
+              ...attachmentFilters.messages,
+              unattributedAssistantContent: 'inspect',
+            },
+          },
+          messages: [
+            {
+              isCreatedByUser: false,
+              role: 'assistant',
+              userSubmittedPaths: [userSubmittedPath],
+              attachments: [{ reference: { label: 'PRIVATE-SENTINEL' } }],
+            },
+          ],
+          shareId: 'share-123',
+        }),
+      ).toThrow(ContentFilterError);
+    },
+  );
 
   it('keeps shared response metadata protection default-off', () => {
     expect(() =>

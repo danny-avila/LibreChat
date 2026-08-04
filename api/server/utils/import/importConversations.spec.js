@@ -81,4 +81,42 @@ describe('importConversations content filtering', () => {
     expect(bulkSaveMessages).not.toHaveBeenCalled();
     expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
   });
+
+  it('threads strict attribution with a legacy-only detector into imported rows', async () => {
+    getImporter.mockReturnValue(async (_jsonData, requestUserId, builderFactory) => {
+      const builder = builderFactory(requestUserId);
+      builder.startConversation(EModelEndpoint.openAI);
+      builder.saveMessage({
+        sender: 'Assistant',
+        isCreatedByUser: false,
+        text: 'Legacy unattributed IMPORT-SECRET',
+      });
+      builder.finishConversation('safe title');
+      await builder.saveBatch();
+    });
+
+    await expect(
+      importConversations({
+        filepath,
+        requestUserId: 'user-123',
+        filters: { messages: { unattributedAssistantContent: 'inspect' } },
+        legacyPii: {
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'import-secret',
+              label: 'restricted import value',
+              regex: 'IMPORT-SECRET',
+            },
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: expect.objectContaining({ source: 'message', field: 'text' }),
+    });
+
+    await expect(fs.stat(filepath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
 });
