@@ -1344,8 +1344,12 @@ export const getMemories = (): Promise<q.MemoriesResponse> => {
   return request.get(endpoints.memories());
 };
 
-export const deleteMemory = (key: string, agentId?: string): Promise<void> => {
-  return request.delete(endpoints.memory(key, agentId));
+export const deleteMemory = (
+  key: string,
+  agentId?: string,
+  chatProjectId?: string,
+): Promise<void> => {
+  return request.delete(endpoints.memory(key, agentId, chatProjectId));
 };
 
 export const updateMemory = (
@@ -1353,8 +1357,12 @@ export const updateMemory = (
   value: string,
   originalKey?: string,
   agentId?: string,
+  chatProjectId?: string,
 ): Promise<q.TUserMemory> => {
-  return request.patch(endpoints.memory(originalKey || key, agentId), { key, value });
+  return request.patch(endpoints.memory(originalKey || key, agentId, chatProjectId), {
+    key,
+    value,
+  });
 };
 
 export const updateMemoryPreferences = (preferences: {
@@ -1367,6 +1375,7 @@ export const createMemory = (data: {
   key: string;
   value: string;
   agentId?: string;
+  chatProjectId?: string;
 }): Promise<{ created: boolean; memory: q.TUserMemory }> => {
   return request.post(endpoints.memories(), data);
 };

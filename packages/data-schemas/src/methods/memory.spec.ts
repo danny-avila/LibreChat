@@ -19,6 +19,8 @@ const userId = new mongoose.Types.ObjectId();
 const otherUserId = new mongoose.Types.ObjectId();
 const agentId = 'agent_partition_a';
 const otherAgentId = 'agent_partition_b';
+const chatProjectId = 'project_partition_a';
+const otherChatProjectId = 'project_partition_b';
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -151,6 +153,128 @@ describe('memory partitions', () => {
 
     const deleted = await methods.deleteAllUserMemories(userId);
     expect(deleted).toBe(2);
+    expect(await MemoryEntry.countDocuments({ userId: otherUserId })).toBe(1);
+  });
+});
+
+describe('chat project partitions', () => {
+  it('keeps a project partition out of the shared personal pool', async () => {
+    await methods.setMemory({ userId, key: 'context', value: 'personal', tokenCount: 1 });
+    await methods.setMemory({
+      userId,
+      key: 'context',
+      value: 'project',
+      tokenCount: 2,
+      chatProjectId,
+    });
+
+    expect((await methods.getUserMemories({ userId })).map((m) => m.value)).toEqual(['personal']);
+    expect((await methods.getUserMemories({ userId, chatProjectId })).map((m) => m.value)).toEqual([
+      'project',
+    ]);
+  });
+
+  it('isolates one project from another', async () => {
+    await methods.setMemory({ userId, key: 'goal', value: 'project a', chatProjectId });
+    await methods.setMemory({
+      userId,
+      key: 'goal',
+      value: 'project b',
+      chatProjectId: otherChatProjectId,
+    });
+
+    expect((await methods.getUserMemories({ userId, chatProjectId })).map((m) => m.value)).toEqual([
+      'project a',
+    ]);
+    expect(
+      (await methods.getUserMemories({ userId, chatProjectId: otherChatProjectId })).map(
+        (m) => m.value,
+      ),
+    ).toEqual(['project b']);
+  });
+
+  it('composes with the agent partition instead of overriding it', async () => {
+    await methods.setMemory({ userId, key: 'context', value: 'project only', chatProjectId });
+    await methods.setMemory({
+      userId,
+      key: 'context',
+      value: 'agent in project',
+      agentId,
+      chatProjectId,
+    });
+
+    expect((await methods.getUserMemories({ userId, chatProjectId })).map((m) => m.value)).toEqual([
+      'project only',
+    ]);
+    expect(
+      (await methods.getUserMemories({ userId, agentId, chatProjectId })).map((m) => m.value),
+    ).toEqual(['agent in project']);
+    expect(await methods.getUserMemories({ userId, agentId })).toHaveLength(0);
+  });
+
+  it('treats entries without a chatProjectId field as the personal pool', async () => {
+    await MemoryEntry.collection.insertOne({
+      userId,
+      key: 'legacy',
+      value: 'pre-partition entry',
+      tokenCount: 4,
+      updated_at: new Date(),
+    });
+
+    expect((await methods.getUserMemories({ userId })).map((m) => m.key)).toEqual(['legacy']);
+    expect(await methods.getUserMemories({ userId, chatProjectId })).toHaveLength(0);
+  });
+
+  it('scopes formatted memories and their totals to the project', async () => {
+    await methods.setMemory({ userId, key: 'one', value: 'personal one', tokenCount: 5 });
+    await methods.setMemory({
+      userId,
+      key: 'two',
+      value: 'project two',
+      tokenCount: 7,
+      chatProjectId,
+    });
+
+    const personal = await methods.getFormattedMemories({ userId });
+    expect(personal.totalTokens).toBe(5);
+    expect(personal.withoutKeys).not.toContain('project two');
+
+    const project = await methods.getFormattedMemories({ userId, chatProjectId });
+    expect(project.totalTokens).toBe(7);
+    expect(project.withKeys).toContain('"key": "two"');
+    expect(project.withKeys).not.toContain('personal one');
+  });
+
+  it('deletes only the targeted project, for the targeted user', async () => {
+    await methods.setMemory({ userId, key: 'one', value: 'personal', tokenCount: 1 });
+    await methods.setMemory({ userId, key: 'two', value: 'project a', chatProjectId });
+    await methods.setMemory({
+      userId,
+      key: 'three',
+      value: 'agent in project a',
+      agentId,
+      chatProjectId,
+    });
+    await methods.setMemory({
+      userId,
+      key: 'four',
+      value: 'project b',
+      chatProjectId: otherChatProjectId,
+    });
+    await methods.setMemory({
+      userId: otherUserId,
+      key: 'five',
+      value: 'other user',
+      chatProjectId,
+    });
+
+    const deleted = await methods.deleteProjectMemories({ userId, chatProjectId });
+
+    expect(deleted).toBe(2);
+    expect(await methods.getUserMemories({ userId })).toHaveLength(1);
+    expect(
+      await methods.getUserMemories({ userId, chatProjectId: otherChatProjectId }),
+    ).toHaveLength(1);
     expect(await MemoryEntry.countDocuments({ userId: otherUserId })).toBe(1);
   });
 });

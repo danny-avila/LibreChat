@@ -38,6 +38,14 @@ export default function MemoryCard({ memory, hasUpdateAccess }: MemoryCardProps)
             {memory.agentName ?? memory.agentId}
           </span>
         )}
+        {memory.chatProjectId != null && (
+          <span
+            className="shrink-0 truncate rounded-full border border-border-light px-2 py-0.5 text-xs text-text-secondary"
+            title={localize('com_ui_memory_project_badge')}
+          >
+            {memory.chatProjectName ?? memory.chatProjectId}
+          </span>
+        )}
         {memory.tokenCount !== undefined && (
           <span className="shrink-0 text-xs text-text-secondary">
             {memory.tokenCount}{' '}

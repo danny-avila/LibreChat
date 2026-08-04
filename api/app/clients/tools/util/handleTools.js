@@ -419,6 +419,7 @@ const loadTools = async ({
           req: options.req,
           agent,
           userId: user,
+          chatProjectId: options.req?.body?.endpointOption?.chatProjectId || undefined,
           memoryMethods: { setMemory, deleteMemory, getFormattedMemories },
           getRoleByName,
         });

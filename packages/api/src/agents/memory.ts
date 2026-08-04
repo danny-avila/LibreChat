@@ -120,6 +120,7 @@ type MemoryArtifactRecord = Record<Tools.memory, MemoryArtifact>;
 export const createMemoryTool = ({
   userId,
   agentId,
+  chatProjectId,
   setMemory,
   validKeys,
   charLimit,
@@ -130,6 +131,8 @@ export const createMemoryTool = ({
   userId: string | ObjectId;
   /** Agent partition to write to; omit for the shared personal pool */
   agentId?: string;
+  /** Chat project partition to write to; omit when not inside a project */
+  chatProjectId?: string;
   setMemory: MemoryMethods['setMemory'];
   validKeys?: string[];
   charLimit?: number;
@@ -226,10 +229,18 @@ export const createMemoryTool = ({
               tokenCount,
               type: 'update',
               ...(agentId ? { agentId } : {}),
+              ...(chatProjectId ? { chatProjectId } : {}),
             },
           };
 
-          const result = await setMemory({ userId, key, value, tokenCount, agentId });
+          const result = await setMemory({
+            userId,
+            key,
+            value,
+            tokenCount,
+            agentId,
+            chatProjectId,
+          });
           if (result.ok) {
             if (tokenLimit) {
               currentTotalTokens = newTotalTokens;
@@ -281,6 +292,7 @@ export const createMemoryTool = ({
 export const createDeleteMemoryTool = ({
   userId,
   agentId,
+  chatProjectId,
   deleteMemory,
   validKeys,
   onWrite,
@@ -288,6 +300,8 @@ export const createDeleteMemoryTool = ({
   userId: string | ObjectId;
   /** Agent partition to delete from; omit for the shared personal pool */
   agentId?: string;
+  /** Chat project partition to delete from; omit when not inside a project */
+  chatProjectId?: string;
   deleteMemory: MemoryMethods['deleteMemory'];
   validKeys?: string[];
   onWrite?: () => void;
@@ -309,10 +323,11 @@ export const createDeleteMemoryTool = ({
             key,
             type: 'delete',
             ...(agentId ? { agentId } : {}),
+            ...(chatProjectId ? { chatProjectId } : {}),
           },
         };
 
-        const result = await deleteMemory({ userId, key, agentId });
+        const result = await deleteMemory({ userId, key, agentId, chatProjectId });
         if (result.ok) {
           onWrite?.();
           logger.debug(`Memory deleted for key "${key}" for user "${userId}"`);
@@ -496,16 +511,24 @@ export function agentHasInlineMemoryTools(agent: InlineMemoryAgent): boolean {
  */
 const requestMemoriesCache = new WeakMap<object, Map<string, Promise<FormattedMemoriesResult>>>();
 
+/** Cache key for a partition; both dimensions participate, so an agent's
+ *  memories inside a project never alias the project's own. */
+const requestPartitionKey = (agentId?: string, chatProjectId?: string): string =>
+  `${agentId ?? ''}:${chatProjectId ?? ''}`;
+
 export function getRequestMemories({
   req,
   userId,
   agentId,
+  chatProjectId,
   getFormattedMemories,
 }: {
   req: object;
   userId: string | ObjectId;
   /** Agent partition; omit for the shared personal pool */
   agentId?: string;
+  /** Chat project partition; omit when not inside a project */
+  chatProjectId?: string;
   getFormattedMemories: MemoryMethods['getFormattedMemories'];
 }): Promise<FormattedMemoriesResult> {
   let partitions = requestMemoriesCache.get(req);
@@ -513,10 +536,10 @@ export function getRequestMemories({
     partitions = new Map();
     requestMemoriesCache.set(req, partitions);
   }
-  const partitionKey = agentId ?? '';
+  const partitionKey = requestPartitionKey(agentId, chatProjectId);
   let cached = partitions.get(partitionKey);
   if (!cached) {
-    cached = getFormattedMemories({ userId, agentId });
+    cached = getFormattedMemories({ userId, agentId, chatProjectId });
     partitions.set(partitionKey, cached);
   }
   return cached;
@@ -528,8 +551,12 @@ export function getRequestMemories({
  * writes call this on success so a later tool round in the same response is
  * seeded with the post-write usage total instead of a stale pre-write one.
  */
-export function invalidateRequestMemories(req: object, agentId?: string): void {
-  requestMemoriesCache.get(req)?.delete(agentId ?? '');
+export function invalidateRequestMemories(
+  req: object,
+  agentId?: string,
+  chatProjectId?: string,
+): void {
+  requestMemoriesCache.get(req)?.delete(requestPartitionKey(agentId, chatProjectId));
 }
 
 /**
@@ -585,6 +612,7 @@ export async function buildInlineMemoryTool({
   req,
   agent,
   userId,
+  chatProjectId,
   memoryMethods,
   getRoleByName,
 }: {
@@ -592,6 +620,8 @@ export async function buildInlineMemoryTool({
   req: ServerRequest;
   agent: InlineMemoryAgent;
   userId: string | ObjectId;
+  /** Chat project partition; omit when not inside a project */
+  chatProjectId?: string;
   memoryMethods: Pick<MemoryMethods, 'setMemory' | 'deleteMemory' | 'getFormattedMemories'>;
   getRoleByName: GetRoleByName;
 }): Promise<DynamicStructuredTool | null> {
@@ -615,9 +645,10 @@ export async function buildInlineMemoryTool({
     return createDeleteMemoryTool({
       userId,
       agentId: memoryAgentId,
+      chatProjectId,
       deleteMemory: memoryMethods.deleteMemory,
       validKeys,
-      onWrite: () => invalidateRequestMemories(req, memoryAgentId),
+      onWrite: () => invalidateRequestMemories(req, memoryAgentId, chatProjectId),
     });
   }
 
@@ -639,6 +670,7 @@ export async function buildInlineMemoryTool({
         req,
         userId,
         agentId: memoryAgentId,
+        chatProjectId,
         getFormattedMemories: memoryMethods.getFormattedMemories,
       });
       totalTokens = formatted?.totalTokens ?? 0;
@@ -653,12 +685,13 @@ export async function buildInlineMemoryTool({
   return createMemoryTool({
     userId,
     agentId: memoryAgentId,
+    chatProjectId,
     setMemory: memoryMethods.setMemory,
     validKeys,
     charLimit,
     tokenLimit,
     totalTokens,
-    onWrite: () => invalidateRequestMemories(req, memoryAgentId),
+    onWrite: () => invalidateRequestMemories(req, memoryAgentId, chatProjectId),
   });
 }
 
@@ -690,6 +723,7 @@ export async function processMemory({
   res,
   userId,
   agentId,
+  chatProjectId,
   setMemory,
   deleteMemory,
   messages,
@@ -711,6 +745,8 @@ export async function processMemory({
   userId: string | ObjectId;
   /** Agent partition; omit for the shared personal pool */
   agentId?: string;
+  /** Chat project partition; omit when not inside a project */
+  chatProjectId?: string;
   memory: string;
   messageId: string;
   conversationId: string;
@@ -728,6 +764,7 @@ export async function processMemory({
     const memoryTool = createMemoryTool({
       userId,
       agentId,
+      chatProjectId,
       tokenLimit,
       setMemory,
       validKeys,
@@ -736,6 +773,7 @@ export async function processMemory({
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,
       agentId,
+      chatProjectId,
       validKeys,
       deleteMemory,
     });
@@ -932,6 +970,7 @@ export async function createMemoryProcessor({
   messageId,
   memoryMethods,
   conversationId,
+  chatProjectId,
   config = {},
   streamId = null,
   jobCreatedAt,
@@ -943,6 +982,8 @@ export async function createMemoryProcessor({
   userId: string | ObjectId;
   /** Agent partition; omit for the shared personal pool */
   agentId?: string;
+  /** Chat project partition; omit when not inside a project */
+  chatProjectId?: string;
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
   streamId?: string | null;
@@ -955,6 +996,7 @@ export async function createMemoryProcessor({
   const { withKeys, withoutKeys, totalTokens } = await memoryMethods.getFormattedMemories({
     userId,
     agentId,
+    chatProjectId,
   });
 
   return [
@@ -965,6 +1007,7 @@ export async function createMemoryProcessor({
           res,
           userId,
           agentId,
+          chatProjectId,
           messages,
           validKeys,
           llmConfig,

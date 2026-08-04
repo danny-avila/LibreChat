@@ -384,6 +384,15 @@ class AgentClient extends BaseClient {
   setOptions(_options) {}
 
   /**
+   * Chat project partition for this run; `undefined` outside a project, so
+   * memory reads and writes fall back to the shared personal pool.
+   * @returns {string | undefined}
+   */
+  get memoryChatProjectId() {
+    return this.options.chatProjectId || undefined;
+  }
+
+  /**
    * Resolve provider + client options for the
    * tool-batch summary model. Same resolution path as titleConvo minus the
    * title-specific branches. Model precedence: the endpoint's
@@ -1346,6 +1355,7 @@ class AgentClient extends BaseClient {
           req: this.options.req,
           userId: this.options.req.user.id + '',
           agentId: agentPartition,
+          chatProjectId: this.memoryChatProjectId,
           getFormattedMemories: db.getFormattedMemories,
         });
       } catch (error) {
@@ -1489,6 +1499,7 @@ class AgentClient extends BaseClient {
           req: this.options.req,
           userId,
           agentId: memoryAgentId,
+          chatProjectId: this.memoryChatProjectId,
           getFormattedMemories: db.getFormattedMemories,
         });
         return { withKeys, withoutKeys };
@@ -1597,6 +1608,7 @@ class AgentClient extends BaseClient {
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
       agentId: memoryAgentId,
+      chatProjectId: this.memoryChatProjectId,
       config,
       messageId,
       streamId,
@@ -1618,6 +1630,7 @@ class AgentClient extends BaseClient {
         req: this.options.req,
         userId,
         agentId: memoryAgentId,
+        chatProjectId: this.memoryChatProjectId,
         getFormattedMemories: db.getFormattedMemories,
       }));
     } catch (error) {

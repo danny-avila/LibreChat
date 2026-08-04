@@ -496,8 +496,17 @@ export const verifyTwoFactorTemp = () => `${BASE_URL}/api/auth/2fa/verify-temp`;
 
 /* Memories */
 export const memories = () => `${BASE_URL}/api/memories`;
-export const memory = (key: string, agentId?: string) =>
-  `${memories()}/${encodeURIComponent(key)}${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`;
+export const memory = (key: string, agentId?: string, chatProjectId?: string) => {
+  const params = new URLSearchParams();
+  if (agentId) {
+    params.set('agentId', agentId);
+  }
+  if (chatProjectId) {
+    params.set('chatProjectId', chatProjectId);
+  }
+  const query = params.toString();
+  return `${memories()}/${encodeURIComponent(key)}${query ? `?${query}` : ''}`;
+};
 export const memoryPreferences = () => `${memories()}/preferences`;
 
 export const searchPrincipals = (params: q.PrincipalSearchParams) => {
