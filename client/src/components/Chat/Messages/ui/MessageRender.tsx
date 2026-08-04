@@ -13,6 +13,7 @@ import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { fontSizeAtom } from '~/store/fontSize';
+import { useIsExodeEmbed } from '~/components/Exode';
 import { MessageContext } from '~/Providers';
 import store from '~/store';
 
@@ -116,6 +117,7 @@ const MessageRender = memo(function MessageRender({
   chatContext,
 }: MessageRenderProps) {
   const localize = useLocalize();
+  const isExodeEmbed = useIsExodeEmbed();
   const {
     ask,
     edit,
@@ -203,6 +205,14 @@ const MessageRender = memo(function MessageRender({
     focus: 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
   };
 
+  /**
+   * The exode embed replaces LibreChat's avatar-led rows (ChatGPT/Claude style) with classic
+   * left(assistant)/right(user) messenger bubbles — the host app's own chat surfaces (Messenger)
+   * already look this way, and the embed should read as part of the same product, not a visibly
+   * different tool. Scoped to the embed only: standalone LibreChat keeps its normal layout.
+   */
+  const isEmbedBubble = isExodeEmbed && !hasParallelContent;
+
   return (
     <div
       id={msg.messageId}
@@ -212,9 +222,10 @@ const MessageRender = memo(function MessageRender({
         baseClasses.chat,
         conditionalClasses.focus,
         'message-render',
+        isEmbedBubble && msg.isCreatedByUser ? 'flex-row-reverse' : '',
       )}
     >
-      {!hasParallelContent && (
+      {!hasParallelContent && !isExodeEmbed && (
         <div className="relative flex flex-shrink-0 flex-col items-center">
           <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
             <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
@@ -227,9 +238,17 @@ const MessageRender = memo(function MessageRender({
           'relative flex flex-col',
           hasParallelContent ? 'w-full' : 'w-11/12',
           msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
+          isEmbedBubble
+            ? cn(
+                'max-w-[85%] rounded-2xl px-3.5 py-2.5',
+                msg.isCreatedByUser
+                  ? 'ml-auto bg-surface-active-alt'
+                  : 'mr-auto bg-surface-secondary',
+              )
+            : '',
         )}
       >
-        {!hasParallelContent && (
+        {!hasParallelContent && !isExodeEmbed && (
           <h2 className={cn('select-none font-semibold', fontSize)}>
             <span className="sr-only">{getHeaderPrefixForScreenReader(msg, localize)}</span>
             {messageLabel}

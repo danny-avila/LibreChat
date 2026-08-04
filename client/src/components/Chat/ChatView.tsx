@@ -26,6 +26,7 @@ import Header from './Header';
 import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
+import { useIsExodeEmbed } from '~/components/Exode';
 
 function LoadingSpinner() {
   return (
@@ -40,6 +41,7 @@ function LoadingSpinner() {
 function ChatView({ index = 0, project }: { index?: number; project?: TChatProject }) {
   const { conversationId } = useParams();
   const localize = useLocalize();
+  const isExodeEmbed = useIsExodeEmbed();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
@@ -105,7 +107,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
             <div className="relative flex h-full w-full flex-col">
-              <Header />
+              {!isExodeEmbed && <Header />}
               <>
                 <div
                   className={cn(
@@ -125,10 +127,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                     {isProjectLandingPage && project && <ProjectLandingChip project={project} />}
                     {isLandingPage && <ConversationStarters />}
                     <ChatForm index={index} placeholder={chatFormPlaceholder} />
-                    {!isLandingPage && <Footer />}
+                    {!isLandingPage && !isExodeEmbed && <Footer />}
                   </div>
                 </div>
-                {isLandingPage && <Footer />}
+                {isLandingPage && !isExodeEmbed && <Footer />}
               </>
             </div>
           </Presentation>

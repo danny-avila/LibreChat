@@ -4,6 +4,8 @@ import { initializeI18n } from './locales/i18n';
 import App from './App';
 import '@librechat/client/style.css';
 import './style.css';
+/* Must follow style.css so its html[data-exode-embed] overrides win. */
+import './exode-theme.css';
 import './mobile.css';
 import { ApiErrorBoundaryProvider } from './hooks/ApiErrorBoundaryContext';
 import 'katex/dist/katex.min.css';

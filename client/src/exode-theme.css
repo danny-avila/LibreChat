@@ -1,0 +1,93 @@
+/**
+ * Exode design tokens for the embedded chat.
+ *
+ * Scoped to `html[data-exode-embed]`, which `useExodeTheme` sets only inside the
+ * exode iframe — standalone LibreChat keeps its own palette untouched.
+ *
+ * The chat runs in an iframe, so exode's own CSS variables do not reach it: this
+ * file re-declares them and remaps LibreChat's semantic tokens onto them. Values
+ * mirror exode-app's `src/assets/styles/vk-scheme.scss` (VKUI scheme).
+ *
+ * `--accent` is deliberately NOT hardcoded — it is per-school, applied at runtime
+ * from `SchoolStore.preferences.colorVariables` and forwarded via the `accent`
+ * query param. The literal below is only the fallback default
+ * (`pages/Manage/School/constants.tsx`) for when the host sends nothing.
+ */
+
+html[data-exode-embed] {
+  /* --- exode (VKUI BrightLight) ------------------------------------------ */
+  --exode-accent: #fa6c1c;
+  --exode-background-content: #ffffff;
+  --exode-content-tint-background: #f5f5f5;
+  --exode-field-background: #f2f3f5;
+  --exode-text-primary: #000000;
+  --exode-text-secondary: #818c99;
+  --exode-placeholder-text: #818c99;
+  --exode-separator-common: #d7d8d9;
+  --exode-separator-alternate: #e1e3e6;
+  --exode-separator-alpha: rgba(0, 0, 0, 0.12);
+
+  /* --- LibreChat semantic tokens -> exode -------------------------------- */
+  --presentation: var(--exode-background-content);
+  --surface-primary: var(--exode-background-content);
+  --surface-primary-alt: var(--exode-content-tint-background);
+  --surface-primary-contrast: var(--exode-content-tint-background);
+  --surface-secondary: var(--exode-content-tint-background);
+  --surface-secondary-alt: var(--exode-field-background);
+  --surface-tertiary: var(--exode-field-background);
+  --surface-tertiary-alt: var(--exode-background-content);
+  --surface-dialog: var(--exode-background-content);
+  --surface-chat: var(--exode-background-content);
+  --surface-active: var(--exode-content-tint-background);
+  --surface-active-alt: var(--exode-field-background);
+  --surface-hover: var(--exode-field-background);
+  --surface-hover-alt: var(--exode-separator-alternate);
+
+  --text-primary: var(--exode-text-primary);
+  --text-secondary: var(--exode-text-secondary);
+  --text-secondary-alt: var(--exode-text-secondary);
+  --text-tertiary: var(--exode-placeholder-text);
+
+  --border-light: var(--exode-separator-alternate);
+  --border-medium: var(--exode-separator-common);
+  --border-medium-alt: var(--exode-separator-common);
+  --border-heavy: var(--exode-separator-common);
+  --border-xheavy: var(--exode-text-secondary);
+
+  --ring-primary: var(--exode-accent);
+
+  /* VKUI's type stack, so the chat reads as part of the host app. */
+  --font-family-sans: -apple-system, system-ui, 'Helvetica Neue', Roboto, sans-serif;
+}
+
+html[data-exode-embed].dark {
+  /* --- exode (VKUI SpaceGray) -------------------------------------------- */
+  --exode-background-content: #19191a;
+  --exode-content-tint-background: #232324;
+  --exode-field-background: #232324;
+  --exode-text-primary: #e1e3e6;
+  --exode-text-secondary: #aaaeb3;
+  --exode-placeholder-text: #aaaeb3;
+  --exode-separator-common: #3d3d3f;
+  --exode-separator-alternate: #2c2c2e;
+  --exode-separator-alpha: rgba(255, 255, 255, 0.12);
+}
+
+html[data-exode-embed] body,
+html[data-exode-embed] input,
+html[data-exode-embed] textarea,
+html[data-exode-embed] button {
+  font-family: var(--font-family-sans);
+}
+
+/* The send button is the one strongly accented control in the composer. */
+html[data-exode-embed] button[data-testid='send-button']:not(:disabled) {
+  background-color: var(--exode-accent);
+  border-color: var(--exode-accent);
+  color: #fff;
+}
+
+/* VKUI corner radii — softer than LibreChat's defaults. */
+html[data-exode-embed] {
+  --exode-radius: 10px;
+}

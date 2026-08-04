@@ -37,6 +37,7 @@ import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
 import Image from './Image';
+import { useIsExodeEmbed } from '~/components/Exode';
 
 type PartProps = {
   part?: TMessageContentParts;
@@ -59,6 +60,8 @@ const Part = memo(function Part({
   hideAttachments,
   onToolExpand,
 }: PartProps) {
+  const isExodeEmbed = useIsExodeEmbed();
+
   if (!part) {
     return null;
   }
@@ -98,6 +101,13 @@ const Part = memo(function Part({
       />
     );
   } else if (part.type === ContentTypes.AGENT_UPDATE) {
+    if (isExodeEmbed) {
+      return isLast && showCursor ? (
+        <Container>
+          <EmptyText />
+        </Container>
+      ) : null;
+    }
     return (
       <>
         <AgentUpdate currentAgentId={part[ContentTypes.AGENT_UPDATE]?.agentId} />
@@ -138,12 +148,18 @@ const Part = memo(function Part({
       </Container>
     );
   } else if (part.type === ContentTypes.THINK) {
+    if (isExodeEmbed) {
+      return null;
+    }
     const reasoning = typeof part.think === 'string' ? part.think : part.think?.value;
     if (typeof reasoning !== 'string') {
       return null;
     }
     return <Reasoning reasoning={reasoning} isLast={isLast ?? false} />;
   } else if (part.type === ContentTypes.SUMMARY) {
+    if (isExodeEmbed) {
+      return null;
+    }
     return (
       <Summary
         content={part.content}
@@ -166,6 +182,13 @@ const Part = memo(function Part({
       const toolCallId =
         'id' in toolCall && typeof toolCall.id === 'string' ? toolCall.id : undefined;
       const card = (() => {
+        /** In the exode embed, only the interactive Q&A card survives — every
+         *  other tool call is step noise ("Ran agent", "Using File Search",
+         *  code/file/bash cards) that the customer-facing chat should never show.
+         *  Approval controls still render below, independent of `card`. */
+        if (isExodeEmbed && toolCall.name !== 'ask_user_question') {
+          return null;
+        }
         if (isBashProgrammaticToolCall(toolCall.name, toolCall.args)) {
           return (
             <BashCall
@@ -357,6 +380,9 @@ const Part = memo(function Part({
       }
       return card;
     } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
+      if (isExodeEmbed) {
+        return null;
+      }
       const code_interpreter = toolCall[ToolCallTypes.CODE_INTERPRETER];
       return (
         <CodeAnalyze
@@ -370,6 +396,9 @@ const Part = memo(function Part({
       toolCall.type === ToolCallTypes.RETRIEVAL ||
       toolCall.type === ToolCallTypes.FILE_SEARCH
     ) {
+      if (isExodeEmbed) {
+        return null;
+      }
       return (
         <RetrievalCall
           initialProgress={toolCall.progress ?? 0.1}
@@ -402,6 +431,10 @@ const Part = memo(function Part({
             </Container>
           );
         }
+        return null;
+      }
+
+      if (isExodeEmbed) {
         return null;
       }
 

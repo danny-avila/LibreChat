@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { NavLink } from '~/common';
 import SidePanelNav from '~/components/SidePanel/Nav';
+import { useIsExodeEmbed } from '~/components/Exode';
 import ExpandedPanel from './ExpandedPanel';
 import { cn } from '~/utils';
 
@@ -19,15 +20,23 @@ function Sidebar({
   onResizeStart: (e: React.MouseEvent) => void;
   onResizeKeyboard: (direction: 'shrink' | 'grow') => void;
 }) {
+  const isExodeEmbed = useIsExodeEmbed();
+
   return (
     <>
       <div className="flex h-full w-full overflow-hidden">
-        <ExpandedPanel
-          links={links}
-          expanded={expanded}
-          onCollapse={onCollapse}
-          onExpand={onExpand}
-        />
+        {/* The exode embed keeps the conversation list but drops the icon rail: the
+            embedded chat is only ever a chat + its history, and every rail
+            destination (agents, files, prompts, memories, account) is chrome the
+            host app owns. */}
+        {!isExodeEmbed && (
+          <ExpandedPanel
+            links={links}
+            expanded={expanded}
+            onCollapse={onCollapse}
+            onExpand={onExpand}
+          />
+        )}
         <nav
           className={cn(
             'min-h-0 flex-1 overflow-hidden bg-surface-primary-alt',

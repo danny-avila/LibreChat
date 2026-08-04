@@ -1,3 +1,4 @@
+import { useLocation } from 'react-router-dom';
 import { z } from 'zod';
 
 export const EXODE_EMBED_QUERY = 'embed=exode';
@@ -46,6 +47,31 @@ export function isExodeEmbedLocation(pathname: string, search: string): boolean 
     return true;
   }
   return new URLSearchParams(search).get('embed') === 'exode';
+}
+
+/**
+ * True once this page load has EVER been the exode embed.
+ *
+ * Sticky for the lifetime of the page load, mirroring `AuthLayout`'s latch
+ * (routes/index.tsx). LibreChat's own navigation — opening a conversation from
+ * the sidebar, starting a new chat — rewrites the URL without `?embed=exode`,
+ * so a live read of the location would flip back to false mid-session and the
+ * embed's chrome-free rendering would come undone. An embedded session stays
+ * embedded until the iframe reloads; a normal page load never becomes one.
+ */
+let exodeEmbedLatch = false;
+
+export function useIsExodeEmbed(): boolean {
+  const location = useLocation();
+  if (!exodeEmbedLatch && isExodeEmbedLocation(location.pathname, location.search)) {
+    exodeEmbedLatch = true;
+  }
+  return exodeEmbedLatch;
+}
+
+/** Test-only: the latch is module state, so it survives between cases otherwise. */
+export function resetExodeEmbedLatchForTests(): void {
+  exodeEmbedLatch = false;
 }
 
 /** Which provisioned agent the host wants this frame to open */

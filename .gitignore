@@ -181,3 +181,6 @@ hive-mind-prompt-*.txt
 CLAUDE.md
 .gsd
 codedb.snapshot
+
+# Cygwin/Git-Bash crash artifact
+bash.exe.stackdump

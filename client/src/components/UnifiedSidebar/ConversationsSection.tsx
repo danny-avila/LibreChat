@@ -17,12 +17,15 @@ import { Conversations } from '~/components/Conversations';
 import ProjectsSection from '~/components/Conversations/ProjectsSection';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import SearchBar from '~/components/Nav/SearchBar';
+import { useIsExodeEmbed } from '~/components/Exode';
+import NewChatButton from './NewChatButton';
 import store from '~/store';
 
 const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'));
 
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
+  const isExodeEmbed = useIsExodeEmbed();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
   const { isAuthenticated } = useAuthContext();
@@ -110,20 +113,23 @@ const ConversationsSection = memo(() => {
       role="region"
       aria-label={localize('com_ui_chat_history')}
     >
+      {isExodeEmbed && <NewChatButton />}
       <div className="flex items-center gap-0.5 px-3">
-        {hasAccessToBookmarks && (
+        {!isExodeEmbed && hasAccessToBookmarks && (
           <Suspense fallback={null}>
             <BookmarkNav tags={tags} setTags={setTags} />
           </Suspense>
         )}
         {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
       </div>
-      {!search.query && (
+      {!isExodeEmbed && !search.query && (
         <div className="px-3">
           <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
         </div>
       )}
-      {!search.query && <ProjectsSection toggleNav={toggleNav} isAuthenticated={isAuthenticated} />}
+      {!isExodeEmbed && !search.query && (
+        <ProjectsSection toggleNav={toggleNav} isAuthenticated={isAuthenticated} />
+      )}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
         <Conversations
           conversations={conversations}

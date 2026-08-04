@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 import { useMediaQuery } from '@librechat/client';
 import {
   PromptGroupsProvider,
@@ -25,7 +25,7 @@ import { TermsAndConditionsModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
 import store from '~/store';
-import { isExodeEmbedLocation } from '~/components/Exode';
+import { useIsExodeEmbed, useExodeTheme } from '~/components/Exode';
 
 /** Isolates keyboard shortcut listeners so they only mount after auth. */
 function KeyboardShortcutsProvider() {
@@ -43,8 +43,8 @@ export default function Root() {
   const [bannerHeight, setBannerHeight] = useState(0);
   const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const location = useLocation();
-  const embedded = isExodeEmbedLocation(location.pathname, location.search);
+  const embedded = useIsExodeEmbed();
+  useExodeTheme();
 
   const { isAuthenticated, logout } = useAuthContext();
 
@@ -92,7 +92,7 @@ export default function Root() {
                 style={{ height: `calc(100dvh - ${embedded ? 0 : bannerHeight}px)` }}
               >
                 <div className="relative z-0 flex h-full w-full overflow-hidden">
-                  {!embedded && <UnifiedSidebar />}
+                  <UnifiedSidebar />
                   <div
                     className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
                     style={{

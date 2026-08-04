@@ -8,6 +8,7 @@ import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers'
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
 import { useChatHelpers, useLocalize } from '~/hooks';
 import SidePanelNav from '~/components/SidePanel/Nav';
+import { useIsExodeEmbed } from '~/components/Exode';
 import ExpandedPanel from './ExpandedPanel';
 import Sidebar from './Sidebar';
 import { cn } from '~/utils';
@@ -41,8 +42,25 @@ function SidebarChatProvider({ children }: { children: ReactNode }) {
 
 function UnifiedSidebar() {
   const localize = useLocalize();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const [expanded, setExpanded] = useRecoilState(store.sidebarExpanded);
+  const mediaQueryIsSmallScreen = useMediaQuery('(max-width: 768px)');
+  const [storedExpanded, setExpanded] = useRecoilState(store.sidebarExpanded);
+  /**
+   * The embed hides the icon rail — and with it the only control that can
+   * re-expand the sidebar — so a stored `false` would strand the user with an
+   * invisible, unrecoverable conversation list. Pin it open there.
+   */
+  const isExodeEmbed = useIsExodeEmbed();
+  const expanded = isExodeEmbed ? true : storedExpanded;
+  /**
+   * The embed's own viewport (an iframe sized to a fraction of the host page, e.g. the exode
+   * assistant panel at ~26vw) is narrow enough to trip this media query even on a desktop host
+   * — `(max-width: 768px)` measures the iframe document, not the outer window. Below it falls
+   * into the small-screen branch: a `position: fixed`, `85vw`-wide slide-over drawer plus the
+   * full `ExpandedPanel` icon rail (with `AccountSettings` etc.) that `Sidebar.tsx` already
+   * excludes on the desktop path. Left alone, that drawer fills the entire iframe and duplicates
+   * chrome the embed intentionally hides. The embed always takes the desktop path instead.
+   */
+  const isSmallScreen = isExodeEmbed ? false : mediaQueryIsSmallScreen;
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);

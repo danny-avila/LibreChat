@@ -14,6 +14,7 @@ import PendingSkillCall from './Parts/PendingSkillCall';
 import { EditTextPart, EmptyText } from './Parts';
 import ApprovalProvider from './ApprovalContext';
 import MemoryArtifacts from './MemoryArtifacts';
+import { useIsExodeEmbed } from '~/components/Exode';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
@@ -147,6 +148,7 @@ const ContentParts = memo(function ContentParts({
   isLatestMessage,
   createdAt,
 }: ContentPartsProps) {
+  const isExodeEmbed = useIsExodeEmbed();
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
   const toolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
@@ -305,20 +307,25 @@ const ContentParts = memo(function ContentParts({
     return result;
   }, [content]);
 
-  const groupedParts = useMemo(
-    () =>
-      groupSequentialToolCalls(sequentialParts).map((group) => {
-        if (group.type === 'single') {
-          return group;
-        }
-        const groupId = getToolGroupId(group.parts, fallbackScope);
-        const groupAttachments = group.parts.flatMap(
-          ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
-        );
-        return { ...group, groupId, groupAttachments };
-      }),
-    [sequentialParts, attachmentMap, fallbackScope],
-  );
+  const groupedParts = useMemo(() => {
+    /** The exode embed hides step/tool-call cards entirely (see `Part.tsx`), so
+     *  grouping them under a "Ran N agents" / "Used N tools" header would leave
+     *  a header with nothing underneath. Render every part individually instead —
+     *  each one still self-suppresses in `Part`, except interactive Q&A. */
+    if (isExodeEmbed) {
+      return sequentialParts.map((part) => ({ type: 'single' as const, part }));
+    }
+    return groupSequentialToolCalls(sequentialParts).map((group) => {
+      if (group.type === 'single') {
+        return group;
+      }
+      const groupId = getToolGroupId(group.parts, fallbackScope);
+      const groupAttachments = group.parts.flatMap(
+        ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
+      );
+      return { ...group, groupId, groupAttachments };
+    });
+  }, [sequentialParts, attachmentMap, fallbackScope, isExodeEmbed]);
 
   // Early return: no content to render AND no pending skill cards
   if (!content && !hasPendingSkills) {
