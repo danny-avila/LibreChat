@@ -284,6 +284,51 @@ describe('ToolService - Action Capability Gating', () => {
       expect(mockLoadToolsUtil).not.toHaveBeenCalled();
     });
 
+    it('blocks a visible argument match before enforcing its traversal overflow', async () => {
+      const privateArgument = 'PRIVATE-ARGUMENT';
+      const deeplyNestedArguments = { visible: privateArgument };
+      let current = deeplyNestedArguments;
+      for (let depth = 0; depth < 30; depth++) {
+        current.nested = {};
+        current = current.nested;
+      }
+      const client = buildClient(buildFilters('arguments', privateArgument));
+
+      await expect(
+        processRequiredActions(client, [buildAction({ toolInput: deeplyNestedArguments })]),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        message: expect.not.stringContaining(privateArgument),
+      });
+
+      expect(mockGetCachedTools).not.toHaveBeenCalled();
+      expect(mockLoadToolsUtil).not.toHaveBeenCalled();
+    });
+
+    it('fails closed before execution when selected arguments exhaust traversal', async () => {
+      const deeplyNestedArguments = { visible: 'safe' };
+      let current = deeplyNestedArguments;
+      for (let depth = 0; depth < 30; depth++) {
+        current.nested = {};
+        current = current.nested;
+      }
+      const client = buildClient(buildFilters('arguments', 'PRIVATE-ARGUMENT'));
+
+      await expect(
+        processRequiredActions(client, [buildAction({ toolInput: deeplyNestedArguments })]),
+      ).rejects.toMatchObject({
+        code: 'content_filter_uninspectable',
+        body: {
+          error: 'content_filter_uninspectable',
+          source: 'tool_argument',
+          field: 'arguments',
+        },
+      });
+
+      expect(mockGetCachedTools).not.toHaveBeenCalled();
+      expect(mockLoadToolsUtil).not.toHaveBeenCalled();
+    });
+
     it('does not inspect required-action values when the source has no active patterns', async () => {
       const opaqueArguments = new Proxy(
         {},
@@ -405,6 +450,41 @@ describe('ToolService - Action Capability Gating', () => {
             function: expect.objectContaining({
               output: expect.not.stringContaining(privateOutput),
             }),
+          }),
+        }),
+      );
+    });
+
+    it('replaces an uninspectable tool output before UI or model submission', async () => {
+      const deeplyNestedOutput = { visible: 'safe' };
+      let current = deeplyNestedOutput;
+      for (let depth = 0; depth < 30; depth++) {
+        current.nested = {};
+        current = current.nested;
+      }
+      const toolCall = jest.fn().mockResolvedValue(deeplyNestedOutput);
+      mockLoadToolsUtil.mockResolvedValue({
+        loadedTools: [{ name: 'safe_tool', _call: toolCall }],
+        toolContextMap: {},
+      });
+      const client = buildClient(buildFilters('output', 'PRIVATE-OUTPUT'));
+      const action = buildAction();
+
+      const result = await processRequiredActions(client, [action]);
+      const output = result.tool_outputs[0].output;
+
+      expect(JSON.parse(output)).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted content could not be completely inspected before processing.',
+        source: 'tool_argument',
+        field: 'output',
+      });
+      expect(action.output).toBe(output);
+      expect(output).not.toContain('PRIVATE-OUTPUT');
+      expect(client.addContentData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool_call: expect.objectContaining({
+            function: expect.objectContaining({ output }),
           }),
         }),
       );

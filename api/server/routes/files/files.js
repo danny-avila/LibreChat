@@ -12,6 +12,7 @@ const {
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
   getCodeExecutionBaseUrl,
+  isContentFilterError,
   inspectContent,
   extractFileContent,
   isBinaryBuffer,
@@ -20,6 +21,7 @@ const {
   contentFilterBlockResponse,
   contentFilterUninspectableResponse,
   getBlockedUninspectableFileField,
+  canInspectUploadTranscriptAfterProcessing,
 } = require('@librechat/api');
 const {
   Time,
@@ -735,7 +737,12 @@ router.post('/', async (req, res) => {
         req.file.mimetype,
         fileConfig.stt?.supportedMimeTypes || [],
       );
-      if (shouldTranscribe) {
+      const canInspectAfterProcessing = canInspectUploadTranscriptAfterProcessing({
+        endpoint: metadata.endpoint,
+        toolResource: metadata.tool_resource,
+        sttSupported: shouldTranscribe,
+      });
+      if (shouldTranscribe && !canInspectAfterProcessing) {
         const uninspectableField = getBlockedUninspectableFileField(filters, ['transcript']);
         if (uninspectableField != null) {
           return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
@@ -814,6 +821,20 @@ router.post('/', async (req, res) => {
     openSseStreamIfRequested();
     return await processAgentFileUpload({ req, res, metadata, sseStream });
   } catch (error) {
+    if (isContentFilterError(error)) {
+      if (sseStream) {
+        sseStream.sendError({
+          ...error.body,
+          code: error.statusCode,
+          temp_file_id: metadata.temp_file_id,
+          tool_resource: metadata.tool_resource,
+          display_to_user: true,
+        });
+      } else {
+        res.status(error.statusCode).json(error.body);
+      }
+      return;
+    }
     const contentProtectionActive =
       hasActiveFilePolicy(req.config?.filters) ||
       hasActivePiiPatterns(req.config?.messageFilter?.pii);

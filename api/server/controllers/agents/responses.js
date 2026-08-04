@@ -240,8 +240,15 @@ function extractResponseRequestContent(request, messageFragments) {
         name: tool.name,
         description: tool.description,
       }),
-      ...extractToolArgumentContent({ arguments: tool.parameters }),
     );
+    try {
+      fragments.push(...extractToolArgumentContent({ arguments: tool.parameters }));
+    } catch (error) {
+      if (isContentTraversalLimitError(error)) {
+        prependContentTraversalFragments(error, fragments);
+      }
+      throw error;
+    }
   }
 
   try {

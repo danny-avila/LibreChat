@@ -19,13 +19,12 @@ const {
   parseSharedLinksPageSize,
   isValidSharedLinksCursor,
   MAX_SHARED_LINK_SEARCH_LENGTH,
+  createSharedLinkConfigMiddleware,
 } = require('@librechat/api');
 const {
   logger,
-  getTenantId,
   runAsSystem,
   tenantStorage,
-  SYSTEM_TENANT_ID,
   createTempChatExpirationDate,
 } = require('@librechat/data-schemas');
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
@@ -53,6 +52,7 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const configMiddleware = require('~/server/middleware/config/app');
 const { getAppConfig } = require('~/server/services/Config/app');
 const router = express.Router();
+const sharedLinkConfigMiddleware = createSharedLinkConfigMiddleware({ getAppConfig });
 
 const SHARE_SERVICE_ERROR_STATUS = {
   INVALID_PARAMS: 400,
@@ -105,14 +105,6 @@ const runWithTenant = (tenantId, fn) =>
 /** Mirrors the owner preview route: pending records older than this are swept to
  * 'failed' on the next poll so the client poller terminates. */
 const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
-
-const getShareStartupPayload = async () => {
-  const tenantId = getTenantId();
-  const appConfig = await getAppConfig(
-    tenantId && tenantId !== SYSTEM_TENANT_ID ? { tenantId } : { baseOnly: true },
-  );
-  return buildSharedLinkStartupPayload(appConfig);
-};
 
 const omitUnsharedMessageFiles = (messages) =>
   messages.map(({ files: _files, attachments: _attachments, ...message }) => ({
@@ -373,22 +365,28 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
 if (allowSharedLinks) {
   const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
 
-  router.get('/:shareId/config', optionalJwtAuth, canAccessSharedLink, async (_req, res) => {
-    try {
-      const payload = await getShareStartupPayload();
-      res.set('Cache-Control', 'private, no-store');
-      res.status(200).json(payload);
-    } catch (error) {
-      logger.error('Error getting shared startup config:', error);
-      res.status(500).json({ message: 'Error getting shared startup config' });
-    }
-  });
+  router.get(
+    '/:shareId/config',
+    optionalJwtAuth,
+    canAccessSharedLink,
+    sharedLinkConfigMiddleware,
+    (req, res) => {
+      try {
+        const payload = buildSharedLinkStartupPayload(req.config);
+        res.set('Cache-Control', 'private, no-store');
+        res.status(200).json(payload);
+      } catch (error) {
+        logger.error('Error getting shared startup config:', error);
+        res.status(500).json({ message: 'Error getting shared startup config' });
+      }
+    },
+  );
 
   router.get(
     '/:shareId',
     optionalJwtAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     async (req, res) => {
       try {
         const contentPreflight = createShareContentPreflight(req.config?.filters, {
@@ -422,8 +420,8 @@ if (allowSharedLinks) {
     requireJwtAuth,
     forkIpLimiter,
     forkUserLimiter,
-    configMiddleware,
     canAccessSharedLink,
+    sharedLinkConfigMiddleware,
     async (req, res) => {
       try {
         const result = await forkSharedConversation({
@@ -468,7 +466,7 @@ if (allowSharedLinks) {
     optionalJwtAuth,
     optionalShareFileAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     resolveShareFile,
     enforceSharedFileContentPolicy,
     async (req, res) => {
@@ -512,7 +510,7 @@ if (allowSharedLinks) {
     optionalJwtAuth,
     optionalShareFileAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     resolveShareFile,
     enforceSharedFileContentPolicy,
     async (req, res) => {
@@ -536,7 +534,7 @@ if (allowSharedLinks) {
     optionalJwtAuth,
     optionalShareFileAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     resolveShareFile,
     enforceSharedFileContentPolicy,
     async (req, res) => {

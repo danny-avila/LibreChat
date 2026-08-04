@@ -804,6 +804,87 @@ describe('createResponse controller', () => {
       );
     });
 
+    it('retains earlier request fragments when a function schema exhausts traversal', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const instructionFragment = {
+        id: 'agent.instructions',
+        path: '/instructions',
+        text: 'PRIVATE-INSTRUCTION',
+        source: 'agent_instruction',
+        field: 'instructions',
+      };
+      const partialToolFragment = {
+        id: 'tool.arguments.partial',
+        path: '/arguments/safe',
+        text: 'safe',
+        source: 'tool_argument',
+        field: 'arguments',
+      };
+      const traversalError = Object.assign(new Error('Traversal limit exceeded'), {
+        code: 'content_filter_uninspectable',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_uninspectable',
+          message: 'Submitted content could not be completely inspected before processing.',
+          source: 'tool_argument',
+          field: 'arguments',
+        },
+      });
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          instructions: 'PRIVATE-INSTRUCTION',
+          tools: [{ type: 'function', name: 'lookup', parameters: { safe: true } }],
+          stream: false,
+        },
+      });
+      api.extractAgentContent.mockReturnValueOnce([instructionFragment]);
+      api.extractToolArgumentContent.mockImplementationOnce(() => {
+        throw traversalError;
+      });
+      api.getContentTraversalFragments.mockReturnValueOnce([
+        instructionFragment,
+        partialToolFragment,
+      ]);
+      api.inspectContent.mockReturnValueOnce({
+        detectorId: 'pii-pattern',
+        ruleId: 'private',
+        label: 'private value',
+        source: 'agent_instruction',
+        field: 'instructions',
+      });
+      req.config.filters = {
+        agentInstructions: {
+          pii: {
+            fields: ['instructions'],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE' }],
+          },
+        },
+      };
+
+      await createResponse(req, res);
+
+      expect(api.prependContentTraversalFragments).toHaveBeenCalledWith(
+        traversalError,
+        expect.arrayContaining([instructionFragment]),
+      );
+      expect(api.inspectContent).toHaveBeenCalledWith(
+        expect.arrayContaining([instructionFragment, partialToolFragment]),
+        expect.anything(),
+      );
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Submitted content was blocked.',
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
     it('blocks instructions and input before loading the agent', async () => {
       const api = require('@librechat/api');
       const db = require('~/models');

@@ -264,7 +264,8 @@ export function isContentTraversalProtected(params: {
       (scope) =>
         scope.source === 'message' ||
         scope.source === 'assembled_context' ||
-        (scope.source === 'tool_argument' && scope.fields.includes('output')),
+        (scope.source === 'tool_argument' &&
+          (scope.fields.includes('arguments') || scope.fields.includes('output'))),
     )
   ) {
     return true;

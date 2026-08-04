@@ -1,5 +1,7 @@
+import { EToolResources } from 'librechat-data-provider';
 import type { FiltersConfig } from 'librechat-data-provider';
 import {
+  canInspectUploadTranscriptAfterProcessing,
   isFileFilterFieldEnabled,
   contentFilterUninspectableResponse,
   getBlockedOpaqueFileField,
@@ -13,6 +15,37 @@ import {
 } from './files';
 
 describe('file content inspection policy', () => {
+  it('defers transcript fail-close only to STT-supported non-assistant context uploads', () => {
+    expect(
+      canInspectUploadTranscriptAfterProcessing({
+        endpoint: 'agents',
+        toolResource: EToolResources.context,
+        sttSupported: true,
+      }),
+    ).toBe(true);
+    expect(
+      canInspectUploadTranscriptAfterProcessing({
+        endpoint: 'assistants',
+        toolResource: EToolResources.context,
+        sttSupported: true,
+      }),
+    ).toBe(false);
+    expect(
+      canInspectUploadTranscriptAfterProcessing({
+        endpoint: 'agents',
+        toolResource: EToolResources.file_search,
+        sttSupported: true,
+      }),
+    ).toBe(false);
+    expect(
+      canInspectUploadTranscriptAfterProcessing({
+        endpoint: 'agents',
+        toolResource: EToolResources.context,
+        sttSupported: false,
+      }),
+    ).toBe(false);
+  });
+
   it('activates canonical file work only for patterns or selected fail-close content', () => {
     expect(hasActiveFilePolicy(undefined)).toBe(false);
     expect(

@@ -379,6 +379,31 @@ describe('processAgentFileUpload', () => {
       );
     });
 
+    it('does not persist context audio when STT cannot produce a strict-policy transcript', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ sttSupportedMimeTypes: ['audio/webm'] }));
+      const { STTService } = require('~/server/services/Files/Audio/STTService');
+      STTService.getInstance.mockResolvedValueOnce({});
+      processAudioFile.mockRejectedValueOnce(new Error('transcription unavailable'));
+      const req = makeReq({
+        mimetype: 'audio/webm',
+        filters: {
+          files: {
+            pii: {
+              fields: ['transcript'],
+              uninspectable: 'block',
+            },
+          },
+        },
+      });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow('transcription unavailable');
+
+      expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+      expect(db.createFile).not.toHaveBeenCalled();
+    });
+
     it('preserves the default-off path without inspecting extracted text', async () => {
       const req = makeReq();
 

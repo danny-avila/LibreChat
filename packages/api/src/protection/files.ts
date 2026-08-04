@@ -1,7 +1,9 @@
 import {
+  EToolResources,
   FILE_FILTER_FIELDS,
   hasActivePiiFields,
   hasActivePiiPatterns,
+  isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { FileFilterField, FiltersConfig } from 'librechat-data-provider';
 import {
@@ -167,6 +169,19 @@ export function getBlockedUninspectableFileField(
     }
   }
   return null;
+}
+
+/** Whether a context upload has a downstream STT step that can inspect its transcript. */
+export function canInspectUploadTranscriptAfterProcessing(input: {
+  readonly endpoint?: string;
+  readonly toolResource?: string;
+  readonly sttSupported: boolean;
+}): boolean {
+  return (
+    input.sttSupported &&
+    !isAssistantsEndpoint(input.endpoint) &&
+    input.toolResource === EToolResources.context
+  );
 }
 
 /**

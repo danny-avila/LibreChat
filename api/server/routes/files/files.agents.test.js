@@ -9,6 +9,7 @@ const {
   SystemRoles,
   AccessRoleIds,
   ResourceType,
+  EToolResources,
   PrincipalType,
 } = require('librechat-data-provider');
 const { createAgent, createFile } = require('~/models');
@@ -72,6 +73,7 @@ jest.mock('fs', () => {
 });
 
 const { processAgentFileUpload } = require('~/server/services/Files/process');
+const { UninspectableFileError } = require('@librechat/api');
 
 // Import the router
 const router = require('~/server/routes/files/files');
@@ -660,7 +662,57 @@ describe('File Routes - Agent Files Endpoint', () => {
       readFile.mockRestore();
     });
 
-    it('blocks an uninspected transcript before audio reaches upload processing', async () => {
+    it('lets STT-supported context audio reach transcript processing under fail-close policy', async () => {
+      await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+      const testApp = createAppWithUser(
+        authorId,
+        SystemRoles.USER,
+        {
+          filters: {
+            files: {
+              pii: {
+                fields: ['transcript'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+        { originalname: 'recording.mp3', mimetype: 'audio/mpeg' },
+      );
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(200);
+      expect(processAgentFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          req: expect.objectContaining({
+            file: expect.objectContaining({ mimetype: 'audio/mpeg' }),
+          }),
+          metadata: expect.objectContaining({ tool_resource: EToolResources.context }),
+        }),
+      );
+    });
+
+    it('fails closed when context audio cannot produce an inspectable transcript', async () => {
+      await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+      processAgentFileUpload.mockRejectedValueOnce(new UninspectableFileError('transcript'));
       const testApp = createAppWithUser(
         authorId,
         SystemRoles.USER,
@@ -691,7 +743,6 @@ describe('File Routes - Agent Files Endpoint', () => {
         source: 'file',
         field: 'transcript',
       });
-      expect(processAgentFileUpload).not.toHaveBeenCalled();
     });
 
     it('should allow file upload to agent for user with EDIT permission', async () => {

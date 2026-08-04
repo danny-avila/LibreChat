@@ -3,6 +3,7 @@ import {
   ContentTraversalLimitError,
   getContentTraversalFragments,
   getContentTraversalScopes,
+  isContentTraversalProtected,
 } from './nested';
 import { extractChatContent } from './chat';
 
@@ -433,7 +434,7 @@ describe('extractChatContent', () => {
     );
   });
 
-  it('retains partial chat content and fails closed for over-deep edited arguments', () => {
+  it('retains partial chat content and fails closed for legacy over-deep edited arguments', () => {
     interface DeepArguments {
       nested?: DeepArguments;
     }
@@ -480,6 +481,12 @@ describe('extractChatContent', () => {
         }),
       ]),
     );
+    expect(
+      isContentTraversalProtected({
+        error: traversalError as ContentTraversalLimitError,
+        legacyPii: {},
+      }),
+    ).toBe(true);
   });
 
   it('retains source indices when quote normalization drops unsupported entries', () => {

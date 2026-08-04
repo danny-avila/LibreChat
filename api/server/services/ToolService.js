@@ -27,7 +27,7 @@ const {
   buildMCPAuthRunStepEvent,
   buildMCPAuthRunStepDeltaEvent,
   buildMCPAuthRunStepCompletedEvent,
-  inspectContent,
+  inspectContentWithTraversal,
   ContentFilterError,
   assertModelBoundContent,
   extractToolArgumentContent,
@@ -327,17 +327,17 @@ const processVisionRequest = async (client, currentAction) => {
   };
 };
 
-const getRequiredActionContentFinding = (client, input) => {
+const getRequiredActionContentInspection = (client, input) => {
   const filters = client.req.config?.filters;
   const pii = filters?.toolArguments?.pii;
   if (!hasActivePiiPatterns(pii)) {
-    return null;
+    return { finding: null, traversalError: null };
   }
   const candidateFields = requiredActionContentFields.filter((field) =>
     Object.prototype.hasOwnProperty.call(input, field),
   );
   if (!hasActivePiiFields(pii, candidateFields)) {
-    return null;
+    return { finding: null, traversalError: null };
   }
   const selectedInput = {};
   for (const field of candidateFields) {
@@ -345,18 +345,19 @@ const getRequiredActionContentFinding = (client, input) => {
       selectedInput[field] = input[field];
     }
   }
-  return inspectContent(extractToolArgumentContent(selectedInput), { filters });
+  return inspectContentWithTraversal(() => extractToolArgumentContent(selectedInput), { filters });
 };
 
 const getSafeRequiredActionOutput = (client, currentAction, output) => {
-  const finding = getRequiredActionContentFinding(client, {
+  const { finding, traversalError } = getRequiredActionContentInspection(client, {
     name: currentAction.tool,
     output,
   });
-  if (finding == null) {
+  if (finding == null && traversalError == null) {
     return output;
   }
-  const blockResponse = contentFilterModelBoundBlockResponse(finding);
+  const blockResponse =
+    finding == null ? traversalError.body : contentFilterModelBoundBlockResponse(finding);
   logger.warn('[required actions] Blocked tool output', {
     toolCallId: currentAction.toolCallId,
     source: blockResponse.source,
@@ -373,10 +374,13 @@ const getSafeRequiredActionOutput = (client, currentAction, output) => {
  */
 async function processRequiredActions(client, requiredActions) {
   for (const currentAction of requiredActions) {
-    const finding = getRequiredActionContentFinding(client, {
+    const { finding, traversalError } = getRequiredActionContentInspection(client, {
       name: currentAction.tool,
       arguments: currentAction.toolInput,
     });
+    if (traversalError != null) {
+      throw traversalError;
+    }
     if (finding != null) {
       throw new ContentFilterError(finding);
     }
