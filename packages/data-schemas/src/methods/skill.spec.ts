@@ -1159,6 +1159,37 @@ describe('Skill CRUD methods', () => {
       expect(updated.skill.allowedTools).toEqual(['execute_code']);
     });
 
+    it('lets an unrelated save through when the stored body already had a malformed flag', async () => {
+      /* Pre-fix import accepted `user-invocable: yes` at 201 and dropped the
+         flag, so installs have skills whose stored SKILL.md carries exactly
+         that. The editor resubmits the whole file on every save, so validating
+         it as if this edit introduced it would leave those skills permanently
+         unsavable — the user cannot even fix the description. */
+      const malformed =
+        '---\nname: stored-typo\ndescription: A demo skill.\nuser-invocable: yes\n---\n\nBody.';
+      const stored = await Skill.create({
+        name: 'stored-typo',
+        description: 'A demo skill.',
+        body: malformed,
+        frontmatter: {},
+        author: owner._id,
+        authorName: owner.name ?? 'Skill Owner',
+        version: 1,
+        source: 'inline',
+        fileCount: 0,
+      });
+
+      const updated = await methods.updateSkill({
+        id: (stored._id as mongoose.Types.ObjectId).toString(),
+        expectedVersion: 1,
+        update: { description: 'An edited description.', body: malformed },
+      });
+
+      expect(updated.status).toBe('updated');
+      if (updated.status !== 'updated') return;
+      expect(updated.skill.description).toBe('An edited description.');
+    });
+
     it('updateSkill rejects a non-boolean flag introduced by a body edit', async () => {
       const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-edit-typo' }));
 

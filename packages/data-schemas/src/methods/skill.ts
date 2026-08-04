@@ -996,6 +996,7 @@ function resolveBodyDerivedColumn(
 function validateBodyDerivedColumns(
   frontmatter: Record<string, unknown> | undefined,
   bodyFlags: BodyFlagResults | undefined,
+  storedBodyFlags?: BodyFlagResults,
 ): ValidationIssue[] {
   if (!bodyFlags) {
     return [];
@@ -1008,6 +1009,10 @@ function validateBodyDerivedColumns(
     }
     const column = flag.column as (typeof BODY_DERIVED_COLUMNS)[number];
     if (bodyFlags[column].status !== 'invalid' || typeof bagDerived[column] === 'boolean') {
+      continue;
+    }
+    /* Already malformed before this edit — not something to reject now. */
+    if (storedBodyFlags?.[column].status === 'invalid') {
       continue;
     }
     issues.push({
@@ -1594,6 +1599,37 @@ export function createSkillMethods(
     const bodyScan =
       update.body !== undefined ? extractBooleanFlagsFromBody(update.body) : undefined;
     const bodyAlwaysApply = bodyScan?.alwaysApply;
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    /**
+     * What the SKILL.md text declared before this edit. Two rules depend on it,
+     * and both exist because the body reader's silence must never be read as an
+     * instruction:
+     *  - a body edit may only RELEASE a flag that this same body used to
+     *    declare, so a skill whose flags live only in the frontmatter bag (the
+     *    legacy shape `backfillDerivedFromFrontmatter` serves, and what setting
+     *    flags through the API alone produces) keeps them;
+     *  - a malformed flag already sitting in the stored text is not this edit's
+     *    fault, so it does not block an unrelated save. The editor resubmits the
+     *    whole file on every save, so rejecting it would leave such a skill
+     *    permanently unsavable.
+     * A key the reader cannot see is therefore invisible on both sides of the
+     * comparison, and the flag is left alone instead of being wrongly released.
+     *
+     * Safe under optimistic concurrency: the write below still requires
+     * `version: expectedVersion`, so a body that changed between this read and
+     * the update fails as a version mismatch rather than acting on stale text.
+     */
+    const storedBodyFlags =
+      update.body !== undefined
+        ? await Skill.findById(id)
+            .select('body')
+            .lean()
+            .then((doc) =>
+              doc
+                ? extractBooleanFlagsFromBody((doc as unknown as { body?: string }).body)
+                : undefined,
+            )
+        : undefined;
     const issues: ValidationIssue[] = [];
     if (update.name !== undefined) issues.push(...validateSkillName(update.name));
     if (update.description !== undefined)
@@ -1604,7 +1640,7 @@ export function createSkillMethods(
     if (update.frontmatter !== undefined)
       issues.push(...validateSkillFrontmatter(update.frontmatter));
     if (update.alwaysApply !== undefined) issues.push(...validateAlwaysApply(update.alwaysApply));
-    issues.push(...validateBodyDerivedColumns(update.frontmatter, bodyScan));
+    issues.push(...validateBodyDerivedColumns(update.frontmatter, bodyScan, storedBodyFlags));
     /* Body-level `always-apply:` only needs to be well-formed when a
        higher-precedence source won't override it (see
        `resolveAlwaysApplyFromInput` for precedence). Rejecting a typo
@@ -1631,33 +1667,6 @@ export function createSkillMethods(
       throw error;
     }
 
-    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
-    /**
-     * A body edit may only release an invocation-mode flag that the SKILL.md
-     * text itself was carrying, so the stored body is read to see what it
-     * declared before. Without this, a skill whose flags live only in the
-     * frontmatter bag — the legacy shape `backfillDerivedFromFrontmatter`
-     * serves, and what setting flags through the API alone produces — would
-     * have a restriction silently lifted by an edit that never mentioned it.
-     * It also makes the body reader's blind spots harmless: a key it cannot
-     * see is invisible on both sides of the comparison, so the flag is left
-     * alone instead of being wrongly released.
-     *
-     * Safe under optimistic concurrency: the write below still requires
-     * `version: expectedVersion`, so a body that changed between this read and
-     * the update fails as a version mismatch rather than acting on stale text.
-     */
-    const storedBodyFlags =
-      update.body !== undefined && update.frontmatter === undefined
-        ? await Skill.findById(id)
-            .select('body')
-            .lean()
-            .then((doc) =>
-              doc
-                ? extractBooleanFlagsFromBody((doc as unknown as { body?: string }).body)
-                : undefined,
-            )
-        : undefined;
     const setPayload: Record<string, unknown> = {};
     const unsetPayload: Record<string, ''> = {};
     if (update.name !== undefined) setPayload.name = update.name;
