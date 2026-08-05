@@ -1,8 +1,8 @@
-import type { Keyv } from 'keyv';
 import { randomUUID } from 'crypto';
-import { standardCache } from '~/cache/cacheFactory';
-import { keyvRedisClientReady } from '~/cache/redisClients';
+import type { Keyv } from 'keyv';
 import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
+import { keyvRedisClientReady } from '~/cache/redisClients';
+import { standardCache } from '~/cache/cacheFactory';
 import { FlowStateManager } from '~/flow/manager';
 
 const FLOW_TYPE = 'mcp_oauth';
