@@ -20,11 +20,13 @@ const {
   buildMCPAuthStepId,
   buildMCPAuthToolCall,
   processMCPEnv,
+  preProcessGraphTokens,
   buildMCPAuthRunStepEvent,
   buildMCPAuthRunStepDeltaEvent,
   buildMCPAuthRunStepEndDeltaEvent,
   isUserSourced,
   checkAccessWithRequestCache,
+  getMissingCustomUserVars,
   getServerCustomUserVars,
   requiresEphemeralUserConnection,
   containsGraphTokenPlaceholder,
@@ -1271,6 +1273,50 @@ async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()
   }
 }
 
+async function hasDurableMCPAuthorization(userId, serverName, config, runtimeContext = {}) {
+  const userMCPAuthMap =
+    runtimeContext.userMCPAuthMap ?? (await runtimeContext.loadUserMCPAuthMap?.());
+  const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
+  if (getMissingCustomUserVars(config, customUserVars).length > 0) {
+    return false;
+  }
+
+  const dbSourced = isUserSourced(config);
+  const bindingConfig = {
+    ...config,
+    args: undefined,
+    env: undefined,
+    headers: undefined,
+    oauth_headers: undefined,
+  };
+  const graphProcessedConfig = dbSourced
+    ? bindingConfig
+    : await preProcessGraphTokens(bindingConfig, {
+        user: runtimeContext.user,
+        graphTokenResolver: getGraphApiToken,
+        scopes: process.env.GRAPH_API_SCOPES,
+      });
+  const runtimeConfig = processMCPEnv({
+    user: runtimeContext.user,
+    options: graphProcessedConfig,
+    dbSourced,
+    customUserVars,
+  });
+  return MCPTokenStorage.hasStoredAuthorization({
+    userId,
+    serverName,
+    findToken,
+    validateClientBinding: (clientInfo, storedMetadata) =>
+      MCPOAuthHandler.assertStoredClientBinding(
+        serverName,
+        runtimeConfig.url,
+        clientInfo,
+        storedMetadata,
+        runtimeConfig.oauth,
+      ),
+  });
+}
+
 /**
  * Get connection status for a specific MCP server
  * @param {string} userId - The user ID
@@ -1279,6 +1325,7 @@ async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()
  * @param {Map<string, import('@librechat/api').MCPConnection>} appConnections - App-level connections
  * @param {Map<string, import('@librechat/api').MCPConnection>} userConnections - User-level connections
  * @param {Set} oauthServers - Set of OAuth servers
+ * @param {{ user?: Partial<IUser>, userMCPAuthMap?: Record<string, Record<string, string>>, loadUserMCPAuthMap?: () => Promise<Record<string, Record<string, string>> | undefined> }} [runtimeContext]
  * @returns {Object} Object containing requiresOAuth and connectionState
  */
 async function getServerConnectionStatus(
@@ -1288,6 +1335,7 @@ async function getServerConnectionStatus(
   appConnections,
   userConnections,
   oauthServers,
+  runtimeContext = {},
 ) {
   const connection = appConnections.get(serverName) || userConnections.get(serverName);
   const isStaleOrDoNotExist = connection ? connection?.isStale(config.updatedAt) : true;
@@ -1320,21 +1368,7 @@ async function getServerConnectionStatus(
       } else if (hasActiveFlow) {
         finalConnectionState = 'connecting';
         authorizationState = 'authorizing';
-      } else if (
-        await MCPTokenStorage.hasStoredAuthorization({
-          userId,
-          serverName,
-          findToken,
-          validateClientBinding: (clientInfo, storedMetadata) =>
-            MCPOAuthHandler.assertStoredClientBinding(
-              serverName,
-              config.url,
-              clientInfo,
-              storedMetadata,
-              config.oauth,
-            ),
-        })
-      ) {
+      } else if (await hasDurableMCPAuthorization(userId, serverName, config, runtimeContext)) {
         /** OAuth readiness is durable even when this pod has no live connection. */
         finalConnectionState = 'connected';
         authorizationState = 'authorized';

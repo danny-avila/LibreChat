@@ -137,4 +137,65 @@ test.describe('MCP OAuth readiness', () => {
     await expect(serverItem).toHaveAttribute('aria-checked', 'true');
     expect(reinitializeCalls).toBe(2);
   });
+
+  test('stops a reused OAuth spinner at the attempt remaining lifetime', async ({ page }) => {
+    test.setTimeout(30000);
+
+    let flowStatusCalls = 0;
+    await page.route('**/api/mcp/connection/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          oauthTimeout: 30000,
+          connectionStatus: {
+            [SERVER_NAME]: {
+              connectionState: 'error',
+              requiresOAuth: true,
+              authorizationState: 'error',
+            },
+          },
+        }),
+      });
+    });
+    await page.route(`**/api/mcp/${SERVER_NAME}/reinitialize`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          message: 'OAuth authorization required',
+          serverName: SERVER_NAME,
+          oauthRequired: true,
+          oauthUrl: 'https://oauth.example.test/authorize',
+          flowId: FLOW_ID,
+          oauthTimeout: 5500,
+        }),
+      });
+    });
+    await page.route('**/api/mcp/oauth/status/**', async (route) => {
+      flowStatusCalls++;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'PENDING', completed: false, failed: false }),
+      });
+    });
+
+    await page.goto('/c/new', { timeout: 10000 });
+    await page.getByRole('button', { name: 'MCP Servers', exact: true }).click();
+    const serverItem = page.getByRole('menuitemcheckbox', { name: new RegExp(SERVER_TITLE) });
+    await serverItem.getByRole('button', { name: `Connect ${SERVER_NAME}` }).click();
+    await page.getByRole('button', { name: 'Authenticate', exact: true }).click();
+
+    await expect(page.getByText(`OAuth login timed out for ${SERVER_NAME}`).first()).toBeVisible({
+      timeout: 15000,
+    });
+    expect(flowStatusCalls).toBe(1);
+
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'MCP Servers', exact: true }).click();
+    await expect(serverItem.getByRole('button', { name: `Connect ${SERVER_NAME}` })).toBeVisible();
+  });
 });

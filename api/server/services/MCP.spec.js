@@ -719,6 +719,170 @@ describe('tests for the new helper functions used by the MCP connection status e
       });
     });
 
+    it('should validate durable readiness against the user-resolved runtime URL', async () => {
+      const appConnections = new Map();
+      const userConnections = new Map();
+      const oauthServers = new Set([mockServerName]);
+      const { findToken } = require('~/models');
+      const credentialSetId = 'credential-set-a';
+      const config = {
+        ...mockConfig,
+        source: 'yaml',
+        url: 'https://mcp.example.com/users/{{LIBRECHAT_USER_ID}}/mcp',
+      };
+      mockGetOAuthReconnectionManager.mockReturnValue({ isReconnecting: jest.fn(() => false) });
+      mockGetFlowStateManager.mockReturnValue({ getFlowState: jest.fn(() => null) });
+      mockGetLogStores.mockReturnValue({});
+      findToken
+        .mockResolvedValueOnce({
+          expiresAt: new Date(Date.now() + 60000),
+          metadata: { credential_set_id: credentialSetId },
+        })
+        .mockResolvedValueOnce({
+          token: 'enc:{"client_id":"dynamic-client"}',
+          metadata: {
+            credential_set_id: credentialSetId,
+            authorization_endpoint: 'https://auth.example.com/authorize',
+            token_endpoint: 'https://auth.example.com/token',
+            server_url: `https://mcp.example.com/users/${mockUserId}/mcp`,
+            client_source: 'dynamic',
+          },
+        });
+
+      const result = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        config,
+        appConnections,
+        userConnections,
+        oauthServers,
+        { user: { id: mockUserId } },
+      );
+
+      expect(result).toEqual({
+        requiresOAuth: true,
+        connectionState: 'connected',
+        authorizationState: 'authorized',
+      });
+    });
+
+    it('should validate durable readiness against the Graph-resolved runtime URL', async () => {
+      const appConnections = new Map();
+      const userConnections = new Map();
+      const oauthServers = new Set([mockServerName]);
+      const { findToken } = require('~/models');
+      const { getGraphApiToken } = require('./GraphTokenService');
+      const credentialSetId = 'credential-set-a';
+      const config = {
+        ...mockConfig,
+        source: 'yaml',
+        url: 'https://mcp.example.com/{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}/mcp',
+      };
+      const user = {
+        id: mockUserId,
+        provider: 'openid',
+        openidId: 'openid-user',
+        federatedTokens: {
+          access_token: 'federated-access-token',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        },
+      };
+      getGraphApiToken.mockResolvedValue({
+        access_token: 'resolved-graph-token',
+        token_type: 'Bearer',
+        expires_in: 3600,
+        scope: 'https://graph.microsoft.com/.default',
+      });
+      mockGetOAuthReconnectionManager.mockReturnValue({ isReconnecting: jest.fn(() => false) });
+      mockGetFlowStateManager.mockReturnValue({ getFlowState: jest.fn(() => null) });
+      mockGetLogStores.mockReturnValue({});
+      findToken
+        .mockResolvedValueOnce({
+          expiresAt: new Date(Date.now() + 60000),
+          metadata: { credential_set_id: credentialSetId },
+        })
+        .mockResolvedValueOnce({
+          token: 'enc:{"client_id":"dynamic-client"}',
+          metadata: {
+            credential_set_id: credentialSetId,
+            authorization_endpoint: 'https://auth.example.com/authorize',
+            token_endpoint: 'https://auth.example.com/token',
+            server_url: 'https://mcp.example.com/resolved-graph-token/mcp',
+            client_source: 'dynamic',
+          },
+        });
+
+      const result = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        config,
+        appConnections,
+        userConnections,
+        oauthServers,
+        { user },
+      );
+
+      expect(result).toEqual({
+        requiresOAuth: true,
+        connectionState: 'connected',
+        authorizationState: 'authorized',
+      });
+      expect(getGraphApiToken).toHaveBeenCalledWith(
+        user,
+        'federated-access-token',
+        'https://graph.microsoft.com/.default',
+        true,
+      );
+    });
+
+    it('should not report durable readiness while required custom user variables are missing', async () => {
+      const appConnections = new Map();
+      const userConnections = new Map();
+      const oauthServers = new Set([mockServerName]);
+      const { findToken } = require('~/models');
+      const credentialSetId = 'credential-set-a';
+      const config = {
+        ...mockConfig,
+        url: 'https://mcp.example.com/',
+        customUserVars: { API_KEY: { title: 'API key' } },
+      };
+      mockGetOAuthReconnectionManager.mockReturnValue({ isReconnecting: jest.fn(() => false) });
+      mockGetFlowStateManager.mockReturnValue({ getFlowState: jest.fn(() => null) });
+      mockGetLogStores.mockReturnValue({});
+      findToken
+        .mockResolvedValueOnce({
+          expiresAt: new Date(Date.now() + 60000),
+          metadata: { credential_set_id: credentialSetId },
+        })
+        .mockResolvedValueOnce({
+          token: 'enc:{"client_id":"dynamic-client"}',
+          metadata: {
+            credential_set_id: credentialSetId,
+            authorization_endpoint: 'https://auth.example.com/authorize',
+            token_endpoint: 'https://auth.example.com/token',
+            server_url: 'https://mcp.example.com/',
+            client_source: 'dynamic',
+          },
+        });
+
+      const result = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        config,
+        appConnections,
+        userConnections,
+        oauthServers,
+        { user: { id: mockUserId } },
+      );
+
+      expect(result).toEqual({
+        requiresOAuth: true,
+        connectionState: 'disconnected',
+        authorizationState: 'needs_authorization',
+      });
+      expect(findToken).not.toHaveBeenCalled();
+    });
+
     it('should reject stored authorization bound to an older server configuration', async () => {
       const appConnections = new Map();
       const userConnections = new Map();

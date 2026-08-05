@@ -721,6 +721,38 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
   }
 });
 
+function createMCPStatusRuntimeContext(user, mcpConfig, oauthServers, serverNames) {
+  const customUserVarServers = serverNames.filter((serverName) => {
+    const customUserVars = mcpConfig[serverName]?.customUserVars;
+    return (
+      oauthServers.has(serverName) &&
+      customUserVars &&
+      typeof customUserVars === 'object' &&
+      Object.keys(customUserVars).length > 0
+    );
+  });
+  let userMCPAuthMapPromise;
+  const loadUserMCPAuthMap = () => {
+    if (!customUserVarServers.length) {
+      return Promise.resolve(undefined);
+    }
+    userMCPAuthMapPromise ??= getUserMCPAuthMap({
+      userId: user.id,
+      servers: customUserVarServers,
+      findPluginAuthsByKeys: db.findPluginAuthsByKeys,
+    });
+    return userMCPAuthMapPromise;
+  };
+  return { user: createSafeUser(user), loadUserMCPAuthMap };
+}
+
+function getMCPReinitializeOAuthTimeout(oauthExpiresAt) {
+  if (typeof oauthExpiresAt !== 'number' || !Number.isFinite(oauthExpiresAt)) {
+    return mcpSettings.OAUTH_HANDLING_TIMEOUT;
+  }
+  return Math.max(0, oauthExpiresAt - Date.now());
+}
+
 /**
  * Reinitialize MCP server
  * This endpoint allows reinitializing a specific MCP server
@@ -786,6 +818,7 @@ router.post(
         message,
         oauthRequired,
         oauthUrl,
+        oauthExpiresAt,
         failureReason,
         missingUserVars,
         connectionDeferred,
@@ -802,7 +835,7 @@ router.post(
         message,
         oauthUrl,
         flowId,
-        oauthTimeout: oauthRequired ? mcpSettings.OAUTH_HANDLING_TIMEOUT : undefined,
+        oauthTimeout: oauthRequired ? getMCPReinitializeOAuthTimeout(oauthExpiresAt) : undefined,
         serverName,
         oauthRequired,
         failureReason,
@@ -832,6 +865,12 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
       user.id,
       { role: user.role, tenantId: getTenantId() },
     );
+    const runtimeContext = createMCPStatusRuntimeContext(
+      user,
+      mcpConfig,
+      oauthServers,
+      Object.keys(mcpConfig),
+    );
     const connectionStatus = Object.fromEntries(
       await Promise.all(
         Object.entries(mcpConfig).map(async ([serverName, config]) => {
@@ -843,6 +882,7 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
               appConnections,
               userConnections,
               oauthServers,
+              runtimeContext,
             );
             return [serverName, status];
           } catch (error) {
@@ -897,6 +937,10 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
         .json({ error: `MCP server '${serverName}' not found in configuration` });
     }
 
+    const runtimeContext = createMCPStatusRuntimeContext(user, mcpConfig, oauthServers, [
+      serverName,
+    ]);
+
     const serverStatus = await getServerConnectionStatus(
       user.id,
       serverName,
@@ -904,6 +948,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
       appConnections,
       userConnections,
       oauthServers,
+      runtimeContext,
     );
 
     res.json({

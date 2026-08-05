@@ -27,6 +27,7 @@ import type {
 import type { MCPServerInitState } from '~/store/mcp';
 import type { ConfigFieldDetail } from '~/common';
 import {
+  getMCPOAuthTimeout,
   getMCPOAuthPollingOutcome,
   isMCPReadyAfterOAuth,
   isTerminalMCPOAuthPollingError,
@@ -228,7 +229,7 @@ export function useMCPServerManager({
       const connectionData = queryClient.getQueryData<MCPConnectionStatusResponse>([
         QueryKeys.mcpConnectionStatus,
       ]);
-      let oauthTimeoutMs = initialOAuthTimeout ?? connectionData?.oauthTimeout ?? 600000;
+      let oauthTimeoutMs = getMCPOAuthTimeout(initialOAuthTimeout, connectionData?.oauthTimeout);
       // Backstop only; the elapsed-time guard governs. Sized above the worst-case poll count.
       let maxAttempts = Math.ceil(oauthTimeoutMs / 5000) + 5;
 
@@ -299,10 +300,14 @@ export function useMCPServerManager({
           const freshConnectionData = queryClient.getQueryData<MCPConnectionStatusResponse>([
             QueryKeys.mcpConnectionStatus,
           ]);
-          // Pick up the configured timeout once the status response lands (cache may have
-          // been empty when polling started), so a tuned deadline is honored mid-flight.
+          // Pick up the configured timeout when the attempt response had no deadline.
+          // A reused flow's remaining lifetime must stay authoritative over this global value.
           if (typeof freshConnectionData?.oauthTimeout === 'number') {
-            oauthTimeoutMs = freshConnectionData.oauthTimeout;
+            oauthTimeoutMs = getMCPOAuthTimeout(
+              initialOAuthTimeout,
+              freshConnectionData.oauthTimeout,
+              oauthTimeoutMs,
+            );
             maxAttempts = Math.ceil(oauthTimeoutMs / 5000) + 5;
           }
           const freshConnectionStatus = freshConnectionData?.connectionStatus || {};

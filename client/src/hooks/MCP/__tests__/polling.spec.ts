@@ -1,9 +1,20 @@
 import {
+  getMCPOAuthTimeout,
   getMCPOAuthPollingOutcome,
   isMCPReadyAfterOAuth,
   isTerminalMCPOAuthPollingError,
   shouldUseMCPConnectionStatus,
 } from '../polling';
+
+describe('getMCPOAuthTimeout', () => {
+  it('preserves the remaining timeout of a reused flow over the global server window', () => {
+    expect(getMCPOAuthTimeout(45_000, 600_000)).toBe(45_000);
+  });
+
+  it('uses the global server window when the attempt has no explicit timeout', () => {
+    expect(getMCPOAuthTimeout(undefined, 300_000)).toBe(300_000);
+  });
+});
 
 describe('getMCPOAuthPollingOutcome', () => {
   it('treats shared flow completion as terminal success', () => {

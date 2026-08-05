@@ -2279,6 +2279,31 @@ describe('MCP Routes', () => {
       });
     });
 
+    it('should return the remaining lifetime for a reused OAuth flow', async () => {
+      const now = 1_800_000_000_000;
+      const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(now);
+      const mockMcpManager = {
+        disconnectUserConnection: jest.fn().mockResolvedValue(),
+      };
+
+      mockRegistryInstance.getServerConfig.mockResolvedValue({ customUserVars: {} });
+      require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
+      require('~/server/services/Tools/mcp').reinitMCPServer.mockResolvedValue({
+        success: true,
+        message: "MCP server 'oauth-server' ready for OAuth authentication",
+        serverName: 'oauth-server',
+        oauthRequired: true,
+        oauthUrl: 'https://oauth.example.com/auth',
+        oauthExpiresAt: now + 45_000,
+      });
+
+      const response = await request(app).post('/api/mcp/oauth-server/reinitialize');
+      dateNowSpy.mockRestore();
+
+      expect(response.status).toBe(200);
+      expect(response.body.oauthTimeout).toBe(45_000);
+    });
+
     it('should return structured reinitialization failure details', async () => {
       const mockMcpManager = {
         disconnectUserConnection: jest.fn().mockResolvedValue(),
@@ -2479,7 +2504,7 @@ describe('MCP Routes', () => {
         mcpConfig: mockMcpConfig,
         appConnections: {},
         userConnections: {},
-        oauthServers: [],
+        oauthServers: new Set(),
       });
 
       getServerConnectionStatus
@@ -2516,6 +2541,58 @@ describe('MCP Routes', () => {
 
       expect(getMCPSetupData).toHaveBeenCalledWith('test-user-id', expect.any(Object));
       expect(getServerConnectionStatus).toHaveBeenCalledTimes(2);
+    });
+
+    it('should batch user variables and pass runtime context into durable status checks', async () => {
+      currentUser = { id: 'test-user-id', email: 'user@example.com' };
+      const mcpConfig = {
+        server1: {
+          url: 'https://mcp.example.com/{{LIBRECHAT_USER_ID}}',
+          customUserVars: { API_KEY: { title: 'API key' } },
+        },
+      };
+      const userMCPAuthMap = {
+        'mcp:server1': { API_KEY: 'secret' },
+      };
+      getMCPSetupData.mockResolvedValue({
+        mcpConfig,
+        appConnections: new Map(),
+        userConnections: new Map(),
+        oauthServers: new Set(['server1']),
+      });
+      require('@librechat/api').getUserMCPAuthMap.mockResolvedValue(userMCPAuthMap);
+      getServerConnectionStatus.mockResolvedValue({
+        connectionState: 'connected',
+        requiresOAuth: true,
+        authorizationState: 'authorized',
+      });
+
+      const response = await request(app).get('/api/mcp/connection/status');
+
+      expect(response.status).toBe(200);
+      expect(require('@librechat/api').getUserMCPAuthMap).not.toHaveBeenCalled();
+      const runtimeContext = getServerConnectionStatus.mock.calls[0][6];
+      await expect(
+        Promise.all([runtimeContext.loadUserMCPAuthMap(), runtimeContext.loadUserMCPAuthMap()]),
+      ).resolves.toEqual([userMCPAuthMap, userMCPAuthMap]);
+      expect(require('@librechat/api').getUserMCPAuthMap).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        servers: ['server1'],
+        findPluginAuthsByKeys: require('~/models').findPluginAuthsByKeys,
+      });
+      expect(require('@librechat/api').getUserMCPAuthMap).toHaveBeenCalledTimes(1);
+      expect(getServerConnectionStatus).toHaveBeenCalledWith(
+        'test-user-id',
+        'server1',
+        mcpConfig.server1,
+        expect.any(Map),
+        expect.any(Map),
+        expect.any(Set),
+        {
+          user: expect.objectContaining({ id: 'test-user-id', email: 'user@example.com' }),
+          loadUserMCPAuthMap: expect.any(Function),
+        },
+      );
     });
 
     it('should resolve independent server statuses concurrently', async () => {
@@ -2598,7 +2675,7 @@ describe('MCP Routes', () => {
         mcpConfig: mockMcpConfig,
         appConnections: {},
         userConnections: {},
-        oauthServers: [],
+        oauthServers: new Set(),
       });
 
       getServerConnectionStatus.mockResolvedValue({
@@ -2626,7 +2703,7 @@ describe('MCP Routes', () => {
         },
         appConnections: {},
         userConnections: {},
-        oauthServers: [],
+        oauthServers: new Set(),
       });
 
       const response = await request(app).get('/api/mcp/connection/status/non-existent-server');

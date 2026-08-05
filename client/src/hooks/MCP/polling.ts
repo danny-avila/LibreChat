@@ -2,6 +2,14 @@ import type { MCPOAuthStatusResponse, MCPReinitializeResponse } from 'librechat-
 
 export type MCPOAuthPollingOutcome = 'pending' | 'completed' | 'failed';
 
+export function getMCPOAuthTimeout(
+  attemptTimeout: number | undefined,
+  connectionTimeout: number | undefined,
+  fallback = 600_000,
+): number {
+  return attemptTimeout ?? connectionTimeout ?? fallback;
+}
+
 /**
  * A missing or unauthorized flow is terminal for this browser poll. Retrying it
  * forever leaves the OAuth spinner active after the shared flow record is gone.
