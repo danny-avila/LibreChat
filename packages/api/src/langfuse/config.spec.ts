@@ -12,6 +12,7 @@ const envKeys = [
   'LANGFUSE_BASEURL',
   'LANGFUSE_FANOUT_ENABLED',
   'LANGFUSE_FANOUT_COLLECTOR_URL',
+  'LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED',
   'LANGFUSE_FANOUT_TENANT_DESTINATIONS',
   'LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED',
   'LANGFUSE_TRACING_ENABLED',
@@ -207,7 +208,6 @@ describe('buildLangfuseConfig', () => {
     expect(config).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://langfuse-fanout-collector:4318',
-      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -233,7 +233,6 @@ describe('buildLangfuseConfig', () => {
     expect(config).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://langfuse-fanout-collector:4318',
-      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -386,7 +385,6 @@ describe('buildLangfuseConfig', () => {
     ).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
-      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -412,7 +410,6 @@ describe('buildLangfuseConfig', () => {
     ).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
-      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -443,4 +440,39 @@ describe('buildLangfuseConfig', () => {
       tags: ['tenant:tenant-1'],
     });
   });
+
+  it.each(['true', '1', 'yes', 'on'])(
+    'disables central collector media uploads when LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED is %s',
+    async (value) => {
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+      process.env.LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED = value;
+      const { buildLangfuseConfig } = await import('./config');
+
+      expect(buildLangfuseConfig({ tenantId: 'tenant-1' })).toEqual({
+        deterministicTraceId: true,
+        baseUrl: 'http://collector-from-env:4318',
+        mediaUploadEnabled: false,
+        metadata: { 'librechat.tenant.id': 'tenant-1' },
+        tags: ['tenant:tenant-1'],
+      });
+    },
+  );
+
+  it.each(['false', '0', 'no', 'off', ''])(
+    'keeps central collector media uploads at the SDK default when LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED is %s',
+    async (value) => {
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+      process.env.LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED = value;
+      const { buildLangfuseConfig } = await import('./config');
+
+      expect(buildLangfuseConfig({ tenantId: 'tenant-1' })).toEqual({
+        deterministicTraceId: true,
+        baseUrl: 'http://collector-from-env:4318',
+        metadata: { 'librechat.tenant.id': 'tenant-1' },
+        tags: ['tenant:tenant-1'],
+      });
+    },
+  );
 });

@@ -2,6 +2,7 @@ import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
 import {
   hasLangfuseEnvCredentials,
+  isLangfuseCentralMediaUploadDisabled,
   isLangfuseFanoutEnabled,
   isLangfuseTenantExportEnabled,
   isLangfuseTraceSampled,
@@ -227,7 +228,9 @@ export function buildLangfuseConfig({
       break;
     case 'fanoutCollector':
       langfuse.baseUrl = exportPlan.collectorUrl;
-      langfuse.mediaUploadEnabled = false;
+      if (isLangfuseCentralMediaUploadDisabled()) {
+        langfuse.mediaUploadEnabled = false;
+      }
       break;
     case 'disabled':
       langfuse.enabled = false;

@@ -222,6 +222,7 @@ beforeEach(() => {
   delete process.env.LANGFUSE_HOST;
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+  delete process.env.LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED;
   delete process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS;
   delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
   delete process.env.LANGFUSE_TRACING_ENABLED;
@@ -1328,7 +1329,6 @@ describe('Langfuse run config', () => {
     expect(callArgs.langfuse).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
-      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -1526,7 +1526,6 @@ describe('Langfuse run config', () => {
     expect(callArgs.langfuse).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
-      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -1549,7 +1548,6 @@ describe('Langfuse run config', () => {
     expect(callArgs.langfuse).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
-      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -1569,7 +1567,6 @@ describe('Langfuse run config', () => {
     expect(callArgs.langfuse).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
-      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -1597,7 +1594,6 @@ describe('Langfuse run config', () => {
     expect(callArgs.langfuse).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
-      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -1660,7 +1656,6 @@ describe('Langfuse run config', () => {
       expect(callArgs.langfuse).toEqual({
         deterministicTraceId: true,
         baseUrl: 'http://collector-from-env:4318',
-        mediaUploadEnabled: false,
         metadata: { 'librechat.tenant.id': 'tenant-1' },
         tags: ['tenant:tenant-1'],
       });
@@ -1721,7 +1716,6 @@ describe('Langfuse run config', () => {
     expect(callArgs.langfuse).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
-      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -1745,7 +1739,6 @@ describe('Langfuse run config', () => {
     expect(callArgs.langfuse).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
-      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
