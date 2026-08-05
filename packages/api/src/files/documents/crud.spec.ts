@@ -335,6 +335,26 @@ describe('Document Parser', () => {
     });
   });
 
+  describe('PPTX', () => {
+    const pptxFile = (): Express.Multer.File =>
+      ({
+        originalname: 'deck.pptx',
+        path: path.join(__dirname, 'deck.pptx'),
+        mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      }) as Express.Multer.File;
+
+    test('extracts slide titles and body text', async () => {
+      const document = await parseDocument({ file: pptxFile() });
+
+      expect(document.filepath).toBe('document_parser');
+      expect(document.text).toContain('Slide 2: Quarterly Highlights');
+      expect(document.text).toContain('Revenue up 12 percent');
+      /* PPTX table cells are ordinary paragraphs, so the built-in reader returns
+       * them as loose lines with the table structure gone. */
+      expect(document.text).toContain('Region');
+      expect(document.text).not.toContain('| Region |');
+    });
+  });
   describe('annotateMissingPages()', () => {
     test('returns text unchanged when no pages are missing', () => {
       expect(annotateMissingPages('body', undefined)).toBe('body');
