@@ -34,6 +34,23 @@ function getFileExtension(filename: string): string {
 const isParsedOfficeDoc = (mime: string): boolean =>
   !mime.includes('pdf') && documentParserMimeTypes.some((regex) => regex.test(mime));
 
+/** Extension fallback for uploads that arrive with a generic or missing MIME type. */
+const PARSED_DOC_EXTENSIONS = new Set(['docx', 'pptx', 'xlsx', 'xls', 'ods', 'odt']);
+
+/**
+ * Whether the document parser extracted text for this file.
+ *
+ * Mirrors how `previewKind` resolves, MIME first and filename second, so a file
+ * whose type arrives as `application/octet-stream` still offers its text rather
+ * than an empty state.
+ */
+const hasParsedText = (mime?: string, fileName?: string): boolean => {
+  if (mime && documentParserMimeTypes.some((regex) => regex.test(mime))) {
+    return true;
+  }
+  return PARSED_DOC_EXTENSIONS.has(fileName ? getFileExtension(fileName) : '');
+};
+
 function canPreviewByMime(mime?: string): 'pdf' | 'text' | false {
   if (!mime) {
     return false;
@@ -153,7 +170,7 @@ export default function FilePreviewDialog({
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
   /** Parsed office documents render no preview of their own, so fall back to their text. */
-  const hasParsedText = !!fileType && documentParserMimeTypes.some((regex) => regex.test(fileType));
+  const showParsedText = hasParsedText(fileType, fileName);
   const { shareId } = useShareContext();
   const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
   const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);
@@ -348,7 +365,7 @@ export default function FilePreviewDialog({
               </div>
             </>
           )}
-          {!previewKind && !loading && !hasParsedText && (
+          {!previewKind && !loading && !showParsedText && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
@@ -357,7 +374,7 @@ export default function FilePreviewDialog({
           )}
           {/* Office documents have no renderable preview here, but the parser already
            * read them for the model. Showing that text beats an empty state. */}
-          {!previewKind && !loading && hasParsedText && (
+          {!previewKind && !loading && showParsedText && (
             <>
               <p className="pb-3 text-sm text-text-secondary">
                 {localize('com_ui_extracted_text_description')}

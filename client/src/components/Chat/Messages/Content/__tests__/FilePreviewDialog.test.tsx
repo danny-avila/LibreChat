@@ -60,4 +60,19 @@ describe('FilePreviewDialog', () => {
     /* PDFs render inline, so they must not be diverted to the extracted-text panel. */
     expect(screen.queryByText(/## Slide one/)).not.toBeInTheDocument();
   });
+
+  test('falls back to the extension when the MIME type is generic', async () => {
+    /* Uploads do not always carry a precise type. `previewKind` already falls back
+     * to the filename, so the parsed-document check does too, otherwise the dialog
+     * claims no preview for a file whose text it holds. */
+    renderDialog('application/octet-stream', 'report.docx');
+
+    expect(await screen.findByText(/## Slide one/)).toBeInTheDocument();
+  });
+
+  test('still reports no preview for an unparsed binary', () => {
+    renderDialog('application/octet-stream', 'archive.bin');
+
+    expect(screen.queryByText(/## Slide one/)).not.toBeInTheDocument();
+  });
 });
