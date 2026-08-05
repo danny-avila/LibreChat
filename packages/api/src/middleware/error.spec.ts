@@ -233,11 +233,11 @@ describe('ErrorController', () => {
     });
 
     it('emits a structured, joinable event for tenant-isolation errors', () => {
-      mockReq = {
+      Object.assign(mockReq, {
         id: 'request-123',
         method: 'GET',
         originalUrl: '/api/banner?access_token=secret-token',
-      } as Request;
+      });
       const tenantError = new Error(
         '[TenantIsolation] Query attempted without tenant context in strict mode',
       );

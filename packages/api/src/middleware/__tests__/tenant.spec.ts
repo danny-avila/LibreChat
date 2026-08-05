@@ -102,7 +102,7 @@ function runRequestContext(req: Parameters<typeof requestContextMiddleware>[0]):
 
 describe('requestContextMiddleware', () => {
   it('generates a safe request ID when no trusted correlation ID is available', async () => {
-    const req = {
+    const req: Parameters<typeof requestContextMiddleware>[0] = {
       headers: {
         'x-request-id': `${'a'.repeat(24)}.${'b'.repeat(24)}.${'c'.repeat(24)}`,
       },
@@ -119,7 +119,7 @@ describe('requestContextMiddleware', () => {
   });
 
   it('does not trust tenant or user identity before authentication', async () => {
-    const req = {
+    const req: Parameters<typeof requestContextMiddleware>[0] = {
       headers: { 'x-request-id': 'pre-auth-request' },
       method: 'GET',
       originalUrl: '/api/auth/me',
