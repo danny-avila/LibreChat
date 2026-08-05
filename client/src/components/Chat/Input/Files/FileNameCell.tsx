@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { documentParserMimeTypes } from 'librechat-data-provider';
+import { isParsedDocument } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import FileTextDialog from '~/components/Chat/Input/Files/FileTextDialog';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
@@ -7,8 +7,7 @@ import { getFileType } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 /** Documents the parser extracts text from, so only those offer the affordance. */
-const hasExtractedText = (mimetype?: string): boolean =>
-  !!mimetype && documentParserMimeTypes.some((regex) => regex.test(mimetype));
+const hasExtractedText = (file: TFile): boolean => isParsedDocument(file.type, file.filename);
 
 /**
  * Filename cell for the file manager.
@@ -22,7 +21,7 @@ export default function FileNameCell({ file }: { file: TFile }) {
   const [open, setOpen] = useState(false);
   const fileType = getFileType(file.type);
 
-  if (!hasExtractedText(file.type)) {
+  if (!hasExtractedText(file)) {
     return (
       <div className="flex gap-2">
         {fileType && <FilePreview fileType={fileType} className="relative" file={file} />}

@@ -12,6 +12,7 @@ import {
   setFileConfigRegexCompiler,
   documentParserMimeTypes,
   getEndpointFileConfig,
+  isParsedDocument,
   applicationMimeTypes,
   defaultOCRMimeTypes,
   supportedMimeTypes,
@@ -247,6 +248,30 @@ describe('documentParserMimeTypes', () => {
     'image/png',
   ])('does not match OCR-only or unsupported type: %s', (mimeType) => {
     expect(check(mimeType)).toBe(false);
+  });
+});
+
+describe('isParsedDocument', () => {
+  it('resolves by MIME type first', () => {
+    expect(isParsedDocument('application/pdf', 'renamed.bin')).toBe(true);
+    expect(
+      isParsedDocument('application/vnd.openxmlformats-officedocument.presentationml.presentation'),
+    ).toBe(true);
+  });
+
+  it('falls back to the filename when the MIME type is generic or wrong', () => {
+    /* Parsed records were historically stored as text/plain, and browsers can
+     * report application/octet-stream; the extension keeps both working. */
+    expect(isParsedDocument('text/plain', 'deck.pptx')).toBe(true);
+    expect(isParsedDocument('application/octet-stream', 'report.docx')).toBe(true);
+    expect(isParsedDocument(undefined, 'paper.pdf')).toBe(true);
+  });
+
+  it('rejects files the parser does not handle', () => {
+    expect(isParsedDocument('application/zip', 'archive.zip')).toBe(false);
+    expect(isParsedDocument('text/plain', 'notes.txt')).toBe(false);
+    expect(isParsedDocument(undefined, undefined)).toBe(false);
+    expect(isParsedDocument('', '.pptx')).toBe(false);
   });
 });
 

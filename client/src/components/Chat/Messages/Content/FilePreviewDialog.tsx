@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { documentParserMimeTypes } from 'librechat-data-provider';
+import { isParsedDocument } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import ExtractedTextPanel from '~/components/Chat/Input/Files/ExtractedTextPanel';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
@@ -27,22 +27,6 @@ interface FilePreviewDialogProps {
   fileSize?: number;
 }
 
-/** Extension fallback for uploads that arrive with a generic or missing MIME type. */
-const PARSED_DOC_EXTENSIONS = new Set(['docx', 'pptx', 'xlsx', 'xls', 'ods', 'odt']);
-
-/**
- * Whether the document parser extracted text for this file.
- *
- * Mirrors how `previewKind` resolves, MIME first and filename second, so a file
- * whose type arrives as `application/octet-stream` still offers its text rather
- * than an empty state.
- */
-const hasParsedText = (mime?: string, fileName?: string): boolean => {
-  if (mime && documentParserMimeTypes.some((regex) => regex.test(mime))) {
-    return true;
-  }
-  return PARSED_DOC_EXTENSIONS.has(fileName ? getFileExtension(fileName) : '');
-};
 /** Formats bytes with unit suffix (differs from ~/utils/formatBytes which returns a raw number). */
 function formatBytes(bytes: number): string {
   if (bytes >= 1048576) {
@@ -100,7 +84,7 @@ export default function FilePreviewDialog({
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
   /** Parsed office documents render no preview of their own, so fall back to their text. */
-  const showParsedText = hasParsedText(fileType, fileName);
+  const showParsedText = isParsedDocument(fileType, fileName);
   const { shareId } = useShareContext();
   // Preview reads revoke their blob after consumption, so they need a separate
   // query identity from user-triggered downloads that may be in flight concurrently.
@@ -281,12 +265,22 @@ export default function FilePreviewDialog({
               </span>
             </div>
           )}
-          {previewError && (
+          {previewError && !showParsedText && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
               </span>
             </div>
+          )}
+          {/* A parsed PDF stores no binary to fetch (its filepath is the parser
+           * marker), so the inline preview fails. Its extracted text still exists. */}
+          {previewError && showParsedText && (
+            <>
+              <p className="pb-3 text-sm text-text-secondary">
+                {localize('com_ui_extracted_text_description')}
+              </p>
+              <ExtractedTextPanel fileId={fileId} enabled={open} />
+            </>
           )}
           {fileBlobUrl && (
             <iframe

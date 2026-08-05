@@ -908,10 +908,16 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           );
         }
         const annotated = annotateMissingPages(text, pagesNeedingOcr);
+        /* Keep the document's real MIME type on the record. Storing the default
+         * `text/plain` here would discard what kind of file this was, and every
+         * extracted-text affordance in the client keys on that type. Model routing
+         * is unaffected: BaseClient short-circuits on `source === text` before any
+         * type-based categorization. */
         return await createTextFile({
           text: annotated,
           bytes: annotated === text ? bytes : Buffer.byteLength(annotated, 'utf8'),
           filepath: ocrFileURL,
+          type: file.mimetype,
         });
       }
       throw new Error(
