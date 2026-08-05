@@ -10,6 +10,7 @@ export * from './ocr';
 export * from './parse';
 export * from './rag';
 export * from './retention';
+export * from './sse';
 export * from './sweep';
 export * from './usage';
 export * from './validation';

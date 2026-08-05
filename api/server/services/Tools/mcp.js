@@ -13,6 +13,13 @@ const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
 const { updateMCPServerTools } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
+const MCP_REINITIALIZE_FAILURE_REASONS = {
+  UNREACHABLE: 'unreachable',
+  MISSING_CUSTOM_USER_VARS: 'missing_custom_user_vars',
+  OAUTH_REQUIRED: 'oauth_required',
+  INITIALIZATION_FAILED: 'initialization_failed',
+};
+
 /**
  * Reinitializes an MCP server connection and discovers available tools.
  * When OAuth is required, uses discovery mode to list tools without full authentication
@@ -76,6 +83,7 @@ async function reinitMCPServer({
           availableTools: null,
           success: false,
           message: `MCP server '${serverName}' is still unreachable`,
+          failureReason: MCP_REINITIALIZE_FAILURE_REASONS.UNREACHABLE,
           oauthRequired: false,
           serverName,
           oauthUrl: null,
@@ -98,6 +106,7 @@ async function reinitMCPServer({
             availableTools: null,
             success: false,
             message: `MCP server '${serverName}' is still unreachable`,
+            failureReason: MCP_REINITIALIZE_FAILURE_REASONS.UNREACHABLE,
             oauthRequired: false,
             serverName,
             oauthUrl: null,
@@ -122,6 +131,8 @@ async function reinitMCPServer({
         message: `MCP server '${serverName}' requires user-provided variable(s) [${missingUserVars.join(
           ', ',
         )}] which are not set`,
+        failureReason: MCP_REINITIALIZE_FAILURE_REASONS.MISSING_CUSTOM_USER_VARS,
+        missingUserVars,
         oauthRequired: false,
         serverName,
         oauthUrl: null,
@@ -278,14 +289,20 @@ async function reinitMCPServer({
       return `Failed to reinitialize MCP server '${serverName}'`;
     };
 
+    const success = Boolean(
+      (connection && !oauthRequired) || (oauthRequired && oauthUrl) || (tools && tools.length > 0),
+    );
+    let failureReason;
+    if (!success) {
+      failureReason = oauthRequired
+        ? MCP_REINITIALIZE_FAILURE_REASONS.OAUTH_REQUIRED
+        : MCP_REINITIALIZE_FAILURE_REASONS.INITIALIZATION_FAILED;
+    }
     const result = {
       availableTools,
-      success: Boolean(
-        (connection && !oauthRequired) ||
-          (oauthRequired && oauthUrl) ||
-          (tools && tools.length > 0),
-      ),
+      success,
       message: getResponseMessage(),
+      failureReason,
       oauthRequired,
       serverName,
       oauthUrl,

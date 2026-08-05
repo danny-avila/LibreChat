@@ -6,8 +6,8 @@ import {
   actionDelimiter,
   isActionTool,
 } from 'librechat-data-provider';
+import type { FilterQuery, Model, PipelineStage, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
-import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IAgent, IAclEntry } from '~/types';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
@@ -28,6 +28,84 @@ const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
   EToolResources.ocr,
 ];
 
+/** Builds an atomic update that prunes deleted IDs without discarding surviving edge members. */
+function createEdgeCleanupPipeline(agentIds: string[]): PipelineStage[] {
+  const cleanEndpoint = (endpoint: string) => ({
+    $cond: [
+      { $isArray: endpoint },
+      {
+        $filter: {
+          input: endpoint,
+          as: 'agentId',
+          cond: { $not: [{ $in: ['$$agentId', agentIds] }] },
+        },
+      },
+      { $cond: [{ $in: [endpoint, agentIds] }, null, endpoint] },
+    ],
+  });
+  const hasEndpoint = (endpoint: string) => ({
+    $cond: [{ $isArray: endpoint }, { $gt: [{ $size: endpoint }, 0] }, { $ne: [endpoint, null] }],
+  });
+
+  return [
+    {
+      $set: {
+        edges: {
+          $filter: {
+            input: {
+              $map: {
+                input: { $ifNull: ['$edges', []] },
+                as: 'edge',
+                in: {
+                  $let: {
+                    vars: {
+                      cleanedFrom: cleanEndpoint('$$edge.from'),
+                      cleanedTo: cleanEndpoint('$$edge.to'),
+                    },
+                    in: {
+                      $cond: [
+                        {
+                          $and: [hasEndpoint('$$cleanedFrom'), hasEndpoint('$$cleanedTo')],
+                        },
+                        {
+                          $mergeObjects: [
+                            '$$edge',
+                            {
+                              from: '$$cleanedFrom',
+                              to: '$$cleanedTo',
+                            },
+                          ],
+                        },
+                        null,
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+            as: 'edge',
+            cond: { $ne: ['$$edge', null] },
+          },
+        },
+      },
+    },
+  ];
+}
+
+/** Removes deleted agent references from every active graph that contains them. */
+async function removeAgentIdsFromEdges(Agent: Model<IAgent>, agentIds: string[]): Promise<void> {
+  if (agentIds.length === 0) {
+    return;
+  }
+
+  await Agent.updateMany(
+    {
+      $or: [{ 'edges.from': { $in: agentIds } }, { 'edges.to': { $in: agentIds } }],
+    },
+    createEdgeCleanupPipeline(agentIds),
+  );
+}
+
 export interface AgentDeps {
   /** Removes all ACL permissions for a resource. Injected from PermissionService. */
   removeAllPermissions: (params: { resourceType: string; resourceId: unknown }) => Promise<void>;
@@ -41,6 +119,8 @@ export interface AgentDeps {
     userObjectId: Types.ObjectId,
     resourceTypes: string | string[],
   ) => Promise<Types.ObjectId[]>;
+  /** Recognizes skill IDs supplied by an external, non-database registry. */
+  isExternalSkillId?: (id: string) => boolean;
 }
 
 /**
@@ -57,11 +137,54 @@ function extractMCPServerNames(tools: string[] | undefined | null): string[] {
       continue;
     }
     const parts = tool.split(mcp_delimiter);
+    /** This index only grants DB-backed servers (`ServerConfigsDB.getAccessibleServers`),
+     * and DB server names are slugs that cannot contain the delimiter
+     * (`generateServerNameFromTitle` strips underscores), so the last segment is always
+     * the real server for those. A config server whose own name contains the delimiter
+     * yields a trailing segment that is not its name; resolving that needs the configured
+     * server list, which is unavailable here - see #14449. */
     if (parts.length >= 2) {
       serverNames.add(parts[parts.length - 1]);
     }
   }
   return Array.from(serverNames);
+}
+
+/**
+ * Rebuilds an agent's MCP server index across a tools update without re-deriving
+ * names from the keys.
+ *
+ * A name already on the agent was resolved against the registry when it was
+ * stored, so it is authoritative; it carries forward while some retained tool
+ * still resolves to it. Only keys that match none of them fall back to the
+ * ambiguous trailing-segment derivation, which cannot tell a config server's
+ * suffix from a real DB server name.
+ */
+function rebuildMCPServerNames(tools: string[] | undefined | null, priorNames: string[]): string[] {
+  if (priorNames.length === 0) {
+    return extractMCPServerNames(tools);
+  }
+
+  const retained = new Set<string>();
+  const unmatched: string[] = [];
+  for (const tool of tools ?? []) {
+    if (!tool || !tool.includes(mcp_delimiter) || isActionTool(tool)) {
+      continue;
+    }
+    const match = priorNames
+      .filter((name) => tool.endsWith(`${mcp_delimiter}${name}`))
+      .sort((a, b) => b.length - a.length)[0];
+    if (match) {
+      retained.add(match);
+    } else {
+      unmatched.push(tool);
+    }
+  }
+
+  for (const name of extractMCPServerNames(unmatched)) {
+    retained.add(name);
+  }
+  return Array.from(retained);
 }
 
 /**
@@ -328,7 +451,7 @@ export function createAgentMethods(
     file_ids: string[];
   }) => Promise<{ matchedCount: number; modifiedCount: number }>;
 } {
-  const { removeAllPermissions, getActions, getSoleOwnedResourceIds } = deps;
+  const { removeAllPermissions, getActions, getSoleOwnedResourceIds, isExternalSkillId } = deps;
 
   /**
    * Create an agent with the provided data.
@@ -336,7 +459,11 @@ export function createAgentMethods(
   async function createAgent(agentData: Record<string, unknown>): Promise<IAgent> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     if (Array.isArray(agentData.skills) && agentData.skills.length > 0) {
-      const prunedSkills = await filterExistingSkillIds(mongoose, agentData.skills as string[]);
+      const prunedSkills = await filterExistingSkillIds(
+        mongoose,
+        agentData.skills as string[],
+        isExternalSkillId,
+      );
       agentData.skills = prunedSkills;
       /** Fail closed when pruning empties a non-empty allowlist — empty +
        *  enabled means the full catalog, and hygiene must never widen scope. */
@@ -356,7 +483,11 @@ export function createAgentMethods(
         },
       ],
       category: (agentData.category as string) || 'general',
-      mcpServerNames: extractMCPServerNames(agentData.tools as string[] | undefined),
+      /** Callers that authorized the tools pass resolved names; deriving from the key
+       * alone cannot tell a config server's suffix from a real DB server name. */
+      mcpServerNames:
+        (agentData.mcpServerNames as string[] | undefined) ??
+        extractMCPServerNames(agentData.tools as string[] | undefined),
     };
 
     return (await Agent.create(initialAgentData)).toObject() as IAgent;
@@ -486,7 +617,8 @@ export function createAgentMethods(
       } = currentAgent.toObject() as unknown as Record<string, unknown>;
       const { $push, $pull, $addToSet, ...directUpdates } = updateData;
 
-      /** Self-heal: drop allowlist ids whose skill doc no longer exists.
+      /** Self-heal: drop allowlist ids whose skill no longer exists in the
+       *  database or the external registry.
        *  A dangling id keeps the allowlist non-empty while scoping the
        *  runtime catalog to an empty intersection — silently disabling
        *  skills for the agent. When pruning empties a non-empty allowlist,
@@ -498,6 +630,7 @@ export function createAgentMethods(
         const prunedSkills = await filterExistingSkillIds(
           mongoose,
           directUpdates.skills as string[],
+          isExternalSkillId,
         );
         directUpdates.skills = prunedSkills;
         updateData.skills = prunedSkills;
@@ -509,9 +642,17 @@ export function createAgentMethods(
 
       // Sync mcpServerNames when tools are updated
       if ((directUpdates as Record<string, unknown>).tools !== undefined) {
-        const mcpServerNames = extractMCPServerNames(
-          (directUpdates as Record<string, unknown>).tools as string[],
-        );
+        /** Callers that authorized the tools pass resolved names; deriving from the key
+         * alone cannot tell a config server's suffix from a real DB server name. */
+        const supplied = (directUpdates as Record<string, unknown>).mcpServerNames as
+          | string[]
+          | undefined;
+        const mcpServerNames =
+          supplied ??
+          rebuildMCPServerNames(
+            (directUpdates as Record<string, unknown>).tools as string[],
+            (currentAgent.mcpServerNames as string[] | undefined) ?? [],
+          );
         (directUpdates as Record<string, unknown>).mcpServerNames = mcpServerNames;
         updateData.mcpServerNames = mcpServerNames;
       }
@@ -737,10 +878,7 @@ export function createAgentMethods(
         }),
       ]);
       try {
-        await Agent.updateMany(
-          { 'edges.to': (agent as unknown as { id: string }).id },
-          { $pull: { edges: { to: (agent as unknown as { id: string }).id } } },
-        );
+        await removeAgentIdsFromEdges(Agent, [(agent as unknown as { id: string }).id]);
       } catch (error) {
         logger.error('[deleteAgent] Error removing agent from handoff edges', error);
       }
@@ -812,10 +950,7 @@ export function createAgentMethods(
       });
 
       try {
-        await Agent.updateMany(
-          { 'edges.to': { $in: agentIds } },
-          { $pull: { edges: { to: { $in: agentIds } } } },
-        );
+        await removeAgentIdsFromEdges(Agent, agentIds);
       } catch (error) {
         logger.error('[deleteUserAgents] Error removing agents from handoff edges', error);
       }
@@ -988,6 +1123,7 @@ export function createAgentMethods(
       const prunedSkills = await filterExistingSkillIds(
         mongoose,
         revertToVersion.skills as string[],
+        isExternalSkillId,
       );
       revertToVersion.skills = prunedSkills;
       if (prunedSkills.length === 0) {

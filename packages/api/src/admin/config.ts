@@ -1,5 +1,6 @@
 import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import {
+  BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
   PrincipalType,
   PrincipalModel,
@@ -17,8 +18,10 @@ import {
   encryptConfigSecrets,
   getConfigSecretMutationPaths,
   getConfigSecretInputError,
+  getConfigSecretSections,
   isConfigSecretAncestorPath,
   isConfigSecretDescendantPath,
+  isConfigSecretPreservablePatch,
   preserveConfigSecrets,
   redactConfigSecrets,
 } from './secrets';
@@ -27,6 +30,7 @@ const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
 const DEFAULT_PRIORITY = 10;
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
+const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
 
 export function isValidFieldPath(path: string): boolean {
   return (
@@ -35,6 +39,7 @@ export function isValidFieldPath(path: string): boolean {
     !path.startsWith('.') &&
     !path.endsWith('.') &&
     !path.includes('..') &&
+    !path.includes('$') &&
     !UNSAFE_SEGMENTS.test(path)
   );
 }
@@ -131,6 +136,13 @@ export interface AdminConfigDeps {
     section: ConfigSection | null,
     verb?: 'manage' | 'read',
   ) => Promise<boolean>;
+  /** Pre-flight-only: whether the caller holds any config-read capability at all (broad or any section), so a zero-access caller 403s before a DB fetch. */
+  hasAnyConfigReadAccess?: (user: CapabilityUser) => Promise<boolean>;
+  /** Resolves which of a set of sections the caller can read in a single batched query. */
+  getReadableConfigSections?: (
+    user: CapabilityUser,
+    sections: ConfigSection[],
+  ) => Promise<{ broad: boolean; sections: Set<string> }>;
   hasCapability?: (user: CapabilityUser, capability: SystemCapability) => Promise<boolean>;
   getAppConfig?: (options?: {
     role?: string;
@@ -183,6 +195,118 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
   };
 }
 
+/**
+ * `AppConfig` keys exempt from the generic per-key `read:configs:<section>`
+ * lookup in `filterSectionsByReadAccess`, for three distinct reasons:
+ * - `paths` is a server-computed constant (resolved at module load), not a
+ *   `TCustomConfig` section, so no `read:configs:<section>` grant could ever
+ *   apply to it.
+ * - `config` is the nested container whose contents are filtered separately
+ *   below; checking the outer key against a nonexistent `read:configs:config`
+ *   grant would always fail and strip the whole object, including sections
+ *   the caller legitimately holds.
+ * - `availableTools` is derived from the `filteredTools`/`includedTools`
+ *   sections plus a filesystem scan, not itself a grantable section. It gets
+ *   its own explicit check below, gated on those two source sections, rather
+ *   than a lookup against the nonexistent `read:configs:availableTools`.
+ * Real `TCustomConfig` sections (e.g. `fileStrategy`) must never be added
+ * here: exempting one would return it to every caller regardless of grants.
+ */
+const STRUCTURAL_APP_CONFIG_KEYS = new Set(['paths', 'availableTools', 'config']);
+
+/**
+ * Top-level `AppConfig` response field → canonical `ConfigSection` name.
+ * `getAppConfig` renames a few sections in the resolved payload
+ * (`interface` → `interfaceConfig`, `turnstile` → `turnstileConfig`,
+ * `mcpServers` → `mcpConfig`). The read-grant capability is keyed by the
+ * canonical section name, so the top-level filter must normalize through
+ * this map before calling `canRead`. Otherwise a caller holding
+ * `read:configs:interface` gets `interfaceConfig` incorrectly stripped
+ * because no section named "interfaceConfig" exists to grant.
+ */
+const APP_CONFIG_FIELD_TO_SECTION: Readonly<Record<string, string>> = {
+  interfaceConfig: 'interface',
+  turnstileConfig: 'turnstile',
+  mcpConfig: 'mcpServers',
+};
+
+type ReadableSections = { broad: boolean; sections: ReadonlySet<string> };
+
+function canReadSection(readable: ReadableSections, section: string): boolean {
+  return readable.broad || readable.sections.has(section);
+}
+
+/** Strips every top-level key not in `preserveKeys` that `canRead` rejects. */
+function filterSectionsByReadAccess<T extends Record<string, unknown>>(
+  obj: T,
+  canRead: (section: string) => boolean,
+  preserveKeys: Set<string> = new Set(),
+): T {
+  const result: Record<string, unknown> = { ...obj };
+  for (const key of Object.keys(result)) {
+    if (!preserveKeys.has(key) && !canRead(key)) {
+      delete result[key];
+    }
+  }
+  return result as T;
+}
+
+function filterConfigDocForReadAccess(config: IConfig, readable: ReadableSections): IConfig {
+  const canRead = (section: string): boolean => canReadSection(readable, section);
+  const filteredOverrides = filterSectionsByReadAccess(
+    (config.overrides ?? {}) as Record<string, unknown>,
+    canRead,
+  );
+
+  let filteredTombstones = config.tombstones;
+  if (config.tombstones?.length) {
+    filteredTombstones = config.tombstones.filter((path) => canRead(getTopLevelSection(path)));
+  }
+
+  return {
+    ...config,
+    overrides: filteredOverrides as Partial<TCustomConfig>,
+    tombstones: filteredTombstones,
+  } as IConfig;
+}
+
+function filterAppConfigForReadAccess(appConfig: AppConfig, readable: ReadableSections): AppConfig {
+  const canRead = (section: string): boolean => canReadSection(readable, section);
+  const canReadTopLevelField = (field: string): boolean =>
+    canRead(APP_CONFIG_FIELD_TO_SECTION[field] ?? field);
+
+  const filtered = filterSectionsByReadAccess(
+    appConfig as unknown as Record<string, unknown>,
+    canReadTopLevelField,
+    STRUCTURAL_APP_CONFIG_KEYS,
+  );
+  if (!canRead('filteredTools') && !canRead('includedTools')) {
+    delete (filtered as { availableTools?: unknown }).availableTools;
+  }
+  const nestedConfig = (filtered as { config?: Record<string, unknown> }).config;
+  if (nestedConfig != null && typeof nestedConfig === 'object') {
+    (filtered as { config?: unknown }).config = filterSectionsByReadAccess(nestedConfig, canRead);
+  }
+  return filtered as unknown as AppConfig;
+}
+
+/** All section names an `IConfig` document's overrides/tombstones could reference. */
+function collectConfigSections(config: IConfig): string[] {
+  return [
+    ...Object.keys(config.overrides ?? {}),
+    ...(config.tombstones ?? []).map(getTopLevelSection),
+  ];
+}
+
+/** All section names an `AppConfig` response could reference, normalized to canonical section names. */
+function collectAppConfigSections(appConfig: AppConfig): string[] {
+  const topLevel = Object.keys(appConfig)
+    .filter((key) => !STRUCTURAL_APP_CONFIG_KEYS.has(key))
+    .map((key) => APP_CONFIG_FIELD_TO_SECTION[key] ?? key);
+  const nested = (appConfig as unknown as { config?: Record<string, unknown> }).config;
+  return [...topLevel, ...(nested ? Object.keys(nested) : [])];
+}
+
 function redactConfigForResponse(config: IConfig): IConfig {
   const safeConfig = JSON.parse(JSON.stringify(config)) as IConfig;
   if (safeConfig.overrides) {
@@ -200,22 +324,13 @@ function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
   return safeConfig;
 }
 
-function isObjectValuedLangfusePatch(fieldPath: string, value: unknown): boolean {
-  return (
-    isConfigSecretAncestorPath(fieldPath) &&
-    value != null &&
-    typeof value === 'object' &&
-    !Array.isArray(value)
-  );
-}
-
 function preservePatchedConfigSecretFields(
   fields: Record<string, unknown>,
   existingOverrides?: unknown,
 ): Record<string, unknown> {
   const result = { ...fields };
   for (const [fieldPath, value] of Object.entries(result)) {
-    if (isObjectValuedLangfusePatch(fieldPath, value)) {
+    if (isConfigSecretPreservablePatch(fieldPath, value)) {
       result[fieldPath] = preserveConfigSecrets(value, existingOverrides, fieldPath);
     }
   }
@@ -245,6 +360,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     deleteConfig,
     toggleConfigActive,
     hasConfigCapability,
+    hasAnyConfigReadAccess = async () => false,
+    getReadableConfigSections = async (u, sections) => {
+      if (await hasConfigCapability(u, null, 'read')) {
+        return { broad: true, sections: new Set(sections) };
+      }
+      const held = await Promise.all(
+        sections.map((section) => hasConfigCapability(u, section, 'read')),
+      );
+      return { broad: false, sections: new Set(sections.filter((_, i) => held[i])) };
+    },
     hasCapability = async () => false,
     getAppConfig,
     invalidateConfigCaches,
@@ -260,12 +385,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      if (!(await hasConfigCapability(user, null, 'read'))) {
+      if (!(await hasAnyConfigReadAccess(user))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
       const configs = await listAllConfigs();
-      const safeConfigs = configs.map(redactConfigForResponse);
+      const sections = [...new Set(configs.flatMap(collectConfigSections))] as ConfigSection[];
+      const readable = await getReadableConfigSections(user, sections);
+      const filtered = configs.map((config) => filterConfigDocForReadAccess(config, readable));
+
+      const safeConfigs = filtered.map(redactConfigForResponse);
       return res.status(200).json({ configs: safeConfigs });
     } catch (error) {
       logger.error('[adminConfig] listConfigs error:', error);
@@ -284,12 +413,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      if (!(await hasConfigCapability(user, null, 'read'))) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
-
       if (!getAppConfig) {
         return res.status(501).json({ error: 'Base config endpoint not configured' });
+      }
+
+      if (!(await hasAnyConfigReadAccess(user))) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
       const baseOnly = (req.query as Record<string, unknown>).baseOnly === 'true';
@@ -297,7 +426,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         tenantId: user.tenantId,
         baseOnly,
       });
-      return res.status(200).json({ config: redactAppConfigForResponse(appConfig) });
+      const sections = collectAppConfigSections(appConfig) as ConfigSection[];
+      const readable = await getReadableConfigSections(user, sections);
+      const filteredAppConfig = filterAppConfigForReadAccess(appConfig, readable);
+
+      return res.status(200).json({ config: redactAppConfigForResponse(filteredAppConfig) });
     } catch (error) {
       logger.error('[adminConfig] getBaseConfig error:', error);
       return res.status(500).json({ error: 'Failed to get base config' });
@@ -323,7 +456,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      if (!(await hasConfigCapability(user, null, 'read'))) {
+      if (!(await hasAnyConfigReadAccess(user))) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
@@ -334,7 +467,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(404).json({ error: 'Config not found' });
       }
 
-      return res.status(200).json({ config: redactConfigForResponse(config) });
+      const sections = collectConfigSections(config) as ConfigSection[];
+      const readable = await getReadableConfigSections(user, sections);
+      const filteredConfig = filterConfigDocForReadAccess(config, readable);
+
+      return res.status(200).json({ config: redactConfigForResponse(filteredConfig) });
     } catch (error) {
       logger.error('[adminConfig] getConfig error:', error);
       return res.status(500).json({ error: 'Failed to get config' });
@@ -398,6 +535,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           );
         }
       }
+      for (const key of Object.keys(filteredOverrides)) {
+        const section = getTopLevelSection(key);
+        if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+          delete (filteredOverrides as Record<string, unknown>)[key];
+          logger.warn(
+            `[adminConfig] Stripping dedicated tenant-wide config section "${key}" from the generic config API`,
+          );
+        }
+      }
       const iface = (overrides as Record<string, unknown>).interface;
       if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
         const filteredIface: Record<string, unknown> = {};
@@ -454,25 +600,44 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         ? { expectEmpty: false }
         : { expectEmpty: true, preservePriority: true };
 
-      const langfuseInputError = getConfigSecretInputError(
-        'langfuse',
-        (filteredOverrides as Record<string, unknown>).langfuse,
-      );
-      if (langfuseInputError) {
-        return res.status(400).json({ error: langfuseInputError });
+      for (const section of getConfigSecretSections()) {
+        const secretInputError = getConfigSecretInputError(
+          section,
+          (filteredOverrides as Record<string, unknown>)[section],
+        );
+        if (secretInputError) {
+          return res.status(400).json({ error: secretInputError });
+        }
       }
 
       const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
-      const existingForSecrets = isObjectValuedLangfusePatch(
-        'langfuse',
-        (filteredOverrides as Record<string, unknown>).langfuse,
-      )
-        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-        : null;
+      const needsExistingSecrets = getConfigSecretSections().some((section) =>
+        isConfigSecretPreservablePatch(
+          section,
+          (filteredOverrides as Record<string, unknown>)[section],
+        ),
+      );
+      const needsProtectedBaseSections =
+        principalId === BASE_CONFIG_PRINCIPAL_ID &&
+        (overrideSections.length > 0 || priority != null);
+      const existingConfig =
+        needsExistingSecrets || needsProtectedBaseSections
+          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+          : null;
       const preservedOverrides = preserveConfigSecrets(
         encryptedOverrides,
-        existingForSecrets?.overrides,
+        existingConfig?.overrides,
       );
+      if (needsProtectedBaseSections) {
+        for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
+          const storedSection = (
+            existingConfig?.overrides as Record<string, unknown> | undefined
+          )?.[section];
+          if (storedSection !== undefined) {
+            (preservedOverrides as Record<string, unknown>)[section] = storedSection;
+          }
+        }
+      }
       const config = await upsertConfig(
         principalType,
         principalId,
@@ -565,6 +730,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           );
           return false;
         }
+        if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath))) {
+          logger.warn(
+            `[adminConfig] Stripping dedicated tenant-wide config field "${entry.fieldPath}" from the generic config API`,
+          );
+          return false;
+        }
         if (isInterfacePermissionPath(entry.fieldPath)) {
           logger.warn(
             `[adminConfig] Stripping interface permission field "${entry.fieldPath}" — use role permissions instead`,
@@ -613,11 +784,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
-      const hasObjectValuedLangfusePatch = Object.entries(fields).some(([fieldPath, value]) =>
-        isObjectValuedLangfusePatch(fieldPath, value),
+      const hasObjectValuedSecretPatch = Object.entries(fields).some(([fieldPath, value]) =>
+        isConfigSecretPreservablePatch(fieldPath, value),
       );
       const existing =
-        requestedPriority == null || hasObjectValuedLangfusePatch
+        requestedPriority == null || hasObjectValuedSecretPatch
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
       const encryptedFields = encryptConfigSecretFields(fields);
@@ -702,6 +873,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
+      if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+        logger.warn(
+          `[adminConfig] Ignoring dedicated tenant-wide config tombstone "${fieldPath}" in the generic config API`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
 
       if (priority != null && !hasBroadManage) {
         logger.warn(
@@ -782,6 +959,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (isBaseOnlyFieldPath(fieldPath)) {
         logger.warn(
           `[adminConfig] Ignoring delete for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
+
+      if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+        logger.warn(
+          `[adminConfig] Ignoring dedicated tenant-wide config delete "${fieldPath}" in the generic config API`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }

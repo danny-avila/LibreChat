@@ -27,8 +27,8 @@ import {
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
+import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '~/utils/approval';
 import { subagentProgressByToolCallId, sandboxStartingByToolCallId } from '~/store';
-import { isAskUserQuestionPart } from '~/utils/approval';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 
 type TUseStepHandler = {
@@ -126,6 +126,14 @@ export default function useStepHandler({
   const pendingDeltaBuffer = useRef(new Map<string, TStepEvent[]>());
   /** Coalesces rapid-fire summarize delta renders into a single rAF frame */
   const summarizeDeltaRaf = useRef<number | null>(null);
+  /** Coalesces per-token message/reasoning delta cache writes into one rAF frame.
+   * `deltaFlushScheduled` (not the handle) gates scheduling: the handle is
+   * assigned after `requestAnimationFrame` returns, which would race a
+   * synchronously-invoked callback. */
+  const messageDeltaRaf = useRef<number | null>(null);
+  const deltaFlushScheduled = useRef(false);
+  const pendingDeltaFlushIds = useRef(new Set<string>());
+  const pendingDeltaFlushRef = useRef<(() => void) | null>(null);
   /**
    * Maps `SubagentUpdateEvent.subagentRunId` → parent `tool_call_id`.
    * Preferred source is `payload.parentToolCallId` (threaded through by the
@@ -323,27 +331,31 @@ export default function useStepHandler({
 
   /**
    * Calculate content index for a run step.
-   * For edited content scenarios, offset by initialContent length.
+   *
+   * Takes the edit-prefix OFFSET rather than the prefix array: after a resume
+   * sync the live array no longer describes the retained prefix, so deriving
+   * the offset here from its length would disagree with the offset every
+   * other event path applies.
    */
   const calculateContentIndex = useCallback(
     (
       serverIndex: number,
-      initialContent: TMessageContentParts[],
+      editPrefixOffset: number,
       incomingContentType: string,
       existingContent?: TMessageContentParts[],
     ): number => {
       /** Only apply -1 adjustment for TEXT or THINK types when they match existing content */
       if (
-        initialContent.length > 0 &&
+        editPrefixOffset > 0 &&
         (incomingContentType === ContentTypes.TEXT || incomingContentType === ContentTypes.THINK)
       ) {
-        const targetIndex = serverIndex + initialContent.length - 1;
+        const targetIndex = serverIndex + editPrefixOffset - 1;
         const existingType = existingContent?.[targetIndex]?.type;
         if (existingType === incomingContentType) {
           return targetIndex;
         }
       }
-      return serverIndex + initialContent.length;
+      return serverIndex + editPrefixOffset;
     },
     [],
   );
@@ -388,6 +400,17 @@ export default function useStepHandler({
      */
     if (isAskUserQuestionPart(updatedContent[index])) {
       updatedContent = updatedContent.filter((part) => !isAskUserQuestionPart(part));
+    } else if (updatedContent.some(isAnsweredAskUserQuestionPart)) {
+      /**
+       * An ALREADY-ANSWERED card the resumed segment streams around rather than
+       * into: the first event after the resume re-renders the ask tool_call at
+       * ITS OWN index, so the slot test above never fires and this handler's
+       * cached copy — which still holds the card the answer-submit stripped from
+       * the store — gets written back, reopening the popover with its options
+       * locked. Only cards the user actually answered are dropped, so an event
+       * racing a still-live pause can't take its card down.
+       */
+      updatedContent = updatedContent.filter((part) => !isAnsweredAskUserQuestionPart(part));
     }
 
     if (!updatedContent[index] && contentType !== ContentTypes.TOOL_CALL) {
@@ -490,6 +513,12 @@ export default function useStepHandler({
       if (finalUpdate) {
         newToolCall.progress = 1;
         newToolCall.output = contentPart.tool_call.output;
+        if (
+          'inputValidationError' in contentPart.tool_call &&
+          contentPart.tool_call.inputValidationError === true
+        ) {
+          Object.assign(newToolCall, { inputValidationError: true });
+        }
       }
 
       updatedContent[index] = {
@@ -576,15 +605,28 @@ export default function useStepHandler({
           return candidateMessages;
         }
 
-        const responseIndex = candidateMessages.findIndex(
-          (message) => message.messageId === responseMessageId,
-        );
-        if (responseIndex < 0) {
+        /** Insert before the row's first CHILD as well as before the response
+         *  row: abandoned responses from preempted attempts are children of
+         *  this user message and may already sit in the list. Landing the
+         *  parent after them orders children before their parent, which the
+         *  message tree renders as phantom root branches (a folded thread). */
+        let insertIndex = candidateMessages.length;
+        for (let i = 0; i < candidateMessages.length; i++) {
+          const message = candidateMessages[i];
+          if (
+            message.messageId === responseMessageId ||
+            message.parentMessageId === userMessage.messageId
+          ) {
+            insertIndex = i;
+            break;
+          }
+        }
+        if (insertIndex >= candidateMessages.length) {
           return [...candidateMessages, userMessage as TMessage];
         }
 
         const nextMessages = [...candidateMessages];
-        nextMessages.splice(responseIndex, 0, userMessage as TMessage);
+        nextMessages.splice(insertIndex, 0, userMessage as TMessage);
         return nextMessages;
       };
       const getResponseBaseMessages = (
@@ -625,6 +667,41 @@ export default function useStepHandler({
             )
           : [...currentMessages, updatedResponse];
       };
+      /**
+       * Per-token deltas fold into `messageMap` immediately (authoritative), but
+       * the cache write — and the buildTree + message-tree walk it triggers —
+       * flushes at most once per frame. Non-delta events keep writing
+       * synchronously from `messageMap`, so a trailing flush after them merges
+       * the same authoritative state; `clearStepMaps` cancels the flush at run
+       * boundaries (same lifecycle as the summarize coalescing above).
+       */
+      const scheduleCoalescedMessagesFlush = (responseMessageId: string) => {
+        pendingDeltaFlushIds.current.add(responseMessageId);
+        const flush = () => {
+          deltaFlushScheduled.current = false;
+          messageDeltaRaf.current = null;
+          pendingDeltaFlushRef.current = null;
+          const ids = pendingDeltaFlushIds.current;
+          pendingDeltaFlushIds.current = new Set();
+          let candidate = messages;
+          for (const id of ids) {
+            const latest = messageMap.current.get(id);
+            if (!latest) {
+              continue;
+            }
+            candidate = mergeResponseMessage(candidate, latest, id, { ensureUserMessage: true });
+            setMessages(candidate);
+          }
+        };
+        /** Exposed so terminal/read boundaries (abort, error, pending-action)
+         * can apply the queued tokens synchronously via `flushPendingDeltas`. */
+        pendingDeltaFlushRef.current = flush;
+        if (deltaFlushScheduled.current) {
+          return;
+        }
+        deltaFlushScheduled.current = true;
+        messageDeltaRaf.current = requestAnimationFrame(flush);
+      };
       let parentMessageId =
         submission.isRegenerate && submission.initialResponse?.parentMessageId
           ? submission.initialResponse.parentMessageId
@@ -636,10 +713,33 @@ export default function useStepHandler({
         lastAnnouncementTimeRef.current = currentTime;
       }
 
+      /**
+       * Index offset for an edited resubmission: the server indexes only the
+       * NEW content, so incoming indices shift past the prefix the client
+       * kept.
+       *
+       * Reads the length CAPTURED when the submission was built rather than
+       * the live `initialResponse.content` array, because a resume sync
+       * REPLACES that array with the server's completion-local snapshot —
+       * whose length describes the new generation, not the retained prefix.
+       * They are equal until a reconnect, so the non-resumed path is
+       * unaffected.
+       *
+       * `editPrefixCleared` means that sync also replaced the RENDERED
+       * content: the prefix is gone from the message and server indices are
+       * already absolute, so any offset would write past the end. Activity
+       * labels honor the same flag — both must agree, or a batch's tool
+       * cards and its header land in different index spaces.
+       *
+       * `initialContent` stays the live array: it seeds a response that is
+       * not in the map yet, and post-sync the seeding path correctly falls
+       * back to the rendered content instead.
+       */
       let initialContent: TMessageContentParts[] = [];
-      // For editedContent scenarios, use the initial response content for index offsetting
-      if (submission?.editedContent != null) {
+      let editPrefixOffset = 0;
+      if (submission?.editedContent != null && submission?.editPrefixCleared !== true) {
         initialContent = submission?.initialResponse?.content ?? initialContent;
+        editPrefixOffset = submission?.editPrefixLength ?? initialContent.length;
       }
 
       if (stepEvent.event === StepEvents.ON_RUN_STEP) {
@@ -656,8 +756,8 @@ export default function useStepHandler({
 
         stepMap.current.set(runStep.id, runStep);
 
-        // Calculate content index - use server index, offset by initialContent for edit scenarios
-        const contentIndex = runStep.index + initialContent.length;
+        // Calculate content index - use server index, offset by the retained edit prefix
+        const contentIndex = runStep.index + editPrefixOffset;
 
         let response = messageMap.current.get(responseMessageId);
 
@@ -703,12 +803,9 @@ export default function useStepHandler({
           // Ensure userMessage is present (multi-tab: Tab 2 may not have it yet).
           // Regenerate reuses an existing user turn; its submission userMessage is only
           // a transport placeholder and must not become a new visible branch.
-          if (
-            !submission.isRegenerate &&
-            !updatedMessages.some((m) => m.messageId === userMessage.messageId)
-          ) {
-            updatedMessages = [...updatedMessages, userMessage as TMessage];
-          }
+          // (`ensureUserMessagePresent` no-ops for regenerate and inserts in
+          // parent-before-children order otherwise.)
+          updatedMessages = ensureUserMessagePresent(updatedMessages, responseMessageId);
 
           setMessages([...updatedMessages, response]);
         }
@@ -797,7 +894,7 @@ export default function useStepHandler({
         const response = messageMap.current.get(responseMessageId);
         if (response) {
           // Agent updates don't need index adjustment
-          const currentIndex = agent_update.index + initialContent.length;
+          const currentIndex = agent_update.index + editPrefixOffset;
           // Agent updates carry their own agentId - use default groupId if agentId is present
           const agentUpdateMeta: ContentMetadata | undefined = agent_update.agentId
             ? { agentId: agent_update.agentId, groupId: 1 }
@@ -834,33 +931,38 @@ export default function useStepHandler({
 
         const response = messageMap.current.get(responseMessageId);
         if (response && messageDelta.delta.content) {
-          const contentPart = Array.isArray(messageDelta.delta.content)
-            ? messageDelta.delta.content[0]
-            : messageDelta.delta.content;
+          /** A delta may carry several parts (e.g. Google server-side tool
+           *  chunks) — every entry must be applied, in order, or streamed
+           *  text is silently dropped. */
+          const contentParts = Array.isArray(messageDelta.delta.content)
+            ? messageDelta.delta.content
+            : [messageDelta.delta.content];
 
-          if (contentPart == null) {
-            return;
+          let updatedResponse = response;
+          let hasUpdate = false;
+          for (const contentPart of contentParts) {
+            if (contentPart == null) {
+              continue;
+            }
+            const currentIndex = calculateContentIndex(
+              runStep.index,
+              editPrefixOffset,
+              contentPart.type || '',
+              updatedResponse.content,
+            );
+            updatedResponse = updateContent(
+              updatedResponse,
+              currentIndex,
+              contentPart,
+              false,
+              getStepMetadata(runStep),
+            );
+            hasUpdate = true;
           }
-
-          const currentIndex = calculateContentIndex(
-            runStep.index,
-            initialContent,
-            contentPart.type || '',
-            response.content,
-          );
-          const updatedResponse = updateContent(
-            response,
-            currentIndex,
-            contentPart,
-            false,
-            getStepMetadata(runStep),
-          );
-          messageMap.current.set(responseMessageId, updatedResponse);
-          setMessages(
-            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
-              ensureUserMessage: true,
-            }),
-          );
+          if (hasUpdate) {
+            messageMap.current.set(responseMessageId, updatedResponse);
+            scheduleCoalescedMessagesFlush(responseMessageId);
+          }
         }
       } else if (stepEvent.event === StepEvents.ON_REASONING_DELTA) {
         const reasoningDelta = stepEvent.data;
@@ -880,33 +982,37 @@ export default function useStepHandler({
 
         const response = messageMap.current.get(responseMessageId);
         if (response && reasoningDelta.delta.content != null) {
-          const contentPart = Array.isArray(reasoningDelta.delta.content)
-            ? reasoningDelta.delta.content[0]
-            : reasoningDelta.delta.content;
+          /** Same multi-part contract as message deltas: Google server-side
+           *  tool chunks emit several think entries in one delta. */
+          const contentParts = Array.isArray(reasoningDelta.delta.content)
+            ? reasoningDelta.delta.content
+            : [reasoningDelta.delta.content];
 
-          if (contentPart == null) {
-            return;
+          let updatedResponse = response;
+          let hasUpdate = false;
+          for (const contentPart of contentParts) {
+            if (contentPart == null) {
+              continue;
+            }
+            const currentIndex = calculateContentIndex(
+              runStep.index,
+              editPrefixOffset,
+              contentPart.type || '',
+              updatedResponse.content,
+            );
+            updatedResponse = updateContent(
+              updatedResponse,
+              currentIndex,
+              contentPart,
+              false,
+              getStepMetadata(runStep),
+            );
+            hasUpdate = true;
           }
-
-          const currentIndex = calculateContentIndex(
-            runStep.index,
-            initialContent,
-            contentPart.type || '',
-            response.content,
-          );
-          const updatedResponse = updateContent(
-            response,
-            currentIndex,
-            contentPart,
-            false,
-            getStepMetadata(runStep),
-          );
-          messageMap.current.set(responseMessageId, updatedResponse);
-          setMessages(
-            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
-              ensureUserMessage: true,
-            }),
-          );
+          if (hasUpdate) {
+            messageMap.current.set(responseMessageId, updatedResponse);
+            scheduleCoalescedMessagesFlush(responseMessageId);
+          }
         }
       } else if (stepEvent.event === StepEvents.ON_RUN_STEP_DELTA) {
         const runStepDelta = stepEvent.data;
@@ -949,8 +1055,8 @@ export default function useStepHandler({
               contentPart.tool_call.expires_at = runStepDelta.delta.expires_at;
             }
 
-            // Use server's index, offset by initialContent for edit scenarios
-            const currentIndex = runStep.index + initialContent.length;
+            // Use server's index, offset by the retained edit prefix
+            const currentIndex = runStep.index + editPrefixOffset;
             updatedResponse = updateContent(
               updatedResponse,
               currentIndex,
@@ -998,8 +1104,8 @@ export default function useStepHandler({
             tool_call: result.tool_call,
           };
 
-          // Use server's index, offset by initialContent for edit scenarios
-          const currentIndex = runStep.index + initialContent.length;
+          // Use server's index, offset by the retained edit prefix
+          const currentIndex = runStep.index + editPrefixOffset;
           updatedResponse = updateContent(
             updatedResponse,
             currentIndex,
@@ -1044,7 +1150,7 @@ export default function useStepHandler({
             summarizing: true,
           };
 
-          const contentIndex = runStep.index + initialContent.length;
+          const contentIndex = runStep.index + editPrefixOffset;
           const updatedResponse = updateContent(
             response,
             contentIndex,
@@ -1128,11 +1234,43 @@ export default function useStepHandler({
     ],
   );
 
+  /** Cancels a queued delta flush so it can't overwrite a terminal write:
+   * once a final handler has written the server's authoritative message, a
+   * trailing frame reading the older streaming copy from `messageMap` must
+   * never land on top of it. */
+  const cancelPendingDeltaFlush = useCallback(() => {
+    if (messageDeltaRaf.current != null) {
+      cancelAnimationFrame(messageDeltaRaf.current);
+      messageDeltaRaf.current = null;
+    }
+    deltaFlushScheduled.current = false;
+    pendingDeltaFlushRef.current = null;
+    pendingDeltaFlushIds.current.clear();
+  }, []);
+
+  /** Applies a queued delta flush synchronously (then cancels the frame).
+   * For boundaries that READ the cache or synthesize from it — abort's
+   * partial-response capture, error cards, pending-action application — the
+   * queued tokens must land first or the stopped/errored message loses them. */
+  const flushPendingDeltas = useCallback(() => {
+    if (messageDeltaRaf.current != null) {
+      cancelAnimationFrame(messageDeltaRaf.current);
+      messageDeltaRaf.current = null;
+    }
+    const flush = pendingDeltaFlushRef.current;
+    pendingDeltaFlushRef.current = null;
+    deltaFlushScheduled.current = false;
+    if (flush) {
+      flush();
+    }
+  }, []);
+
   const clearStepMaps = useCallback(() => {
     if (summarizeDeltaRaf.current != null) {
       cancelAnimationFrame(summarizeDeltaRaf.current);
       summarizeDeltaRaf.current = null;
     }
+    cancelPendingDeltaFlush();
     toolCallIdMap.current.clear();
     messageMap.current.clear();
     stepMap.current.clear();
@@ -1153,7 +1291,7 @@ export default function useStepHandler({
      *  persisted `subagent_content` takes over for historical messages
      *  once the conversation is saved, and we prevent unbounded
      *  atomFamily growth across multi-conversation sessions. */
-  }, [resetSandboxAtoms]);
+  }, [cancelPendingDeltaFlush, resetSandboxAtoms]);
 
   /**
    * Sync a message into the step handler's messageMap.
@@ -1166,5 +1304,12 @@ export default function useStepHandler({
     }
   }, []);
 
-  return { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage };
+  return {
+    stepHandler,
+    clearStepMaps,
+    resetSubagentAtoms,
+    syncStepMessage,
+    cancelPendingDeltaFlush,
+    flushPendingDeltas,
+  };
 }

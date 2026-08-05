@@ -4,6 +4,8 @@ import { logger } from '@librechat/data-schemas';
 import { Registry, collectDefaultMetrics, Counter, Gauge, Histogram } from 'prom-client';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Mongoose } from 'mongoose';
+import type { AgentStartupMilestone, AgentStartupResult } from '~/agents/phases';
+import { agentStartupMilestones, agentStartupResults } from '~/agents/phases';
 
 const PATH_NORMALIZATIONS: [RegExp, string][] = [
   [/^\/api\/agents\/chat\/stream\/[^/]+(?=\/|$)/, '/api/agents/chat/stream/#id'],
@@ -148,6 +150,8 @@ export type RumProxyResult =
   | 'collector_5xx'
   | 'collector_error'
   | 'collector_timeout';
+export type RedisClient = 'ioredis' | 'keyv';
+export type RedisOperationStatus = 'success' | 'error';
 
 type OpenIDUserLookupMetrics = {
   recordLookup: (result: OpenIDUserLookupResult, durationSeconds: number) => void;
@@ -190,12 +194,39 @@ let generationJobMetrics: GenerationJobMetrics = {
   recordResumePendingEvents: () => undefined,
 };
 
+type AgentStartupMetrics = {
+  recordMilestone: (milestone: AgentStartupMilestone, durationSeconds: number) => void;
+  recordResult: (result: AgentStartupResult) => void;
+};
+
+const agentStartupMilestoneSet = new Set<string>(agentStartupMilestones);
+const agentStartupResultSet = new Set<string>(agentStartupResults);
+
+let agentStartupMetrics: AgentStartupMetrics = {
+  recordMilestone: () => undefined,
+  recordResult: () => undefined,
+};
+
 type RumProxyMetrics = {
   recordRequest: (endpoint: RumProxyEndpoint, result: RumProxyResult) => void;
 };
 
 let rumProxyMetrics: RumProxyMetrics = {
   recordRequest: () => undefined,
+};
+
+type RedisOperationMetrics = {
+  recordOperation: (
+    client: RedisClient,
+    useCase: string,
+    operation: string,
+    status: RedisOperationStatus,
+    durationSeconds: number,
+  ) => void;
+};
+
+let redisOperationMetrics: RedisOperationMetrics = {
+  recordOperation: () => undefined,
 };
 
 const resetMetricRecorders = (): void => {
@@ -211,8 +242,15 @@ const resetMetricRecorders = (): void => {
     recordSubscription: () => undefined,
     recordResumePendingEvents: () => undefined,
   };
+  agentStartupMetrics = {
+    recordMilestone: () => undefined,
+    recordResult: () => undefined,
+  };
   rumProxyMetrics = {
     recordRequest: () => undefined,
+  };
+  redisOperationMetrics = {
+    recordOperation: () => undefined,
   };
 };
 
@@ -239,8 +277,39 @@ export function recordGenerationStreamResumePendingEvents(
   generationJobMetrics.recordResumePendingEvents(store, count);
 }
 
+export function recordAgentStartupMilestone(
+  milestone: AgentStartupMilestone,
+  durationSeconds: number,
+): void {
+  if (
+    !agentStartupMilestoneSet.has(milestone) ||
+    !Number.isFinite(durationSeconds) ||
+    durationSeconds < 0
+  ) {
+    return;
+  }
+  agentStartupMetrics.recordMilestone(milestone, durationSeconds);
+}
+
+export function recordAgentStartupResult(result: AgentStartupResult): void {
+  if (!agentStartupResultSet.has(result)) {
+    return;
+  }
+  agentStartupMetrics.recordResult(result);
+}
+
 export function recordRumProxyRequest(endpoint: RumProxyEndpoint, result: RumProxyResult): void {
   rumProxyMetrics.recordRequest(endpoint, result);
+}
+
+export function recordRedisOperation(
+  client: RedisClient,
+  useCase: string,
+  operation: string,
+  status: RedisOperationStatus,
+  durationSeconds: number,
+): void {
+  redisOperationMetrics.recordOperation(client, useCase, operation, status, durationSeconds);
 }
 
 const getElapsedSeconds = (startedAt: bigint): number =>
@@ -519,10 +588,40 @@ export function createMetrics(): PrometheusMetrics {
     registers: [registry],
   });
 
+  const agentStartupMilestoneDuration = new Histogram({
+    name: 'agent_startup_milestone_duration_seconds',
+    help: 'Cumulative agent chat startup latency from request ingress to each milestone',
+    labelNames: ['milestone'] as const,
+    buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300],
+    registers: [registry],
+  });
+
+  const agentStartups = new Counter({
+    name: 'agent_startups_total',
+    help: 'Agent chat startup attempts by terminal result',
+    labelNames: ['result'] as const,
+    registers: [registry],
+  });
+
   const rumProxyRequests = new Counter({
     name: 'rum_proxy_requests_total',
     help: 'RUM proxy requests by endpoint and result',
     labelNames: ['endpoint', 'result'] as const,
+    registers: [registry],
+  });
+
+  const redisOperations = new Counter({
+    name: 'redis_operations_total',
+    help: 'Logical Redis operations by client, use case, operation, and status',
+    labelNames: ['client', 'use_case', 'operation', 'status'] as const,
+    registers: [registry],
+  });
+
+  const redisOperationDuration = new Histogram({
+    name: 'redis_operation_duration_seconds',
+    help: 'Logical Redis operation latency in seconds',
+    labelNames: ['client', 'use_case', 'operation', 'status'] as const,
+    buckets: [0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
     registers: [registry],
   });
 
@@ -535,8 +634,22 @@ export function createMetrics(): PrometheusMetrics {
       generationStreamResumePendingEvents.inc({ store }, count),
   };
 
+  agentStartupMetrics = {
+    recordMilestone: (milestone, durationSeconds) =>
+      agentStartupMilestoneDuration.observe({ milestone }, durationSeconds),
+    recordResult: (result) => agentStartups.inc({ result }),
+  };
+
   rumProxyMetrics = {
     recordRequest: (endpoint, result) => rumProxyRequests.inc({ endpoint, result }),
+  };
+
+  redisOperationMetrics = {
+    recordOperation: (client, useCase, operation, status, durationSeconds) => {
+      const labels = { client, use_case: useCase, operation, status };
+      redisOperations.inc(labels);
+      redisOperationDuration.observe(labels, durationSeconds);
+    },
   };
 
   const metricsMiddleware = (req: Request, res: Response, next: NextFunction): void => {

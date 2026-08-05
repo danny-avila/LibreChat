@@ -1,0 +1,195 @@
+# Amazon DocumentDB Compatibility Assessment (issue #14488)
+
+Adjudicated against official AWS documentation on 2026-07-28. Engine columns
+throughout: DocumentDB **3.6 / 4.0 / 5.0 / 8.0 instance-based** and **elastic
+clusters**. AWS's supported-APIs page states that unsupported operators are
+*omitted* from its tables, so several verdicts below are implicit-by-omission
+and flagged as such.
+
+## Executive summary
+
+- The login blocker was real: three aggregation-pipeline updates (one using
+  `$$NOW`) existed in the codebase. DocumentDB documents no support for
+  pipeline-form updates on any engine version. All three are now rewritten
+  with plain update operators that work on every engine, including elastic.
+- Partial-index creation fails on DocumentDB < 5.0 and elastic — and the
+  failure was **provably silent** (no log, no crash, uniqueness quietly
+  unenforced). Model creation now attaches an `index` listener so failed
+  builds log loudly.
+- Transactions already degrade gracefully via a runtime probe. GridFS is
+  unreachable dead code. `retryWrites=false` is a deployment-docs item.
+- Recommendation: **DocumentDB 5.0+ instance-based is a supportable target**;
+  4.0 runs but with degraded uniqueness enforcement (now logged); **elastic
+  clusters should be documented as unsupported** (no unique indexes at all).
+
+## Proven incompatibilities — fixed in this PR
+
+### 1. `acceptTerms` pipeline update + `$$NOW` (P0 — blocked login)
+
+`packages/data-schemas/src/methods/user.ts:303` used a pipeline-form
+`findByIdAndUpdate` with `$ifNull`/`$$NOW` (introduced by PR #10810, matching
+the reporter's regression window). When Terms gating is on, every login hits
+this and DocumentDB rejects it.
+
+AWS evidence: the [supported APIs page](https://docs.aws.amazon.com/documentdb/latest/developerguide/mongo-apis.html)
+lists only classic update operators (no pipeline form anywhere); the `$set`/
+`$unset` *stage* operators are marked unsupported for 3.6/4.0/5.0; `$$NOW` is
+absent from the System variables table entirely (`$$CURRENT` and `$$REMOVE`
+are explicitly "No"). Implicit-by-omission, but consistent with the reported
+`Failed to parse update: field must be of BSON type object` class of error
+(AWS documents no exact error string).
+
+Fix: null-guarded first-acceptance claim (`termsAcceptedAt: null` matches both
+the schema's explicit `null` default and missing legacy fields — a
+`$exists: false` guard would never fire because of that default), with a
+plain-`$set` fallback for repeat acceptance. First-acceptance timestamp
+preservation, concurrency convergence, and the `IUser | null` contract are
+covered by tests, including a raw-inserted legacy document without the field.
+
+### 2. `decrementTagCounts` pipeline update (P1 — silent tag-count drift)
+
+`packages/data-schemas/src/methods/conversationTag.ts:47` used a
+`$max`/`$subtract`/`$ifNull` pipeline inside `bulkWrite`, wrapped in a
+try/catch that only logs — on DocumentDB, conversation deletion succeeded
+while tag counts silently drifted.
+
+Fix: two mutually exclusive plain ops per tag in one ordered `bulkWrite` —
+clamp-to-zero (`count` below the decrement amount, or null/missing) first,
+then a guarded `$inc`. Clamp-at-zero, missing-count tolerance, and
+variable-amount semantics all preserved; now covered by a new test block
+(previously untested).
+
+### 3. `extendFilesTTL` pipeline update (P1 — `/files/usage` TTL holds fail)
+
+`packages/data-schemas/src/methods/file.ts:607` — **not in the reporter's
+list; found by sweeping the codebase** (`rg` for pipeline-shaped update args
+and `$$NOW`; these three sites were the only hits).
+
+Fix: read the candidate files (one projected query), compute each file's
+`min(now + renewMs, createdAt + maxLifetimeMs)` ceiling client-side, then
+issue per-document guarded `$set`s (`expiresAt: { $exists: true, $lt: next }`)
+through `tenantSafeBulkWrite`. Only-widens, per-file ceiling, and
+cleared-TTL-stays-permanent semantics are preserved under concurrency by the
+write guard. Cost: one extra read round trip on this path — unavoidable
+without a schema change, because the ceiling is per-document.
+
+## Proven, made loud — partial indexes (P1 on < 5.0 / elastic)
+
+Four unique partial indexes exist:
+
+- `packages/data-schemas/src/schema/user.ts:192` and `:199` — OAuth ids
+  (`googleId`, `openidId`, …) with `partialFilterExpression: { $exists: true }`
+- `packages/data-schemas/src/schema/file.ts:173` — `execute_code` files
+  (`$eq`-shaped filter)
+- `packages/data-schemas/src/schema/group.ts:56` — group source ids
+  (`$exists: true`)
+
+AWS: [partial-index.html](https://docs.aws.amazon.com/documentdb/latest/developerguide/partial-index.html)
+— "The partial index feature is supported in Amazon DocumentDB 5.0
+instance-based clusters"; the index-properties table marks Partial as
+No/No/Yes/Yes/No across 3.6/4.0/5.0/8.0/elastic. The `$exists` and `$eq`
+filter shapes used here are inside DocumentDB 5.0's supported operator list
+(`$eq, $exists, $and, $gt/$gte/$lt/$lte`), so on 5.0+ these indexes build.
+
+On 3.6/4.0/elastic the builds fail — and empirically (probe: unique index over
+pre-seeded duplicates, mongoose 8, autoIndex) the failure is **completely
+silent**: no unhandled rejection, no log, the index simply doesn't exist and
+duplicate inserts succeed. Mongoose only surfaces build errors through a
+`Model.on('index')` listener, which nothing attached. `createModels` now
+attaches one that logs every failed build (`packages/data-schemas/src/models/index.ts`).
+Operational consequence on < 5.0 remains: OAuth-account uniqueness is not
+DB-enforced — documented, loud, but not fixable in application code.
+
+## Proven compatible — no action needed
+
+- **Transactions**: supported on 4.0+ instance-based ("Amazon DocumentDB …
+  supports transactions in Amazon DocumentDB 4.0 and later" —
+  [transactions.html](https://docs.aws.amazon.com/documentdb/latest/developerguide/transactions.html));
+  unsupported on 3.6 and elastic. LibreChat already probes at runtime
+  (`packages/data-schemas/src/utils/transactions.ts`, cached in
+  `api/server/services/PermissionService.js`) and falls back to
+  non-transactional writes — the same mode as standalone MongoDB without a
+  replica set. DocumentDB's restrictions (1-minute execution limit, no cursors
+  in transactions, no retryable commit/abort) don't intersect LibreChat's
+  usage.
+- **GridFS**: `packages/api/src/cache/keyvMongo.ts` only constructs a
+  `GridFSBucket` when `useGridFS` is set — no caller ever sets it and the
+  class isn't exported (the singleton uses a plain `logs` collection). Dead
+  code. Moot regardless: AWS lists GridFS as supported on instance-based
+  clusters (elastic: no).
+- **TTL indexes**: supported everywhere including elastic. AWS warns deletion
+  is best-effort ("Documents are not guaranteed to be deleted within any
+  specific period") — acceptable, since LibreChat treats TTL as cleanup, not
+  as a security boundary.
+- **`$ifNull`**: supported on all versions (only its pipeline-update context
+  was the problem).
+
+## Deployment requirements (documentation, not code)
+
+- **`retryWrites=false` is mandatory in `MONGO_URI`.** AWS: "Amazon DocumentDB
+  does not currently support retryable writes"; the failure mode is
+  `{"ok":0,"errmsg":"Unrecognized field: 'txnNumber'","code":9}`
+  ([functional-differences.html](https://docs.aws.amazon.com/documentdb/latest/developerguide/functional-differences.html)).
+  `api/db/connect.js` passes `MONGO_URI` through verbatim, so this belongs in
+  the deployment docs (and the live harness flags a URI missing it).
+- TLS with the AWS CA bundle; clusters are VPC-only (tunnel/bastion for
+  external access).
+
+## Document as unsupported — elastic clusters
+
+[Elastic cluster limitations](https://docs.aws.amazon.com/documentdb/latest/developerguide/docdb-using-elastic-clusters.html):
+no **unique indexes** (any), no partial indexes, no ACID transactions, no
+GridFS, no change streams, `$expr` unsupported, and the cursor-methods table
+even lists `sort()`/`skip()`/`limit()` as "No". The `email + tenantId` unique
+index alone disqualifies elastic clusters. Recommend stating this explicitly
+in the docs.
+
+## Undetermined — honest gaps
+
+- **The reporter's engine version and cluster type** — still unknown; it
+  decides whether the partial-index caveat applies to them (5.0+: it doesn't).
+  Worth asking directly on the issue.
+- **DocumentDB 8.0 pipeline-update acceptance** — 8.0 added `$set`/`$unset`
+  aggregation *stages*, but AWS never documents pipeline-form updates; the
+  harness probe answers this live.
+- **`collMod` is only "Partial"** on every version — avoid
+  `Model.syncIndexes()` against DocumentDB (it may issue `collMod` beyond the
+  documented `expireAfterSeconds`).
+- **Read-side aggregations** (3 files: `methods/prompt.ts`,
+  `methods/aclEntry.ts`, `methods/agentCategory.ts`) were not audited
+  stage-by-stage; no exotic stages (`$facet`, `$setWindowFields`,
+  `$unionWith`, `$graphLookup`) are used anywhere.
+- **No faithful local emulator exists.** The `documentdb-local` Docker image
+  is the PostgreSQL-based Linux Foundation project — AWS's own OSS blog
+  confirms "a different engine than the one used in Amazon DocumentDB." Live
+  regression testing must run against a real cluster.
+
+## Regression strategy
+
+1. **In-repo (CI today)**: the behavioral tests added in
+   `user.methods.spec.ts`, `conversationTag.methods.spec.ts`, and
+   `file.spec.ts` lock the pipeline-free implementations' semantics
+   (first-acceptance preservation, clamp-at-zero, per-file ceiling).
+2. **Live harness (this directory)**: `compat.documentdb.spec.ts` exercises
+   the exact operations behind #14488 against a real cluster and prints a
+   capability matrix (pipeline updates, `$$NOW`, transactions, partial unique
+   indexes, TTL, `retryWrites`). Gated on `DOCUMENTDB_URI`; verified green
+   against real MongoDB as a baseline. Suggested cadence: before releases and
+   whenever update-operator code in `data-schemas` changes; optionally a
+   scheduled GitHub Action on a runner with VPC access to a dev cluster.
+
+## Support matrix and recommendation
+
+| Capability (LibreChat dependency) | 3.6 | 4.0 | 5.0 | 8.0 | Elastic |
+| --- | --- | --- | --- | --- | --- |
+| Pipeline updates (**no longer used**) | ✗ | ✗ | ✗ | ? | ✗ |
+| Plain update operators (all writes now) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Unique indexes | ✓ | ✓ | ✓ | ✓ | ✗ |
+| Partial unique indexes (OAuth ids) | ✗ | ✗ | ✓ | ✓ | ✗ |
+| Transactions (runtime-probed) | ✗ | ✓ | ✓ | ✓ | ✗ |
+| TTL indexes | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+**Recommendation**: support **DocumentDB 5.0+ instance-based** with
+`retryWrites=false` documented as required. 4.0 functions with
+partial-unique-index loss (now logged loudly at startup) — "works, with a
+documented caveat". Elastic clusters: unsupported, full stop.

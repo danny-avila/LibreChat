@@ -201,7 +201,12 @@ const formatAgentMessages = (payload) => {
         }
 
         // Note: `tool_calls` list is defined when constructed by `AIMessage` class, and outputs should be excluded from it
-        const { output, args: _args, ...tool_call } = part.tool_call;
+        const {
+          output,
+          args: _args,
+          inputValidationError: _inputValidationError,
+          ...tool_call
+        } = part.tool_call;
         // TODO: investigate; args as dictionary may need to be provider-or-tool-specific
         let args = _args;
         try {
@@ -266,7 +271,12 @@ const formatAgentMessages = (payload) => {
          *  attaching to the pre-steer one would emit its ToolMessage after
          *  the HumanMessage while the call sat before it (invalid order). */
         lastAIMessage = null;
-      } else if (part.type === ContentTypes.ERROR || part.type === ContentTypes.AGENT_UPDATE) {
+      } else if (
+        part.type === ContentTypes.ERROR ||
+        part.type === ContentTypes.AGENT_UPDATE ||
+        part.type === ContentTypes.ACTIVITY_LABEL
+      ) {
+        // ACTIVITY_LABEL parts are UI-only progress notes — never model input.
         continue;
       } else {
         currentContent.push(part);

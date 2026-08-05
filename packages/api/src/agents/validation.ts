@@ -22,24 +22,20 @@ export const agentAvatarSchema: z.ZodObject<
   source: z.string(),
 });
 
-/** Base resource schema for tool resources */
+/** Persisted resource schema. Full file records are populated only after database authorization. */
 export const agentBaseResourceSchema: z.ZodObject<
   {
     file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-    files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
   },
   'strip'
 > = z.object({
   file_ids: z.array(z.string()).optional(),
-  files: z.array(z.unknown()).optional(), // Files are populated at runtime, not from user input
 });
 
-/** File resource schema extends base with vector_store_ids */
+/** File resource schema extends base with vector_store_ids. */
 export const agentFileResourceSchema: z.ZodObject<
   {
     file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-    files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-  } & {
     vector_store_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
   },
   'strip'
@@ -47,174 +43,17 @@ export const agentFileResourceSchema: z.ZodObject<
   vector_store_ids: z.array(z.string()).optional(),
 });
 
-/** Tool resources schema matching AgentToolResources interface */
+/** Persisted tool resources accepted by Agent create and update APIs. */
 export const agentToolResourcesSchema: z.ZodOptional<
   z.ZodObject<
     {
-      image_edit: z.ZodOptional<
-        z.ZodObject<
-          {
-            file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-            files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-          },
-          'strip',
-          z.ZodTypeAny,
-          {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          },
-          {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        >
-      >;
-      execute_code: z.ZodOptional<
-        z.ZodObject<
-          {
-            file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-            files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-          },
-          'strip',
-          z.ZodTypeAny,
-          {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          },
-          {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        >
-      >;
-      file_search: z.ZodOptional<
-        z.ZodObject<
-          {
-            file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-            files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-          } & {
-            vector_store_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-          },
-          'strip',
-          z.ZodTypeAny,
-          {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-            vector_store_ids?: string[] | undefined;
-          },
-          {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-            vector_store_ids?: string[] | undefined;
-          }
-        >
-      >;
-      context: z.ZodOptional<
-        z.ZodObject<
-          {
-            file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-            files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-          },
-          'strip',
-          z.ZodTypeAny,
-          {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          },
-          {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        >
-      >;
-      /** @deprecated Use context instead */
-      ocr: z.ZodOptional<
-        z.ZodObject<
-          {
-            file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-            files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-          },
-          'strip',
-          z.ZodTypeAny,
-          {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          },
-          {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        >
-      >;
+      image_edit: z.ZodOptional<typeof agentBaseResourceSchema>;
+      execute_code: z.ZodOptional<typeof agentBaseResourceSchema>;
+      file_search: z.ZodOptional<typeof agentFileResourceSchema>;
+      context: z.ZodOptional<typeof agentBaseResourceSchema>;
+      ocr: z.ZodOptional<typeof agentBaseResourceSchema>;
     },
-    'strip',
-    z.ZodTypeAny,
-    {
-      ocr?:
-        | {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        | undefined;
-      context?:
-        | {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        | undefined;
-      execute_code?:
-        | {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        | undefined;
-      file_search?:
-        | {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-            vector_store_ids?: string[] | undefined;
-          }
-        | undefined;
-      image_edit?:
-        | {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        | undefined;
-    },
-    {
-      ocr?:
-        | {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        | undefined;
-      context?:
-        | {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        | undefined;
-      execute_code?:
-        | {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        | undefined;
-      file_search?:
-        | {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-            vector_store_ids?: string[] | undefined;
-          }
-        | undefined;
-      image_edit?:
-        | {
-            file_ids?: string[] | undefined;
-            files?: unknown[] | undefined;
-          }
-        | undefined;
-    }
+    'strip'
   >
 > = z
   .object({
@@ -289,18 +128,20 @@ export const graphEdgeSchema: z.ZodObject<
     .transform((v) => (v === '' ? undefined : v)),
 });
 
-/** Per-tool options schema (defer_loading, allowed_callers, run_in_background) */
+/** Per-tool options schema (defer_loading, allowed_callers, run_in_background, describe_intent) */
 export const toolOptionsSchema: z.ZodObject<
   {
     defer_loading: z.ZodOptional<z.ZodBoolean>;
     allowed_callers: z.ZodOptional<z.ZodArray<z.ZodEnum<['direct', 'code_execution']>, 'many'>>;
     run_in_background: z.ZodOptional<z.ZodBoolean>;
+    describe_intent: z.ZodOptional<z.ZodBoolean>;
   },
   'strip'
 > = z.object({
   defer_loading: z.boolean().optional(),
   allowed_callers: z.array(z.enum(['direct', 'code_execution'])).optional(),
   run_in_background: z.boolean().optional(),
+  describe_intent: z.boolean().optional(),
 });
 
 /** Agent tool options - map of tool_id to tool options */
@@ -312,6 +153,7 @@ export const agentToolOptionsSchema: z.ZodOptional<
         defer_loading: z.ZodOptional<z.ZodBoolean>;
         allowed_callers: z.ZodOptional<z.ZodArray<z.ZodEnum<['direct', 'code_execution']>, 'many'>>;
         run_in_background: z.ZodOptional<z.ZodBoolean>;
+        describe_intent: z.ZodOptional<z.ZodBoolean>;
       },
       'strip',
       z.ZodTypeAny,
@@ -319,11 +161,13 @@ export const agentToolOptionsSchema: z.ZodOptional<
         defer_loading?: boolean | undefined;
         allowed_callers?: ('direct' | 'code_execution')[] | undefined;
         run_in_background?: boolean | undefined;
+        describe_intent?: boolean | undefined;
       },
       {
         defer_loading?: boolean | undefined;
         allowed_callers?: ('direct' | 'code_execution')[] | undefined;
         run_in_background?: boolean | undefined;
+        describe_intent?: boolean | undefined;
       }
     >
   >
@@ -452,175 +296,7 @@ export const agentBaseSchema: z.ZodObject<
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-    tool_resources: z.ZodOptional<
-      z.ZodObject<
-        {
-          image_edit: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-          execute_code: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-          file_search: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              } & {
-                vector_store_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              }
-            >
-          >;
-          context: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-          /** @deprecated Use context instead */
-          ocr: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-        },
-        'strip',
-        z.ZodTypeAny,
-        {
-          ocr?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          context?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          execute_code?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          file_search?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              }
-            | undefined;
-          image_edit?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-        },
-        {
-          ocr?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          context?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          execute_code?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          file_search?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              }
-            | undefined;
-          image_edit?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-        }
-      >
-    >;
+    tool_resources: typeof agentToolResourcesSchema;
     tool_options: z.ZodOptional<
       z.ZodRecord<
         z.ZodString,
@@ -631,6 +307,7 @@ export const agentBaseSchema: z.ZodObject<
               z.ZodArray<z.ZodEnum<['direct', 'code_execution']>, 'many'>
             >;
             run_in_background: z.ZodOptional<z.ZodBoolean>;
+            describe_intent: z.ZodOptional<z.ZodBoolean>;
           },
           'strip',
           z.ZodTypeAny,
@@ -638,11 +315,13 @@ export const agentBaseSchema: z.ZodObject<
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           },
           {
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           }
         >
       >
@@ -802,175 +481,7 @@ export const agentCreateSchema: z.ZodObject<
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-    tool_resources: z.ZodOptional<
-      z.ZodObject<
-        {
-          image_edit: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-          execute_code: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-          file_search: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              } & {
-                vector_store_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              }
-            >
-          >;
-          context: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-          /** @deprecated Use context instead */
-          ocr: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-        },
-        'strip',
-        z.ZodTypeAny,
-        {
-          ocr?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          context?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          execute_code?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          file_search?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              }
-            | undefined;
-          image_edit?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-        },
-        {
-          ocr?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          context?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          execute_code?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          file_search?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              }
-            | undefined;
-          image_edit?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-        }
-      >
-    >;
+    tool_resources: typeof agentToolResourcesSchema;
     tool_options: z.ZodOptional<
       z.ZodRecord<
         z.ZodString,
@@ -981,6 +492,7 @@ export const agentCreateSchema: z.ZodObject<
               z.ZodArray<z.ZodEnum<['direct', 'code_execution']>, 'many'>
             >;
             run_in_background: z.ZodOptional<z.ZodBoolean>;
+            describe_intent: z.ZodOptional<z.ZodBoolean>;
           },
           'strip',
           z.ZodTypeAny,
@@ -988,11 +500,13 @@ export const agentCreateSchema: z.ZodObject<
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           },
           {
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           }
         >
       >
@@ -1117,175 +631,7 @@ export const agentUpdateSchema: z.ZodObject<
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-    tool_resources: z.ZodOptional<
-      z.ZodObject<
-        {
-          image_edit: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-          execute_code: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-          file_search: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              } & {
-                vector_store_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              }
-            >
-          >;
-          context: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-          /** @deprecated Use context instead */
-          ocr: z.ZodOptional<
-            z.ZodObject<
-              {
-                file_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-                files: z.ZodOptional<z.ZodArray<z.ZodUnknown, 'many'>>;
-              },
-              'strip',
-              z.ZodTypeAny,
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              },
-              {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            >
-          >;
-        },
-        'strip',
-        z.ZodTypeAny,
-        {
-          ocr?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          context?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          execute_code?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          file_search?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              }
-            | undefined;
-          image_edit?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-        },
-        {
-          ocr?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          context?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          execute_code?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-          file_search?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-                vector_store_ids?: string[] | undefined;
-              }
-            | undefined;
-          image_edit?:
-            | {
-                file_ids?: string[] | undefined;
-                files?: unknown[] | undefined;
-              }
-            | undefined;
-        }
-      >
-    >;
+    tool_resources: typeof agentToolResourcesSchema;
     tool_options: z.ZodOptional<
       z.ZodRecord<
         z.ZodString,
@@ -1296,6 +642,7 @@ export const agentUpdateSchema: z.ZodObject<
               z.ZodArray<z.ZodEnum<['direct', 'code_execution']>, 'many'>
             >;
             run_in_background: z.ZodOptional<z.ZodBoolean>;
+            describe_intent: z.ZodOptional<z.ZodBoolean>;
           },
           'strip',
           z.ZodTypeAny,
@@ -1303,11 +650,13 @@ export const agentUpdateSchema: z.ZodObject<
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           },
           {
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           }
         >
       >

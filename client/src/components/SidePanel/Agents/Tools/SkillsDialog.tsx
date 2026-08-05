@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Plus, Search } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
@@ -11,7 +11,7 @@ import {
   OGDialogContent,
   OGDialogDescription,
 } from '@librechat/client';
-import type { TSkill } from 'librechat-data-provider';
+import type { TSkill, TSkillSummary } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { CategoryOption } from './CategoryFilter';
 import type { AgentItem } from './items/types';
@@ -19,8 +19,8 @@ import type { AgentForm } from '~/common';
 import { useLocalize, useHasAccess, useAuthContext, useToolFavorites } from '~/hooks';
 import { CreateSkillDialog } from '~/components/Skills/dialogs';
 import { skillsEnabledTransition } from './items/mutations';
+import { useSkillsInfiniteQuery } from '~/data-provider';
 import MarketplaceCatalog from './MarketplaceCatalog';
-import { useListSkillsQuery } from '~/data-provider';
 import { CategoryIcon } from '~/components/Prompts';
 import { buildSkillItems } from './items/catalog';
 import ItemDialog from './ItemDialog/ItemDialog';
@@ -55,11 +55,29 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.CREATE,
   });
-  const { data: skillsData, isLoading: isLoadingSkills } = useListSkillsQuery(
-    { limit: 100 },
-    { enabled: hasSkillsAccess },
-  );
+  const {
+    data: skillsData,
+    isLoading: isLoadingSkills,
+    isError: isSkillsError,
+    fetchNextPage,
+    refetch: refetchSkills,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useSkillsInfiniteQuery({ limit: 100 }, { enabled: hasSkillsAccess });
   const { favoriteKeys, toggle: toggleFavorite } = useToolFavorites();
+
+  useEffect(() => {
+    if (isSkillsError) {
+      return;
+    }
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, isSkillsError, fetchNextPage]);
+
+  const handleRetrySkills = useCallback(() => {
+    void refetchSkills();
+  }, [refetchSkills]);
 
   const skillsField = useWatch({ control, name: 'skills' });
   const selectedIds = useMemo(
@@ -73,10 +91,22 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
   const [createOpen, setCreateOpen] = useState(false);
   const [detailItem, setDetailItem] = useState<AgentItem | null>(null);
 
-  const catalog = useMemo(
-    () => buildSkillItems(skillsData?.skills ?? [], user?.id),
-    [skillsData, user?.id],
-  );
+  const skills = useMemo(() => {
+    const allSkills: TSkillSummary[] = [];
+    const seen = new Set<string>();
+    for (const page of skillsData?.pages ?? []) {
+      for (const skill of page.skills) {
+        if (seen.has(skill._id)) {
+          continue;
+        }
+        seen.add(skill._id);
+        allSkills.push(skill);
+      }
+    }
+    return allSkills;
+  }, [skillsData?.pages]);
+
+  const catalog = useMemo(() => buildSkillItems(skills, user?.id), [skills, user?.id]);
 
   const categoryOptions = useMemo<CategoryOption[]>(() => {
     const seen = new Set<string>();
@@ -210,13 +240,24 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-4">
+            {isSkillsError && (
+              <div
+                role="alert"
+                className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-border-medium px-3 py-2 text-sm text-text-secondary"
+              >
+                <span>{localize('com_ui_skills_load_error')}</span>
+                <Button type="button" variant="outline" onClick={handleRetrySkills}>
+                  {localize('com_ui_retry')}
+                </Button>
+              </div>
+            )}
             <MarketplaceCatalog
               items={filtered}
               selectedIds={selectedIds}
               onToggle={handleToggle}
               onConfigure={setDetailItem}
               view={view}
-              isLoadingSkills={isLoadingSkills}
+              isLoadingSkills={isLoadingSkills || isFetchingNextPage}
               skillsInView={view !== 'mine'}
               favoriteKeys={favoriteKeys}
               onToggleFavorite={toggleFavorite}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { atom, useRecoilState, useRecoilValue } from 'recoil';
 import {
   useAskSubmitStatus,
@@ -61,13 +61,15 @@ const askAnswerCheckedAtom = atom<number[]>({
  */
 export default function useAskAnswerMode(conversationId?: string | null) {
   const enabled = conversationId != null && conversationId !== 'new';
-  const { data: messages } = useGetMessagesByConvoId(enabled ? conversationId : '', {
+  /** `select` projects straight to the live pause: streaming deltas leave the
+   * settled ask part untouched, so structural sharing keeps this null (or the
+   * same ask object) and the subscription stays quiet until a pause actually
+   * starts or resolves. */
+  const { data: liveAskData } = useGetMessagesByConvoId(enabled ? conversationId : '', {
     enabled,
+    select: findLiveAskUserQuestion,
   });
-  const liveAsk = useMemo(
-    () => (enabled ? findLiveAskUserQuestion(messages) : null),
-    [enabled, messages],
-  );
+  const liveAsk = enabled ? (liveAskData ?? null) : null;
   const [dismissedIds, setDismissedIds] = useRecoilState(dismissedAskActionsAtom);
   const [collapsedIds, setCollapsedIds] = useRecoilState(collapsedAskActionsAtom);
   const [selected, setSelected] = useRecoilState(askAnswerSelectionAtom);
@@ -79,7 +81,30 @@ export default function useAskAnswerMode(conversationId?: string | null) {
   const { getAskStatus } = useAskSubmitStatus();
   /** Absent outside ChatView (Share/search render the answer card without the
    *  composer form) — resets are simply skipped there. */
-  const resetComposer = useOptionalChatFormContext()?.reset;
+  const formContext = useOptionalChatFormContext();
+  /** Resume callbacks may settle after this ChatForm has navigated to another
+   * conversation (the form instance is intentionally reused across routes).
+   * Keep the callback's current ownership observable without letting its old
+   * closure reset a newer draft or selection. */
+  const currentScopeRef = useRef({
+    conversationId,
+    actionId: liveAsk?.actionId,
+    formContext,
+  });
+  currentScopeRef.current = {
+    conversationId,
+    actionId: liveAsk?.actionId,
+    formContext,
+  };
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    // Strict Mode runs setup, cleanup, then setup again in development; each
+    // live setup must reassert ownership before a success callback can clean.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   /** The answer is in flight (or terminal): every submit path must become a
    *  no-op so a double-click or a stray Skip can't race a second resume. */
@@ -94,8 +119,14 @@ export default function useAskAnswerMode(conversationId?: string | null) {
    * suppressing it behind an open popover would strand the user at a locked
    * card with no explanation. (`error`, unlike `expired`, stays active: it is
    * retryable — see the composer-preserving submit path.)
+   *
+   * A `submitted` question is likewise done — the run has resumed and there is
+   * nothing left to answer. The chat card already self-hides on it; without the
+   * same test here a card that outlives its strip (a resurrected copy, or a
+   * submit whose store write couldn't run) holds the popover open over an
+   * answered question with every option greyed out.
    */
-  const active = liveAsk != null && !dismissed && status !== 'expired';
+  const active = liveAsk != null && !dismissed && status !== 'expired' && status !== 'submitted';
   const collapsed = active && collapsedIds.includes(liveAsk.actionId);
   /** The popover renders only while expanded; collapse keeps `active` (and the
    *  composer's answer role) but hands the question display to the chat card. */
@@ -176,18 +207,42 @@ export default function useAskAnswerMode(conversationId?: string | null) {
         return false;
       }
       const wasActive = active;
+      const submittedConversationId = conversationId;
+      const submittedActionId = liveAsk.actionId;
+      const submittedComposerText = formContext?.getValues('text') ?? '';
       submitAskAnswer(liveAsk.actionId, values.join(', '), {
         onSuccess: () => {
+          const currentScope = currentScopeRef.current;
+          if (
+            !mountedRef.current ||
+            currentScope.conversationId !== submittedConversationId ||
+            currentScope.actionId !== submittedActionId
+          ) {
+            return;
+          }
           setSelected(null);
           setChecked([]);
-          if (consumedComposerText || (wasActive && saveDrafts)) {
-            resetComposer?.();
+          if (
+            (consumedComposerText || (wasActive && saveDrafts)) &&
+            currentScope.formContext?.getValues('text') === submittedComposerText
+          ) {
+            currentScope.formContext.reset();
           }
         },
       });
       return true;
     },
-    [liveAsk, locked, active, saveDrafts, submitAskAnswer, setSelected, setChecked, resetComposer],
+    [
+      liveAsk,
+      locked,
+      active,
+      saveDrafts,
+      conversationId,
+      formContext,
+      submitAskAnswer,
+      setSelected,
+      setChecked,
+    ],
   );
 
   const checkedValues = useCallback(

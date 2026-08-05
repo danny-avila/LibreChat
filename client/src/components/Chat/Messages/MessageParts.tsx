@@ -3,22 +3,26 @@ import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
+import {
+  cn,
+  getMessageAriaLabel,
+  areMessageRowPropsEqual,
+  getHeaderPrefixForScreenReader,
+} from '~/utils';
 import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
-import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
+import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
 import { fontSizeAtom } from '~/store/fontSize';
 import SiblingSwitch from './SiblingSwitch';
-import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import store from '~/store';
 
-export default function Message(props: TMessageProps) {
+function MessageParts(props: TMessageProps) {
   const localize = useLocalize();
-  const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
-    props;
+  const { message, siblingIdx, siblingCount, setSiblingIdx } = props;
   const { attachments, searchResults } = useAttachments({
     messageId: message?.messageId,
     attachments: message?.attachments,
@@ -41,7 +45,7 @@ export default function Message(props: TMessageProps) {
 
   const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
-  const { children, messageId = null, isCreatedByUser } = message ?? {};
+  const { messageId = null, isCreatedByUser } = message ?? {};
 
   const name = useMemo(() => {
     let result = '';
@@ -74,6 +78,17 @@ export default function Message(props: TMessageProps) {
       message?.endpoint,
       message?.isCreatedByUser,
     ],
+  );
+
+  const authorHeader = useMemo(
+    () =>
+      isCreatedByUser === true ? undefined : (
+        <AuthorHeader
+          icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}
+          label={name}
+        />
+      ),
+    [isCreatedByUser, iconData, assistant, agent, name],
   );
 
   const { hasParallelContent } = useContentMetadata(message);
@@ -150,6 +165,7 @@ export default function Message(props: TMessageProps) {
                     searchResults={searchResults}
                     manualSkills={message.manualSkills}
                     messageId={message.messageId}
+                    authorHeader={authorHeader}
                     setSiblingIdx={setSiblingIdx}
                     isCreatedByUser={message.isCreatedByUser}
                     conversationId={conversation?.conversationId}
@@ -186,13 +202,8 @@ export default function Message(props: TMessageProps) {
           </div>
         </div>
       </div>
-      <MultiMessage
-        messageId={messageId}
-        conversation={conversation}
-        messagesTree={children ?? []}
-        currentEditId={currentEditId}
-        setCurrentEditId={setCurrentEditId}
-      />
     </>
   );
 }
+
+export default React.memo(MessageParts, areMessageRowPropsEqual);

@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
-import { selectorFamily, useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { selectorFamily, useRecoilValue, useRecoilCallback } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import { getMessageBranchSiblingParentIds, selectActiveBranchTail } from '~/utils';
 import store from '~/store';
@@ -126,4 +126,70 @@ export function useLatestMessageId(
   );
 
   return useMessagesCacheSelect(messagesQueryId, select);
+}
+
+export type TLatestMessageMeta = Pick<TMessage, 'messageId' | 'error' | 'isCreatedByUser'>;
+
+/**
+ * Metadata-only projection of the branch tail. Streaming deltas leave these
+ * fields untouched, so React Query's structural sharing keeps the selected
+ * object referentially stable and consumers skip the per-delta re-renders a
+ * full `useLatestMessage` subscription would cause.
+ */
+export function useLatestMessageMeta(
+  index: string | number,
+  messagesQueryIdOverride?: string | null,
+): TLatestMessageMeta | null {
+  const conversationId = useRecoilValue(store.conversationIdByIndex(index));
+  const messagesQueryId = useLatestMessagesQueryId(index, conversationId, messagesQueryIdOverride);
+  const siblingIndexes = useLatestMessageSiblingIndexes(messagesQueryId, conversationId);
+  const select = useCallback(
+    (messages: TMessage[]): TLatestMessageMeta | null => {
+      const tail = selectActiveBranchTail(
+        messages,
+        conversationId,
+        (parentId) => siblingIndexes[getParentLookupKey(parentId)] ?? 0,
+      );
+      if (!tail) {
+        return null;
+      }
+      return {
+        messageId: tail.messageId,
+        error: tail.error,
+        isCreatedByUser: tail.isCreatedByUser,
+      };
+    },
+    [conversationId, siblingIndexes],
+  );
+
+  return useMessagesCacheSelect(messagesQueryId, select);
+}
+
+/**
+ * Call-time reader for the branch tail: no cache subscription at all, so
+ * callbacks that only need the latest message when invoked keep a stable
+ * identity across streaming deltas.
+ */
+export function useGetLatestMessage(
+  index: string | number,
+  messagesQueryIdOverride?: string | null,
+): () => TMessage | null {
+  const queryClient = useQueryClient();
+  const conversationId = useRecoilValue(store.conversationIdByIndex(index));
+  const messagesQueryId = useLatestMessagesQueryId(index, conversationId, messagesQueryIdOverride);
+
+  return useRecoilCallback(
+    ({ snapshot }) =>
+      (): TMessage | null => {
+        if (!messagesQueryId) {
+          return null;
+        }
+        const messages =
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, messagesQueryId]) ?? [];
+        return selectActiveBranchTail(messages, conversationId, (parentId) =>
+          snapshot.getLoadable(store.messagesSiblingIdxFamily(parentId)).getValue(),
+        );
+      },
+    [queryClient, conversationId, messagesQueryId],
+  );
 }

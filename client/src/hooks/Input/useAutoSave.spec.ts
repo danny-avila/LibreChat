@@ -215,3 +215,67 @@ describe('useAutoSave — ask-answer draft swap', () => {
     expect(mockSetValue).toHaveBeenLastCalledWith('text', 'half-typed answer');
   });
 });
+
+describe('useAutoSave — debounced autosave', () => {
+  /** Grabs the `input` listener the hook registered on the textarea. */
+  const getInputListener = (textAreaRef: React.RefObject<HTMLTextAreaElement>) =>
+    (textAreaRef.current!.addEventListener as unknown as jest.Mock).mock.calls.find(
+      ([event]) => event === 'input',
+    )![1] as (e: unknown) => void;
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('flushes the live composer value, not the value captured when typing', () => {
+    jest.useFakeTimers();
+    // A run is active, so the draft is keyed under PENDING_CONVO.
+    const textAreaRef = makeTextAreaRef('queued follow up');
+    renderHook(() =>
+      useAutoSave({
+        isSubmitting: true,
+        conversationId: 'convo-1',
+        textAreaRef,
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    act(() => {
+      getInputListener(textAreaRef)({ target: { value: 'queued follow up' } });
+    });
+
+    // A during-run steer/queue took the text and cleared the composer inside
+    // the 25ms debounce window. The in-flight write must not resurrect it:
+    // run end migrates a surviving pending draft back into the textarea.
+    textAreaRef.current!.value = '';
+    act(() => {
+      jest.advanceTimersByTime(50);
+    });
+
+    expect(mockSetDraft).toHaveBeenLastCalledWith({
+      id: Constants.PENDING_CONVO,
+      value: '',
+    });
+  });
+
+  it('still saves typed text when the composer is untouched', () => {
+    jest.useFakeTimers();
+    const textAreaRef = makeTextAreaRef('still typing');
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef,
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    act(() => {
+      getInputListener(textAreaRef)({ target: { value: 'still typing' } });
+      jest.advanceTimersByTime(50);
+    });
+
+    expect(mockSetDraft).toHaveBeenLastCalledWith({ id: 'convo-1', value: 'still typing' });
+  });
+});

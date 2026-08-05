@@ -4,6 +4,7 @@ import type { MessageContentComplex } from '@librechat/agents';
 import {
   hasUrlContextTool,
   extractYouTubeUrls,
+  hasYouTubeVideoParts,
   appendYouTubeVideoParts,
   DEFAULT_MAX_YOUTUBE_PARTS,
   resolveYouTubeInjectionConfig,
@@ -388,6 +389,61 @@ describe('appendYouTubeVideoParts', () => {
     const mediaParts = parts.filter((p) => (p as Record<string, unknown>).type === 'media');
     expect(mediaParts).toHaveLength(1);
     expect((mediaParts[0] as Record<string, unknown>).fileUri).toBe(WATCH('dQw4w9WgXcQ'));
+  });
+});
+
+describe('hasYouTubeVideoParts', () => {
+  const youtubeText = 'Summarize https://www.youtube.com/watch?v=dQw4w9WgXcQ for me';
+
+  it('detects the parts appendYouTubeVideoParts actually produces', () => {
+    const content = appendYouTubeVideoParts({
+      enabled: true,
+      text: youtubeText,
+      content: youtubeText,
+    });
+    expect(hasYouTubeVideoParts(content)).toBe(true);
+  });
+
+  it('detects Vertex-shaped parts carrying an explicit mimeType', () => {
+    const content = appendYouTubeVideoParts({
+      enabled: true,
+      text: youtubeText,
+      content: youtubeText,
+      max: 1,
+      mimeType: 'video/mp4',
+    });
+    expect(hasYouTubeVideoParts(content)).toBe(true);
+  });
+
+  it('returns false for the untouched content of a no-op injection', () => {
+    const text = 'Read https://example.com/article';
+    const content = appendYouTubeVideoParts({ enabled: true, text, content: text });
+    expect(hasYouTubeVideoParts(content)).toBe(false);
+  });
+
+  it('returns false for string content', () => {
+    expect(hasYouTubeVideoParts(youtubeText)).toBe(false);
+  });
+
+  it('ignores non-YouTube media parts', () => {
+    const content: MessageContentComplex[] = [
+      { type: ContentTypes.TEXT, text: 'look at this' } as MessageContentComplex,
+      {
+        type: 'media',
+        fileUri: 'https://example.com/clip.mp4',
+      } as unknown as MessageContentComplex,
+    ];
+    expect(hasYouTubeVideoParts(content)).toBe(false);
+  });
+
+  it('tolerates malformed parts', () => {
+    const content = [
+      null,
+      undefined,
+      'text',
+      { type: 'media' },
+    ] as unknown as MessageContentComplex[];
+    expect(hasYouTubeVideoParts(content)).toBe(false);
   });
 });
 

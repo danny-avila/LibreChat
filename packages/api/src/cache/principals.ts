@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { Time, CacheKeys } from 'librechat-data-provider';
 import type { Keyv } from 'keyv';
 import { keyvRedisClient, ioredisClient } from './redisClients';
+import { instrumentIORedisClient } from './redisTelemetry';
 import { standardCache } from './cacheFactory';
 import { cacheConfig } from './cacheConfig';
 import { math } from '~/utils';
@@ -42,7 +43,9 @@ export function userPrincipalsCache(): UserPrincipalsCache | undefined {
   }
 
   const cache: UserPrincipalsCache = standardCache(CacheKeys.USER_PRINCIPALS, cacheTtl);
-  const redisClient = ioredisClient;
+  const redisClient = ioredisClient
+    ? instrumentIORedisClient(ioredisClient, CacheKeys.USER_PRINCIPALS)
+    : ioredisClient;
   const isRedisBacked =
     keyvRedisClient != null &&
     !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(CacheKeys.USER_PRINCIPALS);

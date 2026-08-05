@@ -1,27 +1,45 @@
 import React from 'react';
 import { act, renderHook } from '@testing-library/react';
-import { RecoilRoot, useRecoilValue, type MutableSnapshot } from 'recoil';
+import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import useSteerConvert from '../useSteerConvert';
 import store from '~/store';
 
 const mockFetchStreamStatus = jest.fn();
 jest.mock('~/data-provider', () => ({
   fetchStreamStatus: (...args: unknown[]) => mockFetchStreamStatus(...args),
+  getGenerationProtocolVersion: (value: unknown) =>
+    value != null &&
+    typeof value === 'object' &&
+    (value as { generationProtocolVersion?: unknown }).generationProtocolVersion === 2
+      ? 2
+      : 1,
 }));
 
 const CONVO_ID = 'convo-steer-convert';
 
 function setup(initialize?: (snapshot: MutableSnapshot) => void) {
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <RecoilRoot initializeState={initialize}>{children}</RecoilRoot>
+    <RecoilRoot
+      initializeState={(snapshot) => {
+        snapshot.set(store.activeGenerationProtocolVersionByConvoId(CONVO_ID), 2);
+        initialize?.(snapshot);
+      }}
+    >
+      {children}
+    </RecoilRoot>
   );
   return renderHook(
-    () => ({
-      convert: useSteerConvert(),
-      chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
-      queue: useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID)),
-      applied: useRecoilValue(store.appliedSteerIdsByConvoId(CONVO_ID)),
-    }),
+    () => {
+      const setQueue = useSetRecoilState(store.queuedMessagesByConvoId(CONVO_ID));
+      return {
+        convert: useSteerConvert(),
+        chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
+        queue: useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID)),
+        applied: useRecoilValue(store.appliedSteerIdsByConvoId(CONVO_ID)),
+        // Mirrors `useQueueDrain` dequeuing the head item after auto-send.
+        drainQueue: () => setQueue((prev) => prev.slice(1)),
+      };
+    },
     { wrapper },
   );
 }
@@ -61,6 +79,140 @@ describe('useSteerConvert', () => {
     expect(result.current.queue).toEqual([
       expect.objectContaining({
         id: 'srv-ctx',
+        quotes: ['carried quote'],
+        manualSkills: ['carried-skill'],
+      }),
+    ]);
+  });
+
+  it('restores an accepted queued-origin steer with its queue identity, position, and receipt', () => {
+    const original = {
+      id: 'queue-original',
+      text: 'sent from queue',
+      createdAt: 10,
+      priority: true,
+      quotes: ['original quote'],
+    };
+    const after = { id: 'queue-after', text: 'still queued', createdAt: 20 };
+    const { result } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [after]);
+      set(store.pendingSteersByConvoId(CONVO_ID), [
+        {
+          steerId: 'server-replacement-id',
+          text: original.text,
+          status: 'pending' as const,
+          createdAt: 999,
+          queuedOrigin: { item: original, beforeIds: [], afterIds: [after.id] },
+        },
+      ]);
+    });
+
+    act(() => {
+      result.current.convert(CONVO_ID, [
+        { steerId: 'server-replacement-id', text: original.text, createdAt: 999 },
+      ]);
+    });
+
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({
+        ...original,
+        clientRequestId: expect.any(String),
+        recoverySteerId: 'server-replacement-id',
+      }),
+      after,
+    ]);
+    expect(result.current.queue[0]).toMatchObject({
+      id: 'queue-original',
+      createdAt: 10,
+      priority: true,
+      quotes: ['original quote'],
+    });
+    expect(result.current.applied).toContain('server-replacement-id');
+  });
+
+  it('recovers a v1 leftover as an ordinary local follow-up without receipt binding', () => {
+    const { result } = setup();
+    act(() => {
+      result.current.convert(
+        CONVO_ID,
+        [{ steerId: 'legacy-leftover', text: 'recover locally', createdAt: 1 }],
+        { generationProtocolVersion: 1 },
+      );
+    });
+
+    expect(result.current.queue).toEqual([
+      {
+        id: 'legacy-leftover',
+        text: 'recover locally',
+        createdAt: 1,
+      },
+    ]);
+  });
+
+  it('correlates a terminal leftover that arrives before the 202 ACK', () => {
+    const original = {
+      id: 'queue-before-ack',
+      text: 'terminal raced the ACK',
+      createdAt: 10,
+      priority: true,
+    };
+    const after = { id: 'queue-after-race', text: 'after', createdAt: 20 };
+    const { result } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [after]);
+      set(store.pendingSteersByConvoId(CONVO_ID), [
+        {
+          steerId: 'local-correlation-id',
+          text: original.text,
+          status: 'sending' as const,
+          createdAt: 999,
+          queuedOrigin: { item: original, beforeIds: [], afterIds: [after.id] },
+        },
+      ]);
+    });
+
+    act(() => {
+      result.current.convert(CONVO_ID, [
+        {
+          steerId: 'server-id-before-ack',
+          clientSteerId: 'local-correlation-id',
+          text: original.text,
+          createdAt: 999,
+        },
+      ]);
+    });
+
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({
+        ...original,
+        clientRequestId: expect.any(String),
+        recoverySteerId: 'server-id-before-ack',
+        recoveryClientSteerId: 'local-correlation-id',
+      }),
+      after,
+    ]);
+    expect(result.current.chips).toEqual([]);
+    expect(result.current.applied).toContain('server-id-before-ack');
+  });
+
+  it('falls back to context carried on the steer when its chip is already gone', () => {
+    // A reclaimed steer stays interactive during its cancel round-trip, so a
+    // competing X can delete the chip before the conversion runs. The steer
+    // carries its own picks so they survive that race.
+    const { result } = setup();
+    act(() => {
+      result.current.convert(CONVO_ID, [
+        {
+          steerId: 'reclaimed',
+          text: 'carried',
+          createdAt: 1,
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        },
+      ]);
+    });
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({
+        id: 'reclaimed',
         quotes: ['carried quote'],
         manualSkills: ['carried-skill'],
       }),
@@ -112,7 +264,60 @@ describe('useSteerConvert', () => {
     expect(result.current.applied).toEqual(['srv-2']);
   });
 
-  describe('claimParked (clears the parked server copy of live-delivered steers)', () => {
+  it('does not re-queue a steer already drained after conversion', () => {
+    const { result } = setup();
+    const steers = [{ steerId: 'srv-drained', text: 'submitted once', createdAt: 5 }];
+    // First delivery converts the leftover steer into a queued chip.
+    act(() => {
+      result.current.convert(CONVO_ID, steers);
+    });
+    expect(result.current.queue).toEqual([expect.objectContaining({ id: 'srv-drained' })]);
+    // The run-end drain submits it and removes it from the queue.
+    act(() => {
+      result.current.drainQueue();
+    });
+    expect(result.current.queue).toEqual([]);
+    // A late redelivery of the SAME steer (claimParked /chat/status, abort
+    // response, or reconnect) must NOT resurrect a queued chip for a message
+    // that was already sent — the applied-id set marks it settled.
+    act(() => {
+      result.current.convert(CONVO_ID, steers);
+    });
+    expect(result.current.queue).toEqual([]);
+    expect(result.current.applied).toEqual(['srv-drained']);
+  });
+
+  it('re-queues a drained recovery source when inactive status proves it was not consumed', () => {
+    const { result } = setup();
+    const steers = [{ steerId: 'srv-retry', text: 'retry after failed recovery', createdAt: 5 }];
+    act(() => {
+      result.current.convert(CONVO_ID, steers);
+    });
+    const failedAttemptId = result.current.queue[0].clientRequestId;
+    act(() => {
+      result.current.drainQueue();
+    });
+
+    expect(result.current.queue).toEqual([]);
+    act(() => {
+      result.current.convert(CONVO_ID, steers, {
+        generationProtocolVersion: 2,
+        allowPreviouslyConvertedIds: ['srv-retry'],
+      });
+    });
+
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({
+        id: 'srv-retry',
+        clientRequestId: expect.any(String),
+        recoverySteerId: 'srv-retry',
+      }),
+    ]);
+    expect(result.current.queue[0].clientRequestId).not.toBe(failedAttemptId);
+    expect(result.current.applied).toEqual(['srv-retry']);
+  });
+
+  describe('claimParked (reconciles the parked server copy of live-delivered steers)', () => {
     beforeEach(() => {
       mockFetchStreamStatus.mockReset();
     });
@@ -120,6 +325,7 @@ describe('useSteerConvert', () => {
     it('fires exactly one status fetch per batch and dedupes the claimed steers', async () => {
       mockFetchStreamStatus.mockResolvedValue({
         active: false,
+        generationProtocolVersion: 2,
         unrecoveredSteers: [
           { steerId: 'live-1', text: 'delivered live', createdAt: 1 },
           { steerId: 'parked-1', text: 'parked only', createdAt: 2 },
@@ -154,9 +360,35 @@ describe('useSteerConvert', () => {
       expect(result.current.queue).toEqual([expect.objectContaining({ id: 'srv-3' })]);
     });
 
+    it('downgrades an existing bound recovery when a legacy claim deletes its source', async () => {
+      mockFetchStreamStatus.mockResolvedValue({
+        active: false,
+        generationProtocolVersion: 1,
+        unrecoveredSteers: [{ steerId: 'legacy-claimed', text: 'keep these words', createdAt: 1 }],
+      });
+      const { result } = setup();
+
+      await act(async () => {
+        result.current.convert(
+          CONVO_ID,
+          [{ steerId: 'legacy-claimed', text: 'keep these words', createdAt: 1 }],
+          { claimParked: true, generationProtocolVersion: 2 },
+        );
+      });
+
+      expect(result.current.queue).toEqual([
+        {
+          id: 'legacy-claimed',
+          text: 'keep these words',
+          createdAt: 1,
+        },
+      ]);
+    });
+
     it('claims under claimConversationId while chips land under the chip key', async () => {
       mockFetchStreamStatus.mockResolvedValue({
         active: false,
+        generationProtocolVersion: 2,
         unrecoveredSteers: [
           { steerId: 'parked-2', text: 'parked under resolved id', createdAt: 2 },
         ],

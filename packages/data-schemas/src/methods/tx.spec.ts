@@ -1526,7 +1526,9 @@ describe('Google Model Tests', () => {
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',
     'gemini-3.1-flash-lite-preview',
+    'gemini-3.6-flash',
     'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
     'gemini-2.5-pro',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
@@ -1574,7 +1576,9 @@ describe('Google Model Tests', () => {
       'gemini-3.1-pro-preview': 'gemini-3.1',
       'gemini-3.1-pro-preview-customtools': 'gemini-3.1',
       'gemini-3.1-flash-lite-preview': 'gemini-3.1-flash-lite',
+      'gemini-3.6-flash': 'gemini-3.6-flash',
       'gemini-3.5-flash': 'gemini-3.5-flash',
+      'gemini-3.5-flash-lite': 'gemini-3.5-flash-lite',
       'gemini-2.5-pro': 'gemini-2.5-pro',
       'gemini-2.5-flash': 'gemini-2.5-flash',
       'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
@@ -1690,6 +1694,38 @@ describe('Google Model Tests', () => {
     );
     expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
       cacheTokenValues['gemini-3.5-flash'].read,
+    );
+  });
+
+  it('should return correct rates for Gemini 3.6 Flash', () => {
+    const model = 'gemini-3.6-flash';
+    expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.6-flash'].prompt,
+    );
+    expect(getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.6-flash'].completion,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+      cacheTokenValues['gemini-3.6-flash'].write,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+      cacheTokenValues['gemini-3.6-flash'].read,
+    );
+  });
+
+  it('should return correct rates for Gemini 3.5 Flash-Lite', () => {
+    const model = 'gemini-3.5-flash-lite';
+    expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.5-flash-lite'].prompt,
+    );
+    expect(getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.5-flash-lite'].completion,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+      cacheTokenValues['gemini-3.5-flash-lite'].write,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+      cacheTokenValues['gemini-3.5-flash-lite'].read,
     );
   });
 });
@@ -2407,6 +2443,75 @@ describe('Claude Model Tests', () => {
     );
   });
 
+  it('should return correct prompt and completion rates for Claude Opus 5', () => {
+    expect(getMultiplier({ model: 'claude-opus-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-opus-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-opus-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-opus-5'].completion,
+    );
+  });
+
+  it('should handle Claude Opus 5 model name variations', () => {
+    const modelVariations = [
+      'claude-opus-5',
+      'claude-opus-5-20260701',
+      'claude-opus-5-latest',
+      'anthropic/claude-opus-5',
+      'claude-opus-5/anthropic',
+      'claude-opus-5-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-opus-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-opus-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-opus-5'].completion,
+      );
+    });
+  });
+
+  it('should not confuse Claude Opus 5 with Claude Opus 4.5', () => {
+    expect(getValueKey('claude-opus-5')).toBe('claude-opus-5');
+    expect(getValueKey('claude-opus-4-5')).toBe('claude-opus-4-5');
+  });
+
+  it('should return correct cache rates for Claude Opus 5', () => {
+    expect(getCacheMultiplier({ model: 'claude-opus-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-opus-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-opus-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-opus-5'].read,
+    );
+  });
+
+  it('should price Bedrock cross-region inference profile IDs like their base model', () => {
+    const profileToBase: Array<[string, string]> = [
+      ['global.anthropic.claude-opus-5', 'claude-opus-5'],
+      ['us.anthropic.claude-opus-5', 'claude-opus-5'],
+      ['global.anthropic.claude-opus-4-8', 'claude-opus-4-8'],
+      ['global.anthropic.claude-sonnet-5', 'claude-sonnet-5'],
+      ['global.anthropic.claude-sonnet-4-6', 'claude-sonnet-4-6'],
+      ['global.anthropic.claude-fable-5', 'claude-fable-5'],
+    ];
+
+    profileToBase.forEach(([profileId, base]) => {
+      expect(getValueKey(profileId)).toBe(base);
+      expect(getMultiplier({ model: profileId, tokenType: 'prompt' })).toBe(
+        tokenValues[base].prompt,
+      );
+      expect(getMultiplier({ model: profileId, tokenType: 'completion' })).toBe(
+        tokenValues[base].completion,
+      );
+      expect(getCacheMultiplier({ model: profileId, cacheType: 'write' })).toBe(
+        cacheTokenValues[base].write,
+      );
+    });
+  });
+
   it('should return correct prompt and completion rates for Claude Fable 5', () => {
     expect(getMultiplier({ model: 'claude-fable-5', tokenType: 'prompt' })).toBe(
       tokenValues['claude-fable-5'].prompt,
@@ -2566,6 +2671,7 @@ describe('Premium Token Pricing', () => {
       'claude-opus-4-6',
       'claude-opus-4-7',
       'claude-opus-4-8',
+      'claude-opus-5',
       'claude-fable-5',
       'claude-mythos-5',
       'claude-sonnet-4-6',

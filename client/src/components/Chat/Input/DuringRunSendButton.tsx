@@ -1,13 +1,17 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { useWatch } from 'react-hook-form';
 import { SendIcon } from '@librechat/client';
-import { Zap, Clock, OctagonPause } from 'lucide-react';
+import { Zap, Clock, OctagonPause, ZapOff } from 'lucide-react';
 import type { Control } from 'react-hook-form';
+import type { ComposerKeyContext, KeyChordSource } from '~/utils/shortcuts';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
-import { isMacPlatform } from '~/utils/shortcuts';
+import { isMacPlatform, resolveComposerKeyDown } from '~/utils/shortcuts';
+import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
 
 const ROW_CLASS =
   'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-text-primary hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
@@ -23,7 +27,7 @@ function Kbd({ children }: { children: React.ReactNode }) {
 type ActionRow = {
   key: string;
   label: string;
-  kbd: string;
+  kbd?: string;
   icon: React.ReactNode;
   disabled?: boolean;
   onClick: () => void;
@@ -43,18 +47,79 @@ type DuringRunSendButtonProps = {
  * (and `submitButtonRef`, so Enter's synthetic click routes here) whenever the
  * composer holds text — submitting steers or queues per the effective action.
  * Hovering it reveals the full action list with its shortcuts: steer, queue
- * (⌘/Ctrl+Enter routes to the non-default action), and interrupt & send
- * (⌥/Alt+Enter). Clearing the composer restores the Stop button.
+ * (⌘/Ctrl+Enter routes to the non-default action), interrupt & steer
+ * (⌘/Ctrl+Shift+Enter — stops writing now but keeps what is written), and
+ * interrupt & send (⌥/Alt+Enter — discards the answer and starts over).
+ * Clearing the composer restores the Stop button.
  */
 const DuringRunSendButton = React.memo(
   forwardRef((props: DuringRunSendButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
     const localize = useLocalize();
+    const steerInterruptsByDefault = useRecoilValue(store.steerInterruptsByDefault);
+    const enterToSend = useRecoilValue(store.enterToSend);
+    const { submitOverride, yieldedChords } = useComposerBindings();
     const { steering } = props;
     const data = useWatch({ control: props.control });
     const content = data?.text?.trim();
     const primary = steering.effectiveAction;
     const modEnter = isMacPlatform ? '⌘⏎' : 'Ctrl ⏎';
     const altEnter = isMacPlatform ? '⌥⏎' : 'Alt ⏎';
+    const modShiftEnter = isMacPlatform ? '⌘⇧⏎' : 'Ctrl ⇧ ⏎';
+
+    /**
+     * What each canonical chord actually does right now, asked of the same
+     * decision table the composer executes. A hint only appears on a row its
+     * chord still triggers: a chord rebound to a global shortcut (or claimed
+     * by a rebound submit) is dropped rather than advertised on a row it no
+     * longer reaches, and with Enter-to-send off, plain Enter inserts a
+     * newline during a run, so ⌘/Ctrl+Enter carries the default action.
+     */
+    const verdicts = useMemo(() => {
+      const ctx: ComposerKeyContext = {
+        isComposing: false,
+        isSubmitting: true,
+        allowSubmitWhileGenerating: true,
+        hasDuringRunModifier: true,
+        enterToSend,
+        submitOverride,
+        yieldedChords,
+      };
+      const chord = (init: Partial<KeyChordSource>) =>
+        resolveComposerKeyDown(
+          { key: 'Enter', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, ...init },
+          ctx,
+        );
+      const mod = isMacPlatform ? { metaKey: true } : { ctrlKey: true };
+      return {
+        plainEnter: chord({}),
+        modEnter: chord(mod),
+        modShiftEnter: chord({ ...mod, shiftKey: true }),
+        altEnter: chord({ altKey: true }),
+      };
+    }, [enterToSend, submitOverride, yieldedChords]);
+
+    /**
+     * With the preference on, plain Enter routes through `submitDuringRun`,
+     * which preempts. The hint has to follow it: leaving ⏎ on the ordinary
+     * Steer row would advertise a key that does something else, and that row
+     * deliberately stays non-preempting when CLICKED. No key reaches it in
+     * this mode, so it shows none.
+     */
+    const enterInterrupts = primary === 'steer' && steerInterruptsByDefault;
+    /** The chord that submits the default action, if any still does. */
+    let submitHint: string | undefined;
+    if (verdicts.plainEnter === 'submit') {
+      submitHint = '⏎';
+    } else if (verdicts.modEnter === 'submit') {
+      submitHint = modEnter;
+    }
+    const alternateHint = verdicts.modEnter === 'other' ? modEnter : undefined;
+    let interruptSteerKbd: string | undefined;
+    if (enterInterrupts && submitHint != null) {
+      interruptSteerKbd = submitHint;
+    } else if (verdicts.modShiftEnter === 'preempt') {
+      interruptSteerKbd = modShiftEnter;
+    }
 
     const runAction = (action: (text: string) => boolean | void) => {
       const text = props.getText().trim();
@@ -66,10 +131,15 @@ const DuringRunSendButton = React.memo(
       }
     };
 
+    let steerKbd: string | undefined = alternateHint;
+    if (primary === 'steer') {
+      steerKbd = enterInterrupts ? undefined : submitHint;
+    }
+
     const steerRow: ActionRow = {
       key: 'steer',
       label: localize('com_ui_steer'),
-      kbd: primary === 'steer' ? '⏎' : modEnter,
+      kbd: steerKbd,
       icon: <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />,
       // Gate on availability, not the default action — the row exists to
       // override a queue-preferring default with an explicit steer.
@@ -79,19 +149,33 @@ const DuringRunSendButton = React.memo(
     const queueRow: ActionRow = {
       key: 'queue',
       label: localize('com_ui_queue'),
-      kbd: primary === 'queue' ? '⏎' : modEnter,
+      kbd: primary === 'queue' ? submitHint : alternateHint,
       icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
       onClick: () => runAction((text) => steering.queueFromComposer(text)),
+    };
+    /** Keeps the half-written answer, unlike interrupt & send below it. */
+    const interruptSteerRow: ActionRow = {
+      key: 'interrupt-steer',
+      label: localize('com_ui_interrupt_steer'),
+      kbd: interruptSteerKbd,
+      icon: <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />,
+      // Matches the standalone button's gate, and deliberately NOT
+      // `!canSteer` like the steer row above: `canSteer` is also false before
+      // a conversation exists, where `interruptSteer` falls back to interrupt
+      // & send and this row must stay live for the whole first turn.
+      disabled: steering.pausedOnApproval || !steering.canControlGeneration,
+      onClick: () => runAction((text) => steering.interruptSteer(text)),
     };
     const interruptRow: ActionRow = {
       key: 'interrupt',
       label: localize('com_ui_interrupt_send'),
-      kbd: altEnter,
+      kbd: verdicts.altEnter === 'interrupt' ? altEnter : undefined,
       icon: <OctagonPause className="h-4 w-4 text-red-500" aria-hidden="true" />,
+      disabled: !steering.canControlGeneration,
       onClick: () => runAction((text) => steering.interruptAndSend(text)),
     };
     const rows = primary === 'steer' ? [steerRow, queueRow] : [queueRow, steerRow];
-    rows.push(interruptRow);
+    rows.push(interruptSteerRow, interruptRow);
 
     const label =
       primary === 'steer' ? localize('com_ui_steer_send') : localize('com_ui_queue_send');
@@ -135,7 +219,8 @@ const DuringRunSendButton = React.memo(
             >
               {row.icon}
               {row.label}
-              <Kbd>{row.kbd}</Kbd>
+              {/* A disabled row's action refuses its chord too, so no hint. */}
+              {row.kbd != null && row.disabled !== true && <Kbd>{row.kbd}</Kbd>}
             </button>
           ))}
         </Ariakit.Hovercard>

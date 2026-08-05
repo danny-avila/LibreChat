@@ -59,6 +59,8 @@
     "e2e:a11y": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.a11y.ts --headed",
     "e2e:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.ts",
     "e2e:mock": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
+    "e2e:mock:redis": "npm run e2e:prepare && cross-env E2E_STREAM_STORE=redis playwright test --config=e2e/playwright.config.mock.ts",
+    "e2e:benchmark:agents": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.benchmark.ts agent-startup.latency.spec.ts",
     "e2e:mock:enforce": "npm run e2e:prepare && cross-env E2E_MODEL_SPECS_ENFORCE=true playwright test --config=e2e/playwright.config.mock.ts enforced-model-specs.spec.ts",
     "e2e:mock:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:debug": "npm run e2e:prepare && cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
@@ -109,7 +111,10 @@
     "migrate:shared-link-permissions:batch": "node config/migrate-shared-link-permissions.js --batch-size=50",
     "migrate:orphaned-agent-files:dry-run": "node config/migrate-orphaned-agent-files.js --dry-run",
     "migrate:orphaned-agent-files": "node config/migrate-orphaned-agent-files.js",
-    "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50"
+    "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50",
+    "migrate:code-file-duplicates:dry-run": "node config/migrate-code-file-duplicates.js --dry-run",
+    "migrate:code-file-duplicates": "node config/migrate-code-file-duplicates.js",
+    "migrate:code-file-duplicates:batch": "node config/migrate-code-file-duplicates.js --batch-size=50"
   },
   "repository": {
     "type": "git",
@@ -148,15 +153,16 @@
     "lint-staged": "^15.4.3",
     "prettier": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.6.11",
-    "turbo": "^2.9.17",
+    "turbo": "^2.10.5",
     "typescript-eslint": "^8.60.1"
   },
   "overrides": {
+    "brace-expansion": "^5.0.8",
     "@xmldom/xmldom": "^0.8.13",
     "elliptic": "^6.6.1",
     "form-data": "^4.0.6",
     "langsmith": "^0.6.0",
-    "postcss": "^8.5.13",
+    "postcss": "^8.5.18",
     "tslib": "^2.8.1",
     "fast-xml-parser": "5.7.2",
     "serialize-javascript": "7.0.5",
@@ -181,14 +187,19 @@
     },
     "underscore": "1.13.8",
     "hono": "^4.12.25",
-    "@hono/node-server": "^1.19.10",
+    "@hono/node-server": "^2.0.11",
     "monaco-editor": {
-      "dompurify": "3.4.0"
+      "dompurify": "3.4.12"
     },
-    "svgo": "^2.8.2",
+    "test-exclude": "^8.0.0",
     "js-yaml": "^4.2.0",
     "ws": "^8.21.0",
-    "@opentelemetry/core": "^2.9.0"
+    "@opentelemetry/core": "^2.9.0",
+    "@opentelemetry/propagator-jaeger": "^2.10.0",
+    "protobufjs": "^7.6.5",
+    "gaxios": {
+      "uuid": "^11.1.1"
+    }
   },
   "nodemonConfig": {
     "ignore": [

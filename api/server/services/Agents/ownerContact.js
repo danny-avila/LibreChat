@@ -59,7 +59,7 @@ const attachOwnerContacts = async (agents) => {
   let ownersById = new Map();
   if (ownerIds.length > 0) {
     try {
-      const users = await db.findUsers({ _id: { $in: ownerIds } }, 'name username email');
+      const users = await db.findUsers({ _id: { $in: ownerIds } }, 'name username');
       ownersById = new Map(users.map((user) => [user?._id?.toString(), user]));
     } catch (error) {
       logger.warn('[/Agents] Failed to resolve agent owner users', error);
