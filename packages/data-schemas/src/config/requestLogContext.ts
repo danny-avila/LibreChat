@@ -40,10 +40,14 @@ const STRUCTURED_EVENT_LOG_CONTEXT_KEYS = [
   'error_signature',
 ] as const;
 
-const LOG_CONTEXT_KEYS = [
+type LogContextKey =
+  | (typeof REQUEST_LOG_CONTEXT_KEYS)[number]
+  | (typeof STRUCTURED_EVENT_LOG_CONTEXT_KEYS)[number];
+
+const LOG_CONTEXT_KEYS: readonly LogContextKey[] = [
   ...REQUEST_LOG_CONTEXT_KEYS,
   ...STRUCTURED_EVENT_LOG_CONTEXT_KEYS,
-] as const;
+];
 
 const IDENTITY_CONTEXT_KEYS = ['tenantId', 'tenant_id', 'userId', 'user_id'] as const;
 const IDENTITY_FREE_EVENT_NAMES = new Set([
@@ -55,7 +59,6 @@ const IDENTITY_FREE_EVENT_NAMES = new Set([
 const STRUCTURED_EVENT_LOG_CONTEXT_KEY_SET = new Set<string>(STRUCTURED_EVENT_LOG_CONTEXT_KEYS);
 const MAX_LOG_CONTEXT_ARRAY_LENGTH = 10;
 
-type LogContextKey = (typeof LOG_CONTEXT_KEYS)[number];
 type LogContextValue = string | number | boolean | readonly string[];
 type LogContextInfo =
   | Partial<{ [Key in LogContextKey]: unknown }>
