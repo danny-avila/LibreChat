@@ -1883,23 +1883,36 @@ export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
+/**
+ * Validates a messageFilter PII regex at config load. Defaults to native RegExp so browser
+ * builds add no extra engine; the server injects a check backed by the linear-time runtime
+ * engine (RE2) via setMessageFilterRegexValidator, so a pattern the runtime cannot compile
+ * (backreferences, lookaround, control escapes, and so on) is rejected at load rather than
+ * silently dropped at request time.
+ */
+let messageFilterRegexValidator: (pattern: string) => boolean = (value) => {
+  try {
+    new RegExp(value, 'g');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const setMessageFilterRegexValidator = (validate: (pattern: string) => boolean): void => {
+  messageFilterRegexValidator = validate;
+};
+
 const messageFilterPiiCustomPatternSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   regex: z
     .string()
     .min(1)
-    .refine(
-      (value) => {
-        try {
-          new RegExp(value, 'g');
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      { message: 'Invalid regex' },
-    ),
+    .refine((value) => messageFilterRegexValidator(value), {
+      message:
+        'Unsupported regex: not compatible with the RE2 engine (no backreferences, lookaround, or control escapes)',
+    }),
 });
 
 export const messageFilterPiiSchema = z.object({

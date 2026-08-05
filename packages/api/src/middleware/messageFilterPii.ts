@@ -1,4 +1,6 @@
+import { RE2JS } from 're2js';
 import { logger } from '@librechat/data-schemas';
+import { setMessageFilterRegexValidator } from 'librechat-data-provider';
 import type {
   NextFunction,
   RequestHandler,
@@ -8,12 +10,42 @@ import type {
 import type { MessageFilterPiiConfig } from 'librechat-data-provider';
 import { getReferencedQuotes, mergeQuotedText } from '../utils/quotes';
 
-type CompiledPattern = { id: string; label: string; pattern: RegExp };
+/**
+ * Wire the messageFilter PII config validator to the linear-time engine (RE2) so a custom
+ * pattern the runtime cannot compile is rejected at config load rather than silently dropped at
+ * request time. Call once at server startup, before config is parsed; browser builds keep the
+ * native default and pull in no engine.
+ */
+export function configureMessageFilterRegexValidator(): void {
+  setMessageFilterRegexValidator((pattern) => {
+    try {
+      RE2JS.compile(pattern);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+type CompiledPattern = { id: string; label: string; pattern: RE2JS };
+
+const WHITESPACE = '\\s\\p{Zs}\\x0B\\x{2028}\\x{2029}\\x{FEFF}';
 
 const STARTER_PATTERNS: CompiledPattern[] = [
-  { id: 'sk_prefix', label: 'sk- prefix token', pattern: /\b(sk-)[a-zA-Z0-9_-]+/g },
-  { id: 'bearer_header', label: 'Bearer token', pattern: /\b(Bearer )[^\s"']+/gi },
-  { id: 'api_key_header', label: 'api-key header', pattern: /\b(api-key:?\s+)[^\s"']+/gi },
+  { id: 'sk_prefix', label: 'sk- prefix token', pattern: RE2JS.compile('\\b(sk-)[a-zA-Z0-9_-]+') },
+  {
+    id: 'bearer_header',
+    label: 'Bearer token',
+    pattern: RE2JS.compile(`\\b(Bearer )[^${WHITESPACE}"']+`, RE2JS.CASE_INSENSITIVE),
+  },
+  {
+    id: 'api_key_header',
+    label: 'api-key header',
+    pattern: RE2JS.compile(
+      `\\b(api-key:?[${WHITESPACE}]+)[^${WHITESPACE}"']+`,
+      RE2JS.CASE_INSENSITIVE,
+    ),
+  },
 ];
 
 const STARTER_BY_ID = new Map(STARTER_PATTERNS.map((p) => [p.id, p]));
@@ -32,32 +64,40 @@ function selectStarter(ids?: string[]): CompiledPattern[] {
   return out;
 }
 
-const COMPILE_CACHE = new WeakMap<object, CompiledPattern[]>();
+type CompiledConfig = { patterns: CompiledPattern[]; failClosed: boolean };
 
-function compile(config: MessageFilterPiiConfig): CompiledPattern[] {
+const COMPILE_CACHE = new WeakMap<object, CompiledConfig>();
+
+function compile(config: MessageFilterPiiConfig): CompiledConfig {
   const cached = COMPILE_CACHE.get(config);
   if (cached != null) {
     return cached;
   }
   const starter = selectStarter(config.starterPatterns);
   const custom: CompiledPattern[] = [];
+  let dropped = 0;
   for (const p of config.customPatterns ?? []) {
     try {
-      custom.push({ id: p.id, label: p.label, pattern: new RegExp(p.regex, 'g') });
+      custom.push({ id: p.id, label: p.label, pattern: RE2JS.compile(p.regex) });
     } catch (err) {
+      dropped += 1;
       logger.warn(
-        `[messageFilter.pii] dropping invalid customPattern ${JSON.stringify(p.id)}: ${(err as Error).message}`,
+        `[messageFilter.pii] dropping invalid or unsupported customPattern ${JSON.stringify(p.id)}: ${(err as Error).message}`,
       );
     }
   }
-  const result = [...starter, ...custom];
+  const patterns = [...starter, ...custom];
+  // Fail closed when any declared custom pattern fails to compile (e.g. a DB or admin override
+  // carrying RE2-incompatible syntax that never hit load-time validation): a silently dropped
+  // pattern would let the text it was meant to catch pass even when other patterns survive, so
+  // block rather than enforce an unintended subset.
+  const result: CompiledConfig = { patterns, failClosed: dropped > 0 };
   COMPILE_CACHE.set(config, result);
   return result;
 }
 
 function findMatch(text: string, patterns: CompiledPattern[]): CompiledPattern | null {
   for (const p of patterns) {
-    p.pattern.lastIndex = 0;
     if (p.pattern.test(text)) {
       return p;
     }
@@ -68,6 +108,8 @@ function findMatch(text: string, patterns: CompiledPattern[]): CompiledPattern |
 export interface PiiMatch {
   id: string;
   label: string;
+  /** Set when a configured custom pattern failed to compile; block without a real matched label. */
+  misconfigured?: boolean;
 }
 
 type ContentPart = { type?: string; text?: string; [key: string]: unknown };
@@ -83,7 +125,10 @@ export function findPiiMatchInMessages(
   if (config == null || !Array.isArray(messages) || messages.length === 0) {
     return null;
   }
-  const patterns = compile(config);
+  const { patterns, failClosed } = compile(config);
+  if (failClosed) {
+    return { id: '__misconfigured__', label: 'restricted value', misconfigured: true };
+  }
   if (patterns.length === 0) {
     return null;
   }
@@ -175,7 +220,14 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
       next();
       return;
     }
-    const patterns = compile(config);
+    const { patterns, failClosed } = compile(config);
+    if (failClosed) {
+      res.status(400).json({
+        error: 'message_filter_pii_block',
+        message: 'Message filtering is misconfigured; contact your administrator.',
+      });
+      return;
+    }
     if (patterns.length === 0) {
       next();
       return;
