@@ -916,6 +916,15 @@ export const agentsEndpointSchema = baseEndpointSchema
       recursionLimit: z.number().optional(),
       disableBuilder: z.boolean().optional().default(false),
       maxRecursionLimit: z.number().optional(),
+      /** Max cumulative bytes a single streamed tool call's arguments may reach before the run
+       * aborts. Defaults to 64 KiB in the agents SDK; `0` disables the guard. */
+      maxToolCallArgBytes: z.number().optional(),
+      /** Max streamed chunk events per model generation before the run aborts. Off by default. */
+      maxDeltaEventsPerTurn: z.number().optional(),
+      /** Per-tool overrides of `maxToolCallArgBytes`, keyed by model-facing tool name; `0`
+       * disables the guard for that tool only. Merged over LibreChat's shipped default of
+       * `{ create_file: 131072 }`. */
+      maxToolCallArgBytesByTool: z.record(z.number()).optional(),
       maxCitations: z.number().min(1).max(50).optional().default(30),
       maxCitationsPerFile: z.number().min(1).max(10).optional().default(7),
       minRelevanceScore: z.number().min(0.0).max(1.0).optional().default(0.45),
