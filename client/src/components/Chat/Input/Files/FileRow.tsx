@@ -1,13 +1,26 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
-import { EToolResources } from 'librechat-data-provider';
+import { EToolResources, documentParserMimeTypes } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { logger, getCachedPreview } from '~/utils';
 import { useFileDeletion } from '~/hooks/Files';
+import FileTextDialog from './FileTextDialog';
 import FileContainer from './FileContainer';
 import { useLocalize } from '~/hooks';
 import Image from './Image';
+
+/**
+ * Whether a staged upload already has extracted text to show.
+ *
+ * Parsing happens server-side on upload, so the text exists as soon as the
+ * progress bar completes, before the message is ever sent.
+ */
+const hasExtractedText = (file: ExtendedFile): boolean =>
+  !!file.file_id &&
+  file.progress >= 1 &&
+  !!file.type &&
+  documentParserMimeTypes.some((regex) => regex.test(file.type as string));
 
 /**
  * Shared wrapper with a stable module-scope identity. Passing an inline arrow as
@@ -43,6 +56,7 @@ export default function FileRow({
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const [textFile, setTextFile] = useState<ExtendedFile | null>(null);
   const files = Array.from(_files?.values() ?? []).filter((file) =>
     fileFilter ? fileFilter(file) : true,
   );
@@ -151,7 +165,11 @@ export default function FileRow({
                     source={file.source}
                   />
                 ) : (
-                  <FileContainer file={file} onDelete={handleDelete} />
+                  <FileContainer
+                    file={file}
+                    onDelete={handleDelete}
+                    onClick={hasExtractedText(file) ? () => setTextFile(file) : undefined}
+                  />
                 )}
               </div>
             );
@@ -160,9 +178,28 @@ export default function FileRow({
     );
   };
 
+  const textDialog = (
+    <FileTextDialog
+      open={textFile !== null}
+      onOpenChange={(open) => !open && setTextFile(null)}
+      fileId={textFile?.file_id ?? ''}
+      filename={textFile?.filename ?? ''}
+    />
+  );
+
   if (Wrapper) {
-    return <Wrapper>{renderFiles()}</Wrapper>;
+    return (
+      <>
+        <Wrapper>{renderFiles()}</Wrapper>
+        {textDialog}
+      </>
+    );
   }
 
-  return renderFiles();
+  return (
+    <>
+      {renderFiles()}
+      {textDialog}
+    </>
+  );
 }

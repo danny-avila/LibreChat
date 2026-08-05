@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Copy, CheckCheck } from 'lucide-react';
-import { Button, Spinner } from '@librechat/client';
+import { Spinner } from '@librechat/client';
+import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useFilePreview } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -18,15 +18,15 @@ interface ExtractedTextPanelProps {
  */
 export default function ExtractedTextPanel({ fileId, enabled }: ExtractedTextPanelProps) {
   const localize = useLocalize();
-  const [copied, setCopied] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   const { data, isLoading, isError } = useFilePreview(fileId, { enabled: enabled && !!fileId });
 
   const text = data?.text ?? '';
 
   const handleCopy = () => {
     navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
     });
   };
 
@@ -48,16 +48,18 @@ export default function ExtractedTextPanel({ fileId, enabled }: ExtractedTextPan
   }
 
   return (
-    <>
-      <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-tertiary p-4 text-sm text-text-primary">
+    <div className="relative">
+      <div className="absolute right-2 top-2 z-10">
+        <CopyButton
+          isCopied={isCopied}
+          onClick={handleCopy}
+          iconOnly
+          className="rounded-lg bg-surface-secondary"
+        />
+      </div>
+      <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-tertiary p-4 pr-12 text-sm text-text-primary">
         {text}
       </pre>
-      <div className="flex justify-end pt-2">
-        <Button variant="outline" onClick={handleCopy} aria-label={localize('com_ui_copy')}>
-          {copied ? <CheckCheck className="mr-2 size-4" /> : <Copy className="mr-2 size-4" />}
-          {localize('com_ui_copy')}
-        </Button>
-      </div>
-    </>
+    </div>
   );
 }

@@ -37,12 +37,18 @@ jest.mock('../Image', () => {
 });
 
 jest.mock('../FileContainer', () => {
-  return function MockFileContainer({ file }: any) {
+  return function MockFileContainer({ file, onClick }: any) {
     return (
-      <div data-testid="mock-file-container">
+      <div data-testid="mock-file-container" data-clickable={onClick ? 'true' : 'false'}>
         <span data-testid="file-name">{file.filename}</span>
       </div>
     );
+  };
+});
+
+jest.mock('../FileTextDialog', () => {
+  return function MockFileTextDialog({ open }: any) {
+    return open ? <div data-testid="mock-text-dialog" /> : null;
   };
 });
 
@@ -358,6 +364,43 @@ describe('FileRow', () => {
       expect(imageUrl).toBe(
         '/images/68c98b26901ebe2d87c193a2/c0fe1b93-ba3d-456c-80be-9a492bfd9ed0__image.png',
       );
+    });
+  });
+
+  describe('Extracted Text', () => {
+    const PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+    const renderOne = (overrides: Partial<ExtendedFile>) => {
+      const file = createMockFile({ filename: 'deck.pptx', type: PPTX, ...overrides });
+      const filesMap = new Map<string, ExtendedFile>();
+      filesMap.set(file.file_id, file);
+      renderFileRow(filesMap);
+    };
+
+    test('a parsed document offers its text once uploaded', () => {
+      /* Parsing runs server-side during upload, so the text is available before
+       * the message is ever sent. */
+      renderOne({ progress: 1 });
+
+      expect(screen.getByTestId('mock-file-container')).toHaveAttribute('data-clickable', 'true');
+    });
+
+    test('offers nothing while the upload is still in flight', () => {
+      renderOne({ progress: 0.4 });
+
+      expect(screen.getByTestId('mock-file-container')).toHaveAttribute('data-clickable', 'false');
+    });
+
+    test('offers nothing for a file type the parser does not handle', () => {
+      renderOne({ filename: 'archive.zip', type: 'application/zip' });
+
+      expect(screen.getByTestId('mock-file-container')).toHaveAttribute('data-clickable', 'false');
+    });
+
+    test('keeps the dialog closed until a chip is chosen', () => {
+      renderOne({ progress: 1 });
+
+      expect(screen.queryByTestId('mock-text-dialog')).not.toBeInTheDocument();
     });
   });
 });
