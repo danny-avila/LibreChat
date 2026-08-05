@@ -2,6 +2,12 @@ import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import type { Redis, Cluster } from 'ioredis';
 import type { IEventTransport, PreemptMessage } from '~/stream/interfaces/IJobStore';
+import type { ChunkPublicationOptions } from '~/stream/internal/chunkPublication';
+import {
+  MAX_COALESCED_BYTES,
+  MAX_COALESCED_EVENTS,
+  resolveCoalesceWindowMs,
+} from '~/stream/internal/coalescing';
 import { registerChunkPublicationCapability } from '~/stream/internal/chunkPublication';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 
@@ -33,6 +39,7 @@ const KEYS = {
  */
 const EventTypes = {
   CHUNK: 'chunk',
+  CHUNK_BATCH: 'chunk_batch',
   DONE: 'done',
   ERROR: 'error',
   ABORT: 'abort',
@@ -46,12 +53,29 @@ interface PubSubMessage {
   seq?: number;
   data?: unknown;
   error?: string;
+  /** First sequence of a CHUNK_BATCH frame; events[i] owns baseSeq + i. */
+  baseSeq?: number;
+  /** Coalesced chunk payloads of a CHUNK_BATCH frame, in emission order. */
+  events?: unknown[];
   /** Immutable identity of the generation that emitted the event. */
   generationId?: number;
   /** Opaque nonce linking a replacement abort to its owner acknowledgement. */
   abortRequestId?: string;
   /** Payload for PREEMPT messages; fenced by its own createdAt. */
   preempt?: PreemptMessage;
+}
+
+/**
+ * Producer-side buffer of coalescable chunk publications for one stream.
+ * Payloads are pre-serialized at enqueue so a flush only joins strings, and
+ * each resolver settles its caller's receipt with `baseSeq + index`.
+ */
+interface PendingChunkBatch {
+  generationId?: number;
+  events: string[];
+  resolvers: Array<(receipt: number | false | undefined) => void>;
+  bytes: number;
+  timer: ReturnType<typeof setTimeout> | null;
 }
 
 /**
@@ -109,9 +133,13 @@ interface PreemptRegistration {
  *     expectCreatedAt | "",
  *     allowRetainedEpoch ("0" | "1"),
  *     generationEpochGraceTtl,
- *     requireActiveJob ("0" | "1")
+ *     requireActiveJob ("0" | "1"),
+ *     sequenceCount
  *   ]
- *   RETURNS: the 0-indexed seq assigned to this event, or -1 when the generation guard fails
+ *   RETURNS: the 0-indexed first seq assigned to this frame, or -1 when the generation
+ *   guard fails. A single-event frame passes count 1 and splices the seq; a coalesced
+ *   frame passes its event count, reserves that many consecutive sequences in one INCRBY,
+ *   and splices the base — event i in the frame owns base + i.
  *
  * During a rolling deployment, a job created by the previous version can expire without
  * leaving a generation marker. A tagged terminal event may claim that absent marker only
@@ -136,7 +164,8 @@ const PUBLISH_SEQ_LUA =
   'local currentStatus = redis.call("HGET", KEYS[2], "status") ' +
   'if currentStatus ~= "running" and currentStatus ~= "requires_action" then return -1 end ' +
   'end ' +
-  'local val = redis.call("INCR", KEYS[1]) ' +
+  'local count = tonumber(ARGV[9]) ' +
+  'local val = redis.call("INCRBY", KEYS[1], count) ' +
   'local ttl = tonumber(ARGV[4]) ' +
   'local seqTtl = redis.call("TTL", KEYS[1]) ' +
   'if seqTtl < math.floor(ttl / 2) then ' +
@@ -144,7 +173,7 @@ const PUBLISH_SEQ_LUA =
   'if jobTtl > ttl then ttl = jobTtl end ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
   'end ' +
-  'local seq = val - 1 ' +
+  'local seq = val - count ' +
   'redis.call("PUBLISH", ARGV[1], ARGV[2] .. string.format("%d", seq) .. ARGV[3]) ' +
   'return seq';
 
@@ -237,6 +266,10 @@ export class RedisEventTransport implements IEventTransport {
   private channelSubscriptions = new Map<string, Promise<void>>();
   /** Counter for generating unique subscriber IDs */
   private subscriberIdCounter = 0;
+  /** Coalescable chunk publications awaiting their window flush, per stream */
+  private pendingBatches = new Map<string, PendingChunkBatch>();
+  /** Delta-coalescing window; 0 keeps every publication on the per-event path */
+  private readonly coalesceWindowMs: number;
 
   private createStreamState(): StreamSubscribers {
     return {
@@ -273,8 +306,9 @@ export class RedisEventTransport implements IEventTransport {
   constructor(publisher: Redis | Cluster, subscriber: Redis | Cluster) {
     this.publisher = instrumentIORedisClient(publisher, RedisUseCases.GENERATION_STREAM);
     this.subscriber = instrumentIORedisClient(subscriber, RedisUseCases.GENERATION_STREAM);
-    registerChunkPublicationCapability(this, (streamId, event, generationId) =>
-      this.publishChunkWithReceipt(streamId, event, generationId),
+    this.coalesceWindowMs = resolveCoalesceWindowMs();
+    registerChunkPublicationCapability(this, (streamId, event, generationId, publishOptions) =>
+      this.publishChunkWithReceipt(streamId, event, generationId, publishOptions),
     );
 
     // Set up message handler for all subscriptions
@@ -315,6 +349,26 @@ export class RedisEventTransport implements IEventTransport {
     requireActiveJob = false,
   ): Promise<number> {
     const [prefix, suffix] = RedisEventTransport.buildPayloadParts(message);
+    return this.evalPublishSequenced(
+      streamId,
+      prefix,
+      suffix,
+      1,
+      expectedGenerationId,
+      allowRetainedEpoch,
+      requireActiveJob,
+    );
+  }
+
+  private async evalPublishSequenced(
+    streamId: string,
+    prefix: string,
+    suffix: string,
+    count: number,
+    expectedGenerationId?: number,
+    allowRetainedEpoch = false,
+    requireActiveJob = false,
+  ): Promise<number> {
     const seq = await this.publisher.eval(
       PUBLISH_SEQ_LUA,
       3,
@@ -329,6 +383,7 @@ export class RedisEventTransport implements IEventTransport {
       allowRetainedEpoch ? '1' : '0',
       String(GENERATION_EPOCH_GRACE_TTL_SECONDS),
       requireActiveJob ? '1' : '0',
+      String(count),
     );
     return seq as number;
   }
@@ -337,7 +392,18 @@ export class RedisEventTransport implements IEventTransport {
     streamId: string,
     event: unknown,
     generationId?: number,
+    options?: ChunkPublicationOptions,
   ): Promise<number | false | void> {
+    if (options?.coalesce === true && this.coalesceWindowMs > 0) {
+      return this.enqueueCoalescedChunk(streamId, event, generationId);
+    }
+    /** A sequenced non-coalescable publication is an ordering barrier: pending
+     * deltas must be issued first so their reserved sequences stay below this
+     * frame's. Both EVALs ride the same connection (and, under Cluster, the
+     * same hash slot), so issue order alone preserves sequence order. */
+    if (this.pendingBatches.has(streamId)) {
+      void this.flushCoalescedChunks(streamId);
+    }
     return this.publishWithSequence(
       streamId,
       {
@@ -357,6 +423,119 @@ export class RedisEventTransport implements IEventTransport {
          * remains replayable from the durable/local buffer. */
         return undefined;
       });
+  }
+
+  /**
+   * Buffer a coalescable chunk for the current window and settle its receipt when the
+   * batch flushes. The receipt keeps per-event semantics: its own absolute sequence,
+   * `false` under a generation/status fence, `undefined` on operational failure.
+   */
+  private enqueueCoalescedChunk(
+    streamId: string,
+    event: unknown,
+    generationId?: number,
+  ): Promise<number | false | undefined> {
+    let pending = this.pendingBatches.get(streamId);
+    if (pending && pending.generationId !== generationId) {
+      void this.flushCoalescedChunks(streamId);
+      pending = undefined;
+    }
+    if (!pending) {
+      pending = { generationId, events: [], resolvers: [], bytes: 0, timer: null };
+      this.pendingBatches.set(streamId, pending);
+    }
+
+    const batch = pending;
+    const encoded = JSON.stringify(event);
+    batch.events.push(encoded);
+    batch.bytes += encoded.length;
+    const receipt = new Promise<number | false | undefined>((resolve) => {
+      batch.resolvers.push(resolve);
+    });
+
+    if (batch.events.length >= MAX_COALESCED_EVENTS || batch.bytes >= MAX_COALESCED_BYTES) {
+      void this.flushCoalescedChunks(streamId);
+    } else if (batch.timer == null) {
+      batch.timer = setTimeout(() => {
+        void this.flushCoalescedChunks(streamId);
+      }, this.coalesceWindowMs);
+    }
+    return receipt;
+  }
+
+  /**
+   * Publish the stream's pending coalesced chunks as one CHUNK_BATCH frame.
+   *
+   * One INCRBY reserves a consecutive sequence per buffered event, so subscribers
+   * unpack the frame into individually sequenced chunks and the reorder buffer is
+   * none the wiser. The events array is spliced from pre-serialized payloads for
+   * the same reason single frames are: no server-side re-encoding.
+   */
+  private flushCoalescedChunks(streamId: string): Promise<void> {
+    const pending = this.pendingBatches.get(streamId);
+    if (!pending) {
+      return Promise.resolve();
+    }
+    this.pendingBatches.delete(streamId);
+    if (pending.timer != null) {
+      clearTimeout(pending.timer);
+      pending.timer = null;
+    }
+
+    const { generationId, events, resolvers } = pending;
+    const prefix = `{"type":${JSON.stringify(EventTypes.CHUNK_BATCH)},"baseSeq":`;
+    const suffix =
+      (generationId != null ? `,"generationId":${generationId}` : '') +
+      `,"events":[${events.join(',')}]}`;
+
+    return this.evalPublishSequenced(
+      streamId,
+      prefix,
+      suffix,
+      events.length,
+      generationId,
+      false,
+      generationId != null,
+    ).then(
+      (baseSeq) => {
+        if (baseSeq === -1) {
+          for (const resolve of resolvers) {
+            resolve(false);
+          }
+          return;
+        }
+        for (let i = 0; i < resolvers.length; i++) {
+          resolvers[i](baseSeq + i);
+        }
+      },
+      (err) => {
+        logger.error(`[RedisEventTransport] Failed to publish chunk batch:`, err);
+        for (const resolve of resolvers) {
+          resolve(undefined);
+        }
+      },
+    );
+  }
+
+  /** Publish a stream's pending coalesced chunks now (pre-transition barrier). */
+  async flushPendingChunks(streamId: string): Promise<void> {
+    await this.flushCoalescedChunks(streamId);
+  }
+
+  /** Drop a stream's pending coalesced chunks without publishing (teardown path). */
+  private discardCoalescedChunks(streamId: string): void {
+    const pending = this.pendingBatches.get(streamId);
+    if (!pending) {
+      return;
+    }
+    this.pendingBatches.delete(streamId);
+    if (pending.timer != null) {
+      clearTimeout(pending.timer);
+      pending.timer = null;
+    }
+    for (const resolve of pending.resolvers) {
+      resolve(undefined);
+    }
   }
 
   private ensureChannelSubscription(channel: string): Promise<void> {
@@ -518,6 +697,30 @@ export class RedisEventTransport implements IEventTransport {
       }
       if (parsed.type === EventTypes.CHUNK && parsed.seq != null) {
         this.handleOrderedChunk(streamId, streamState, parsed);
+      } else if (
+        parsed.type === EventTypes.CHUNK_BATCH &&
+        parsed.baseSeq != null &&
+        Array.isArray(parsed.events)
+      ) {
+        /** Unpack at ingress: each coalesced payload owns baseSeq + i, so the
+         * reorder buffer sees the exact per-event sequences it would have seen
+         * from individual frames (dup drop, gap buffering, force-flush). Each
+         * event is isolated: a throwing subscriber callback must degrade like
+         * a lost individual frame (that sequence stalls until the reorder
+         * force-flush) instead of discarding the rest of the batch, whose
+         * sequences are already reserved and would otherwise never arrive. */
+        for (let i = 0; i < parsed.events.length; i++) {
+          try {
+            this.handleOrderedChunk(streamId, streamState, {
+              type: EventTypes.CHUNK,
+              seq: parsed.baseSeq + i,
+              data: parsed.events[i],
+              ...(parsed.generationId != null && { generationId: parsed.generationId }),
+            });
+          } catch (err) {
+            logger.error(`[RedisEventTransport] Failed to deliver coalesced chunk:`, err);
+          }
+        }
       } else if (
         (parsed.type === EventTypes.DONE || parsed.type === EventTypes.ERROR) &&
         parsed.seq != null
@@ -881,6 +1084,9 @@ export class RedisEventTransport implements IEventTransport {
    */
   async emitDone(streamId: string, event: unknown, generationId?: number): Promise<void> {
     try {
+      /** Terminal frames must carry a later sequence than every pending delta,
+       * or subscribers would close on DONE and drop the coalesced tail. */
+      await this.flushCoalescedChunks(streamId);
       const sequence = await this.publishWithSequence(
         streamId,
         {
@@ -906,6 +1112,7 @@ export class RedisEventTransport implements IEventTransport {
     replacedGenerationId: number,
     creationAttemptId: string,
   ): Promise<void> {
+    await this.flushCoalescedChunks(streamId);
     const [prefix, suffix] = RedisEventTransport.buildPayloadParts({
       type: EventTypes.DONE,
       data: event,
@@ -934,6 +1141,7 @@ export class RedisEventTransport implements IEventTransport {
    */
   async emitError(streamId: string, error: string, generationId?: number): Promise<void> {
     try {
+      await this.flushCoalescedChunks(streamId);
       const sequence = await this.publishWithSequence(
         streamId,
         {
@@ -1233,6 +1441,11 @@ export class RedisEventTransport implements IEventTransport {
     const channel = CHANNELS.events(streamId);
     const state = this.streams.get(streamId);
 
+    /** Terminal publications flushed ahead of themselves; anything still pending
+     * here belongs to a torn-down generation and stays recoverable from the
+     * durable chunk log, matching a dropped per-event publication. */
+    this.discardCoalescedChunks(streamId);
+
     if (state) {
       state.handlers.clear();
       state.allSubscribersLeftCallback = undefined;
@@ -1261,6 +1474,10 @@ export class RedisEventTransport implements IEventTransport {
    * Destroy all resources.
    */
   destroy(): void {
+    for (const streamId of this.pendingBatches.keys()) {
+      this.discardCoalescedChunks(streamId);
+    }
+
     // Clear all flush timeouts and buffered messages.
     // Sequence keys are NOT deleted here — they are shared across replicas.
     // A shutting-down replica must not nuke the counter for active publishers.
