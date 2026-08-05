@@ -57,7 +57,9 @@ const MAX_LOG_CONTEXT_ARRAY_LENGTH = 10;
 
 type LogContextKey = (typeof LOG_CONTEXT_KEYS)[number];
 type LogContextValue = string | number | boolean | readonly string[];
-type LogContextInfo = Partial<{ [Key in LogContextKey]: unknown }>;
+type LogContextInfo =
+  | Partial<{ [Key in LogContextKey]: unknown }>
+  | winston.Logform.TransformableInfo;
 
 function isIdentityFreeEvent(eventName: unknown): boolean {
   return typeof eventName === 'string' && IDENTITY_FREE_EVENT_NAMES.has(eventName);

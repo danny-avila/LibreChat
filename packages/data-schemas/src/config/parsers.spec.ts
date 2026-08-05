@@ -358,7 +358,7 @@ describe('jsonTruncateFormat structured events', () => {
     } satisfies winston.Logform.TransformableInfo;
 
     const output = format.transform(info, format.options);
-    if (output === false) {
+    if (typeof output !== 'object') {
       throw new Error('Expected jsonTruncateFormat to preserve the log record');
     }
 
