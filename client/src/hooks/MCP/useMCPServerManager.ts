@@ -30,6 +30,7 @@ import {
   getMCPOAuthPollingOutcome,
   isMCPReadyAfterOAuth,
   isTerminalMCPOAuthPollingError,
+  shouldUseMCPConnectionStatus,
 } from './polling';
 import { useLocalize, useHasAccess, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
@@ -269,6 +270,7 @@ export function useMCPServerManager({
             }
           }
           const flowOutcome = flowStatus ? getMCPOAuthPollingOutcome(flowStatus) : null;
+          const canUseConnectionStatus = shouldUseMCPConnectionStatus(flowId, terminalFlowError);
           let isReady = false;
           if (flowOutcome === 'completed') {
             /** Flow completion is durable credential readiness, not proof that tool discovery
@@ -288,7 +290,7 @@ export function useMCPServerManager({
             }
             isReady = true;
           }
-          if (!flowId || terminalFlowError) {
+          if (canUseConnectionStatus) {
             // The flow record may have expired or been denied on another pod. Re-read
             // durable connection state before deciding whether the UI can finish.
             await queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
@@ -306,7 +308,7 @@ export function useMCPServerManager({
           const freshConnectionStatus = freshConnectionData?.connectionStatus || {};
 
           const serverStatus = freshConnectionStatus[serverName];
-          if (!flowId || terminalFlowError) {
+          if (canUseConnectionStatus) {
             isReady =
               serverStatus?.authorizationState === 'authorized' ||
               serverStatus?.connectionState === 'connected';
@@ -369,8 +371,9 @@ export function useMCPServerManager({
 
           if (
             flowOutcome === 'failed' ||
-            serverStatus?.authorizationState === 'error' ||
-            serverStatus?.connectionState === 'error'
+            (canUseConnectionStatus &&
+              (serverStatus?.authorizationState === 'error' ||
+                serverStatus?.connectionState === 'error'))
           ) {
             showToast({
               message: localize('com_ui_mcp_init_failed'),

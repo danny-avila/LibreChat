@@ -27,6 +27,14 @@ export function getMCPOAuthPollingOutcome(status: MCPOAuthStatusResponse): MCPOA
   return 'pending';
 }
 
+/** An active flow endpoint is newer and more specific than cached connection status. */
+export function shouldUseMCPConnectionStatus(
+  flowId: string | undefined,
+  terminalFlowError: boolean,
+): boolean {
+  return !flowId || terminalFlowError;
+}
+
 /** OAuth completion proves credentials were stored; reinitialization proves this request pod can use them. */
 export function isMCPReadyAfterOAuth(response: MCPReinitializeResponse): boolean {
   return response.success && response.oauthRequired !== true;

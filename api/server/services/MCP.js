@@ -1320,7 +1320,21 @@ async function getServerConnectionStatus(
       } else if (hasActiveFlow) {
         finalConnectionState = 'connecting';
         authorizationState = 'authorizing';
-      } else if (await MCPTokenStorage.hasStoredAuthorization({ userId, serverName, findToken })) {
+      } else if (
+        await MCPTokenStorage.hasStoredAuthorization({
+          userId,
+          serverName,
+          findToken,
+          validateClientBinding: (clientInfo, storedMetadata) =>
+            MCPOAuthHandler.assertStoredClientBinding(
+              serverName,
+              config.url,
+              clientInfo,
+              storedMetadata,
+              config.oauth,
+            ),
+        })
+      ) {
         /** OAuth readiness is durable even when this pod has no live connection. */
         finalConnectionState = 'connected';
         authorizationState = 'authorized';

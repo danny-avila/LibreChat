@@ -2,6 +2,7 @@ import {
   getMCPOAuthPollingOutcome,
   isMCPReadyAfterOAuth,
   isTerminalMCPOAuthPollingError,
+  shouldUseMCPConnectionStatus,
 } from '../polling';
 
 describe('getMCPOAuthPollingOutcome', () => {
@@ -32,6 +33,17 @@ describe('getMCPOAuthPollingOutcome', () => {
     expect(isTerminalMCPOAuthPollingError({ response: { status: 404 } })).toBe(true);
     expect(isTerminalMCPOAuthPollingError({ response: { status: 403 } })).toBe(true);
     expect(isTerminalMCPOAuthPollingError({ response: { status: 500 } })).toBe(false);
+  });
+});
+
+describe('shouldUseMCPConnectionStatus', () => {
+  it('ignores stale cached errors while a live OAuth flow is pending', () => {
+    expect(shouldUseMCPConnectionStatus('active-flow', false)).toBe(false);
+  });
+
+  it('uses durable connection status when no usable flow endpoint remains', () => {
+    expect(shouldUseMCPConnectionStatus(undefined, false)).toBe(true);
+    expect(shouldUseMCPConnectionStatus('missing-flow', true)).toBe(true);
   });
 });
 

@@ -11,11 +11,16 @@ test.describe('MCP OAuth readiness', () => {
     test.setTimeout(120000);
 
     let reinitializeCalls = 0;
+    let flowStatusCalls = 0;
     let readinessComplete = false;
+    let markPendingPolled!: () => void;
     let markReadinessStarted!: () => void;
     let releaseReadiness!: () => void;
     const readinessStarted = new Promise<void>((resolve) => {
       markReadinessStarted = resolve;
+    });
+    const pendingPolled = new Promise<void>((resolve) => {
+      markPendingPolled = resolve;
     });
     const readinessGate = new Promise<void>((resolve) => {
       releaseReadiness = resolve;
@@ -36,9 +41,11 @@ test.describe('MCP OAuth readiness', () => {
                   authorizationState: 'authorized',
                 }
               : {
-                  connectionState: 'disconnected',
+                  /** A retry can begin while React Query still holds the previous attempt's
+                   * terminal status. The live PENDING flow must supersede this stale error. */
+                  connectionState: 'error',
                   requiresOAuth: true,
-                  authorizationState: 'needs_authorization',
+                  authorizationState: 'error',
                 },
           },
         }),
@@ -80,6 +87,16 @@ test.describe('MCP OAuth readiness', () => {
     });
 
     await page.route('**/api/mcp/oauth/status/**', async (route) => {
+      flowStatusCalls++;
+      if (flowStatusCalls === 1) {
+        markPendingPolled();
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ status: 'PENDING', completed: false, failed: false }),
+        });
+        return;
+      }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -95,6 +112,13 @@ test.describe('MCP OAuth readiness', () => {
 
     await page.getByRole('button', { name: 'Authenticate', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Continue with OAuth' })).toBeVisible();
+    await pendingPolled;
+
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'MCP Servers', exact: true }).click();
+    await expect(serverItem.getByRole('button', { name: 'Cancel' })).toBeVisible();
+    await expect(page.getByText('Failed to initialize MCP server')).toHaveCount(0);
+
     await readinessStarted;
 
     await page.keyboard.press('Escape');

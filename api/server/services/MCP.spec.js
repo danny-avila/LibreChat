@@ -9,6 +9,7 @@ jest.mock('@librechat/data-schemas', () => ({
     warn: jest.fn(),
   },
   getTenantId: mockGetTenantId,
+  decryptV2: jest.fn(async (value) => value.replace(/^enc:/, '')),
 }));
 
 // Create mock registry instance
@@ -423,6 +424,10 @@ describe('tests for the new helper functions used by the MCP connection status e
     const mockServerName = 'test-server';
     const mockConfig = { updatedAt: Date.now() };
 
+    beforeEach(() => {
+      require('~/models').findToken.mockReset();
+    });
+
     it('should return app connection state when available', async () => {
       const appConnections = new Map([
         [
@@ -678,6 +683,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const oauthServers = new Set([mockServerName]);
       const { findToken } = require('~/models');
       const credentialSetId = 'credential-set-a';
+      const config = { ...mockConfig, url: 'https://mcp.example.com/' };
       mockGetOAuthReconnectionManager.mockReturnValue({ isReconnecting: jest.fn(() => false) });
       mockGetFlowStateManager.mockReturnValue({ getFlowState: jest.fn(() => null) });
       mockGetLogStores.mockReturnValue({});
@@ -686,12 +692,21 @@ describe('tests for the new helper functions used by the MCP connection status e
           expiresAt: new Date(Date.now() + 60000),
           metadata: { credential_set_id: credentialSetId },
         })
-        .mockResolvedValueOnce({ metadata: { credential_set_id: credentialSetId } });
+        .mockResolvedValueOnce({
+          token: 'enc:{"client_id":"dynamic-client"}',
+          metadata: {
+            credential_set_id: credentialSetId,
+            authorization_endpoint: 'https://auth.example.com/authorize',
+            token_endpoint: 'https://auth.example.com/token',
+            server_url: 'https://mcp.example.com/',
+            client_source: 'dynamic',
+          },
+        });
 
       const result = await getServerConnectionStatus(
         mockUserId,
         mockServerName,
-        mockConfig,
+        config,
         appConnections,
         userConnections,
         oauthServers,
@@ -701,6 +716,57 @@ describe('tests for the new helper functions used by the MCP connection status e
         requiresOAuth: true,
         connectionState: 'connected',
         authorizationState: 'authorized',
+      });
+    });
+
+    it('should reject stored authorization bound to an older server configuration', async () => {
+      const appConnections = new Map();
+      const userConnections = new Map();
+      const oauthServers = new Set([mockServerName]);
+      const { findToken } = require('~/models');
+      const credentialSetId = 'credential-set-a';
+      const config = {
+        updatedAt: Date.now(),
+        url: 'https://new-mcp.example.com/',
+      };
+      mockGetOAuthReconnectionManager.mockReturnValue({ isReconnecting: jest.fn(() => false) });
+      mockGetFlowStateManager.mockReturnValue({ getFlowState: jest.fn(() => null) });
+      mockGetLogStores.mockReturnValue({});
+      findToken.mockImplementation(({ type }) => {
+        if (type === 'mcp_oauth') {
+          return {
+            expiresAt: new Date(Date.now() + 60000),
+            metadata: { credential_set_id: credentialSetId },
+          };
+        }
+        if (type === 'mcp_oauth_client') {
+          return {
+            token: 'enc:{"client_id":"dynamic-client"}',
+            metadata: {
+              credential_set_id: credentialSetId,
+              authorization_endpoint: 'https://auth.example.com/authorize',
+              token_endpoint: 'https://auth.example.com/token',
+              server_url: 'https://old-mcp.example.com/',
+              client_source: 'dynamic',
+            },
+          };
+        }
+        return null;
+      });
+
+      const result = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        config,
+        appConnections,
+        userConnections,
+        oauthServers,
+      );
+
+      expect(result).toEqual({
+        requiresOAuth: true,
+        connectionState: 'disconnected',
+        authorizationState: 'needs_authorization',
       });
     });
 

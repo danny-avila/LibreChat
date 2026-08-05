@@ -169,10 +169,15 @@ export class MCPTokenStorage {
     userId,
     serverName,
     findToken,
+    validateClientBinding,
   }: {
     userId: string;
     serverName: string;
     findToken: TokenMethods['findToken'];
+    validateClientBinding: (
+      clientInfo: OAuthClientInformation,
+      storedMetadata: Partial<OAuthStoredClientMetadata>,
+    ) => void;
   }): Promise<boolean> {
     const identifier = `mcp:${serverName}`;
     try {
@@ -182,27 +187,47 @@ export class MCPTokenStorage {
       ]);
       const clientCredentialSetId = getCredentialSetId(clientInfoData);
       const accessCredentialSetId = getCredentialSetId(accessTokenData);
+      let hasUsableAuthorization = false;
       if (accessTokenData) {
         if (!accessCredentialSetId || clientCredentialSetId !== accessCredentialSetId) {
           return false;
         }
         if (!accessTokenData.expiresAt || accessTokenData.expiresAt > new Date()) {
-          return true;
+          hasUsableAuthorization = true;
         }
       }
 
-      const refreshTokenData = await findToken({
-        userId,
-        type: 'mcp_oauth_refresh',
-        identifier: `${identifier}:refresh`,
-      });
-      const refreshCredentialSetId = getCredentialSetId(refreshTokenData);
-      return (
-        !!refreshCredentialSetId &&
-        refreshCredentialSetId === clientCredentialSetId &&
-        (!accessCredentialSetId || refreshCredentialSetId === accessCredentialSetId) &&
-        (!refreshTokenData?.expiresAt || refreshTokenData.expiresAt > new Date())
-      );
+      if (!hasUsableAuthorization) {
+        const refreshTokenData = await findToken({
+          userId,
+          type: 'mcp_oauth_refresh',
+          identifier: `${identifier}:refresh`,
+        });
+        const refreshCredentialSetId = getCredentialSetId(refreshTokenData);
+        hasUsableAuthorization =
+          !!refreshCredentialSetId &&
+          refreshCredentialSetId === clientCredentialSetId &&
+          (!accessCredentialSetId || refreshCredentialSetId === accessCredentialSetId) &&
+          (!refreshTokenData?.expiresAt || refreshTokenData.expiresAt > new Date());
+      }
+
+      if (!hasUsableAuthorization || !clientInfoData?.token) {
+        return false;
+      }
+
+      const clientInfo = JSON.parse(
+        await decryptV2(clientInfoData.token),
+      ) as OAuthClientInformation;
+      try {
+        validateClientBinding(clientInfo, getTokenMetadata(clientInfoData));
+      } catch (error) {
+        logger.debug(
+          `${this.getLogPrefix(userId, serverName)} Stored authorization no longer matches the configured OAuth binding`,
+          { error },
+        );
+        return false;
+      }
+      return true;
     } catch (error) {
       logger.warn(
         `${this.getLogPrefix(userId, serverName)} Failed to inspect stored authorization`,

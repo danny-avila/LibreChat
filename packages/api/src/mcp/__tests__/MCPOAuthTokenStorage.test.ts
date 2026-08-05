@@ -51,12 +51,17 @@ describe('MCPTokenStorage', () => {
   });
 
   describe('hasStoredAuthorization', () => {
-    async function storeClient(metadata: Record<string, unknown> = storedBindingMetadata) {
+    const validateClientBinding = () => undefined;
+
+    async function storeClient(
+      metadata: Record<string, unknown> = storedBindingMetadata,
+      clientInfo = { client_id: 'dynamic-client' },
+    ) {
       await store.createToken({
         userId: 'u1',
         type: 'mcp_oauth_client',
         identifier: 'mcp:srv1:client',
-        token: 'enc:client-info',
+        token: `enc:${JSON.stringify(clientInfo)}`,
         expiresIn: 3600,
         metadata,
       });
@@ -77,6 +82,7 @@ describe('MCPTokenStorage', () => {
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
+          validateClientBinding,
         }),
       ).resolves.toBe(true);
     });
@@ -96,6 +102,7 @@ describe('MCPTokenStorage', () => {
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
+          validateClientBinding,
         }),
       ).resolves.toBe(false);
     });
@@ -122,6 +129,7 @@ describe('MCPTokenStorage', () => {
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
+          validateClientBinding,
         }),
       ).resolves.toBe(true);
     });
@@ -141,6 +149,7 @@ describe('MCPTokenStorage', () => {
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
+          validateClientBinding,
         }),
       ).resolves.toBe(true);
     });
@@ -160,6 +169,7 @@ describe('MCPTokenStorage', () => {
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
+          validateClientBinding,
         }),
       ).resolves.toBe(false);
     });
@@ -179,6 +189,34 @@ describe('MCPTokenStorage', () => {
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
+          validateClientBinding,
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it('rejects usable credentials that are bound to an older server configuration', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:access-token',
+        expiresIn: 3600,
+      });
+      await storeClient({
+        ...storedBindingMetadata,
+        server_url: 'https://old-mcp.example.com/',
+      });
+
+      await expect(
+        MCPTokenStorage.hasStoredAuthorization({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          validateClientBinding: (_clientInfo, storedMetadata) => {
+            if (storedMetadata.server_url !== 'https://new-mcp.example.com/') {
+              throw new Error('stored server binding changed');
+            }
+          },
         }),
       ).resolves.toBe(false);
     });
