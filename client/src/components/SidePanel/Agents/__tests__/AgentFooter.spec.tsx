@@ -335,6 +335,7 @@ describe('AgentFooter', () => {
       });
 
       render(<AgentFooter {...defaultProps} />);
+      expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument();
       expect(screen.getByText('Create')).toBeInTheDocument();
       expect(screen.queryByTestId('version-button')).not.toBeInTheDocument();
       expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
