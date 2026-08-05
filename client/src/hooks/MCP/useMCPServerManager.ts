@@ -30,6 +30,7 @@ import {
   getMCPOAuthTimeout,
   getMCPOAuthPollingOutcome,
   isMCPReadyAfterOAuth,
+  shouldFailMCPOAuthFallback,
   isTerminalMCPOAuthPollingError,
   shouldUseMCPConnectionStatus,
 } from './polling';
@@ -349,7 +350,7 @@ export function useMCPServerManager({
             return;
           }
 
-          if (terminalFlowError) {
+          if (shouldFailMCPOAuthFallback(terminalFlowError, serverStatus)) {
             showToast({
               message: localize('com_ui_mcp_init_failed'),
               status: 'error',
@@ -376,7 +377,8 @@ export function useMCPServerManager({
 
           if (
             flowOutcome === 'failed' ||
-            (canUseConnectionStatus &&
+            (!terminalFlowError &&
+              canUseConnectionStatus &&
               (serverStatus?.authorizationState === 'error' ||
                 serverStatus?.connectionState === 'error'))
           ) {

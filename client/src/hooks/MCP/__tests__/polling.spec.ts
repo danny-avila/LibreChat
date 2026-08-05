@@ -2,6 +2,7 @@ import {
   getMCPOAuthTimeout,
   getMCPOAuthPollingOutcome,
   isMCPReadyAfterOAuth,
+  shouldFailMCPOAuthFallback,
   isTerminalMCPOAuthPollingError,
   shouldUseMCPConnectionStatus,
 } from '../polling';
@@ -55,6 +56,36 @@ describe('shouldUseMCPConnectionStatus', () => {
   it('uses durable connection status when no usable flow endpoint remains', () => {
     expect(shouldUseMCPConnectionStatus(undefined, false)).toBe(true);
     expect(shouldUseMCPConnectionStatus('missing-flow', true)).toBe(true);
+  });
+});
+
+describe('shouldFailMCPOAuthFallback', () => {
+  it('keeps polling when a fallback pod still reports active authorization', () => {
+    expect(
+      shouldFailMCPOAuthFallback(true, {
+        requiresOAuth: true,
+        connectionState: 'error',
+        authorizationState: 'authorizing',
+      }),
+    ).toBe(false);
+    expect(
+      shouldFailMCPOAuthFallback(true, {
+        requiresOAuth: true,
+        connectionState: 'connecting',
+        authorizationState: 'needs_authorization',
+      }),
+    ).toBe(false);
+  });
+
+  it('fails a missing flow only after fallback status is no longer authorizing', () => {
+    expect(
+      shouldFailMCPOAuthFallback(true, {
+        requiresOAuth: true,
+        connectionState: 'disconnected',
+        authorizationState: 'needs_authorization',
+      }),
+    ).toBe(true);
+    expect(shouldFailMCPOAuthFallback(false, undefined)).toBe(false);
   });
 });
 

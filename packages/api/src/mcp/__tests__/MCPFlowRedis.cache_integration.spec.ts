@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { Keyv } from 'keyv';
+import { keyvRedisClient, keyvRedisClientReady } from '~/cache/redisClients';
 import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
-import { keyvRedisClientReady } from '~/cache/redisClients';
 import { standardCache } from '~/cache/cacheFactory';
 import { FlowStateManager } from '~/flow/manager';
 
@@ -16,6 +16,9 @@ describe('MCP OAuth flow state across Redis-backed instances', () => {
   const flowIds = new Set<string>();
 
   beforeAll(async () => {
+    if (!keyvRedisClient || !keyvRedisClientReady) {
+      throw new Error('MCP cross-instance flow tests require a real Redis client');
+    }
     await keyvRedisClientReady;
     const namespace = `MCPFlowRedis-${process.pid}-${randomUUID()}`;
     podAStore = standardCache(namespace, FLOW_TTL);

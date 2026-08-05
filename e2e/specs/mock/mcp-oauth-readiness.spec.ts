@@ -198,4 +198,82 @@ test.describe('MCP OAuth readiness', () => {
     await page.getByRole('button', { name: 'MCP Servers', exact: true }).click();
     await expect(serverItem.getByRole('button', { name: `Connect ${SERVER_NAME}` })).toBeVisible();
   });
+
+  test('keeps polling when an older fallback pod still reports authorization in progress', async ({
+    page,
+  }) => {
+    test.setTimeout(30000);
+
+    let flowStatusCalls = 0;
+    await page.route('**/api/mcp/connection/status', async (route) => {
+      let serverStatus = {
+        connectionState: 'connected',
+        requiresOAuth: true,
+        authorizationState: 'authorized',
+      };
+      if (flowStatusCalls === 0) {
+        serverStatus = {
+          connectionState: 'error',
+          requiresOAuth: true,
+          authorizationState: 'error',
+        };
+      } else if (flowStatusCalls === 1) {
+        serverStatus = {
+          connectionState: 'error',
+          requiresOAuth: true,
+          authorizationState: 'authorizing',
+        };
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          oauthTimeout: 30000,
+          connectionStatus: { [SERVER_NAME]: serverStatus },
+        }),
+      });
+    });
+    await page.route(`**/api/mcp/${SERVER_NAME}/reinitialize`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          message: 'OAuth authorization required',
+          serverName: SERVER_NAME,
+          oauthRequired: true,
+          oauthUrl: 'https://oauth.example.test/authorize',
+          flowId: FLOW_ID,
+          oauthTimeout: 30000,
+        }),
+      });
+    });
+    await page.route('**/api/mcp/oauth/status/**', async (route) => {
+      flowStatusCalls++;
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Route not found' }),
+      });
+    });
+
+    await page.goto('/c/new', { timeout: 10000 });
+    await page.getByRole('button', { name: 'MCP Servers', exact: true }).click();
+    const serverItem = page.getByRole('menuitemcheckbox', { name: new RegExp(SERVER_TITLE) });
+    await serverItem.getByRole('button', { name: `Connect ${SERVER_NAME}` }).click();
+    await page.getByRole('button', { name: 'Authenticate', exact: true }).click();
+
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'MCP Servers', exact: true }).click();
+    await expect(serverItem.getByRole('button', { name: 'Cancel' })).toBeVisible({
+      timeout: 8000,
+    });
+    await expect(page.getByText('Failed to initialize MCP server')).toHaveCount(0);
+    await expect(
+      page.getByText(`MCP server '${SERVER_NAME}' authenticated successfully`).first(),
+    ).toBeVisible({ timeout: 20000 });
+    await expect(serverItem).toHaveAttribute('aria-checked', 'true');
+    expect(flowStatusCalls).toBeGreaterThanOrEqual(2);
+  });
 });

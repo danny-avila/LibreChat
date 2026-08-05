@@ -1,4 +1,8 @@
-import type { MCPOAuthStatusResponse, MCPReinitializeResponse } from 'librechat-data-provider';
+import type {
+  MCPServerStatus,
+  MCPOAuthStatusResponse,
+  MCPReinitializeResponse,
+} from 'librechat-data-provider';
 
 export type MCPOAuthPollingOutcome = 'pending' | 'completed' | 'failed';
 
@@ -41,6 +45,20 @@ export function shouldUseMCPConnectionStatus(
   terminalFlowError: boolean,
 ): boolean {
   return !flowId || terminalFlowError;
+}
+
+/** A legacy pod's missing flow route is not terminal while shared fallback state is active. */
+export function shouldFailMCPOAuthFallback(
+  terminalFlowError: boolean,
+  serverStatus: MCPServerStatus | undefined,
+): boolean {
+  if (!terminalFlowError) {
+    return false;
+  }
+  return (
+    serverStatus?.authorizationState !== 'authorizing' &&
+    serverStatus?.connectionState !== 'connecting'
+  );
 }
 
 /** OAuth completion proves credentials were stored; reinitialization proves this request pod can use them. */
