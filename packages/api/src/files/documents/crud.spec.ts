@@ -343,7 +343,11 @@ describe('Document Parser', () => {
         mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       }) as Express.Multer.File;
 
-    test('extracts slide titles and body text', async () => {
+    afterEach(() => {
+      delete process.env.DOCUMENT_PARSER_ANYDOC;
+    });
+
+    test('extracts slide titles and body text with the built-in parser', async () => {
       const document = await parseDocument({ file: pptxFile() });
 
       expect(document.filepath).toBe('document_parser');
@@ -354,7 +358,112 @@ describe('Document Parser', () => {
       expect(document.text).toContain('Region');
       expect(document.text).not.toContain('| Region |');
     });
+
+    test('recovers slide headings, bullets and tables with anydoc enabled', async () => {
+      process.env.DOCUMENT_PARSER_ANYDOC = 'true';
+
+      const document = await parseDocument({ file: pptxFile() });
+
+      expect(document.text).toContain('## Quarterly Highlights');
+      expect(document.text).toContain('- Revenue up 12 percent');
+      expect(document.text).toContain('| Region | Units | Revenue |');
+      expect(document.text).toContain('| North | 1200 | 48000 |');
+    });
   });
+
+  describe('anydoc (DOCUMENT_PARSER_ANYDOC)', () => {
+    const docxFile = (name: string): Express.Multer.File =>
+      ({
+        originalname: name,
+        path: path.join(__dirname, name),
+        mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }) as Express.Multer.File;
+
+    afterEach(() => {
+      delete process.env.DOCUMENT_PARSER_ANYDOC;
+    });
+
+    test('is off by default, leaving the built-in extractors in place', async () => {
+      const document = await parseDocument({ file: docxFile('sample.docx') });
+
+      expect(document.text).toBe('This is a sample DOCX file.\n\n');
+    });
+
+    test('recovers headings, tables and emphasis when enabled', async () => {
+      process.env.DOCUMENT_PARSER_ANYDOC = 'true';
+
+      const document = await parseDocument({ file: docxFile('structured.docx') });
+
+      expect(document.text).toContain('# Quarterly Report');
+      expect(document.text).toContain('## Regional Totals');
+      expect(document.text).toContain('| Region | Units | Revenue |');
+      expect(document.text).toContain('**Totals are unaudited.**');
+    });
+
+    test('the built-in extractor drops that same structure', async () => {
+      /* Guards the premise of the flag: without it, mammoth returns the cell values
+       * as loose lines with no table, no heading levels and no emphasis. */
+      const document = await parseDocument({ file: docxFile('structured.docx') });
+
+      expect(document.text).toContain('Quarterly Report');
+      expect(document.text).not.toContain('# Quarterly Report');
+      expect(document.text).not.toContain('| Region |');
+      expect(document.text).not.toContain('**');
+    });
+
+    test('rejects a zip bomb without handing it to anydoc', async () => {
+      /* anydoc applies no decompression cap of its own: measured on this fixture it
+       * returns 80MB of Markdown at ~400MB RSS from 158KB on disk. Asserting only
+       * that parseDocument rejects would pass even if anydoc had already inflated
+       * the file, because the fallback parser throws too. What has to hold is that
+       * anydoc is never handed the bytes at all. */
+      process.env.DOCUMENT_PARSER_ANYDOC = 'true';
+      const toMarkdownBytes = jest.fn();
+      jest.doMock('@firecrawl/anydoc', () => ({ toMarkdownBytes, formatFromPath: () => null }));
+      jest.resetModules();
+      const { parseDocument: parseWithSpy } = await import('./crud');
+
+      await expect(parseWithSpy({ file: docxFile('bomb.docx') })).rejects.toThrow(
+        /exceeds the 25MB per-entry decompressed cap/,
+      );
+      expect(toMarkdownBytes).not.toHaveBeenCalled();
+
+      jest.dontMock('@firecrawl/anydoc');
+      jest.resetModules();
+    });
+
+    test('hands a safe document to anydoc', async () => {
+      /* The counterpart to the bomb case: proves the spy above would have fired,
+       * so "not called" there is a real guarantee and not a broken mock. */
+      process.env.DOCUMENT_PARSER_ANYDOC = 'true';
+      const toMarkdownBytes = jest.fn().mockResolvedValue('# stubbed');
+      jest.doMock('@firecrawl/anydoc', () => ({ toMarkdownBytes, formatFromPath: () => null }));
+      jest.resetModules();
+      const { parseDocument: parseWithSpy } = await import('./crud');
+
+      const document = await parseWithSpy({ file: docxFile('structured.docx') });
+
+      expect(toMarkdownBytes).toHaveBeenCalledTimes(1);
+      expect(document.text).toBe('# stubbed');
+
+      jest.dontMock('@firecrawl/anydoc');
+      jest.resetModules();
+    });
+
+    test('falls back to the built-in parser when anydoc cannot read the file', async () => {
+      process.env.DOCUMENT_PARSER_ANYDOC = 'true';
+      const file = {
+        originalname: 'sample.xls',
+        path: path.join(__dirname, 'sample.xls'),
+        mimetype: 'application/vnd.ms-excel',
+      } as Express.Multer.File;
+
+      const document = await parseDocument({ file });
+
+      expect(document.text.length).toBeGreaterThan(0);
+    });
+  });
+
   describe('annotateMissingPages()', () => {
     test('returns text unchanged when no pages are missing', () => {
       expect(annotateMissingPages('body', undefined)).toBe('body');
