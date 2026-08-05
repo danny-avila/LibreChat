@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
-import { documentParserMimeTypes } from 'librechat-data-provider';
+import { isParsedDocument } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import ExtractedTextPanel from '~/components/Chat/Input/Files/ExtractedTextPanel';
 import { useFileDownload, useSharedFileDownload } from '~/data-provider';
@@ -32,24 +32,7 @@ function getFileExtension(filename: string): string {
 
 /** Parsed documents other than PDF, which has its own inline preview. */
 const isParsedOfficeDoc = (mime: string): boolean =>
-  !mime.includes('pdf') && documentParserMimeTypes.some((regex) => regex.test(mime));
-
-/** Extension fallback for uploads that arrive with a generic or missing MIME type. */
-const PARSED_DOC_EXTENSIONS = new Set(['docx', 'pptx', 'xlsx', 'xls', 'ods', 'odt']);
-
-/**
- * Whether the document parser extracted text for this file.
- *
- * Mirrors how `previewKind` resolves, MIME first and filename second, so a file
- * whose type arrives as `application/octet-stream` still offers its text rather
- * than an empty state.
- */
-const hasParsedText = (mime?: string, fileName?: string): boolean => {
-  if (mime && documentParserMimeTypes.some((regex) => regex.test(mime))) {
-    return true;
-  }
-  return PARSED_DOC_EXTENSIONS.has(fileName ? getFileExtension(fileName) : '');
-};
+  !mime.includes('pdf') && isParsedDocument(mime);
 
 function canPreviewByMime(mime?: string): 'pdf' | 'text' | false {
   if (!mime) {
@@ -170,7 +153,7 @@ export default function FilePreviewDialog({
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
   /** Parsed office documents render no preview of their own, so fall back to their text. */
-  const showParsedText = hasParsedText(fileType, fileName);
+  const showParsedText = isParsedDocument(fileType, fileName);
   const { shareId } = useShareContext();
   const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
   const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);
@@ -333,12 +316,22 @@ export default function FilePreviewDialog({
               </span>
             </div>
           )}
-          {previewError && (
+          {previewError && !showParsedText && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
               </span>
             </div>
+          )}
+          {/* A parsed PDF stores no binary to fetch (its filepath is the parser
+           * marker), so the inline preview fails. Its extracted text still exists. */}
+          {previewError && showParsedText && (
+            <>
+              <p className="pb-3 text-sm text-text-secondary">
+                {localize('com_ui_extracted_text_description')}
+              </p>
+              <ExtractedTextPanel fileId={fileId} enabled={open} />
+            </>
           )}
           {fileBlobUrl && (
             <iframe

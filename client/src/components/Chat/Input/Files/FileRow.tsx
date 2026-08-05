@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
-import { EToolResources, documentParserMimeTypes } from 'librechat-data-provider';
+import { EToolResources, isParsedDocument } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { logger, getCachedPreview } from '~/utils';
@@ -17,10 +17,7 @@ import Image from './Image';
  * progress bar completes, before the message is ever sent.
  */
 const hasExtractedText = (file: ExtendedFile): boolean =>
-  !!file.file_id &&
-  file.progress >= 1 &&
-  !!file.type &&
-  documentParserMimeTypes.some((regex) => regex.test(file.type as string));
+  !!file.file_id && file.progress >= 1 && isParsedDocument(file.type, file.filename);
 
 /**
  * Shared wrapper with a stable module-scope identity. Passing an inline arrow as

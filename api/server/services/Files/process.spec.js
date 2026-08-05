@@ -283,6 +283,17 @@ describe('processAgentFileUpload', () => {
       expect(created.bytes).toBe(Buffer.byteLength(created.text, 'utf8'));
     });
 
+    test("stores the parsed record with the document's real MIME type", async () => {
+      /* Stored as text/plain, the record forgets what kind of document it was,
+       * and the client's extracted-text affordances key on that type. Model
+       * routing is unaffected: BaseClient short-circuits on source === text. */
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(db.createFile.mock.calls[0][0].type).toBe(PDF_MIME);
+    });
+
     test('leaves text and byte count untouched when every page was extracted', async () => {
       getStrategyFunctions.mockReturnValue({
         handleFileUpload: jest

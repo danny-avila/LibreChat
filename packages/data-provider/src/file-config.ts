@@ -240,7 +240,7 @@ export const defaultOCRMimeTypes = [
   /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
 ];
 
-/** MIME types handled by the built-in document parser (pdf, docx, excel variants, ods/odt) */
+/** MIME types handled by the built-in document parser (pdf, docx, pptx, excel variants, ods/odt) */
 export const documentParserMimeTypes = [
   excelMimeTypes,
   /^application\/pdf$/,
@@ -249,6 +249,25 @@ export const documentParserMimeTypes = [
   /^application\/vnd\.oasis\.opendocument\.spreadsheet$/,
   /^application\/vnd\.oasis\.opendocument\.text$/,
 ];
+
+/** Extension fallback for uploads whose MIME type arrives generic or missing */
+const parsedDocumentExtensions = new Set(['pdf', 'docx', 'pptx', 'xlsx', 'xls', 'ods', 'odt']);
+
+/**
+ * Whether the document parser extracts text for this file, resolved the way the
+ * parser itself routes: MIME type first, filename extension as fallback.
+ * Single source of truth for every UI affordance that offers extracted text.
+ */
+export function isParsedDocument(type?: string | null, filename?: string | null): boolean {
+  if (type && documentParserMimeTypes.some((regex) => regex.test(type))) {
+    return true;
+  }
+  const dot = filename?.lastIndexOf('.') ?? -1;
+  if (filename == null || dot <= 0) {
+    return false;
+  }
+  return parsedDocumentExtensions.has(filename.slice(dot + 1).toLowerCase());
+}
 
 export const defaultTextMimeTypes = [/^[\w.-]+\/[\w.-]+$/];
 
