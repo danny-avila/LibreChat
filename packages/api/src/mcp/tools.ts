@@ -83,8 +83,18 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       const serverTools: LCAvailableTools = {};
       const mcpDelimiter = Constants.mcp_delimiter;
 
-      if (tools == null || tools.length === 0) {
+      if (tools == null) {
         logger.debug(`[MCP Cache] No tools to update for server ${serverName} (user: ${userId})`);
+        return serverTools;
+      }
+
+      if (tools.length === 0) {
+        if (!(await isRequestScoped(userId, serverName, serverConfig))) {
+          await setCachedTools(serverTools, { userId, serverName });
+          logger.debug(
+            `[MCP Cache] Cleared stale tools for server ${serverName} (user: ${userId})`,
+          );
+        }
         return serverTools;
       }
 

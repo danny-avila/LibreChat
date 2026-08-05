@@ -57,7 +57,11 @@ const {
   createToolEndCallback,
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
-const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+const {
+  loadAgentTools,
+  loadToolsForExecution,
+  isExpectedMCPToolsUnavailableError,
+} = require('~/server/services/ToolService');
 const {
   findAccessibleResources,
   getEffectivePermissions,
@@ -113,6 +117,9 @@ function createToolLoader(signal, definitionsOnly = true) {
       });
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);
+      if (isExpectedMCPToolsUnavailableError(error)) {
+        throw error;
+      }
     }
   };
 }

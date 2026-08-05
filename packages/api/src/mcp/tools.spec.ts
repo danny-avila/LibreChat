@@ -36,14 +36,14 @@ describe('createMCPToolCacheService', () => {
       expect(deps.setCachedTools).not.toHaveBeenCalled();
     });
 
-    it('returns empty object for empty tools array', async () => {
+    it('replaces a stale cache entry when the server returns an empty tools array', async () => {
       const deps = createMockDeps();
       const { updateMCPServerTools } = createMCPToolCacheService(deps);
 
       const result = await updateMCPServerTools({ userId: 'u1', serverName: 'srv', tools: [] });
 
       expect(result).toEqual({});
-      expect(deps.setCachedTools).not.toHaveBeenCalled();
+      expect(deps.setCachedTools).toHaveBeenCalledWith({}, { userId: 'u1', serverName: 'srv' });
     });
 
     it('builds MODEL-FACING keys with the normalized server name, store keyed raw', async () => {

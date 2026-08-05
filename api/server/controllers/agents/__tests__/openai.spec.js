@@ -196,6 +196,8 @@ jest.mock('~/cache', () => ({
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn().mockResolvedValue([]),
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
+  isExpectedMCPToolsUnavailableError: (error) =>
+    error?.code === 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
 }));
 
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
@@ -392,6 +394,31 @@ describe('OpenAIChatCompletionController', () => {
       expect(loadToolsForExecution).toHaveBeenLastCalledWith(
         expect.objectContaining({ agentResourceType: ResourceType.REMOTE_AGENT }),
       );
+    });
+
+    it('returns 503 when an agent expects MCP tools but resolves none', async () => {
+      const { initializeAgent } = require('@librechat/api');
+      const { loadAgentTools } = require('~/server/services/ToolService');
+      const toolError = Object.assign(new Error('Expected MCP tools are unavailable'), {
+        code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+        status: 503,
+        statusCode: 503,
+      });
+      loadAgentTools.mockRejectedValueOnce(toolError);
+      initializeAgent.mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+        await loadTools({
+          req,
+          res,
+          tools: ['run_query_mcp_warehouse'],
+          model: agent.model,
+          agentId: agent.id,
+          provider: agent.provider,
+        });
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(503);
     });
   });
 

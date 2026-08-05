@@ -991,10 +991,11 @@ export async function initializeAgent(
    * `loadTools` failures take two forms:
    *   1. The wrapper throws — rare; only when something around the
    *      try/catch in `createToolLoader` itself fails.
-   *   2. The wrapper returns `undefined` — the typical CJS path: every
-   *      production loader (`createToolLoader` in `initialize.js`,
-   *      `openai.js`, `responses.js`) catches `loadAgentTools` errors and
-   *      returns `undefined`. Without explicit handling, the empty
+   *   2. The wrapper returns `undefined` — the typical CJS path for errors
+   *      that remain soft-failures. Runtime loaders rethrow invariant
+   *      failures such as an explicitly configured MCP tool set resolving
+   *      to zero, but preserve the legacy `undefined` result for unrelated
+   *      failures. Without explicit handling, the empty
    *      fallback object below would silently drop the agent's baseline
    *      tools for the turn (not just the skill-added extras).
    *
@@ -1034,7 +1035,7 @@ export async function initializeAgent(
     }
   }
   if (initialFailedSilently(loadToolsResult)) {
-    /* Production loaders swallow errors and return undefined. Treat that
+    /* Runtime loaders may swallow non-invariant errors and return undefined. Treat that
        the same as a throw when extras were requested — the agent's own
        tools must still load. */
     logger.warn(

@@ -255,7 +255,7 @@ async function reinitMCPServer({
       tools = await connection.fetchTools();
     }
 
-    if (tools && tools.length > 0) {
+    if (tools) {
       availableTools = await updateMCPServerTools({
         userId: user.id,
         serverName,
