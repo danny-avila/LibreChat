@@ -50,6 +50,8 @@ export {
   getTenantId,
   getUserId,
   getRequestId,
+  getRequestMethod,
+  getRequestPath,
   runAsSystem,
   scopedCacheKey,
   SYSTEM_TENANT_ID,

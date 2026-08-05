@@ -1,8 +1,10 @@
 import {
   buildSafeAuthLogContext,
-  formatAuthLogMessage,
+  buildSafeRequestLogContext,
+  buildTenantIsolationErrorLogContext,
   getAuthFailureErrorName,
   getAuthFailureReason,
+  getAuthFailureReasonCategory,
 } from './auth';
 import type { AuthLogRequest, AuthLogState } from './auth';
 
@@ -19,6 +21,7 @@ function createRequest(overrides: Partial<AuthLogRequest> = {}): AuthLogRequest 
 function createAuthState(overrides: Partial<AuthLogState> = {}): AuthLogState {
   return {
     tokenProvider: 'openid',
+    tokenSource: 'bearer',
     openidReuseEnabled: true,
     openidJwtAvailable: true,
     hasOpenIdReuseUserId: true,
@@ -36,12 +39,13 @@ describe('auth middleware logging helpers', () => {
       }),
       createAuthState(),
       {
+        event_name: 'jwt_auth_rejected',
         attempted_strategies: ['openidJwt', 'jwt'],
         fallback_attempted: true,
         fallback_succeeded: false,
-        reason: 'jwt expired',
-        error_name: 'TokenExpiredError',
-        status: 401,
+        reason_category: 'expired_jwt',
+        recovery_classification: 'terminal_rejection',
+        response_status: 401,
       },
     );
 
@@ -50,15 +54,17 @@ describe('auth middleware logging helpers', () => {
       method: 'GET',
       path: '/api/ask',
       token_provider: 'openid',
+      token_source: 'bearer',
       openid_reuse_enabled: true,
       openid_jwt_available: true,
       has_openid_reuse_user_id: true,
       attempted_strategies: ['openidJwt', 'jwt'],
       fallback_attempted: true,
       fallback_succeeded: false,
-      reason: 'jwt expired',
-      error_name: 'TokenExpiredError',
-      status: 401,
+      event_name: 'jwt_auth_rejected',
+      reason_category: 'expired_jwt',
+      recovery_classification: 'terminal_rejection',
+      response_status: 401,
     });
     expect(JSON.stringify(log)).not.toContain('secret-token');
   });
@@ -72,6 +78,7 @@ describe('auth middleware logging helpers', () => {
       }),
       createAuthState({
         tokenProvider: null,
+        tokenSource: null,
         openidReuseEnabled: false,
         openidJwtAvailable: false,
         hasOpenIdReuseUserId: false,
@@ -88,6 +95,21 @@ describe('auth middleware logging helpers', () => {
     });
   });
 
+  it('drops JWT-shaped and oversized request IDs supplied through headers', () => {
+    const jwtShapedRequestId = `${'a'.repeat(24)}.${'b'.repeat(24)}.${'c'.repeat(24)}`;
+    const log = buildSafeAuthLogContext(
+      createRequest({ headers: { 'x-request-id': jwtShapedRequestId } }),
+      createAuthState(),
+    );
+    const oversizedLog = buildSafeAuthLogContext(
+      createRequest({ headers: { 'x-request-id': 'a'.repeat(129) } }),
+      createAuthState(),
+    );
+
+    expect(log.request_id).toBeUndefined();
+    expect(oversizedLog.request_id).toBeUndefined();
+  });
+
   it('buckets unknown token providers to keep auth logs low-cardinality', () => {
     const log = buildSafeAuthLogContext(
       createRequest(),
@@ -97,6 +119,15 @@ describe('auth middleware logging helpers', () => {
     );
 
     expect(log.token_provider).toBe('other');
+  });
+
+  it('buckets unknown token sources to keep auth logs low-cardinality', () => {
+    const log = buildSafeAuthLogContext(
+      createRequest(),
+      createAuthState({ tokenSource: 'attacker-controlled-source' }),
+    );
+
+    expect(log.token_source).toBe('other');
   });
 
   it('prefers route buckets over concrete dynamic request paths', () => {
@@ -128,13 +159,13 @@ describe('auth middleware logging helpers', () => {
     expect(log.path).toBe('/api/share/link/:conversationId');
   });
 
-  it('drops unsupported extra values and keeps safe arrays primitive', () => {
+  it('drops unsupported and sensitive extra values while keeping allowed fields', () => {
     const log = buildSafeAuthLogContext(createRequest({ id: 'request-id' }), createAuthState(), {
       attempted_strategies: ['openidJwt', '', { strategy: 'jwt' }, 'jwt'],
       fallback_attempted: true,
       path: { unsafe: true },
       request_id: { unsafe: true },
-      status: Number.NaN,
+      response_status: Number.NaN,
       unsafe_object: { token: 'secret-token' },
       reason: '  jwt expired  ',
     });
@@ -144,29 +175,49 @@ describe('auth middleware logging helpers', () => {
       method: 'GET',
       path: '/api/messages',
       token_provider: 'openid',
+      token_source: 'bearer',
       openid_reuse_enabled: true,
       openid_jwt_available: true,
       has_openid_reuse_user_id: true,
       attempted_strategies: ['openidJwt', 'jwt'],
       fallback_attempted: true,
-      reason: 'jwt expired',
     });
     expect(JSON.stringify(log)).not.toContain('secret-token');
   });
 
-  it('formats auth log messages with serialized safe context for stdout collectors', () => {
-    const log = buildSafeAuthLogContext(createRequest({ id: 'request-id' }), createAuthState(), {
-      fallback_attempted: true,
-      reason: 'jwt expired',
-      error_name: 'TokenExpiredError',
-      status: 401,
-    });
-
-    expect(
-      formatAuthLogMessage('[requireJwtAuth] OpenID JWT auth failed; trying fallback', log),
-    ).toBe(
-      '[requireJwtAuth] OpenID JWT auth failed; trying fallback {"fallback_attempted":true,"reason":"jwt expired","error_name":"TokenExpiredError","status":401,"request_id":"request-id","method":"GET","path":"/api/messages","token_provider":"openid","openid_reuse_enabled":true,"openid_jwt_available":true,"has_openid_reuse_user_id":true}',
+  it('builds request context without raw query strings', () => {
+    const context = buildSafeRequestLogContext(
+      createRequest({
+        id: 'request-id',
+        path: undefined,
+        originalUrl: '/api/convos/conversation-123?access_token=secret-token',
+      }),
     );
+
+    expect(context).toEqual({ request_id: 'request-id', method: 'GET', path: '/api/convos' });
+    expect(JSON.stringify(context)).not.toContain('secret-token');
+  });
+
+  it('builds a safe, joinable context for tenant-isolation errors', () => {
+    const context = buildTenantIsolationErrorLogContext(
+      createRequest({
+        id: 'request-id',
+        path: undefined,
+        originalUrl: '/api/banner?access_token=secret-token',
+      }),
+      new Error('[TenantIsolation] Query attempted without tenant context in strict mode'),
+    );
+
+    expect(context).toEqual({
+      event_name: 'tenant_isolation_error',
+      error_category: 'tenant_isolation',
+      error_signature: 'missing_query_context',
+      response_status: 500,
+      request_id: 'request-id',
+      method: 'GET',
+      path: '/api/banner',
+    });
+    expect(JSON.stringify(context)).not.toContain('secret-token');
   });
 
   it('prefers Passport info fields for auth failure reason and error name', () => {
@@ -175,6 +226,7 @@ describe('auth middleware logging helpers', () => {
 
     expect(getAuthFailureReason(err, info)).toBe('jwt expired');
     expect(getAuthFailureErrorName(err, info)).toBe('TokenExpiredError');
+    expect(getAuthFailureReasonCategory(err, info)).toBe('expired_jwt');
   });
 
   it('falls back to Error fields when Passport info is absent', () => {
@@ -182,6 +234,7 @@ describe('auth middleware logging helpers', () => {
 
     expect(getAuthFailureReason(err, undefined)).toBe('invalid signature');
     expect(getAuthFailureErrorName(err, undefined)).toBe('JsonWebTokenError');
+    expect(getAuthFailureReasonCategory(err, undefined)).toBe('malformed_jwt');
   });
 
   it('does not throw when Passport failure objects expose throwing getters', () => {
@@ -202,5 +255,6 @@ describe('auth middleware logging helpers', () => {
 
     expect(getAuthFailureReason(err, info)).toBe('invalid signature');
     expect(getAuthFailureErrorName(err, info)).toBe('JsonWebTokenError');
+    expect(getAuthFailureReasonCategory(err, info)).toBe('malformed_jwt');
   });
 });

@@ -28,6 +28,7 @@ const {
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
+  requestContextMiddleware,
   registerShutdownTask,
   configureServerTimeouts,
   setupGracefulShutdown,
@@ -204,6 +205,7 @@ const startServer = async () => {
   });
 
   /* Middleware */
+  app.use(requestContextMiddleware);
   app.use('/api/agents/chat', agentStartupIngressMiddleware);
   app.use(metricsMiddleware);
   app.use(noIndex);

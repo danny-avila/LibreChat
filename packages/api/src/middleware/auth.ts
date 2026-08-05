@@ -7,6 +7,24 @@ type AuthLogValue = string | number | boolean | readonly string[];
 type AuthLogHeaderValue = string | string[] | undefined;
 type AuthRoutePath = string | RegExp | readonly (string | RegExp)[];
 
+const JWT_SHAPED_VALUE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+const MAX_REQUEST_ID_LENGTH = 128;
+const AUTH_LOG_EXTRA_KEYS = new Set([
+  'event_name',
+  'auth_strategy',
+  'primary_strategy',
+  'fallback_strategy',
+  'fallback_attempted',
+  'fallback_succeeded',
+  'attempted_strategies',
+  'final_strategy',
+  'primary_failure_reason_category',
+  'reason_category',
+  'recovery_classification',
+  'response_status',
+  'strategy_status',
+]);
+
 export type AuthLogRequest = {
   headers?: Record<string, AuthLogHeaderValue>;
   method?: string;
@@ -23,12 +41,26 @@ export type AuthLogRequest = {
 
 export type AuthLogState = {
   tokenProvider?: string | null;
+  tokenSource?: string | null;
   openidReuseEnabled: boolean;
   openidJwtAvailable: boolean;
   hasOpenIdReuseUserId: boolean;
 };
 
-export type AuthLogContext = Record<string, AuthLogValue>;
+export type RequestLogContext = {
+  request_id?: string;
+  method?: string;
+  path?: string;
+};
+
+export type AuthLogContext = RequestLogContext & Record<string, AuthLogValue>;
+
+export type AuthFailureReasonCategory =
+  | 'expired_jwt'
+  | 'malformed_jwt'
+  | 'principal_mismatch'
+  | 'missing_or_unrecognized_token'
+  | 'authentication_error';
 
 function normalizeAuthLogValue(value: unknown): string | undefined {
   if (value == null) {
@@ -85,12 +117,22 @@ function normalizeAuthLogContextValue(value: unknown): AuthLogValue | undefined 
 }
 
 function getRequestId(req: AuthLogRequest): string | undefined {
-  return (
+  const requestId =
     normalizeAuthLogValue(req.requestId) ??
     normalizeAuthLogValue(req.id) ??
     normalizeAuthLogValue(req.headers?.['x-request-id']) ??
-    normalizeAuthLogValue(req.headers?.['x-correlation-id'])
-  );
+    normalizeAuthLogValue(req.headers?.['x-correlation-id']);
+
+  if (
+    !requestId ||
+    requestId.length > MAX_REQUEST_ID_LENGTH ||
+    JWT_SHAPED_VALUE.test(requestId) ||
+    !/^[A-Za-z0-9_.:-]+$/.test(requestId)
+  ) {
+    return undefined;
+  }
+
+  return requestId;
 }
 
 function normalizeRoutePath(path: AuthRoutePath | undefined): string | undefined {
@@ -138,7 +180,7 @@ function bucketConcretePath(path: string | undefined): string | undefined {
 }
 
 function getRequestPath(req: AuthLogRequest): string | undefined {
-  const baseUrl = normalizeAuthLogValue(req.baseUrl);
+  const baseUrl = bucketConcretePath(normalizeAuthLogValue(req.baseUrl));
   const routePath = normalizeRoutePath(req.route?.path);
   if (routePath) {
     return joinRoutePath(baseUrl, routePath);
@@ -149,6 +191,18 @@ function getRequestPath(req: AuthLogRequest): string | undefined {
 
   const path = normalizeAuthLogValue(req.path) ?? normalizeAuthLogValue(req.originalUrl ?? req.url);
   return bucketConcretePath(path);
+}
+
+export function buildSafeRequestLogContext(req: AuthLogRequest): RequestLogContext {
+  const requestId = getRequestId(req);
+  const method = normalizeAuthLogValue(req.method);
+  const path = getRequestPath(req);
+
+  return {
+    ...(requestId && { request_id: requestId }),
+    ...(method && { method }),
+    ...(path && { path }),
+  };
 }
 
 function getAuthFailureField(source: unknown, field: keyof AuthFailureLike): unknown {
@@ -179,6 +233,10 @@ function compactAuthLogContext(log: Record<string, unknown>): AuthLogContext {
   return compacted as AuthLogContext;
 }
 
+function selectAuthLogExtra(extra: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(extra).filter(([key]) => AUTH_LOG_EXTRA_KEYS.has(key)));
+}
+
 export function getAuthFailureReason(
   err: unknown,
   info: unknown,
@@ -198,6 +256,39 @@ export function getAuthFailureErrorName(err: unknown, info: unknown): string | u
   );
 }
 
+export function getAuthFailureReasonCategory(
+  err: unknown,
+  info: unknown,
+): AuthFailureReasonCategory {
+  const reason = getAuthFailureReason(err, info).toLowerCase();
+  const errorName = getAuthFailureErrorName(err, info)?.toLowerCase();
+
+  if (reason.includes('expired') || errorName === 'tokenexpirederror') {
+    return 'expired_jwt';
+  }
+
+  if (reason.includes('user-id mismatch') || reason.includes('principal mismatch')) {
+    return 'principal_mismatch';
+  }
+
+  if (
+    errorName === 'jsonwebtokenerror' ||
+    reason.includes('jwt malformed') ||
+    reason.includes('invalid signature') ||
+    reason.includes('invalid algorithm') ||
+    reason.includes('invalid token') ||
+    reason.includes('invalid key')
+  ) {
+    return 'malformed_jwt';
+  }
+
+  if (reason === 'unauthorized' || reason.includes('no auth token')) {
+    return 'missing_or_unrecognized_token';
+  }
+
+  return 'authentication_error';
+}
+
 function getSafeTokenProvider(tokenProvider: unknown): string | undefined {
   const normalized = normalizeAuthLogValue(tokenProvider);
   if (!normalized) {
@@ -206,23 +297,80 @@ function getSafeTokenProvider(tokenProvider: unknown): string | undefined {
   return normalized === 'openid' || normalized === 'librechat' ? normalized : 'other';
 }
 
+function getSafeTokenSource(tokenSource: unknown): string | undefined {
+  const normalized = normalizeAuthLogValue(tokenSource);
+  if (!normalized) {
+    return undefined;
+  }
+
+  return ['bearer', 'none'].includes(normalized) ? normalized : 'other';
+}
+
 export function buildSafeAuthLogContext(
   req: AuthLogRequest,
   authState: AuthLogState,
   extra: Record<string, unknown> = {},
 ): AuthLogContext {
-  return compactAuthLogContext({
-    ...extra,
-    request_id: getRequestId(req),
-    method: normalizeAuthLogValue(req.method),
-    path: getRequestPath(req),
-    token_provider: getSafeTokenProvider(authState.tokenProvider),
-    openid_reuse_enabled: authState.openidReuseEnabled,
-    openid_jwt_available: authState.openidJwtAvailable,
-    has_openid_reuse_user_id: authState.hasOpenIdReuseUserId,
-  });
+  return {
+    ...compactAuthLogContext({
+      ...selectAuthLogExtra(extra),
+      token_provider: getSafeTokenProvider(authState.tokenProvider),
+      token_source: getSafeTokenSource(authState.tokenSource),
+      openid_reuse_enabled: authState.openidReuseEnabled,
+      openid_jwt_available: authState.openidJwtAvailable,
+      has_openid_reuse_user_id: authState.hasOpenIdReuseUserId,
+    }),
+    ...buildSafeRequestLogContext(req),
+  };
 }
 
+/**
+ * @deprecated Pass `{ message, ...context }` to the logger so structured fields
+ * survive JSON message truncation. Retained for package API compatibility only.
+ */
 export function formatAuthLogMessage(message: string, context: AuthLogContext): string {
   return `${message} ${JSON.stringify(context)}`;
+}
+
+function getTenantIsolationSignature(message: string): string {
+  if (message.includes('Query attempted without tenant context')) {
+    return 'missing_query_context';
+  }
+  if (message.includes('Aggregate attempted without tenant context')) {
+    return 'missing_aggregate_context';
+  }
+  if (message.includes('Save attempted without tenant context')) {
+    return 'missing_save_context';
+  }
+  if (message.includes('insertMany attempted without tenant context')) {
+    return 'missing_insert_many_context';
+  }
+  if (message.includes('Cross-tenant')) {
+    return 'cross_tenant_mutation';
+  }
+  if (message.includes('does not match current tenant context')) {
+    return 'tenant_mismatch';
+  }
+  if (message.includes('Modifying tenantId via replacement')) {
+    return 'replacement_tenant_mutation';
+  }
+  return 'tenant_isolation_error';
+}
+
+export function buildTenantIsolationErrorLogContext(
+  req: AuthLogRequest,
+  err: unknown,
+): AuthLogContext | undefined {
+  const message = normalizeAuthLogValue(getAuthFailureField(err, 'message'));
+  if (!message?.startsWith('[TenantIsolation]')) {
+    return undefined;
+  }
+
+  return {
+    event_name: 'tenant_isolation_error',
+    error_category: 'tenant_isolation',
+    error_signature: getTenantIsolationSignature(message),
+    response_status: 500,
+    ...buildSafeRequestLogContext(req),
+  };
 }

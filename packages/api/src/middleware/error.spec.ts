@@ -231,6 +231,32 @@ describe('ErrorController', () => {
       expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
       expect(logger.error).toHaveBeenCalledWith('ErrorController => error', genericError);
     });
+
+    it('emits a structured, joinable event for tenant-isolation errors', () => {
+      mockReq = {
+        id: 'request-123',
+        method: 'GET',
+        originalUrl: '/api/banner?access_token=secret-token',
+      } as Request;
+      const tenantError = new Error(
+        '[TenantIsolation] Query attempted without tenant context in strict mode',
+      );
+
+      ErrorController(tenantError, mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(logger.error).toHaveBeenCalledWith({
+        message: 'Tenant-isolation request failed',
+        event_name: 'tenant_isolation_error',
+        error_category: 'tenant_isolation',
+        error_signature: 'missing_query_context',
+        response_status: 500,
+        request_id: 'request-123',
+        method: 'GET',
+        path: '/api/banner',
+      });
+      expect(JSON.stringify((logger.error as jest.Mock).mock.calls)).not.toContain('secret-token');
+    });
   });
 
   describe('Catch block handling', () => {

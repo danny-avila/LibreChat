@@ -7,7 +7,14 @@ import {
   jsonTruncateFormat,
   stripHeavyErrorFields,
 } from './parsers';
-import { getTenantId, getUserId, getRequestId, SYSTEM_TENANT_ID } from './tenantContext';
+import {
+  getTenantId,
+  getUserId,
+  getRequestId,
+  getRequestMethod,
+  getRequestPath,
+  SYSTEM_TENANT_ID,
+} from './tenantContext';
 import { getLogDirectory } from './utils';
 
 const { NODE_ENV, DEBUG_LOGGING, CONSOLE_JSON, DEBUG_CONSOLE, LOG_TO_FILE } = process.env;
@@ -31,7 +38,14 @@ const levels: winston.config.AbstractConfigSetLevels = {
   silly: 7,
 };
 
-const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'] as const;
+const LOG_CONTEXT_KEYS = [
+  'tenantId',
+  'userId',
+  'requestId',
+  'request_id',
+  'method',
+  'path',
+] as const;
 
 function getLogTenantId(): string | undefined {
   const tenantId = getTenantId();
@@ -46,6 +60,9 @@ const requestContextFormat = winston.format((info: winston.Logform.Transformable
     tenantId: getLogTenantId(),
     userId: getUserId(),
     requestId: getRequestId(),
+    request_id: getRequestId(),
+    method: getRequestMethod(),
+    path: getRequestPath(),
   };
   LOG_CONTEXT_KEYS.forEach((key) => {
     if (context[key] && info[key] == null) {

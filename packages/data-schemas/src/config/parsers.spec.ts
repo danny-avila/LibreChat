@@ -1,5 +1,5 @@
 import winston from 'winston';
-import { debugTraverse, redactFormat, redactMessage } from './parsers';
+import { debugTraverse, jsonTruncateFormat, redactFormat, redactMessage } from './parsers';
 
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
@@ -318,5 +318,40 @@ describe('debugTraverse request context', () => {
     expect(out).not.toContain('__SYSTEM__');
     expect(out).not.toMatch(/tenantId:/);
     expect(out).toContain('userId');
+  });
+});
+
+describe('jsonTruncateFormat structured events', () => {
+  it('preserves short auth correlation fields when the human-readable message is truncated', () => {
+    const format = jsonTruncateFormat();
+    const info = {
+      level: 'warn',
+      message: `JWT auth rejected: ${'x'.repeat(300)}`,
+      event_name: 'jwt_auth_rejected',
+      request_id: 'request-123',
+      method: 'GET',
+      path: '/api/messages',
+      token_source: 'bearer',
+      reason_category: 'malformed_jwt',
+      recovery_classification: 'terminal_rejection',
+      response_status: 401,
+    };
+
+    const output = format.transform(
+      info as unknown as import('winston').Logform.TransformableInfo,
+      format.options,
+    ) as Record<string, unknown>;
+
+    expect(output.message).toBe(`${info.message.slice(0, 255)}...`);
+    expect(output).toMatchObject({
+      event_name: 'jwt_auth_rejected',
+      request_id: 'request-123',
+      method: 'GET',
+      path: '/api/messages',
+      token_source: 'bearer',
+      reason_category: 'malformed_jwt',
+      recovery_classification: 'terminal_rejection',
+      response_status: 401,
+    });
   });
 });
