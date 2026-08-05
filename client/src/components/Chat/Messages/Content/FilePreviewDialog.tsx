@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { documentParserMimeTypes } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import ExtractedTextPanel from '~/components/Chat/Input/Files/ExtractedTextPanel';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import { revokeDownloadURL, useFileDownload, useSharedFileDownload } from '~/data-provider';
 import { getFileExtension, getPreviewKind, shouldUseSharedFileDownload } from './preview';
@@ -81,6 +83,8 @@ export default function FilePreviewDialog({
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
+  /** Parsed office documents render no preview of their own, so fall back to their text. */
+  const hasParsedText = !!fileType && documentParserMimeTypes.some((regex) => regex.test(fileType));
   const { shareId } = useShareContext();
   // Preview reads revoke their blob after consumption, so they need a separate
   // query identity from user-triggered downloads that may be in flight concurrently.
@@ -104,7 +108,7 @@ export default function FilePreviewDialog({
   const [isCopied, setIsCopied] = useState(false);
   const loadingRef = useRef(false);
 
-  const previewKind = getPreviewKind(fileName, fileType, fileSource);
+  const previewKind = hasParsedText ? false : getPreviewKind(fileName, fileType, fileSource);
   const downloadFilename = getDownloadFilename(fileName, fileId, fileSource);
 
   const cancelledRef = useRef(false);
@@ -293,12 +297,22 @@ export default function FilePreviewDialog({
               </div>
             </>
           )}
-          {!previewKind && !loading && (
+          {!previewKind && !loading && !hasParsedText && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
               </span>
             </div>
+          )}
+          {/* Office documents have no renderable preview here, but the parser already
+           * read them for the model. Showing that text beats an empty state. */}
+          {!previewKind && !loading && hasParsedText && (
+            <>
+              <p className="pb-3 text-sm text-text-secondary">
+                {localize('com_ui_extracted_text_description')}
+              </p>
+              <ExtractedTextPanel fileId={fileId} enabled={open} />
+            </>
           )}
         </div>
       </OGDialogContent>
