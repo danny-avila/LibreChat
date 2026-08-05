@@ -1,8 +1,8 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { Agent, GraphEdge } from 'librechat-data-provider';
 import type { Response } from 'express';
-import type { ServerRequest } from '~/types';
 import type { InitializedAgent } from './initialize';
+import type { ServerRequest } from '~/types';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
