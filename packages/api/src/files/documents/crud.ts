@@ -6,6 +6,7 @@ import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { MistralOCRUploadResult } from '~/types';
 import { assertSafeZipSize } from './zipSafety';
 import { extractPptxSlides } from './html';
+import { isEnabled } from '~/utils/common';
 
 interface ParsedDocument {
   text: string;
@@ -78,8 +79,77 @@ export async function parseDocument({
   };
 }
 
-/** Maps a MIME type to its document parser function, or `undefined` if unsupported. */
+/**
+ * Office formats where anydoc overlaps the built-in parsers.
+ *
+ * PDF is deliberately excluded: it already goes through pdf-inspector directly,
+ * which is the same engine anydoc would use for it, and the direct path also
+ * surfaces `pagesNeedingOcr`.
+ */
+const ANYDOC_MIME_TYPES = [
+  /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/,
+  /^application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation$/,
+  excelMimeTypes,
+  /^application\/vnd\.oasis\.opendocument\.spreadsheet$/,
+  /^application\/vnd\.oasis\.opendocument\.text$/,
+];
+
+/**
+ * Maps a MIME type to its document parser function, or `undefined` if unsupported.
+ *
+ * With `DOCUMENT_PARSER_ANYDOC` enabled, office formats are routed through anydoc
+ * and fall back to the built-in parser if it throws.
+ */
 function getParserForMimeType(mimetype: string): FileParseFn | undefined {
+  const builtIn = getBuiltInParser(mimetype);
+  if (!builtIn || !isEnabled(process.env.DOCUMENT_PARSER_ANYDOC)) {
+    return builtIn;
+  }
+  if (!ANYDOC_MIME_TYPES.some((regex) => regex.test(mimetype))) {
+    return builtIn;
+  }
+  return (file) => officeToText(file, builtIn);
+}
+
+/**
+ * Converts an office document to Markdown with anydoc, recovering headings, tables
+ * and emphasis that the built-in extractors drop.
+ *
+ * anydoc applies no decompression limit of its own: a 158KB DOCX whose document.xml
+ * inflates to 78MB is parsed in full, ~400MB RSS. The zip guard therefore has to run
+ * on the raw buffer before anydoc sees it, exactly as it does for mammoth.
+ */
+async function officeToText(
+  file: Express.Multer.File,
+  builtIn: FileParseFn,
+): Promise<ParsedDocument> {
+  try {
+    const buffer = await fs.promises.readFile(file.path);
+    if (isZipArchive(buffer)) {
+      await assertSafeZipSize(buffer, { name: file.originalname ?? 'document' });
+    }
+    const { toMarkdownBytes, formatFromPath } = await import('@firecrawl/anydoc');
+    const format = formatFromPath(file.originalname ?? file.path);
+    const text = await toMarkdownBytes(new Uint8Array(buffer), format);
+    if (text?.trim()) {
+      return { text };
+    }
+    logger.warn(`[parseDocument] anydoc returned no text for "${file.originalname}"`);
+  } catch (error) {
+    logger.warn(
+      `[parseDocument] anydoc failed for "${file.originalname}", falling back to the built-in parser:`,
+      error,
+    );
+  }
+  return builtIn(file);
+}
+
+/** `.xls` (BIFF/CFB) is not a ZIP, so the zip guard does not apply to it. */
+function isZipArchive(buffer: Buffer): boolean {
+  return buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b;
+}
+
+function getBuiltInParser(mimetype: string): FileParseFn | undefined {
   if (mimetype === 'application/pdf') {
     return pdfToText;
   }
@@ -106,7 +176,7 @@ function getParserForMimeType(mimetype: string): FileParseFn | undefined {
  *
  * Reuses the slide reader behind the office preview, which already caps slide count
  * and per-entry decompressed size. Table cells surface as loose paragraphs because
- * PPTX cells are ordinary `<a:p>` runs, so table structure is not preserved.
+ * PPTX cells are ordinary `<a:p>` runs; anydoc recovers the table structure.
  */
 async function pptxToText(file: Express.Multer.File): Promise<ParsedDocument> {
   const buffer = await fs.promises.readFile(file.path);
