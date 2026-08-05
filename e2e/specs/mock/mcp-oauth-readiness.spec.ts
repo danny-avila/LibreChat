@@ -132,7 +132,7 @@ test.describe('MCP OAuth readiness', () => {
     releaseReadiness();
 
     await expect(
-      page.getByText(`MCP server '${SERVER_NAME}' authenticated successfully`),
+      page.getByText(`MCP server '${SERVER_NAME}' authenticated successfully`).first(),
     ).toBeVisible();
     await expect(serverItem).toHaveAttribute('aria-checked', 'true');
     expect(reinitializeCalls).toBe(2);
