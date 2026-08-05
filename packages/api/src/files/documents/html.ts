@@ -1019,13 +1019,23 @@ function renderPptxSlidesHtml(slides: PptxSlide[]): string {
  * up the slide-XML extraction pass.
  */
 export async function pptxToSlideListHtml(buffer: Buffer): Promise<string> {
+  const slides = await extractPptxSlides(buffer);
+  return renderPptxSlidesHtml(slides);
+}
+
+/**
+ * Reads a PPTX into per-slide title and body text, in slide-number order.
+ *
+ * Shared by the slide-list preview and the document parser so both see the same
+ * slides, caps and zip guard.
+ */
+export async function extractPptxSlides(buffer: Buffer): Promise<PptxSlide[]> {
   await assertSafeZipSize(buffer, { name: 'pptx' });
   const rawSlides = await extractPptxSlideXml(buffer);
-  const slides: PptxSlide[] = rawSlides.map(({ number, xml }) => {
+  return rawSlides.map(({ number, xml }) => {
     const { title, body } = extractSlideText(xml);
     return { number, title, body };
   });
-  return renderPptxSlidesHtml(slides);
 }
 
 /* =============================================================================

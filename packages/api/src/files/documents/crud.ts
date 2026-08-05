@@ -5,6 +5,7 @@ import { megabyte, excelMimeTypes, FileSources } from 'librechat-data-provider';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { MistralOCRUploadResult } from '~/types';
 import { assertSafeZipSize } from './zipSafety';
+import { extractPptxSlides } from './html';
 
 interface ParsedDocument {
   text: string;
@@ -94,7 +95,31 @@ function getParserForMimeType(mimetype: string): FileParseFn | undefined {
   if (mimetype === 'application/vnd.oasis.opendocument.text') {
     return odtToText;
   }
+  if (mimetype === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+    return pptxToText;
+  }
   return undefined;
+}
+
+/**
+ * Parses PowerPoint, returning each slide's title and body text.
+ *
+ * Reuses the slide reader behind the office preview, which already caps slide count
+ * and per-entry decompressed size. Table cells surface as loose paragraphs because
+ * PPTX cells are ordinary `<a:p>` runs, so table structure is not preserved.
+ */
+async function pptxToText(file: Express.Multer.File): Promise<ParsedDocument> {
+  const buffer = await fs.promises.readFile(file.path);
+  const slides = await extractPptxSlides(buffer);
+
+  const text = slides
+    .map(({ number, title, body }) => {
+      const lines = [`Slide ${number}${title ? `: ${title}` : ''}`, ...body];
+      return lines.join('\n');
+    })
+    .join('\n\n');
+
+  return { text };
 }
 
 /**
