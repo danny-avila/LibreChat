@@ -154,7 +154,7 @@
     "rate-limit-redis": "^4.2.0",
     "sanitize-html": "^2.17.6",
     "sharp": "^0.35.3",
-    "undici": "^7.24.1",
+    "undici": "^7.29.0",
     "yauzl": "^3.2.1",
     "zod": "^3.22.4"
   },
