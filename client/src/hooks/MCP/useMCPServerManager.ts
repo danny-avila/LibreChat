@@ -22,14 +22,15 @@ import type {
   TPlugin,
   MCPServersResponse,
   MCPConnectionStatusResponse,
+  MCPOAuthStatusResponse,
 } from 'librechat-data-provider';
 import type { MCPServerInitState } from '~/store/mcp';
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useHasAccess, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
+import { getMCPOAuthPollingOutcome, isTerminalMCPOAuthPollingError } from './polling';
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
 import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
 import { getMCPReinitializeErrorMessage } from './errors';
-import { getMCPOAuthPollingOutcome } from './polling';
 
 export interface MCPServerDefinition {
   serverName: string;
@@ -251,9 +252,22 @@ export function useMCPServerManager({
             return;
           }
 
-          const flowStatus = flowId ? await dataService.getMCPOAuthStatus(flowId) : null;
+          let flowStatus: MCPOAuthStatusResponse | null = null;
+          let terminalFlowError = false;
+          if (flowId) {
+            try {
+              flowStatus = await dataService.getMCPOAuthStatus(flowId);
+            } catch (error) {
+              if (!isTerminalMCPOAuthPollingError(error)) {
+                throw error;
+              }
+              terminalFlowError = true;
+            }
+          }
           const flowOutcome = flowStatus ? getMCPOAuthPollingOutcome(flowStatus) : null;
-          if (!flowId) {
+          if (!flowId || terminalFlowError) {
+            // The flow record may have expired or been denied on another pod. Re-read
+            // durable connection state before deciding whether the UI can finish.
             await queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
           }
 
@@ -301,6 +315,18 @@ export function useMCPServerManager({
             setTimeout(() => {
               cleanupServerState(serverName);
             }, 1000);
+            return;
+          }
+
+          if (terminalFlowError) {
+            showToast({
+              message: localize('com_ui_mcp_init_failed'),
+              status: 'error',
+            });
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+            }
+            cleanupServerState(serverName);
             return;
           }
 

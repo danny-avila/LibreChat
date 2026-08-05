@@ -1,4 +1,4 @@
-import { getMCPOAuthPollingOutcome } from '../polling';
+import { getMCPOAuthPollingOutcome, isTerminalMCPOAuthPollingError } from '../polling';
 
 describe('getMCPOAuthPollingOutcome', () => {
   it('treats shared flow completion as terminal success', () => {
@@ -22,5 +22,11 @@ describe('getMCPOAuthPollingOutcome', () => {
     expect(getMCPOAuthPollingOutcome({ status: 'PENDING', completed: false, failed: false })).toBe(
       'pending',
     );
+  });
+
+  it('treats missing and unauthorized flow records as terminal polling errors', () => {
+    expect(isTerminalMCPOAuthPollingError({ response: { status: 404 } })).toBe(true);
+    expect(isTerminalMCPOAuthPollingError({ response: { status: 403 } })).toBe(true);
+    expect(isTerminalMCPOAuthPollingError({ response: { status: 500 } })).toBe(false);
   });
 });

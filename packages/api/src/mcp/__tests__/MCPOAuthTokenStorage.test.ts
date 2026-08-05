@@ -51,7 +51,7 @@ describe('MCPTokenStorage', () => {
   });
 
   describe('hasStoredAuthorization', () => {
-    async function storeClient(metadata = storedBindingMetadata) {
+    async function storeClient(metadata: Record<string, unknown> = storedBindingMetadata) {
       await store.createToken({
         userId: 'u1',
         type: 'mcp_oauth_client',
