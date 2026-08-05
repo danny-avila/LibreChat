@@ -1336,6 +1336,55 @@ describe('User parameter passing tests', () => {
   });
 
   describe('createMCPTool', () => {
+    it.each(['OAuth flow initiated - return early', 'Pending OAuth flow reused - return early'])(
+      'preserves runtime-detected OAuth for the internal signal: %s',
+      async (oauthSignal) => {
+        const mockUser = { id: 'runtime-oauth-user', role: 'USER' };
+        const mockRes = { write: jest.fn(), flush: jest.fn() };
+        const { getRoleByName } = require('~/models');
+        getRoleByName.mockResolvedValue({
+          permissions: {
+            [PermissionTypes.MCP_SERVERS]: {
+              [Permissions.USE]: true,
+            },
+          },
+        });
+        mockGetMCPManager.mockReturnValue({
+          callTool: jest.fn().mockRejectedValue(new Error(oauthSignal)),
+        });
+
+        const mcpTool = await createMCPTool({
+          res: mockRes,
+          user: mockUser,
+          config: { url: 'https://runtime-oauth.example.com/mcp' },
+          toolKey: `test-tool${D}test-server`,
+          provider: 'openai',
+          userMCPAuthMap: {},
+          availableTools: {
+            [`test-tool${D}test-server`]: {
+              function: {
+                description: 'Cached tool',
+                parameters: { type: 'object', properties: {} },
+              },
+            },
+          },
+        });
+
+        await expect(
+          mcpTool.invoke(
+            {},
+            {
+              configurable: { user: mockUser },
+              metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+              toolCall: {},
+            },
+          ),
+        ).rejects.toThrow(
+          '[MCP][test-server][test-tool] OAuth authentication required. Please check the server logs for the authentication URL.',
+        );
+      },
+    );
+
     it('does not label forwarded-token failures as MCP OAuth', async () => {
       const mockUser = { id: 'forwarded-token-user', role: 'USER' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };

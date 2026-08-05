@@ -1123,9 +1123,12 @@ function createToolInstance({
         error.message?.includes('OAuth') ||
         error.message?.includes('authentication') ||
         error.message?.includes('Non-200 status code (401)');
+      const isOAuthFlowSignal =
+        error.message === 'OAuth flow initiated - return early' ||
+        error.message === 'Pending OAuth flow reused - return early';
 
       if (isOAuthError) {
-        if (capturedServerConfig && !isOAuthServer(capturedServerConfig)) {
+        if (capturedServerConfig && !isOAuthServer(capturedServerConfig) && !isOAuthFlowSignal) {
           throw new Error(
             `[MCP][${serverName}][${toolName}] upstream authentication failed; MCP OAuth is not configured for this server.`,
           );
