@@ -17,6 +17,7 @@ import type {
   GuardrailConfiguration,
   InferenceProfileConfig,
 } from '~/types';
+import { isBedrockMantleModel, initializeBedrockMantle } from './mantle';
 import { getHttpsProxyAgent } from '~/utils/proxy';
 import { checkUserKeyExpiry } from '~/utils';
 
@@ -216,8 +217,20 @@ export async function initializeBedrock({
     };
   }
 
+  const model = model_parameters?.model as string | undefined;
+  if (isBedrockMantleModel(model)) {
+    return initializeBedrockMantle({
+      model_parameters,
+      credentials,
+      bearerToken,
+      profile: BEDROCK_AWS_PROFILE,
+      defaultRegion: BEDROCK_AWS_DEFAULT_REGION,
+      userId: req.user?.id,
+    });
+  }
+
   const requestOptions: Record<string, unknown> = {
-    model: model_parameters?.model as string | undefined,
+    model,
     region: BEDROCK_AWS_DEFAULT_REGION,
   };
 
@@ -249,7 +262,6 @@ export async function initializeBedrock({
     };
   }
 
-  const model = model_parameters?.model as string | undefined;
   if (model && bedrockConfig?.inferenceProfiles?.[model]) {
     const applicationInferenceProfile = extractEnvVariable(bedrockConfig.inferenceProfiles[model]);
     llmConfig.applicationInferenceProfile = applicationInferenceProfile;
