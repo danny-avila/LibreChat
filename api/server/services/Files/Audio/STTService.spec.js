@@ -10,7 +10,7 @@ jest.mock('librechat-data-provider', () => ({
 }));
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 
-const { getFileExtensionFromMime, MIME_TO_EXTENSION_MAP } = require('./STTService');
+const { STTService, getFileExtensionFromMime, MIME_TO_EXTENSION_MAP } = require('./STTService');
 
 describe('getFileExtensionFromMime', () => {
   it('should normalize audio/x-m4a to m4a', () => {
@@ -48,6 +48,41 @@ describe('getFileExtensionFromMime', () => {
   it('should return webm for null/undefined input', () => {
     expect(getFileExtensionFromMime(null)).toBe('webm');
     expect(getFileExtensionFromMime(undefined)).toBe('webm');
+  });
+});
+
+describe('STTService.getProviderSchema provider detection', () => {
+  const service = new STTService();
+
+  const buildReq = (stt) => ({ config: { speech: { stt } } });
+
+  it('resolves exactly one provider when allowedAddresses is set alongside it', async () => {
+    const req = buildReq({
+      allowedAddresses: ['127.0.0.1:8080'],
+      openai: { url: 'http://127.0.0.1:8080', apiKey: 'sk', model: 'whisper-1' },
+    });
+    const [provider, schema] = await service.getProviderSchema(req);
+    expect(provider).toBe('openai');
+    expect(schema.url).toBe('http://127.0.0.1:8080');
+  });
+
+  it('reports "No provider is set" when only allowedAddresses is present', async () => {
+    const req = buildReq({ allowedAddresses: ['127.0.0.1:8080'] });
+    await expect(service.getProviderSchema(req)).rejects.toThrow('No provider is set');
+  });
+
+  it('reports "Multiple providers" when two providers are set even with allowedAddresses', async () => {
+    const req = buildReq({
+      allowedAddresses: ['127.0.0.1:8080'],
+      openai: { url: 'http://127.0.0.1:8080', apiKey: 'sk', model: 'whisper-1' },
+      azureOpenAI: {
+        instanceName: 'inst',
+        apiKey: 'sk',
+        deploymentName: 'dep',
+        apiVersion: '2024',
+      },
+    });
+    await expect(service.getProviderSchema(req)).rejects.toThrow('Multiple providers are set');
   });
 });
 

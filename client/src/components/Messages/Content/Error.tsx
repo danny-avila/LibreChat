@@ -6,6 +6,7 @@ import { useLocalize } from '~/hooks';
 import CodeBlock from './CodeBlock';
 
 const localizedErrorPrefix = 'com_error';
+const langChainModelNotFoundUrl = /langchain\.com\/.*\/MODEL_NOT_FOUND(?:\/|\b)/i;
 
 type TConcurrent = {
   limit: number;
@@ -134,6 +135,10 @@ const Error = ({ text }: { text: string }) => {
   const jsonString = extractJson(text);
   const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
   const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
+
+  if (langChainModelNotFoundUrl.test(text)) {
+    return localize('com_error_model_not_found');
+  }
 
   if (!isJson(jsonString)) {
     return defaultResponse;

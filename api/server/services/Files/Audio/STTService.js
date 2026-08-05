@@ -157,7 +157,7 @@ class STTService {
     }
 
     const providers = Object.entries(sttSchema).filter(
-      ([, value]) => Object.keys(value).length > 0,
+      ([key, value]) => key !== 'allowedAddresses' && Object.keys(value).length > 0,
     );
 
     if (providers.length !== 1) {

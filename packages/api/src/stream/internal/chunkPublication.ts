@@ -8,10 +8,22 @@ import type { IEventTransport } from '../interfaces/IJobStore';
  */
 export type ChunkPublicationReceipt = number | false | void;
 
+/**
+ * Hot-path hints for transports that can batch sequenced publications.
+ * `coalesce` marks an event as eligible for windowed batching: the receipt
+ * promise then resolves when the batch flushes instead of per event. Only
+ * order-insensitive-to-latency streaming deltas should opt in; fenced
+ * emissions (durable, steer, created, terminal) must stay per-event.
+ */
+export interface ChunkPublicationOptions {
+  coalesce?: boolean;
+}
+
 type ChunkPublicationCapability = (
   streamId: string,
   event: unknown,
   generationId?: number,
+  options?: ChunkPublicationOptions,
 ) => Promise<ChunkPublicationReceipt>;
 
 /**
@@ -36,10 +48,15 @@ export function emitChunkWithReceipt(
   streamId: string,
   event: unknown,
   generationId?: number,
+  options?: ChunkPublicationOptions,
 ): Promise<ChunkPublicationReceipt> {
   const capability = chunkPublicationCapabilities.get(transport);
   if (capability) {
-    return capability(streamId, event, generationId);
+    /** Preserve the 3-arg call shape when no hint is given: registered
+     * capabilities predate the options parameter and spies assert on it. */
+    return options === undefined
+      ? capability(streamId, event, generationId)
+      : capability(streamId, event, generationId, options);
   }
   return Promise.resolve(transport.emitChunk(streamId, event, generationId));
 }
