@@ -3,6 +3,36 @@ import * as fs from 'fs';
 import JSZip from 'jszip';
 import { parseDocument, annotateMissingPages } from './crud';
 
+/**
+ * pdfjs ships ESM this Jest setup cannot load, so the suite stubs it wholesale.
+ * Per-test behavior is driven through these knobs; the default of no text models
+ * pages with no readable layer, which is what image-only fixtures contain.
+ */
+const mockPdfjs: { numPages: number; pageText: Record<number, string> } = {
+  numPages: 1,
+  pageText: {},
+};
+
+jest.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
+  getDocument: () => ({
+    promise: Promise.resolve({
+      get numPages() {
+        return mockPdfjs.numPages;
+      },
+      getPage: (pageNumber: number) =>
+        Promise.resolve({
+          getTextContent: () =>
+            Promise.resolve({
+              items: (mockPdfjs.pageText[pageNumber] ?? '')
+                .split(' ')
+                .filter(Boolean)
+                .map((str) => ({ str })),
+            }),
+        }),
+    }),
+  }),
+}));
+
 describe('Document Parser', () => {
   test('parseDocument() parses text from docx', async () => {
     const file = {
@@ -246,6 +276,11 @@ describe('Document Parser', () => {
         mimetype: 'application/pdf',
       }) as Express.Multer.File;
 
+    beforeEach(() => {
+      mockPdfjs.numPages = 1;
+      mockPdfjs.pageText = {};
+    });
+
     test('parseDocument() recovers layout structure from a text-based pdf', async () => {
       const document = await parseDocument({ file: pdfFile('sample.pdf') });
 
@@ -261,9 +296,24 @@ describe('Document Parser', () => {
     test('parseDocument() reports the scanned pages of a part-scanned pdf', async () => {
       const document = await parseDocument({ file: pdfFile('sample-mixed.pdf') });
 
-      /** Page 1 is real text; page 2 is image-only and must be called out, not dropped silently. */
+      /** Page 1 is real text; page 2 has no text layer in either engine and must be
+       * called out, not dropped silently. */
       expect(document.text).toContain('Quarterly Report');
       expect(document.pagesNeedingOcr).toEqual([2]);
+    });
+
+    test('parseDocument() recovers pages pdf-inspector drops, from the raw text layer', async () => {
+      /* pdf-inspector's quality heuristics reject poor embedded OCR layers outright:
+       * on a 157-page scanned press kit it kept 5 pages and silently dropped 152.
+       * A page it drops must fall back to whatever the raw text layer holds, and only
+       * pages where both engines find nothing belong in the omission notice. */
+      mockPdfjs.pageText = { 2: 'garbled but present ocr layer text' };
+
+      const document = await parseDocument({ file: pdfFile('sample-mixed.pdf') });
+
+      expect(document.text).toContain('Quarterly Report');
+      expect(document.text).toContain('garbled but present ocr layer text');
+      expect(document.pagesNeedingOcr).toBeUndefined();
     });
 
     test('parseDocument() ignores garbled-text flags that are not scanned pages', async () => {
@@ -300,38 +350,15 @@ describe('Document Parser', () => {
     });
 
     test('parseDocument() falls back to the flat extractor when pdf-inspector throws', async () => {
-      /* pdfjs ships ESM that Jest cannot load in this project, which is why the real
-       * import stays lazy. Only that loader is stubbed here; the assertion is on our
-       * own wiring, that a pdf-inspector failure routes to the legacy extractor and
-       * its text is what comes back. */
-      jest.doMock(
-        'pdfjs-dist/legacy/build/pdf.mjs',
-        () => ({
-          getDocument: () => ({
-            promise: Promise.resolve({
-              numPages: 1,
-              getPage: () =>
-                Promise.resolve({
-                  getTextContent: () =>
-                    Promise.resolve({ items: [{ str: 'Quarterly' }, { str: 'Report' }] }),
-                }),
-            }),
-          }),
-        }),
-        { virtual: true },
-      );
+      mockPdfjs.numPages = 1;
+      mockPdfjs.pageText = { 1: 'Quarterly Report' };
 
-      jest.resetModules();
-      const { parseDocument: parseWithStub } = await import('./crud');
-      const document = await parseWithStub({ file: pdfFile('sample-badxref.pdf') });
+      const document = await parseDocument({ file: pdfFile('sample-badxref.pdf') });
 
       expect(document.text).toBe('Quarterly Report\n');
       /** The fallback is the flat extractor, so no structure and no page-level OCR data. */
       expect(document.text).not.toContain('|Region|');
       expect(document.pagesNeedingOcr).toBeUndefined();
-
-      jest.dontMock('pdfjs-dist/legacy/build/pdf.mjs');
-      jest.resetModules();
     });
   });
 
