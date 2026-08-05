@@ -296,3 +296,19 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('Failed to fetch tools'));
   });
 });
+
+describe('MCPConnection.usesOAuth', () => {
+  it.each([
+    [{ type: 'streamable-http', url: 'https://example.com/mcp', requiresOAuth: true }, true],
+    [{ type: 'streamable-http', url: 'https://example.com/mcp', oauth: {} }, true],
+    [{ type: 'streamable-http', url: 'https://example.com/mcp', requiresOAuth: false }, false],
+  ] as const)('reports OAuth from the resolved connection config', (serverConfig, expected) => {
+    const connection = new MCPConnection({
+      serverName: 'oauth-status-test',
+      serverConfig,
+      useSSRFProtection: false,
+    });
+
+    expect(connection.usesOAuth()).toBe(expected);
+  });
+});

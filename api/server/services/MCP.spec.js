@@ -805,6 +805,41 @@ describe('tests for the new helper functions used by the MCP connection status e
       });
     });
 
+    it('should preserve OAuth status from a live runtime-resolved connection', async () => {
+      const { findToken } = require('~/models');
+      const appConnections = new Map();
+      const userConnections = new Map([
+        [
+          mockServerName,
+          {
+            connectionState: 'connected',
+            isStale: jest.fn(() => false),
+            usesOAuth: jest.fn(() => true),
+          },
+        ],
+      ]);
+
+      const result = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        {
+          ...mockConfig,
+          source: 'yaml',
+          url: 'https://mcp.example.com/{{LIBRECHAT_USER_ID}}/mcp',
+        },
+        appConnections,
+        userConnections,
+        new Set(),
+      );
+
+      expect(result).toEqual({
+        requiresOAuth: true,
+        connectionState: 'connected',
+        authorizationState: 'authorized',
+      });
+      expect(findToken).not.toHaveBeenCalled();
+    });
+
     it('should derive runtime-detected OAuth state from an active shared flow', async () => {
       const appConnections = new Map();
       const userConnections = new Map();
@@ -1544,6 +1579,52 @@ describe('User parameter passing tests', () => {
         ),
       ).rejects.toThrow(
         '[MCP][test-server][test-tool] upstream authentication failed; MCP OAuth is not configured for this server.',
+      );
+    });
+
+    it('does not label OBO authentication failures as unconfigured MCP OAuth', async () => {
+      const mockUser = { id: 'obo-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      mockGetMCPManager.mockReturnValue({
+        callTool: jest.fn().mockRejectedValue(new Error('Non-200 status code (401)')),
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        config: { requiresOAuth: false, obo: {} },
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: { user: mockUser },
+            metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+            toolCall: {},
+          },
+        ),
+      ).rejects.toThrow(
+        '[MCP][test-server][test-tool] OAuth authentication required. Please check the server logs for the authentication URL.',
       );
     });
 

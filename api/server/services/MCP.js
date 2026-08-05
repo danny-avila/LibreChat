@@ -29,6 +29,7 @@ const {
   getMissingCustomUserVars,
   getServerCustomUserVars,
   requiresEphemeralUserConnection,
+  requiresOAuthMachinery,
   hasRuntimeUrlPlaceholders,
   containsGraphTokenPlaceholder,
   isOAuthServer,
@@ -1129,7 +1130,11 @@ function createToolInstance({
         error.message === 'Pending OAuth flow reused - return early';
 
       if (isOAuthError) {
-        if (capturedServerConfig && !isOAuthServer(capturedServerConfig) && !isOAuthFlowSignal) {
+        if (
+          capturedServerConfig &&
+          !requiresOAuthMachinery(capturedServerConfig) &&
+          !isOAuthFlowSignal
+        ) {
           throw new Error(
             `[MCP][${serverName}][${toolName}] upstream authentication failed; MCP OAuth is not configured for this server.`,
           );
@@ -1363,23 +1368,25 @@ async function getServerConnectionStatus(
   const connection = appConnections.get(serverName) || userConnections.get(serverName);
   const isStaleOrDoNotExist = connection ? connection?.isStale(config.updatedAt) : true;
   const configuredOAuth = oauthServers.has(serverName);
+  const liveConnectionOAuth = connection?.usesOAuth?.() === true;
   const runtimeOAuthCandidate = canDetectMCPRuntimeOAuth(config);
+  const effectiveOAuth = configuredOAuth || liveConnectionOAuth;
 
   const baseConnectionState = isStaleOrDoNotExist
     ? 'disconnected'
     : connection?.connectionState || 'disconnected';
   let finalConnectionState = baseConnectionState;
-  let requiresOAuth = configuredOAuth;
-  let authorizationState = configuredOAuth ? 'needs_authorization' : 'not_required';
+  let requiresOAuth = effectiveOAuth;
+  let authorizationState = effectiveOAuth ? 'needs_authorization' : 'not_required';
 
   // connection state overrides specific to OAuth servers
-  if (configuredOAuth && baseConnectionState === 'connected') {
+  if (effectiveOAuth && baseConnectionState === 'connected') {
     authorizationState = 'authorized';
-  } else if (configuredOAuth && baseConnectionState === 'connecting') {
+  } else if (effectiveOAuth && baseConnectionState === 'connecting') {
     authorizationState = 'authorizing';
-  } else if (configuredOAuth && baseConnectionState === 'error') {
+  } else if (effectiveOAuth && baseConnectionState === 'error') {
     authorizationState = 'error';
-  } else if (baseConnectionState === 'disconnected' && (configuredOAuth || runtimeOAuthCandidate)) {
+  } else if (baseConnectionState === 'disconnected' && (effectiveOAuth || runtimeOAuthCandidate)) {
     // check if server is actively being reconnected
     const oauthReconnectionManager = getOAuthReconnectionManager();
     if (oauthReconnectionManager.isReconnecting(userId, serverName)) {

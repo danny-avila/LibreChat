@@ -23,7 +23,7 @@ import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { runOutsideTracing } from '~/utils/tracing';
 import { isAddressAllowed } from '~/auth/domain';
-import { sanitizeUrlForLogging } from './utils';
+import { isOAuthServer, sanitizeUrlForLogging } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { mcpConfig } from './mcpConfig';
 
@@ -2461,6 +2461,11 @@ export class MCPConnection extends EventEmitter {
 
   public setOAuthTokens(tokens: MCPOAuthTokens): void {
     this.oauthTokens = tokens;
+  }
+
+  /** Whether this connection's resolved runtime config uses MCP OAuth. */
+  public usesOAuth(): boolean {
+    return isOAuthServer(this.options);
   }
 
   /**
