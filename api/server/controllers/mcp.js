@@ -5,10 +5,12 @@
  * @import { MCPServerRegistry } from '@librechat/api'
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
+const { randomUUID } = require('crypto');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   checkAccess,
   isUserSourced,
+  MCPConnection,
   MCPErrorCodes,
   splitMCPToolKey,
   normalizeServerName,
@@ -403,13 +405,19 @@ const createMCPServerController = async (req, res) => {
     const reservedServerNames = [
       ...new Set([...configNames, ...configNames.map(normalizeServerName)]),
     ];
-    const result = await getMCPServersRegistry().addServer(
-      'temp_server_name',
-      validation.data,
-      'DB',
-      userId,
-      reservedServerNames,
-    );
+    const inspectionServerName = `temp_server_${randomUUID()}`;
+    let result;
+    try {
+      result = await getMCPServersRegistry().addServer(
+        inspectionServerName,
+        validation.data,
+        'DB',
+        userId,
+        reservedServerNames,
+      );
+    } finally {
+      MCPConnection.clearCooldown(inspectionServerName);
+    }
     res.status(201).json({
       serverName: result.serverName,
       ...redactServerSecrets(result.config, { canEdit: true }),
