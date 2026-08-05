@@ -89,4 +89,16 @@ describe('custom endpoint streamRate resolution', () => {
     const options = await initializeCustom(makeParams({ allBlock: { activityLabel: true } }));
     expect(streamDelayOf(options)).toBeUndefined();
   });
+
+  it('lets `endpoints.all.streamRate: 0` override an endpoint streamRate (explicit disable)', async () => {
+    const options = await initializeCustom(
+      makeParams({ endpointStreamRate: 25, allBlock: { streamRate: 0 } }),
+    );
+    expect(streamDelayOf(options)).toBe(0);
+  });
+
+  it('passes an explicit endpoint `streamRate: 0` through to the llmConfig', async () => {
+    const options = await initializeCustom(makeParams({ endpointStreamRate: 0 }));
+    expect(streamDelayOf(options)).toBe(0);
+  });
 });
