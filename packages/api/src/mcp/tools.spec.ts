@@ -36,14 +36,14 @@ describe('createMCPToolCacheService', () => {
       expect(deps.setCachedTools).not.toHaveBeenCalled();
     });
 
-    it('returns empty object for empty tools array', async () => {
+    it('replaces a stale cache entry when the server returns an empty tools array', async () => {
       const deps = createMockDeps();
       const { updateMCPServerTools } = createMCPToolCacheService(deps);
 
       const result = await updateMCPServerTools({ userId: 'u1', serverName: 'srv', tools: [] });
 
       expect(result).toEqual({});
-      expect(deps.setCachedTools).not.toHaveBeenCalled();
+      expect(deps.setCachedTools).toHaveBeenCalledWith({}, { userId: 'u1', serverName: 'srv' });
     });
 
     it('builds MODEL-FACING keys with the normalized server name, store keyed raw', async () => {
@@ -324,6 +324,18 @@ describe('createMCPToolCacheService', () => {
 
       expect(result).toEqual(cachedTools);
       expect(deps.getCachedTools).toHaveBeenCalledWith({ userId: 'u1', serverName: 'brave' });
+    });
+
+    it('treats a cached empty catalog as a miss so discovery remains enabled', async () => {
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue({}),
+        getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
+      });
+      const { getMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await getMCPServerTools('u1', 'brave');
+
+      expect(result).toBeNull();
     });
 
     it('heals stale raw-keyed cache entries to the normalized key format at read time', async () => {

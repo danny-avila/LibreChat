@@ -49,6 +49,7 @@ const {
   loadAgentTools,
   loadToolsForExecution,
   getAccessibleMcpServerNames,
+  isExpectedMCPToolsUnavailableError,
 } = require('~/server/services/ToolService');
 const {
   findAccessibleResources,
@@ -103,6 +104,9 @@ function createToolLoader(signal, definitionsOnly = true) {
       });
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);
+      if (isExpectedMCPToolsUnavailableError(error)) {
+        throw error;
+      }
     }
   };
 }

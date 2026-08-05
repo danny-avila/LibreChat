@@ -102,6 +102,24 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     );
   });
 
+  it('updates the cache with an empty catalog after a successful connection', async () => {
+    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      userMCPAuthMap: undefined,
+    });
+
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith({
+      userId: user.id,
+      serverName,
+      tools: [],
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+  });
+
   it('passes request body and Graph resolver into connection creation', async () => {
     mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
     const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };

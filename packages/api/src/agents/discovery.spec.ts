@@ -1,8 +1,8 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { Agent, GraphEdge } from 'librechat-data-provider';
 import type { Response } from 'express';
-import type { ServerRequest } from '~/types';
 import type { InitializedAgent } from './initialize';
+import type { ServerRequest } from '~/types';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -1036,6 +1036,37 @@ describe('discoverConnectedAgents', () => {
     // Validation error is caught inside the BFS and the agent is skipped
     expect(result.skippedAgentIds.has('B')).toBe(true);
     expect(result.agentConfigs.has('B')).toBe(false);
+  });
+
+  it('propagates an expected-MCP-tools failure from a handoff target', async () => {
+    const toolError = Object.assign(new Error('Target Agent has no available MCP tools'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    mockInitializeAgent.mockRejectedValueOnce(toolError);
+
+    const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
+    const getAgent = jest.fn(async () => makeAgent('B', []));
+    const checkPermission = jest.fn().mockResolvedValue(true);
+
+    await expect(
+      discoverConnectedAgents(
+        {
+          req: makeReq(),
+          res: makeRes(),
+          primaryConfig,
+          allowedProviders: new Set(),
+          modelsConfig: { openai: ['gpt-4o'] },
+          loadTools: jest.fn(),
+        },
+        {
+          getAgent,
+          checkPermission,
+          logViolation: jest.fn(),
+          db: {} as never,
+        },
+      ),
+    ).rejects.toBe(toolError);
   });
 
   it('skips when request has no authenticated user', async () => {

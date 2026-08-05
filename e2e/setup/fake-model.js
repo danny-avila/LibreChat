@@ -1340,6 +1340,25 @@ function parseHandoffScript(text) {
         error: `script.routes[${index}].targetTools must be an array of non-empty strings`,
       };
     }
+    if (route.targetToolCall != null) {
+      const targetToolCall = route.targetToolCall;
+      if (
+        typeof targetToolCall !== 'object' ||
+        Array.isArray(targetToolCall) ||
+        typeof targetToolCall.id !== 'string' ||
+        targetToolCall.id === '' ||
+        typeof targetToolCall.name !== 'string' ||
+        targetToolCall.name === '' ||
+        typeof targetToolCall.args !== 'object' ||
+        targetToolCall.args == null ||
+        Array.isArray(targetToolCall.args) ||
+        typeof targetToolCall.outputIncludes !== 'string'
+      ) {
+        return {
+          error: `script.routes[${index}].targetToolCall must contain an id, name, args object, and outputIncludes`,
+        };
+      }
+    }
 
     const args = route.args ?? {};
     let inferredReceipt = null;
@@ -1358,6 +1377,7 @@ function parseHandoffScript(text) {
       receipt: route.receipt ?? inferredReceipt,
       targetInstructions: route.targetInstructions,
       targetTools: route.targetTools ?? [],
+      targetToolCall: route.targetToolCall,
     });
   }
 
@@ -1782,6 +1802,36 @@ function buildHandoffResponses(graph, parsed) {
             response:
               `E2E handoff reception failed ${script.label}: agent=${agentId}; ` +
               receptionFailures.join('; '),
+          };
+        }
+
+        const targetToolCall = incomingRoute.targetToolCall;
+        if (targetToolCall) {
+          const toolResult = findToolMessage(messages, targetToolCall.id);
+          if (!toolResult) {
+            return {
+              response: '',
+              toolCalls: [
+                {
+                  id: targetToolCall.id,
+                  name: targetToolCall.name,
+                  args: targetToolCall.args,
+                  type: 'tool_call',
+                },
+              ],
+            };
+          }
+
+          const output = getContentText(toolResult.content);
+          if (!output.includes(targetToolCall.outputIncludes)) {
+            return {
+              response:
+                `E2E handoff target tool failed ${script.label}: agent=${agentId}; ` +
+                `expected=${targetToolCall.outputIncludes}; received=${output || '(empty)'}`,
+            };
+          }
+          return {
+            response: `E2E handoff tool complete ${script.label}: agent=${agentId}`,
           };
         }
       }
