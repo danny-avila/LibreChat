@@ -1,0 +1,17 @@
+version: 1.3.13
+cache: true
+
+endpoints:
+  allowedAddresses:
+    - 'presidio-gateway:4000'
+  custom:
+    - name: 'Presidio-Crusoe'
+      apiKey: '${LITELLM_MASTER_KEY}'
+      baseURL: 'http://presidio-gateway:4000/v1'
+      models:
+        default:
+          - 'meta-llama/Llama-3.3-70B-Instruct'
+        fetch: false
+      titleConvo: false
+      dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
+      modelDisplayLabel: 'Crusoe via Presidio'

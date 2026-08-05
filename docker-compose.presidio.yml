@@ -1,0 +1,52 @@
+services:
+  api:
+    volumes:
+      - type: bind
+        source: ./librechat.presidio.yaml
+        target: /app/librechat.yaml
+        read_only: true
+    depends_on:
+      presidio-gateway:
+        condition: service_healthy
+
+  presidio-analyzer:
+    image: ghcr.io/data-privacy-stack/presidio-analyzer:latest
+    restart: unless-stopped
+
+  presidio-anonymizer:
+    image: ghcr.io/data-privacy-stack/presidio-anonymizer:latest
+    restart: unless-stopped
+
+  presidio-gateway:
+    image: docker.litellm.ai/berriai/litellm:main-latest
+    command:
+      - --config
+      - /app/config.yaml
+      - --port
+      - '4000'
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ./litellm.presidio.yaml
+        target: /app/config.yaml
+        read_only: true
+    environment:
+      LLM_API_KEY: ${LLM_API_KEY}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      PRESIDIO_ANALYZER_API_BASE: http://presidio-analyzer:3000
+      PRESIDIO_ANONYMIZER_API_BASE: http://presidio-anonymizer:3000
+    depends_on:
+      - presidio-analyzer
+      - presidio-anonymizer
+    ports:
+      - '127.0.0.1:4000:4000'
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')"
+      interval: 10s
+      timeout: 15s
+      retries: 12
+      start_period: 120s

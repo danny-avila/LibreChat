@@ -1,0 +1,36 @@
+model_list:
+  - model_name: meta-llama/Llama-3.3-70B-Instruct
+    litellm_params:
+      model: openai/meta-llama/Llama-3.3-70B-Instruct
+      api_base: https://api.inference.crusoecloud.com/v1
+      api_key: os.environ/LLM_API_KEY
+
+guardrails:
+  - guardrail_name: presidio-pii
+    litellm_params:
+      guardrail: presidio
+      mode: pre_call
+      default_on: true
+      presidio_language: en
+      presidio_filter_scope: input
+      presidio_score_thresholds:
+        ALL: 0.50
+        US_DRIVER_LICENSE: 0.85
+      pii_entities_config:
+        PERSON: MASK
+        EMAIL_ADDRESS: MASK
+        PHONE_NUMBER: MASK
+        CREDIT_CARD: MASK
+        IBAN_CODE: MASK
+        IP_ADDRESS: MASK
+        US_SSN: MASK
+        US_BANK_NUMBER: MASK
+        CRYPTO: MASK
+        MEDICAL_LICENSE: MASK
+        LOCATION: MASK
+
+litellm_settings:
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
