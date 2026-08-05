@@ -1,7 +1,7 @@
 import { Providers } from '@librechat/agents';
 import { getToken } from '@aws/bedrock-token-generator';
-import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { EModelEndpoint } from 'librechat-data-provider';
+import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import type { BaseInitializeParams } from '~/types';
 import { isBedrockMantleModel, getBedrockMantleBaseURL } from './mantle';
 import { initializeBedrock } from './initialize';
