@@ -7,8 +7,8 @@ import {
   jsonTruncateFormat,
   stripHeavyErrorFields,
 } from './parsers';
-import { SYSTEM_TENANT_ID } from './tenantContext';
 import { attachRequestContext, LOG_CONTEXT_KEYS } from './requestLogContext';
+import { SYSTEM_TENANT_ID } from './tenantContext';
 import { getLogDirectory } from './utils';
 
 const { NODE_ENV, DEBUG_LOGGING, CONSOLE_JSON, DEBUG_CONSOLE, LOG_TO_FILE } = process.env;

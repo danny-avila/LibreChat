@@ -1,5 +1,5 @@
-import { tenantStorage } from './tenantContext';
 import { attachRequestContext } from './requestLogContext';
+import { tenantStorage } from './tenantContext';
 
 describe('attachRequestContext', () => {
   const context = {
