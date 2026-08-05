@@ -104,6 +104,7 @@ test.describe('isolated subagent results with a real provider', () => {
 
       await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 30_000 });
       const conversationId = new URL(page.url()).pathname.split('/c/')[1];
+      expect(conversationId).toBeTruthy();
       let messages: PersistedMessage[] = [];
       await expect
         .poll(
