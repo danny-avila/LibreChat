@@ -115,7 +115,7 @@ function buildCustomOptions(
   }
 
   const allConfig = appConfig?.endpoints?.all;
-  if (allConfig) {
+  if (allConfig?.streamRate) {
     customOptions.streamRate = allConfig.streamRate;
   }
 
