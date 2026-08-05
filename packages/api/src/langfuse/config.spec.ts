@@ -184,6 +184,7 @@ describe('buildLangfuseConfig', () => {
         'librechat.langfuse.destination': 'eu',
       },
     });
+    expect(config).not.toHaveProperty('mediaUploadEnabled');
   });
 
   it('fails closed to central-only export when tenant secret decryption fails', async () => {
@@ -206,6 +207,7 @@ describe('buildLangfuseConfig', () => {
     expect(config).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://langfuse-fanout-collector:4318',
+      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -231,6 +233,7 @@ describe('buildLangfuseConfig', () => {
     expect(config).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://langfuse-fanout-collector:4318',
+      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -383,6 +386,7 @@ describe('buildLangfuseConfig', () => {
     ).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
+      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });
@@ -408,6 +412,7 @@ describe('buildLangfuseConfig', () => {
     ).toEqual({
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
+      mediaUploadEnabled: false,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });

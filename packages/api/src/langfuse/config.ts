@@ -16,6 +16,7 @@ import { traceIdForMessage } from './trace';
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
   librechatTraceAttributes?: Record<string, string | number | boolean | null | undefined>;
+  mediaUploadEnabled?: boolean;
 };
 type LangfuseTenantDestination = NonNullable<ReturnType<typeof resolveLangfuseTenantDestination>>;
 type LangfuseExportPlan =
@@ -226,6 +227,7 @@ export function buildLangfuseConfig({
       break;
     case 'fanoutCollector':
       langfuse.baseUrl = exportPlan.collectorUrl;
+      langfuse.mediaUploadEnabled = false;
       break;
     case 'disabled':
       langfuse.enabled = false;
