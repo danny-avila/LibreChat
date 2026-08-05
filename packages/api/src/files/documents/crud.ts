@@ -215,36 +215,91 @@ async function pdfToText(file: Express.Multer.File): Promise<ParsedDocument> {
   return { text: await pdfToTextLegacy(data) };
 }
 
-/** The one OCR reason that actually means "this page holds no extractable text". */
-const SCANNED_PAGE_REASON = 'scanned';
-
+/**
+ * Extracts a PDF per page: pdf-inspector's markdown where it produced any, the raw
+ * text layer via pdfjs where it did not.
+ *
+ * pdf-inspector applies quality heuristics (garbled text, GID-encoded fonts) that
+ * reject low-quality embedded OCR layers outright. On a 157-page scanned press kit
+ * with a poor OCR layer it kept 5 pages and silently dropped 152 while reporting
+ * only 13 as needing OCR, so neither its markdown nor its page accounting can be
+ * trusted on its own. A degraded text layer still beats losing the page, so dropped
+ * pages fall back to pdfjs, which reads the layer verbatim.
+ *
+ * Pages are reported as needing OCR only when both engines find nothing, an
+ * empirical test that replaces trusting the reason codes.
+ */
 async function pdfToTextInspector(data: Buffer): Promise<ParsedDocument> {
   // Imported inline so that Jest can test other routes without loading the native binding
-  const { processPdf } = await import('@firecrawl/pdf-inspector');
-  const result = processPdf(data);
-  const scannedPages = getScannedPages(result.ocrReasonsByPage);
+  const { extractPagesMarkdown } = await import('@firecrawl/pdf-inspector');
+  const result = extractPagesMarkdown(data);
+  const pages = [...result.pages].sort((a, b) => a.page - b.page);
+
+  const droppedPages = pages.filter((page) => !page.markdown?.trim());
+  const recovered = droppedPages.length
+    ? await extractPageTextLegacy(
+        data,
+        droppedPages.map((page) => page.page),
+      )
+    : new Map<number, string>();
+
+  const parts: string[] = [];
+  const pagesNeedingOcr: number[] = [];
+  for (const page of pages) {
+    if (page.markdown?.trim()) {
+      parts.push(page.markdown);
+      continue;
+    }
+    const legacyText = recovered.get(page.page)?.trim();
+    if (legacyText) {
+      parts.push(legacyText);
+      continue;
+    }
+    pagesNeedingOcr.push(page.page + 1);
+  }
 
   return {
-    text: result.markdown ?? '',
-    pagesNeedingOcr: scannedPages.length ? scannedPages : undefined,
+    text: parts.join('\n\n'),
+    pagesNeedingOcr: pagesNeedingOcr.length ? pagesNeedingOcr : undefined,
   };
 }
 
 /**
- * Narrows the parser's `pagesNeedingOcr` to genuinely image-based pages.
+ * Reads the raw text layer of specific 0-indexed pages with pdfjs.
  *
- * The raw list also carries a `suspected_garbled_text` quality heuristic that
- * false-positives on dense punctuation, a page of table-of-contents dot leaders
- * being enough to trip it. Those pages keep their text in the markdown, so
- * reporting them would tell the user content was dropped when none was.
+ * Failure here must not fail the document: pages that cannot be recovered are
+ * reported in `pagesNeedingOcr` instead, so an unavailable or broken pdfjs
+ * degrades to a visible omission notice rather than a parse error.
  */
-function getScannedPages(ocrReasonsByPage: { page: number; reasons: string[] }[]): number[] {
-  if (!ocrReasonsByPage?.length) {
-    return [];
+async function extractPageTextLegacy(
+  data: Buffer,
+  pageIndexes: number[],
+): Promise<Map<number, string>> {
+  const texts = new Map<number, string>();
+  let pdf;
+  try {
+    // Imported inline so that Jest can test other routes without failing due to loading ESM
+    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    pdf = await getDocument({ data: new Uint8Array(data) }).promise;
+  } catch (error) {
+    logger.warn('[parseDocument] pdfjs unavailable for page recovery:', error);
+    return texts;
   }
-  return ocrReasonsByPage
-    .filter((entry) => entry.reasons?.includes(SCANNED_PAGE_REASON))
-    .map((entry) => entry.page);
+
+  for (const pageIndex of pageIndexes) {
+    try {
+      const page = await pdf.getPage(pageIndex + 1);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .filter((item): item is TextItem => !('type' in item))
+        .map((item) => item.str)
+        .join(' ');
+      texts.set(pageIndex, pageText);
+    } catch {
+      /* An unreadable page is reported in pagesNeedingOcr rather than failing the document. */
+    }
+  }
+  return texts;
 }
 
 async function pdfToTextLegacy(data: Buffer): Promise<string> {
