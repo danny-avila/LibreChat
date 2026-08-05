@@ -592,6 +592,7 @@ function overrideModel({
   sleep,
   toolCalls,
   thrownError,
+  overrideSubagentModel,
   resolveInvocation,
   resolveOnStream,
 }) {
@@ -605,7 +606,15 @@ function overrideModel({
       resolveOnStream,
     });
     graph.overrideModel = model;
-    graph.setSubagentModelOverride?.(model);
+    if (overrideSubagentModel) {
+      if (typeof graph.setSubagentModelOverride !== 'function') {
+        throw new Error(
+          '[e2e] Streamed subagent result coverage requires an @librechat/agents release ' +
+            'with StandardGraph.setSubagentModelOverride',
+        );
+      }
+      graph.setSubagentModelOverride(model);
+    }
     return;
   }
 
@@ -626,7 +635,6 @@ function overrideModel({
     toolCalls,
   });
   graph.overrideModel = model;
-  graph.setSubagentModelOverride?.(model);
 }
 
 function parseSkillAssertion(text, agentId) {
@@ -1135,6 +1143,7 @@ function subagentResultResponses(text) {
   const expectedResult = `E2E subagent streamed result ${marker.label}`;
   return {
     responses: [''],
+    overrideSubagentModel: true,
     resolveInvocation: (messages) => {
       const toolResult = findLastToolMessageText(messages, expectedResult);
       if (toolResult) {
@@ -2038,21 +2047,29 @@ module.exports = function fakeModelHook(run, context) {
   const text = getLatestUserText(context?.messages);
   const toolNames = collectToolNames(context?.agents);
   const handoffScript = parseHandoffScript(text);
-  const { responses, sleep, toolCalls, thrownError, resolveInvocation, resolveOnStream } =
-    handoffScript
-      ? buildHandoffResponses(graph, handoffScript)
-      : resolveResponses({
-          graph,
-          messages: context?.messages,
-          text,
-          toolNames,
-        });
+  const {
+    responses,
+    sleep,
+    toolCalls,
+    thrownError,
+    overrideSubagentModel,
+    resolveInvocation,
+    resolveOnStream,
+  } = handoffScript
+    ? buildHandoffResponses(graph, handoffScript)
+    : resolveResponses({
+        graph,
+        messages: context?.messages,
+        text,
+        toolNames,
+      });
   overrideModel({
     graph,
     responses,
     sleep,
     toolCalls,
     thrownError,
+    overrideSubagentModel,
     resolveInvocation: async (streamMessages, streamOptions, runManager) =>
       deferredHitlInvocationResponse({
         graph,

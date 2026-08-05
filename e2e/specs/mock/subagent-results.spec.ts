@@ -61,9 +61,15 @@ test.describe('isolated subagent results', () => {
       expect(response.ok()).toBeTruthy();
 
       const expected = `E2E subagent streamed result ${label}`;
-      await expect(messagesView(page).getByText(expected, { exact: true })).toBeVisible({
+      await expect(page.getByRole('button', { name: 'Stop generating' })).toBeHidden({
         timeout: 60_000,
       });
+      const finalAnswer = messagesView(page)
+        .locator('.message-render')
+        .last()
+        .getByRole('paragraph')
+        .filter({ hasText: expected });
+      await expect(finalAnswer).toHaveText(expected, { timeout: 30_000 });
       await expect(messagesView(page).getByText('Task completed', { exact: true })).toHaveCount(0);
     } finally {
       await cleanupAgent(page, parentId);
