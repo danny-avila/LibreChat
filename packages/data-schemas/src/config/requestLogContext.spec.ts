@@ -36,7 +36,7 @@ describe('attachRequestContext', () => {
           requestId: 'request-123',
           request_id: 'request-123',
           method: 'POST',
-          path: '/api/example',
+          request_path: '/api/example',
         });
         const rendered = formatLogContext(result);
         expect(rendered).toContain(`"event_name":"${eventName}"`);
@@ -57,7 +57,24 @@ describe('attachRequestContext', () => {
         requestId: 'request-123',
         request_id: 'request-123',
         method: 'POST',
-        path: '/api/example',
+        request_path: '/api/example',
       });
+    }));
+
+  it('keeps application paths separate from the safe request route', () =>
+    tenantStorage.run(context, () => {
+      const result = attachRequestContext({
+        level: 'error',
+        message: 'upload cleanup failed',
+        path: '/uploads/tenant-123/user-123/file.txt',
+      });
+
+      expect(result).toMatchObject({
+        path: '/uploads/tenant-123/user-123/file.txt',
+        request_path: '/api/example',
+      });
+      const rendered = formatLogContext(result);
+      expect(rendered).toContain('"request_path":"/api/example"');
+      expect(rendered).not.toContain('/uploads/tenant-123/user-123/file.txt');
     }));
 });

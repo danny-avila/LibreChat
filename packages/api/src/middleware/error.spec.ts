@@ -253,7 +253,7 @@ describe('ErrorController', () => {
         response_status: 500,
         request_id: 'request-123',
         method: 'GET',
-        path: '/api/banner',
+        request_path: '/api/banner',
       });
       expect(JSON.stringify((logger.error as jest.Mock).mock.calls)).not.toContain('secret-token');
     });

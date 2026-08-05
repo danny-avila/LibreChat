@@ -14,7 +14,7 @@ const REQUEST_LOG_CONTEXT_KEYS = [
   'requestId',
   'request_id',
   'method',
-  'path',
+  'request_path',
 ] as const;
 
 const STRUCTURED_EVENT_LOG_CONTEXT_KEYS = [
@@ -142,7 +142,7 @@ export function attachRequestContext(
     requestId: getRequestId(),
     request_id: getRequestId(),
     method: getRequestMethod(),
-    path: getRequestPath(),
+    request_path: getRequestPath(),
   };
   REQUEST_LOG_CONTEXT_KEYS.forEach((key) => {
     if (context[key] && info[key] == null) {

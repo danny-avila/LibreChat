@@ -326,7 +326,7 @@ describe('debugTraverse request context', () => {
         event_name: 'jwt_auth_rejected',
         request_id: 'request-123',
         method: 'GET',
-        path: '/api/messages',
+        request_path: '/api/messages',
         token_source: 'bearer',
         reason_category: 'malformed_jwt',
         recovery_classification: 'terminal_rejection',
@@ -339,6 +339,18 @@ describe('debugTraverse request context', () => {
     expect(out).toContain('"reason_category":"malformed_jwt"');
     expect(out).toContain('"response_status":401');
   });
+
+  it('does not render an application path as request correlation context', () => {
+    const out = runFormatter(
+      buildInfo('warn', {
+        path: '/uploads/tenant-123/user-123/file.txt',
+        request_path: '/api/files',
+      }),
+    );
+
+    expect(out).toContain('"request_path":"/api/files"');
+    expect(out).not.toContain('/uploads/tenant-123/user-123/file.txt');
+  });
 });
 
 describe('jsonTruncateFormat structured events', () => {
@@ -350,7 +362,7 @@ describe('jsonTruncateFormat structured events', () => {
       event_name: 'jwt_auth_rejected',
       request_id: 'request-123',
       method: 'GET',
-      path: '/api/messages',
+      request_path: '/api/messages',
       token_source: 'bearer',
       reason_category: 'malformed_jwt',
       recovery_classification: 'terminal_rejection',
@@ -367,7 +379,7 @@ describe('jsonTruncateFormat structured events', () => {
       event_name: 'jwt_auth_rejected',
       request_id: 'request-123',
       method: 'GET',
-      path: '/api/messages',
+      request_path: '/api/messages',
       token_source: 'bearer',
       reason_category: 'malformed_jwt',
       recovery_classification: 'terminal_rejection',

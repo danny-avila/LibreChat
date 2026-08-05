@@ -80,7 +80,7 @@ export function buildRequestContext(req: ContextRequest): TenantContext {
   return {
     requestId: requestContext.request_id,
     requestMethod: requestContext.method,
-    requestPath: requestContext.path,
+    requestPath: requestContext.request_path,
   };
 }
 

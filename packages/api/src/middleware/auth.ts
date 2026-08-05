@@ -61,7 +61,7 @@ export type AuthLogState = {
 export type RequestLogContext = {
   request_id?: string;
   method?: string;
-  path?: string;
+  request_path?: string;
 };
 
 export type AuthLogContext = RequestLogContext & Record<string, AuthLogValue>;
@@ -219,12 +219,12 @@ function getRequestPath(req: AuthLogRequest): string | undefined {
 export function buildSafeRequestLogContext(req: AuthLogRequest): RequestLogContext {
   const requestId = getRequestId(req);
   const method = getRequestMethod(req.method);
-  const path = getRequestPath(req);
+  const requestPath = getRequestPath(req);
 
   return {
     ...(requestId && { request_id: requestId }),
     ...(method && { method }),
-    ...(path && { path }),
+    ...(requestPath && { request_path: requestPath }),
   };
 }
 

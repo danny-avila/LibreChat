@@ -52,7 +52,7 @@ describe('auth middleware logging helpers', () => {
     expect(log).toEqual({
       request_id: 'request-id',
       method: 'GET',
-      path: '/api/ask',
+      request_path: '/api/ask',
       token_provider: 'openid',
       token_source: 'bearer',
       openid_reuse_enabled: true,
@@ -88,7 +88,7 @@ describe('auth middleware logging helpers', () => {
     expect(log).toEqual({
       request_id: 'header-request-id',
       method: 'GET',
-      path: '/api/messages',
+      request_path: '/api/messages',
       openid_reuse_enabled: false,
       openid_jwt_available: false,
       has_openid_reuse_user_id: false,
@@ -158,7 +158,7 @@ describe('auth middleware logging helpers', () => {
       createAuthState(),
     );
 
-    expect(log.path).toBe('/api/messages');
+    expect(log.request_path).toBe('/api/messages');
     expect(JSON.stringify(log)).not.toContain('conversation-123');
     expect(JSON.stringify(log)).not.toContain('message-456');
     expect(JSON.stringify(log)).not.toContain('secret-token');
@@ -174,7 +174,7 @@ describe('auth middleware logging helpers', () => {
       createAuthState(),
     );
 
-    expect(log.path).toBe('/api/share/link/:conversationId');
+    expect(log.request_path).toBe('/api/share/link/:conversationId');
   });
 
   it('drops unsupported and sensitive extra values while keeping allowed fields', () => {
@@ -191,7 +191,7 @@ describe('auth middleware logging helpers', () => {
     expect(log).toEqual({
       request_id: 'request-id',
       method: 'GET',
-      path: '/api/messages',
+      request_path: '/api/messages',
       token_provider: 'openid',
       token_source: 'bearer',
       openid_reuse_enabled: true,
@@ -212,7 +212,11 @@ describe('auth middleware logging helpers', () => {
       }),
     );
 
-    expect(context).toEqual({ request_id: 'request-id', method: 'GET', path: '/api/convos' });
+    expect(context).toEqual({
+      request_id: 'request-id',
+      method: 'GET',
+      request_path: '/api/convos',
+    });
     expect(JSON.stringify(context)).not.toContain('secret-token');
   });
 
@@ -233,7 +237,7 @@ describe('auth middleware logging helpers', () => {
       response_status: 500,
       request_id: 'request-id',
       method: 'GET',
-      path: '/api/banner',
+      request_path: '/api/banner',
     });
     expect(JSON.stringify(context)).not.toContain('secret-token');
   });
