@@ -67,11 +67,17 @@ export function buildTenantContext(
   req: ContextRequest,
   tenantId: string | undefined = req.tenantId ?? req.user?.tenantId,
 ): TenantContext {
+  return {
+    ...buildRequestContext(req),
+    tenantId: normalizeContextValue(tenantId),
+    userId: getUserId(req.user ?? null),
+  };
+}
+
+export function buildRequestContext(req: ContextRequest): TenantContext {
   const requestContext = buildSafeRequestLogContext(req);
 
   return {
-    tenantId: normalizeContextValue(tenantId),
-    userId: getUserId(req.user ?? null),
     requestId: requestContext.request_id,
     requestMethod: requestContext.method,
     requestPath: requestContext.path,
@@ -88,12 +94,7 @@ export function requestContextMiddleware(
   next: NextFunction,
 ): void {
   const request = req as ServerRequest & { requestId?: string };
-  const requestLogContext = buildSafeRequestLogContext(request);
-  const context: TenantContext = {
-    requestId: requestLogContext.request_id,
-    requestMethod: requestLogContext.method,
-    requestPath: requestLogContext.path,
-  };
+  const context = buildRequestContext(request);
   if (!context.requestId) {
     context.requestId = randomUUID();
     request.requestId = context.requestId;
