@@ -337,12 +337,29 @@ function getReplayStepId(event: t.ServerSentEvent): unknown {
     return result != null && typeof result === 'object' && 'id' in result ? result.id : undefined;
   }
 
+  if (event.event === 'on_elicitation') {
+    const elicitation = 'elicitation' in event.data ? event.data.elicitation : undefined;
+    return elicitation != null && typeof elicitation === 'object' && 'flowId' in elicitation
+      ? elicitation.flowId
+      : undefined;
+  }
+
+  if (event.event === 'on_elicitation_resolved') {
+    return 'flowId' in event.data ? event.data.flowId : undefined;
+  }
+
   return undefined;
 }
 
-function isOAuthReplayEvent(event: t.ServerSentEvent): boolean {
+function isReplayEvent(event: t.ServerSentEvent): boolean {
   if (!('event' in event) || !event.data || typeof event.data !== 'object') {
     return false;
+  }
+
+  // Replay URL-mode elicitation cards on resume (UI-only, like OAuth cards) so a
+  // refresh during a pending authorization doesn't lose the card until timeout.
+  if (event.event === 'on_elicitation' || event.event === 'on_elicitation_resolved') {
+    return true;
   }
 
   if (event.event === 'on_run_step') {
@@ -5387,12 +5404,9 @@ class GenerationJobManagerClass {
     if (event.event === UsageEvents.ON_TOKEN_USAGE) {
       return this.trackTokenUsage(streamId, event, expectedCreatedAt);
     }
-    if (
-      (event.event === 'on_run_step' ||
-        event.event === 'on_run_step_delta' ||
-        event.event === 'on_run_step_completed') &&
-      isOAuthReplayEvent(event)
-    ) {
+    // `isReplayEvent` self-gates by event type — the OAuth run-step variants plus
+    // the UI-only elicitation cards — so no separate type prefilter is needed.
+    if (isReplayEvent(event)) {
       return this.trackReplayEvent(streamId, event, expectedCreatedAt);
     }
   }
@@ -5546,7 +5560,7 @@ class GenerationJobManagerClass {
     event: t.ServerSentEvent,
     expectedCreatedAt: number,
   ): Promise<void> {
-    if (!isOAuthReplayEvent(event)) {
+    if (!isReplayEvent(event)) {
       return;
     }
 
