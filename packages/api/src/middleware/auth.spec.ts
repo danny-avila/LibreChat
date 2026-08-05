@@ -51,7 +51,7 @@ describe('auth middleware logging helpers', () => {
 
     expect(log).toEqual({
       request_id: 'request-id',
-      method: 'GET',
+      request_method: 'GET',
       request_path: '/api/ask',
       token_provider: 'openid',
       token_source: 'bearer',
@@ -87,7 +87,7 @@ describe('auth middleware logging helpers', () => {
 
     expect(log).toEqual({
       request_id: 'header-request-id',
-      method: 'GET',
+      request_method: 'GET',
       request_path: '/api/messages',
       openid_reuse_enabled: false,
       openid_jwt_available: false,
@@ -122,10 +122,10 @@ describe('auth middleware logging helpers', () => {
   });
 
   it('normalizes known request methods and buckets unknown methods', () => {
-    expect(buildSafeRequestLogContext(createRequest({ method: 'get' })).method).toBe('GET');
-    expect(buildSafeRequestLogContext(createRequest({ method: 'CUSTOM_METHOD' })).method).toBe(
-      'OTHER',
-    );
+    expect(buildSafeRequestLogContext(createRequest({ method: 'get' })).request_method).toBe('GET');
+    expect(
+      buildSafeRequestLogContext(createRequest({ method: 'CUSTOM_METHOD' })).request_method,
+    ).toBe('OTHER');
   });
 
   it('buckets unknown token providers to keep auth logs low-cardinality', () => {
@@ -190,7 +190,7 @@ describe('auth middleware logging helpers', () => {
 
     expect(log).toEqual({
       request_id: 'request-id',
-      method: 'GET',
+      request_method: 'GET',
       request_path: '/api/messages',
       token_provider: 'openid',
       token_source: 'bearer',
@@ -214,7 +214,7 @@ describe('auth middleware logging helpers', () => {
 
     expect(context).toEqual({
       request_id: 'request-id',
-      method: 'GET',
+      request_method: 'GET',
       request_path: '/api/convos',
     });
     expect(JSON.stringify(context)).not.toContain('secret-token');
@@ -236,7 +236,7 @@ describe('auth middleware logging helpers', () => {
       error_signature: 'missing_query_context',
       response_status: 500,
       request_id: 'request-id',
-      method: 'GET',
+      request_method: 'GET',
       request_path: '/api/banner',
     });
     expect(JSON.stringify(context)).not.toContain('secret-token');

@@ -35,7 +35,7 @@ describe('attachRequestContext', () => {
         expect(result).toMatchObject({
           requestId: 'request-123',
           request_id: 'request-123',
-          method: 'POST',
+          request_method: 'POST',
           request_path: '/api/example',
         });
         const rendered = formatLogContext(result);
@@ -56,7 +56,7 @@ describe('attachRequestContext', () => {
         userId: 'user-123',
         requestId: 'request-123',
         request_id: 'request-123',
-        method: 'POST',
+        request_method: 'POST',
         request_path: '/api/example',
       });
     }));
@@ -66,15 +66,20 @@ describe('attachRequestContext', () => {
       const result = attachRequestContext({
         level: 'error',
         message: 'upload cleanup failed',
+        method: 'DELETE',
         path: '/uploads/tenant-123/user-123/file.txt',
       });
 
       expect(result).toMatchObject({
+        method: 'DELETE',
         path: '/uploads/tenant-123/user-123/file.txt',
+        request_method: 'POST',
         request_path: '/api/example',
       });
       const rendered = formatLogContext(result);
+      expect(rendered).toContain('"request_method":"POST"');
       expect(rendered).toContain('"request_path":"/api/example"');
+      expect(rendered).not.toContain('"method":"DELETE"');
       expect(rendered).not.toContain('/uploads/tenant-123/user-123/file.txt');
     }));
 });

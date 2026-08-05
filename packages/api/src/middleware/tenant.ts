@@ -79,7 +79,7 @@ export function buildRequestContext(req: ContextRequest): TenantContext {
 
   return {
     requestId: requestContext.request_id,
-    requestMethod: requestContext.method,
+    requestMethod: requestContext.request_method,
     requestPath: requestContext.request_path,
   };
 }

@@ -13,7 +13,7 @@ const REQUEST_LOG_CONTEXT_KEYS = [
   'userId',
   'requestId',
   'request_id',
-  'method',
+  'request_method',
   'request_path',
 ] as const;
 
@@ -141,7 +141,7 @@ export function attachRequestContext(
     userId: omitIdentity ? undefined : getUserId(),
     requestId: getRequestId(),
     request_id: getRequestId(),
-    method: getRequestMethod(),
+    request_method: getRequestMethod(),
     request_path: getRequestPath(),
   };
   REQUEST_LOG_CONTEXT_KEYS.forEach((key) => {

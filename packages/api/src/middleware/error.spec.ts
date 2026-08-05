@@ -252,7 +252,7 @@ describe('ErrorController', () => {
         error_signature: 'missing_query_context',
         response_status: 500,
         request_id: 'request-123',
-        method: 'GET',
+        request_method: 'GET',
         request_path: '/api/banner',
       });
       expect(JSON.stringify((logger.error as jest.Mock).mock.calls)).not.toContain('secret-token');
