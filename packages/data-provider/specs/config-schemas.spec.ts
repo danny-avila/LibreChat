@@ -1006,6 +1006,12 @@ describe('interfaceSchema', () => {
 
     expect(result.defaultPinnedTools).toBeUndefined();
   });
+
+  it('accepts a disabled MCP deep-link setting', () => {
+    const result = interfaceSchema.parse({ mcpServers: { deepLinks: false } });
+
+    expect(result.mcpServers?.deepLinks).toBe(false);
+  });
 });
 
 describe('summarizationTriggerSchema', () => {

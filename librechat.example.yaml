@@ -199,6 +199,7 @@ interface:
   # - create: Allow users to create and manage new MCP servers
   # - share: Allow users to share MCP servers with other users
   # - public: Allow users to share MCP servers publicly (with everyone)
+  # - deepLinks: Allow /mcps/add links to prefill MCP server creation (default: true)
 
   # Creation / edit MCP server config Dialog config example
   # trustCheckbox:

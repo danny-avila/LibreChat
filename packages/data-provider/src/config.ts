@@ -1332,6 +1332,7 @@ const mcpServersSchema = z
     share: z.boolean().optional(),
     public: z.boolean().optional(),
     configureObo: z.boolean().optional(),
+    deepLinks: z.boolean().optional(),
     trustCheckbox: z
       .object({
         label: localizedStringSchema.optional(),
@@ -1489,6 +1490,7 @@ export const interfaceSchema = z
       create: true,
       share: false,
       public: false,
+      deepLinks: true,
     },
     fileSearch: true,
     fileCitations: true,

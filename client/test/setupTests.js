@@ -17,6 +17,15 @@ import '@testing-library/jest-dom/extend-expect';
 // 'react-lottie' uses canvas
 import 'jest-canvas-mock';
 
+if (typeof Request === 'undefined') {
+  global.Request = class Request {
+    constructor(url, init) {
+      this.url = url;
+      this.init = init;
+    }
+  };
+}
+
 // Mock ResizeObserver
 import './resizeObserver.mock';
 
