@@ -213,6 +213,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const mockConfigWithOAuth = {
         server1: { type: 'stdio' },
         server2: { type: 'http', requiresOAuth: true },
+        server3: { type: 'http', oauth: { client_id: 'configured-client' } },
       };
       mockRegistryInstance.getAllServerConfigs.mockResolvedValue(mockConfigWithOAuth);
 
@@ -239,7 +240,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       expect(result.mcpConfig).toEqual(mockConfigWithOAuth);
       expect(result.appConnections).toEqual(mockAppConnections);
       expect(result.userConnections).toEqual(mockUserConnections);
-      expect(result.oauthServers).toEqual(new Set(['server2']));
+      expect(result.oauthServers).toEqual(new Set(['server2', 'server3']));
     });
 
     it('should return empty data when no servers are configured', async () => {
@@ -755,6 +756,121 @@ describe('tests for the new helper functions used by the MCP connection status e
         connectionState: 'connected',
         authorizationState: 'authorized',
       });
+    });
+
+    it('should derive runtime-detected OAuth readiness from bound token storage', async () => {
+      const appConnections = new Map();
+      const userConnections = new Map();
+      const oauthServers = new Set();
+      const { findToken } = require('~/models');
+      const credentialSetId = 'credential-set-a';
+      const config = {
+        ...mockConfig,
+        source: 'yaml',
+        url: 'https://mcp.example.com/users/{{LIBRECHAT_USER_ID}}/mcp',
+      };
+      mockGetOAuthReconnectionManager.mockReturnValue({ isReconnecting: jest.fn(() => false) });
+      mockGetFlowStateManager.mockReturnValue({ getFlowState: jest.fn(() => null) });
+      mockGetLogStores.mockReturnValue({});
+      findToken
+        .mockResolvedValueOnce({
+          expiresAt: new Date(Date.now() + 60000),
+          metadata: { credential_set_id: credentialSetId },
+        })
+        .mockResolvedValueOnce({
+          token: 'enc:{"client_id":"dynamic-client"}',
+          metadata: {
+            credential_set_id: credentialSetId,
+            authorization_endpoint: 'https://auth.example.com/authorize',
+            token_endpoint: 'https://auth.example.com/token',
+            server_url: `https://mcp.example.com/users/${mockUserId}/mcp`,
+            client_source: 'dynamic',
+          },
+        });
+
+      const result = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        config,
+        appConnections,
+        userConnections,
+        oauthServers,
+        { user: { id: mockUserId } },
+      );
+
+      expect(result).toEqual({
+        requiresOAuth: true,
+        connectionState: 'connected',
+        authorizationState: 'authorized',
+      });
+    });
+
+    it('should derive runtime-detected OAuth state from an active shared flow', async () => {
+      const appConnections = new Map();
+      const userConnections = new Map();
+      const oauthServers = new Set();
+      const config = {
+        ...mockConfig,
+        source: 'yaml',
+        url: 'https://mcp.example.com/{{LIBRECHAT_BODY_TENANT}}/mcp',
+      };
+      mockGetOAuthReconnectionManager.mockReturnValue({ isReconnecting: jest.fn(() => false) });
+      mockGetFlowStateManager.mockReturnValue({
+        getFlowState: jest.fn(() => ({
+          status: 'PENDING',
+          createdAt: Date.now() - 1000,
+          ttl: 180000,
+        })),
+      });
+      mockGetLogStores.mockReturnValue({});
+
+      const result = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        config,
+        appConnections,
+        userConnections,
+        oauthServers,
+        { user: { id: mockUserId } },
+      );
+
+      expect(result).toEqual({
+        requiresOAuth: true,
+        connectionState: 'connecting',
+        authorizationState: 'authorizing',
+      });
+    });
+
+    it('should not inspect OAuth state for an explicitly non-OAuth runtime URL', async () => {
+      const appConnections = new Map();
+      const userConnections = new Map();
+      const oauthServers = new Set();
+      const { findToken } = require('~/models');
+      const mockFlowManager = { getFlowState: jest.fn() };
+      mockGetFlowStateManager.mockReturnValue(mockFlowManager);
+      mockGetLogStores.mockReturnValue({});
+
+      const result = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        {
+          ...mockConfig,
+          source: 'yaml',
+          url: 'https://mcp.example.com/{{LIBRECHAT_USER_ID}}/mcp',
+          requiresOAuth: false,
+        },
+        appConnections,
+        userConnections,
+        oauthServers,
+      );
+
+      expect(result).toEqual({
+        requiresOAuth: false,
+        connectionState: 'disconnected',
+        authorizationState: 'not_required',
+      });
+      expect(mockFlowManager.getFlowState).not.toHaveBeenCalled();
+      expect(findToken).not.toHaveBeenCalled();
     });
 
     it('should not report durable readiness when the runtime URL violates current policy', async () => {

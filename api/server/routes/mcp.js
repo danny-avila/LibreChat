@@ -721,14 +721,11 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
   }
 });
 
-function createMCPStatusRuntimeContext(user, mcpConfig, oauthServers, serverNames) {
+function createMCPStatusRuntimeContext(user, mcpConfig, serverNames) {
   const customUserVarServers = serverNames.filter((serverName) => {
     const customUserVars = mcpConfig[serverName]?.customUserVars;
     return (
-      oauthServers.has(serverName) &&
-      customUserVars &&
-      typeof customUserVars === 'object' &&
-      Object.keys(customUserVars).length > 0
+      customUserVars && typeof customUserVars === 'object' && Object.keys(customUserVars).length > 0
     );
   });
   let userMCPAuthMapPromise;
@@ -873,12 +870,7 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
       user.id,
       { role: user.role, tenantId: getTenantId() },
     );
-    const runtimeContext = createMCPStatusRuntimeContext(
-      user,
-      mcpConfig,
-      oauthServers,
-      Object.keys(mcpConfig),
-    );
+    const runtimeContext = createMCPStatusRuntimeContext(user, mcpConfig, Object.keys(mcpConfig));
     const connectionStatus = Object.fromEntries(
       await Promise.all(
         Object.entries(mcpConfig).map(async ([serverName, config]) => {
@@ -945,9 +937,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
         .json({ error: `MCP server '${serverName}' not found in configuration` });
     }
 
-    const runtimeContext = createMCPStatusRuntimeContext(user, mcpConfig, oauthServers, [
-      serverName,
-    ]);
+    const runtimeContext = createMCPStatusRuntimeContext(user, mcpConfig, [serverName]);
 
     const serverStatus = await getServerConnectionStatus(
       user.id,

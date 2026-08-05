@@ -2558,7 +2558,7 @@ describe('MCP Routes', () => {
         mcpConfig,
         appConnections: new Map(),
         userConnections: new Map(),
-        oauthServers: new Set(['server1']),
+        oauthServers: new Set(),
       });
       require('@librechat/api').getUserMCPAuthMap.mockResolvedValue(userMCPAuthMap);
       getServerConnectionStatus.mockResolvedValue({

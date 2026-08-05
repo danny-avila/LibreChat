@@ -29,6 +29,7 @@ const {
   getMissingCustomUserVars,
   getServerCustomUserVars,
   requiresEphemeralUserConnection,
+  hasRuntimeUrlPlaceholders,
   containsGraphTokenPlaceholder,
   isOAuthServer,
 } = require('@librechat/api');
@@ -1201,7 +1202,7 @@ async function getMCPSetupData(userId, options = {}) {
   const userConnections = mcpManager.getUserConnections(userId) || new Map();
   const oauthServers = new Set(
     Object.entries(mcpConfig)
-      .filter(([, config]) => config.requiresOAuth)
+      .filter(([, config]) => isOAuthServer(config))
       .map(([name]) => name),
   );
 
@@ -1335,6 +1336,10 @@ async function hasDurableMCPAuthorization(userId, serverName, config, runtimeCon
   });
 }
 
+function canDetectMCPRuntimeOAuth(config) {
+  return config.requiresOAuth == null && config.apiKey == null && hasRuntimeUrlPlaceholders(config);
+}
+
 /**
  * Get connection status for a specific MCP server
  * @param {string} userId - The user ID
@@ -1357,37 +1362,44 @@ async function getServerConnectionStatus(
 ) {
   const connection = appConnections.get(serverName) || userConnections.get(serverName);
   const isStaleOrDoNotExist = connection ? connection?.isStale(config.updatedAt) : true;
+  const configuredOAuth = oauthServers.has(serverName);
+  const runtimeOAuthCandidate = canDetectMCPRuntimeOAuth(config);
 
   const baseConnectionState = isStaleOrDoNotExist
     ? 'disconnected'
     : connection?.connectionState || 'disconnected';
   let finalConnectionState = baseConnectionState;
-  let authorizationState = oauthServers.has(serverName) ? 'needs_authorization' : 'not_required';
+  let requiresOAuth = configuredOAuth;
+  let authorizationState = configuredOAuth ? 'needs_authorization' : 'not_required';
 
   // connection state overrides specific to OAuth servers
-  if (oauthServers.has(serverName) && baseConnectionState === 'connected') {
+  if (configuredOAuth && baseConnectionState === 'connected') {
     authorizationState = 'authorized';
-  } else if (oauthServers.has(serverName) && baseConnectionState === 'connecting') {
+  } else if (configuredOAuth && baseConnectionState === 'connecting') {
     authorizationState = 'authorizing';
-  } else if (oauthServers.has(serverName) && baseConnectionState === 'error') {
+  } else if (configuredOAuth && baseConnectionState === 'error') {
     authorizationState = 'error';
-  } else if (baseConnectionState === 'disconnected' && oauthServers.has(serverName)) {
+  } else if (baseConnectionState === 'disconnected' && (configuredOAuth || runtimeOAuthCandidate)) {
     // check if server is actively being reconnected
     const oauthReconnectionManager = getOAuthReconnectionManager();
     if (oauthReconnectionManager.isReconnecting(userId, serverName)) {
+      requiresOAuth = true;
       finalConnectionState = 'connecting';
       authorizationState = 'authorizing';
     } else {
       const { hasActiveFlow, hasFailedFlow } = await checkOAuthFlowStatus(userId, serverName);
 
       if (hasFailedFlow) {
+        requiresOAuth = true;
         finalConnectionState = 'error';
         authorizationState = 'error';
       } else if (hasActiveFlow) {
+        requiresOAuth = true;
         finalConnectionState = 'connecting';
         authorizationState = 'authorizing';
       } else if (await hasDurableMCPAuthorization(userId, serverName, config, runtimeContext)) {
         /** OAuth readiness is durable even when this pod has no live connection. */
+        requiresOAuth = true;
         finalConnectionState = 'connected';
         authorizationState = 'authorized';
       }
@@ -1395,7 +1407,7 @@ async function getServerConnectionStatus(
   }
 
   return {
-    requiresOAuth: oauthServers.has(serverName),
+    requiresOAuth,
     connectionState: finalConnectionState,
     authorizationState,
   };
