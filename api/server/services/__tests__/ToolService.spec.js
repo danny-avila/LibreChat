@@ -387,6 +387,7 @@ describe('ToolService - Action Capability Gating', () => {
       ).rejects.toMatchObject({
         code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
         statusCode: 503,
+        message: expect.stringContaining('can access its selected tools'),
       });
     });
 

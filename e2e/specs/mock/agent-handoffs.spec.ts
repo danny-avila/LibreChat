@@ -947,7 +947,7 @@ test.describe('agent handoffs', () => {
       expect(response.status()).toBe(200);
       await expect(
         messagesView(page).getByText(
-          /is configured to use MCP tools, but none are available\. Reconnect or reinitialize the MCP server and try again\./,
+          /is configured to use MCP tools, but none are available\. Verify that the MCP server is connected and this agent can access its selected tools, then try again\./,
         ),
       ).toBeVisible({ timeout: 30000 });
       await expect(

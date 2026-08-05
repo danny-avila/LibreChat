@@ -535,7 +535,7 @@ const isExpectedMCPToolsUnavailableError = (error) =>
 const createExpectedMCPToolsUnavailableError = (agentName, cause) => {
   const subject = agentName ? `Agent "${agentName}"` : 'The agent';
   const error = new Error(
-    `${subject} is configured to use MCP tools, but none are available. Reconnect or reinitialize the MCP server and try again.`,
+    `${subject} is configured to use MCP tools, but none are available. Verify that the MCP server is connected and this agent can access its selected tools, then try again.`,
   );
   error.name = 'AgentToolInitializationError';
   error.code = expectedMCPToolsUnavailableCode;
