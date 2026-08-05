@@ -5,7 +5,12 @@ import type { TPendingSteer } from 'librechat-data-provider';
 import type { QueuedMessage, QueuedMessageOrigin } from '~/store/families';
 import type { GenerationProtocolVersion } from '~/data-provider';
 import type { SteerCarriedContext } from '~/utils';
-import { appendAppliedSteerIds, carriedSteerContext, insertQueuedOrigin } from '~/utils';
+import {
+  appendAppliedSteerIds,
+  carriedSteerContext,
+  compareQueuedMessages,
+  insertQueuedOrigin,
+} from '~/utils';
 import { fetchStreamStatus, getGenerationProtocolVersion } from '~/data-provider';
 import store from '~/store';
 
@@ -165,9 +170,7 @@ export default function useSteerConvert() {
            *  captured position instead of being re-minted under the server id. */
           const ordinary = fresh.filter(({ queuedOrigin }) => queuedOrigin == null);
           let merged: QueuedMessage[] = [...existing, ...ordinary.map(({ item }) => item)].sort(
-            (a, b) =>
-              Number(b.priority ?? false) - Number(a.priority ?? false) ||
-              a.createdAt - b.createdAt,
+            compareQueuedMessages,
           );
           for (const { queuedOrigin } of fresh) {
             if (queuedOrigin != null) {

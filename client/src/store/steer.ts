@@ -20,3 +20,11 @@ export const steerOverlayHeightFamily = atomFamily((_conversationId: string) => 
  * and the chip-derived check cannot see an arm until its response lands.
  */
 export const escalatingSteerFamily = atomFamily((_conversationId: string) => atom<boolean>(false));
+
+/**
+ * Whether the queued-message outbox is expanded, per queue key (so a brand-new
+ * chat and its resolved id are distinct, matching `useSteering.queueKey`).
+ * Collapsed by default and deliberately in memory only: the queue itself does
+ * not survive a reload, so persisting the disclosure would outlive its subject.
+ */
+export const queueExpandedFamily = atomFamily((_queueKey: string) => atom<boolean>(false));

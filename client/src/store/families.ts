@@ -387,6 +387,10 @@ export type QueuedMessage = {
   /** Front-inserted by "Interrupt & send": stays ahead of chronologically
    *  older items when leftover steers are merged back into the queue. */
   priority?: boolean;
+  /** Set by "Send next": promotes the row above ordinary follow-ups (but never
+   *  above an interrupt), most recent promotion first. Absent on rows the user
+   *  never reordered. */
+  bumpedAt?: number;
 };
 
 /** Snapshot of a queued item's logical position while it is temporarily sent
@@ -406,6 +410,28 @@ export type QueuedMessageOrigin = {
 const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
   key: 'queuedMessagesByConvoId',
   default: [],
+});
+
+/**
+ * A terminal epoch withheld from the drain for its undo grace. The queue is
+ * NOT popped while a hold stands — only the epoch is parked — so cancelling
+ * costs nothing and a reload during the window loses no text. `dueAt` is
+ * absolute so a hold survives leaving and re-entering the conversation.
+ */
+export type QueueDrainHold = {
+  runEnd: RunEnd;
+  dueAt: number;
+  /** Absent while the window is open and Undo is offered. `released` means the
+   *  epoch was handed back to the drain (the window is over, so Undo is no
+   *  longer advertised); `cancelled` neutralizes an epoch already handed back,
+   *  for the frame in which Undo and release can race. */
+  status?: 'released' | 'cancelled';
+};
+
+/** Per-conversation undo grace on the next automatic drain. */
+const queueDrainHoldByConvoId = atomFamily<QueueDrainHold | null, string>({
+  key: 'queueDrainHoldByConvoId',
+  default: null,
 });
 
 /**
@@ -714,6 +740,7 @@ export default {
   pendingQuotesByConvoId,
   pendingSteersByConvoId,
   queuedMessagesByConvoId,
+  queueDrainHoldByConvoId,
   runEndByIndex,
   pendingRunEndByConvoId,
   drainAfterAbortByIndex,

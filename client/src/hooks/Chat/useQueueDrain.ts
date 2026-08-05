@@ -3,6 +3,7 @@ import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { DrainAfterAbort, QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
 import type { TAskFunction } from '~/common';
+import { compareQueuedMessages, isSameRunEpoch, isSendableQueuedMessage } from '~/utils';
 import { useMarkFilesUsageMutation } from '~/data-provider';
 import store from '~/store';
 
@@ -36,8 +37,8 @@ const batchFileIds = (fileIds: string[]): string[][] => {
   return batches;
 };
 
-const compareQueuedMessages = (a: QueuedMessage, b: QueuedMessage): number =>
-  Number(b.priority ?? false) - Number(a.priority ?? false) || a.createdAt - b.createdAt;
+/** Gmail-style window to take an automatic send back before it fires. */
+export const QUEUE_UNDO_GRACE_MS = 3000;
 
 /** Interrupt intent belongs to one generation, never to whichever terminal
  * event happens to occupy the shared pane slot next. The NEW_CONVO alias is
@@ -67,17 +68,27 @@ const matchesInterruptArm = (armed: DrainAfterAbort | false, end: RunEnd): boole
  *   the next, so multi-message queues send FIFO in sequence.
  * - Migrates a queue keyed under `NEW_CONVO` to the real conversation id when
  *   the finished run started as a new-conversation submission.
+ * - Withholds an automatic send for `undoGraceMs`: the terminal epoch is
+ *   parked in `queueDrainHoldByConvoId` and re-posted when the window closes.
+ *   The queue itself is untouched while a hold stands, so "undo" is a pure
+ *   cancel — nothing to restore, nothing to lose. Manual sends and armed
+ *   interrupts skip the grace: both are the user asking for it NOW.
  */
 export default function useQueueDrain(
   index: string | number,
   activeConversationId: string | undefined,
   ask: TAskFunction,
+  options?: { undoGraceMs?: number },
 ) {
+  const undoGraceMs = options?.undoGraceMs ?? QUEUE_UNDO_GRACE_MS;
   const runEnd = useRecoilValue(store.runEndByIndex(index));
   const parkedRunEnd = useRecoilValue(
     store.pendingRunEndByConvoId(activeConversationId ?? Constants.NEW_CONVO),
   );
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const drainHold = useRecoilValue(
+    store.queueDrainHoldByConvoId(activeConversationId ?? Constants.NEW_CONVO),
+  );
   const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
   const ownQueue = useRecoilValue(
     store.queuedMessagesByConvoId(activeConversationId ?? Constants.NEW_CONVO),
@@ -205,6 +216,27 @@ export default function useQueueDrain(
         if (end == null) {
           return null;
         }
+        /** A standing window short-circuits BEFORE anything is consumed or
+         *  written: both signal carriers retain unconsumed epochs, so leaving
+         *  this one in place is lossless — and mutating nothing is what keeps
+         *  the effect from re-running itself into a loop while it waits.
+         *
+         *  An armed interrupt is exempt. The user aborted a run to say this
+         *  now, and the standing window may belong to an unrelated earlier
+         *  epoch; making it wait out that timer contradicts the rule that
+         *  armed interrupts skip the grace. Read-only, so the no-loop
+         *  guarantee holds — the arm is consumed on the normal path below. */
+        if (end.conversationId != null) {
+          const standing = snapshot
+            .getLoadable(store.queueDrainHoldByConvoId(end.conversationId))
+            .getValue();
+          const armedNow = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
+          const interruptWaiting =
+            matchesInterruptArm(armedNow, end) || end.interruptArmed === true;
+          if (standing != null && standing.dueAt > Date.now() && !interruptWaiting) {
+            return null;
+          }
+        }
         // Consume the signal first — a hard double-fire guard even if the
         // effect re-runs before Recoil propagates.
         if (fromParked && activeConversationId) {
@@ -241,7 +273,50 @@ export default function useQueueDrain(
           : ownQueue;
 
         const shouldDrain = end.outcome === 'completed' || interruptArmed;
-        const next = shouldDrain ? (merged[0] ?? null) : null;
+        const hold = snapshot.getLoadable(store.queueDrainHoldByConvoId(conversationId)).getValue();
+        const now = Date.now();
+        /** A hold owns exactly ONE epoch. A newer terminal event can be the one
+         *  consumed above, and retiring the hold (or discarding that event) on
+         *  its behalf would lose the newer signal and leave the older one to
+         *  reopen a window — so act only on the epoch the hold actually holds. */
+        const holdOwnsEnd = hold != null && isSameRunEpoch(hold.runEnd, end);
+        if (holdOwnsEnd) {
+          set(store.queueDrainHoldByConvoId(conversationId), null);
+        }
+        /** Undo landed after the timer handed this epoch back. The epoch is
+         *  consumed above, so discarding it here is what makes the visible
+         *  Undo mean what it says. */
+        if (holdOwnsEnd && hold?.status === 'cancelled') {
+          return null;
+        }
+        /** Withhold the epoch, never the queue: the rows stay exactly where
+         *  they are, so cancelling is a no-op and a reload costs no text.
+         *  A first turn's queue does have to migrate before the window opens —
+         *  the composer reads the resolved id by then, so leaving the rows
+         *  under `NEW_CONVO` would blank the group for the whole window. */
+        if (
+          shouldDrain &&
+          !interruptArmed &&
+          hold == null &&
+          undoGraceMs > 0 &&
+          merged.length > 0
+        ) {
+          if (shouldMigrate && newConvoQueue.length > 0) {
+            set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), []);
+            set(store.queuedMessagesByConvoId(conversationId), merged);
+          }
+          set(store.queueDrainHoldByConvoId(conversationId), {
+            runEnd: end,
+            dueAt: now + undoGraceMs,
+          });
+          return null;
+        }
+        /** A row mid-edit can be blank, and blank is not a message. Skipping to
+         *  the row behind it would send out of order, so this epoch simply
+         *  drains nothing — consumed above, so the effect cannot spin — and the
+         *  next run end picks the queue up again. */
+        const front = merged[0] ?? null;
+        const next = shouldDrain && front != null && isSendableQueuedMessage(front) ? front : null;
         const remainder = next ? merged.slice(1) : merged;
 
         if (shouldMigrate && newConvoQueue.length > 0) {
@@ -266,6 +341,39 @@ export default function useQueueDrain(
       },
     [index, activeConversationId],
   );
+
+  /** Hands the held epoch back to the drain through the same parked slot a
+   *  returning navigation uses, so an expired window resumes identically
+   *  whether or not the user stayed on the conversation. */
+  const releaseDrainHold = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (convoId: string) => {
+        const held = snapshot.getLoadable(store.queueDrainHoldByConvoId(convoId)).getValue();
+        if (held == null || held.status != null) {
+          return;
+        }
+        /** Marked before the epoch goes back so Undo stops being offered the
+         *  moment the window closes — a new run can block the drain, and an
+         *  Undo that no longer undoes anything is worse than none. */
+        set(store.queueDrainHoldByConvoId(convoId), { ...held, status: 'released' });
+        set(store.pendingRunEndByConvoId(convoId), held.runEnd);
+      },
+    [],
+  );
+
+  useEffect(() => {
+    if (drainHold == null || drainHold.status != null) {
+      return;
+    }
+    const convoId = activeConversationId ?? Constants.NEW_CONVO;
+    const remaining = drainHold.dueAt - Date.now();
+    if (remaining <= 0) {
+      releaseDrainHold(convoId);
+      return;
+    }
+    const timer = setTimeout(() => releaseDrainHold(convoId), remaining);
+    return () => clearTimeout(timer);
+  }, [drainHold, activeConversationId, releaseDrainHold]);
 
   const restoreQueued = useRecoilCallback(
     ({ set }) =>
@@ -334,6 +442,10 @@ export default function useQueueDrain(
   }, [
     runEnd,
     parkedRunEnd,
+    /** A standing window leaves later epochs untouched, so removing it has to
+     *  bring the drain back to reconsider them — otherwise a follow-up sits
+     *  stranded until some unrelated dependency happens to change. */
+    drainHold,
     isSubmitting,
     activeConversationId,
     parkForeignRunEnd,

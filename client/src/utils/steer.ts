@@ -5,7 +5,7 @@ import type {
   TSteerAppliedEvent,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import type { QueuedMessage, QueuedMessageOrigin } from '~/store/families';
+import type { QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
 
 type SteerPart = Extract<TMessageContentParts, { type: ContentTypes.STEER }>;
 
@@ -141,6 +141,21 @@ export function appendAppliedSteerIds(prev: string[], steerIds: string[]): strin
   return [...prev, ...fresh].slice(-APPLIED_STEER_IDS_CAP);
 }
 
+/**
+ * Whether two terminal signals are the same generation. Conversation ids are
+ * reused by later turns, so identity is the exact epoch: the generation stamp
+ * when either side carries one, else the termination time.
+ */
+export function isSameRunEpoch(a: RunEnd | null | undefined, b: RunEnd): boolean {
+  if (a == null || a.conversationId !== b.conversationId) {
+    return false;
+  }
+  if (a.generationCreatedAt != null || b.generationCreatedAt != null) {
+    return a.generationCreatedAt === b.generationCreatedAt;
+  }
+  return a.endedAt === b.endedAt;
+}
+
 export type SteerCarriedContext = { quotes?: string[]; manualSkills?: string[] };
 
 /** Quotes/skill picks are client-only (a steer never sends them to the
@@ -153,6 +168,137 @@ export function carriedSteerContext(source?: SteerCarriedContext): SteerCarriedC
     ...(quotes && quotes.length > 0 && { quotes }),
     ...(manualSkills && manualSkills.length > 0 && { manualSkills }),
   };
+}
+
+/**
+ * The queue's one ordering rule, shared by every writer so a reorder cannot be
+ * undone by the next enqueue re-sorting on a different key. Three tiers:
+ *
+ * 0. "Interrupt & send" front-inserts. They aborted a run to be said now, so
+ *    they outrank everything — and stay FIFO among themselves, because two
+ *    interrupts are sequential instructions, not competing ones.
+ * 1. "Send next" promotions, most recently promoted first.
+ * 2. Everything else, in enqueue order.
+ */
+function orderingTier(item: QueuedMessage): number {
+  if (item.priority === true) {
+    return 0;
+  }
+  return item.bumpedAt != null ? 1 : 2;
+}
+
+export function compareQueuedMessages(a: QueuedMessage, b: QueuedMessage): number {
+  const tier = orderingTier(a) - orderingTier(b);
+  if (tier !== 0) {
+    return tier;
+  }
+  if (a.bumpedAt != null && b.bumpedAt != null && a.bumpedAt !== b.bumpedAt) {
+    return b.bumpedAt - a.bumpedAt;
+  }
+  return a.createdAt - b.createdAt;
+}
+
+/**
+ * Whether a row can be sent as it stands. A row being edited holds exactly what
+ * the user has typed, blank included, so "there is nothing to send" is a fact
+ * about the row rather than a state every sender has to be told about
+ * separately. Blank rows exist only while their editor is open — closing it
+ * restores the pre-edit words — so this never describes a resting queue.
+ */
+export function isSendableQueuedMessage(item: QueuedMessage): boolean {
+  return item.text.trim().length > 0;
+}
+
+/** Queued texts are separate thoughts, so a join reads as paragraphs. */
+export const QUEUED_TEXT_SEPARATOR = '\n\n';
+
+/**
+ * A row bound to a parked server source cannot be merged or rewritten: the
+ * recovery turn must reproduce that source's exact text and file set, and its
+ * user-row identity is the receipt id, so two sources cannot become one turn.
+ * Discarding the parked copy first (`discardQueued`) downgrades the row and
+ * makes it mergeable like any local follow-up.
+ */
+export function isMergeableQueuedMessage(item: QueuedMessage): boolean {
+  return item.recoverySteerId == null && item.clientRequestId == null;
+}
+
+const dedupeFiles = (items: QueuedMessage[]): TMessage['files'] => {
+  const byId = new Map<string, NonNullable<TMessage['files']>[number]>();
+  for (const item of items) {
+    for (const file of item.files ?? []) {
+      const key = file.file_id ?? file.filepath ?? '';
+      if (key.length > 0 && !byId.has(key)) {
+        byId.set(key, file);
+      }
+    }
+  }
+  return byId.size > 0 ? [...byId.values()] : undefined;
+};
+
+const dedupeStrings = (values: Array<string[] | undefined>): string[] | undefined => {
+  const merged = new Set<string>();
+  for (const list of values) {
+    for (const value of list ?? []) {
+      merged.add(value);
+    }
+  }
+  return merged.size > 0 ? [...merged] : undefined;
+};
+
+/**
+ * Folds queued rows into the one turn they were probably always meant to be —
+ * each extra turn costs a full model round trip and context replay. Keeps the
+ * front-most row's identity and position so the merged message drains exactly
+ * where the first of its parts would have, and takes the LATEST predecessor
+ * fence of the batch so the merged turn is gated on everything it followed.
+ */
+export function mergeQueuedMessages(items: QueuedMessage[]): QueuedMessage | null {
+  if (items.length < 2 || items.some((item) => !isMergeableQueuedMessage(item))) {
+    return null;
+  }
+  /** Folding a row mid-edit would bake in whatever is on screen at that instant,
+   *  blank included. Self-protecting here so no caller has to remember. */
+  if (items.some((item) => !isSendableQueuedMessage(item))) {
+    return null;
+  }
+  const [first] = items;
+  const files = dedupeFiles(items);
+  const quotes = dedupeStrings(items.map((item) => item.quotes));
+  const manualSkills = dedupeStrings(items.map((item) => item.manualSkills));
+  const fences = items
+    .map((item) => item.expectedPredecessorCreatedAt)
+    .filter((value): value is number => value != null);
+  return {
+    id: first.id,
+    text: items.map((item) => item.text).join(QUEUED_TEXT_SEPARATOR),
+    createdAt: first.createdAt,
+    ...(first.priority === true && { priority: true }),
+    ...(first.bumpedAt != null && { bumpedAt: first.bumpedAt }),
+    ...(fences.length > 0 && { expectedPredecessorCreatedAt: Math.max(...fences) }),
+    ...(files && { files }),
+    ...(quotes && { quotes }),
+    ...(manualSkills && { manualSkills }),
+  };
+}
+
+/**
+ * Promotes an item to drain next, leaving every other item's order intact.
+ * Deliberately does NOT set `priority`: that tier belongs to interrupts, which
+ * aborted a run and must stay ahead of a promotion made before them.
+ */
+export function bumpQueuedMessage(
+  queue: QueuedMessage[],
+  id: string,
+  bumpedAt: number,
+): QueuedMessage[] {
+  const index = queue.findIndex((item) => item.id === id);
+  if (index < 0) {
+    return queue;
+  }
+  const next = [...queue];
+  next[index] = { ...next[index], bumpedAt };
+  return next.sort(compareQueuedMessages);
 }
 
 /** Restore a temporarily removed queue item using surviving original
@@ -199,17 +345,18 @@ export function insertQueuedOrigin(
     }
   }
   if (index < 0) {
-    index = queue.findIndex((queued) => {
-      const itemPriority = Number(restoredItem.priority === true);
-      const queuedPriority = Number(queued.priority === true);
-      return (
-        itemPriority > queuedPriority ||
-        (itemPriority === queuedPriority && restoredItem.createdAt < queued.createdAt)
-      );
-    });
+    index = queue.findIndex((queued) => compareQueuedMessages(restoredItem, queued) < 0);
     if (index < 0) {
       index = queue.length;
     }
+  }
+  /** Captured neighbours describe where the row WAS, and the queue may have
+   *  been reordered while it was away — a "Send this one next" promotion must
+   *  not be undone by a restore landing in front of it. Walk the neighbour
+   *  slot forward past anything that now outranks the row; with no promotion
+   *  the neighbour slot already satisfies the comparator and this is a no-op. */
+  while (index < queue.length && compareQueuedMessages(queue[index], restoredItem) < 0) {
+    index += 1;
   }
   return [...queue.slice(0, index), restoredItem, ...queue.slice(index)];
 }

@@ -2420,3 +2420,358 @@ describe('useSteering', () => {
     });
   });
 });
+
+describe('useSteering — clear all', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function setupClearAll(initialize?: (snapshot: MutableSnapshot) => void) {
+    const sendNow = jest.fn();
+    const stopGenerating = jest.fn();
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <RecoilRoot initializeState={withActiveGeneration(initialize)}>{children}</RecoilRoot>
+    );
+    return renderHook(
+      () => ({
+        steering: useSteering({
+          index: 0,
+          conversationId: CONVO_ID,
+          conversation: agentsConversation,
+          isSubmitting: false,
+          answerModeActive: false,
+          sendNow,
+          stopGenerating,
+        }),
+        queue: useQueue(CONVO_ID),
+        drainHold: useRecoilValue(store.queueDrainHoldByConvoId(CONVO_ID)),
+      }),
+      { wrapper },
+    );
+  }
+
+  /** Removing the last row leaves nothing to auto-send, and a surviving window
+   *  could later drain a row queued under a NEWER run. */
+  it('retires the pending send when removal empties the queue', () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [{ id: 'q1', text: 'only row', createdAt: 1 }]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 4_000_000_000_000,
+      });
+    });
+
+    act(() => {
+      result.current.steering.removeQueued('q1');
+    });
+
+    expect(result.current.queue).toEqual([]);
+    expect(result.current.drainHold).toBeNull();
+  });
+
+  /** Once the timer has handed the epoch back, the hold is the only thing that
+   *  can neutralize it — dropping it outright lets the parked epoch through. */
+  it('tombstones a released window rather than dropping it', () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [{ id: 'q1', text: 'only row', createdAt: 1 }]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 1,
+        status: 'released',
+      });
+    });
+
+    act(() => {
+      result.current.steering.removeQueued('q1');
+    });
+
+    expect(result.current.queue).toEqual([]);
+    expect(result.current.drainHold).toMatchObject({ status: 'cancelled' });
+  });
+
+  /** A withheld epoch grants ONE drain; expediting a row spends it, so leaving
+   *  the window armed for the remaining rows would send twice for one run end —
+   *  and would do it even if that manual run was stopped. */
+  it('retires the pending send when a row is expedited, rows remaining or not', () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'q1', text: 'sent by hand', createdAt: 1 },
+        { id: 'q2', text: 'still waiting', createdAt: 2 },
+      ]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 4_000_000_000_000,
+      });
+    });
+
+    act(() => {
+      result.current.steering.sendQueuedNow({ id: 'q1', text: 'sent by hand', createdAt: 1 });
+    });
+
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({ id: 'q2', text: 'still waiting' }),
+    ]);
+    expect(result.current.drainHold).toBeNull();
+  });
+
+  it('keeps the pending send while other rows remain', () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'q1', text: 'first', createdAt: 1 },
+        { id: 'q2', text: 'second', createdAt: 2 },
+      ]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 4_000_000_000_000,
+      });
+    });
+
+    act(() => {
+      result.current.steering.removeQueued('q1');
+    });
+
+    expect(result.current.queue).toHaveLength(1);
+    expect(result.current.drainHold).not.toBeNull();
+  });
+
+  it('folds the queue into one payload and empties it', async () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'q1', text: 'first', createdAt: 1 },
+        { id: 'q2', text: 'second', createdAt: 2 },
+      ]);
+    });
+
+    let cleared: QueuedMessage | null | undefined;
+    await act(async () => {
+      cleared = await result.current.steering.clearQueued();
+    });
+
+    expect(cleared?.text).toBe('first\n\nsecond');
+    expect(result.current.queue).toEqual([]);
+  });
+
+  /** The row must be OUT of the queue for the cancellation round trip: a run
+   *  completing mid-flight would otherwise drain and send the very message the
+   *  user is removing. */
+  it('holds a recovered row out of the queue while its source cancels', async () => {
+    let settleCancel: ((value: { removed: boolean }) => void) | undefined;
+    mockCancelSteer.mockImplementationOnce(
+      () =>
+        new Promise<{ removed: boolean }>((resolve) => {
+          settleCancel = resolve;
+        }),
+    );
+
+    const recovered = {
+      id: 'q1',
+      text: 'being removed',
+      createdAt: 1,
+      recoverySteerId: 'server-source',
+      recoveryClientSteerId: 'client-source',
+    };
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [recovered]);
+    });
+
+    let pending: Promise<boolean> | undefined;
+    act(() => {
+      pending = result.current.steering.discardQueued(recovered);
+    });
+
+    // Nothing for a drain to find while the receipt is in flight.
+    expect(result.current.queue).toEqual([]);
+
+    let settled = false;
+    await act(async () => {
+      settleCancel?.({ removed: true });
+      settled = (await pending) ?? false;
+    });
+
+    expect(settled).toBe(true);
+    // Back in its slot, downgraded: the parked copy is gone, so it is an
+    // ordinary local row the caller can edit or remove.
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({ id: 'q1', text: 'being removed' }),
+    ]);
+    expect(result.current.queue[0].recoverySteerId).toBeUndefined();
+    expect(result.current.queue[0].recoveryClientSteerId).toBeUndefined();
+  });
+
+  it('returns a recovered row untouched when its source refuses to cancel', async () => {
+    mockCancelSteer.mockResolvedValueOnce({ removed: false, generationProtocolVersion: 2 });
+    const recovered = {
+      id: 'q1',
+      text: 'stays put',
+      createdAt: 1,
+      recoverySteerId: 'server-source',
+      recoveryClientSteerId: 'client-source',
+    };
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [recovered]);
+    });
+
+    let settled = true;
+    await act(async () => {
+      settled = await result.current.steering.discardQueued(recovered);
+    });
+
+    expect(settled).toBe(false);
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({ id: 'q1', recoverySteerId: 'server-source' }),
+    ]);
+  });
+
+  /** Retiring twice must not resurrect a parked epoch: the second call has to
+   *  leave an existing tombstone standing. */
+  it('keeps a cancelled tombstone across a second queue action', () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'q1', text: 'first', createdAt: 1 },
+        { id: 'q2', text: 'second', createdAt: 2 },
+      ]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: 1,
+        status: 'cancelled',
+      });
+    });
+
+    act(() => {
+      result.current.steering.removeQueued('q1');
+    });
+    expect(result.current.drainHold).toMatchObject({ status: 'cancelled' });
+
+    act(() => {
+      result.current.steering.removeQueued('q2');
+    });
+    expect(result.current.drainHold).toMatchObject({ status: 'cancelled' });
+  });
+
+  /** A standing window would otherwise fire on whatever the fallbacks put back
+   *  — sending exactly what the user just cleared. */
+  it('cancels a pending automatic send as part of clearing', async () => {
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [{ id: 'q1', text: 'cleared', createdAt: 1 }]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: { conversationId: CONVO_ID, outcome: 'completed', endedAt: 1 },
+        dueAt: Date.now() + 3000,
+      });
+    });
+
+    await act(async () => {
+      await result.current.steering.clearQueued();
+    });
+
+    expect(result.current.drainHold).toBeNull();
+  });
+
+  /** The rows must leave the queue BEFORE the cancellations are awaited: a run
+   *  ending mid-clear would otherwise drain one of the very messages the user
+   *  asked to take back. */
+  it('empties the queue up front rather than during the cancellations', () => {
+    let settleCancel: ((value: { removed: boolean }) => void) | undefined;
+    mockCancelSteer.mockImplementationOnce(
+      () =>
+        new Promise<{ removed: boolean }>((resolve) => {
+          settleCancel = resolve;
+        }),
+    );
+
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        {
+          id: 'q1',
+          text: 'recovered row',
+          createdAt: 1,
+          recoverySteerId: 'server-source',
+          recoveryClientSteerId: 'client-source',
+        },
+        { id: 'q2', text: 'ordinary row', createdAt: 2 },
+      ]);
+    });
+
+    act(() => {
+      void result.current.steering.clearQueued();
+    });
+
+    // Nothing left to drain while the cancellation is still in flight.
+    expect(result.current.queue).toEqual([]);
+    settleCancel?.({ removed: true });
+  });
+
+  it('puts a row back when its parked source refuses to cancel', async () => {
+    mockCancelSteer.mockResolvedValueOnce({ removed: false, generationProtocolVersion: 2 });
+
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        {
+          id: 'q1',
+          text: 'stuck row',
+          createdAt: 1,
+          recoverySteerId: 'server-source',
+          recoveryClientSteerId: 'client-source',
+        },
+        { id: 'q2', text: 'ordinary row', createdAt: 2 },
+      ]);
+    });
+
+    let cleared: QueuedMessage | null | undefined;
+    await act(async () => {
+      cleared = await result.current.steering.clearQueued();
+    });
+
+    // Only the row the client fully owns went to the composer.
+    expect(cleared?.text).toBe('ordinary row');
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({ id: 'q1', recoverySteerId: 'server-source' }),
+    ]);
+  });
+
+  /** Cancelling a parked source is a round trip, so the queue can grow while
+   *  clear-all is in flight; a message the user queued meanwhile is not part
+   *  of what they asked to clear. */
+  it('leaves a message queued after the clear started untouched', async () => {
+    let settleCancel: ((value: { removed: boolean }) => void) | undefined;
+    mockCancelSteer.mockImplementationOnce(
+      () =>
+        new Promise<{ removed: boolean }>((resolve) => {
+          settleCancel = resolve;
+        }),
+    );
+
+    const { result } = setupClearAll(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        {
+          id: 'q1',
+          text: 'recovered row',
+          createdAt: 1,
+          recoverySteerId: 'server-source',
+          recoveryClientSteerId: 'client-source',
+        },
+        { id: 'q2', text: 'ordinary row', createdAt: 2 },
+      ]);
+    });
+
+    let pending: Promise<QueuedMessage | null> | undefined;
+    act(() => {
+      pending = result.current.steering.clearQueued();
+    });
+
+    // The user queues something else while the cancellation is in flight.
+    act(() => {
+      result.current.steering.enqueue('queued mid-clear', { id: 'q3', createdAt: 3 });
+    });
+
+    let cleared: QueuedMessage | null | undefined;
+    await act(async () => {
+      settleCancel?.({ removed: true });
+      cleared = (await pending) ?? null;
+    });
+
+    expect(cleared?.text).toBe('recovered row\n\nordinary row');
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({ id: 'q3', text: 'queued mid-clear' }),
+    ]);
+  });
+});

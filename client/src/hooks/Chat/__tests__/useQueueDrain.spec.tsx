@@ -3,7 +3,7 @@ import { Constants } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
-import type { DrainAfterAbort, RunEnd, QueuedMessage } from '~/store/families';
+import type { DrainAfterAbort, RunEnd, QueuedMessage, QueueDrainHold } from '~/store/families';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
 
@@ -38,7 +38,7 @@ function setup(
       store.queuedMessagesByConvoId(Constants.NEW_CONVO),
     );
     setters.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
-    useQueueDrain(INDEX, activeConversationId, ask);
+    useQueueDrain(INDEX, activeConversationId, ask, { undoGraceMs: 0 });
     return null;
   }
 
@@ -95,6 +95,39 @@ describe('useQueueDrain', () => {
 
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
     expect(ask).toHaveBeenCalledWith({ text: 'first follow-up' }, emptyOverrides);
+  });
+
+  /** A row being edited holds exactly what is typed, blank included. Blank is
+   *  not a message, and skipping to the row behind it would send out of order —
+   *  so this epoch drains nothing and the next run end picks the queue up. */
+  it('drains nothing when the front row is mid-edit and blank', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'q1', text: '   ', createdAt: 1 },
+        queuedMessage('q2', 'behind it'),
+      ]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(ask).not.toHaveBeenCalled();
+
+    // The epoch was consumed, so the effect is not spinning; a later run end
+    // drains normally once the row has words again.
+    act(() => {
+      setters.setQueue!([
+        queuedMessage('q1', 'now it has words'),
+        queuedMessage('q2', 'behind it'),
+      ]);
+    });
+    act(() => {
+      setters.setRunEnd!(runEnd({ generationCreatedAt: 77 }));
+    });
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: 'now it has words' }, emptyOverrides);
   });
 
   it('parks a mismatched signal instead of draining into the wrong conversation', async () => {
@@ -460,7 +493,7 @@ describe('useQueueDrain', () => {
       ({ activeConversationId }: { activeConversationId: string }) => {
         setRunEnd = useSetRecoilState(store.runEndByIndex(INDEX));
         setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(INDEX));
-        useQueueDrain(INDEX, activeConversationId, ask);
+        useQueueDrain(INDEX, activeConversationId, ask, { undoGraceMs: 0 });
         return {
           indexEnd: useRecoilValue(store.runEndByIndex(INDEX)),
           parkedA: useRecoilValue(store.pendingRunEndByConvoId(CONVO_A)),
@@ -599,7 +632,7 @@ describe('useQueueDrain', () => {
         setters.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
         state.newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
         state.parkedUnderOptimistic = useRecoilValue(store.pendingRunEndByConvoId(OPTIMISTIC_ID));
-        useQueueDrain(INDEX, Constants.NEW_CONVO as string, ask);
+        useQueueDrain(INDEX, Constants.NEW_CONVO as string, ask, { undoGraceMs: 0 });
         return null;
       }
 
@@ -691,5 +724,281 @@ describe('useQueueDrain', () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(ask).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** A short real window rather than fake timers: the drain rides react-query
+ *  mutations and Recoil propagation, which fake timers would also freeze. */
+const GRACE_MS = 30;
+const AFTER_GRACE_MS = 120;
+
+describe('useQueueDrain undo grace', () => {
+  function setupGraced(initialize?: (snapshot: MutableSnapshot) => void) {
+    const ask = jest.fn();
+    const state: {
+      setRunEnd?: (value: RunEnd | null) => void;
+      setInterruptFlag?: (value: DrainAfterAbort | false) => void;
+      setIsSubmitting?: (value: boolean) => void;
+      cancelHold?: () => void;
+      queue?: QueuedMessage[];
+      newConvoQueue?: QueuedMessage[];
+      hold?: QueueDrainHold | null;
+    } = {};
+
+    function Harness() {
+      state.setRunEnd = useSetRecoilState(store.runEndByIndex(INDEX));
+      state.setInterruptFlag = useSetRecoilState(store.drainAfterAbortByIndex(INDEX));
+      const setHold = useSetRecoilState(store.queueDrainHoldByConvoId(CONVO_ID));
+      /** Mirrors `useSteering.cancelQueueDrain`: a released epoch is
+       *  tombstoned rather than merely dropped. */
+      state.cancelHold = () =>
+        setHold((held) => {
+          if (held == null) {
+            return null;
+          }
+          return held.status === 'released' ? { ...held, status: 'cancelled' } : null;
+        });
+      state.setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(INDEX));
+      state.queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
+      state.newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
+      state.hold = useRecoilValue(store.queueDrainHoldByConvoId(CONVO_ID));
+      useQueueDrain(INDEX, CONVO_ID, ask, { undoGraceMs: GRACE_MS });
+      return null;
+    }
+
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <RecoilRoot initializeState={initialize}>
+          <Harness />
+          {children}
+        </RecoilRoot>
+      </QueryClientProvider>
+    );
+    renderHook(() => null, { wrapper });
+    return { ask, state };
+  }
+
+  const withQueue =
+    (...items: QueuedMessage[]) =>
+    ({ set }: MutableSnapshot) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), items);
+    };
+
+  it('withholds the send for the grace window, then drains', async () => {
+    const { ask, state } = setupGraced(withQueue(queuedMessage('q1', 'hold me')));
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+
+    // Held: the epoch is parked and the queue is untouched, so there is
+    // nothing to restore if the user cancels.
+    await waitFor(() => expect(state.hold).not.toBeNull());
+    expect(ask).not.toHaveBeenCalled();
+    expect(state.queue).toHaveLength(1);
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1), { timeout: AFTER_GRACE_MS * 4 });
+    expect(ask).toHaveBeenCalledWith({ text: 'hold me' }, emptyOverrides);
+    expect(state.hold).toBeNull();
+  });
+
+  it('cancelling the hold sends nothing and leaves the queue intact', async () => {
+    const { ask, state } = setupGraced(withQueue(queuedMessage('q1', 'never sent')));
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+    await waitFor(() => expect(state.hold).not.toBeNull());
+
+    act(() => {
+      state.cancelHold!();
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, AFTER_GRACE_MS));
+    expect(ask).not.toHaveBeenCalled();
+    expect(state.queue).toEqual([expect.objectContaining({ id: 'q1', text: 'never sent' })]);
+  });
+
+  it('skips the grace when interrupt & send armed the drain', async () => {
+    const { ask, state } = setupGraced(withQueue(queuedMessage('q1', 'now please')));
+
+    act(() => {
+      state.setInterruptFlag!({ conversationId: CONVO_ID, generationCreatedAt: 41 });
+    });
+    act(() => {
+      state.setRunEnd!(runEnd({ outcome: 'aborted' }));
+    });
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(state.hold).toBeNull();
+  });
+
+  it('does not hold when nothing is queued', async () => {
+    const { ask, state } = setupGraced();
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, AFTER_GRACE_MS));
+    expect(state.hold).toBeNull();
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('parks a second epoch arriving inside the window so its drain is not lost', async () => {
+    const { ask, state } = setupGraced(
+      withQueue(queuedMessage('q1', 'first'), queuedMessage('q2', 'second')),
+    );
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+    await waitFor(() => expect(state.hold).not.toBeNull());
+    act(() => {
+      state.setRunEnd!(runEnd({ generationCreatedAt: 99 }));
+    });
+
+    // Both epochs drain their one message each: the second was parked rather
+    // than overwriting the held one.
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(2), { timeout: AFTER_GRACE_MS * 8 });
+    expect(ask.mock.calls.map(([payload]) => payload.text)).toEqual(['first', 'second']);
+  });
+
+  /** The composer reads the resolved id by run end, so rows left under the
+   *  optimistic key would vanish from the group for the whole window. */
+  it('migrates a first turn`s queue to the resolved conversation before opening the window', async () => {
+    const { ask, state } = setupGraced(({ set }) => {
+      set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
+        queuedMessage('q1', 'queued on the first turn'),
+      ]);
+    });
+
+    act(() => {
+      state.setRunEnd!(runEnd({ startedAsNewConvo: true }));
+    });
+
+    await waitFor(() => expect(state.hold).not.toBeNull());
+    expect(state.newConvoQueue).toEqual([]);
+    expect(state.queue).toEqual([
+      expect.objectContaining({ id: 'q1', text: 'queued on the first turn' }),
+    ]);
+    expect(ask).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1), { timeout: AFTER_GRACE_MS * 4 });
+    expect(ask).toHaveBeenCalledWith({ text: 'queued on the first turn' }, emptyOverrides);
+  });
+
+  /** A run started INSIDE the window blocks the drain, so the released epoch
+   *  sits parked with the banner still up. Undo then has to neutralize that
+   *  epoch, or it sends anyway the moment the run goes idle. */
+  it('undo after the window closed still cancels the parked epoch', async () => {
+    const { ask, state } = setupGraced(withQueue(queuedMessage('q1', 'must not send')));
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+    await waitFor(() => expect(state.hold).not.toBeNull());
+
+    // The user starts another turn before the window closes.
+    act(() => {
+      state.setIsSubmitting!(true);
+    });
+
+    // The timer hands the epoch back, but the drain is blocked, so the hold
+    // stays — marked released, which is what stops Undo being advertised.
+    await waitFor(() => expect(state.hold?.status).toBe('released'), {
+      timeout: AFTER_GRACE_MS * 4,
+    });
+    expect(ask).not.toHaveBeenCalled();
+
+    act(() => {
+      state.cancelHold!();
+    });
+    expect(state.hold?.status).toBe('cancelled');
+
+    act(() => {
+      state.setIsSubmitting!(false);
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, AFTER_GRACE_MS));
+    expect(ask).not.toHaveBeenCalled();
+    expect(state.queue).toHaveLength(1);
+    expect(state.hold).toBeNull();
+  });
+
+  /** The window may belong to an unrelated earlier epoch, and the user aborted
+   *  a run to say this now — waiting out that timer contradicts the rule that
+   *  armed interrupts skip the grace. */
+  it('lets an armed interrupt drain straight through a standing window', async () => {
+    const { ask, state } = setupGraced(
+      withQueue(queuedMessage('q1', 'interrupt text'), queuedMessage('q2', 'ordinary follow-up')),
+    );
+
+    act(() => {
+      state.setRunEnd!(runEnd());
+    });
+    await waitFor(() => expect(state.hold).not.toBeNull());
+    expect(ask).not.toHaveBeenCalled();
+
+    // Interrupt & send: the arm plus the aborted epoch it belongs to.
+    act(() => {
+      state.setInterruptFlag!({ conversationId: CONVO_ID, generationCreatedAt: 99 });
+    });
+    act(() => {
+      state.setRunEnd!(runEnd({ outcome: 'aborted', generationCreatedAt: 99 }));
+    });
+
+    // No timer wait: the assertion resolves well inside the grace window.
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: 'interrupt text' }, emptyOverrides);
+  });
+
+  /** A hold owns exactly one epoch. Acting on a NEWER terminal event on its
+   *  behalf loses that signal and leaves the older one to reopen a window. */
+  it('a cancelled hold discards only its own epoch', async () => {
+    const { ask, state } = setupGraced(
+      withQueue(queuedMessage('q1', 'first'), queuedMessage('q2', 'second')),
+    );
+
+    act(() => {
+      state.setRunEnd!(runEnd({ generationCreatedAt: 41 }));
+    });
+    await waitFor(() => expect(state.hold).not.toBeNull());
+
+    // A newer run finishes while the window is open, so its epoch queues up
+    // behind the held one; then the window closes and Undo lands.
+    act(() => {
+      state.setIsSubmitting!(true);
+    });
+    act(() => {
+      state.setRunEnd!(runEnd({ generationCreatedAt: 77 }));
+    });
+    await waitFor(() => expect(state.hold?.status).toBe('released'));
+    act(() => {
+      state.cancelHold!();
+    });
+    act(() => {
+      state.setIsSubmitting!(false);
+    });
+
+    // The cancelled epoch sends nothing; the NEWER completion is still honoured
+    // and drains one row, rather than being swallowed on the hold's behalf.
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1), { timeout: AFTER_GRACE_MS * 8 });
+    expect(ask).toHaveBeenCalledWith({ text: 'first' }, emptyOverrides);
+    expect(state.queue).toHaveLength(1);
+  });
+
+  it('drains immediately when the window already expired while away', async () => {
+    const { ask } = setupGraced(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'overdue')]);
+      set(store.queueDrainHoldByConvoId(CONVO_ID), {
+        runEnd: runEnd(),
+        dueAt: Date.now() - 1000,
+      });
+    });
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: 'overdue' }, emptyOverrides);
   });
 });

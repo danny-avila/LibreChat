@@ -1,13 +1,20 @@
 import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TSteerAppliedEvent } from 'librechat-data-provider';
+import type { QueuedMessage } from '~/store/families';
 import {
+  isSameRunEpoch,
+  isSendableQueuedMessage,
   getSteerPart,
   applySteerPart,
   resolveRunEndTarget,
+  bumpQueuedMessage,
+  mergeQueuedMessages,
   findSteerMessageIndex,
   appendAppliedSteerIds,
   resolveAbortSteerTarget,
+  compareQueuedMessages,
   insertQueuedOrigin,
+  isMergeableQueuedMessage,
 } from '../steer';
 
 const buildEvent = (overrides: Partial<TSteerAppliedEvent> = {}): TSteerAppliedEvent => ({
@@ -216,5 +223,241 @@ describe('insertQueuedOrigin', () => {
       }),
       expect.objectContaining({ id: 'queued-d' }),
     ]);
+  });
+});
+
+const queued = (overrides: Partial<QueuedMessage> & { id: string }): QueuedMessage => ({
+  text: `text ${overrides.id}`,
+  createdAt: 1,
+  ...overrides,
+});
+
+describe('insertQueuedOrigin — promotions made while a row was away', () => {
+  /** B leaves for a steer attempt, C is promoted in its absence, then the
+   *  attempt fails: B's captured neighbours must not put it back in front of
+   *  the row the user explicitly chose to send next. */
+  it('never restores a row ahead of a promotion it did not know about', () => {
+    const origin = {
+      item: { id: 'b', text: 'send B', createdAt: 2 },
+      beforeIds: ['a'],
+      afterIds: ['c'],
+    };
+    const promoted = bumpQueuedMessage(
+      [
+        { id: 'a', text: 'send A', createdAt: 1 },
+        { id: 'c', text: 'send C', createdAt: 3 },
+      ],
+      'c',
+      500,
+    );
+
+    expect(insertQueuedOrigin(promoted, origin).map(({ id }) => id)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('still honours captured neighbours when nothing was promoted', () => {
+    const origin = {
+      item: { id: 'b', text: 'send B', createdAt: 2 },
+      beforeIds: ['a'],
+      afterIds: ['c'],
+    };
+    const queue = [
+      { id: 'a', text: 'send A', createdAt: 1 },
+      { id: 'c', text: 'send C', createdAt: 3 },
+    ];
+
+    expect(insertQueuedOrigin(queue, origin).map(({ id }) => id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('isSameRunEpoch', () => {
+  const epoch = { conversationId: 'c1', outcome: 'completed' as const, endedAt: 10 };
+
+  it('matches on the generation stamp when either side carries one', () => {
+    expect(
+      isSameRunEpoch(
+        { ...epoch, generationCreatedAt: 41 },
+        { ...epoch, generationCreatedAt: 41, endedAt: 99 },
+      ),
+    ).toBe(true);
+    expect(
+      isSameRunEpoch({ ...epoch, generationCreatedAt: 41 }, { ...epoch, generationCreatedAt: 42 }),
+    ).toBe(false);
+    expect(isSameRunEpoch({ ...epoch, generationCreatedAt: 41 }, epoch)).toBe(false);
+  });
+
+  it('falls back to the termination time, and never matches across conversations', () => {
+    expect(isSameRunEpoch(epoch, { ...epoch })).toBe(true);
+    expect(isSameRunEpoch(epoch, { ...epoch, endedAt: 11 })).toBe(false);
+    expect(isSameRunEpoch(epoch, { ...epoch, conversationId: 'c2' })).toBe(false);
+  });
+
+  it('treats an absent signal as no match', () => {
+    expect(isSameRunEpoch(null, epoch)).toBe(false);
+    expect(isSameRunEpoch(undefined, epoch)).toBe(false);
+  });
+});
+
+describe('compareQueuedMessages', () => {
+  const ids = (items: QueuedMessage[]) =>
+    [...items].sort(compareQueuedMessages).map(({ id }) => id);
+
+  it('orders by enqueue time by default', () => {
+    expect(ids([queued({ id: 'b', createdAt: 2 }), queued({ id: 'a', createdAt: 1 })])).toEqual([
+      'a',
+      'b',
+    ]);
+  });
+
+  it('keeps interrupt front-inserts ahead of chronologically older rows', () => {
+    expect(
+      ids([
+        queued({ id: 'old', createdAt: 1 }),
+        queued({ id: 'armed', createdAt: 9, priority: true }),
+      ]),
+    ).toEqual(['armed', 'old']);
+  });
+
+  it('drains the most recently promoted row first', () => {
+    const items = [
+      queued({ id: 'first-bump', createdAt: 1, bumpedAt: 100 }),
+      queued({ id: 'second-bump', createdAt: 2, bumpedAt: 200 }),
+      queued({ id: 'plain', createdAt: 3 }),
+    ];
+    expect(ids(items)).toEqual(['second-bump', 'first-bump', 'plain']);
+  });
+
+  /** An interrupt aborted a run to be said now, so it outranks a promotion
+   *  whichever came first — and two interrupts stay FIFO among themselves. */
+  it('keeps interrupts ahead of promotions in both arrival orders', () => {
+    expect(
+      ids([
+        queued({ id: 'bumped', createdAt: 1, bumpedAt: 500 }),
+        queued({ id: 'armed', createdAt: 5, priority: true }),
+      ]),
+    ).toEqual(['armed', 'bumped']);
+    expect(
+      ids([
+        queued({ id: 'armed', createdAt: 1, priority: true }),
+        queued({ id: 'bumped', createdAt: 5, bumpedAt: 500 }),
+      ]),
+    ).toEqual(['armed', 'bumped']);
+  });
+
+  it('keeps two interrupts FIFO, as sequential instructions rather than rivals', () => {
+    expect(
+      ids([
+        queued({ id: 'second', createdAt: 20, priority: true }),
+        queued({ id: 'first', createdAt: 10, priority: true }),
+      ]),
+    ).toEqual(['first', 'second']);
+  });
+});
+
+describe('bumpQueuedMessage', () => {
+  const queue = [
+    queued({ id: 'a', createdAt: 1 }),
+    queued({ id: 'b', createdAt: 2 }),
+    queued({ id: 'c', createdAt: 3 }),
+  ];
+
+  it('moves the chosen row to the front and preserves the rest of the order', () => {
+    expect(bumpQueuedMessage(queue, 'c', 500).map(({ id }) => id)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('survives a later enqueue, because the order lives in the sort key', () => {
+    const bumped = bumpQueuedMessage(queue, 'c', 500);
+    const afterEnqueue = [...bumped, queued({ id: 'd', createdAt: 4 })].sort(compareQueuedMessages);
+    expect(afterEnqueue.map(({ id }) => id)).toEqual(['c', 'a', 'b', 'd']);
+  });
+
+  it('returns the same array when the id is gone', () => {
+    expect(bumpQueuedMessage(queue, 'missing', 500)).toBe(queue);
+  });
+});
+
+describe('isMergeableQueuedMessage', () => {
+  it('rejects rows bound to a parked server source', () => {
+    expect(isMergeableQueuedMessage(queued({ id: 'a', recoverySteerId: 'steer-1' }))).toBe(false);
+    expect(isMergeableQueuedMessage(queued({ id: 'b', clientRequestId: 'req-1' }))).toBe(false);
+  });
+
+  it('accepts ordinary local rows', () => {
+    expect(isMergeableQueuedMessage(queued({ id: 'c' }))).toBe(true);
+  });
+});
+
+describe('isSendableQueuedMessage', () => {
+  it('is the whole rule: a row with words is sendable, one without is not', () => {
+    expect(isSendableQueuedMessage(queued({ id: 'a', text: 'words' }))).toBe(true);
+    expect(isSendableQueuedMessage(queued({ id: 'b', text: '' }))).toBe(false);
+    expect(isSendableQueuedMessage(queued({ id: 'c', text: '   \n  ' }))).toBe(false);
+  });
+});
+
+describe('mergeQueuedMessages', () => {
+  it('refuses a batch containing a row being emptied, so a fold cannot bake in a blank', () => {
+    expect(
+      mergeQueuedMessages([queued({ id: 'a', text: 'kept' }), queued({ id: 'b', text: '  ' })]),
+    ).toBeNull();
+  });
+
+  it('joins texts in drain order as paragraphs', () => {
+    const merged = mergeQueuedMessages([
+      queued({ id: 'a', text: 'first thought', createdAt: 1 }),
+      queued({ id: 'b', text: 'second thought', createdAt: 2 }),
+    ]);
+    expect(merged?.text).toBe('first thought\n\nsecond thought');
+  });
+
+  it('keeps the front row`s identity and position', () => {
+    const merged = mergeQueuedMessages([
+      queued({ id: 'a', createdAt: 7, priority: true, bumpedAt: 90 }),
+      queued({ id: 'b', createdAt: 8 }),
+    ]);
+    expect(merged).toMatchObject({ id: 'a', createdAt: 7, priority: true, bumpedAt: 90 });
+  });
+
+  it('unions attachments, quotes and skill picks without duplicates', () => {
+    const merged = mergeQueuedMessages([
+      queued({
+        id: 'a',
+        files: [{ file_id: 'f1', filepath: '/f1', type: 'image/png' }],
+        quotes: ['q1'],
+        manualSkills: ['s1'],
+      }),
+      queued({
+        id: 'b',
+        files: [
+          { file_id: 'f1', filepath: '/f1', type: 'image/png' },
+          { file_id: 'f2', filepath: '/f2', type: 'image/png' },
+        ],
+        quotes: ['q1', 'q2'],
+        manualSkills: ['s2'],
+      }),
+    ]);
+    expect(merged?.files?.map((file) => file.file_id)).toEqual(['f1', 'f2']);
+    expect(merged?.quotes).toEqual(['q1', 'q2']);
+    expect(merged?.manualSkills).toEqual(['s1', 's2']);
+  });
+
+  it('takes the latest predecessor fence so the merged turn is gated on everything it followed', () => {
+    const merged = mergeQueuedMessages([
+      queued({ id: 'a', expectedPredecessorCreatedAt: 100 }),
+      queued({ id: 'b', expectedPredecessorCreatedAt: 400 }),
+    ]);
+    expect(merged?.expectedPredecessorCreatedAt).toBe(400);
+  });
+
+  it('refuses to merge a recovery-bound row, whose parked source must be discarded first', () => {
+    expect(
+      mergeQueuedMessages([
+        queued({ id: 'a' }),
+        queued({ id: 'b', recoverySteerId: 'steer-1', recoveryClientSteerId: 'local-1' }),
+      ]),
+    ).toBeNull();
+  });
+
+  it('refuses a batch of fewer than two rows', () => {
+    expect(mergeQueuedMessages([queued({ id: 'a' })])).toBeNull();
   });
 });

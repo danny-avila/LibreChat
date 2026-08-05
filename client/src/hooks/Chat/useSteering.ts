@@ -8,18 +8,24 @@ import type { RunEnd, PendingSteer, QueuedMessage, QueuedMessageOrigin } from '~
 import type { GenerationProtocolVersion } from '~/data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
+  appendAppliedSteerIds,
+  bumpQueuedMessage,
+  carriedSteerContext,
+  clearAllDrafts,
+  compareQueuedMessages,
+  insertQueuedOrigin,
+  isMergeableQueuedMessage,
+  isSameRunEpoch,
+  isSendableQueuedMessage,
+  mergeQueuedMessages,
+} from '~/utils';
+import {
   useGetMessagesByConvoId,
   useCancelSteerMutation,
   useSteerMessageMutation,
   useMarkFilesUsageMutation,
   supportsGenerationProtocolV2,
 } from '~/data-provider';
-import {
-  appendAppliedSteerIds,
-  carriedSteerContext,
-  clearAllDrafts,
-  insertQueuedOrigin,
-} from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
@@ -81,16 +87,6 @@ function isDefiniteSteerRejection(error: unknown): boolean {
     status !== 408 &&
     status !== 425
   );
-}
-
-function isSameRunEpoch(a: RunEnd | null, b: RunEnd): boolean {
-  if (a == null || a.conversationId !== b.conversationId) {
-    return false;
-  }
-  if (a.generationCreatedAt != null || b.generationCreatedAt != null) {
-    return a.generationCreatedAt === b.generationCreatedAt;
-  }
-  return a.endedAt === b.endedAt;
 }
 
 /** True when the latest assistant message carries an unresolved tool approval —
@@ -559,11 +555,7 @@ export default function useSteering({
           ...(options?.front && { priority: true }),
         };
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
-          [...prev, item].sort(
-            (a, b) =>
-              Number(b.priority ?? false) - Number(a.priority ?? false) ||
-              a.createdAt - b.createdAt,
-          ),
+          [...prev, item].sort(compareQueuedMessages),
         );
         if (options?.skipUsageMark !== true) {
           markQueuedFilesUsage(options?.files);
@@ -633,45 +625,117 @@ export default function useSteering({
     clearAllDrafts(Constants.PENDING_CONVO);
   }, []);
 
-  const removeQueued = useRecoilCallback(
-    ({ set }) =>
-      (id: string) => {
-        set(store.queuedMessagesByConvoId(queueKey), (prev) =>
-          prev.filter((item) => item.id !== id),
+  /**
+   * Stops a pending automatic send. A window still counting down is simply
+   * dropped, but once the timer has handed its epoch back the hold is the only
+   * thing that can neutralize it — so that case leaves a tombstone the drain
+   * consumes, rather than a null that lets the parked epoch through.
+   */
+  const retireDrainHold = useRecoilCallback(
+    ({ snapshot, set }) =>
+      () => {
+        const held = snapshot.getLoadable(store.queueDrainHoldByConvoId(queueKey)).getValue();
+        if (held == null) {
+          return;
+        }
+        /** Already neutralized and waiting for its parked epoch to be consumed.
+         *  Clearing it here would expose that epoch again, so a second queue
+         *  action must leave the tombstone standing. */
+        if (held.status === 'cancelled') {
+          return;
+        }
+        set(
+          store.queueDrainHoldByConvoId(queueKey),
+          held.status === 'released' ? { ...held, status: 'cancelled' } : null,
         );
       },
     [queueKey],
   );
 
-  /** Once a parked source is discarded it must never be retried as a recovery
-   * attempt. Downgrade the row in place so a guarded Edit that finds a newer
-   * draft can leave the same words, context, identity, and queue position as
-   * an ordinary local follow-up. */
-  const downgradeQueuedRecovery = useRecoilCallback(
+  const removeQueued = useRecoilCallback(
     ({ snapshot, set }) =>
-      (id: string): boolean => {
+      (id: string) => {
         const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
-        let found = false;
-        const next = queue.map((item) => {
-          if (item.id !== id) {
-            return item;
-          }
-          found = true;
-          const {
-            clientRequestId: _clientRequestId,
-            recoverySteerId: _recoverySteerId,
-            recoveryClientSteerId: _recoveryClientSteerId,
-            ...ordinary
-          } = item;
-          return ordinary;
-        });
-        if (found) {
-          set(store.queuedMessagesByConvoId(queueKey), next);
+        const next = queue.filter((item) => item.id !== id);
+        if (next.length === queue.length) {
+          return;
         }
-        return found;
+        set(store.queuedMessagesByConvoId(queueKey), next);
+        /** Nothing left to auto-send: retiring the window here stops a stale
+         *  completion from later draining a row queued under a NEWER run. */
+        if (next.length === 0) {
+          retireDrainHold();
+        }
+      },
+    [queueKey, retireDrainHold],
+  );
+
+  /** "Send next". Order lives in the sort key rather than the array so the
+   *  choice survives the next enqueue, drain, or leftover conversion. */
+  const bumpQueued = useRecoilCallback(
+    ({ set }) =>
+      (id: string) => {
+        set(store.queuedMessagesByConvoId(queueKey), (prev) =>
+          bumpQueuedMessage(prev, id, Date.now()),
+        );
       },
     [queueKey],
   );
+
+  /** In-place rewrite of a waiting row. Refuses a recovery-bound row: its
+   *  parked source is matched by exact text server-side, so the words may only
+   *  change after `discardQueued` has downgraded it to an ordinary row. */
+  const updateQueuedText = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (id: string, text: string): boolean => {
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        const target = queue.find((item) => item.id === id);
+        if (target == null || !isMergeableQueuedMessage(target)) {
+          return false;
+        }
+        /** Blank is recorded, not refused. Refusing it was the root of a whole
+         *  family of bugs: the queue kept words the screen no longer showed, and
+         *  every reader — the drain, Send now, the escalate shortcut, Merge,
+         *  Clear all, the trash — had to be taught about that disagreement.
+         *  Now the row simply is not sendable, which each reader can see for
+         *  itself via `isSendableQueuedMessage`. */
+        if (target.text === text) {
+          return true;
+        }
+        set(
+          store.queuedMessagesByConvoId(queueKey),
+          queue.map((item) => (item.id === id ? { ...item, text } : item)),
+        );
+        return true;
+      },
+    [queueKey],
+  );
+
+  /** Folds every ordinary waiting row into one turn. All-or-nothing: a batch
+   *  holding a recovery-bound row is refused rather than partially folded, so
+   *  no parked source is ever stranded behind a merged message. */
+  const mergeQueued = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (): boolean => {
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        const merged = mergeQueuedMessages(queue);
+        if (merged == null) {
+          return false;
+        }
+        set(store.queuedMessagesByConvoId(queueKey), [merged]);
+        return true;
+      },
+    [queueKey],
+  );
+
+  /** Cancels a withheld automatic send. The queue was never popped, so this
+   *  only drops the epoch — the rows stay put for a manual send. If the timer
+   *  already handed the epoch back (a new run can block the drain, leaving it
+   *  parked), dropping the hold alone would let it drain anyway: tombstone it
+   *  instead so the drain discards that epoch when it finally runs. */
+  /** Cancels a withheld automatic send. The queue was never popped, so the
+   *  rows simply stay put for a manual send. */
+  const cancelQueueDrain = retireDrainHold;
 
   /** Settle a queued row's terminal recovery source before an Edit/Remove.
    * Ordinary rows have no server copy. A v2 leftover first uses its durable
@@ -679,7 +743,10 @@ export default function useSteering({
    * local row; the caller decides whether the live composer can consume it.
    * The cancel deliberately omits the active epoch: the receipt belongs to the
    * terminal source generation, not whichever run now occupies the chat. */
-  const discardQueued = useCallback(
+  /** Cancels a row's parked server copy by receipt, independent of whether the
+   *  row is still in the queue — clear-all takes its rows out first, so the
+   *  downgrade step cannot be the thing that reports success. */
+  const cancelParkedSource = useCallback(
     async (item: QueuedMessage): Promise<boolean> => {
       if (item.recoverySteerId == null) {
         return true;
@@ -698,14 +765,98 @@ export default function useSteering({
           showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
           return false;
         }
-        return downgradeQueuedRecovery(item.id);
+        return true;
       } catch {
         showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
         return false;
       }
     },
-    [cancelSteer, conversationId, downgradeQueuedRecovery, hasRealConvoId, localize, showToast],
+    [cancelSteer, conversationId, hasRealConvoId, localize, showToast],
   );
+
+  /** Empties the queue and hands back what it held. Removing up front is the
+   *  point: the parked-source cancellations below are round trips, and rows
+   *  left in place could be drained by a run ending mid-clear — sending the
+   *  very messages the user asked to take back. */
+  const takeAllQueued = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (): QueuedMessage[] => {
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        if (queue.length > 0) {
+          set(store.queuedMessagesByConvoId(queueKey), []);
+        }
+        return queue;
+      },
+    [queueKey],
+  );
+
+  /**
+   * Puts rows back without clobbering anything queued in the meantime. Also the
+   * public requeue path for a cleared payload the composer refused: passing the
+   * ITEM back preserves every field it carries, where rebuilding one from parts
+   * has twice now lost a field that mattered (the predecessor fence, then the
+   * interrupt tier).
+   */
+  const restoreQueuedBatch = useRecoilCallback(
+    ({ set }) =>
+      (items: QueuedMessage[]) => {
+        if (items.length === 0) {
+          return;
+        }
+        set(store.queuedMessagesByConvoId(queueKey), (prev) => {
+          const held = new Set(prev.map((item) => item.id));
+          const missing = items.filter((item) => !held.has(item.id));
+          return missing.length === 0 ? prev : [...prev, ...missing].sort(compareQueuedMessages);
+        });
+      },
+    [queueKey],
+  );
+
+  /**
+   * "Clear all": hands the waiting words back to the user rather than deleting
+   * them. Rows leave the queue immediately, then each parked server copy is
+   * cancelled by receipt — a surviving copy would be re-offered as a fresh row
+   * on the next status read. A row whose cancellation fails goes back in the
+   * queue; its words are never dropped on the floor. The caller owns the
+   * composer and decides whether it can accept the payload.
+   */
+  const clearQueued = useCallback(async (): Promise<QueuedMessage | null> => {
+    /** Taking the words back cancels any pending automatic send outright. A
+     *  standing window would otherwise fire on whatever the fallbacks put back
+     *  — a requeued payload the composer refused, or a row whose parked source
+     *  would not cancel — sending exactly what was just cleared. */
+    cancelQueueDrain();
+    const taken = takeAllQueued();
+    if (taken.length === 0) {
+      return null;
+    }
+    const cleared: QueuedMessage[] = [];
+    const stuck: QueuedMessage[] = [];
+    for (const item of taken) {
+      if (item.recoverySteerId == null) {
+        cleared.push(item);
+        continue;
+      }
+      if (!(await cancelParkedSource(item))) {
+        stuck.push(item);
+        continue;
+      }
+      /** The parked copy is gone, so the row is an ordinary local follow-up
+       *  now — and only ordinary rows can be folded together. */
+      const {
+        clientRequestId: _clientRequestId,
+        recoverySteerId: _recoverySteerId,
+        recoveryClientSteerId: _recoveryClientSteerId,
+        ...ordinary
+      } = item;
+      cleared.push(ordinary);
+    }
+    restoreQueuedBatch(stuck);
+    if (cleared.length === 0) {
+      return null;
+    }
+    return cleared.length === 1 ? cleared[0] : mergeQueuedMessages(cleared);
+  }, [cancelQueueDrain, takeAllQueued, cancelParkedSource, restoreQueuedBatch]);
 
   /** Capture-then-remove, including the item's neighbours, so any refused send
    *  or rejected steer can restore the ORIGINAL item in place even if the run
@@ -736,11 +887,17 @@ export default function useSteering({
         };
         queuedOrigins.set(id, origin);
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
-          prev.filter((item) => item.id !== id),
+          prev.filter((queued) => queued.id !== id),
         );
+        /** A withheld epoch grants exactly ONE drain, and expediting a row is
+         *  the user spending it themselves — the manually started run's own
+         *  completion drains whatever comes next. Leaving the window armed for
+         *  any remaining rows would send twice for one run end, and would do it
+         *  even when that manual run was stopped or errored. */
+        retireDrainHold();
         return origin;
       },
-    [queueKey],
+    [queueKey, retireDrainHold],
   );
 
   const releaseQueuedOrigin = useCallback(
@@ -779,6 +936,40 @@ export default function useSteering({
   );
 
   /**
+   * Settles a row's parked source for an Edit or Remove, holding the row OUT of
+   * the queue for the round trip. Leaving it in place let a run completing
+   * mid-cancellation drain and send the very message being removed — the same
+   * hazard clear-all avoids by taking its rows up front. Cancellation refused:
+   * the row returns to its original slot untouched. Cancellation settled: it
+   * returns already downgraded, so what the caller does next (hand the words to
+   * the composer, remove it) sees an ordinary local row with no parked copy.
+   */
+  const discardQueued = useCallback(
+    async (item: QueuedMessage): Promise<boolean> => {
+      if (item.recoverySteerId == null) {
+        return true;
+      }
+      const origin = takeQueued(item.id);
+      if (origin == null) {
+        return false;
+      }
+      if (!(await cancelParkedSource(item))) {
+        restoreQueued(origin);
+        return false;
+      }
+      const {
+        clientRequestId: _clientRequestId,
+        recoverySteerId: _recoverySteerId,
+        recoveryClientSteerId: _recoveryClientSteerId,
+        ...ordinary
+      } = origin.item;
+      restoreQueued({ ...origin, item: ordinary });
+      return true;
+    },
+    [cancelParkedSource, restoreQueued, takeQueued],
+  );
+
+  /**
    * Re-posts a spent run-end signal so the drain wakes and reconsiders the
    * queue. No-op while a signal for THIS conversation is still armed: that
    * drain has not run yet and will see the item on its own, so arming a second
@@ -794,7 +985,15 @@ export default function useSteering({
       (convoId: string, end: RunEnd) => {
         const indexArmed = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
         const parkedArmed = snapshot.getLoadable(store.pendingRunEndByConvoId(convoId)).getValue();
-        if (isSameRunEpoch(indexArmed, end) || isSameRunEpoch(parkedArmed, end)) {
+        /** A withheld epoch lives in the hold, in neither carrier — without
+         *  this the re-arm appends a copy and the release appends the held one,
+         *  leaving two identical completions to drain two rows. */
+        const held = snapshot.getLoadable(store.queueDrainHoldByConvoId(convoId)).getValue();
+        if (
+          isSameRunEpoch(indexArmed, end) ||
+          isSameRunEpoch(parkedArmed, end) ||
+          isSameRunEpoch(held?.runEnd, end)
+        ) {
           return;
         }
         set(store.pendingRunEndByConvoId(convoId), end);
@@ -1275,6 +1474,10 @@ export default function useSteering({
       if (isSubmitting && (!duringRunActive || !canSteer || item.recoverySteerId != null)) {
         return;
       }
+      /** Nothing to send: the row is mid-edit and currently blank. */
+      if (!isSendableQueuedMessage(item)) {
+        return;
+      }
       /** UI callers always find the item; a stale/direct caller has no original
        *  neighbours, so restoration falls back to the queue's priority split. */
       const origin = takeQueued(item.id) ?? { item, beforeIds: [], afterIds: [] };
@@ -1460,8 +1663,14 @@ export default function useSteering({
       convertSteerToQueue,
       queueReclaimedSteer,
       enqueue,
+      requeueCleared: restoreQueuedBatch,
       removeQueued,
       discardQueued,
+      bumpQueued,
+      updateQueuedText,
+      mergeQueued,
+      clearQueued,
+      cancelQueueDrain,
       sendQueuedNow,
       interruptAndSend,
       interruptSteer,
@@ -1486,8 +1695,14 @@ export default function useSteering({
       convertSteerToQueue,
       queueReclaimedSteer,
       enqueue,
+      restoreQueuedBatch,
       removeQueued,
       discardQueued,
+      bumpQueued,
+      updateQueuedText,
+      mergeQueued,
+      clearQueued,
+      cancelQueueDrain,
       sendQueuedNow,
       interruptAndSend,
       interruptSteer,
