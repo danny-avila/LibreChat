@@ -45,6 +45,8 @@ const TOOL_APPROVAL_RESTRICTED_MARKER = 'E2E_TOOL_APPROVAL_RESTRICTED:';
 const TOOL_APPROVAL_REWRITE_MARKER = 'E2E_TOOL_APPROVAL_REWRITE:';
 const DEFERRED_HITL_MARKER = 'E2E_DEFERRED_HITL:';
 const HANDOFF_MARKER = 'E2E_HANDOFF:';
+const SUBAGENT_RESULT_MARKER = 'E2E_SUBAGENT_RESULT:';
+const SUBAGENT_CHILD_MARKER = 'E2E_SUBAGENT_CHILD:';
 const HANDOFF_TOOL_PREFIX = 'lc_transfer_to_';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
@@ -482,7 +484,7 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
     this.streamSleep = sleep ?? CHUNK_DELAY_MS;
   }
 
-  async *streamScriptedResponseChunks({ response, toolCalls, runManager }) {
+  async *streamScriptedResponseChunks({ response, toolCalls, textDeltaBlocks, runManager }) {
     if (this.emitCustomEvent) {
       await runManager?.handleCustomEvent('some_test_event', {
         someval: true,
@@ -492,7 +494,14 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
     const chunks = response ? response.split(/(?<=\s+)|(?=\s+)/) : [];
     for await (const chunk of chunks) {
       await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
-      const responseChunk = this._createResponseChunk(chunk);
+      const responseChunk = textDeltaBlocks
+        ? new ChatGenerationChunk({
+            text: chunk,
+            message: new AIMessageChunk({
+              content: [{ type: 'text_delta', index: 0, text: chunk }],
+            }),
+          })
+        : this._createResponseChunk(chunk);
       yield responseChunk;
       void runManager?.handleLLMNewToken(chunk);
     }
@@ -544,6 +553,7 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
       chunkStream = this.streamScriptedResponseChunks({
         response: scriptedResponse.response ?? '',
         toolCalls: scriptedResponse.toolCalls,
+        textDeltaBlocks: scriptedResponse.textDeltaBlocks === true,
         runManager,
       });
     } else if (dynamicResponse) {
@@ -586,7 +596,7 @@ function overrideModel({
   resolveOnStream,
 }) {
   if (!thrownError) {
-    graph.overrideModel = new UsageEmittingFakeChatModel({
+    const model = new UsageEmittingFakeChatModel({
       responses,
       sleep: sleep ?? CHUNK_DELAY_MS,
       emitCustomEvent: true,
@@ -594,6 +604,8 @@ function overrideModel({
       resolveInvocation,
       resolveOnStream,
     });
+    graph.overrideModel = model;
+    graph.setSubagentModelOverride?.(model);
     return;
   }
 
@@ -607,12 +619,14 @@ function overrideModel({
     }
   }
 
-  graph.overrideModel = new ThrowingFakeChatModel({
+  const model = new ThrowingFakeChatModel({
     responses,
     sleep: sleep ?? CHUNK_DELAY_MS,
     emitCustomEvent: true,
     toolCalls,
   });
+  graph.overrideModel = model;
+  graph.setSubagentModelOverride?.(model);
 }
 
 function parseSkillAssertion(text, agentId) {
@@ -1097,6 +1111,56 @@ function findLastToolMessageText(messages, requiredToken) {
     }
   }
   return '';
+}
+
+function parseSubagentResultMarker(text) {
+  const value = getMarkerValue(text, SUBAGENT_RESULT_MARKER);
+  const separator = value.indexOf(':');
+  if (separator <= 0 || separator === value.length - 1) {
+    return null;
+  }
+  return {
+    childId: value.slice(0, separator),
+    label: value.slice(separator + 1),
+  };
+}
+
+function subagentResultResponses(text) {
+  const marker = parseSubagentResultMarker(text);
+  if (!marker) {
+    return null;
+  }
+
+  const childPrompt = `${SUBAGENT_CHILD_MARKER}${marker.label}`;
+  const expectedResult = `E2E subagent streamed result ${marker.label}`;
+  return {
+    responses: [''],
+    resolveInvocation: (messages) => {
+      const toolResult = findLastToolMessageText(messages, expectedResult);
+      if (toolResult) {
+        return { response: toolResult };
+      }
+
+      if (getLatestUserText(messages).includes(childPrompt)) {
+        return { response: expectedResult, textDeltaBlocks: true };
+      }
+
+      return {
+        response: '',
+        toolCalls: [
+          {
+            id: `call_e2e_subagent_${marker.label}`,
+            name: 'subagent',
+            args: {
+              description: childPrompt,
+              subagent_type: marker.childId,
+            },
+            type: 'tool_call',
+          },
+        ],
+      };
+    },
+  };
 }
 
 function approvalToolResponses(label, toolNames, review) {
@@ -1809,6 +1873,11 @@ function buildHandoffResponses(graph, parsed) {
 }
 
 function resolveResponses({ graph, messages, text, toolNames }) {
+  const subagentResult = subagentResultResponses(text);
+  if (subagentResult) {
+    return subagentResult;
+  }
+
   const batchApprovalLabel = getMarkerValue(text, TOOL_APPROVAL_BATCH_MARKER);
   if (batchApprovalLabel) {
     return batchApprovalToolResponses(batchApprovalLabel, toolNames);
