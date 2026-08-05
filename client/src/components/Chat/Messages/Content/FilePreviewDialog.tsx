@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
+import { documentParserMimeTypes } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import ExtractedTextPanel from '~/components/Chat/Input/Files/ExtractedTextPanel';
 import { useFileDownload, useSharedFileDownload } from '~/data-provider';
 import { logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import CopyButton from '~/components/Messages/Content/CopyButton';
@@ -28,12 +30,23 @@ function getFileExtension(filename: string): string {
   return dot > 0 ? filename.slice(dot + 1).toLowerCase() : '';
 }
 
+/** Parsed documents other than PDF, which has its own inline preview. */
+const isParsedOfficeDoc = (mime: string): boolean =>
+  !mime.includes('pdf') && documentParserMimeTypes.some((regex) => regex.test(mime));
+
 function canPreviewByMime(mime?: string): 'pdf' | 'text' | false {
   if (!mime) {
     return false;
   }
   if (mime.includes('pdf')) {
     return 'pdf';
+  }
+  /* Office MIME types contain the substring "xml"
+   * (application/vnd.openxmlformats-officedocument...), so the check below would
+   * classify a binary .docx/.pptx/.xlsx as text and render its raw bytes. They
+   * have no inline preview; their extracted text is shown instead. */
+  if (isParsedOfficeDoc(mime)) {
+    return false;
   }
   if (
     mime.startsWith('text/') ||
@@ -139,6 +152,8 @@ export default function FilePreviewDialog({
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
+  /** Parsed office documents render no preview of their own, so fall back to their text. */
+  const hasParsedText = !!fileType && documentParserMimeTypes.some((regex) => regex.test(fileType));
   const { shareId } = useShareContext();
   const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
   const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);
@@ -333,12 +348,22 @@ export default function FilePreviewDialog({
               </div>
             </>
           )}
-          {!previewKind && !loading && (
+          {!previewKind && !loading && !hasParsedText && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
               </span>
             </div>
+          )}
+          {/* Office documents have no renderable preview here, but the parser already
+           * read them for the model. Showing that text beats an empty state. */}
+          {!previewKind && !loading && hasParsedText && (
+            <>
+              <p className="pb-3 text-sm text-text-secondary">
+                {localize('com_ui_extracted_text_description')}
+              </p>
+              <ExtractedTextPanel fileId={fileId} enabled={open} />
+            </>
           )}
         </div>
       </OGDialogContent>
