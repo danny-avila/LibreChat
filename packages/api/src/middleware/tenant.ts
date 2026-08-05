@@ -88,7 +88,12 @@ export function requestContextMiddleware(
   next: NextFunction,
 ): void {
   const request = req as ServerRequest & { requestId?: string };
-  const context = buildTenantContext(request);
+  const requestLogContext = buildSafeRequestLogContext(request);
+  const context: TenantContext = {
+    requestId: requestLogContext.request_id,
+    requestMethod: requestLogContext.method,
+    requestPath: requestLogContext.path,
+  };
   if (!context.requestId) {
     context.requestId = randomUUID();
     request.requestId = context.requestId;

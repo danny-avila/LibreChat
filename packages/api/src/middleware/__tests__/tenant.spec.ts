@@ -118,6 +118,26 @@ describe('requestContextMiddleware', () => {
     expect(req.requestId).toBe(context.requestId);
   });
 
+  it('does not trust tenant or user identity before authentication', async () => {
+    const req = {
+      headers: { 'x-request-id': 'pre-auth-request' },
+      method: 'GET',
+      originalUrl: '/api/auth/me',
+      tenantId: 'untrusted-tenant',
+      user: { id: 'untrusted-user', tenantId: 'untrusted-tenant' },
+    } as unknown as ServerRequest;
+
+    const context = await runRequestContext(req);
+
+    expect(context).toEqual({
+      tenantId: undefined,
+      userId: undefined,
+      requestId: 'pre-auth-request',
+      method: 'GET',
+      path: '/api/auth',
+    });
+  });
+
   it('keeps malformed-auth and parallel page requests independently attributable', async () => {
     const malformedAuthRequest = {
       headers: {
