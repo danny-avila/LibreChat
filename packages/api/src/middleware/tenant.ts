@@ -13,7 +13,7 @@ type ContextUser = {
   _id?: { toString: () => string };
 } | null;
 
-type ContextRequest = {
+export type ContextRequest = {
   headers: ServerRequest['headers'];
   tenantId?: string;
   user?: ContextUser;
@@ -89,16 +89,15 @@ export function buildRequestContext(req: ContextRequest): TenantContext {
  * no tenant or user identity, so strict tenant isolation remains fail-closed.
  */
 export function requestContextMiddleware(
-  req: ServerRequest,
+  req: ContextRequest,
   _res: Response,
   next: NextFunction,
 ): void {
-  const request = req as ServerRequest & { requestId?: string };
-  const context = buildRequestContext(request);
+  const context = buildRequestContext(req);
   if (!context.requestId) {
     context.requestId = randomUUID();
-    request.requestId = context.requestId;
   }
+  req.requestId = context.requestId;
   runWithTenantContext(context, next);
 }
 

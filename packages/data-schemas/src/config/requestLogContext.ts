@@ -8,7 +8,7 @@ import {
   SYSTEM_TENANT_ID,
 } from './tenantContext';
 
-export const LOG_CONTEXT_KEYS = [
+const REQUEST_LOG_CONTEXT_KEYS = [
   'tenantId',
   'userId',
   'requestId',
@@ -17,18 +17,104 @@ export const LOG_CONTEXT_KEYS = [
   'path',
 ] as const;
 
+const STRUCTURED_EVENT_LOG_CONTEXT_KEYS = [
+  'event_name',
+  'auth_strategy',
+  'primary_strategy',
+  'fallback_strategy',
+  'fallback_attempted',
+  'fallback_succeeded',
+  'attempted_strategies',
+  'final_strategy',
+  'primary_failure_reason_category',
+  'reason_category',
+  'recovery_classification',
+  'response_status',
+  'strategy_status',
+  'token_provider',
+  'token_source',
+  'openid_reuse_enabled',
+  'openid_jwt_available',
+  'has_openid_reuse_user_id',
+  'error_category',
+  'error_signature',
+] as const;
+
+const LOG_CONTEXT_KEYS = [
+  ...REQUEST_LOG_CONTEXT_KEYS,
+  ...STRUCTURED_EVENT_LOG_CONTEXT_KEYS,
+] as const;
+
 const IDENTITY_CONTEXT_KEYS = ['tenantId', 'tenant_id', 'userId', 'user_id'] as const;
+const IDENTITY_FREE_EVENT_NAMES = new Set([
+  'jwt_auth_fallback_attempt',
+  'jwt_auth_rejected',
+  'jwt_auth_recovered',
+  'tenant_isolation_error',
+]);
+const STRUCTURED_EVENT_LOG_CONTEXT_KEY_SET = new Set<string>(STRUCTURED_EVENT_LOG_CONTEXT_KEYS);
+const MAX_LOG_CONTEXT_ARRAY_LENGTH = 10;
+
+type LogContextKey = (typeof LOG_CONTEXT_KEYS)[number];
+type LogContextValue = string | number | boolean | readonly string[];
+type LogContextInfo = Partial<{ [Key in LogContextKey]: unknown }>;
 
 function isIdentityFreeEvent(eventName: unknown): boolean {
-  return (
-    typeof eventName === 'string' &&
-    (eventName.startsWith('jwt_auth_') || eventName === 'tenant_isolation_error')
-  );
+  return typeof eventName === 'string' && IDENTITY_FREE_EVENT_NAMES.has(eventName);
 }
 
 function getLogTenantId(): string | undefined {
   const tenantId = getTenantId();
   return tenantId === SYSTEM_TENANT_ID ? undefined : tenantId;
+}
+
+function normalizeLogContextValue(value: unknown): LogContextValue | undefined {
+  if (typeof value === 'string') {
+    return value || undefined;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const values = value
+    .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+    .slice(0, MAX_LOG_CONTEXT_ARRAY_LENGTH);
+  return values.length > 0 ? values : undefined;
+}
+
+/** Serializes the allowlisted context rendered by non-JSON log transports. */
+export function formatLogContext(info: LogContextInfo): string {
+  const context: Partial<Record<LogContextKey, LogContextValue>> = {};
+  const omitIdentity = isIdentityFreeEvent(info.event_name);
+
+  LOG_CONTEXT_KEYS.forEach((key) => {
+    if (STRUCTURED_EVENT_LOG_CONTEXT_KEY_SET.has(key) && !omitIdentity) {
+      return;
+    }
+    if (omitIdentity && (key === 'tenantId' || key === 'userId')) {
+      return;
+    }
+    if (key === 'tenantId' && info[key] === SYSTEM_TENANT_ID) {
+      return;
+    }
+    const value = normalizeLogContextValue(info[key]);
+    if (value !== undefined) {
+      context[key] = value;
+    }
+  });
+
+  return Object.keys(context).length > 0 ? JSON.stringify(context) : '';
+}
+
+export function appendLogContext(line: string, info: LogContextInfo): string {
+  const context = formatLogContext(info);
+  return context ? `${line} ${context}` : line;
 }
 
 /**
@@ -53,7 +139,7 @@ export function attachRequestContext(
     method: getRequestMethod(),
     path: getRequestPath(),
   };
-  LOG_CONTEXT_KEYS.forEach((key) => {
+  REQUEST_LOG_CONTEXT_KEYS.forEach((key) => {
     if (context[key] && info[key] == null) {
       info[key] = context[key];
     }

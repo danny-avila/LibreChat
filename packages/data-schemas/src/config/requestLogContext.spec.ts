@@ -1,4 +1,4 @@
-import { attachRequestContext } from './requestLogContext';
+import { attachRequestContext, formatLogContext } from './requestLogContext';
 import { tenantStorage } from './tenantContext';
 
 describe('attachRequestContext', () => {
@@ -18,6 +18,8 @@ describe('attachRequestContext', () => {
           level: 'warn',
           message: 'event',
           event_name: eventName,
+          reason_category: 'malformed_jwt',
+          response_status: 401,
           tenantId: 'explicit-tenant',
           tenant_id: 'explicit-tenant',
           userId: 'explicit-user',
@@ -36,6 +38,12 @@ describe('attachRequestContext', () => {
           method: 'POST',
           path: '/api/example',
         });
+        const rendered = formatLogContext(result);
+        expect(rendered).toContain(`"event_name":"${eventName}"`);
+        expect(rendered).toContain('"reason_category":"malformed_jwt"');
+        expect(rendered).toContain('"response_status":401');
+        expect(rendered).not.toContain('explicit-tenant');
+        expect(rendered).not.toContain('explicit-user');
       }),
   );
 

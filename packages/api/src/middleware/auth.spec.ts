@@ -110,6 +110,24 @@ describe('auth middleware logging helpers', () => {
     expect(oversizedLog.request_id).toBeUndefined();
   });
 
+  it('uses the next valid correlation candidate after rejecting an unsafe request ID', () => {
+    const context = buildSafeRequestLogContext(
+      createRequest({
+        requestId: `${'a'.repeat(24)}.${'b'.repeat(24)}.${'c'.repeat(24)}`,
+        headers: { 'x-request-id': 'safe-header-request' },
+      }),
+    );
+
+    expect(context.request_id).toBe('safe-header-request');
+  });
+
+  it('normalizes known request methods and buckets unknown methods', () => {
+    expect(buildSafeRequestLogContext(createRequest({ method: 'get' })).method).toBe('GET');
+    expect(buildSafeRequestLogContext(createRequest({ method: 'CUSTOM_METHOD' })).method).toBe(
+      'OTHER',
+    );
+  });
+
   it('buckets unknown token providers to keep auth logs low-cardinality', () => {
     const log = buildSafeAuthLogContext(
       createRequest(),

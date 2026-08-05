@@ -319,6 +319,26 @@ describe('debugTraverse request context', () => {
     expect(out).not.toMatch(/tenantId:/);
     expect(out).toContain('userId');
   });
+
+  it('preserves structured auth metadata for non-JSON warning output', () => {
+    const out = runFormatter(
+      buildInfo('warn', {
+        event_name: 'jwt_auth_rejected',
+        request_id: 'request-123',
+        method: 'GET',
+        path: '/api/messages',
+        token_source: 'bearer',
+        reason_category: 'malformed_jwt',
+        recovery_classification: 'terminal_rejection',
+        response_status: 401,
+      }),
+    );
+
+    expect(out).toContain('"event_name":"jwt_auth_rejected"');
+    expect(out).toContain('"request_id":"request-123"');
+    expect(out).toContain('"reason_category":"malformed_jwt"');
+    expect(out).toContain('"response_status":401');
+  });
 });
 
 describe('jsonTruncateFormat structured events', () => {
@@ -335,12 +355,12 @@ describe('jsonTruncateFormat structured events', () => {
       reason_category: 'malformed_jwt',
       recovery_classification: 'terminal_rejection',
       response_status: 401,
-    };
+    } satisfies winston.Logform.TransformableInfo;
 
-    const output = format.transform(
-      info as unknown as import('winston').Logform.TransformableInfo,
-      format.options,
-    ) as Record<string, unknown>;
+    const output = format.transform(info, format.options);
+    if (output === false) {
+      throw new Error('Expected jsonTruncateFormat to preserve the log record');
+    }
 
     expect(output.message).toBe(`${info.message.slice(0, 255)}...`);
     expect(output).toMatchObject({

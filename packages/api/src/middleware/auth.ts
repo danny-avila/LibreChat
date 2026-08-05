@@ -9,6 +9,17 @@ type AuthRoutePath = string | RegExp | readonly (string | RegExp)[];
 
 const JWT_SHAPED_VALUE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const MAX_REQUEST_ID_LENGTH = 128;
+const SAFE_REQUEST_METHODS = new Set([
+  'CONNECT',
+  'DELETE',
+  'GET',
+  'HEAD',
+  'OPTIONS',
+  'PATCH',
+  'POST',
+  'PUT',
+  'TRACE',
+]);
 const AUTH_LOG_EXTRA_KEYS = new Set([
   'event_name',
   'auth_strategy',
@@ -117,22 +128,34 @@ function normalizeAuthLogContextValue(value: unknown): AuthLogValue | undefined 
 }
 
 function getRequestId(req: AuthLogRequest): string | undefined {
-  const requestId =
-    normalizeAuthLogValue(req.requestId) ??
-    normalizeAuthLogValue(req.id) ??
-    normalizeAuthLogValue(req.headers?.['x-request-id']) ??
-    normalizeAuthLogValue(req.headers?.['x-correlation-id']);
+  const candidates = [
+    req.requestId,
+    req.id,
+    req.headers?.['x-request-id'],
+    req.headers?.['x-correlation-id'],
+  ];
 
-  if (
-    !requestId ||
-    requestId.length > MAX_REQUEST_ID_LENGTH ||
-    JWT_SHAPED_VALUE.test(requestId) ||
-    !/^[A-Za-z0-9_.:-]+$/.test(requestId)
-  ) {
-    return undefined;
+  for (const candidate of candidates) {
+    const requestId = normalizeAuthLogValue(candidate);
+    if (
+      requestId &&
+      requestId.length <= MAX_REQUEST_ID_LENGTH &&
+      !JWT_SHAPED_VALUE.test(requestId) &&
+      /^[A-Za-z0-9_.:-]+$/.test(requestId)
+    ) {
+      return requestId;
+    }
   }
 
-  return requestId;
+  return undefined;
+}
+
+function getRequestMethod(method: unknown): string | undefined {
+  const normalized = normalizeAuthLogValue(method)?.toUpperCase();
+  if (!normalized) {
+    return undefined;
+  }
+  return SAFE_REQUEST_METHODS.has(normalized) ? normalized : 'OTHER';
 }
 
 function normalizeRoutePath(path: AuthRoutePath | undefined): string | undefined {
@@ -195,7 +218,7 @@ function getRequestPath(req: AuthLogRequest): string | undefined {
 
 export function buildSafeRequestLogContext(req: AuthLogRequest): RequestLogContext {
   const requestId = getRequestId(req);
-  const method = normalizeAuthLogValue(req.method);
+  const method = getRequestMethod(req.method);
   const path = getRequestPath(req);
 
   return {
@@ -222,10 +245,10 @@ function getAuthFailureField(source: unknown, field: keyof AuthFailureLike): unk
   return undefined;
 }
 
-function compactAuthLogContext(log: Record<string, unknown>): AuthLogContext {
+function compactAuthLogContext(log: object): AuthLogContext {
   const compacted: Partial<AuthLogContext> = {};
-  for (const key of Object.keys(log)) {
-    const value = normalizeAuthLogContextValue(log[key]);
+  for (const [key, rawValue] of Object.entries(log)) {
+    const value = normalizeAuthLogContextValue(rawValue);
     if (value !== undefined) {
       Object.assign(compacted, { [key]: value });
     }
@@ -233,7 +256,7 @@ function compactAuthLogContext(log: Record<string, unknown>): AuthLogContext {
   return compacted as AuthLogContext;
 }
 
-function selectAuthLogExtra(extra: Record<string, unknown>): Record<string, unknown> {
+function selectAuthLogExtra(extra: object): object {
   return Object.fromEntries(Object.entries(extra).filter(([key]) => AUTH_LOG_EXTRA_KEYS.has(key)));
 }
 
@@ -309,7 +332,7 @@ function getSafeTokenSource(tokenSource: unknown): string | undefined {
 export function buildSafeAuthLogContext(
   req: AuthLogRequest,
   authState: AuthLogState,
-  extra: Record<string, unknown> = {},
+  extra: object = {},
 ): AuthLogContext {
   return {
     ...compactAuthLogContext({

@@ -79,7 +79,7 @@ function runMiddlewareContext(
   });
 }
 
-function runRequestContext(req: ServerRequest): Promise<{
+function runRequestContext(req: Parameters<typeof requestContextMiddleware>[0]): Promise<{
   tenantId?: string;
   userId?: string;
   requestId?: string;
@@ -108,7 +108,7 @@ describe('requestContextMiddleware', () => {
       },
       method: 'GET',
       originalUrl: '/api/banner',
-    } as unknown as ServerRequest & { requestId?: string };
+    };
 
     const context = await runRequestContext(req);
 
@@ -125,7 +125,7 @@ describe('requestContextMiddleware', () => {
       originalUrl: '/api/auth/me',
       tenantId: 'untrusted-tenant',
       user: { id: 'untrusted-user', tenantId: 'untrusted-tenant' },
-    } as unknown as ServerRequest;
+    };
 
     const context = await runRequestContext(req);
 
@@ -136,6 +136,7 @@ describe('requestContextMiddleware', () => {
       method: 'GET',
       path: '/api/auth',
     });
+    expect(req.requestId).toBe('pre-auth-request');
   });
 
   it('keeps malformed-auth and parallel page requests independently attributable', async () => {
@@ -146,12 +147,12 @@ describe('requestContextMiddleware', () => {
       },
       method: 'GET',
       originalUrl: '/api/auth/me?access_token=not-logged',
-    } as unknown as ServerRequest;
+    };
     const pageRequest = {
       headers: { 'x-request-id': 'page-request' },
       method: 'GET',
       originalUrl: '/api/banner?access_token=not-logged',
-    } as unknown as ServerRequest;
+    };
 
     const [authContext, pageContext] = await Promise.all([
       runRequestContext(malformedAuthRequest),
