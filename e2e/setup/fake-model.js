@@ -47,6 +47,9 @@ const DEFERRED_HITL_MARKER = 'E2E_DEFERRED_HITL:';
 const HANDOFF_MARKER = 'E2E_HANDOFF:';
 const SUBAGENT_RESULT_MARKER = 'E2E_SUBAGENT_RESULT:';
 const SUBAGENT_CHILD_MARKER = 'E2E_SUBAGENT_CHILD:';
+const SUBAGENT_MODEL_OVERRIDE_ERROR =
+  '[e2e] Streamed subagent result coverage requires an @librechat/agents release with ' +
+  'StandardGraph.setSubagentModelOverride';
 const HANDOFF_TOOL_PREFIX = 'lc_transfer_to_';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
@@ -596,6 +599,16 @@ function overrideModel({
   resolveInvocation,
   resolveOnStream,
 }) {
+  if (overrideSubagentModel && typeof graph.setSubagentModelOverride !== 'function') {
+    overrideModel({
+      graph,
+      responses: [''],
+      sleep,
+      thrownError: SUBAGENT_MODEL_OVERRIDE_ERROR,
+    });
+    return;
+  }
+
   if (!thrownError) {
     const model = new UsageEmittingFakeChatModel({
       responses,
@@ -607,12 +620,6 @@ function overrideModel({
     });
     graph.overrideModel = model;
     if (overrideSubagentModel) {
-      if (typeof graph.setSubagentModelOverride !== 'function') {
-        throw new Error(
-          '[e2e] Streamed subagent result coverage requires an @librechat/agents release ' +
-            'with StandardGraph.setSubagentModelOverride',
-        );
-      }
       graph.setSubagentModelOverride(model);
     }
     return;
