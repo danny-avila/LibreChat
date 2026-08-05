@@ -3,6 +3,7 @@ const {
   Tools,
   Constants,
   ResourceType,
+  ErrorTypes,
   EModelEndpoint,
   isActionTool,
   actionDelimiter,
@@ -264,6 +265,27 @@ describe('ToolService - Action Capability Gating', () => {
       };
       expect(primeSearchFiles).toHaveBeenCalledWith(expectedParams);
       expect(primeCodeFiles).toHaveBeenCalledWith(expectedParams);
+    });
+
+    it('propagates a typed CodeAPI resource recovery failure before model invocation', async () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.execute_code];
+      const req = createMockReq(capabilities);
+      const resourceRecoveryError = Object.assign(new Error('resource recovery required'), {
+        code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      });
+      const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
+      primeCodeFiles.mockRejectedValueOnce(resourceRecoveryError);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await expect(
+        loadAgentTools({
+          req,
+          res: {},
+          agent: { id: 'agent_123', tools: [Tools.execute_code] },
+          tool_resources: { execute_code: { file_ids: ['stale-file'] } },
+          definitionsOnly: true,
+        }),
+      ).rejects.toBe(resourceRecoveryError);
     });
 
     it('should exclude action tools from definitions when actions capability is disabled', async () => {

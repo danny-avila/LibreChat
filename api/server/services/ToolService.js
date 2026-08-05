@@ -1165,6 +1165,9 @@ async function loadToolDefinitionsWrapper({
         primedCodeFiles = files;
       }
     } catch (error) {
+      if (error?.code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED) {
+        throw error;
+      }
       logger.error('[loadToolDefinitionsWrapper] Error priming code files:', error);
     }
   }

@@ -8,6 +8,7 @@ const {
   PermissionBits,
   hasPermissions,
   AgentCapabilities,
+  ErrorTypes,
 } = require('librechat-data-provider');
 const {
   createRun,
@@ -116,6 +117,9 @@ function createToolLoader(signal, definitionsOnly = true) {
         streamId: null,
       });
     } catch (error) {
+      if (error?.code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED) {
+        throw error;
+      }
       logger.error('Error loading tools for agent ' + agentId, error);
       if (isExpectedMCPToolsUnavailableError(error)) {
         throw error;

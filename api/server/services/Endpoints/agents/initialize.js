@@ -27,6 +27,7 @@ const {
   isAgentsEndpoint,
   getResponseSender,
   AgentCapabilities,
+  ErrorTypes,
   MAX_SUBAGENT_GRAPH_NODES,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
@@ -109,6 +110,9 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
         accessibleMcpServerNames,
       });
     } catch (error) {
+      if (error?.code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED) {
+        throw error;
+      }
       logger.error('Error loading tools for agent ' + agentId, error);
       if (isExpectedMCPToolsUnavailableError(error)) {
         throw error;
