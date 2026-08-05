@@ -1,4 +1,4 @@
-import type { MCPOAuthStatusResponse } from 'librechat-data-provider';
+import type { MCPOAuthStatusResponse, MCPReinitializeResponse } from 'librechat-data-provider';
 
 export type MCPOAuthPollingOutcome = 'pending' | 'completed' | 'failed';
 
@@ -25,4 +25,9 @@ export function getMCPOAuthPollingOutcome(status: MCPOAuthStatusResponse): MCPOA
     return 'failed';
   }
   return 'pending';
+}
+
+/** OAuth completion proves credentials were stored; reinitialization proves this request pod can use them. */
+export function isMCPReadyAfterOAuth(response: MCPReinitializeResponse): boolean {
+  return response.success && response.oauthRequired !== true;
 }

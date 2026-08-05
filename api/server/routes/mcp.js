@@ -373,6 +373,13 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       });
       return res.redirect(`${basePath}/oauth/success?serverName=${encodeURIComponent(serverName)}`);
     }
+    if (currentFlowState?.status === 'FAILED') {
+      logger.warn('[MCP OAuth] Refusing token exchange for failed flow', {
+        flowId,
+        serverName,
+      });
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
+    }
 
     logger.debug('[MCP OAuth] Completing OAuth flow');
     /**
@@ -821,29 +828,35 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
       user.id,
       { role: user.role, tenantId: getTenantId() },
     );
-    const connectionStatus = {};
-
-    for (const [serverName, config] of Object.entries(mcpConfig)) {
-      try {
-        connectionStatus[serverName] = await getServerConnectionStatus(
-          user.id,
-          serverName,
-          config,
-          appConnections,
-          userConnections,
-          oauthServers,
-        );
-      } catch (error) {
-        const message = `Failed to get status for server "${serverName}"`;
-        logger.error(`[MCP Connection Status] ${message},`, error);
-        connectionStatus[serverName] = {
-          connectionState: 'error',
-          requiresOAuth: oauthServers.has(serverName),
-          authorizationState: oauthServers.has(serverName) ? 'error' : 'not_required',
-          error: message,
-        };
-      }
-    }
+    const connectionStatus = Object.fromEntries(
+      await Promise.all(
+        Object.entries(mcpConfig).map(async ([serverName, config]) => {
+          try {
+            const status = await getServerConnectionStatus(
+              user.id,
+              serverName,
+              config,
+              appConnections,
+              userConnections,
+              oauthServers,
+            );
+            return [serverName, status];
+          } catch (error) {
+            const message = `Failed to get status for server "${serverName}"`;
+            logger.error(`[MCP Connection Status] ${message},`, error);
+            return [
+              serverName,
+              {
+                connectionState: 'error',
+                requiresOAuth: oauthServers.has(serverName),
+                authorizationState: oauthServers.has(serverName) ? 'error' : 'not_required',
+                error: message,
+              },
+            ];
+          }
+        }),
+      ),
+    );
 
     res.json({
       success: true,

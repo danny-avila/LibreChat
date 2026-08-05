@@ -126,6 +126,44 @@ describe('MCPTokenStorage', () => {
       ).resolves.toBe(true);
     });
 
+    it('accepts a bound refresh token after the expired access-token record is removed', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:refresh-token',
+        expiresIn: 3600,
+      });
+      await storeClient();
+
+      await expect(
+        MCPTokenStorage.hasStoredAuthorization({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+        }),
+      ).resolves.toBe(true);
+    });
+
+    it('rejects a refresh-only credential from a different client generation', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:refresh-token',
+        expiresIn: 3600,
+      });
+      await storeClient({ ...storedBindingMetadata, credential_set_id: 'different-generation' });
+
+      await expect(
+        MCPTokenStorage.hasStoredAuthorization({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+        }),
+      ).resolves.toBe(false);
+    });
+
     it('rejects an expired access token without a usable refresh token', async () => {
       await createBoundToken(store, {
         userId: 'u1',

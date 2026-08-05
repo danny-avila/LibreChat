@@ -180,13 +180,15 @@ export class MCPTokenStorage {
         findToken({ userId, type: 'mcp_oauth', identifier }),
         findToken({ userId, type: 'mcp_oauth_client', identifier: `${identifier}:client` }),
       ]);
-      const credentialSetId = getCredentialSetId(accessTokenData);
-      if (!credentialSetId || getCredentialSetId(clientInfoData) !== credentialSetId) {
-        return false;
-      }
-
-      if (!accessTokenData?.expiresAt || accessTokenData.expiresAt > new Date()) {
-        return true;
+      const clientCredentialSetId = getCredentialSetId(clientInfoData);
+      const accessCredentialSetId = getCredentialSetId(accessTokenData);
+      if (accessTokenData) {
+        if (!accessCredentialSetId || clientCredentialSetId !== accessCredentialSetId) {
+          return false;
+        }
+        if (!accessTokenData.expiresAt || accessTokenData.expiresAt > new Date()) {
+          return true;
+        }
       }
 
       const refreshTokenData = await findToken({
@@ -194,8 +196,11 @@ export class MCPTokenStorage {
         type: 'mcp_oauth_refresh',
         identifier: `${identifier}:refresh`,
       });
+      const refreshCredentialSetId = getCredentialSetId(refreshTokenData);
       return (
-        getCredentialSetId(refreshTokenData) === credentialSetId &&
+        !!refreshCredentialSetId &&
+        refreshCredentialSetId === clientCredentialSetId &&
+        (!accessCredentialSetId || refreshCredentialSetId === accessCredentialSetId) &&
         (!refreshTokenData?.expiresAt || refreshTokenData.expiresAt > new Date())
       );
     } catch (error) {

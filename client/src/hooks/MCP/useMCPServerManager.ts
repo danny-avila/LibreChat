@@ -26,8 +26,12 @@ import type {
 } from 'librechat-data-provider';
 import type { MCPServerInitState } from '~/store/mcp';
 import type { ConfigFieldDetail } from '~/common';
+import {
+  getMCPOAuthPollingOutcome,
+  isMCPReadyAfterOAuth,
+  isTerminalMCPOAuthPollingError,
+} from './polling';
 import { useLocalize, useHasAccess, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
-import { getMCPOAuthPollingOutcome, isTerminalMCPOAuthPollingError } from './polling';
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
 import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
 import { getMCPReinitializeErrorMessage } from './errors';
@@ -265,6 +269,25 @@ export function useMCPServerManager({
             }
           }
           const flowOutcome = flowStatus ? getMCPOAuthPollingOutcome(flowStatus) : null;
+          let isReady = false;
+          if (flowOutcome === 'completed') {
+            /** Flow completion is durable credential readiness, not proof that tool discovery
+             * finished on this pod. Reinitialize once more through the normal API so the
+             * selected server and its tools are usable before the UI reports success. */
+            const readiness = await reinitializeMutation.mutateAsync(serverName);
+            if (!isMCPReadyAfterOAuth(readiness)) {
+              showToast({
+                message: getMCPReinitializeErrorMessage(readiness, localize),
+                status: 'error',
+              });
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+              }
+              cleanupServerState(serverName);
+              return;
+            }
+            isReady = true;
+          }
           if (!flowId || terminalFlowError) {
             // The flow record may have expired or been denied on another pod. Re-read
             // durable connection state before deciding whether the UI can finish.
@@ -283,12 +306,13 @@ export function useMCPServerManager({
           const freshConnectionStatus = freshConnectionData?.connectionStatus || {};
 
           const serverStatus = freshConnectionStatus[serverName];
+          if (!flowId || terminalFlowError) {
+            isReady =
+              serverStatus?.authorizationState === 'authorized' ||
+              serverStatus?.connectionState === 'connected';
+          }
 
-          if (
-            flowOutcome === 'completed' ||
-            serverStatus?.authorizationState === 'authorized' ||
-            serverStatus?.connectionState === 'connected'
-          ) {
+          if (isReady) {
             if (timeoutId) {
               clearTimeout(timeoutId);
             }
@@ -383,7 +407,15 @@ export function useMCPServerManager({
       timeoutId = setTimeout(pollOnce, getPollInterval(0));
       pollIntervalsRef.current[serverName] = timeoutId;
     },
-    [queryClient, serverInitStates, showToast, localize, setMCPValues, cleanupServerState],
+    [
+      queryClient,
+      serverInitStates,
+      showToast,
+      localize,
+      setMCPValues,
+      cleanupServerState,
+      reinitializeMutation,
+    ],
   );
 
   const initializeServer = useCallback(

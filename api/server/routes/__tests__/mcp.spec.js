@@ -1806,6 +1806,39 @@ describe('MCP Routes', () => {
       expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
       expect(MCPTokenStorage.storeTokens).not.toHaveBeenCalled();
     });
+
+    it('should reject a retained failed flow without exchanging or storing tokens', async () => {
+      const flowId = 'test-user-id:test-server';
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'FAILED',
+          error: 'mcp_oauth flow timed out',
+        }),
+      };
+
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: flowId,
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        metadata: {},
+        clientInfo: {},
+        codeVerifier: 'test-verifier',
+      });
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const csrfToken = generateTestCsrfToken(flowId);
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({ code: 'late-auth-code', state: flowId });
+      const basePath = getBasePath();
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_state`);
+      expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
+      expect(MCPTokenStorage.storeTokens).not.toHaveBeenCalled();
+    });
   });
 
   describe('GET /oauth/tokens/:flowId', () => {
@@ -2449,6 +2482,49 @@ describe('MCP Routes', () => {
       });
 
       expect(getMCPSetupData).toHaveBeenCalledWith('test-user-id', expect.any(Object));
+      expect(getServerConnectionStatus).toHaveBeenCalledTimes(2);
+    });
+
+    it('should resolve independent server statuses concurrently', async () => {
+      let releaseFirst;
+      let markSecondStarted;
+      const firstRelease = new Promise((resolve) => {
+        releaseFirst = resolve;
+      });
+      const secondStarted = new Promise((resolve) => {
+        markSecondStarted = resolve;
+      });
+
+      getMCPSetupData.mockResolvedValue({
+        mcpConfig: {
+          server1: { endpoint: 'http://server1.com' },
+          server2: { endpoint: 'http://server2.com' },
+        },
+        appConnections: new Map(),
+        userConnections: new Map(),
+        oauthServers: new Set(),
+      });
+      getServerConnectionStatus.mockImplementation(async (_userId, serverName) => {
+        if (serverName === 'server1') {
+          await firstRelease;
+        } else {
+          markSecondStarted();
+        }
+        return {
+          connectionState: 'connected',
+          requiresOAuth: false,
+          authorizationState: 'not_required',
+        };
+      });
+
+      const responsePromise = request(app)
+        .get('/api/mcp/connection/status')
+        .then((res) => res);
+      await secondStarted;
+      releaseFirst();
+      const response = await responsePromise;
+
+      expect(response.status).toBe(200);
       expect(getServerConnectionStatus).toHaveBeenCalledTimes(2);
     });
 
