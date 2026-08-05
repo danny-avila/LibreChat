@@ -326,6 +326,18 @@ describe('createMCPToolCacheService', () => {
       expect(deps.getCachedTools).toHaveBeenCalledWith({ userId: 'u1', serverName: 'brave' });
     });
 
+    it('treats a cached empty catalog as a miss so discovery remains enabled', async () => {
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue({}),
+        getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
+      });
+      const { getMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await getMCPServerTools('u1', 'brave');
+
+      expect(result).toBeNull();
+    });
+
     it('heals stale raw-keyed cache entries to the normalized key format at read time', async () => {
       /** Entries written before keys embedded the normalized server name would
        *  otherwise make the server's tools vanish for up to the cache TTL —

@@ -228,6 +228,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     }
     try {
       const cached = (await getCachedTools({ userId, serverName })) ?? null;
+      if (!cached || Object.keys(cached).length === 0) {
+        return null;
+      }
       return normalizeCachedToolKeys(cached, serverName);
     } catch (error) {
       logger.error(`[getMCPServerTools] Error fetching cached tools for ${serverName}:`, error);
