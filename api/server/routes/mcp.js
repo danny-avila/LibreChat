@@ -373,10 +373,14 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       });
       return res.redirect(`${basePath}/oauth/success?serverName=${encodeURIComponent(serverName)}`);
     }
-    if (currentFlowState?.status === 'FAILED') {
-      logger.warn('[MCP OAuth] Refusing token exchange for failed flow', {
+    const isStalePendingFlow =
+      currentFlowState?.status === 'PENDING' &&
+      (!currentFlowState.createdAt || Date.now() - currentFlowState.createdAt >= PENDING_STALE_MS);
+    if (currentFlowState?.status === 'FAILED' || isStalePendingFlow) {
+      logger.warn('[MCP OAuth] Refusing token exchange for terminal flow', {
         flowId,
         serverName,
+        status: currentFlowState.status,
       });
       return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
     }

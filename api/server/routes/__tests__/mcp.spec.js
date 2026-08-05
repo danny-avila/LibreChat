@@ -1184,7 +1184,7 @@ describe('MCP Routes', () => {
     it('should handle OAuth callback successfully', async () => {
       // mockRegistryInstance is defined at the top of the file
       const mockFlowManager = {
-        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
@@ -1278,7 +1278,7 @@ describe('MCP Routes', () => {
 
     it('should clear tenant-scoped token flow state after storing callback tokens', async () => {
       const mockFlowManager = {
-        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
@@ -1352,7 +1352,7 @@ describe('MCP Routes', () => {
               status: 'PENDING',
             });
           }
-          return Promise.resolve({ status: 'PENDING' });
+          return Promise.resolve({ status: 'PENDING', createdAt: Date.now() });
         }),
         completeFlow: jest.fn().mockResolvedValue(true),
         deleteFlow: jest.fn().mockResolvedValue(true),
@@ -1418,7 +1418,7 @@ describe('MCP Routes', () => {
 
     it('should use oauthHeaders from flow state when present', async () => {
       const mockFlowManager = {
-        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
@@ -1470,7 +1470,7 @@ describe('MCP Routes', () => {
 
     it('should fall back to registry oauth_headers when flow state lacks them', async () => {
       const mockFlowManager = {
-        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
@@ -1547,7 +1547,7 @@ describe('MCP Routes', () => {
     it('should handle system-level OAuth completion', async () => {
       // mockRegistryInstance is defined at the top of the file
       const mockFlowManager = {
-        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
@@ -1591,7 +1591,7 @@ describe('MCP Routes', () => {
     it('should handle reconnection failure after OAuth', async () => {
       // mockRegistryInstance is defined at the top of the file
       const mockFlowManager = {
-        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
@@ -1719,7 +1719,7 @@ describe('MCP Routes', () => {
       // First call checks idempotency (status PENDING = not completed)
       // Second call retrieves flow state for processing
       mockFlowManager.getFlowState
-        .mockResolvedValueOnce({ status: 'PENDING' })
+        .mockResolvedValueOnce({ status: 'PENDING', createdAt: Date.now() })
         .mockResolvedValueOnce(flowState);
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(flowState);
@@ -1813,6 +1813,39 @@ describe('MCP Routes', () => {
         getFlowState: jest.fn().mockResolvedValue({
           status: 'FAILED',
           error: 'mcp_oauth flow timed out',
+        }),
+      };
+
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: flowId,
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        metadata: {},
+        clientInfo: {},
+        codeVerifier: 'test-verifier',
+      });
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const csrfToken = generateTestCsrfToken(flowId);
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({ code: 'late-auth-code', state: flowId });
+      const basePath = getBasePath();
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_state`);
+      expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
+      expect(MCPTokenStorage.storeTokens).not.toHaveBeenCalled();
+    });
+
+    it('should reject an over-age pending flow without relying on its original monitor', async () => {
+      const flowId = 'test-user-id:test-server';
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: Date.now() - PENDING_STALE_MS - 1000,
         }),
       };
 
@@ -2766,7 +2799,7 @@ describe('MCP Routes', () => {
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
 
       const mockFlowManager = {
-        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
         completeFlow: jest.fn(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
