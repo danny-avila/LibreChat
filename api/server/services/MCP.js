@@ -1234,8 +1234,8 @@ async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()
     // flow the initiate/callback paths already reject, hiding the connect button.
     const flowTTL = flowState.ttl || PENDING_STALE_MS;
 
-    if (flowState.status === 'FAILED' || flowAge > flowTTL) {
-      const wasCancelled = flowState.error && flowState.error.includes('cancelled');
+    if (flowState.status === 'FAILED' || (flowState.status === 'PENDING' && flowAge > flowTTL)) {
+      const wasCancelled = /abort|cancel/i.test(flowState.error ?? '');
 
       if (wasCancelled) {
         logger.debug(`[MCP Connection Status] Found cancelled OAuth flow for ${serverName}`, {
@@ -1302,6 +1302,21 @@ async function hasDurableMCPAuthorization(userId, serverName, config, runtimeCon
     dbSourced,
     customUserVars,
   });
+  const allowlists = await (runtimeContext.loadMCPAllowlists?.() ??
+    getMCPServersRegistry().resolveAllowlists({
+      userId,
+      role: runtimeContext.user?.role,
+    }));
+  if (
+    runtimeConfig.url &&
+    !(await isMCPDomainAllowed(
+      runtimeConfig,
+      allowlists.allowedDomains,
+      allowlists.allowedAddresses,
+    ))
+  ) {
+    return false;
+  }
   return MCPTokenStorage.hasStoredAuthorization({
     userId,
     serverName,
@@ -1325,7 +1340,7 @@ async function hasDurableMCPAuthorization(userId, serverName, config, runtimeCon
  * @param {Map<string, import('@librechat/api').MCPConnection>} appConnections - App-level connections
  * @param {Map<string, import('@librechat/api').MCPConnection>} userConnections - User-level connections
  * @param {Set} oauthServers - Set of OAuth servers
- * @param {{ user?: Partial<IUser>, userMCPAuthMap?: Record<string, Record<string, string>>, loadUserMCPAuthMap?: () => Promise<Record<string, Record<string, string>> | undefined> }} [runtimeContext]
+ * @param {{ user?: Partial<IUser>, userMCPAuthMap?: Record<string, Record<string, string>>, loadUserMCPAuthMap?: () => Promise<Record<string, Record<string, string>> | undefined>, loadMCPAllowlists?: () => Promise<{ allowedDomains?: string[] | null, allowedAddresses?: string[] | null }> }} [runtimeContext]
  * @returns {Object} Object containing requiresOAuth and connectionState
  */
 async function getServerConnectionStatus(

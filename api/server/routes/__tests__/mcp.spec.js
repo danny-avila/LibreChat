@@ -2575,12 +2575,23 @@ describe('MCP Routes', () => {
       await expect(
         Promise.all([runtimeContext.loadUserMCPAuthMap(), runtimeContext.loadUserMCPAuthMap()]),
       ).resolves.toEqual([userMCPAuthMap, userMCPAuthMap]);
+      await expect(
+        Promise.all([runtimeContext.loadMCPAllowlists(), runtimeContext.loadMCPAllowlists()]),
+      ).resolves.toEqual([
+        { allowedDomains: null, allowedAddresses: null, useSSRFProtection: true },
+        { allowedDomains: null, allowedAddresses: null, useSSRFProtection: true },
+      ]);
       expect(require('@librechat/api').getUserMCPAuthMap).toHaveBeenCalledWith({
         userId: 'test-user-id',
         servers: ['server1'],
         findPluginAuthsByKeys: require('~/models').findPluginAuthsByKeys,
       });
       expect(require('@librechat/api').getUserMCPAuthMap).toHaveBeenCalledTimes(1);
+      expect(mockRegistryInstance.resolveAllowlists).toHaveBeenCalledTimes(1);
+      expect(mockRegistryInstance.resolveAllowlists).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        role: undefined,
+      });
       expect(getServerConnectionStatus).toHaveBeenCalledWith(
         'test-user-id',
         'server1',
@@ -2591,6 +2602,7 @@ describe('MCP Routes', () => {
         {
           user: expect.objectContaining({ id: 'test-user-id', email: 'user@example.com' }),
           loadUserMCPAuthMap: expect.any(Function),
+          loadMCPAllowlists: expect.any(Function),
         },
       );
     });

@@ -212,6 +212,7 @@ export function useMCPServerManager({
 
       let pollAttempts = 0;
       let timeoutId: NodeJS.Timeout | null = null;
+      const pollingStartedAt = Date.now();
 
       /** OAuth can take several minutes if the user steps away from the consent screen.
        * Poll for the full server-side handling window (MCP_OAUTH_HANDLING_TIMEOUT
@@ -233,31 +234,24 @@ export function useMCPServerManager({
       let oauthTimeoutMs = getMCPOAuthTimeout(initialOAuthTimeout, connectionData?.oauthTimeout);
       // Backstop only; the elapsed-time guard governs. Sized above the worst-case poll count.
       let maxAttempts = Math.ceil(oauthTimeoutMs / 5000) + 5;
+      const stopForOAuthTimeout = (elapsedTime: number) => {
+        console.warn(
+          `[MCP Manager] OAuth timeout for ${serverName} after ${(elapsedTime / 1000).toFixed(0)}s (attempt ${pollAttempts})`,
+        );
+        showToast({
+          message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
+          status: 'error',
+        });
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        cleanupServerState(serverName);
+      };
 
       const pollOnce = async () => {
         try {
           pollAttempts++;
-          const state = getServerInitState(serverInitStates, serverName);
-
-          /** Stop polling once the handling window or max attempts is exceeded */
-          const elapsedTime = state?.oauthStartTime
-            ? Date.now() - state.oauthStartTime
-            : pollAttempts * 5000; // Rough estimate if no start time
-
-          if (pollAttempts > maxAttempts || elapsedTime > oauthTimeoutMs) {
-            console.warn(
-              `[MCP Manager] OAuth timeout for ${serverName} after ${(elapsedTime / 1000).toFixed(0)}s (attempt ${pollAttempts})`,
-            );
-            showToast({
-              message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
-              status: 'error',
-            });
-            if (timeoutId) {
-              clearTimeout(timeoutId);
-            }
-            cleanupServerState(serverName);
-            return;
-          }
+          const elapsedTime = Date.now() - pollingStartedAt;
 
           let flowStatus: MCPOAuthStatusResponse | null = null;
           let terminalFlowError = false;
@@ -362,10 +356,9 @@ export function useMCPServerManager({
             return;
           }
 
-          // Check for OAuth timeout (should align with maxAttempts)
-          if (state?.oauthStartTime && Date.now() - state.oauthStartTime > oauthTimeoutMs) {
+          if (flowOutcome === 'failed') {
             showToast({
-              message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
+              message: localize('com_ui_mcp_init_failed'),
               status: 'error',
             });
             if (timeoutId) {
@@ -375,12 +368,17 @@ export function useMCPServerManager({
             return;
           }
 
+          /** Make one final shared-state read before declaring a short reused attempt timed out. */
+          if (pollAttempts > maxAttempts || elapsedTime > oauthTimeoutMs) {
+            stopForOAuthTimeout(elapsedTime);
+            return;
+          }
+
           if (
-            flowOutcome === 'failed' ||
-            (!terminalFlowError &&
-              canUseConnectionStatus &&
-              (serverStatus?.authorizationState === 'error' ||
-                serverStatus?.connectionState === 'error'))
+            !terminalFlowError &&
+            canUseConnectionStatus &&
+            (serverStatus?.authorizationState === 'error' ||
+              serverStatus?.connectionState === 'error')
           ) {
             showToast({
               message: localize('com_ui_mcp_init_failed'),
@@ -407,6 +405,11 @@ export function useMCPServerManager({
           pollIntervalsRef.current[serverName] = timeoutId;
         } catch (error) {
           console.warn(`[MCP Manager] Transient error polling server ${serverName}:`, error);
+          const elapsedTime = Date.now() - pollingStartedAt;
+          if (pollAttempts > maxAttempts || elapsedTime > oauthTimeoutMs) {
+            stopForOAuthTimeout(elapsedTime);
+            return;
+          }
           const nextInterval = getPollInterval(pollAttempts);
           timeoutId = setTimeout(pollOnce, nextInterval);
           pollIntervalsRef.current[serverName] = timeoutId;
@@ -417,15 +420,7 @@ export function useMCPServerManager({
       timeoutId = setTimeout(pollOnce, getPollInterval(0));
       pollIntervalsRef.current[serverName] = timeoutId;
     },
-    [
-      queryClient,
-      serverInitStates,
-      showToast,
-      localize,
-      setMCPValues,
-      cleanupServerState,
-      reinitializeMutation,
-    ],
+    [queryClient, showToast, localize, setMCPValues, cleanupServerState, reinitializeMutation],
   );
 
   const initializeServer = useCallback(

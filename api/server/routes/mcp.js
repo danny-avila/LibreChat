@@ -732,6 +732,7 @@ function createMCPStatusRuntimeContext(user, mcpConfig, oauthServers, serverName
     );
   });
   let userMCPAuthMapPromise;
+  let mcpAllowlistsPromise;
   const loadUserMCPAuthMap = () => {
     if (!customUserVarServers.length) {
       return Promise.resolve(undefined);
@@ -743,7 +744,14 @@ function createMCPStatusRuntimeContext(user, mcpConfig, oauthServers, serverName
     });
     return userMCPAuthMapPromise;
   };
-  return { user: createSafeUser(user), loadUserMCPAuthMap };
+  const loadMCPAllowlists = () => {
+    mcpAllowlistsPromise ??= getMCPServersRegistry().resolveAllowlists({
+      userId: user.id,
+      role: user.role,
+    });
+    return mcpAllowlistsPromise;
+  };
+  return { user: createSafeUser(user), loadUserMCPAuthMap, loadMCPAllowlists };
 }
 
 function getMCPReinitializeOAuthTimeout(oauthExpiresAt) {

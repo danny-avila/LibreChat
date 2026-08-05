@@ -18,6 +18,9 @@ const mockRegistryInstance = {
   getAllServerConfigs: jest.fn(() => Promise.resolve({})),
   getServerConfig: jest.fn(() => Promise.resolve(null)),
   ensureConfigServers: jest.fn(() => Promise.resolve({})),
+  resolveAllowlists: jest.fn(() =>
+    Promise.resolve({ allowedDomains: null, allowedAddresses: null, useSSRFProtection: true }),
+  ),
 };
 
 // Create isMCPDomainAllowed mock that can be configured per-test
@@ -98,6 +101,12 @@ describe('tests for the new helper functions used by the MCP connection status e
     jest.clearAllMocks();
     jest.spyOn(MCPOAuthHandler, 'generateFlowId');
     mockGetTenantId.mockReturnValue(undefined);
+    mockIsMCPDomainAllowed.mockResolvedValue(true);
+    mockRegistryInstance.resolveAllowlists.mockResolvedValue({
+      allowedDomains: null,
+      allowedAddresses: null,
+      useSSRFProtection: true,
+    });
 
     mockGetMCPManager = require('~/config').getMCPManager;
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
@@ -310,6 +319,21 @@ describe('tests for the new helper functions used by the MCP connection status e
       );
     });
 
+    it('should treat aborted flow cleanup as neutral connection status', async () => {
+      const mockFlowState = {
+        status: 'FAILED',
+        createdAt: Date.now() - 60000,
+        ttl: 180000,
+        error: 'Tool loading aborted',
+      };
+      const mockFlowManager = { getFlowState: jest.fn(() => mockFlowState) };
+      mockGetFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const result = await checkOAuthFlowStatus(mockUserId, mockServerName);
+
+      expect(result).toEqual({ hasActiveFlow: false, hasFailedFlow: false });
+    });
+
     it('should detect failed flow when flow has timed out', async () => {
       const mockFlowState = {
         status: 'PENDING',
@@ -390,6 +414,20 @@ describe('tests for the new helper functions used by the MCP connection status e
       const mockFlowState = {
         status: 'COMPLETED',
         createdAt: Date.now() - 60000,
+        ttl: 180000,
+      };
+      const mockFlowManager = { getFlowState: jest.fn(() => mockFlowState) };
+      mockGetFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const result = await checkOAuthFlowStatus(mockUserId, mockServerName);
+
+      expect(result).toEqual({ hasActiveFlow: false, hasFailedFlow: false });
+    });
+
+    it('should treat an old completed flow as neutral instead of timed out', async () => {
+      const mockFlowState = {
+        status: 'COMPLETED',
+        createdAt: Date.now() - 200000,
         ttl: 180000,
       };
       const mockFlowManager = { getFlowState: jest.fn(() => mockFlowState) };
@@ -717,6 +755,49 @@ describe('tests for the new helper functions used by the MCP connection status e
         connectionState: 'connected',
         authorizationState: 'authorized',
       });
+    });
+
+    it('should not report durable readiness when the runtime URL violates current policy', async () => {
+      const appConnections = new Map();
+      const userConnections = new Map();
+      const oauthServers = new Set([mockServerName]);
+      const { findToken } = require('~/models');
+      const config = { ...mockConfig, url: 'https://blocked.example.com/' };
+      mockGetOAuthReconnectionManager.mockReturnValue({ isReconnecting: jest.fn(() => false) });
+      mockGetFlowStateManager.mockReturnValue({ getFlowState: jest.fn(() => null) });
+      mockGetLogStores.mockReturnValue({});
+      mockRegistryInstance.resolveAllowlists.mockResolvedValue({
+        allowedDomains: ['allowed.example.com'],
+        allowedAddresses: null,
+        useSSRFProtection: false,
+      });
+      mockIsMCPDomainAllowed.mockResolvedValue(false);
+
+      const result = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        config,
+        appConnections,
+        userConnections,
+        oauthServers,
+        { user: { id: mockUserId, role: 'user' } },
+      );
+
+      expect(result).toEqual({
+        requiresOAuth: true,
+        connectionState: 'disconnected',
+        authorizationState: 'needs_authorization',
+      });
+      expect(mockRegistryInstance.resolveAllowlists).toHaveBeenCalledWith({
+        userId: mockUserId,
+        role: 'user',
+      });
+      expect(mockIsMCPDomainAllowed).toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'https://blocked.example.com/' }),
+        ['allowed.example.com'],
+        null,
+      );
+      expect(findToken).not.toHaveBeenCalled();
     });
 
     it('should validate durable readiness against the user-resolved runtime URL', async () => {

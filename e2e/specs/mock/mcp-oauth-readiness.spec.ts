@@ -192,11 +192,149 @@ test.describe('MCP OAuth readiness', () => {
     await expect(page.getByText(`OAuth login timed out for ${SERVER_NAME}`).first()).toBeVisible({
       timeout: 15000,
     });
-    expect(flowStatusCalls).toBe(1);
+    expect(flowStatusCalls).toBe(2);
 
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'MCP Servers', exact: true }).click();
     await expect(serverItem.getByRole('button', { name: `Connect ${SERVER_NAME}` })).toBeVisible();
+  });
+
+  test('accepts completion found by the final poll after the attempt deadline', async ({
+    page,
+  }) => {
+    test.setTimeout(30000);
+
+    let reinitializeCalls = 0;
+    let flowStatusCalls = 0;
+    await page.route('**/api/mcp/connection/status', async (route) => {
+      const readinessComplete = reinitializeCalls > 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          oauthTimeout: 30000,
+          connectionStatus: {
+            [SERVER_NAME]: {
+              connectionState: readinessComplete ? 'connected' : 'error',
+              requiresOAuth: true,
+              authorizationState: readinessComplete ? 'authorized' : 'error',
+            },
+          },
+        }),
+      });
+    });
+    await page.route(`**/api/mcp/${SERVER_NAME}/reinitialize`, async (route) => {
+      reinitializeCalls++;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          reinitializeCalls === 1
+            ? {
+                success: true,
+                message: 'OAuth authorization required',
+                serverName: SERVER_NAME,
+                oauthRequired: true,
+                oauthUrl: 'https://oauth.example.test/authorize',
+                flowId: FLOW_ID,
+                oauthTimeout: 1000,
+              }
+            : {
+                success: true,
+                message: 'MCP server reinitialized successfully',
+                serverName: SERVER_NAME,
+                oauthRequired: false,
+              },
+        ),
+      });
+    });
+    await page.route('**/api/mcp/oauth/status/**', async (route) => {
+      flowStatusCalls++;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'COMPLETED', completed: true, failed: false }),
+      });
+    });
+
+    await page.goto('/c/new', { timeout: 10000 });
+    await page.getByRole('button', { name: 'MCP Servers', exact: true }).click();
+    const serverItem = page.getByRole('menuitemcheckbox', { name: new RegExp(SERVER_TITLE) });
+    await serverItem.getByRole('button', { name: `Connect ${SERVER_NAME}` }).click();
+    await page.getByRole('button', { name: 'Authenticate', exact: true }).click();
+
+    await expect(
+      page.getByText(`MCP server '${SERVER_NAME}' authenticated successfully`).first(),
+    ).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(`OAuth login timed out for ${SERVER_NAME}`)).toHaveCount(0);
+    await expect(
+      page.getByRole('menuitemcheckbox', {
+        name: new RegExp(SERVER_TITLE),
+        includeHidden: true,
+      }),
+    ).toHaveAttribute('aria-checked', 'true');
+    expect(flowStatusCalls).toBe(1);
+    expect(reinitializeCalls).toBe(2);
+  });
+
+  test('stops polling at the attempt deadline during repeated transient errors', async ({
+    page,
+  }) => {
+    test.setTimeout(30000);
+
+    let flowStatusCalls = 0;
+    await page.route('**/api/mcp/connection/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          oauthTimeout: 30000,
+          connectionStatus: {
+            [SERVER_NAME]: {
+              connectionState: 'error',
+              requiresOAuth: true,
+              authorizationState: 'error',
+            },
+          },
+        }),
+      });
+    });
+    await page.route(`**/api/mcp/${SERVER_NAME}/reinitialize`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          message: 'OAuth authorization required',
+          serverName: SERVER_NAME,
+          oauthRequired: true,
+          oauthUrl: 'https://oauth.example.test/authorize',
+          flowId: FLOW_ID,
+          oauthTimeout: 1000,
+        }),
+      });
+    });
+    await page.route('**/api/mcp/oauth/status/**', async (route) => {
+      flowStatusCalls++;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Temporary shared-state failure' }),
+      });
+    });
+
+    await page.goto('/c/new', { timeout: 10000 });
+    await page.getByRole('button', { name: 'MCP Servers', exact: true }).click();
+    const serverItem = page.getByRole('menuitemcheckbox', { name: new RegExp(SERVER_TITLE) });
+    await serverItem.getByRole('button', { name: `Connect ${SERVER_NAME}` }).click();
+    await page.getByRole('button', { name: 'Authenticate', exact: true }).click();
+
+    await expect(page.getByText(`OAuth login timed out for ${SERVER_NAME}`).first()).toBeVisible({
+      timeout: 15000,
+    });
+    expect(flowStatusCalls).toBe(1);
   });
 
   test('keeps polling when an older fallback pod still reports authorization in progress', async ({
