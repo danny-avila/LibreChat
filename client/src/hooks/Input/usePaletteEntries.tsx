@@ -3,6 +3,7 @@ import { MCPIcon } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Brain, Globe, Layers, FolderSearch, WandSparkles, SquareChevronRight } from 'lucide-react';
 import {
+  AuthType,
   Permissions,
   ArtifactModes,
   PermissionTypes,
@@ -209,8 +210,16 @@ export default function usePaletteEntries({
       return entries;
     }
 
-    const { webSearch, codeInterpreter, fileSearch, skills, memory, artifacts, mcpServerManager } =
-      context;
+    const {
+      webSearch,
+      codeInterpreter,
+      fileSearch,
+      skills,
+      memory,
+      artifacts,
+      mcpServerManager,
+      searchApiKeyForm,
+    } = context;
 
     const pushTool = (
       itemId: string,
@@ -236,6 +245,14 @@ export default function usePaletteEntries({
     };
 
     if (canUseWebSearch && webSearchEnabled) {
+      /* Same rule the old tools menu used for its gear: only credentials the
+         user can actually provide are editable. Toggling opens the key dialog
+         on its own while unauthenticated, so this pill is what keeps existing
+         credentials reachable — editing, switching provider or revoking. */
+      const authTypes = webSearch.authData?.authTypes ?? [];
+      const searchConfigurable =
+        authTypes.length === 0 ||
+        !authTypes.every(([, authType]) => authType === AuthType.SYSTEM_DEFINED);
       pushTool(
         'web_search',
         localize('com_ui_web_search'),
@@ -243,6 +260,16 @@ export default function usePaletteEntries({
         ACCENT.webSearch,
         webSearch.toggleState === true,
         () => webSearch.debouncedChange({ value: !webSearch.toggleState }),
+        searchConfigurable && searchApiKeyForm != null
+          ? [
+              {
+                id: 'configure',
+                label: localize('com_ui_configure'),
+                active: false,
+                onSelect: () => searchApiKeyForm.setIsDialogOpen(true),
+              },
+            ]
+          : undefined,
       );
     }
 
@@ -357,11 +384,48 @@ export default function usePaletteEntries({
       }
     }
 
-    const { selectableServers, mcpValues, toggleServerSelection } = mcpServerManager ?? {};
+    const {
+      selectableServers,
+      mcpValues,
+      toggleServerSelection,
+      connectionStatus,
+      initializeServer,
+      getServerStatusIconProps,
+    } = mcpServerManager ?? {};
     if (canUseMcp && selectableServers) {
       const selected = new Set(mcpValues ?? []);
       for (const server of selectableServers) {
         const title = server.config?.title || server.serverName;
+        /* A row for a server that is not connected routes through the manager
+           instead of blindly selecting: credentials first when the server wants
+           custom variables, otherwise a reinitialize — which runs the OAuth
+           flow when needed and selects the server itself once it is ready.
+           Selecting an unusable server here used to be a dead end: every
+           connect, authenticate and retry control lived in the menu this
+           palette replaced. */
+        const selectServer = () => {
+          if (selected.has(server.serverName)) {
+            toggleServerSelection?.(server.serverName);
+            return;
+          }
+          const status = connectionStatus?.[server.serverName];
+          if (status != null && status.connectionState !== 'connected') {
+            const statusProps = getServerStatusIconProps?.(server.serverName);
+            if (statusProps?.isInitializing) {
+              return;
+            }
+            if (statusProps?.hasCustomUserVars) {
+              statusProps.onConfigClick({
+                stopPropagation: () => {},
+                preventDefault: () => {},
+              } as React.MouseEvent);
+              return;
+            }
+            void initializeServer?.(server.serverName);
+            return;
+          }
+          toggleServerSelection?.(server.serverName);
+        };
         entries.push({
           key: `mcp:${server.serverName}`,
           itemType: 'mcp',
@@ -384,7 +448,7 @@ export default function usePaletteEntries({
             ),
           section: 'mcp',
           active: selected.has(server.serverName),
-          onSelect: () => toggleServerSelection?.(server.serverName),
+          onSelect: selectServer,
         });
       }
     }
