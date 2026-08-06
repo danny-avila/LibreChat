@@ -2139,7 +2139,6 @@
   "com_ui_versions": "Versions",
   "com_ui_via_server": "in {{0}}",
   "com_ui_view_memory": "View Memory",
-  "com_ui_wait_for_tool_steps": "Wait for tool steps instead",
   "com_ui_web_search": "Web Search",
   "com_ui_web_search_cohere_key": "Enter Cohere API Key",
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (optional)",
