@@ -25,6 +25,9 @@
       }
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "clean": "rimraf dist",
     "build": "npm run clean && tsdown",
