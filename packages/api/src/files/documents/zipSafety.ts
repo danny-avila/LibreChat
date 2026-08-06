@@ -17,6 +17,15 @@ const DEFAULT_MAX_TOTAL_BYTES = 100 * megabyte;
  */
 const DEFAULT_MAX_ENTRY_BYTES = 25 * megabyte;
 
+/** End-Of-Central-Directory record signature, `PK\x05\x06`. */
+const EOCD_SIGNATURE = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+
+/** Fixed size of the EOCD record, before its variable-length comment. */
+const EOCD_RECORD_BYTES = 22;
+
+/** Largest legal EOCD tail: the fixed record plus a 65535-byte comment. */
+const EOCD_SCAN_BYTES = EOCD_RECORD_BYTES + 65535;
+
 /**
  * Tag-distinct error so callers (e.g. the office HTML producers and the
  * RAG document parser) can distinguish a refused zip-bomb from generic
@@ -162,4 +171,60 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
       zipfile.on('error', (zipErr: Error) => finish(zipErr));
     });
   });
+}
+
+/**
+ * Detects a ZIP archive the way the consuming parsers do: by locating the
+ * End-Of-Central-Directory record from the tail.
+ *
+ * Testing the leading `PK` magic bytes is not enough. Real zip readers (anydoc's
+ * Rust zip crate, SheetJS) seek the EOCD backwards from the end of the file and
+ * tolerate arbitrary prepended data — that is how self-extracting archives work.
+ * Prepending a few junk bytes to a zip bomb therefore makes a magic-byte test
+ * report "not a zip" while the parser still happily inflates it.
+ *
+ * Candidate signatures are confirmed by checking that the record's declared
+ * comment length runs exactly to the end of the buffer, so a stray `PK\x05\x06`
+ * inside an unrelated binary (a `.xls` CFB container, say) is not mistaken for
+ * an archive.
+ */
+export function isZipArchive(buffer: Buffer): boolean {
+  if (buffer.length < EOCD_RECORD_BYTES) {
+    return false;
+  }
+  const tail =
+    buffer.length > EOCD_SCAN_BYTES ? buffer.subarray(buffer.length - EOCD_SCAN_BYTES) : buffer;
+
+  let index = tail.lastIndexOf(EOCD_SIGNATURE, tail.length - EOCD_RECORD_BYTES);
+  while (index >= 0) {
+    if (index + EOCD_RECORD_BYTES + tail.readUInt16LE(index + 20) === tail.length) {
+      return true;
+    }
+    if (index === 0) {
+      return false;
+    }
+    index = tail.lastIndexOf(EOCD_SIGNATURE, index - 1);
+  }
+  return false;
+}
+
+/**
+ * Runs the decompression guard when — and only when — the buffer really is a ZIP.
+ *
+ * Detection and enforcement have to stay welded together. Once the tail says
+ * "archive", a validator failure is a rejection and never a fall-through: yauzl
+ * does not compensate for the offset shift that prepended bytes introduce, so a
+ * padded bomb surfaces here as a malformed-central-directory error, and passing
+ * that to the parser would hand it exactly the file the guard exists to stop.
+ * Non-archives (`.xls` is CFB, not ZIP) skip the validator entirely, which is
+ * why the check cannot simply be made unconditional.
+ */
+export async function assertSafeZipSizeIfArchive(
+  buffer: Buffer,
+  options: ZipSafetyOptions = {},
+): Promise<void> {
+  if (!isZipArchive(buffer)) {
+    return;
+  }
+  await assertSafeZipSize(buffer, options);
 }
