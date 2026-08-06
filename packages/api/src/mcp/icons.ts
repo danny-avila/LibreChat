@@ -17,12 +17,12 @@ import { MAX_MCP_ICON_PATH_LENGTH } from 'librechat-data-provider';
 const SVG_DATA_URI = /^data:image\/svg\+xml/i;
 
 /**
- * SVG elements safe to keep for an icon. Drawing, shape, gradient, clip, and
- * filter primitives, plus `use` for self-contained `<defs>` references (common
- * exporter output). The filter set mirrors the client sanitizer's DOMPurify
- * `svgFilters` profile so an icon that previews with effects is stored intact.
- * `script`, `foreignObject`, `style`, `a`, `image`, `animate`, and `set` are
- * intentionally omitted so no active content, embedded HTML, or navigation
+ * SVG elements safe to keep for an icon. Drawing, shape, gradient, clip, marker,
+ * and filter primitives, plus `use` for self-contained `<defs>` references
+ * (common exporter output). The filter set mirrors the client sanitizer's
+ * DOMPurify `svgFilters` profile so an icon that previews with effects is stored
+ * intact. `script`, `foreignObject`, `style`, `a`, `image`, `animate`, and `set`
+ * are intentionally omitted so no active content, embedded HTML, or navigation
  * survives; hrefs are restricted to same-document fragments below.
  */
 const ALLOWED_SVG_TAGS = [
@@ -45,6 +45,7 @@ const ALLOWED_SVG_TAGS = [
   'clipPath',
   'mask',
   'pattern',
+  'marker',
   'title',
   'desc',
   'filter',
@@ -120,6 +121,15 @@ const ALLOWED_SVG_ATTRS = [
   'clip-path',
   'clip-rule',
   'mask',
+  'marker-start',
+  'marker-mid',
+  'marker-end',
+  'markerWidth',
+  'markerHeight',
+  'markerUnits',
+  'refX',
+  'refY',
+  'orient',
   'preserveAspectRatio',
   'id',
   'class',
@@ -179,14 +189,22 @@ const ALLOWED_SVG_ATTRS = [
   'tableValues',
 ];
 
+/** Matches a same-document `url(#id)` reference (optionally quoted) or `none`. */
+const LOCAL_URL_REFERENCE = /^(?:none|url\(\s*(['"]?)#[^'")]*\1\s*\))$/;
+
 /**
  * Drops `href`/`xlink:href` references that leave the document while preserving
- * same-document fragments used by `<use>` and gradients.
+ * same-document fragments used by `<use>` and gradients, and restricts
+ * `marker-start`/`marker-mid`/`marker-end` to fragment-only `url(#id)` values.
  */
 function keepLocalReferences(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
   for (const [name, value] of Object.entries(attribs)) {
     if (name === 'href' || name === 'xlink:href') {
       if (!value.trim().startsWith('#')) {
+        delete attribs[name];
+      }
+    } else if (name === 'marker-start' || name === 'marker-mid' || name === 'marker-end') {
+      if (!LOCAL_URL_REFERENCE.test(value.trim())) {
         delete attribs[name];
       }
     }
