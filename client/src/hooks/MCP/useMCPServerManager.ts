@@ -307,7 +307,7 @@ export function useMCPServerManager({
             /** Flow completion is durable credential readiness, not proof that tool discovery
              * finished on this pod. Reinitialize once more through the normal API so the
              * selected server and its tools are usable before the UI reports success. */
-            const readiness = await reinitializeMutation.mutateAsync(serverName);
+            const readiness = await reinitializeServer(serverName);
             if (!isMCPReadyAfterOAuth(readiness)) {
               showToast({
                 message: getMCPReinitializeErrorMessage(readiness, localize),
@@ -455,7 +455,7 @@ export function useMCPServerManager({
       timeoutId = setTimeout(pollOnce, getPollInterval(0));
       pollIntervalsRef.current[serverName] = timeoutId;
     },
-    [queryClient, showToast, localize, setMCPValues, cleanupServerState, reinitializeMutation],
+    [queryClient, showToast, localize, setMCPValues, cleanupServerState, reinitializeServer],
   );
 
   const initializeServer = useCallback(
