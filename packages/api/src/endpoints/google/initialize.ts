@@ -127,7 +127,7 @@ export async function initializeGoogle({
   const result = getGoogleConfig(credentials, clientOptions);
 
   if (clientOptions.streamRate != null) {
-    (result.llmConfig as Record<string, unknown>)._lc_stream_delay = clientOptions.streamRate;
+    result.llmConfig._lc_stream_delay = clientOptions.streamRate;
   }
 
   return result;

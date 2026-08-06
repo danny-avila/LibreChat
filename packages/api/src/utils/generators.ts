@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
-import { GraphEvents } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
+import { GraphEvents, sleep } from '@librechat/agents';
 import type { Response as ServerResponse } from 'express';
 import type { Agent as HttpsAgent } from 'node:https';
 import type { Agent as HttpAgent } from 'node:http';
@@ -89,5 +89,21 @@ export function createStreamEventHandlers(res: ServerResponse): {
         sendEvent(res, event);
       }
     },
+  };
+}
+
+/**
+ * @deprecated No longer used internally: stream pacing lives in
+ * `@librechat/agents` (adaptive smoothing via `_lc_stream_delay` /
+ * `streamRate`), and LangChain runs callback handlers in the background, so
+ * a sleep here never paced token delivery. Kept as a compatibility shim for
+ * external `@librechat/api` consumers; removal is reserved for a major
+ * release.
+ */
+export function createHandleLLMNewToken(streamRate: number) {
+  return async function (): Promise<void> {
+    if (streamRate) {
+      await sleep(streamRate);
+    }
   };
 }

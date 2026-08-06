@@ -462,7 +462,8 @@ endpoints:
   # Use this to run Anthropic Claude models through Google Cloud Vertex AI
   # anthropic:
   #   # (optional) Override the adaptive stream-smoothing cadence in milliseconds.
-  #   # All endpoints smooth at 25ms by default; set 0 to disable smoothing.
+  #   # Agents SDK-backed providers smooth at 25ms by default; set 0 to disable
+  #   # smoothing. (Legacy Assistants/Ollama paths sleep this long per chunk instead.)
   #   streamRate: 20
   #   # (optional) Title model for conversation titles
   #   titleModel: claude-3.5-haiku  # Use the visible model name (key from models config)

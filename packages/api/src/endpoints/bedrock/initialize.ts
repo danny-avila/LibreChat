@@ -330,7 +330,7 @@ export async function initializeBedrock({
       ? appConfig.endpoints.all.streamRate
       : (bedrockConfig?.streamRate as number | undefined);
   if (streamRate != null) {
-    (llmConfig as Record<string, unknown>)._lc_stream_delay = streamRate;
+    llmConfig._lc_stream_delay = streamRate;
   }
 
   return {
