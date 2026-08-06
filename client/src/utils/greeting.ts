@@ -20,6 +20,14 @@ const lateNight: GreetingOption[] = [
   { key: 'com_ui_greeting_think_through', namedKey: 'com_ui_greeting_think_through_named' },
 ];
 
+/** 04:00 to 07:00, where the visitor could be up early or not yet in bed. */
+const dawn: GreetingOption[] = [
+  { key: 'com_ui_greeting_bird_or_owl', namedKey: 'com_ui_greeting_bird_or_owl_named' },
+  { key: 'com_ui_greeting_up_already', namedKey: 'com_ui_greeting_up_already_named' },
+  { key: 'com_ui_greeting_before_sun', namedKey: 'com_ui_greeting_before_sun_named' },
+  { key: 'com_ui_greeting_early_bird', namedKey: 'com_ui_greeting_early_bird_named' },
+];
+
 const morning: GreetingOption[] = [
   { key: 'com_ui_greeting_good_morning', namedKey: 'com_ui_greeting_good_morning_named' },
   { key: 'com_ui_greeting_first_move', namedKey: 'com_ui_greeting_first_move_named' },
@@ -63,11 +71,6 @@ const eveningShift: GreetingOption = {
   namedKey: 'com_ui_greeting_evening_shift_named',
 };
 
-const earlyBird: GreetingOption = {
-  key: 'com_ui_greeting_early_bird',
-  namedKey: 'com_ui_greeting_early_bird_named',
-};
-
 const happyThursday: GreetingOption = {
   key: 'com_ui_greeting_happy_thursday',
   namedKey: 'com_ui_greeting_happy_thursday_named',
@@ -84,7 +87,8 @@ const tackle: GreetingOption = {
 };
 
 export const defaultGreetingSlots: GreetingSlot[] = [
-  { until: 5, options: lateNight },
+  { until: 4, options: lateNight },
+  { until: 7, options: dawn },
   { until: 12, options: morning },
   { until: 17, options: afternoon },
   { until: 22, options: evening },
@@ -93,7 +97,8 @@ export const defaultGreetingSlots: GreetingSlot[] = [
 
 export const greetingSlotsByDay: Partial<Record<DayKey, GreetingSlot[]>> = {
   sun: [
-    { until: 5, options: lateNight },
+    { until: 4, options: lateNight },
+    { until: 7, options: dawn },
     { until: 12, options: [...morning, cooking] },
     { until: 17, options: afternoon },
     { until: 22, options: [...evening, welcomeBack] },
@@ -101,7 +106,8 @@ export const greetingSlotsByDay: Partial<Record<DayKey, GreetingSlot[]>> = {
   ],
 
   mon: [
-    { until: 5, options: lateNight },
+    { until: 4, options: lateNight },
+    { until: 7, options: dawn },
     { until: 12, options: [...morning, newWeek] },
     { until: 17, options: [...afternoon, backAtIt] },
     { until: 22, options: [...evening, eveningShift] },
@@ -109,15 +115,17 @@ export const greetingSlotsByDay: Partial<Record<DayKey, GreetingSlot[]>> = {
   ],
 
   wed: [
-    { until: 5, options: lateNight },
-    { until: 12, options: [...morning, earlyBird] },
+    { until: 4, options: lateNight },
+    { until: 7, options: dawn },
+    { until: 12, options: morning },
     { until: 17, options: afternoon },
     { until: 22, options: [...evening, welcomeBack] },
     { until: 24, options: lateNight },
   ],
 
   thu: [
-    { until: 5, options: lateNight },
+    { until: 4, options: lateNight },
+    { until: 7, options: dawn },
     { until: 12, options: [...morning, happyThursday] },
     { until: 17, options: afternoon },
     { until: 22, options: evening },
@@ -125,7 +133,8 @@ export const greetingSlotsByDay: Partial<Record<DayKey, GreetingSlot[]>> = {
   ],
 
   fri: [
-    { until: 5, options: lateNight },
+    { until: 4, options: lateNight },
+    { until: 7, options: dawn },
     { until: 12, options: morning },
     { until: 17, options: afternoon },
     { until: 22, options: [...evening, eveningShift] },
@@ -133,7 +142,8 @@ export const greetingSlotsByDay: Partial<Record<DayKey, GreetingSlot[]>> = {
   ],
 
   sat: [
-    { until: 5, options: lateNight },
+    { until: 4, options: lateNight },
+    { until: 7, options: dawn },
     { until: 12, options: [...morning, coffee] },
     { until: 17, options: [...afternoon, tackle] },
     { until: 22, options: evening },

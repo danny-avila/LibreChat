@@ -60,7 +60,7 @@ describe('getGreetingSlot', () => {
   it('maps each weekday to its own schedule', () => {
     dayKeys.forEach((_key, index) => {
       expect(dateForDay(index, 12).getDay()).toBe(index);
-      expect(getGreetingSlot(dateForDay(index, 12))).toBe(slotsFor(index)[2]);
+      expect(getGreetingSlot(dateForDay(index, 12))).toBe(slotsFor(index)[3]);
     });
   });
 
@@ -86,15 +86,18 @@ describe('getGreetingSlot', () => {
 
   it.each([
     [0, 0],
-    [4, 0],
+    [3, 0],
+    [4, 1],
     [5, 1],
-    [11, 1],
-    [12, 2],
-    [16, 2],
-    [17, 3],
-    [21, 3],
-    [22, 4],
-    [23, 4],
+    [6, 1],
+    [7, 2],
+    [11, 2],
+    [12, 3],
+    [16, 3],
+    [17, 4],
+    [21, 4],
+    [22, 5],
+    [23, 5],
   ])('resolves hour %i to slot index %i on every day', (hour, slotIndex) => {
     dayKeys.forEach((_key, dayIndex) => {
       expect(getGreetingSlot(dateForDay(dayIndex, hour))).toBe(slotsFor(dayIndex)[slotIndex]);
@@ -151,7 +154,8 @@ describe('getGreetingKey', () => {
 
 describe('getMsUntilNextGreeting', () => {
   it('counts down to the end of the active slot', () => {
-    expect(getMsUntilNextGreeting(dateForDay(2, 4, 59, 0))).toBe(60 * 1000);
+    expect(getMsUntilNextGreeting(dateForDay(2, 3, 59, 0))).toBe(60 * 1000);
+    expect(getMsUntilNextGreeting(dateForDay(2, 6, 59, 0))).toBe(60 * 1000);
     expect(getMsUntilNextGreeting(dateForDay(2, 11, 30, 0))).toBe(30 * 60 * 1000);
     expect(getMsUntilNextGreeting(dateForDay(2, 16, 0, 0))).toBe(60 * 60 * 1000);
     expect(getMsUntilNextGreeting(dateForDay(2, 21, 0, 0))).toBe(60 * 60 * 1000);

@@ -45,23 +45,21 @@ describe('useGreeting', () => {
     expect(result.current).not.toBe('fallback');
   });
 
-  it('updates automatically at every boundary of the day', () => {
-    jest.setSystemTime(tuesdayAt(4, 59));
+  it('updates automatically across every slot of the day', () => {
+    jest.setSystemTime(tuesdayAt(0, 0));
     const { result } = renderHook(() => useGreeting('Test User'));
 
     const seen = [result.current];
-    [5, 12, 17, 22].forEach(() => {
+    for (let hour = 1; hour < 24; hour++) {
       act(() => {
-        jest.advanceTimersByTime(60 * 1000);
+        jest.advanceTimersByTime(60 * 60 * 1000);
       });
       seen.push(result.current);
-      act(() => {
-        jest.advanceTimersByTime(4 * 60 * 60 * 1000 + 59 * 60 * 1000);
-      });
-    });
+    }
 
     seen.forEach((greeting) => expect(greeting).toContain('Test User'));
-    expect(new Set(seen).size).toBeGreaterThan(1);
+    /** Six slots a day: late night, dawn, morning, afternoon, evening, late night. */
+    expect(new Set(seen).size).toBeGreaterThanOrEqual(4);
   });
 
   it('recalculates when the tab becomes visible again after a clock jump', () => {
