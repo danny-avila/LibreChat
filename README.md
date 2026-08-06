@@ -64,6 +64,7 @@
 - **Langfuse observability:** Configure encrypted Langfuse connections in-app, optionally fan out traces by tenant, and suppress central export per run.
 - **Administration and security:** Delegate individual config sections, encrypt registered secrets and custom endpoint keys, audit terms acceptance, and control model visibility.
 - **Navigation and responsiveness:** A dock-style message rail, warmer conversation switches, virtualized search, and faster Agent startup keep large workspaces responsive.
+- **Streaming and tool reliability:** Adaptive provider stream smoothing, optional Redis delta batching, Agent stream circuit breakers, and cross-replica MCP OAuth readiness improve long-running tool workflows.
 - **Deployment and reliability:** Added configurable HTTP timeouts, Amazon DocumentDB 5.0+ support, low-noise Redis and browser observability, and a rolling-upgrade-safe generation protocol.
 
 Read the [full v0.8.8-rc1 changelog](https://www.librechat.ai/changelog/v0.8.8-rc1).
