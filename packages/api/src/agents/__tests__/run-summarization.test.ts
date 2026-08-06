@@ -648,6 +648,35 @@ describe('summarizationEnabled resolution', () => {
     expect(config.provider).toBe('openAI');
     expect(config.model).toBe('gpt-4o');
   });
+
+  it('false when the effective context budget is below the viable minimum', async () => {
+    /**
+     * A tiny user-set maxContextTokens re-triggers summarization on every
+     * graph step until the recursion limit aborts the run; the guard falls
+     * back to plain pruning instead.
+     */
+    const agents = await callAndCapture({
+      agents: [makeAgent({ maxContextTokens: 10 })],
+      summarizationConfig: {
+        enabled: true,
+        provider: 'anthropic',
+        model: 'claude-3-haiku',
+      },
+    });
+    expect(agents[0].summarizationEnabled).toBe(false);
+  });
+
+  it('true at exactly the 1024-token viable minimum', async () => {
+    const agents = await callAndCapture({
+      agents: [makeAgent({ maxContextTokens: 1024 })],
+      summarizationConfig: {
+        enabled: true,
+        provider: 'anthropic',
+        model: 'claude-3-haiku',
+      },
+    });
+    expect(agents[0].summarizationEnabled).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
