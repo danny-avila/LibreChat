@@ -609,10 +609,19 @@ export function useShortcutActions(): ShortcutAction[] {
     return copy(text.trim(), { format: 'text/plain' });
   }, []);
 
-  const handleStopGenerating = useCallback(
-    () => clickElement('[data-testid="stop-generation-button"]'),
-    [],
-  );
+  const handleStopGenerating = useCallback(() => {
+    /* Both split panes can be generating at once, each advertising this
+       shortcut under its own composer; stop the run the user is focused in
+       rather than always the first pane's. */
+    const focusedPane = document.activeElement?.closest('form');
+    const scoped = focusedPane?.querySelector<HTMLElement>(
+      '[data-testid="stop-generation-button"]',
+    );
+    if (scoped != null) {
+      return clickTarget(scoped);
+    }
+    return clickElement('[data-testid="stop-generation-button"]');
+  }, []);
 
   const handleRegenerateResponse = useCallback(
     () => clickElement('[data-testid="regenerate-generation-button"]'),
