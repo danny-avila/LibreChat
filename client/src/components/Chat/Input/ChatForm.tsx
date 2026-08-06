@@ -700,6 +700,7 @@ const ChatForm = memo(function ChatForm({
             duringRunActive={steering.duringRunActive}
             canControlGeneration={steering.canControlGeneration}
             duringRunAction={steering.effectiveAction}
+            canSteer={steering.canSteer}
             answerModeActive={answerMode.active}
             uploadingCount={uploadingCount}
           />
