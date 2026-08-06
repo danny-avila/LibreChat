@@ -42,8 +42,6 @@ import store from '~/store';
 const isValidChatProjectId = (projectId: string | null): projectId is string =>
   projectId != null && /^[a-f\d]{24}$/i.test(projectId);
 
-const EMPTY_AGENTS_MAP: TAgentsMap = {};
-
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
   const { isAuthenticated, user, roles } = useAuthRedirect();
@@ -129,18 +127,16 @@ export default function ChatRoute() {
   });
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
-  const agentsMapContext = useAgentsMapContext();
+  /** The map comes from Root's shared context (one mapping pass app-wide); the
+   * select-less observer only tracks settle state. Only a loaded list may
+   * invalidate a stored agent pick: on a transient catalog failure (retries are
+   * disabled) the map stays unknown, the pick stays trusted, and the gate below
+   * releases so the landing never hangs on the error. */
+  const agentsMap: TAgentsMap | undefined = useAgentsMapContext();
   const agentsQuery = useListAgentsQuery(
     { requiredPermission: PermissionBits.VIEW },
     { enabled: isAuthenticated },
   );
-  /** The map itself comes from Root's shared context (one mapping pass app-wide);
-   * the select-less observer only tracks settle state. A failed agent list reads
-   * as empty: a stored agent pick that cannot be verified must not suppress the
-   * soft default indefinitely. */
-  const agentsMap: TAgentsMap | undefined = agentsQuery.isError
-    ? EMPTY_AGENTS_MAP
-    : agentsMapContext;
 
   const isTemporaryChat = isTemporaryConversation(conversation);
 
@@ -204,6 +200,7 @@ export default function ChatRoute() {
     if (
       (isNewConvo || notFoundConvo) &&
       agentsMap == null &&
+      !agentsQuery.isError &&
       !hasModelSelection(querySettings) &&
       defaultSpecAwaitsAgents(startupConfig, endpointsQuery.data)
     ) {
@@ -307,6 +304,7 @@ export default function ChatRoute() {
   }, [
     roles,
     agentsMap,
+    agentsQuery.isError,
     startupConfig,
     initialConvoQuery.data,
     initialConvoQuery.isError,
