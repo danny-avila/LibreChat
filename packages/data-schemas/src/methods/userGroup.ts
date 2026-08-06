@@ -1096,6 +1096,7 @@ export function createUserGroupMethods(
               username: userWithId.username,
               avatar: userWithId.avatar,
               provider: userWithId.provider,
+              idOnTheSource: userWithId.idOnTheSource,
             } as TUser);
           }),
         ),

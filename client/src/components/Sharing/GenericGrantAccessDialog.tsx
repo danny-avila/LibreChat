@@ -26,7 +26,7 @@ import UnifiedPeopleSearch from './PeoplePicker/UnifiedPeopleSearch';
 import PeoplePickerAdminSettings from './PeoplePickerAdminSettings';
 import PublicSharingToggle from './PublicSharingToggle';
 import { SelectedPrincipalsList } from './PeoplePicker';
-import { computeShareChanges } from './shareChanges';
+import { computeShareChanges, dedupeNewShares } from './shareChanges';
 import { cn } from '~/utils';
 
 export default function GenericGrantAccessDialog({
@@ -110,10 +110,10 @@ export default function GenericGrantAccessDialog({
 
   // Handler for adding users from search (immediate add to unified list)
   const handleAddFromSearch = (newShares: TPrincipal[]) => {
-    const sharesToAdd = newShares.filter(
-      (newShare) =>
-        !allShares.some((existing) => existing.idOnTheSource === newShare.idOnTheSource),
-    );
+    const sharesToAdd = dedupeNewShares(allShares, newShares);
+    if (!sharesToAdd.length) {
+      return;
+    }
 
     const sharesWithDefaults = sharesToAdd.map((share) => ({
       ...share,
