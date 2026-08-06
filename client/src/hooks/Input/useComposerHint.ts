@@ -1,7 +1,19 @@
+import { useMemo } from 'react';
 import type { LocalizeFunction } from '~/common';
+import { isMacPlatform, bindingDisplayString } from '~/utils/shortcuts';
+import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import { useShortcutDisplay } from '~/hooks/useKeyboardShortcuts';
-import { isMacPlatform } from '~/utils/shortcuts';
 import useLocalize from '~/hooks/useLocalize';
+
+/** The effective `submitMessage` binding, reduced to what the hints need.
+ *  `customized` false means the stock modifier chord applies; a customized
+ *  binding replaces it, and a cleared one leaves no chord at all. */
+export interface SendBinding {
+  customized: boolean;
+  display: string;
+}
+
+const DEFAULT_SEND_BINDING: SendBinding = { customized: false, display: '' };
 
 export interface ComposerHintState {
   hasText: boolean;
@@ -53,6 +65,9 @@ export function composeHint(
   /** The live binding for `stopGenerating`, which the user can rebind or clear
    *  outright — so the stop line is built from it rather than naming a key. */
   stopShortcut: string,
+  /** The live `submitMessage` binding, for the same reason: the send chords
+   *  named below follow the customization instead of asserting the stock one. */
+  sendBinding: SendBinding = DEFAULT_SEND_BINDING,
 ): ComposerHint {
   if (state.answerModeActive) {
     return { text: localize('com_ui_composer_hint_answer'), kind: 'state' };
@@ -73,6 +88,11 @@ export function composeHint(
   if (state.duringRunActive && state.hasText) {
     const mod = isMac ? '⌘⏎' : 'Ctrl+⏎';
     const alt = isMac ? '⌥⏎' : 'Alt+⏎';
+    /* A customized binding replaces the stock chord as what triggers the
+       default action; it also makes the modifier's alternate route unreachable
+       (`resolveComposerKeyDown` only maps it with the stock binding), so the
+       alternate is named only while the stock chord still works. */
+    const sendChord = sendBinding.customized ? sendBinding.display : mod;
     const isSteer = state.duringRunAction === 'steer';
     /* With plain Enter bound to a newline, the chord IS the default action and
        there is no second chord left to reach the alternate one, so the hint
@@ -86,15 +106,24 @@ export function composeHint(
     const chordVerb = isSteer
       ? 'com_ui_composer_hint_steer_verb'
       : 'com_ui_composer_hint_queue_verb';
-    const parts = state.enterToSend
-      ? [defaultAction, alternateAction]
-      : [`${mod} ${localize(chordVerb)}`];
+    const parts: string[] = [];
+    if (state.enterToSend) {
+      parts.push(defaultAction);
+      if (!sendBinding.customized) {
+        parts.push(alternateAction);
+      }
+    } else if (sendChord) {
+      parts.push(`${sendChord} ${localize(chordVerb)}`);
+    }
     /* Until the start POST installs the generation epoch, every chord that
        reaches the live run refuses — only the default action survives, because
        queueing is local. Naming the others through that window advertises keys
        that do nothing, the same failure as pointing at an unbound shortcut. */
     if (!state.canControlGeneration) {
-      return { text: parts[0], kind: 'state' };
+      return {
+        text: parts[0] ?? localize('com_ui_composer_hint_running'),
+        kind: 'state',
+      };
     }
     return {
       text: [...parts, `${alt} ${localize('com_ui_composer_hint_interrupt')}`].join(SEPARATOR),
@@ -117,13 +146,18 @@ export function composeHint(
   if (state.hasText) {
     if (!state.enterToSend) {
       const mod = isMac ? '⌘⏎' : 'Ctrl+⏎';
-      return {
-        text: [
-          `${mod} ${localize('com_ui_composer_hint_send')}`,
-          `⏎ ${localize('com_ui_composer_hint_newline')}`,
-        ].join(SEPARATOR),
-        kind: 'tip',
-      };
+      const sendChord = sendBinding.customized ? sendBinding.display : mod;
+      /* A cleared binding leaves no key that sends, and naming one that does
+         nothing is worse than the plain typing tip. */
+      if (sendChord) {
+        return {
+          text: [
+            `${sendChord} ${localize('com_ui_composer_hint_send')}`,
+            `⏎ ${localize('com_ui_composer_hint_newline')}`,
+          ].join(SEPARATOR),
+          kind: 'tip',
+        };
+      }
     }
     return { text: localize('com_ui_composer_hint_typing'), kind: 'tip' };
   }
@@ -134,5 +168,13 @@ export function composeHint(
 export default function useComposerHint(state: ComposerHintState): ComposerHint {
   const localize = useLocalize();
   const stopShortcut = useShortcutDisplay('stopGenerating');
-  return composeHint(state, localize, isMacPlatform, stopShortcut);
+  const { submitOverride } = useComposerBindings();
+  const sendBinding = useMemo<SendBinding>(
+    () => ({
+      customized: submitOverride !== undefined,
+      display: submitOverride ? bindingDisplayString(submitOverride, isMacPlatform) : '',
+    }),
+    [submitOverride],
+  );
+  return composeHint(state, localize, isMacPlatform, stopShortcut, sendBinding);
 }
