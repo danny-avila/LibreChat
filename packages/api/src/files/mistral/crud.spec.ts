@@ -139,6 +139,18 @@ describe('MistralOCR Service', () => {
       (jest.mocked(fs).createReadStream as jest.Mock).mockReturnValue(mockReadStream);
     });
 
+    it('destroys the upload stream when the request fails (async SSRF block)', async () => {
+      const err = Object.assign(new Error('SSRF protection'), { code: 'ESSRF' });
+      mockAxios.post!.mockRejectedValueOnce(err);
+
+      await expect(
+        uploadDocumentToMistral({ filePath: '/path/to/test.pdf', apiKey: 'k' }),
+      ).rejects.toBe(err);
+
+      const stream = (jest.mocked(fs).createReadStream as jest.Mock).mock.results[0].value;
+      expect(stream.destroy).toHaveBeenCalled();
+    });
+
     it('should upload a document to Mistral API using file streaming', async () => {
       const mockResponse: { data: MistralFileUploadResponse } = {
         data: {
@@ -172,6 +184,9 @@ describe('MistralOCR Service', () => {
             }),
             maxBodyLength: Infinity,
             maxContentLength: Infinity,
+            maxRedirects: 0,
+            httpAgent: expect.anything(),
+            httpsAgent: expect.anything(),
           }),
         );
         expect(result).toEqual(mockResponse.data);
@@ -212,11 +227,14 @@ describe('MistralOCR Service', () => {
 
       expect(mockAxios.get).toHaveBeenCalledWith(
         'https://api.mistral.ai/v1/files/file-123/url?expiry=24',
-        {
+        expect.objectContaining({
           headers: {
             Authorization: 'Bearer test-api-key',
           },
-        },
+          maxRedirects: 0,
+          httpAgent: expect.anything(),
+          httpsAgent: expect.anything(),
+        }),
       );
       expect(result).toEqual(mockResponse.data);
     });
@@ -246,11 +264,17 @@ describe('MistralOCR Service', () => {
         baseURL: 'https://api.mistral.ai/v1',
       });
 
-      expect(mockAxios.delete).toHaveBeenCalledWith('https://api.mistral.ai/v1/files/file-123', {
-        headers: {
-          Authorization: 'Bearer test-api-key',
-        },
-      });
+      expect(mockAxios.delete).toHaveBeenCalledWith(
+        'https://api.mistral.ai/v1/files/file-123',
+        expect.objectContaining({
+          headers: {
+            Authorization: 'Bearer test-api-key',
+          },
+          maxRedirects: 0,
+          httpAgent: expect.anything(),
+          httpsAgent: expect.anything(),
+        }),
+      );
     });
 
     it('should use default baseURL when not provided', async () => {
@@ -261,11 +285,14 @@ describe('MistralOCR Service', () => {
         apiKey: 'test-api-key',
       });
 
-      expect(mockAxios.delete).toHaveBeenCalledWith('https://api.mistral.ai/v1/files/file-456', {
-        headers: {
-          Authorization: 'Bearer test-api-key',
-        },
-      });
+      expect(mockAxios.delete).toHaveBeenCalledWith(
+        'https://api.mistral.ai/v1/files/file-456',
+        expect.objectContaining({
+          headers: {
+            Authorization: 'Bearer test-api-key',
+          },
+        }),
+      );
     });
 
     it('should not throw when deletion fails', async () => {
@@ -332,12 +359,15 @@ describe('MistralOCR Service', () => {
             document_url: 'https://document-url.com',
           },
         },
-        {
+        expect.objectContaining({
           headers: {
             'Content-Type': 'application/json',
             Authorization: 'Bearer test-api-key',
           },
-        },
+          maxRedirects: 0,
+          httpAgent: expect.anything(),
+          httpsAgent: expect.anything(),
+        }),
       );
       expect(result).toEqual(mockResponse.data);
     });
@@ -381,12 +411,12 @@ describe('MistralOCR Service', () => {
             image_url: 'https://image-url.com/image.png',
           },
         },
-        {
+        expect.objectContaining({
           headers: {
             'Content-Type': 'application/json',
             Authorization: 'Bearer test-api-key',
           },
-        },
+        }),
       );
       expect(result).toEqual(mockResponse.data);
     });
@@ -858,8 +888,8 @@ describe('MistralOCR Service', () => {
         user: { id: 'user123' },
         config: {
           ocr: {
-            apiKey: 'OCR_API_KEY',
-            baseURL: 'OCR_BASEURL',
+            apiKey: '${OCR_API_KEY}',
+            baseURL: '${OCR_BASEURL}',
           },
         },
       } as unknown as ServerRequest;
@@ -942,8 +972,8 @@ describe('MistralOCR Service', () => {
         user: { id: 'user123' },
         config: {
           ocr: {
-            apiKey: 'OCR_API_KEY',
-            baseURL: 'OCR_BASEURL',
+            apiKey: '${OCR_API_KEY}',
+            baseURL: '${OCR_BASEURL}',
             mistralModel: 'mistral-ocr-latest',
           },
         },
@@ -1603,11 +1633,11 @@ describe('MistralOCR Service', () => {
         // Verify delete was called with correct parameters
         expect(mockAxios.delete).toHaveBeenCalledWith(
           'https://api.mistral.ai/v1/files/file-cleanup-123',
-          {
+          expect.objectContaining({
             headers: {
               Authorization: 'Bearer test-api-key',
             },
-          },
+          }),
         );
         expect(mockAxios.delete).toHaveBeenCalledTimes(1);
       });
@@ -1672,11 +1702,11 @@ describe('MistralOCR Service', () => {
         // Verify delete was still called despite the error
         expect(mockAxios.delete).toHaveBeenCalledWith(
           'https://api.mistral.ai/v1/files/file-cleanup-456',
-          {
+          expect.objectContaining({
             headers: {
               Authorization: 'Bearer test-api-key',
             },
-          },
+          }),
         );
         expect(mockAxios.delete).toHaveBeenCalledTimes(1);
       });
@@ -1765,11 +1795,11 @@ describe('MistralOCR Service', () => {
         // Verify delete was attempted
         expect(mockAxios.delete).toHaveBeenCalledWith(
           'https://api.mistral.ai/v1/files/file-cleanup-789',
-          {
+          expect.objectContaining({
             headers: {
               Authorization: 'Bearer test-api-key',
             },
-          },
+          }),
         );
 
         // Verify error was logged
@@ -2015,13 +2045,13 @@ describe('MistralOCR Service', () => {
           apiKey: 'test-api-key',
         });
 
-        expect(mockAxios.post).toHaveBeenCalledWith(
-          'https://api.mistral.ai/v1/files',
-          expect.anything(),
-          expect.not.objectContaining({
-            httpsAgent: expect.anything(),
-          }),
-        );
+        const config = mockAxios.post!.mock.calls[0][2] as {
+          maxRedirects?: number;
+          httpsAgent?: { proxyUrl?: string };
+        };
+        expect(config.maxRedirects).toBe(0);
+        expect(config.httpsAgent).toBeDefined();
+        expect(config.httpsAgent?.proxyUrl).toBeUndefined();
       });
     });
 
@@ -2457,6 +2487,71 @@ describe('MistralOCR Service', () => {
         const authHeader = ocrCall[2]?.headers?.Authorization;
         expect(authHeader).toBe('Bearer hardcoded-api-key-12345');
       });
+    });
+  });
+
+  describe('SSRF connect-time guard', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+      delete process.env.PROXY;
+    });
+
+    it('blocks a literal private-IP baseURL with ESSRF', async () => {
+      await expect(
+        performOCR({
+          apiKey: 'k',
+          url: 'https://document-url.com',
+          baseURL: 'http://10.0.0.5:8080',
+        }),
+      ).rejects.toMatchObject({ code: 'ESSRF' });
+    });
+
+    it('exempts a literal private IP present in ocr.allowedAddresses', async () => {
+      mockAxios.post!.mockResolvedValueOnce({ data: { pages: [] } });
+      await performOCR({
+        apiKey: 'k',
+        url: 'https://document-url.com',
+        baseURL: 'http://10.0.0.5:8080',
+        allowedAddresses: ['10.0.0.5:8080'],
+      });
+
+      const config = mockAxios.post!.mock.calls[0][2] as {
+        httpAgent?: unknown;
+        maxRedirects?: number;
+      };
+      expect(config.httpAgent).toBeDefined();
+      expect(config.maxRedirects).toBe(0);
+    });
+
+    it('does not open the upload file stream when the OCR target is a blocked literal private IP', async () => {
+      (jest.mocked(fs).createReadStream as jest.Mock).mockClear();
+      await expect(
+        uploadDocumentToMistral({
+          apiKey: 'k',
+          filePath: '/tmp/doc.pdf',
+          baseURL: 'http://10.0.0.5:8080',
+        }),
+      ).rejects.toMatchObject({ code: 'ESSRF' });
+      expect(jest.mocked(fs).createReadStream).not.toHaveBeenCalled();
+    });
+
+    it('preserves proxy precedence and still disables redirects', async () => {
+      process.env.PROXY = 'http://proxy.example.com:8080';
+      mockAxios.post!.mockResolvedValueOnce({ data: { pages: [] } });
+      await performOCR({
+        apiKey: 'k',
+        url: 'https://document-url.com',
+        baseURL: 'https://api.mistral.ai/v1',
+      });
+
+      const config = mockAxios.post!.mock.calls[0][2] as {
+        maxRedirects?: number;
+        httpsAgent?: { proxyUrl?: string };
+        httpAgent?: unknown;
+      };
+      expect(config.maxRedirects).toBe(0);
+      expect(config.httpsAgent?.proxyUrl).toBe('http://proxy.example.com:8080');
+      expect(config.httpAgent).toBeUndefined();
     });
   });
 });
