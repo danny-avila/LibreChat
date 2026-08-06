@@ -663,6 +663,7 @@ export type TVerifyEmail = {
 export type TResendVerificationEmail = Omit<TVerifyEmail, 'token'>;
 
 export type EmailChangeErrorCode =
+  | 'account_modified'
   | 'current_password_invalid'
   | 'email_change_disabled'
   | 'email_delivery_failed'

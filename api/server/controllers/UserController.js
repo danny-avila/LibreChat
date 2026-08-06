@@ -16,6 +16,7 @@ const {
   MCPOAuthHandler,
   MCPTokenStorage,
   createEmailChangeService,
+  resolveAppConfigForUser,
   getAppConfigOptionsFromUser,
   normalizeHttpError,
   extractWebSearchEnvVars,
@@ -58,7 +59,7 @@ const emailChangeService = createEmailChangeService({
     ),
   getUserById: (userId, tenantId) =>
     withTenant(tenantId, () =>
-      db.getUserById(userId, 'email _id name username provider tenantId +password'),
+      db.getUserById(userId, 'email _id name username provider role tenantId +password'),
     ),
   updateUser: (userId, update, expectedState, tenantId) =>
     withTenant(tenantId, () => db.updateUser(userId, update, expectedState)),
@@ -67,6 +68,8 @@ const emailChangeService = createEmailChangeService({
   upsertToken: (scope, data, tenantId) => withTenant(tenantId, () => db.upsertToken(scope, data)),
   deleteTokens: (query, tenantId) => withTenant(tenantId, () => db.deleteTokens(query)),
   verifyPassword: (user, password) => comparePassword(user, password, { compare: bcrypt.compare }),
+  resolveAllowedDomains: async (user) =>
+    (await resolveAppConfigForUser(getAppConfig, user))?.registration?.allowedDomains,
   sendEmail,
   isEmailChangeAllowed,
   clientDomain: process.env.DOMAIN_CLIENT ?? 'http://localhost:3080',
