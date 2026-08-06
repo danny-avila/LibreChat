@@ -2482,7 +2482,6 @@
   "com_ui_wakeup_task_finished": "Background task finished",
   "com_ui_wakeup_tasks_finished": "{{0}} background tasks finished",
   "com_ui_wakeup_view_activity": "View activity",
-  "com_ui_wait_for_tool_steps": "Wait for tool steps instead",
   "com_ui_web_search": "Web Search",
   "com_ui_web_search_cohere_key": "Enter Cohere API Key",
   "com_ui_web_search_firecrawl_url": "Firecrawl API URL (optional)",
