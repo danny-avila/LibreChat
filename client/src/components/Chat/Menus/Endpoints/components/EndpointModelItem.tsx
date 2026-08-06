@@ -4,10 +4,10 @@ import { CheckCircle2, EarthIcon, Pin, PinOff } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useFavorites, useLocalize, useIsActiveItem } from '~/hooks';
+import { isFlatEndpointDropdown } from './EndpointMenuContentByMode';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { cn } from '~/utils';
-
 interface EndpointModelItemProps {
   modelId: string | null;
   endpoint: Endpoint;
@@ -15,7 +15,8 @@ interface EndpointModelItemProps {
 
 export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps) {
   const localize = useLocalize();
-  const { handleSelectModel, selectedValues } = useModelSelectorContext();
+  const { handleSelectModel, selectedValues, modelSelectMenuMode, mappedEndpoints } =
+    useModelSelectorContext();
   const {
     endpoint: selectedEndpoint,
     model: selectedModel,
@@ -72,7 +73,9 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
   const renderAvatar = () => {
     const isAgentOrAssistant =
       isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value);
-    const showEndpointIcon = isAgentOrAssistant && endpoint.icon;
+    const showEndpointIcon =
+      (isAgentOrAssistant && endpoint.icon) ||
+      (isFlatEndpointDropdown(modelSelectMenuMode, mappedEndpoints ?? []) && endpoint.icon);
 
     const getContent = () => {
       if (avatarUrl) {
@@ -96,6 +99,17 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
     );
   };
 
+  const renderModelName = () => {
+    if (
+      isFlatEndpointDropdown(modelSelectMenuMode, mappedEndpoints ?? []) &&
+      endpoint.label &&
+      endpoint.customParams?.showEndpointInModelName === true
+    ) {
+      return `${endpoint.label}/${modelName}`;
+    }
+    return modelName;
+  };
+
   return (
     <MenuItem
       ref={itemRef}
@@ -105,7 +119,7 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
     >
       <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
         {renderAvatar()}
-        <span className="truncate">{modelName}</span>
+        <span className="truncate">{renderModelName()}</span>
         {isGlobal && <EarthIcon className="ml-1 size-4 text-surface-submit" />}
       </div>
       <button

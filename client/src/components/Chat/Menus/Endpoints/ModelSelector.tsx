@@ -3,6 +3,10 @@ import { TooltipAnchor } from '@librechat/client';
 import { getConfigDefaults } from 'librechat-data-provider';
 import type { ModelSelectorProps } from '~/common';
 import {
+  EndpointMenuContentByMode,
+  isFlatEndpointDropdown,
+} from './components/EndpointMenuContentByMode';
+import {
   renderModelSpecs,
   renderEndpoints,
   renderSearchResults,
@@ -40,6 +44,7 @@ function ModelSelectorContent() {
     keyDialogOpen,
     onOpenChange,
     keyDialogEndpoint,
+    modelSelectMenuMode,
   } = useModelSelectorContext();
 
   const selectedIcon = useMemo(
@@ -85,6 +90,27 @@ function ModelSelectorContent() {
       }
     />
   );
+
+  if (isFlatEndpointDropdown(modelSelectMenuMode, mappedEndpoints ?? [])) {
+    return (
+      <EndpointMenuContentByMode
+        mode={modelSelectMenuMode}
+        selectedValues={selectedValues}
+        onValuesChange={(values: Record<string, any>) => {
+          setSelectedValues({
+            endpoint: values.endpoint || '',
+            model: values.model || '',
+            modelSpec: values.modelSpec || '',
+          });
+        }}
+        setSearchValue={setSearchValue}
+        searchResults={searchResults}
+        searchValue={searchValue}
+        trigger={trigger}
+        mappedEndpoints={mappedEndpoints ?? []}
+      />
+    );
+  }
 
   return (
     <div className="relative flex w-full max-w-md flex-col items-center gap-2">

@@ -113,6 +113,7 @@ export const useEndpoints = ({
               endpoint: ep,
             })
           : null,
+        customParams: getEndpointField(endpointsConfig, ep, 'customParams'),
       };
 
       if (ep === EModelEndpoint.agents && showAgentMarketplace) {
