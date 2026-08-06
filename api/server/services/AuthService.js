@@ -538,15 +538,16 @@ const resetPassword = async (userId, token, password) => {
   }
 
   const currentUser = await getUserById(userId, 'email _id emailChangedAt');
-  /** Address-less tokens are tolerated so links issued by a not-yet-upgraded node keep
-   * working, but never for an account whose address has moved: such a token cannot be
-   * attributed to the current address and would otherwise outlive the change. */
+  /** Keyed on the token's address binding rather than its type, so the untyped legacy
+   * shape returned by `findPasswordResetToken`'s fallback is covered too. Address-less
+   * tokens stay usable so links from a not-yet-upgraded node keep working, but never for
+   * an account whose address has moved: they cannot be attributed to the current address
+   * and would otherwise outlive the change. */
   if (
     !currentUser ||
-    (passwordResetToken.type === AuthTokenTypes.PASSWORD_RESET &&
-      (passwordResetToken.email
-        ? passwordResetToken.email.toLowerCase() !== currentUser.email.toLowerCase()
-        : currentUser.emailChangedAt != null))
+    (passwordResetToken.email
+      ? passwordResetToken.email.toLowerCase() !== currentUser.email.toLowerCase()
+      : currentUser.emailChangedAt != null)
   ) {
     return new Error('Invalid or expired password reset token');
   }

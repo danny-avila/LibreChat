@@ -780,6 +780,40 @@ describe('resetPassword', () => {
     );
   });
 
+  it('rejects an untyped legacy reset token once the account email has moved', async () => {
+    const resetHash = bcrypt.hashSync('reset-token', 10);
+    findToken.mockImplementation(async (query) =>
+      query.type === 'password_reset'
+        ? null
+        : { token: resetHash, userId: 'user-reset', email: null, identifier: null, type: null },
+    );
+    getUserById.mockResolvedValue({
+      _id: 'user-reset',
+      email: 'new@example.com',
+      emailChangedAt: new Date(),
+    });
+
+    const result = await resetPassword('user-reset', 'reset-token', 'new-password');
+
+    expect(result).toBeInstanceOf(Error);
+    expect(updateUser).not.toHaveBeenCalled();
+  });
+
+  it('accepts an untyped legacy reset token for an account that never moved', async () => {
+    const resetHash = bcrypt.hashSync('reset-token', 10);
+    findToken.mockImplementation(async (query) =>
+      query.type === 'password_reset'
+        ? null
+        : { token: resetHash, userId: 'user-reset', email: null, identifier: null, type: null },
+    );
+    getUserById.mockResolvedValue({ _id: 'user-reset', email: 'user@example.com' });
+    updateUser.mockResolvedValue({ email: 'user@example.com' });
+
+    const result = await resetPassword('user-reset', 'reset-token', 'new-password');
+
+    expect(result).toEqual({ message: 'Password reset was successful' });
+  });
+
   it('rejects an address-less reset token once the account email has moved', async () => {
     const resetHash = bcrypt.hashSync('reset-token', 10);
     findToken.mockResolvedValue({
