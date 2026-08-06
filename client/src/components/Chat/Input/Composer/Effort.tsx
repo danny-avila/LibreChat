@@ -235,6 +235,10 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
         ref={trackRef}
         role="radiogroup"
         aria-label={localize('com_ui_composer_thinking')}
+        /* The rail is built on physical left offsets and clientX math, so the
+           axis is explicitly LTR; the hint row below carries the same dir so
+           "Faster" stays over the low end in RTL locales too. */
+        dir="ltr"
         style={{ height: THUMB_ACTIVE }}
         onPointerDown={(e) => {
           /* Capture keeps the sweep alive past the track's edges. It throws for
@@ -362,7 +366,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
                Tab reaches the current level and leaves, and the arrow keys move
                between them. Under Auto no level is checked, so the one that
                would be restored takes the tab stop. */
-            tabIndex={index === (isAuto ? restoreIndex : activeIndex) ? 0 : -1}
+            tabIndex={index === shownIndex ? 0 : -1}
             onKeyDown={(event) => {
               const step = ARROW_STEP[event.key];
               if (step === undefined) {
@@ -389,6 +393,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
       <div className="mt-1.5 grid">
         <div
           aria-hidden="true"
+          dir="ltr"
           className={cn(
             'col-start-1 row-start-1 flex items-center justify-between text-[11px] text-text-secondary transition-opacity duration-150',
             dragging ? 'opacity-100' : 'pointer-events-none opacity-0',
