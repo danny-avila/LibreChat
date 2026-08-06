@@ -175,12 +175,15 @@ export default function SubagentPanel(): JSX.Element | null {
               'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
               status.tone === 'error' && 'bg-surface-secondary text-text-warning',
               status.tone === 'muted' && 'bg-surface-secondary text-text-secondary',
-              status.tone === 'live' && 'bg-surface-secondary text-primary',
+              status.tone === 'live' && 'bg-surface-secondary text-text-primary',
               status.tone === 'done' && 'bg-surface-secondary text-text-secondary',
             )}
           >
             {status.tone === 'live' && (
-              <span className="size-1.5 animate-pulse rounded-full bg-primary" aria-hidden="true" />
+              <span
+                className="size-1.5 animate-pulse rounded-full bg-text-primary"
+                aria-hidden="true"
+              />
             )}
             {status.label}
           </span>
