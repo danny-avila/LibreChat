@@ -17,6 +17,9 @@ interface CustomIconProps {
  * keep their original colors. Pass an explicit `monochrome` flag to skip
  * detection when the icon's config already declares it. The tint color is
  * inherited from the element's text color, so set a `text-*` class on `className`.
+ * An `object-cover` class carries over to the masked branch as `mask-size: cover`
+ * so a non-square glyph fills its slot the same way the `<img>` branch does;
+ * anything else letterboxes with `contain`.
  *
  * In forced-colors mode (Windows High Contrast) the UA overrides
  * `background-color`, which would blank a masked glyph, so `custom-icon-tint`
@@ -34,6 +37,7 @@ export default function CustomIcon({
 
   if (shouldTint) {
     const maskUrl = `url("${src.replace(/["\\\n\r\f]/g, encodeURIComponent)}")`;
+    const maskSize = /\bobject-cover\b/.test(className ?? '') ? 'cover' : 'contain';
     return (
       <span
         role={decorative ? undefined : 'img'}
@@ -48,8 +52,8 @@ export default function CustomIcon({
           WebkitMaskRepeat: 'no-repeat',
           maskPosition: 'center',
           WebkitMaskPosition: 'center',
-          maskSize: 'contain',
-          WebkitMaskSize: 'contain',
+          maskSize,
+          WebkitMaskSize: maskSize,
         }}
       >
         {onError != null && (
