@@ -1,3 +1,4 @@
+/* eslint jest/expect-expect: ["warn", { "assertFunctionNames": ["expect", "refused"] }] */
 import { renderHook } from '@testing-library/react';
 import { FileSources, EModelEndpoint, mergeFileConfig } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
