@@ -1,7 +1,8 @@
-import { logger } from '@librechat/data-schemas';
 import { ErrorTypes } from 'librechat-data-provider';
+import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { NextFunction, Request, Response } from 'express';
 import type { MongoServerError, ValidationError, CustomError } from '~/types';
+import { buildTenantIsolationErrorLogContext } from './auth';
 
 const handleDuplicateKeyError = (err: MongoServerError, res: Response) => {
   logger.warn('Duplicate key error: ' + (err.errmsg || err.message));
@@ -74,7 +75,19 @@ export const ErrorController = (
       return res.status(error.statusCode).send(error.body);
     }
 
-    logger.error('ErrorController => error', err);
+    const tenantIsolationContext = buildTenantIsolationErrorLogContext(req, err);
+    if (tenantIsolationContext) {
+      const { requestId, requestMethod, requestPath } = tenantStorage.getStore() ?? {};
+      logger.error({
+        message: 'Tenant-isolation request failed',
+        ...tenantIsolationContext,
+        ...(requestId && { request_id: requestId }),
+        ...(requestMethod && { request_method: requestMethod }),
+        ...(requestPath && { request_path: requestPath }),
+      });
+    } else {
+      logger.error('ErrorController => error', err);
+    }
     return res.status(500).send('An unknown error occurred.');
   } catch (processingError) {
     logger.error('ErrorController => processing error', processingError);

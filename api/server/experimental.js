@@ -23,6 +23,7 @@ const {
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
+  requestContextMiddleware,
   configureServerTimeouts,
   configureMessageFilterRegexValidator,
 } = require('@librechat/api');
@@ -358,6 +359,7 @@ if (cluster.isMaster) {
     app.get('/health', (_req, res) => res.status(200).send('OK'));
 
     /** Middleware */
+    app.use(requestContextMiddleware);
     app.use(noIndex);
     app.use(express.json({ limit: '3mb' }));
     app.use(express.urlencoded({ extended: true, limit: '3mb' }));

@@ -1,5 +1,5 @@
 import winston from 'winston';
-import { debugTraverse, redactFormat, redactMessage } from './parsers';
+import { debugTraverse, jsonTruncateFormat, redactFormat, redactMessage } from './parsers';
 
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
@@ -318,5 +318,76 @@ describe('debugTraverse request context', () => {
     expect(out).not.toContain('__SYSTEM__');
     expect(out).not.toMatch(/tenantId:/);
     expect(out).toContain('userId');
+  });
+
+  it('preserves structured auth metadata for non-JSON warning output', () => {
+    const out = runFormatter(
+      buildInfo('warn', {
+        event_name: 'jwt_auth_rejected',
+        request_id: 'request-123',
+        request_method: 'GET',
+        request_path: '/api/messages',
+        token_source: 'bearer',
+        reason_category: 'malformed_jwt',
+        recovery_classification: 'terminal_rejection',
+        response_status: 401,
+      }),
+    );
+
+    expect(out).toContain('"event_name":"jwt_auth_rejected"');
+    expect(out).toContain('"request_id":"request-123"');
+    expect(out).toContain('"reason_category":"malformed_jwt"');
+    expect(out).toContain('"response_status":401');
+  });
+
+  it('does not render application metadata as request correlation context', () => {
+    const out = runFormatter(
+      buildInfo('warn', {
+        method: 'DELETE',
+        path: '/uploads/tenant-123/user-123/file.txt',
+        request_method: 'POST',
+        request_path: '/api/files',
+      }),
+    );
+
+    expect(out).toContain('"request_method":"POST"');
+    expect(out).toContain('"request_path":"/api/files"');
+    expect(out).not.toContain('"method":"DELETE"');
+    expect(out).not.toContain('/uploads/tenant-123/user-123/file.txt');
+  });
+});
+
+describe('jsonTruncateFormat structured events', () => {
+  it('preserves short auth correlation fields when the human-readable message is truncated', () => {
+    const format = jsonTruncateFormat();
+    const info = {
+      level: 'warn',
+      message: `JWT auth rejected: ${'x'.repeat(300)}`,
+      event_name: 'jwt_auth_rejected',
+      request_id: 'request-123',
+      request_method: 'GET',
+      request_path: '/api/messages',
+      token_source: 'bearer',
+      reason_category: 'malformed_jwt',
+      recovery_classification: 'terminal_rejection',
+      response_status: 401,
+    } satisfies winston.Logform.TransformableInfo;
+
+    const output = format.transform(info, format.options);
+    if (typeof output !== 'object') {
+      throw new Error('Expected jsonTruncateFormat to preserve the log record');
+    }
+
+    expect(output.message).toBe(`${info.message.slice(0, 255)}...`);
+    expect(output).toMatchObject({
+      event_name: 'jwt_auth_rejected',
+      request_id: 'request-123',
+      request_method: 'GET',
+      request_path: '/api/messages',
+      token_source: 'bearer',
+      reason_category: 'malformed_jwt',
+      recovery_classification: 'terminal_rejection',
+      response_status: 401,
+    });
   });
 });
