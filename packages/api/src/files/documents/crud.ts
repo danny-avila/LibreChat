@@ -9,6 +9,7 @@ import type {
   PDFDocumentLoadingTask,
 } from 'pdfjs-dist/types/src/display/api';
 import type { ParsedDocumentUploadResult } from '~/types';
+import { extractPagesMarkdownIsolated, extractTextIsolated } from './pdfNative';
 import { assertSafeZipSize, assertSafeZipSizeIfArchive } from './zipSafety';
 import { extractPptxSlides } from './html';
 import { isEnabled } from '~/utils/common';
@@ -201,7 +202,7 @@ async function pdfToText(file: Express.Multer.File): Promise<ParsedDocument> {
   const data = await fs.promises.readFile(file.path);
 
   try {
-    return await pdfToTextInspector(data);
+    return await pdfToTextInspector(file.path, data);
   } catch (error) {
     logger.warn(
       `[parseDocument] pdf-inspector failed for "${file.originalname}", falling back to pdfjs:`,
@@ -226,14 +227,14 @@ async function pdfToText(file: Express.Multer.File): Promise<ParsedDocument> {
  * Pages are reported as needing OCR only when both engines find nothing, an
  * empirical test that replaces trusting the reason codes.
  *
+ * The pdf-inspector calls run on a worker thread (see `./pdfNative`); pdfjs reads
+ * the already-loaded buffer inline, since it yields on its own.
+ *
  * @throws {Error} when pdf-inspector reports no pages at all, so the caller falls
  * back to pdfjs instead of returning the empty string a page-less join produces.
  */
-async function pdfToTextInspector(data: Buffer): Promise<ParsedDocument> {
-  // Imported inline so that Jest can test other routes without loading the native binding
-  const { extractPagesMarkdown, extractText } = await import('@firecrawl/pdf-inspector');
-  const result = extractPagesMarkdown(data);
-  const pages = [...result.pages].sort((a, b) => a.page - b.page);
+async function pdfToTextInspector(filePath: string, data: Buffer): Promise<ParsedDocument> {
+  const pages = [...(await extractPagesMarkdownIsolated(filePath))].sort((a, b) => a.page - b.page);
   if (!pages.length) {
     throw new Error('pdf-inspector returned no pages');
   }
@@ -274,7 +275,7 @@ async function pdfToTextInspector(data: Buffer): Promise<ParsedDocument> {
    * markdown islands in a sea of mush. Page accounting stays empirical either way. */
   if (droppedPages.length > pages.length * DROPPED_PAGE_MAJORITY) {
     try {
-      const plain = extractText(data);
+      const plain = await extractTextIsolated(filePath);
       if (plain.trim()) {
         return { text: plain, pagesNeedingOcr: ocrResult };
       }

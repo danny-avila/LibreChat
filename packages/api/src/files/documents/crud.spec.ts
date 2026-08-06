@@ -375,9 +375,9 @@ describe('Document Parser', () => {
       );
       try {
         await jest.isolateModulesAsync(async () => {
-          jest.doMock('@firecrawl/pdf-inspector', () => ({
-            extractPagesMarkdown: () => ({ pages: flooded }),
-            extractText: () => '',
+          jest.doMock('./pdfNative', () => ({
+            extractPagesMarkdownIsolated: async () => flooded,
+            extractTextIsolated: async () => '',
           }));
 
           const { parseDocument: parseIsolated } = await import('./crud');
@@ -391,7 +391,7 @@ describe('Document Parser', () => {
           expect(document.text).toContain('recovered line');
         });
       } finally {
-        jest.dontMock('@firecrawl/pdf-inspector');
+        jest.dontMock('./pdfNative');
       }
     });
 
@@ -403,15 +403,13 @@ describe('Document Parser', () => {
        * notice still comes from the empirical per-page probe. */
       try {
         await jest.isolateModulesAsync(async () => {
-          jest.doMock('@firecrawl/pdf-inspector', () => ({
-            extractPagesMarkdown: () => ({
-              pages: [
-                { page: 0, markdown: '# Only structured page' },
-                { page: 1, markdown: '' },
-                { page: 2, markdown: '' },
-              ],
-            }),
-            extractText: () => 'clean whole document text',
+          jest.doMock('./pdfNative', () => ({
+            extractPagesMarkdownIsolated: async () => [
+              { page: 0, markdown: '# Only structured page' },
+              { page: 1, markdown: '' },
+              { page: 2, markdown: '' },
+            ],
+            extractTextIsolated: async () => 'clean whole document text',
           }));
           mockPdfjs.pageText = { 2: 'm u s h y r e c o v e r y' };
 
@@ -424,7 +422,7 @@ describe('Document Parser', () => {
         });
       } finally {
         /* isolateModulesAsync scopes the module registry but not doMock itself. */
-        jest.dontMock('@firecrawl/pdf-inspector');
+        jest.dontMock('./pdfNative');
       }
     });
 
@@ -446,9 +444,9 @@ describe('Document Parser', () => {
        * A PDF that parses on the flat extractor has to keep parsing. */
       try {
         await jest.isolateModulesAsync(async () => {
-          jest.doMock('@firecrawl/pdf-inspector', () => ({
-            extractPagesMarkdown: () => ({ pages: [] }),
-            extractText: () => '',
+          jest.doMock('./pdfNative', () => ({
+            extractPagesMarkdownIsolated: async () => [],
+            extractTextIsolated: async () => '',
           }));
           mockPdfjs.numPages = 1;
           mockPdfjs.pageText = { 1: 'Quarterly Report' };
@@ -459,7 +457,7 @@ describe('Document Parser', () => {
           expect(document.text).toBe('Quarterly Report\n');
         });
       } finally {
-        jest.dontMock('@firecrawl/pdf-inspector');
+        jest.dontMock('./pdfNative');
       }
     });
 
@@ -469,14 +467,12 @@ describe('Document Parser', () => {
        * assertion in the suite, since the mixed fixture is itself exactly 50%. */
       try {
         await jest.isolateModulesAsync(async () => {
-          jest.doMock('@firecrawl/pdf-inspector', () => ({
-            extractPagesMarkdown: () => ({
-              pages: [
-                { page: 0, markdown: '# Structured page' },
-                { page: 1, markdown: '' },
-              ],
-            }),
-            extractText: () => 'WHOLE_DOCUMENT_SENTINEL',
+          jest.doMock('./pdfNative', () => ({
+            extractPagesMarkdownIsolated: async () => [
+              { page: 0, markdown: '# Structured page' },
+              { page: 1, markdown: '' },
+            ],
+            extractTextIsolated: async () => 'WHOLE_DOCUMENT_SENTINEL',
           }));
           mockPdfjs.pageText = { 2: 'recovered second page' };
 
@@ -487,7 +483,7 @@ describe('Document Parser', () => {
           expect(document.text).toBe('# Structured page\n\nrecovered second page');
         });
       } finally {
-        jest.dontMock('@firecrawl/pdf-inspector');
+        jest.dontMock('./pdfNative');
       }
     });
 
@@ -496,15 +492,13 @@ describe('Document Parser', () => {
        * on a majority-dropped document the per-page assembly still has to ship. */
       try {
         await jest.isolateModulesAsync(async () => {
-          jest.doMock('@firecrawl/pdf-inspector', () => ({
-            extractPagesMarkdown: () => ({
-              pages: [
-                { page: 0, markdown: '# Only structured page' },
-                { page: 1, markdown: '' },
-                { page: 2, markdown: '' },
-              ],
-            }),
-            extractText: () => {
+          jest.doMock('./pdfNative', () => ({
+            extractPagesMarkdownIsolated: async () => [
+              { page: 0, markdown: '# Only structured page' },
+              { page: 1, markdown: '' },
+              { page: 2, markdown: '' },
+            ],
+            extractTextIsolated: async () => {
               throw new Error('plain-text extraction failed');
             },
           }));
@@ -518,7 +512,7 @@ describe('Document Parser', () => {
           expect(document.pagesNeedingOcr).toEqual([3]);
         });
       } finally {
-        jest.dontMock('@firecrawl/pdf-inspector');
+        jest.dontMock('./pdfNative');
       }
     });
 
