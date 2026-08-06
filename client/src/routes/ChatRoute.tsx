@@ -3,10 +3,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import type { TPreset } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
+import type { TPreset, TAgentsMap } from 'librechat-data-provider';
 import {
+  defaultSpecAwaitsAgents,
   mergeQuerySettingsWithSpec,
   processValidSettings,
   getDefaultModelSpec,
@@ -15,11 +16,13 @@ import {
   isTemporaryConversation,
   logger,
   clearMessagesCache,
+  mapAgents,
 } from '~/utils';
 import {
   useGetConvoIdQuery,
   useGetStartupConfig,
   useGetEndpointsQuery,
+  useListAgentsQuery,
   useProjectQuery,
 } from '~/data-provider';
 import {
@@ -38,6 +41,8 @@ import store from '~/store';
 
 const isValidChatProjectId = (projectId: string | null): projectId is string =>
   projectId != null && /^[a-f\d]{24}$/i.test(projectId);
+
+const EMPTY_AGENTS_MAP: TAgentsMap = {};
 
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
@@ -124,6 +129,15 @@ export default function ChatRoute() {
   });
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
+  const agentsQuery = useListAgentsQuery(
+    { requiredPermission: PermissionBits.VIEW },
+    { select: (res) => mapAgents(res.data), enabled: isAuthenticated },
+  );
+  /** A failed agent list reads as empty: a stored agent pick that cannot be
+   * verified must not suppress the soft default indefinitely. */
+  const agentsMap: TAgentsMap | undefined = agentsQuery.isError
+    ? EMPTY_AGENTS_MAP
+    : agentsQuery.data;
 
   const isTemporaryChat = isTemporaryConversation(conversation);
 
@@ -165,6 +179,17 @@ export default function ChatRoute() {
       return;
     }
 
+    /** A stored agent pick can only be validated against the loaded agent list
+     * (it may name an agent since deleted, or one from another org sharing this
+     * browser storage). Defer the first conversation until the list settles. */
+    if (
+      isNewConvo &&
+      agentsMap == null &&
+      defaultSpecAwaitsAgents(startupConfig, endpointsQuery.data)
+    ) {
+      return;
+    }
+
     const getNewConvoPreset = () => {
       const queryParams: Record<string, string> = {};
       searchParams.forEach((value, key) => {
@@ -182,7 +207,9 @@ export default function ChatRoute() {
         ? startupConfig?.modelSpecs?.list?.find((spec) => spec.name === querySettings.spec)
         : undefined;
 
-      const result = urlSpec ? undefined : getDefaultModelSpec(startupConfig, endpointsQuery.data);
+      const result = urlSpec
+        ? undefined
+        : getDefaultModelSpec(startupConfig, endpointsQuery.data, agentsMap);
       const spec = urlSpec ?? result?.default ?? result?.last ?? result?.softDefault;
       const specPreset = spec ? getModelSpecPreset(spec) : undefined;
 
@@ -220,7 +247,7 @@ export default function ChatRoute() {
       initialConvoQuery.isError &&
       isNotFoundError(initialConvoQuery.error)
     ) {
-      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data);
+      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data, agentsMap);
       const spec = result?.default ?? result?.last ?? result?.softDefault;
       showToast({
         message: localize('com_ui_conversation_not_found'),
@@ -267,6 +294,7 @@ export default function ChatRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     roles,
+    agentsMap,
     startupConfig,
     initialConvoQuery.data,
     initialConvoQuery.isError,
