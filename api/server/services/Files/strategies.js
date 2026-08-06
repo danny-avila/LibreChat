@@ -4,6 +4,8 @@ const {
   saveURLToS3WithMetadata,
   ImageService,
   parseDocument,
+  uploadAnydoc,
+  uploadPdfInspector,
   uploadFileToS3,
   saveBufferToS3,
   getS3FileStream,
@@ -306,6 +308,21 @@ const documentParserStrategy = () => ({
   handleFileUpload: parseDocument,
 });
 
+/**
+ * Extraction-only strategies: they read text out of an upload and never store bytes,
+ * so every storage slot stays null and only `handleFileUpload` is populated. Each
+ * provider validates the MIME type it receives and names itself when it cannot.
+ */
+const pdfInspectorStrategy = () => ({
+  ...documentParserStrategy(),
+  handleFileUpload: uploadPdfInspector,
+});
+
+const anydocStrategy = () => ({
+  ...documentParserStrategy(),
+  handleFileUpload: uploadAnydoc,
+});
+
 // Strategy Selector
 const getStrategyFunctions = (fileSource) => {
   if (fileSource === FileSources.firebase) {
@@ -334,6 +351,10 @@ const getStrategyFunctions = (fileSource) => {
     return vertexMistralOCRStrategy();
   } else if (fileSource === FileSources.document_parser) {
     return documentParserStrategy();
+  } else if (fileSource === FileSources.pdf_inspector) {
+    return pdfInspectorStrategy();
+  } else if (fileSource === FileSources.anydoc) {
+    return anydocStrategy();
   } else if (fileSource === FileSources.text) {
     return localStrategy(); // Text files use local strategy
   } else {

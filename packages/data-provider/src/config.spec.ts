@@ -4,11 +4,13 @@ import {
   bedrockModels,
   configSchema,
   excludedKeys,
+  OCRStrategy,
   resolveEndpointType,
   webSearchSchema,
 } from './config';
 import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
 import { getEndpointFileConfig, mergeFileConfig } from './file-config';
+import { documentParserSources, FileSources } from './types/files';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
@@ -704,5 +706,48 @@ describe('bedrockModels defaults', () => {
   it('keeps Opus 5 available as a global profile', () => {
     expect(bedrockModels).toContain('global.anthropic.claude-opus-5');
     expect(bedrockModels).not.toContain('anthropic.claude-opus-5');
+  });
+});
+
+describe('OCRStrategy / FileSources coupling', () => {
+  /**
+   * `appConfig.ocr.strategy` is handed straight to `getStrategyFunctions()` as a
+   * `FileSources` key (api/server/services/Files/process.js), so the two enums are
+   * bound by string equality alone. A strategy with no counterpart throws "Invalid
+   * file source", which the caller swallows into the document_parser fallback: the
+   * deployment silently gets the wrong parser with no error surfaced.
+   */
+  const fileSourceValues = new Set<string>(Object.values(FileSources));
+
+  /**
+   * `custom_ocr` is configurable today but has never had a strategy implementation.
+   * It stays listed here rather than removed, since dropping a live config value is
+   * a breaking change; wiring it up should delete this entry.
+   */
+  const unimplementedStrategies = new Set<string>([OCRStrategy.CUSTOM_OCR]);
+
+  it.each(Object.values(OCRStrategy).filter((strategy) => !unimplementedStrategies.has(strategy)))(
+    'strategy %s resolves to a FileSources key of the same name',
+    (strategy) => {
+      expect(fileSourceValues.has(strategy)).toBe(true);
+    },
+  );
+
+  it('only exempts strategies that are still known to be unimplemented', () => {
+    const stillMissing = Array.from(unimplementedStrategies).filter(
+      (strategy) => !fileSourceValues.has(strategy),
+    );
+
+    expect(stillMissing).toEqual(Array.from(unimplementedStrategies));
+  });
+
+  it('groups every local parser under documentParserSources', () => {
+    expect(Array.from(documentParserSources).every((source) => fileSourceValues.has(source))).toBe(
+      true,
+    );
+    expect(documentParserSources.has(FileSources.pdf_inspector)).toBe(true);
+    expect(documentParserSources.has(FileSources.anydoc)).toBe(true);
+    /** Remote OCR must stay out: its results keep text/plain, not the source type */
+    expect(documentParserSources.has(FileSources.mistral_ocr)).toBe(false);
   });
 });

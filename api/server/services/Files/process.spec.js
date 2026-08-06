@@ -203,12 +203,19 @@ const mockRes = {
   json: jest.fn().mockReturnValue({}),
 };
 
-const makeFileConfig = ({ ocrSupportedMimeTypes = [], textSupportedMimeTypes = [] } = {}) => ({
+const makeFileConfig = ({
+  ocrSupportedMimeTypes = [],
+  textSupportedMimeTypes = [],
+  documentParserSupportedMimeTypes,
+} = {}) => ({
   checkType: (mime, types) =>
     (types ?? []).some((t) => (typeof t === 'string' ? t === mime : t.test(mime))),
   ocr: { supportedMimeTypes: ocrSupportedMimeTypes },
   stt: { supportedMimeTypes: [] },
   text: { supportedMimeTypes: textSupportedMimeTypes },
+  ...(documentParserSupportedMimeTypes
+    ? { documentParser: { supportedMimeTypes: documentParserSupportedMimeTypes } }
+    : {}),
 });
 
 const setupStoredFileUpload = (result = {}) => {
@@ -290,6 +297,48 @@ describe('processAgentFileUpload', () => {
       /* Stored as text/plain, the record forgets what kind of document it was,
        * and the client's extracted-text affordances key on that type. Model
        * routing is unaffected: BaseClient short-circuits on source === text. */
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(db.createFile.mock.calls[0][0].type).toBe(PDF_MIME);
+    });
+
+    test.each([FileSources.pdf_inspector, FileSources.anydoc])(
+      'keeps the real MIME type for documents parsed by %s',
+      async (marker) => {
+        /* `filepath` is a provider marker, not a path. Matching only
+         * `document_parser` would silently drop the MIME type for every other local
+         * parser, and every client affordance that offers extracted text keys on it. */
+        getStrategyFunctions.mockReturnValue({
+          handleFileUpload: jest
+            .fn()
+            .mockResolvedValue({ text: 'parsed', bytes: 6, filepath: marker }),
+        });
+        const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+        await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+        expect(db.createFile.mock.calls[0][0].type).toBe(PDF_MIME);
+      },
+    );
+
+    test('an admin document-parser allowlist overrides the built-in defaults', async () => {
+      /* The one extraction list that had no admin surface. Narrowing it must be able
+       * to take a type out of the parser's reach, the same way `fileConfig.ocr` and
+       * `fileConfig.text` already can. */
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ documentParserSupportedMimeTypes: ['application/vnd.ms-excel'] }),
+      );
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow();
+    });
+
+    test('falls back to the built-in defaults when no admin allowlist is set', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig());
       const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });

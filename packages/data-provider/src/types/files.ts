@@ -16,7 +16,21 @@ export enum FileSources {
   vertexai_mistral_ocr = 'vertexai_mistral_ocr',
   text = 'text',
   document_parser = 'document_parser',
+  pdf_inspector = 'pdf_inspector',
+  anydoc = 'anydoc',
 }
+
+/**
+ * Local document parsers, whose extraction results keep the uploaded file's MIME
+ * type. Remote OCR results must not: its supported types include images, and an
+ * OCR'd image stored as `image/png` with a provider marker for a filepath renders
+ * as a broken thumbnail.
+ */
+export const documentParserSources: ReadonlySet<string> = new Set<string>([
+  FileSources.document_parser,
+  FileSources.pdf_inspector,
+  FileSources.anydoc,
+]);
 
 export const checkOpenAIStorage = (source: string) =>
   source === FileSources.openai || source === FileSources.azure;
@@ -71,6 +85,9 @@ export type FileConfig = {
   ocr?: {
     supportedMimeTypes?: RegexLike[];
   };
+  documentParser?: {
+    supportedMimeTypes?: RegExp[];
+  };
   text?: {
     supportedMimeTypes?: RegexLike[];
   };
@@ -96,6 +113,9 @@ export type FileConfigInput = {
     quality?: number;
   };
   ocr?: {
+    supportedMimeTypes?: string[];
+  };
+  documentParser?: {
     supportedMimeTypes?: string[];
   };
   text?: {

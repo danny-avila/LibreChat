@@ -17,6 +17,7 @@ const {
   removeNullishValues,
   isAssistantsEndpoint,
   getEndpointFileConfig,
+  documentParserSources,
   documentParserMimeTypes,
   isPermissiveMimeConfig,
 } = require('librechat-data-provider');
@@ -802,8 +803,14 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       appConfig?.ocr != null &&
       fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
 
-    const isDocumentParserEligible = documentParserMimeTypes.some((regex) =>
-      regex.test(file.mimetype),
+    /* Admin file config wins over the parser's own defaults. `fileConfig.documentParser`
+     * falls back to `documentParserMimeTypes` when unconfigured, so this keeps the
+     * built-in behavior while giving operators the same override they already have for
+     * `fileConfig.ocr` and `fileConfig.text`. Each provider still validates the type it
+     * receives, which is what turns an unroutable file into a named error. */
+    const isDocumentParserEligible = fileConfig.checkType(
+      file.mimetype,
+      fileConfig.documentParser?.supportedMimeTypes || documentParserMimeTypes,
     );
 
     /**
@@ -878,7 +885,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         text: annotated,
         bytes: annotated === text ? bytes : Buffer.byteLength(annotated, 'utf8'),
         filepath,
-        type: filepath === FileSources.document_parser ? file.mimetype : undefined,
+        type: documentParserSources.has(filepath) ? file.mimetype : undefined,
       });
     };
 
@@ -888,7 +895,11 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
     if (shouldUseOCR) {
       const ocrResult = await resolveDocumentText();
-      if (ocrResult) {
+      /* Checked before annotation: a fully image-based document can come back with no
+       * text but a full `pagesNeedingOcr` list, and annotating that first would store a
+       * file whose entire content is the omission notice. Providers report emptiness
+       * rather than throwing, so this rule stays with the caller and applies to all. */
+      if (ocrResult?.text?.trim()) {
         return await createDocumentTextFile(ocrResult);
       }
       throw new Error(
