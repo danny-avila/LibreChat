@@ -70,8 +70,12 @@ const NO_ROWS: PaletteRow[] = [];
 const FAVORITE_MODIFIER = isMacPlatform ? '\u2318' : 'Ctrl';
 
 /** A row's element id, derived from its identity so the combobox keeps naming
- *  the same row as the list rearranges under it. */
-const rowElementId = (key: string) => `palette-row-${key.replace(/[^\w:-]/g, '_')}`;
+ *  the same row as the list rearranges under it. Scoped per composer index:
+ *  split view mounts one palette per pane, and a shared id would point the
+ *  secondary combobox's `aria-controls` and `aria-activedescendant` at the
+ *  primary pane's list. */
+const rowElementId = (index: number, key: string) =>
+  `palette-row-${index}-${key.replace(/[^\w:-]/g, '_')}`;
 
 const SECTION_LABEL: Record<PaletteSection, TranslationKeys> = {
   tool: 'com_ui_composer_tools',
@@ -673,6 +677,12 @@ function Palette({
      out. Under index keys a row that changes place is a box that stays put
      while its contents are swapped, so nothing about the change is animatable;
      keyed this way the box follows its row and its offset can be moved to. */
+  /* Bound to the pane here because the renderer's own `index` parameter is the
+     row index. */
+  const paletteRowId = useCallback((key: string) => rowElementId(index, key), [index]);
+  const listId = `composer-palette-list-${index}`;
+  const helpId = `composer-palette-help-${index}`;
+
   const rowRenderer = useCallback(
     ({ index, style }: { index: number; style: React.CSSProperties }) => {
       const row = rows[index];
@@ -705,7 +715,7 @@ function Palette({
             key={row.key}
             data-row-key={row.key}
             style={style}
-            id={rowElementId(row.key)}
+            id={paletteRowId(row.key)}
             role="option"
             aria-selected={isActive}
             onClick={() => activate(index)}
@@ -735,7 +745,7 @@ function Palette({
             key={row.key}
             data-row-key={row.key}
             style={style}
-            id={rowElementId(row.key)}
+            id={paletteRowId(row.key)}
             role="option"
             aria-selected={isActive}
             onClick={() => activate(index)}
@@ -792,7 +802,7 @@ function Palette({
           key={row.key}
           data-row-key={row.key}
           style={style}
-          id={rowElementId(row.key)}
+          id={paletteRowId(row.key)}
           role="option"
           aria-selected={isActive}
           aria-checked={isEntry ? checked : undefined}
@@ -883,7 +893,17 @@ function Palette({
         </div>
       );
     },
-    [rows, activeIndex, activate, favorites, localize, expanded, entering, collapsing],
+    [
+      rows,
+      activeIndex,
+      activate,
+      favorites,
+      localize,
+      expanded,
+      entering,
+      collapsing,
+      paletteRowId,
+    ],
   );
 
   return (
@@ -984,15 +1004,18 @@ function Palette({
               <input
                 ref={inputRef}
                 role="combobox"
-                aria-expanded={rows.length > 0}
+                /* The input only exists while the popover is open, and the
+                   listbox below stays mounted (empty on a dry search), so the
+                   widget state cannot contradict what is on screen. */
+                aria-expanded="true"
                 autoComplete="off"
-                aria-controls={rows.length > 0 ? 'composer-palette-list' : undefined}
+                aria-controls={listId}
                 aria-activedescendant={
                   activeRow != null && isSelectable(activeRow)
-                    ? rowElementId(activeRow.key)
+                    ? paletteRowId(activeRow.key)
                     : undefined
                 }
-                aria-describedby="composer-palette-help"
+                aria-describedby={helpId}
                 placeholder={localize('com_ui_composer_palette_search')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -1000,13 +1023,15 @@ function Palette({
                 data-testid="composer-palette-search"
                 className="w-full border-0 bg-transparent text-sm text-text-primary shadow-none ring-0 placeholder:text-text-secondary focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
               />
-              <span id="composer-palette-help" className="sr-only">
+              <span id={helpId} className="sr-only">
                 {localize('com_ui_composer_palette_help', { 0: FAVORITE_MODIFIER })}
               </span>
             </div>
-            {rows.length === 0 ? (
+            {rows.length === 0 && (
               /* A search that matches nothing is a state change with nothing
-                 to focus, so it has to be said rather than only drawn. */
+                 to focus, so it has to be said rather than only drawn. A
+                 sibling of the listbox, not a replacement: the combobox keeps
+                 pointing at the (empty) list it controls. */
               <div
                 role="status"
                 aria-live="polite"
@@ -1014,43 +1039,46 @@ function Palette({
               >
                 {localize('com_ui_composer_no_results')}
               </div>
-            ) : (
-              <div
-                ref={listBodyRef}
-                id="composer-palette-list"
-                role="listbox"
-                aria-label={localize('com_ui_composer_palette')}
-                className={cn('palette-rows p-1.5', instant && 'palette-instant')}
-              >
-                <AutoSizer disableHeight>
-                  {({ width }) => (
-                    <List
-                      ref={listRef}
-                      width={width}
-                      overscanRowCount={8}
-                      rowCount={rows.length}
-                      /* The list defaults to a `grid` of `row`s, labelled
+            )}
+            <div
+              ref={listBodyRef}
+              id={listId}
+              role="listbox"
+              aria-label={localize('com_ui_composer_palette')}
+              className={cn(
+                'palette-rows',
+                rows.length > 0 && 'p-1.5',
+                instant && 'palette-instant',
+              )}
+            >
+              <AutoSizer disableHeight>
+                {({ width }) => (
+                  <List
+                    ref={listRef}
+                    width={width}
+                    overscanRowCount={8}
+                    rowCount={rows.length}
+                    /* The list defaults to a `grid` of `row`s, labelled
                          "grid" in English and holding its own tab stop. Left
                          alone it sits between this listbox and its options, so
                          none of them are owned by it, and it announces a
                          second, empty widget where the rows should be. */
-                      role="presentation"
-                      containerRole="presentation"
-                      aria-label=""
-                      tabIndex={-1}
-                      scrollToIndex={scrollToActive ? activeIndex : undefined}
-                      rowRenderer={rowRenderer}
-                      rowHeight={measureRow}
-                      height={Math.min(layout.height, LIST_MAX_HEIGHT)}
-                      className={cn(
-                        'focus:outline-none',
-                        layout.height > LIST_MAX_HEIGHT && 'palette-scroll',
-                      )}
-                    />
-                  )}
-                </AutoSizer>
-              </div>
-            )}
+                    role="presentation"
+                    containerRole="presentation"
+                    aria-label=""
+                    tabIndex={-1}
+                    scrollToIndex={scrollToActive ? activeIndex : undefined}
+                    rowRenderer={rowRenderer}
+                    rowHeight={measureRow}
+                    height={Math.min(layout.height, LIST_MAX_HEIGHT)}
+                    className={cn(
+                      'focus:outline-none',
+                      layout.height > LIST_MAX_HEIGHT && 'palette-scroll',
+                    )}
+                  />
+                )}
+              </AutoSizer>
+            </div>
           </Ariakit.Popover>
         </Ariakit.PopoverProvider>
       </FileUpload>
