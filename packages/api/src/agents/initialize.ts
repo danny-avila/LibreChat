@@ -115,6 +115,13 @@ function getToolName(tool: unknown): string | undefined {
   return typeof name === 'string' ? name : undefined;
 }
 
+function isResourceRecoveryRequired(error: unknown): boolean {
+  if (error == null || typeof error !== 'object') {
+    return false;
+  }
+  return (error as { code?: unknown }).code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED;
+}
+
 function hasToolDefinition(toolDefinitions: LCTool[] | undefined, name: string): boolean {
   return toolDefinitions?.some((toolDefinition) => toolDefinition.name === name) === true;
 }
@@ -1024,6 +1031,9 @@ export async function initializeAgent(
   try {
     loadToolsResult = await callLoadTools(requestedToolNames);
   } catch (err) {
+    if (isResourceRecoveryRequired(err)) {
+      throw err;
+    }
     if (extraAllowedToolNames.length > 0) {
       logger.warn(
         `[allowedTools] loadTools threw with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them:`,

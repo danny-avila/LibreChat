@@ -1272,7 +1272,11 @@ async function loadAgentTools({
         accessibleMcpServerNames,
       });
     } catch (error) {
-      if (isExpectedMCPToolsUnavailableError(error) || !agent.tools?.some(isExpectedMCPTool)) {
+      if (
+        error?.code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED ||
+        isExpectedMCPToolsUnavailableError(error) ||
+        !agent.tools?.some(isExpectedMCPTool)
+      ) {
         throw error;
       }
       throw createExpectedMCPToolsUnavailableError(agent.name, error);

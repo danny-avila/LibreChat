@@ -281,7 +281,10 @@ describe('ToolService - Action Capability Gating', () => {
         loadAgentTools({
           req,
           res: {},
-          agent: { id: 'agent_123', tools: [Tools.execute_code] },
+          agent: {
+            id: 'agent_123',
+            tools: [Tools.execute_code, 'run_query_mcp_warehouse'],
+          },
           tool_resources: { execute_code: { file_ids: ['stale-file'] } },
           definitionsOnly: true,
         }),

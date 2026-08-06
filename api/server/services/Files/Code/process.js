@@ -832,6 +832,8 @@ class CodeResourceRecoveryError extends Error {
     this.name = 'CodeResourceRecoveryError';
     this.code = ErrorTypes.RESOURCE_RECOVERY_REQUIRED;
     this.status = 409;
+    this.statusCode = 409;
+    this.details = { required, primed, failed };
     this.required = required;
     this.primed = primed;
     this.failed = failed;
@@ -844,11 +846,28 @@ const getPrimingCorrelation = (req) => ({
 });
 
 const getReuploadFailureCategory = (error) => {
-  const status = error?.response?.status;
-  if (status === 404) {
+  const status =
+    error?.response?.status ??
+    error?.statusCode ??
+    error?.status ??
+    error?.$metadata?.httpStatusCode;
+  const code = error?.code ?? error?.name;
+  if (
+    status === 404 ||
+    code === 'NoSuchKey' ||
+    code === 'NotFound' ||
+    code === 'BlobNotFound' ||
+    code === 'ResourceNotFound'
+  ) {
     return 'missing_backing_object';
   }
-  if (status === 401 || status === 403) {
+  if (
+    status === 401 ||
+    status === 403 ||
+    code === 'AccessDenied' ||
+    code === 'AccessDeniedException' ||
+    code === 'Forbidden'
+  ) {
     return 'resource_access_denied';
   }
   return 'reupload_failed';
@@ -927,9 +946,7 @@ const primeFiles = async (options) => {
     const ref = file.metadata?.codeEnvRef;
     if (!ref) {
       skippedNoRef += 1;
-      logger.debug(
-        `[primeCodeFiles] file=${file.file_id} path=skip reason=no-codeenvref filename=${file.filename}`,
-      );
+      logger.debug(`[primeCodeFiles] file=${file.file_id} path=skip reason=no-codeenvref`);
       continue;
     }
     requiredCodeFiles += 1;

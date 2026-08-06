@@ -1927,6 +1927,7 @@ describe('Code Process', () => {
         agentId: 'agent-123',
         resourceType: ResourceType.REMOTE_AGENT,
       });
+      expect(JSON.stringify(logger.debug.mock.calls)).not.toContain(files[0].filename);
     });
 
     it('does not read a runtime file record that has no authorized database record', async () => {
@@ -2205,58 +2206,73 @@ describe('Code Process', () => {
       ]);
     });
 
-    it('fails with a typed recovery error when every cross-region resource is missing', async () => {
-      const dbFile = {
-        file_id: 'librechat-file-id',
-        filename: 'cross-region-report.png',
-        filepath: 'https://storage.us-east.example.test/missing-object',
-        source: 'local',
-        context: 'execute_code',
-        metadata: {
-          codeEnvRef: {
-            kind: 'user',
-            id: 'user-123',
-            storage_session_id: 'US_EAST_SESSION',
-            file_id: 'MISSING_OBJECT',
+    it.each([
+      ['Axios/CloudFront 404', { response: { status: 404 } }, 'missing_backing_object'],
+      [
+        'AWS SDK NoSuchKey',
+        { name: 'NoSuchKey', $metadata: { httpStatusCode: 404 } },
+        'missing_backing_object',
+      ],
+      ['Azure BlobNotFound', { code: 'BlobNotFound', statusCode: 404 }, 'missing_backing_object'],
+      ['storage access denied', { code: 'AccessDenied', status: 403 }, 'resource_access_denied'],
+    ])(
+      'fails with a typed recovery error for %s',
+      async (_errorShape, downloadError, expectedCategory) => {
+        const dbFile = {
+          file_id: 'librechat-file-id',
+          filename: 'cross-region-report.png',
+          filepath: 'https://storage.us-east.example.test/missing-object',
+          source: 'local',
+          context: 'execute_code',
+          metadata: {
+            codeEnvRef: {
+              kind: 'user',
+              id: 'user-123',
+              storage_session_id: 'US_EAST_SESSION',
+              file_id: 'MISSING_OBJECT',
+            },
           },
-        },
-      };
-      const getDownloadStream = jest.fn().mockRejectedValue({ response: { status: 404 } });
-      getFiles.mockResolvedValue([dbFile]);
-      getStrategyFunctions.mockImplementation((source) =>
-        source === 'execute_code' ? { handleFileUpload: jest.fn() } : { getDownloadStream },
-      );
-      mockAxios.mockResolvedValue({ data: null });
+        };
+        const getDownloadStream = jest.fn().mockRejectedValue(downloadError);
+        getFiles.mockResolvedValue([dbFile]);
+        getStrategyFunctions.mockImplementation((source) =>
+          source === 'execute_code' ? { handleFileUpload: jest.fn() } : { getDownloadStream },
+        );
+        mockAxios.mockResolvedValue({ data: null });
 
-      await expect(
-        primeFiles({
-          req: {
-            id: 'request-123',
-            body: { messageId: 'run-123' },
-            user: { id: 'user-123', role: 'USER' },
-          },
-          tool_resources: {
-            execute_code: { file_ids: ['librechat-file-id'], files: [] },
-          },
-          agentId: 'agent-id',
-        }),
-      ).rejects.toMatchObject({
-        code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
-        required: 1,
-        primed: 0,
-        failed: 1,
-      });
+        await expect(
+          primeFiles({
+            req: {
+              id: 'request-123',
+              body: { messageId: 'run-123' },
+              user: { id: 'user-123', role: 'USER' },
+            },
+            tool_resources: {
+              execute_code: { file_ids: ['librechat-file-id'], files: [] },
+            },
+            agentId: 'agent-id',
+          }),
+        ).rejects.toMatchObject({
+          code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+          status: 409,
+          statusCode: 409,
+          details: { required: 1, primed: 0, failed: 1 },
+          required: 1,
+          primed: 0,
+          failed: 1,
+        });
 
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'resource-recovery-required requestId=request-123 runId=run-123 required=1 primed=0 failed=1 category=missing_backing_object',
-        ),
-      );
-      const failureLogs = logger.error.mock.calls.map(([message]) => message).join('\n');
-      expect(failureLogs).toContain('category=missing_backing_object');
-      expect(failureLogs).not.toContain(dbFile.filename);
-      expect(failureLogs).not.toContain(dbFile.filepath);
-    });
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining(
+            `resource-recovery-required requestId=request-123 runId=run-123 required=1 primed=0 failed=1 category=${expectedCategory}`,
+          ),
+        );
+        const failureLogs = logger.error.mock.calls.map(([message]) => message).join('\n');
+        expect(failureLogs).toContain(`category=${expectedCategory}`);
+        expect(failureLogs).not.toContain(dbFile.filename);
+        expect(failureLogs).not.toContain(dbFile.filepath);
+      },
+    );
   });
 
   describe('primeFiles toolContext for model-visible code files', () => {

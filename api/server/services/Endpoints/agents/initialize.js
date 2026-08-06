@@ -808,7 +808,10 @@ const initializeClient = async ({
       agentToolContexts.set(agentId, buildAgentToolContext({ agent, config }));
       return config;
     } catch (err) {
-      if (isExpectedMCPToolsUnavailableError(err)) {
+      if (
+        err?.code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED ||
+        isExpectedMCPToolsUnavailableError(err)
+      ) {
         throw err;
       }
       logger.error(`[processAgent] Error processing subagent ${agentId}:`, err);
