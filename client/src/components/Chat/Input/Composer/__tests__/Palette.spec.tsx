@@ -127,21 +127,21 @@ function renderPalette(over: { canAttach?: boolean; entries?: PaletteEntry[] } =
  *  list's own containers are presentational too, so rows are found by the
  *  identity attribute rather than by role alone. */
 const rows = () =>
-  Array.from(document.querySelectorAll('#composer-palette-list [data-row-key]')).map(
+  Array.from(document.querySelectorAll('[id^="composer-palette-list"] [data-row-key]')).map(
     (row) => row.textContent?.trim() ?? '',
   );
 
 /** Just the section headers, which is what carries the order. */
 const headers = () =>
   Array.from(
-    document.querySelectorAll<HTMLElement>('#composer-palette-list [data-row-key^="h:"]'),
+    document.querySelectorAll<HTMLElement>('[id^="composer-palette-list"] [data-row-key^="h:"]'),
   ).map((row) => row.textContent?.trim() ?? '');
 
 /** Row identities in list order, which is what the model actually decides. */
 const keys = () =>
-  Array.from(document.querySelectorAll<HTMLElement>('#composer-palette-list [data-row-key]')).map(
-    (row) => row.dataset.rowKey ?? '',
-  );
+  Array.from(
+    document.querySelectorAll<HTMLElement>('[id^="composer-palette-list"] [data-row-key]'),
+  ).map((row) => row.dataset.rowKey ?? '');
 
 const search = (text: string) => {
   const input = screen.getByTestId('composer-palette-search');
@@ -257,11 +257,12 @@ describe('Palette', () => {
       const empty = screen.getByText('com_ui_composer_no_results');
       expect(empty).toBeInTheDocument();
       expect(empty).toHaveAttribute('role', 'status');
-      /* And the field stops claiming to control a list that is not there. */
-      expect(screen.getByTestId('composer-palette-search')).toHaveAttribute(
-        'aria-expanded',
-        'false',
-      );
+      /* The widget stays expanded and keeps controlling its (now empty)
+         list: collapsing mid-search while the popover is still on screen
+         reported a contradictory state exactly when the results changed. */
+      const input = screen.getByTestId('composer-palette-search');
+      expect(input).toHaveAttribute('aria-expanded', 'true');
+      expect(document.getElementById(input.getAttribute('aria-controls') ?? '')).not.toBeNull();
     });
   });
 
@@ -269,7 +270,7 @@ describe('Palette', () => {
     it('starts on the first row that can be chosen, never on a header', () => {
       renderPalette();
       const input = screen.getByTestId('composer-palette-search');
-      expect(input.getAttribute('aria-activedescendant')).toBe('palette-row-local:provider');
+      expect(input.getAttribute('aria-activedescendant')).toBe('palette-row-0-local:provider');
     });
 
     /* An id that names nothing is the failure mode here: screen readers lose
@@ -294,7 +295,7 @@ describe('Palette', () => {
       const input = screen.getByTestId('composer-palette-search');
       fireEvent.keyDown(input, { key: 'ArrowDown' });
       const moved = input.getAttribute('aria-activedescendant');
-      expect(moved).toBe('palette-row-execute_code');
+      expect(moved).toBe('palette-row-0-execute_code');
 
       /* Starring it lifts the row into favourites without changing the row
          count, which is exactly the case a positional highlight got wrong. */
