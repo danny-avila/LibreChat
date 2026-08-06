@@ -2,6 +2,7 @@ import { Providers } from '@librechat/agents';
 import { getToken } from '@aws/bedrock-token-generator';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import type { AwsCredentialIdentity, AwsCredentialIdentityProvider } from '@smithy/types';
+import type { BedrockConverseInput } from 'librechat-data-provider';
 import type { BedrockCredentials, InitializeResultBase } from '~/types';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 
@@ -38,17 +39,17 @@ export function getBedrockMantleBaseURL(region: string): string {
  * `additionalModelRequestFields`, etc.) are intentionally excluded so they
  * never leak into the Responses API request body.
  */
-const mantleModelOptionKeys = [
+const mantleModelOptionKeys: readonly (keyof BedrockConverseInput)[] = [
   'model',
   'maxTokens',
   'temperature',
   'topP',
   'stop',
   'reasoning_effort',
-] as const;
+];
 
 export interface BedrockMantleParams {
-  model_parameters?: Record<string, unknown>;
+  model_parameters?: Partial<BedrockConverseInput>;
   /** Static or user-provided AWS credentials resolved by `initializeBedrock` */
   credentials?: BedrockCredentials;
   /** Pre-issued Bedrock API key (long-term key or user-provided bearer token) */
@@ -118,7 +119,10 @@ export async function initializeBedrockMantle({
   /** `useResponsesApi` is part of the model options so reasoning params are
    *  shaped for the Responses API — `bedrock-mantle` does not serve these
    *  models over Chat Completions. */
-  const modelOptions: Record<string, unknown> = { user: userId, useResponsesApi: true };
+  const modelOptions: Record<string, unknown> = { useResponsesApi: true };
+  if (userId) {
+    modelOptions.user = userId;
+  }
   for (const key of mantleModelOptionKeys) {
     const value = model_parameters?.[key];
     if (value != null) {

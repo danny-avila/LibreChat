@@ -10,6 +10,7 @@ import {
   removeNullishValues,
 } from 'librechat-data-provider';
 import type { BedrockRuntimeClientConfig } from '@aws-sdk/client-bedrock-runtime';
+import type { BedrockConverseInput } from 'librechat-data-provider';
 import type {
   BaseInitializeParams,
   InitializeResultBase,
@@ -220,7 +221,7 @@ export async function initializeBedrock({
   const model = model_parameters?.model as string | undefined;
   if (isBedrockMantleModel(model)) {
     return initializeBedrockMantle({
-      model_parameters,
+      model_parameters: model_parameters as Partial<BedrockConverseInput> | undefined,
       credentials,
       bearerToken,
       profile: BEDROCK_AWS_PROFILE,
