@@ -90,7 +90,7 @@ function RoundButton({
           disabled={disabled}
           className={cn(
             'flex size-9 shrink-0 items-center justify-center rounded-full transition-colors',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
             'disabled:cursor-not-allowed disabled:opacity-40',
             primary
               ? 'bg-text-primary text-surface-primary hover:opacity-90'
