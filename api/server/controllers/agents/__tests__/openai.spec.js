@@ -196,8 +196,8 @@ jest.mock('~/cache', () => ({
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn().mockResolvedValue([]),
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
-  isExpectedMCPToolsUnavailableError: (error) =>
-    error?.code === 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+  isFatalAgentInitializationError: (error) =>
+    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
 }));
 
 const mockGetMultiplier = jest.fn().mockReturnValue(1);

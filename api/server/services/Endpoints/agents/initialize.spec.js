@@ -59,8 +59,8 @@ const mockLoadToolsForExecution = jest.fn();
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn(),
   loadToolsForExecution: (...args) => mockLoadToolsForExecution(...args),
-  isExpectedMCPToolsUnavailableError: (error) =>
-    error?.code === 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+  isFatalAgentInitializationError: (error) =>
+    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
 }));
 
 jest.mock('~/server/controllers/ModelController', () => ({

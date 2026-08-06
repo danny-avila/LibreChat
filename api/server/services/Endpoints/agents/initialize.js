@@ -27,7 +27,6 @@ const {
   isAgentsEndpoint,
   getResponseSender,
   AgentCapabilities,
-  ErrorTypes,
   MAX_SUBAGENT_GRAPH_NODES,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
@@ -41,7 +40,7 @@ const {
   loadAgentTools,
   loadToolsForExecution,
   getAccessibleMcpServerNames,
-  isExpectedMCPToolsUnavailableError,
+  isFatalAgentInitializationError,
 } = require('~/server/services/ToolService');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const {
@@ -110,13 +109,10 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
         accessibleMcpServerNames,
       });
     } catch (error) {
-      if (error?.code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED) {
+      if (isFatalAgentInitializationError(error)) {
         throw error;
       }
       logger.error('Error loading tools for agent ' + agentId, error);
-      if (isExpectedMCPToolsUnavailableError(error)) {
-        throw error;
-      }
     }
   };
 }
@@ -808,10 +804,7 @@ const initializeClient = async ({
       agentToolContexts.set(agentId, buildAgentToolContext({ agent, config }));
       return config;
     } catch (err) {
-      if (
-        err?.code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED ||
-        isExpectedMCPToolsUnavailableError(err)
-      ) {
+      if (isFatalAgentInitializationError(err)) {
         throw err;
       }
       logger.error(`[processAgent] Error processing subagent ${agentId}:`, err);

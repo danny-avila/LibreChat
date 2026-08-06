@@ -8,7 +8,6 @@ const {
   PermissionBits,
   hasPermissions,
   AgentCapabilities,
-  ErrorTypes,
 } = require('librechat-data-provider');
 const {
   createRun,
@@ -61,7 +60,7 @@ const {
 const {
   loadAgentTools,
   loadToolsForExecution,
-  isExpectedMCPToolsUnavailableError,
+  isFatalAgentInitializationError,
 } = require('~/server/services/ToolService');
 const {
   findAccessibleResources,
@@ -117,13 +116,10 @@ function createToolLoader(signal, definitionsOnly = true) {
         streamId: null,
       });
     } catch (error) {
-      if (error?.code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED) {
+      if (isFatalAgentInitializationError(error)) {
         throw error;
       }
       logger.error('Error loading tools for agent ' + agentId, error);
-      if (isExpectedMCPToolsUnavailableError(error)) {
-        throw error;
-      }
     }
   };
 }

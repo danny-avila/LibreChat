@@ -65,6 +65,7 @@ import {
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { applyBackgroundToolCalls } from './background';
+import { isFatalAgentInitializationError } from './errors';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
@@ -113,13 +114,6 @@ function getToolName(tool: unknown): string | undefined {
   }
   const { name } = tool as { name?: unknown };
   return typeof name === 'string' ? name : undefined;
-}
-
-function isResourceRecoveryRequired(error: unknown): boolean {
-  if (error == null || typeof error !== 'object') {
-    return false;
-  }
-  return (error as { code?: unknown }).code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED;
 }
 
 function hasToolDefinition(toolDefinitions: LCTool[] | undefined, name: string): boolean {
@@ -1031,7 +1025,7 @@ export async function initializeAgent(
   try {
     loadToolsResult = await callLoadTools(requestedToolNames);
   } catch (err) {
-    if (isResourceRecoveryRequired(err)) {
+    if (isFatalAgentInitializationError(err, { allowExpectedMCPFallback: true })) {
       throw err;
     }
     if (extraAllowedToolNames.length > 0) {

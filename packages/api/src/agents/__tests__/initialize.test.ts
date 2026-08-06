@@ -1511,7 +1511,7 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(definedNames).not.toContain('mcp__broken__tool');
   });
 
-  it('does not retry a resource recovery failure without skill-added tools', async () => {
+  it('does not retry a resource recovery failure when execute_code is skill-added', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['web_search'];
     const { Types } = await import('mongoose');
@@ -1549,6 +1549,53 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
 
     expect(loadTools).toHaveBeenCalledTimes(1);
     expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', Tools.execute_code]);
+  });
+
+  it('still retries when only skill-added tools expect unavailable MCP tools', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const expectedMCPError = Object.assign(new Error('expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    loadTools.mockRejectedValueOnce(expectedMCPError).mockResolvedValueOnce({
+      tools: [],
+      toolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: [{ name: 'web_search', description: '', parameters: {} }],
+      hasDeferredTools: false,
+      actionsEnabled: undefined,
+    });
+
+    const getSkillByName = buildGetSkillByName(
+      'mcp-skill',
+      ['mcp__warehouse__query'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['mcp-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'mcp__warehouse__query']);
+    expect(loadTools.mock.calls[1][0].tools).toEqual(['web_search']);
+    expect(result.toolDefinitions?.map((definition) => definition.name)).toContain('web_search');
   });
 
   it('falls back to host-provided skill authoring tools when BOTH loadTools calls return undefined', async () => {

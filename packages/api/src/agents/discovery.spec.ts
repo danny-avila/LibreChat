@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { ErrorTypes, EModelEndpoint } from 'librechat-data-provider';
 import type { Agent, GraphEdge } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { InitializedAgent } from './initialize';
@@ -1038,11 +1038,11 @@ describe('discoverConnectedAgents', () => {
     expect(result.agentConfigs.has('B')).toBe(false);
   });
 
-  it('propagates an expected-MCP-tools failure from a handoff target', async () => {
-    const toolError = Object.assign(new Error('Target Agent has no available MCP tools'), {
-      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
-      statusCode: 503,
-    });
+  it.each([
+    ['expected MCP tools are unavailable', 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 503],
+    ['CodeAPI resource recovery is required', ErrorTypes.RESOURCE_RECOVERY_REQUIRED, 409],
+  ])('propagates a fatal handoff initialization error when %s', async (_case, code, statusCode) => {
+    const toolError = Object.assign(new Error(_case), { code, statusCode });
     mockInitializeAgent.mockRejectedValueOnce(toolError);
 
     const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
@@ -1068,6 +1068,41 @@ describe('discoverConnectedAgents', () => {
       ),
     ).rejects.toBe(toolError);
   });
+
+  it.each([
+    ['expected MCP tools are unavailable', 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 503],
+    ['CodeAPI resource recovery is required', ErrorTypes.RESOURCE_RECOVERY_REQUIRED, 409],
+  ])(
+    'propagates a fatal legacy-chain initialization error when %s',
+    async (_case, code, statusCode) => {
+      const toolError = Object.assign(new Error(_case), { code, statusCode });
+      mockInitializeAgent.mockRejectedValueOnce(toolError);
+
+      const primaryConfig = makeConfig('A');
+      const getAgent = jest.fn(async () => makeAgent('B', []));
+      const checkPermission = jest.fn().mockResolvedValue(true);
+
+      await expect(
+        discoverConnectedAgents(
+          {
+            req: makeReq(),
+            res: makeRes(),
+            primaryConfig,
+            agent_ids: ['B'],
+            allowedProviders: new Set(),
+            modelsConfig: { openai: ['gpt-4o'] },
+            loadTools: jest.fn(),
+          },
+          {
+            getAgent,
+            checkPermission,
+            logViolation: jest.fn(),
+            db: {} as never,
+          },
+        ),
+      ).rejects.toBe(toolError);
+    },
+  );
 
   it('skips when request has no authenticated user', async () => {
     const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
