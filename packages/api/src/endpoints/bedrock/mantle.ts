@@ -27,10 +27,15 @@ export function isBedrockMantleModel(model?: string): boolean {
 
 /**
  * In-Region `bedrock-mantle` endpoint URL serving the OpenAI-compatible API.
+ * When `BEDROCK_REVERSE_PROXY` is configured, it replaces the AWS host — same
+ * as the Converse path — so gateway-only deployments keep working and the
+ * bearer token never bypasses the gateway; the `/openai/v1` path is preserved.
  * @see https://docs.aws.amazon.com/bedrock/latest/userguide/endpoints.html
  */
-export function getBedrockMantleBaseURL(region: string): string {
-  return `https://bedrock-mantle.${region}.api.aws/openai/v1`;
+export function getBedrockMantleBaseURL(region: string, reverseProxy?: string): string {
+  const trimmedReverseProxy = reverseProxy?.trim();
+  const host = trimmedReverseProxy || `bedrock-mantle.${region}.api.aws`;
+  return `https://${host}/openai/v1`;
 }
 
 /**
@@ -58,6 +63,8 @@ export interface BedrockMantleParams {
   profile?: string;
   /** Fallback region (`BEDROCK_AWS_DEFAULT_REGION`) when the request has none */
   defaultRegion?: string;
+  /** Reverse-proxy host (`BEDROCK_REVERSE_PROXY`) replacing the AWS endpoint */
+  reverseProxy?: string;
   userId?: string;
 }
 
@@ -95,6 +102,7 @@ export async function initializeBedrockMantle({
   bearerToken,
   profile,
   defaultRegion,
+  reverseProxy,
   userId,
 }: BedrockMantleParams): Promise<InitializeResultBase> {
   const requestRegion =
@@ -131,7 +139,7 @@ export async function initializeBedrockMantle({
   }
 
   const options = getOpenAIConfig(apiKey, {
-    reverseProxyUrl: getBedrockMantleBaseURL(region),
+    reverseProxyUrl: getBedrockMantleBaseURL(region, reverseProxy),
     modelOptions,
     proxy: process.env.PROXY ?? undefined,
     streaming: true,

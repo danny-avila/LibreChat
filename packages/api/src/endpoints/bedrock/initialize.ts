@@ -226,6 +226,7 @@ export async function initializeBedrock({
       bearerToken,
       profile: BEDROCK_AWS_PROFILE,
       defaultRegion: BEDROCK_AWS_DEFAULT_REGION,
+      reverseProxy: BEDROCK_REVERSE_PROXY,
       userId: req.user?.id,
     });
   }

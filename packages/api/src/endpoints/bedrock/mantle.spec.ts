@@ -88,6 +88,15 @@ describe('getBedrockMantleBaseURL', () => {
       'https://bedrock-mantle.us-east-2.api.aws/openai/v1',
     );
   });
+
+  it('should replace the AWS host with a configured reverse proxy', () => {
+    expect(getBedrockMantleBaseURL('us-east-2', 'bedrock-gateway.internal')).toBe(
+      'https://bedrock-gateway.internal/openai/v1',
+    );
+    expect(getBedrockMantleBaseURL('us-east-2', '  ')).toBe(
+      'https://bedrock-mantle.us-east-2.api.aws/openai/v1',
+    );
+  });
 });
 
 describe('initializeBedrock mantle routing', () => {
@@ -99,6 +108,7 @@ describe('initializeBedrock mantle routing', () => {
     delete process.env.BEDROCK_AWS_BEARER_TOKEN;
     delete process.env.BEDROCK_AWS_PROFILE;
     delete process.env.BEDROCK_AWS_SESSION_TOKEN;
+    delete process.env.BEDROCK_REVERSE_PROXY;
     delete process.env.PROXY;
     process.env.BEDROCK_AWS_ACCESS_KEY_ID = 'test-access-key';
     process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = 'test-secret-key';
@@ -167,6 +177,14 @@ describe('initializeBedrock mantle routing', () => {
     expect(result.configOptions?.baseURL).toBe(
       'https://bedrock-mantle.us-east-2.api.aws/openai/v1',
     );
+  });
+
+  it('should route mantle traffic through BEDROCK_REVERSE_PROXY when configured', async () => {
+    process.env.BEDROCK_REVERSE_PROXY = 'bedrock-gateway.internal';
+    const params = createMockParams();
+    const result = await initializeBedrock(params);
+
+    expect(result.configOptions?.baseURL).toBe('https://bedrock-gateway.internal/openai/v1');
   });
 
   it('should throw when no region is available', async () => {
