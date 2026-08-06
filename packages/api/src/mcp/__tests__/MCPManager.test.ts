@@ -654,7 +654,7 @@ describe('MCPManager', () => {
       );
     });
 
-    it('should attach request OAuth handler without reprocessing resolved config', async () => {
+    it('should attach a recovery handler without reprocessing resolved config', async () => {
       const rawServerConfig = {
         type: 'sse',
         url: 'https://api.example.com/{{LIBRECHAT_USER_ID}}',
@@ -673,18 +673,40 @@ describe('MCPManager', () => {
           Authorization: 'Bearer ${SHOULD_NOT_EXPAND}',
         },
       };
-      const cleanupOAuthHandler = jest.fn();
-
+      const authError = new Error('Non-200 status code (401)');
+      const connection = Object.assign(new EventEmitter(), {
+        client: {
+          request: jest
+            .fn()
+            .mockRejectedValueOnce(authError)
+            .mockResolvedValueOnce({
+              content: [{ type: 'text', text: 'Recovered result' }],
+              isError: false,
+            }),
+        },
+        connect: jest.fn().mockResolvedValue(undefined),
+        getLastConnectionCheckError: jest.fn().mockReturnValue(undefined),
+        isConnected: jest.fn().mockResolvedValue(true),
+        isOAuthAuthenticationError: jest.fn((error: unknown) => error === authError),
+        setRequestHeaders: jest.fn(),
+        timeout: 30000,
+        url: processedServerConfig.url,
+      }) as unknown as MCPConnection;
       mockProcessMCPEnv.mockReturnValue(processedServerConfig);
-      (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mockReturnValue(
-        cleanupOAuthHandler,
+      (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mockImplementation(
+        (_basic, _oauth, currentConnection: MCPConnection) => {
+          const listener = () => currentConnection.emit('oauthHandled');
+          currentConnection.on('oauthReauthenticationRequired', listener);
+          return () => currentConnection.off('oauthReauthenticationRequired', listener);
+        },
       );
       mockAppConnections({
-        get: jest.fn().mockResolvedValue(mockConnection),
+        get: jest.fn().mockResolvedValue(connection),
       });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(rawServerConfig);
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
       const oauthStart = jest.fn();
 
       await manager.callTool({
@@ -698,8 +720,8 @@ describe('MCPManager', () => {
         >[0]['flowManager'],
       });
 
-      /** One pass from user-connection runtime resolution, one from callTool — none from the handler attach */
-      expect(mockProcessMCPEnv).toHaveBeenCalledTimes(2);
+      /** callTool resolves the config once; handler attachment does not process it again. */
+      expect(mockProcessMCPEnv).toHaveBeenCalledTimes(1);
       expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledWith(
         expect.objectContaining({
           serverConfig: processedServerConfig,
@@ -709,9 +731,9 @@ describe('MCPManager', () => {
           oauthStart,
           user: mockUser,
         }),
-        mockConnection,
+        connection,
       );
-      expect(cleanupOAuthHandler).toHaveBeenCalled();
+      expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
 
     it('should leave graph token placeholders sandboxed for user-sourced configs', async () => {
@@ -1151,11 +1173,12 @@ describe('MCPManager', () => {
 
       await expect(callTool(manager)).rejects.toBe(toolError);
 
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).not.toHaveBeenCalled();
       expect(connection.connect).not.toHaveBeenCalled();
       expect(request).toHaveBeenCalledTimes(1);
     });
 
-    it('shares one connection rebuild across concurrent rejected calls', async () => {
+    it('shares one OAuth handler and connection rebuild across concurrent rejected calls', async () => {
       const authError = new Error('Non-200 status code (401)');
       const request = jest
         .fn()
@@ -1170,7 +1193,10 @@ describe('MCPManager', () => {
             finishConnect = resolve;
           }),
       );
-      attachOAuthHandler();
+      const oauthHandler = jest.fn((currentConnection: MCPConnection) => {
+        currentConnection.emit('oauthHandled');
+      });
+      attachOAuthHandler(oauthHandler);
       const manager = await createManager(connection);
 
       const firstCall = callTool(manager);
@@ -1179,8 +1205,11 @@ describe('MCPManager', () => {
       finishConnect?.();
 
       await expect(Promise.all([firstCall, secondCall])).resolves.toHaveLength(2);
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledTimes(1);
+      expect(oauthHandler).toHaveBeenCalledTimes(1);
       expect(connection.connect).toHaveBeenCalledTimes(1);
       expect(request).toHaveBeenCalledTimes(4);
+      expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
   });
 

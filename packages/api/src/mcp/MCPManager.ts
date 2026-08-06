@@ -337,6 +337,7 @@ Please follow these instructions when using tools from the respective MCP server
     error: unknown,
     serverName: string,
     userId: string,
+    attachRequestOAuthHandler: () => () => void,
   ): Promise<void> {
     const existingRecovery = this.oauthRecoveries.get(connection);
     if (existingRecovery) {
@@ -344,10 +345,13 @@ Please follow these instructions when using tools from the respective MCP server
     }
 
     const recovery = new Promise<void>((resolve, reject) => {
+      let cleanupRequestOAuthHandler: (() => void) | undefined;
       const cleanup = () => {
         clearTimeout(timeout);
         connection.off('oauthHandled', handleSuccess);
         connection.off('oauthFailed', handleFailure);
+        cleanupRequestOAuthHandler?.();
+        cleanupRequestOAuthHandler = undefined;
       };
       const handleSuccess = () => {
         cleanup();
@@ -365,6 +369,14 @@ Please follow these instructions when using tools from the respective MCP server
 
       connection.once('oauthHandled', handleSuccess);
       connection.once('oauthFailed', handleFailure);
+
+      try {
+        cleanupRequestOAuthHandler = attachRequestOAuthHandler();
+      } catch (handlerError) {
+        cleanup();
+        reject(handlerError);
+        return;
+      }
 
       const emitted = connection.emit('oauthReauthenticationRequired', {
         serverName,
@@ -437,7 +449,7 @@ Please follow these instructions when using tools from the respective MCP server
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
-    let cleanupRequestOAuthHandler: (() => void) | undefined;
+    let attachRequestOAuthHandler: (() => () => void) | undefined;
     let disconnectAfterCall = false;
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
@@ -550,35 +562,36 @@ Please follow these instructions when using tools from the respective MCP server
       if (userId && user && oauthStart && flowManager && isOAuthServer(currentOptions)) {
         const { allowedDomains, allowedAddresses, useSSRFProtection } =
           await registry.resolveAllowlists({ userId, role: user?.role });
-        cleanupRequestOAuthHandler = MCPConnectionFactory.attachRequestOAuthHandler(
-          {
-            serverName,
-            serverConfig: currentOptions,
-            dbSourced: isDbSourced,
-            skipEnvProcessing: true,
-            useSSRFProtection,
-            allowedDomains,
-            allowedAddresses,
-          },
-          {
-            useOAuth: true,
-            user,
-            flowManager,
-            tokenMethods,
-            signal: options?.signal,
-            oauthStart,
-            oauthEnd,
-            customUserVars,
-            requestBody,
-          },
-          connection,
-        );
+        attachRequestOAuthHandler = () =>
+          MCPConnectionFactory.attachRequestOAuthHandler(
+            {
+              serverName,
+              serverConfig: currentOptions,
+              dbSourced: isDbSourced,
+              skipEnvProcessing: true,
+              useSSRFProtection,
+              allowedDomains,
+              allowedAddresses,
+            },
+            {
+              useOAuth: true,
+              user,
+              flowManager,
+              tokenMethods,
+              signal: options?.signal,
+              oauthStart,
+              oauthEnd,
+              customUserVars,
+              requestBody,
+            },
+            connection!,
+          );
       }
 
       connection.setRequestHeaders(resolvedHeaders);
 
       if (!connectionIsActive) {
-        if (!cleanupRequestOAuthHandler || !userId) {
+        if (!attachRequestOAuthHandler || !userId) {
           throw new McpError(
             ErrorCode.InternalError,
             `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
@@ -586,7 +599,13 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         try {
-          await this.recoverOAuthConnection(connection, connectionCheckError, serverName, userId);
+          await this.recoverOAuthConnection(
+            connection,
+            connectionCheckError,
+            serverName,
+            userId,
+            attachRequestOAuthHandler,
+          );
         } catch (recoveryError) {
           logger.warn(
             `${logPrefix}[${toolName}] Connection-check OAuth recovery failed`,
@@ -618,7 +637,7 @@ Please follow these instructions when using tools from the respective MCP server
         result = await requestTool();
       } catch (error) {
         if (
-          !cleanupRequestOAuthHandler ||
+          !attachRequestOAuthHandler ||
           !connection.isOAuthAuthenticationError(error) ||
           !userId
         ) {
@@ -626,7 +645,13 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         try {
-          await this.recoverOAuthConnection(connection, error, serverName, userId);
+          await this.recoverOAuthConnection(
+            connection,
+            error,
+            serverName,
+            userId,
+            attachRequestOAuthHandler,
+          );
         } catch (recoveryError) {
           logger.warn(`${logPrefix}[${toolName}] Runtime OAuth recovery failed`, recoveryError);
           throw error;
@@ -646,7 +671,6 @@ Please follow these instructions when using tools from the respective MCP server
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
     } finally {
-      cleanupRequestOAuthHandler?.();
       // Ephemeral connections are never stored in userConnections, so disconnecting
       // is the only cleanup needed; removing the map entry here could orphan a
       // still-connected cached connection from before a config change.
