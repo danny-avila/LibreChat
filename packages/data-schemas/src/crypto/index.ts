@@ -1,21 +1,38 @@
 import 'dotenv/config';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import { SignPayloadParams } from '~/types';
+import type { SignPayloadParams } from '~/types';
 
 const { webcrypto } = crypto;
+const fallbackJwtSecret = crypto.randomBytes(32).toString('hex');
 
-/** Use hex decoding for both key and IV for legacy methods */
-const key = Buffer.from(process.env.CREDS_KEY ?? '', 'hex');
-const iv = Buffer.from(process.env.CREDS_IV ?? '', 'hex');
+/** Use hex decoding for both key and IV for legacy methods. */
+const fallbackKey = crypto.randomBytes(32);
+const fallbackIv = crypto.randomBytes(16);
 const algorithm = 'AES-CBC';
+
+function getKey(): Buffer {
+  const configuredKey = process.env.CREDS_KEY;
+  return configuredKey && /^[0-9a-f]{64}$/i.test(configuredKey)
+    ? Buffer.from(configuredKey, 'hex')
+    : fallbackKey;
+}
+
+function getIv(): Buffer {
+  const configuredIv = process.env.CREDS_IV;
+  return configuredIv && /^[0-9a-f]{32}$/i.test(configuredIv)
+    ? Buffer.from(configuredIv, 'hex')
+    : fallbackIv;
+}
 
 export async function signPayload({
   payload,
   secret,
   expirationTime,
 }: SignPayloadParams): Promise<string> {
-  return jwt.sign(payload, secret!, { expiresIn: expirationTime });
+  return jwt.sign(payload, secret ?? process.env.JWT_SECRET ?? fallbackJwtSecret, {
+    expiresIn: expirationTime,
+  });
 }
 
 export async function hashToken(str: string): Promise<string> {
@@ -32,13 +49,13 @@ export async function hashToken(str: string): Promise<string> {
  * @returns The encrypted string in hex format
  */
 export async function encrypt(value: string): Promise<string> {
-  const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
+  const cryptoKey = await webcrypto.subtle.importKey('raw', getKey(), { name: algorithm }, false, [
     'encrypt',
   ]);
   const encoder = new TextEncoder();
   const data = encoder.encode(value);
   const encryptedBuffer = await webcrypto.subtle.encrypt(
-    { name: algorithm, iv: iv },
+    { name: algorithm, iv: getIv() },
     cryptoKey,
     data,
   );
@@ -51,12 +68,12 @@ export async function encrypt(value: string): Promise<string> {
  * @returns The decrypted plaintext
  */
 export async function decrypt(encryptedValue: string): Promise<string> {
-  const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
+  const cryptoKey = await webcrypto.subtle.importKey('raw', getKey(), { name: algorithm }, false, [
     'decrypt',
   ]);
   const encryptedBuffer = Buffer.from(encryptedValue, 'hex');
   const decryptedBuffer = await webcrypto.subtle.decrypt(
-    { name: algorithm, iv: iv },
+    { name: algorithm, iv: getIv() },
     cryptoKey,
     encryptedBuffer,
   );
@@ -73,7 +90,7 @@ export async function decrypt(encryptedValue: string): Promise<string> {
  */
 export async function encryptV2(value: string): Promise<string> {
   const gen_iv = webcrypto.getRandomValues(new Uint8Array(16));
-  const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
+  const cryptoKey = await webcrypto.subtle.importKey('raw', getKey(), { name: algorithm }, false, [
     'encrypt',
   ]);
   const encoder = new TextEncoder();
@@ -98,7 +115,7 @@ export async function decryptV2(encryptedValue: string): Promise<string> {
   }
   const gen_iv = Buffer.from(parts.shift() ?? '', 'hex');
   const encrypted = parts.join(':');
-  const cryptoKey = await webcrypto.subtle.importKey('raw', key, { name: algorithm }, false, [
+  const cryptoKey = await webcrypto.subtle.importKey('raw', getKey(), { name: algorithm }, false, [
     'decrypt',
   ]);
   const encryptedBuffer = Buffer.from(encrypted, 'hex');
@@ -121,9 +138,7 @@ const algorithm_v3 = 'aes-256-ctr';
  * @returns The encrypted string with a "v3:" prefix.
  */
 export function encryptV3(value: string): string {
-  if (key.length !== 32) {
-    throw new Error(`Invalid key length: expected 32 bytes, got ${key.length} bytes`);
-  }
+  const key = getKey();
   const iv_v3 = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv(algorithm_v3, key, iv_v3);
   const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
@@ -142,7 +157,7 @@ export function decryptV3(encryptedValue: string): string {
   }
   const iv_v3 = Buffer.from(parts[1], 'hex');
   const encryptedText = Buffer.from(parts.slice(2).join(':'), 'hex');
-  const decipher = crypto.createDecipheriv(algorithm_v3, key, iv_v3);
+  const decipher = crypto.createDecipheriv(algorithm_v3, getKey(), iv_v3);
   const decrypted = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
   return decrypted.toString('utf8');
 }

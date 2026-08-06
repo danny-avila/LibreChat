@@ -1,4 +1,7 @@
+import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
+
+const fallbackSecret = crypto.randomBytes(32).toString('hex');
 
 /**
  * Generate a short-lived JWT token
@@ -7,7 +10,7 @@ import jwt from 'jsonwebtoken';
  * @returns {String} - The generated JWT token
  */
 export const generateShortLivedToken = (userId: string, expireIn: string = '5m'): string => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET!, {
+  return jwt.sign({ id: userId }, process.env.JWT_SECRET ?? fallbackSecret, {
     expiresIn: expireIn,
     algorithm: 'HS256',
   });

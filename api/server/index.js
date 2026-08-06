@@ -1,3 +1,5 @@
+require('../config/credentials');
+
 const telemetry = require('./telemetry');
 const fs = require('fs');
 const path = require('path');
