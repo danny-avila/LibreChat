@@ -205,14 +205,17 @@ function bucketConcretePath(path: string | undefined): string | undefined {
 function getRequestPath(req: AuthLogRequest): string | undefined {
   const baseUrl = bucketConcretePath(normalizeAuthLogValue(req.baseUrl));
   const routePath = normalizeRoutePath(req.route?.path);
-  if (routePath) {
+  if (routePath && baseUrl) {
     return joinRoutePath(baseUrl, routePath);
   }
   if (baseUrl) {
     return baseUrl;
   }
 
-  const path = normalizeAuthLogValue(req.path) ?? normalizeAuthLogValue(req.originalUrl ?? req.url);
+  const path =
+    normalizeAuthLogValue(req.originalUrl) ??
+    normalizeAuthLogValue(req.path) ??
+    normalizeAuthLogValue(req.url);
   return bucketConcretePath(path);
 }
 

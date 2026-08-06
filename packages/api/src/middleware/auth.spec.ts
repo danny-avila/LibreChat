@@ -177,6 +177,21 @@ describe('auth middleware logging helpers', () => {
     expect(log.request_path).toBe('/api/share/link/:conversationId');
   });
 
+  it('buckets the original URL when Express leaves an unmounted route template', () => {
+    const context = buildSafeRequestLogContext(
+      createRequest({
+        baseUrl: '',
+        path: '/conversation-123',
+        originalUrl: '/api/convos/conversation-123?access_token=secret-token',
+        route: { path: '/:id' },
+      }),
+    );
+
+    expect(context.request_path).toBe('/api/convos');
+    expect(JSON.stringify(context)).not.toContain('conversation-123');
+    expect(JSON.stringify(context)).not.toContain('secret-token');
+  });
+
   it('drops unsupported and sensitive extra values while keeping allowed fields', () => {
     const log = buildSafeAuthLogContext(createRequest({ id: 'request-id' }), createAuthState(), {
       attempted_strategies: ['openidJwt', '', { strategy: 'jwt' }, 'jwt'],

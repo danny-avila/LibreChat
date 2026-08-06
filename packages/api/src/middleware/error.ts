@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, tenantStorage } from '@librechat/data-schemas';
 import { ErrorTypes } from 'librechat-data-provider';
 import type { NextFunction, Request, Response } from 'express';
 import type { MongoServerError, ValidationError, CustomError } from '~/types';
@@ -77,9 +77,13 @@ export const ErrorController = (
 
     const tenantIsolationContext = buildTenantIsolationErrorLogContext(req, err);
     if (tenantIsolationContext) {
+      const { requestId, requestMethod, requestPath } = tenantStorage.getStore() ?? {};
       logger.error({
         message: 'Tenant-isolation request failed',
         ...tenantIsolationContext,
+        ...(requestId && { request_id: requestId }),
+        ...(requestMethod && { request_method: requestMethod }),
+        ...(requestPath && { request_path: requestPath }),
       });
     } else {
       logger.error('ErrorController => error', err);
