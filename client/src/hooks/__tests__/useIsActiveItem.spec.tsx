@@ -14,8 +14,25 @@ function Probe() {
 /** MutationObserver delivery can slip well past a microtask on a loaded machine. */
 const OBSERVER_WAIT = { timeout: 4000 };
 
+/** One test chains two OBSERVER_WAITs, whose budget exceeds Jest's 5s default. */
+jest.setTimeout(20_000);
+
 const getProbe = (container: HTMLElement) =>
   container.querySelector('[data-testid="probe"]') as HTMLDivElement;
+
+/**
+ * Resolves once the browser has delivered an attribute mutation on `element`. The hook
+ * registers its observer at mount, so it is earlier in delivery order than this one and
+ * has already run its callback by the time this resolves.
+ */
+const nextAttributeMutation = (element: HTMLElement): Promise<void> =>
+  new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      observer.disconnect();
+      resolve();
+    });
+    observer.observe(element, { attributes: true });
+  });
 
 describe('useIsActiveItem', () => {
   it('starts with isActive=false when data-active-item is absent', () => {
@@ -54,21 +71,13 @@ describe('useIsActiveItem', () => {
     const { container } = render(<Probe />);
     const probe = getProbe(container);
 
-    act(() => {
+    const delivered = nextAttributeMutation(probe);
+    await act(async () => {
       probe.setAttribute('data-something-else', 'x');
+      await delivered;
     });
-    await waitFor(() => expect(probe.getAttribute('data-active')).toBe('false'), OBSERVER_WAIT);
 
-    /** A later observed mutation proves the observer ran without the unrelated one flipping it. */
-    act(() => {
-      probe.setAttribute('data-active-item', '');
-    });
-    await waitFor(() => expect(probe.getAttribute('data-active')).toBe('true'), OBSERVER_WAIT);
-
-    act(() => {
-      probe.removeAttribute('data-active-item');
-    });
-    await waitFor(() => expect(probe.getAttribute('data-active')).toBe('false'), OBSERVER_WAIT);
+    expect(probe.getAttribute('data-active')).toBe('false');
   });
 
   it('disconnects the MutationObserver on unmount', async () => {

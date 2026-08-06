@@ -70,13 +70,14 @@ jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
 }));
 
-async function findFileInput(container: HTMLElement): Promise<HTMLInputElement> {
-  let input: Element | null = null;
-  await waitFor(() => {
-    input = container.querySelector('input[type="file"]');
-    expect(input).toBeInstanceOf(HTMLInputElement);
+function findFileInput(container: HTMLElement): Promise<HTMLInputElement> {
+  return waitFor(() => {
+    const input = container.querySelector('input[type="file"]');
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error('Upload input was not rendered');
+    }
+    return input;
   });
-  return input as unknown as HTMLInputElement;
 }
 
 describe('UploadSkillDialog', () => {
