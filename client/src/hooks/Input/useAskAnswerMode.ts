@@ -367,6 +367,13 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       if (e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229) {
         return false;
       }
+      /* Before the typed-text branch: the hint advertises Esc in every answer
+         state, and bailing on nonempty text made it work only while the box
+         was empty. Dismiss exits answer mode; the draft stays where it is. */
+      if (e.key === 'Escape') {
+        dismiss();
+        return true;
+      }
       const composerText = e.currentTarget.value;
       if (composerText.trim().length > 0) {
         // The composer IS the free-form answer box: Enter submits the typed
@@ -388,10 +395,6 @@ export default function useAskAnswerMode(conversationId?: string | null) {
        * corrupt the free-form answer.
        */
       if (options.length === 0 || !popoverVisible) {
-        if (e.key === 'Escape') {
-          dismiss();
-          return true;
-        }
         return false;
       }
       const digit = Number.parseInt(e.key, 10);
@@ -417,10 +420,6 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       if (e.key === 'Enter' && !e.shiftKey && canSubmit) {
         e.preventDefault();
         submit();
-        return true;
-      }
-      if (e.key === 'Escape') {
-        dismiss();
         return true;
       }
       return false;
