@@ -53,6 +53,24 @@ describe('CustomIcon', () => {
       expect(span?.style.maskImage).toBe('url("/a%5Cb%0Ac.svg")');
     });
 
+    it('letterboxes with mask-size contain by default', () => {
+      const { container } = render(
+        <CustomIcon src="/glyph.svg" alt="" monochrome className="size-8" />,
+      );
+
+      const span = container.querySelector('span');
+      expect(span?.style.maskSize).toBe('contain');
+    });
+
+    it('keeps object-cover sizing semantics via mask-size cover', () => {
+      const { container } = render(
+        <CustomIcon src="/glyph.svg" alt="" monochrome className="h-8 w-8 object-cover" />,
+      );
+
+      const span = container.querySelector('span');
+      expect(span?.style.maskSize).toBe('cover');
+    });
+
     it('does not render a probe image on the tinted path without an onError handler', () => {
       const { container } = render(<CustomIcon src="/glyph.svg" alt="" monochrome />);
 
