@@ -241,7 +241,13 @@ function QueueRow({
       <button
         type="button"
         aria-label={localize('com_ui_edit_message')}
-        onClick={() => {
+        onClick={async () => {
+          /* A recovered row still has a parked copy on the server; discard it
+             through its durable receipt first, or the edited words would come
+             back as a second message on the next reload. */
+          if (!(await steering.discardQueued(message))) {
+            return;
+          }
           /* Same order as the trash below: dropped only once the words are
              somewhere else. A paused question owns the composer, and removing
              the row anyway would leave the message nowhere at all. */
@@ -265,7 +271,11 @@ function QueueRow({
       <button
         type="button"
         aria-label={localize('com_ui_remove_queued')}
-        onClick={() => {
+        onClick={async () => {
+          /* Discard the parked server copy first, as on Edit above. */
+          if (!(await steering.discardQueued(message))) {
+            return;
+          }
           /* Only dropped once the words are somewhere else. The composer
              refuses when it is occupied or the user has moved to another
              chat, and removing the message anyway destroyed it. */
