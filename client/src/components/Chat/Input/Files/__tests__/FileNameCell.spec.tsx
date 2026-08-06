@@ -1,10 +1,11 @@
 import React from 'react';
+import { FileSources } from 'librechat-data-provider';
 import { render, screen } from '@testing-library/react';
 import type { TFile } from 'librechat-data-provider';
 import FileNameCell from '../FileNameCell';
 
 jest.mock('~/data-provider', () => ({
-  useFilePreview: () => ({ data: undefined, isLoading: false, isError: false }),
+  useFilePreview: () => ({ data: undefined, isInitialLoading: false, isError: false }),
 }));
 
 jest.mock('~/components/Chat/Input/Files/FilePreview', () => ({
@@ -12,12 +13,13 @@ jest.mock('~/components/Chat/Input/Files/FilePreview', () => ({
   default: () => <div data-testid="file-icon" />,
 }));
 
-const makeFile = (type: string): TFile =>
+const makeFile = (type: string, source: FileSources = FileSources.text): TFile =>
   ({
     file_id: 'file-1',
     filename: 'report.bin',
     type,
     filepath: '/uploads/report.bin',
+    source,
   }) as TFile;
 
 describe('FileNameCell', () => {
@@ -43,6 +45,29 @@ describe('FileNameCell', () => {
      * control for every row would promise content that is not there. */
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(screen.getByText('report.bin')).toBeInTheDocument();
+  });
+
+  test.each([
+    [FileSources.local, 'file_search'],
+    [FileSources.execute_code, 'code interpreter'],
+    [FileSources.s3, 'object storage'],
+  ])('offers nothing for a PDF stored as a binary via %s', (source) => {
+    /* Only the parser writes `text`, and every record it writes carries
+     * `FileSources.text`. The same PDF uploaded to file_search or execute_code is
+     * stored whole, so the control would always land on an empty state. */
+    render(<FileNameCell file={makeFile('application/pdf', source)} />);
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByText('report.bin')).toBeInTheDocument();
+  });
+
+  test('offers nothing when the record carries no source at all', () => {
+    const file = makeFile('application/pdf');
+    delete (file as Partial<TFile>).source;
+
+    render(<FileNameCell file={file} />);
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
   test('the trigger names the file for screen readers', () => {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
-import { EToolResources, isParsedDocument } from 'librechat-data-provider';
+import { EToolResources, FileSources, isParsedDocument } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { logger, getCachedPreview } from '~/utils';
@@ -14,10 +14,16 @@ import Image from './Image';
  * Whether a staged upload already has extracted text to show.
  *
  * Parsing happens server-side on upload, so the text exists as soon as the
- * progress bar completes, before the message is ever sent.
+ * progress bar completes, before the message is ever sent. `source` is only
+ * copied onto the staged record by the same update that sets `progress` to 1,
+ * and only parser-written records carry `FileSources.text`: the same PDF sent
+ * to file_search or execute_code is stored as a binary with no text.
  */
 const hasExtractedText = (file: ExtendedFile): boolean =>
-  !!file.file_id && file.progress >= 1 && isParsedDocument(file.type, file.filename);
+  !!file.file_id &&
+  file.progress >= 1 &&
+  file.source === FileSources.text &&
+  isParsedDocument(file.type, file.filename);
 
 /**
  * Shared wrapper with a stable module-scope identity. Passing an inline arrow as
@@ -144,6 +150,7 @@ export default function FileRow({
               deleteFile({ file, setFiles });
             };
             const isImage = file.type?.startsWith('image') ?? false;
+            const showsText = hasExtractedText(file);
 
             return (
               <div
@@ -165,7 +172,12 @@ export default function FileRow({
                   <FileContainer
                     file={file}
                     onDelete={handleDelete}
-                    onClick={hasExtractedText(file) ? () => setTextFile(file) : undefined}
+                    onClick={showsText ? () => setTextFile(file) : undefined}
+                    ariaLabel={
+                      showsText
+                        ? localize('com_ui_view_extracted_text_var', { 0: file.filename ?? '' })
+                        : undefined
+                    }
                   />
                 )}
               </div>

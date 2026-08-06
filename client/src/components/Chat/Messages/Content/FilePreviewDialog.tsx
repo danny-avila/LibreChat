@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { isParsedDocument } from 'librechat-data-provider';
+import { FileSources, isParsedDocument } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import ExtractedTextPanel from '~/components/Chat/Input/Files/ExtractedTextPanel';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
@@ -25,6 +25,12 @@ interface FilePreviewDialogProps {
   fileType?: string;
   fileSource?: string;
   fileSize?: number;
+  /**
+   * Storage backend the record was written to. Only `FileSources.text` records
+   * hold extracted text, so the parsed-text fallback stays off when the caller
+   * cannot supply it rather than promising text that was never stored.
+   */
+  source?: FileSources;
 }
 
 /** Formats bytes with unit suffix (differs from ~/utils/formatBytes which returns a raw number). */
@@ -80,11 +86,17 @@ export default function FilePreviewDialog({
   fileType,
   fileSource,
   fileSize,
+  source,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
-  /** Parsed office documents render no preview of their own, so fall back to their text. */
-  const showParsedText = isParsedDocument(fileType, fileName);
+  /**
+   * Parsed documents render no preview of their own, so fall back to their text.
+   * The MIME type alone is not enough: a stored PDF whose download fails is not a
+   * parsed record, and offering its "extracted text" hides the real "preview
+   * unavailable" outcome behind an empty state.
+   */
+  const showParsedText = source === FileSources.text && isParsedDocument(fileType, fileName);
   const { shareId } = useShareContext();
   // Preview reads revoke their blob after consumption, so they need a separate
   // query identity from user-triggered downloads that may be in flight concurrently.
@@ -279,7 +291,7 @@ export default function FilePreviewDialog({
               <p className="pb-3 text-sm text-text-secondary">
                 {localize('com_ui_extracted_text_description')}
               </p>
-              <ExtractedTextPanel fileId={fileId} enabled={open} />
+              <ExtractedTextPanel fileId={fileId} enabled={open} shareId={shareId} />
             </>
           )}
           {fileBlobUrl && (
@@ -321,7 +333,7 @@ export default function FilePreviewDialog({
               <p className="pb-3 text-sm text-text-secondary">
                 {localize('com_ui_extracted_text_description')}
               </p>
-              <ExtractedTextPanel fileId={fileId} enabled={open} />
+              <ExtractedTextPanel fileId={fileId} enabled={open} shareId={shareId} />
             </>
           )}
         </div>

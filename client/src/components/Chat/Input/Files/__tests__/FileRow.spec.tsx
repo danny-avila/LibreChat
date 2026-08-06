@@ -1,9 +1,27 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import userEvent from '@testing-library/user-event';
 import { FileSources } from 'librechat-data-provider';
+import { render, screen } from '@testing-library/react';
 import type { ExtendedFile } from '~/common';
 import FileRow from '../FileRow';
+
+interface MockImageProps {
+  url?: string;
+  progress: number;
+  source?: FileSources;
+}
+
+interface MockFileContainerProps {
+  file: Partial<ExtendedFile>;
+  ariaLabel?: string;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
+}
+
+interface MockFileTextDialogProps {
+  open: boolean;
+  filename: string;
+}
 
 jest.mock('~/hooks', () => ({
   useLocalize: jest.fn(),
@@ -25,7 +43,7 @@ jest.mock('~/utils', () => ({
 }));
 
 jest.mock('../Image', () => {
-  return function MockImage({ url, progress, source }: any) {
+  return function MockImage({ url, progress, source }: MockImageProps) {
     return (
       <div data-testid="mock-image">
         <span data-testid="image-url">{url}</span>
@@ -36,19 +54,24 @@ jest.mock('../Image', () => {
   };
 });
 
+/* Renders a real button so the click path into FileRow's dialog is exercised
+ * rather than only the presence of an `onClick` prop. */
 jest.mock('../FileContainer', () => {
-  return function MockFileContainer({ file, onClick }: any) {
+  return function MockFileContainer({ file, ariaLabel, onClick }: MockFileContainerProps) {
     return (
       <div data-testid="mock-file-container" data-clickable={onClick ? 'true' : 'false'}>
         <span data-testid="file-name">{file.filename}</span>
+        <button type="button" onClick={onClick} aria-label={ariaLabel ?? file.filename}>
+          {file.filename}
+        </button>
       </div>
     );
   };
 });
 
 jest.mock('../FileTextDialog', () => {
-  return function MockFileTextDialog({ open }: any) {
-    return open ? <div data-testid="mock-text-dialog" /> : null;
+  return function MockFileTextDialog({ open, filename }: MockFileTextDialogProps) {
+    return open ? <div data-testid="mock-text-dialog">{filename}</div> : null;
   };
 });
 
@@ -64,11 +87,16 @@ describe('FileRow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockUseLocalize.mockReturnValue((key: string) => {
+    mockUseLocalize.mockReturnValue((key: string, options?: Record<string, string>) => {
       const translations: Record<string, string> = {
         com_ui_deleting_file: 'Deleting file...',
+        com_ui_view_extracted_text_var: 'View text extracted from {{0}}',
       };
-      return translations[key] || key;
+      const template = translations[key] || key;
+      if (!options) {
+        return template;
+      }
+      return template.replace(/\{\{(\w+)\}\}/g, (_match, token: string) => options[token] ?? '');
     });
 
     mockUseDeleteFilesMutation.mockReturnValue({
@@ -371,7 +399,13 @@ describe('FileRow', () => {
     const PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
     const renderOne = (overrides: Partial<ExtendedFile>) => {
-      const file = createMockFile({ filename: 'deck.pptx', type: PPTX, ...overrides });
+      const file = createMockFile({
+        filename: 'deck.pptx',
+        type: PPTX,
+        source: FileSources.text,
+        progress: 1,
+        ...overrides,
+      });
       const filesMap = new Map<string, ExtendedFile>();
       filesMap.set(file.file_id, file);
       renderFileRow(filesMap);
@@ -397,8 +431,53 @@ describe('FileRow', () => {
       expect(screen.getByTestId('mock-file-container')).toHaveAttribute('data-clickable', 'false');
     });
 
+    test.each([
+      [FileSources.local, 'file_search'],
+      [FileSources.execute_code, 'code interpreter'],
+    ])('offers nothing for a parsed type stored as a binary via %s', (source) => {
+      /* Only the parser writes `text`, and it always stamps `FileSources.text`.
+       * The same document sent to %s is stored whole and has no text at all. */
+      renderOne({ source });
+
+      expect(screen.getByTestId('mock-file-container')).toHaveAttribute('data-clickable', 'false');
+    });
+
+    test('offers nothing before the staged record learns its source', () => {
+      /* `source` lands on the staged record in the same update that sets progress
+       * to 1, so an in-between render must not offer the control. */
+      renderOne({ source: undefined });
+
+      expect(screen.getByTestId('mock-file-container')).toHaveAttribute('data-clickable', 'false');
+    });
+
+    test('names the chip after what choosing it does', () => {
+      renderOne({});
+
+      expect(
+        screen.getByRole('button', { name: 'View text extracted from deck.pptx' }),
+      ).toBeInTheDocument();
+    });
+
     test('keeps the dialog closed until a chip is chosen', () => {
-      renderOne({ progress: 1 });
+      renderOne({});
+
+      expect(screen.queryByTestId('mock-text-dialog')).not.toBeInTheDocument();
+    });
+
+    test('opens the extracted text for the chosen chip', async () => {
+      renderOne({});
+
+      await userEvent.click(
+        screen.getByRole('button', { name: 'View text extracted from deck.pptx' }),
+      );
+
+      expect(await screen.findByTestId('mock-text-dialog')).toHaveTextContent('deck.pptx');
+    });
+
+    test('choosing a chip with no extracted text opens nothing', async () => {
+      renderOne({ source: FileSources.local });
+
+      await userEvent.click(screen.getByRole('button', { name: 'deck.pptx' }));
 
       expect(screen.queryByTestId('mock-text-dialog')).not.toBeInTheDocument();
     });
