@@ -378,7 +378,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
             }}
             onClick={() => select(value)}
             style={{ left: `${(index / levels.length) * 100}%`, width: `${100 / levels.length}%` }}
-            className="absolute inset-y-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+            className="absolute inset-y-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
           />
         ))}
       </div>
@@ -436,7 +436,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
                   <button
                     type="button"
                     aria-label={localize('com_ui_more_info')}
-                    className="rounded-full text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    className="rounded-full text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
                   >
                     <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
