@@ -8,7 +8,7 @@ type AuthLogHeaderValue = string | string[] | undefined;
 type AuthRoutePath = string | RegExp | readonly (string | RegExp)[];
 
 const COMPACT_JWT_VALUE =
-  /^(?:[A-Za-z0-9_-]+\.){2}[A-Za-z0-9_-]+$|^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*){4}$/;
+  /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*){2}$|^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*){4}$/;
 const MAX_REQUEST_ID_LENGTH = 128;
 const SAFE_REQUEST_METHODS = new Set([
   'CONNECT',

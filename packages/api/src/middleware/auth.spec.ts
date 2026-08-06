@@ -95,25 +95,19 @@ describe('auth middleware logging helpers', () => {
     });
   });
 
-  it('drops compact JWTs and oversized request IDs supplied through headers', () => {
-    const jwtShapedRequestId = `${'a'.repeat(24)}.${'b'.repeat(24)}.${'c'.repeat(24)}`;
-    const compactJweRequestId = 'header..initialization-vector.ciphertext.authentication-tag';
+  it.each([
+    `${'a'.repeat(24)}.${'b'.repeat(24)}.${'c'.repeat(24)}`,
+    'header..signature',
+    'header.payload.',
+    'header..initialization-vector.ciphertext.authentication-tag',
+    'a'.repeat(129),
+  ])('drops credential-shaped or oversized request ID %s', (requestId) => {
     const log = buildSafeAuthLogContext(
-      createRequest({ headers: { 'x-request-id': jwtShapedRequestId } }),
-      createAuthState(),
-    );
-    const compactJweLog = buildSafeAuthLogContext(
-      createRequest({ headers: { 'x-request-id': compactJweRequestId } }),
-      createAuthState(),
-    );
-    const oversizedLog = buildSafeAuthLogContext(
-      createRequest({ headers: { 'x-request-id': 'a'.repeat(129) } }),
+      createRequest({ headers: { 'x-request-id': requestId } }),
       createAuthState(),
     );
 
     expect(log.request_id).toBeUndefined();
-    expect(compactJweLog.request_id).toBeUndefined();
-    expect(oversizedLog.request_id).toBeUndefined();
   });
 
   it('uses the next valid correlation candidate after rejecting an unsafe request ID', () => {
@@ -265,6 +259,22 @@ describe('auth middleware logging helpers', () => {
 
   it.each([
     [
+      '[TenantIsolation] Query attempted without tenant context in strict mode',
+      'missing_query_context',
+    ],
+    [
+      '[TenantIsolation] Aggregate attempted without tenant context in strict mode',
+      'missing_aggregate_context',
+    ],
+    [
+      '[TenantIsolation] Save attempted without tenant context in strict mode',
+      'missing_save_context',
+    ],
+    [
+      '[TenantIsolation] insertMany attempted without tenant context in strict mode',
+      'missing_insert_many_context',
+    ],
+    [
       '[TenantIsolation] bulkWrite on Message attempted without tenant context in strict mode',
       'missing_bulk_write_context',
     ],
@@ -272,7 +282,16 @@ describe('auth middleware logging helpers', () => {
       '[TenantIsolation] Unknown bulkWrite operation type in strict mode — refusing to pass through without tenant injection',
       'unsupported_bulk_write_operation',
     ],
-  ])('classifies known bulk-write isolation errors', (message, errorSignature) => {
+    ['[TenantIsolation] Cross-tenant tenantId mutation is not allowed', 'cross_tenant_mutation'],
+    [
+      '[TenantIsolation] Document tenantId does not match current tenant context',
+      'tenant_mismatch',
+    ],
+    [
+      '[TenantIsolation] Modifying tenantId via replacement is not allowed',
+      'replacement_tenant_mutation',
+    ],
+  ])('classifies known tenant-isolation error %s', (message, errorSignature) => {
     const context = buildTenantIsolationErrorLogContext(createRequest(), new Error(message));
 
     expect(context?.error_signature).toBe(errorSignature);

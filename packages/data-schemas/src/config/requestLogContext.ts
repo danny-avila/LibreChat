@@ -17,6 +17,13 @@ const REQUEST_LOG_CONTEXT_KEYS = [
   'request_path',
 ] as const;
 
+const RESERVED_REQUEST_LOG_CONTEXT_KEYS = new Set<string>([
+  'requestId',
+  'request_id',
+  'request_method',
+  'request_path',
+]);
+
 const STRUCTURED_EVENT_LOG_CONTEXT_KEYS = [
   'event_name',
   'auth_strategy',
@@ -145,7 +152,7 @@ export function attachRequestContext(
     request_path: getRequestPath(),
   };
   REQUEST_LOG_CONTEXT_KEYS.forEach((key) => {
-    if (context[key] && info[key] == null) {
+    if (context[key] && (RESERVED_REQUEST_LOG_CONTEXT_KEYS.has(key) || info[key] == null)) {
       info[key] = context[key];
     }
   });
