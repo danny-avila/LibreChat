@@ -115,7 +115,7 @@ function MessageParts(props: TMessageProps) {
   return (
     <>
       <div
-        className="w-full border-0 bg-transparent dark:border-0 dark:bg-transparent"
+        className="w-full border-0 bg-transparent"
         onWheel={handleScroll}
         onTouchMove={handleScroll}
       >

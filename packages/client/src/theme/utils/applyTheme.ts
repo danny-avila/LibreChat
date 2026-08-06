@@ -31,6 +31,12 @@ function mapTheme(rgb: IThemeRGB): Partial<IThemeVariables> {
     'rgb-text-secondary-alt': '--text-secondary-alt',
     'rgb-text-tertiary': '--text-tertiary',
     'rgb-text-warning': '--text-warning',
+    'rgb-text-destructive': '--text-destructive',
+    'rgb-link': '--link',
+    'rgb-link-hover': '--link-hover',
+    'rgb-link-visited': '--link-visited',
+    'rgb-accent-primary': '--accent-primary',
+    'rgb-accent-primary-hover': '--accent-primary-hover',
     'rgb-ring-primary': '--ring-primary',
     'rgb-header-primary': '--header-primary',
     'rgb-header-hover': '--header-hover',
@@ -52,31 +58,35 @@ function mapTheme(rgb: IThemeRGB): Partial<IThemeVariables> {
     'rgb-surface-destructive': '--surface-destructive',
     'rgb-surface-destructive-hover': '--surface-destructive-hover',
     'rgb-surface-chat': '--surface-chat',
+    'rgb-surface-inverted': '--surface-inverted',
+    'rgb-surface-inverted-hover': '--surface-inverted-hover',
+    'rgb-text-inverted': '--text-inverted',
+    'rgb-surface-fixed': '--surface-fixed',
+    'rgb-surface-fixed-hover': '--surface-fixed-hover',
+    'rgb-text-fixed': '--text-fixed',
     'rgb-border-light': '--border-light',
     'rgb-border-medium': '--border-medium',
     'rgb-border-medium-alt': '--border-medium-alt',
     'rgb-border-heavy': '--border-heavy',
     'rgb-border-xheavy': '--border-xheavy',
+    'rgb-border-destructive': '--border-destructive',
+    'rgb-status-success': '--status-success',
+    'rgb-status-success-subtle': '--status-success-subtle',
+    'rgb-status-success-border': '--status-success-border',
+    'rgb-status-info': '--status-info',
+    'rgb-status-info-subtle': '--status-info-subtle',
+    'rgb-status-info-border': '--status-info-border',
+    'rgb-status-warning': '--status-warning',
+    'rgb-status-warning-subtle': '--status-warning-subtle',
+    'rgb-status-warning-border': '--status-warning-border',
+    'rgb-status-error': '--status-error',
+    'rgb-status-error-subtle': '--status-error-subtle',
+    'rgb-status-error-border': '--status-error-border',
+    'rgb-status-neutral': '--status-neutral',
+    'rgb-status-neutral-subtle': '--status-neutral-subtle',
+    'rgb-status-neutral-border': '--status-neutral-border',
     'rgb-brand-purple': '--brand-purple',
     'rgb-presentation': '--presentation',
-
-    // Utility colors
-    'rgb-background': '--background',
-    'rgb-foreground': '--foreground',
-    'rgb-primary': '--primary',
-    'rgb-primary-foreground': '--primary-foreground',
-    'rgb-secondary': '--secondary',
-    'rgb-secondary-foreground': '--secondary-foreground',
-    'rgb-muted': '--muted',
-    'rgb-muted-foreground': '--muted-foreground',
-    'rgb-accent': '--accent',
-    'rgb-accent-foreground': '--accent-foreground',
-    'rgb-destructive-foreground': '--destructive-foreground',
-    'rgb-border': '--border',
-    'rgb-input': '--input',
-    'rgb-ring': '--ring',
-    'rgb-card': '--card',
-    'rgb-card-foreground': '--card-foreground',
   };
 
   Object.entries(mappings).forEach(([rgbKey, cssVar]) => {
@@ -108,8 +118,9 @@ export default function applyTheme(themeRGB?: IThemeRGB): void {
       return;
     }
 
-    // Set the CSS variable as rgb() value for compatibility
-    // This ensures existing CSS that expects color values (not space-separated RGB) continues to work
-    root.style.setProperty(cssVar, `rgb(${value})`);
+    // Store the bare `R G B` channel triplet. The Tailwind color map wraps these
+    // as `rgb(var(--x) / <alpha-value>)`, so storing raw channels is what enables
+    // opacity modifiers and matches the style.css defaults.
+    root.style.setProperty(cssVar, value);
   });
 }

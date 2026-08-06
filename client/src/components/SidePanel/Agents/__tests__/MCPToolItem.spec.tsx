@@ -9,6 +9,14 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('@librechat/client', () => ({
   TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 const tool = {

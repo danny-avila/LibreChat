@@ -54,7 +54,7 @@ export default function PublicSharingToggle({
             <div
               className={cn(
                 'transition-colors duration-200',
-                isPublic ? 'text-blue-600 dark:text-blue-500' : 'text-text-secondary',
+                isPublic ? 'text-status-info' : 'text-text-secondary',
               )}
             >
               <Globe className="size-5" />
@@ -106,7 +106,7 @@ export default function PublicSharingToggle({
         <div
           className={cn(
             'rounded-lg transition-all duration-300',
-            isPublic ? 'bg-surface-secondary/50 translate-y-0' : '-translate-y-2',
+            isPublic ? 'translate-y-0 bg-surface-secondary/50' : '-translate-y-2',
           )}
         >
           <div className="flex items-center justify-between">
@@ -114,9 +114,7 @@ export default function PublicSharingToggle({
               <div
                 className={cn(
                   'transition-all duration-300',
-                  isPublic
-                    ? 'scale-100 text-blue-600 dark:text-blue-500'
-                    : 'scale-95 text-text-secondary',
+                  isPublic ? 'scale-100 text-status-info' : 'scale-95 text-text-secondary',
                 )}
               >
                 <Shield className="size-5" />
