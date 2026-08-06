@@ -15,6 +15,10 @@ import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
 import { useLocalize } from '~/hooks';
+import {
+  EndpointMenuContentByMode,
+  isFlatEndpointDropdown,
+} from './components/EndpointMenuContentByMode';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -40,6 +44,7 @@ function ModelSelectorContent() {
     keyDialogOpen,
     onOpenChange,
     keyDialogEndpoint,
+    modelSelectMenuMode,
   } = useModelSelectorContext();
 
   const selectedIcon = useMemo(
@@ -85,6 +90,27 @@ function ModelSelectorContent() {
       }
     />
   );
+
+  if (isFlatEndpointDropdown(modelSelectMenuMode, mappedEndpoints ?? [])) {
+    return (
+      <EndpointMenuContentByMode
+        mode={modelSelectMenuMode}
+        selectedValues={selectedValues}
+        onValuesChange={(values: Record<string, any>) => {
+          setSelectedValues({
+            endpoint: values.endpoint || '',
+            model: values.model || '',
+            modelSpec: values.modelSpec || '',
+          });
+        }}
+        setSearchValue={setSearchValue}
+        searchResults={searchResults}
+        searchValue={searchValue}
+        trigger={trigger}
+        mappedEndpoints={mappedEndpoints ?? []}
+      />
+    );
+  }
 
   return (
     <div className="relative flex w-full max-w-md flex-col items-center gap-2">

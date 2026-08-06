@@ -28,6 +28,7 @@ type ModelSelectorContextType = {
   agentsMap: t.TAgentsMap | undefined;
   assistantsMap: t.TAssistantsMap | undefined;
   endpointsConfig: t.TEndpointsConfig;
+  modelSelectMenuMode: 'flat' | 'auto' | 'nested' | undefined;
 
   // Functions
   endpointRequiresUserKey: (endpoint: string) => boolean;
@@ -258,9 +259,11 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
       setEndpointSearchValue,
       endpointRequiresUserKey,
       setSearchValue: setDebouncedSearchValue,
+      modelSelectMenuMode: startupConfig?.interface?.modelSelectMenuMode,
       ...keyProps,
     }),
     [
+      startupConfig,
       searchValue,
       searchResults,
       selectedValues,

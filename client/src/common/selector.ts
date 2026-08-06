@@ -12,6 +12,7 @@ export interface Endpoint {
   modelIcons?: Record<string, string | undefined>;
   showMarketplace?: boolean;
   searchAliases?: string[];
+  customParams?: Record<string, any>;
 }
 
 export interface SelectedValues {
