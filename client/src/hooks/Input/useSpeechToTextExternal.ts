@@ -293,7 +293,10 @@ const useSpeechToTextExternal = (
   };
 
   const handleKeyDown = async (e: KeyboardEvent) => {
-    if (e.shiftKey && e.altKey && e.code === 'KeyL' && isExternalSTTEnabled) {
+    /* Gated on the Speech to Text setting, not just the selected engine: with
+       the setting off every dictation control is hidden, and this shortcut was
+       the one path left that could start an invisible recording. */
+    if (e.shiftKey && e.altKey && e.code === 'KeyL' && isExternalSTTEnabled && speechToText) {
       if (!window.MediaRecorder) {
         showToast({ message: 'MediaRecorder is not supported in this browser', status: 'error' });
         return;
@@ -320,7 +323,7 @@ const useSpeechToTextExternal = (
       window.removeEventListener('keydown', handleKeyDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isListening]);
+  }, [isListening, speechToText]);
 
   /* Navigating away mid-take ends neither path above, and the audio graph
      would outlive the page that opened it. */
