@@ -29,6 +29,7 @@ const mockSendQueuedNow = jest.fn();
 const mockRemoveQueued = jest.fn();
 const mockReorderQueued = jest.fn();
 const mockRestoreQueuedOrder = jest.fn();
+const mockDiscardQueued = jest.fn().mockResolvedValue(true);
 
 /** Only what the rail reads, filled out against the real type so a change to
  *  the contract breaks compilation rather than passing quietly. */
@@ -41,6 +42,7 @@ const steeringWith = (over: Partial<SteeringControls> = {}): SteeringControls =>
     removeQueued: mockRemoveQueued,
     reorderQueued: mockReorderQueued,
     restoreQueuedOrder: mockRestoreQueuedOrder,
+    discardQueued: mockDiscardQueued,
     ...over,
   }) as SteeringControls;
 
@@ -171,12 +173,14 @@ describe('Queue', () => {
     }
   });
 
-  it('returns a trashed message to the composer before dropping it', () => {
+  it('returns a trashed message to the composer before dropping it', async () => {
     const onRestore = jest.fn().mockReturnValue(true);
     renderQueue([queued({ id: 'q1', files: [{ file_id: 'f1' }] as never })], steering, {
       onRestoreToComposer: onRestore,
     });
-    fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+    });
     expect(onRestore).toHaveBeenCalledWith(
       'follow up on this',
       [{ file_id: 'f1' }],
@@ -188,10 +192,12 @@ describe('Queue', () => {
 
   /* The composer refuses when it is occupied or the user has moved on. Dropping
      the message anyway is the only path here that can destroy text outright. */
-  it('keeps the message queued when the composer refuses to take it back', () => {
+  it('keeps the message queued when the composer refuses to take it back', async () => {
     const onRestore = jest.fn().mockReturnValue(false);
     renderQueue([queued({ id: 'q1' })], steering, { onRestoreToComposer: onRestore });
-    fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+    });
     expect(onRestore).toHaveBeenCalled();
     expect(mockRemoveQueued).not.toHaveBeenCalled();
     /* Keeping the words is right; saying nothing about it is not. Without this
@@ -201,12 +207,14 @@ describe('Queue', () => {
     );
   });
 
-  it('hands the whole message to the composer to edit', () => {
+  it('hands the whole message to the composer to edit', async () => {
     const onEdit = jest.fn().mockReturnValue(true);
     renderQueue([queued({ id: 'q1', quotes: ['a quote'], manualSkills: ['writer'] })], steering, {
       onEditToComposer: onEdit,
     });
-    fireEvent.click(screen.getByLabelText('com_ui_edit_message'));
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('com_ui_edit_message'));
+    });
     expect(onEdit).toHaveBeenCalledWith('follow up on this', [], {
       quotes: ['a quote'],
       manualSkills: ['writer'],
@@ -217,10 +225,12 @@ describe('Queue', () => {
   /* Edit used to drop the row first and hand the words over second, so a
      composer that refuses — a paused question owns it — destroyed the message
      outright. Same restore-then-remove order as the trash. */
-  it('keeps the message queued when the composer refuses to take it for editing', () => {
+  it('keeps the message queued when the composer refuses to take it for editing', async () => {
     const onEdit = jest.fn().mockReturnValue(false);
     renderQueue([queued({ id: 'q1' })], steering, { onEditToComposer: onEdit });
-    fireEvent.click(screen.getByLabelText('com_ui_edit_message'));
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('com_ui_edit_message'));
+    });
     expect(onEdit).toHaveBeenCalled();
     expect(mockRemoveQueued).not.toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
