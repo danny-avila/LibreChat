@@ -106,15 +106,24 @@ function formatDocumentBlock(
 
 /**
  * Filters out files the provider's document path cannot send to the model.
- * Anthropic rejects non-PDF base64 documents with a 400 that recurs on every
- * retry, so unsupported types are skipped instead of bricking the conversation.
+ * Claude rejects non-PDF binary documents with a 400 that recurs on every retry,
+ * including when it is reached through an OpenAI-compatible gateway. Unsupported
+ * types are skipped instead of bricking the conversation.
  */
-function filterProviderDocumentFiles(provider: Providers, files: IMongoFile[]): IMongoFile[] {
+function filterProviderDocumentFiles(
+  provider: Providers,
+  files: IMongoFile[],
+  model?: string,
+): IMongoFile[] {
   if (provider === Providers.BEDROCK) {
     return files.filter((file) => isBedrockDocumentType(file.type));
   }
 
-  if (provider !== Providers.ANTHROPIC) {
+  const usesAnthropicDocumentCapabilities =
+    provider === Providers.ANTHROPIC ||
+    (isOpenAILikeProvider(provider) && model?.toLowerCase().includes('claude'));
+
+  if (!usesAnthropicDocumentCapabilities) {
     return files;
   }
 
@@ -130,7 +139,7 @@ function filterProviderDocumentFiles(provider: Providers, files: IMongoFile[]): 
 
   if (skipped.length) {
     console.warn(
-      `Skipping attachment(s) unsupported by Anthropic document input: ${skipped.join(', ')}`,
+      `Skipping attachment(s) unsupported by Claude document input: ${skipped.join(', ')}`,
     );
   }
 
@@ -182,7 +191,7 @@ export async function encodeAndFormatDocuments(
     return result;
   }
 
-  const processableFiles = filterProviderDocumentFiles(provider, files);
+  const processableFiles = filterProviderDocumentFiles(provider, files, model);
 
   if (!processableFiles.length) {
     return result;

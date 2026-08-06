@@ -407,6 +407,17 @@ endpoints:
   #   recursionLimit: 50
   #   # (optional) Max recursion depth for agents, defaults to 25
   #   maxRecursionLimit: 100
+  #   # (optional) Abort a run once a single streamed tool call's arguments exceed this many bytes.
+  #   # Guards against runaway malformed tool-call generation. Defaults to 65536 (64 KiB); 0 disables.
+  #   maxToolCallArgBytes: 65536
+  #   # (optional) Abort a run once a single model generation emits more than this many stream events.
+  #   # Defense in depth against looping provider streams. Disabled by default.
+  #   maxDeltaEventsPerTurn: 100000
+  #   # (optional) Per-tool overrides for maxToolCallArgBytes, keyed by tool name; 0 disables that
+  #   # tool's guard. LibreChat ships { create_file: 131072 } so document-sized file writes are not
+  #   # cut off; entries here merge over (and can replace) that default.
+  #   maxToolCallArgBytesByTool:
+  #     create_file: 131072
   #   # (optional) Disable the builder interface for agents
   #   disableBuilder: false
   #   # (optional) When conversation titles are generated:
@@ -894,9 +905,12 @@ endpoints:
 #     # (optional) Pick a subset of the starter catalog by id; omit to
 #     # enable all starters (sk_prefix, bearer_header, api_key_header).
 #     starterPatterns: [sk_prefix, bearer_header, api_key_header]
-#     # (optional) Operator-defined patterns. Each entry needs id,
-#     # label, and a JavaScript-flavor regex; the regex is validated
-#     # at config load time.
+#     # (optional) Operator-defined patterns. Each entry needs id, label,
+#     # and a regex in RE2 syntax and semantics (RE2 is a linear-time engine
+#     # with no catastrophic backtracking; a few escapes such as \p, \A, and
+#     # \s differ from JavaScript). Backreferences and lookaround are not
+#     # supported; the regex is validated against the RE2 engine at config
+#     # load time and a pattern it cannot compile is rejected.
 #     customPatterns:
 #       - id: anthropic_api_key
 #         label: Anthropic API key

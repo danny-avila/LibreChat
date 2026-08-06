@@ -211,6 +211,8 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn().mockResolvedValue([]),
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
+  isExpectedMCPToolsUnavailableError: (error) =>
+    error?.code === 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
 }));
 
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
@@ -341,6 +343,36 @@ describe('createResponse controller', () => {
       end: jest.fn(),
       write: jest.fn(),
     };
+  });
+
+  it('returns 503 when an agent expects MCP tools but resolves none', async () => {
+    const { initializeAgent, sendResponsesErrorResponse } = require('@librechat/api');
+    const { loadAgentTools } = require('~/server/services/ToolService');
+    const toolError = Object.assign(new Error('Expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      status: 503,
+      statusCode: 503,
+    });
+    loadAgentTools.mockRejectedValueOnce(toolError);
+    initializeAgent.mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+      await loadTools({
+        req,
+        res,
+        tools: ['run_query_mcp_warehouse'],
+        model: agent.model,
+        agentId: agent.id,
+        provider: agent.provider,
+      });
+    });
+
+    await createResponse(req, res);
+
+    expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+      res,
+      503,
+      'Expected MCP tools are unavailable',
+      'server_error',
+    );
   });
 
   describe('execution envelope', () => {

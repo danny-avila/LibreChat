@@ -359,6 +359,113 @@ describe('ToolService - Action Capability Gating', () => {
       expect(callArgs.tools).toContain(regularTool);
     });
 
+    it('fails initialization when an explicitly selected MCP tool cannot be resolved', async () => {
+      const mcpTool = `search${Constants.mcp_delimiter}warehouse`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockResolveConfigServers.mockResolvedValue({
+        warehouse: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/warehouse',
+        },
+      });
+      mockLoadToolDefinitions.mockResolvedValueOnce({
+        toolDefinitions: [],
+        toolRegistry: new Map(),
+        hasDeferredTools: false,
+        mcpResolution: { expectedToolCount: 1, resolvedToolCount: 0 },
+      });
+
+      await expect(
+        loadAgentTools({
+          req,
+          res: {},
+          agent: { id: 'agent_123', name: 'Target Agent', tools: [mcpTool] },
+          definitionsOnly: true,
+        }),
+      ).rejects.toMatchObject({
+        code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+        statusCode: 503,
+        message: expect.stringContaining('can access its selected tools'),
+      });
+    });
+
+    it('fails closed when MCP definition loading throws before resolution completes', async () => {
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockLoadToolDefinitions.mockRejectedValueOnce(new Error('MCP registry unavailable'));
+
+      await expect(
+        loadAgentTools({
+          req,
+          res: {},
+          agent: {
+            id: 'agent_123',
+            name: 'Target Agent',
+            tools: [`run_query${Constants.mcp_delimiter}warehouse`],
+          },
+          definitionsOnly: true,
+        }),
+      ).rejects.toMatchObject({
+        code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+        statusCode: 503,
+        cause: expect.objectContaining({ message: 'MCP registry unavailable' }),
+      });
+    });
+
+    it('allows a server pin with no explicitly selected MCP tools', async () => {
+      const serverPin = `${Constants.mcp_server}${Constants.mcp_delimiter}warehouse`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockLoadToolDefinitions.mockResolvedValueOnce({
+        toolDefinitions: [],
+        toolRegistry: new Map(),
+        hasDeferredTools: false,
+        mcpResolution: { expectedToolCount: 0, resolvedToolCount: 0 },
+      });
+
+      await expect(
+        loadAgentTools({
+          req,
+          res: {},
+          agent: { id: 'agent_123', tools: [serverPin] },
+          definitionsOnly: true,
+        }),
+      ).resolves.toMatchObject({ toolDefinitions: [] });
+    });
+
+    it('allows partial MCP resolution when at least one expected tool is available', async () => {
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockLoadToolDefinitions.mockResolvedValueOnce({
+        toolDefinitions: [{ name: 'list_sources_mcp_warehouse', toolType: 'mcp' }],
+        toolRegistry: new Map(),
+        hasDeferredTools: false,
+        mcpResolution: { expectedToolCount: 2, resolvedToolCount: 1 },
+      });
+
+      await expect(
+        loadAgentTools({
+          req,
+          res: {},
+          agent: {
+            id: 'agent_123',
+            tools: [
+              `list_sources${Constants.mcp_delimiter}warehouse`,
+              `run_query${Constants.mcp_delimiter}warehouse`,
+            ],
+          },
+          definitionsOnly: true,
+        }),
+      ).resolves.toMatchObject({
+        toolDefinitions: [expect.objectContaining({ name: 'list_sources_mcp_warehouse' })],
+      });
+    });
+
     it('should filter MCP tool definitions when user lacks MCP server use permission', async () => {
       const { userCanUseMCPServers } = require('~/server/services/MCP');
       userCanUseMCPServers.mockResolvedValueOnce(false);
@@ -379,6 +486,31 @@ describe('ToolService - Action Capability Gating', () => {
       const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
       expect(callArgs.tools).toContain(regularTool);
       expect(callArgs.tools).not.toContain(mcpTool);
+    });
+
+    it('fails explicitly when MCP permission filtering removes every expected tool', async () => {
+      const { userCanUseMCPServers } = require('~/server/services/MCP');
+      userCanUseMCPServers.mockResolvedValueOnce(false);
+
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await expect(
+        loadAgentTools({
+          req,
+          res: {},
+          agent: {
+            id: 'agent_123',
+            tools: [`run_query${Constants.mcp_delimiter}warehouse`],
+          },
+          definitionsOnly: true,
+        }),
+      ).rejects.toMatchObject({
+        code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+        statusCode: 503,
+      });
+      expect(mockLoadToolDefinitions).not.toHaveBeenCalled();
     });
 
     it('should return actionsEnabled in the result', async () => {

@@ -19,6 +19,7 @@ const HANDOFF_PROMPT = 'Pass the specialist the exact request and relevant const
 const HANDOFF_PROMPT_KEY = 'context';
 const MCP_SERVER_TOOL_ID = 'sys__server__sys_mcp_e2e-memory';
 const MCP_TOOL_ID = 'remember_fact_mcp_e2e-memory';
+const MISSING_MCP_TOOL_ID = 'retired_fact_mcp_e2e-memory';
 const MCP_SERVER_NAME = 'e2e-memory';
 
 type HandoffRoute = {
@@ -31,6 +32,12 @@ type HandoffRoute = {
   receipt?: string;
   targetInstructions?: string;
   targetTools?: string[];
+  targetToolCall?: {
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+    outputIncludes: string;
+  };
 };
 
 type MCPToolsResponse = {
@@ -796,6 +803,159 @@ test.describe('agent handoffs', () => {
       await cleanupAgent(page, routerId);
       await cleanupAgent(page, unusedId);
       await cleanupAgent(page, chosenId);
+    }
+  });
+
+  test('invokes the target-scoped MCP tool after transfer and persists its output', async ({
+    page,
+  }) => {
+    test.setTimeout(180000);
+
+    await page.goto('/c/new', { timeout: 10000 });
+    const token = await getAccessToken(page);
+    const targetName = uniqueAgentName('E2E Tool Handoff Target');
+    const routerName = uniqueAgentName('E2E Tool Handoff Router');
+    const label = `target-tool-${Date.now()}`;
+    const fact = `delegated fact ${label}`;
+    const toolCallId = `call_e2e_handoff_target_tool_${label}`;
+    const toolOutput = `E2E MCP memory noted: ${fact}`;
+    let targetId: string | undefined;
+    let routerId: string | undefined;
+
+    try {
+      await waitForMCPTool(page, token);
+      const target = await createAgentViaApi(page, token, targetName, undefined, {
+        tools: [MCP_SERVER_TOOL_ID, MCP_TOOL_ID],
+      });
+      targetId = target.id;
+      const router = await createAgentViaApi(page, token, routerName, [
+        {
+          from: '',
+          to: target.id,
+          edgeType: 'handoff',
+          description: 'Delegate requests that require the target memory tool.',
+        },
+      ]);
+      routerId = router.id;
+
+      await selectAgentForChat(page, routerName);
+      const response = await sendMessage(
+        page,
+        handoffMarker(label, [
+          {
+            from: router.id,
+            to: target.id,
+            description: 'Delegate requests that require the target memory tool.',
+            args: {},
+            targetTools: [MCP_TOOL_ID],
+            targetToolCall: {
+              id: toolCallId,
+              name: MCP_TOOL_ID,
+              args: { fact },
+              outputIncludes: toolOutput,
+            },
+          },
+        ]),
+      );
+      expect(response.ok()).toBeTruthy();
+
+      const view = messagesView(page);
+      await expect(view.getByRole('button', { name: `Transferred to ${targetName}` })).toBeVisible({
+        timeout: 30000,
+      });
+      const toolCall = view.locator(`[data-testid="tool-call"][data-tool-call-id="${toolCallId}"]`);
+      await expect(toolCall).toBeVisible({ timeout: 30000 });
+      const toolToggle = toolCall.getByRole('button', { name: /remember_fact/ });
+      if ((await toolToggle.getAttribute('aria-expanded')) !== 'true') {
+        await toolToggle.click();
+      }
+      await expect(
+        view.locator(`[data-tool-call-output-id="${toolCallId}"]`).getByText(toolOutput, {
+          exact: true,
+        }),
+      ).toBeVisible({ timeout: 30000 });
+      const finalText = `E2E handoff tool complete ${label}: agent=${target.id}`;
+      await expect(view.getByText(finalText, { exact: true })).toBeVisible({ timeout: 30000 });
+
+      await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 15000 });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(
+        messagesView(page).locator(`[data-testid="tool-call"][data-tool-call-id="${toolCallId}"]`),
+      ).toBeVisible({ timeout: 30000 });
+      await expect(messagesView(page).getByText(finalText, { exact: true })).toBeVisible({
+        timeout: 30000,
+      });
+    } finally {
+      await cleanupAgent(page, routerId);
+      await cleanupAgent(page, targetId);
+    }
+  });
+
+  test('publishes a terminal error before model execution when the handoff target expects an unavailable MCP tool', async ({
+    page,
+  }) => {
+    test.setTimeout(180000);
+
+    await page.goto('/c/new', { timeout: 10000 });
+    const token = await getAccessToken(page);
+    const targetName = uniqueAgentName('E2E Unavailable Tool Target');
+    const routerName = uniqueAgentName('E2E Unavailable Tool Router');
+    const label = `unavailable-target-tool-${Date.now()}`;
+    let targetId: string | undefined;
+    let routerId: string | undefined;
+
+    try {
+      await waitForMCPTool(page, token);
+      const target = await createAgentViaApi(page, token, targetName, undefined, {
+        tools: [MISSING_MCP_TOOL_ID],
+      });
+      targetId = target.id;
+      const router = await createAgentViaApi(page, token, routerName, [
+        {
+          from: '',
+          to: target.id,
+          edgeType: 'handoff',
+          description: 'Delegate requests that require the unavailable target tool.',
+        },
+      ]);
+      routerId = router.id;
+
+      await selectAgentForChat(page, routerName);
+      const input = page.getByRole('textbox', { name: 'Message input' });
+      await input.fill(
+        handoffMarker(label, [
+          {
+            from: router.id,
+            to: target.id,
+            description: 'Delegate requests that require the unavailable target tool.',
+            args: {},
+          },
+        ]),
+      );
+      const [response] = await Promise.all([
+        page.waitForResponse((candidate) => {
+          const { pathname } = new URL(candidate.url());
+          return (
+            candidate.request().method() === 'POST' &&
+            (pathname === '/api/agents/chat' || pathname.startsWith('/api/agents/chat/')) &&
+            !pathname.endsWith('/abort')
+          );
+        }),
+        input.press('Enter'),
+      ]);
+
+      expect(response.status()).toBe(200);
+      await expect(
+        messagesView(page).getByText(
+          /is configured to use MCP tools, but none are available\. Verify that the MCP server is connected and this agent can access its selected tools, then try again\./,
+        ),
+      ).toBeVisible({ timeout: 30000 });
+      await expect(
+        messagesView(page).getByText(new RegExp(`E2E handoff (continuing|complete) ${label}`)),
+      ).toHaveCount(0);
+    } finally {
+      await cleanupAgent(page, routerId);
+      await cleanupAgent(page, targetId);
     }
   });
 

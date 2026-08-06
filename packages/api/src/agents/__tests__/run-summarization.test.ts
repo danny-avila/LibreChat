@@ -222,6 +222,7 @@ beforeEach(() => {
   delete process.env.LANGFUSE_HOST;
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+  delete process.env.LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED;
   delete process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS;
   delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
   delete process.env.LANGFUSE_TRACING_ENABLED;

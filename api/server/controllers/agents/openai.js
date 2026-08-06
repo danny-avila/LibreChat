@@ -49,6 +49,7 @@ const {
   loadAgentTools,
   loadToolsForExecution,
   getAccessibleMcpServerNames,
+  isExpectedMCPToolsUnavailableError,
 } = require('~/server/services/ToolService');
 const {
   findAccessibleResources,
@@ -103,6 +104,9 @@ function createToolLoader(signal, definitionsOnly = true) {
       });
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);
+      if (isExpectedMCPToolsUnavailableError(error)) {
+        throw error;
+      }
     }
   };
 }
@@ -189,7 +193,9 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     return sendErrorResponse(
       res,
       400,
-      `Message contains a ${piiHit.label}. Remove it and try again.`,
+      piiHit.misconfigured
+        ? 'Message filtering is misconfigured; contact your administrator.'
+        : `Message contains a ${piiHit.label}. Remove it and try again.`,
       'invalid_request_error',
       'message_filter_pii_block',
     );

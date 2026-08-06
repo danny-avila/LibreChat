@@ -115,7 +115,7 @@ function buildCustomOptions(
   }
 
   const allConfig = appConfig?.endpoints?.all;
-  if (allConfig) {
+  if (allConfig?.streamRate != null) {
     customOptions.streamRate = allConfig.streamRate;
   }
 
@@ -345,7 +345,7 @@ export async function initializeCustom({
   }
 
   const streamRate = clientOptions.streamRate as number | undefined;
-  if (streamRate) {
+  if (streamRate != null) {
     (options.llmConfig as Record<string, unknown>)._lc_stream_delay = streamRate;
   }
 

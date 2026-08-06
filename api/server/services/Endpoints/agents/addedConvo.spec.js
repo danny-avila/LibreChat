@@ -41,6 +41,11 @@ jest.mock('~/server/services/MCP', () => ({
   getAccessibleMcpServerNames: jest.fn(async () => []),
 }));
 
+jest.mock('~/server/services/ToolService', () => ({
+  isExpectedMCPToolsUnavailableError: (error) =>
+    error?.code === 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+}));
+
 jest.mock('./skillDeps', () => ({
   canAuthorSkillFiles: (...args) => mockCanAuthorSkillFiles(...args),
   getSkillDbMethods: () => mockGetSkillDbMethods(),
@@ -136,6 +141,16 @@ describe('processAddedConvo', () => {
       expect.objectContaining({ codeEnvAvailable: undefined }),
       expect.anything(),
     );
+  });
+
+  it('propagates an expected-MCP-tools failure from an added parallel agent', async () => {
+    const toolError = Object.assign(new Error('Added agent expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    mockInitializeAgent.mockRejectedValueOnce(toolError);
+
+    await expect(processAddedConvo(baseParams())).rejects.toBe(toolError);
   });
 
   it('keeps deployment-aware skill metadata on a persisted added-agent config', async () => {

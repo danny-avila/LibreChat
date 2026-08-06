@@ -13,7 +13,7 @@ import type {
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvRef } from 'librechat-data-provider';
-import type { SkillFileRecord } from './skillFiles';
+import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { ServerRequest } from '~/types';
 import {
   backgroundTaskRegistry,
@@ -3419,7 +3419,7 @@ async function handleSkillToolCall(
 
   const injectedMessages: InjectedMessage[] = [buildSkillPrimeMessage({ name: skill.name, body })];
 
-  const contentText = `Skill "${args.skillName}" loaded. Follow the instructions below.`;
+  let contentText = `Skill "${args.skillName}" loaded. Follow the instructions below.`;
   let artifact:
     | {
         session_id: string;
@@ -3448,9 +3448,10 @@ async function handleSkillToolCall(
     getStrategyFunctions &&
     batchUploadCodeEnvFiles
   ) {
+    let primeResult: PrimeSkillFilesResult | null = null;
     try {
       const skillFiles = await listSkillFiles(skill._id);
-      const primeResult = await primeSkillFiles({
+      primeResult = await primeSkillFiles({
         skill,
         skillFiles,
         req,
@@ -3487,6 +3488,15 @@ async function handleSkillToolCall(
         `[handleSkillToolCall] Failed to prime files for skill "${args.skillName}":`,
         error instanceof Error ? error.message : error,
       );
+    }
+    if (!primeResult) {
+      /* Degrade loudly: without this note the model follows skill
+       * instructions referencing sandbox paths that were never mounted
+       * and burns turns on missing-path errors. */
+      contentText +=
+        `\n\nNote: this skill's bundled files could not be loaded into the code environment ` +
+        `(upload failed or was rate-limited). Paths under /mnt/data/${SKILL_FILE_PREFIX}${skill.name}/ ` +
+        `are NOT available to bash or code execution this turn. Use the read_file tool to view bundled files instead.`;
     }
   }
 

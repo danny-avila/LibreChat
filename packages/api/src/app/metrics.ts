@@ -185,6 +185,7 @@ type GenerationJobMetrics = {
     result: GenerationStreamSubscriptionResult,
   ) => void;
   recordResumePendingEvents: (store: GenerationJobStore, count: number) => void;
+  recordEarlyBufferOverflow: (store: GenerationJobStore) => void;
 };
 
 let generationJobMetrics: GenerationJobMetrics = {
@@ -192,6 +193,7 @@ let generationJobMetrics: GenerationJobMetrics = {
   setJobsInFlight: () => undefined,
   recordSubscription: () => undefined,
   recordResumePendingEvents: () => undefined,
+  recordEarlyBufferOverflow: () => undefined,
 };
 
 type AgentStartupMetrics = {
@@ -241,6 +243,7 @@ const resetMetricRecorders = (): void => {
     setJobsInFlight: () => undefined,
     recordSubscription: () => undefined,
     recordResumePendingEvents: () => undefined,
+    recordEarlyBufferOverflow: () => undefined,
   };
   agentStartupMetrics = {
     recordMilestone: () => undefined,
@@ -275,6 +278,10 @@ export function recordGenerationStreamResumePendingEvents(
   count: number,
 ): void {
   generationJobMetrics.recordResumePendingEvents(store, count);
+}
+
+export function recordGenerationStreamEarlyBufferOverflow(store: GenerationJobStore): void {
+  generationJobMetrics.recordEarlyBufferOverflow(store);
 }
 
 export function recordAgentStartupMilestone(
@@ -588,6 +595,13 @@ export function createMetrics(): PrometheusMetrics {
     registers: [registry],
   });
 
+  const generationStreamEarlyBufferOverflows = new Counter({
+    name: 'generation_stream_early_buffer_overflows_total',
+    help: 'Early event replay buffers discarded after exceeding hard size bounds',
+    labelNames: ['store'] as const,
+    registers: [registry],
+  });
+
   const agentStartupMilestoneDuration = new Histogram({
     name: 'agent_startup_milestone_duration_seconds',
     help: 'Cumulative agent chat startup latency from request ingress to each milestone',
@@ -632,6 +646,7 @@ export function createMetrics(): PrometheusMetrics {
       generationStreamSubscriptions.inc({ store, type, result }),
     recordResumePendingEvents: (store, count) =>
       generationStreamResumePendingEvents.inc({ store }, count),
+    recordEarlyBufferOverflow: (store) => generationStreamEarlyBufferOverflows.inc({ store }),
   };
 
   agentStartupMetrics = {

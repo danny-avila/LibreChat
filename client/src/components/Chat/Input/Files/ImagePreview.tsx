@@ -31,6 +31,7 @@ const ImagePreview = ({
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -108,6 +109,9 @@ const ImagePreview = ({
     transition: 'stroke-dashoffset 0.3s linear',
   };
 
+  /** Keyboard users need the same expand affordance the pointer gets on hover. */
+  const showExpandAffordance = isHovered || isFocused;
+
   return (
     <>
       <button
@@ -128,6 +132,8 @@ const ImagePreview = ({
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
       >
         {progress < 1 ? (
           <ProgressCircle
@@ -140,14 +146,14 @@ const ImagePreview = ({
           <div
             className={cn(
               'absolute inset-0 flex transform-gpu cursor-pointer items-center justify-center rounded-xl transition-opacity duration-200 ease-in-out',
-              isHovered ? 'bg-black/20 opacity-100' : 'opacity-0',
+              showExpandAffordance ? 'bg-black/20 opacity-100' : 'opacity-0',
             )}
             aria-hidden="true"
           >
             <Maximize2
               className={cn(
                 'size-5 transform-gpu text-white drop-shadow-lg transition-all duration-200',
-                isHovered ? 'scale-110' : '',
+                showExpandAffordance ? 'scale-110' : '',
               )}
             />
           </div>
