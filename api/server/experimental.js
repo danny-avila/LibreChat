@@ -26,6 +26,7 @@ const {
   requestContextMiddleware,
   configureServerTimeouts,
   configureMessageFilterRegexValidator,
+  configureFileConfigRegexEngine,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -50,6 +51,9 @@ const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+
+/** Route admin file-config MIME patterns through a linear-time engine (ReDoS-safe) on upload. */
+configureFileConfigRegexEngine();
 
 /** Reject messageFilter PII patterns the RE2 runtime engine cannot compile, at config load. */
 configureMessageFilterRegexValidator();

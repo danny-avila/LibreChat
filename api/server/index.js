@@ -34,6 +34,7 @@ const {
   setupGracefulShutdown,
   updateInterfacePermissions,
   configureMessageFilterRegexValidator,
+  configureFileConfigRegexEngine,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -45,9 +46,9 @@ const {
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
-const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
+const { startExpiredFileSweep } = require('./services/Files/process');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
@@ -57,6 +58,9 @@ const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+
+/** Route admin file-config MIME patterns through a linear-time engine (ReDoS-safe) on upload. */
+configureFileConfigRegexEngine();
 
 /** Reject messageFilter PII patterns the RE2 runtime engine cannot compile, at config load. */
 configureMessageFilterRegexValidator();
