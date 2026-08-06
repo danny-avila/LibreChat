@@ -12,6 +12,7 @@ const {
 } = require('~/server/controllers/UserController');
 const {
   verifyEmailLimiter,
+  emailChangeLimiter,
   verifyEmailSubmissionLimiter,
   configMiddleware,
   canDeleteAccount,
@@ -31,7 +32,7 @@ router.delete('/delete', requireJwtAuth, canDeleteAccount, configMiddleware, del
 router.post(
   '/email/change',
   requireJwtAuth,
-  verifyEmailLimiter,
+  emailChangeLimiter,
   configMiddleware,
   requestEmailChangeController,
 );

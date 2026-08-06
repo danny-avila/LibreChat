@@ -24,6 +24,7 @@ jest.mock('~/server/middleware', () => {
     canDeleteAccount: pass,
     configMiddleware: pass,
     verifyEmailLimiter: pass,
+    emailChangeLimiter: pass,
     verifyEmailSubmissionLimiter: (...args) => mockVerifyEmailSubmissionLimiter(...args),
   };
 });

@@ -780,6 +780,25 @@ describe('resetPassword', () => {
     );
   });
 
+  it('rejects an address-less reset token once the account email has moved', async () => {
+    const resetHash = bcrypt.hashSync('reset-token', 10);
+    findToken.mockResolvedValue({
+      token: resetHash,
+      userId: 'user-reset',
+      type: 'password_reset',
+    });
+    getUserById.mockResolvedValue({
+      _id: 'user-reset',
+      email: 'new@example.com',
+      emailChangedAt: new Date(),
+    });
+
+    const result = await resetPassword('user-reset', 'reset-token', 'new-password');
+
+    expect(result).toBeInstanceOf(Error);
+    expect(updateUser).not.toHaveBeenCalled();
+  });
+
   it('rejects a typed reset token issued to a previous email address', async () => {
     const resetHash = bcrypt.hashSync('reset-token', 10);
     findToken.mockResolvedValue({

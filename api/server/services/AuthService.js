@@ -537,12 +537,16 @@ const resetPassword = async (userId, token, password) => {
     return new Error('Invalid or expired password reset token');
   }
 
-  const currentUser = await getUserById(userId, 'email _id');
+  const currentUser = await getUserById(userId, 'email _id emailChangedAt');
+  /** Address-less tokens are tolerated so links issued by a not-yet-upgraded node keep
+   * working, but never for an account whose address has moved: such a token cannot be
+   * attributed to the current address and would otherwise outlive the change. */
   if (
     !currentUser ||
     (passwordResetToken.type === AuthTokenTypes.PASSWORD_RESET &&
-      passwordResetToken.email &&
-      passwordResetToken.email.toLowerCase() !== currentUser.email.toLowerCase())
+      (passwordResetToken.email
+        ? passwordResetToken.email.toLowerCase() !== currentUser.email.toLowerCase()
+        : currentUser.emailChangedAt != null))
   ) {
     return new Error('Invalid or expired password reset token');
   }
