@@ -349,6 +349,39 @@ describe('Document Parser', () => {
       );
     });
 
+    test('parseDocument() ships whole-document plain text when most pages are dropped', async () => {
+      /* Letter-spacing in poor OCR layers lives inside the item strings, so pdfjs
+       * assembly outputs mush ("m i s s i o n"). pdf-inspector's plain-text extractor
+       * re-segments words from glyph positions; when structure survived on only a
+       * sliver of pages, the whole document goes through it instead. The omission
+       * notice still comes from the empirical per-page probe. */
+      try {
+        await jest.isolateModulesAsync(async () => {
+          jest.doMock('@firecrawl/pdf-inspector', () => ({
+            extractPagesMarkdown: () => ({
+              pages: [
+                { page: 0, markdown: '# Only structured page' },
+                { page: 1, markdown: '' },
+                { page: 2, markdown: '' },
+              ],
+            }),
+            extractText: () => 'clean whole document text',
+          }));
+          mockPdfjs.pageText = { 2: 'm u s h y r e c o v e r y' };
+
+          const { parseDocument: parseIsolated } = await import('./crud');
+          const document = await parseIsolated({ file: pdfFile('sample.pdf') });
+
+          expect(document.text).toBe('clean whole document text');
+          /** Page 3 had nothing in either engine, and stays reported despite the swap. */
+          expect(document.pagesNeedingOcr).toEqual([3]);
+        });
+      } finally {
+        /* isolateModulesAsync scopes the module registry but not doMock itself. */
+        jest.dontMock('@firecrawl/pdf-inspector');
+      }
+    });
+
     test('parseDocument() falls back to the flat extractor when pdf-inspector throws', async () => {
       mockPdfjs.numPages = 1;
       mockPdfjs.pageText = { 1: 'Quarterly Report' };
