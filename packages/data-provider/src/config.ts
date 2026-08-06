@@ -1421,6 +1421,7 @@ export const interfaceSchema = z
               .array(
                 z.object({
                   value: z.string(),
+                  label: z.string().optional(),
                   description: z.string().optional(),
                 }),
               )

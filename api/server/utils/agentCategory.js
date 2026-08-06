@@ -1,7 +1,16 @@
 const { logger } = require('@librechat/data-schemas');
 
+/** Mirrors the hardcoded agent fallback in `data-schemas` (agent schema default and `createAgent`).
+ * It must never be deactivated, or agents created without a category become unreachable from
+ * every marketplace tab except "All". */
+const FALLBACK_CATEGORY = 'general';
+
 function normalizeValue(raw) {
   return (raw ?? '').toString().trim().toLowerCase();
+}
+
+function optionalString(raw) {
+  return typeof raw === 'string' ? raw.trim() : undefined;
 }
 
 /**
@@ -19,9 +28,15 @@ async function syncCategories(customCategoriesList, enableDefaultCategories) {
   logger.info(
     `${enableDefaultCategories ? 'Enabling' : 'Disabling'} default agent categories as per configuration.`,
   );
+  if (!enableDefaultCategories) {
+    logger.warn(
+      `Keeping the '${FALLBACK_CATEGORY}' category active: it is the fallback assigned to agents created without a category. Declare it in the categories list to change its label or description.`,
+    );
+  }
   for (const cat of dbCategories.filter((c) => !c.custom)) {
-    logger.info(`${enableDefaultCategories ? 'Enabling' : 'Disabling'} category: ${cat.value}`);
-    await updateCategory(cat.value, { isActive: enableDefaultCategories });
+    const isActive = cat.value === FALLBACK_CATEGORY ? true : enableDefaultCategories;
+    logger.info(`${isActive ? 'Enabling' : 'Disabling'} category: ${cat.value}`);
+    await updateCategory(cat.value, { isActive });
   }
 
   if (!Array.isArray(customCategoriesList)) {
@@ -46,8 +61,9 @@ async function syncCategories(customCategoriesList, enableDefaultCategories) {
     }
     acc.push({
       normalizedValue,
-      label: cat.value.toString().trim(),
-      description: typeof cat.description === 'string' ? cat.description : '',
+      rawValue: cat.value.toString().trim(),
+      label: optionalString(cat.label) || undefined,
+      description: optionalString(cat.description),
       order: initialOrder + acc.length,
     });
     return acc;
@@ -67,17 +83,27 @@ async function syncCategories(customCategoriesList, enableDefaultCategories) {
       (cat) => normalizeValue(cat.value) === prepared.normalizedValue,
     );
 
-    if (existing && existing.custom === false) {
-      logger.warn(
-        `Skipping custom category '${prepared.label}': value collides with an existing default category.`,
-      );
+    /* Default categories keep `custom: false` when overridden, so the deletion pass above (which
+     * only targets custom rows) can never remove them, and `ensureDefaultCategories` keeps
+     * managing their localization keys. Only explicitly provided fields are applied — otherwise
+     * re-declaring a default purely to reactivate it would clobber its `com_` label. */
+    if (existing && !existing.custom) {
+      const overrides = { isActive: true };
+      if (prepared.label) {
+        overrides.label = prepared.label;
+      }
+      if (prepared.description !== undefined) {
+        overrides.description = prepared.description;
+      }
+      logger.info(`Overriding default category: ${existing.value}`);
+      await updateCategory(existing.value, overrides);
       continue;
     }
 
     const formattedCategory = {
       value: prepared.normalizedValue,
-      label: prepared.label,
-      description: prepared.description,
+      label: prepared.label || prepared.rawValue,
+      description: prepared.description ?? '',
       isActive: true,
       custom: true,
       order: prepared.order,
