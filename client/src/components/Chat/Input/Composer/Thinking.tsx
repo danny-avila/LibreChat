@@ -90,7 +90,7 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
         }
         className={cn(
           'flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-sm transition-colors',
-          'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
+          'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
           'text-text-primary',
           open && 'bg-surface-hover',
         )}
