@@ -2,7 +2,7 @@
  * @jest-environment @happy-dom/jest-environment
  */
 import React from 'react';
-import { act, render } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 
 import useIsActiveItem from '../useIsActiveItem';
 
@@ -10,6 +10,9 @@ function Probe() {
   const { ref, isActive } = useIsActiveItem<HTMLDivElement>();
   return <div ref={ref} data-testid="probe" data-active={isActive ? 'true' : 'false'} />;
 }
+
+/** MutationObserver delivery can slip well past a microtask on a loaded machine. */
+const OBSERVER_WAIT = { timeout: 4000 };
 
 const getProbe = (container: HTMLElement) =>
   container.querySelector('[data-testid="probe"]') as HTMLDivElement;
@@ -24,42 +27,48 @@ describe('useIsActiveItem', () => {
     const { container } = render(<Probe />);
     const probe = getProbe(container);
 
-    await act(async () => {
+    act(() => {
       probe.setAttribute('data-active-item', '');
-      // Allow the MutationObserver microtask to run
-      await Promise.resolve();
     });
 
-    expect(probe.getAttribute('data-active')).toBe('true');
+    // MutationObserver delivery is not guaranteed within a single microtask
+    await waitFor(() => expect(probe.getAttribute('data-active')).toBe('true'), OBSERVER_WAIT);
   });
 
   it('flips isActive back to false when data-active-item is removed', async () => {
     const { container } = render(<Probe />);
     const probe = getProbe(container);
 
-    await act(async () => {
+    act(() => {
       probe.setAttribute('data-active-item', '');
-      await Promise.resolve();
     });
-    expect(probe.getAttribute('data-active')).toBe('true');
+    await waitFor(() => expect(probe.getAttribute('data-active')).toBe('true'), OBSERVER_WAIT);
 
-    await act(async () => {
+    act(() => {
       probe.removeAttribute('data-active-item');
-      await Promise.resolve();
     });
-    expect(probe.getAttribute('data-active')).toBe('false');
+    await waitFor(() => expect(probe.getAttribute('data-active')).toBe('false'), OBSERVER_WAIT);
   });
 
   it('ignores unrelated attribute mutations', async () => {
     const { container } = render(<Probe />);
     const probe = getProbe(container);
 
-    await act(async () => {
+    act(() => {
       probe.setAttribute('data-something-else', 'x');
-      await Promise.resolve();
     });
+    await waitFor(() => expect(probe.getAttribute('data-active')).toBe('false'), OBSERVER_WAIT);
 
-    expect(probe.getAttribute('data-active')).toBe('false');
+    /** A later observed mutation proves the observer ran without the unrelated one flipping it. */
+    act(() => {
+      probe.setAttribute('data-active-item', '');
+    });
+    await waitFor(() => expect(probe.getAttribute('data-active')).toBe('true'), OBSERVER_WAIT);
+
+    act(() => {
+      probe.removeAttribute('data-active-item');
+    });
+    await waitFor(() => expect(probe.getAttribute('data-active')).toBe('false'), OBSERVER_WAIT);
   });
 
   it('disconnects the MutationObserver on unmount', async () => {
