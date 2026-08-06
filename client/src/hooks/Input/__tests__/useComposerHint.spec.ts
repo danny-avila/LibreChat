@@ -13,6 +13,7 @@ const baseState: ComposerHintState = {
    *  pre-epoch window is exercised explicitly below. */
   canControlGeneration: true,
   duringRunAction: 'queue' as const,
+  canSteer: true,
   answerModeActive: false,
   uploadingCount: 0,
   enterToSend: true,

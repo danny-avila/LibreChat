@@ -27,6 +27,10 @@ export interface ComposerHintState {
   canControlGeneration: boolean;
   /** Which action Enter takes during a run, per the effective setting. */
   duringRunAction: 'steer' | 'queue';
+  /** Whether the steer route can accept input right now. A paused tool
+   *  approval forces the effective action to queue and refuses steers, so the
+   *  live-send alternate must not be advertised through it. */
+  canSteer: boolean;
   /** The composer is the answer box for a paused `ask_user_question`. */
   answerModeActive: boolean;
   uploadingCount: number;
@@ -109,7 +113,9 @@ export function composeHint(
     const parts: string[] = [];
     if (state.enterToSend) {
       parts.push(defaultAction);
-      if (!sendBinding.customized) {
+      /* The queue alternate is local and always lands; the send-now alternate
+         rides the steer route, which a paused approval refuses. */
+      if (!sendBinding.customized && (isSteer || state.canSteer)) {
         parts.push(alternateAction);
       }
     } else if (sendChord) {
