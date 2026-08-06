@@ -35,7 +35,11 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
   const currentRef = useRef<HTMLSpanElement>(null);
   const [slotWidth, setSlotWidth] = useState<number>();
 
-  const raw = conversation?.[setting.key as keyof TConversation];
+  /* The conversation only holds a value once the user touches the control; an
+     admin can still override the setting's default (e.g. reasoning_effort:
+     high), and labelling that state Auto would disagree with what actually
+     runs — and with the Parameters panel. */
+  const raw = conversation?.[setting.key as keyof TConversation] ?? setting.default;
   const value = raw == null ? undefined : String(raw);
   const isAuto = value == null || AUTO_VALUES.has(value);
   const display = isAuto ? localize('com_ui_auto') : resolveEffortLabel(setting, value, localize);
