@@ -6,7 +6,6 @@ const {
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
-  createSSRFSafeAgents,
   splitMCPToolKey,
   buildServerNameAliases,
   findShadowedServerNames,
@@ -19,6 +18,7 @@ const {
   DELETE_MEMORY_TOOL_NAME,
   createAskUserQuestionTool,
   ASK_USER_QUESTION_TOOL_NAME,
+  resolveWebSearchSSRFAgents,
   buildWebSearchDynamicContext,
 } = require('@librechat/api');
 const {
@@ -397,7 +397,10 @@ const loadTools = async ({
         webSearchConfig: webSearch,
       });
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
-      const { httpAgent, httpsAgent } = createSSRFSafeAgents(webSearch?.allowedAddresses);
+      const { httpAgent, httpsAgent } = resolveWebSearchSSRFAgents(
+        result.authResult,
+        webSearch?.allowedAddresses,
+      );
       requestedTools[tool] = async () => {
         toolContextMap[tool] = buildWebSearchContext();
         dynamicToolContextMap[tool] = buildWebSearchDynamicContext(

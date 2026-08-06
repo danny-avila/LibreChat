@@ -15,7 +15,7 @@ const mockGetAccessibleMcpServerNames = jest.fn(async () => []);
 const mockHttpAgent = { __agent: 'http' };
 const mockHttpsAgent = { __agent: 'https' };
 const mockCreateSearchTool = jest.fn(() => ({ name: 'web_search' }));
-const mockCreateSSRFSafeAgents = jest.fn(() => ({
+const mockResolveWebSearchSSRFAgents = jest.fn(() => ({
   httpAgent: mockHttpAgent,
   httpsAgent: mockHttpsAgent,
 }));
@@ -29,7 +29,7 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   loadWebSearchAuth: (...args) => mockLoadWebSearchAuth(...args),
-  createSSRFSafeAgents: (...args) => mockCreateSSRFSafeAgents(...args),
+  resolveWebSearchSSRFAgents: (...args) => mockResolveWebSearchSSRFAgents(...args),
 }));
 
 jest.mock('~/server/services/PluginService', () => mockPluginService);
@@ -852,8 +852,11 @@ describe('Tool Handlers', () => {
       });
       await toolMap[Tools.web_search]();
 
-      expect(mockCreateSSRFSafeAgents).toHaveBeenCalledTimes(1);
-      expect(mockCreateSSRFSafeAgents).toHaveBeenCalledWith(allowedAddresses);
+      expect(mockResolveWebSearchSSRFAgents).toHaveBeenCalledTimes(1);
+      expect(mockResolveWebSearchSSRFAgents).toHaveBeenCalledWith(
+        { searchProvider: 'serper' },
+        allowedAddresses,
+      );
       expect(mockCreateSearchTool).toHaveBeenCalledWith(
         expect.objectContaining({
           httpAgent: mockHttpAgent,
@@ -872,7 +875,10 @@ describe('Tool Handlers', () => {
       });
       await toolMap[Tools.web_search]();
 
-      expect(mockCreateSSRFSafeAgents).toHaveBeenCalledWith(undefined);
+      expect(mockResolveWebSearchSSRFAgents).toHaveBeenCalledWith(
+        { searchProvider: 'serper' },
+        undefined,
+      );
       expect(mockCreateSearchTool).toHaveBeenCalledWith(
         expect.objectContaining({
           httpAgent: mockHttpAgent,
