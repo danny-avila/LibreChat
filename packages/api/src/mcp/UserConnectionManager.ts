@@ -427,7 +427,21 @@ export abstract class UserConnectionManager {
         logger.warn(
           `[MCP][User: ${userId}][${serverName}] Found existing but disconnected connection object. Cleaning up.`,
         );
-        this.removeUserConnection(userId, serverName); // Clean up maps
+        /**
+         * Stop the connection's reconnection loop before dropping it: it may be
+         * retrying with the credentials the connection was built with, long after
+         * this manager stopped tracking it. Torn down inline rather than through
+         * `disconnectUserConnection` so the caller's in-flight coalescing entry in
+         * `pendingConnections` survives.
+         */
+        connection.stopReconnecting();
+        await connection.disconnect().catch((error) => {
+          logger.warn(
+            `[MCP][User: ${userId}][${serverName}] Failed to disconnect abandoned connection`,
+            error,
+          );
+        });
+        this.removeUserConnection(userId, serverName);
         connection = undefined;
       }
     }
@@ -717,6 +731,13 @@ export abstract class UserConnectionManager {
     const connection = userMap?.get(serverName);
     if (connection) {
       logger.info(`[MCP][User: ${userId}][${serverName}] Disconnecting...`);
+      /**
+       * This connection is being abandoned, so cancel any reconnection loop it
+       * has in flight: once dropped from the map nothing will ever reuse it, but
+       * the loop would keep reopening sessions with the credentials the
+       * connection was built with, long after they went stale.
+       */
+      connection.stopReconnecting();
       await connection.disconnect();
       this.removeUserConnection(userId, serverName);
     }
