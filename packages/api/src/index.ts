@@ -53,6 +53,8 @@ export * from './projects';
 /* Skills */
 export * from './skills';
 export * from './favorites';
+/* Artifact Apps */
+export * from './artifactApps';
 /* Endpoints */
 export * from './endpoints';
 /* Files */

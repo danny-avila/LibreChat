@@ -49,6 +49,7 @@ export enum ResourceType {
   REMOTE_AGENT = 'remoteAgent',
   SKILL = 'skill',
   SHARED_LINK = 'sharedLink',
+  ARTIFACT_APP = 'artifactApp',
 }
 
 /**
@@ -86,6 +87,9 @@ export enum AccessRoleIds {
   SKILL_OWNER = 'skill_owner',
   SHARED_LINK_VIEWER = 'sharedLink_viewer',
   SHARED_LINK_OWNER = 'sharedLink_owner',
+  ARTIFACT_APP_VIEWER = 'artifactApp_viewer',
+  ARTIFACT_APP_EDITOR = 'artifactApp_editor',
+  ARTIFACT_APP_OWNER = 'artifactApp_owner',
 }
 
 // ===== ZOD SCHEMAS =====
@@ -326,12 +330,14 @@ export function accessRoleToPermBits(accessRoleId: string): number {
     case AccessRoleIds.REMOTE_AGENT_VIEWER:
     case AccessRoleIds.SKILL_VIEWER:
     case AccessRoleIds.SHARED_LINK_VIEWER:
+    case AccessRoleIds.ARTIFACT_APP_VIEWER:
       return PermissionBits.VIEW;
     case AccessRoleIds.AGENT_EDITOR:
     case AccessRoleIds.PROMPTGROUP_EDITOR:
     case AccessRoleIds.MCPSERVER_EDITOR:
     case AccessRoleIds.REMOTE_AGENT_EDITOR:
     case AccessRoleIds.SKILL_EDITOR:
+    case AccessRoleIds.ARTIFACT_APP_EDITOR:
       return PermissionBits.VIEW | PermissionBits.EDIT;
     case AccessRoleIds.AGENT_OWNER:
     case AccessRoleIds.PROMPTGROUP_OWNER:
@@ -339,6 +345,7 @@ export function accessRoleToPermBits(accessRoleId: string): number {
     case AccessRoleIds.REMOTE_AGENT_OWNER:
     case AccessRoleIds.SKILL_OWNER:
     case AccessRoleIds.SHARED_LINK_OWNER:
+    case AccessRoleIds.ARTIFACT_APP_OWNER:
       return (
         PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE
       );
