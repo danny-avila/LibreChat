@@ -1,8 +1,8 @@
 import React from 'react';
+import { EndpointMenuContent, renderSearchResults } from '.';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import { CustomMenu as Menu } from '../CustomMenu';
-import { EndpointMenuContent, renderSearchResults } from '.';
 import { useLocalize } from '~/hooks';
 
 interface EndpointMenuContentByModeProps {

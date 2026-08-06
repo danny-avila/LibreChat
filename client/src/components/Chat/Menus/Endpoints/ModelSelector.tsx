@@ -3,6 +3,10 @@ import { TooltipAnchor } from '@librechat/client';
 import { getConfigDefaults } from 'librechat-data-provider';
 import type { ModelSelectorProps } from '~/common';
 import {
+  EndpointMenuContentByMode,
+  isFlatEndpointDropdown,
+} from './components/EndpointMenuContentByMode';
+import {
   renderModelSpecs,
   renderEndpoints,
   renderSearchResults,
@@ -15,10 +19,6 @@ import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
 import { useLocalize } from '~/hooks';
-import {
-  EndpointMenuContentByMode,
-  isFlatEndpointDropdown,
-} from './components/EndpointMenuContentByMode';
 
 const defaultInterface = getConfigDefaults().interface;
 

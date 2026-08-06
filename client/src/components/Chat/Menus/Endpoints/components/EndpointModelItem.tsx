@@ -4,10 +4,10 @@ import { CheckCircle2, EarthIcon, Pin, PinOff } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useFavorites, useLocalize, useIsActiveItem } from '~/hooks';
+import { isFlatEndpointDropdown } from './EndpointMenuContentByMode';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { cn } from '~/utils';
-import { isFlatEndpointDropdown } from './EndpointMenuContentByMode';
 interface EndpointModelItemProps {
   modelId: string | null;
   endpoint: Endpoint;
