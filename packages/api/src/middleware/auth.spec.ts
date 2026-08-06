@@ -95,10 +95,15 @@ describe('auth middleware logging helpers', () => {
     });
   });
 
-  it('drops JWT-shaped and oversized request IDs supplied through headers', () => {
+  it('drops compact JWTs and oversized request IDs supplied through headers', () => {
     const jwtShapedRequestId = `${'a'.repeat(24)}.${'b'.repeat(24)}.${'c'.repeat(24)}`;
+    const compactJweRequestId = 'header..initialization-vector.ciphertext.authentication-tag';
     const log = buildSafeAuthLogContext(
       createRequest({ headers: { 'x-request-id': jwtShapedRequestId } }),
+      createAuthState(),
+    );
+    const compactJweLog = buildSafeAuthLogContext(
+      createRequest({ headers: { 'x-request-id': compactJweRequestId } }),
       createAuthState(),
     );
     const oversizedLog = buildSafeAuthLogContext(
@@ -107,6 +112,7 @@ describe('auth middleware logging helpers', () => {
     );
 
     expect(log.request_id).toBeUndefined();
+    expect(compactJweLog.request_id).toBeUndefined();
     expect(oversizedLog.request_id).toBeUndefined();
   });
 
@@ -255,6 +261,21 @@ describe('auth middleware logging helpers', () => {
       request_path: '/api/banner',
     });
     expect(JSON.stringify(context)).not.toContain('secret-token');
+  });
+
+  it.each([
+    [
+      '[TenantIsolation] bulkWrite on Message attempted without tenant context in strict mode',
+      'missing_bulk_write_context',
+    ],
+    [
+      '[TenantIsolation] Unknown bulkWrite operation type in strict mode — refusing to pass through without tenant injection',
+      'unsupported_bulk_write_operation',
+    ],
+  ])('classifies known bulk-write isolation errors', (message, errorSignature) => {
+    const context = buildTenantIsolationErrorLogContext(createRequest(), new Error(message));
+
+    expect(context?.error_signature).toBe(errorSignature);
   });
 
   it('prefers Passport info fields for auth failure reason and error name', () => {

@@ -7,7 +7,8 @@ type AuthLogValue = string | number | boolean | readonly string[];
 type AuthLogHeaderValue = string | string[] | undefined;
 type AuthRoutePath = string | RegExp | readonly (string | RegExp)[];
 
-const JWT_SHAPED_VALUE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+const COMPACT_JWT_VALUE =
+  /^(?:[A-Za-z0-9_-]+\.){2}[A-Za-z0-9_-]+$|^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*){4}$/;
 const MAX_REQUEST_ID_LENGTH = 128;
 const SAFE_REQUEST_METHODS = new Set([
   'CONNECT',
@@ -140,7 +141,7 @@ function getRequestId(req: AuthLogRequest): string | undefined {
     if (
       requestId &&
       requestId.length <= MAX_REQUEST_ID_LENGTH &&
-      !JWT_SHAPED_VALUE.test(requestId) &&
+      !COMPACT_JWT_VALUE.test(requestId) &&
       /^[A-Za-z0-9_.:-]+$/.test(requestId)
     ) {
       return requestId;
@@ -359,6 +360,12 @@ export function formatAuthLogMessage(message: string, context: AuthLogContext): 
 }
 
 function getTenantIsolationSignature(message: string): string {
+  if (message.includes('bulkWrite on') && message.includes('without tenant context')) {
+    return 'missing_bulk_write_context';
+  }
+  if (message.includes('Unknown bulkWrite operation type')) {
+    return 'unsupported_bulk_write_operation';
+  }
   if (message.includes('Query attempted without tenant context')) {
     return 'missing_query_context';
   }
