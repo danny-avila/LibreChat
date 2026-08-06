@@ -168,7 +168,17 @@ describe('email change service', () => {
       });
 
       expect(response).toMatchObject({ status: 409, code: 'account_modified' });
-      expect(deps.upsertToken).not.toHaveBeenCalled();
+      expect(deps.deleteTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '507f1f77bcf86cd799439011',
+          email: 'new@example.com',
+          type: EMAIL_CHANGE_TOKEN_TYPE,
+        }),
+        'tenant-1',
+      );
+      expect(deps.sendEmail).not.toHaveBeenCalledWith(
+        expect.objectContaining({ template: 'verifyEmailChange.handlebars' }),
+      );
     });
 
     it('removes the pending token if verification delivery fails', async () => {
@@ -297,19 +307,16 @@ describe('email change service', () => {
       });
 
       expect(response).toEqual({ status: 200, message: 'Email address changed successfully' });
-      expect(deps.deleteTokens).toHaveBeenNthCalledWith(
-        1,
+      expect(deps.deleteTokens).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: '507f1f77bcf86cd799439011',
-          email: 'new@example.com',
           type: EMAIL_CHANGE_TOKEN_TYPE,
-          token: expect.any(String),
         }),
         'tenant-1',
       );
       expect(deps.updateUser).toHaveBeenCalledWith(
         '507f1f77bcf86cd799439011',
-        { email: 'new@example.com', emailVerified: true },
+        { email: 'new@example.com', emailVerified: true, emailChangedAt: expect.any(Date) },
         { email: 'old@example.com', password: 'password-hash', provider: 'local' },
         'tenant-1',
       );
@@ -346,6 +353,27 @@ describe('email change service', () => {
         ([query]) => query.type === 'password_reset',
       );
       expect(resetCleanups).toHaveLength(2);
+    });
+
+    it('leaves the link usable when the update fails transiently', async () => {
+      const { deps, service } = createDeps({
+        findToken: jest.fn().mockResolvedValue(await pendingToken()),
+        updateUser: jest.fn().mockRejectedValue(new Error('connection reset')),
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'raw-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toMatchObject({ status: 500 });
+      expect(deps.deleteTokens).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: EMAIL_CHANGE_TOKEN_TYPE }),
+        expect.anything(),
+      );
     });
 
     it('rejects confirmation when the allowlist stopped permitting the pending address', async () => {

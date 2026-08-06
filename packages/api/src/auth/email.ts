@@ -67,7 +67,7 @@ export interface EmailChangeDeps {
   getUserById: (userId: string, tenantId?: string) => Promise<EmailChangeUser | null>;
   updateUser: (
     userId: string,
-    update: Pick<EmailChangeUser, 'email'> & { emailVerified: boolean },
+    update: Pick<EmailChangeUser, 'email'> & { emailVerified: boolean; emailChangedAt: Date },
     expectedState: Pick<EmailChangeUser, 'email' | 'password' | 'provider'>,
     tenantId?: string,
   ) => Promise<EmailChangeUser | null>;
@@ -304,20 +304,6 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       token: tokenHash,
     };
 
-    const latestUser = await deps.getUserById(input.userId, input.tenantId);
-    if (
-      !latestUser ||
-      userIdOf(latestUser) !== userId ||
-      latestUser.provider !== 'local' ||
-      latestUser.password !== user.password ||
-      normalizeEmail(latestUser.email) !== oldEmail
-    ) {
-      logger.warn(
-        `[emailChange] Account changed while issuing [User ID: ${userId}] [New Email: ${newEmail}] [IP: ${ip}]`,
-      );
-      return result(409, 'Account was modified during the request', 'account_modified');
-    }
-
     await deps.upsertToken(
       tokenScope,
       {
@@ -332,6 +318,23 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       },
       user.tenantId,
     );
+
+    /** Re-read after the write: a confirmation that landed mid-request would leave this
+     * token bound to an obsolete address, so drop it before a dead link is delivered. */
+    const latestUser = await deps.getUserById(input.userId, input.tenantId);
+    if (
+      !latestUser ||
+      userIdOf(latestUser) !== userId ||
+      latestUser.provider !== 'local' ||
+      latestUser.password !== user.password ||
+      normalizeEmail(latestUser.email) !== oldEmail
+    ) {
+      await deleteTokensOrLog(deps, tokenQuery, user.tenantId, 'token bound to a stale address');
+      logger.warn(
+        `[emailChange] Account changed while issuing [User ID: ${userId}] [New Email: ${newEmail}] [IP: ${ip}]`,
+      );
+      return result(409, 'Account was modified during the request', 'account_modified');
+    }
 
     try {
       await deps.sendEmail({
@@ -422,14 +425,6 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(409, 'Email address is already linked to another account', 'email_in_use');
     }
 
-    const consumed = await deps.deleteTokens(
-      { ...tokenQuery, token: emailChangeToken.token },
-      tenantId,
-    );
-    if (consumed.deletedCount !== 1) {
-      return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
-    }
-
     try {
       await Promise.all([
         deps.deleteTokens({ userId, type: PASSWORD_RESET_TOKEN_TYPE }, tenantId),
@@ -443,10 +438,13 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(500, 'Failed to change email address');
     }
 
+    /** The compare-and-set is the commit point and the single-use guard: a competing
+     * confirmation cannot match `oldEmail` twice. Consuming the token only afterwards
+     * keeps the link replayable when the update fails transiently. */
     try {
       const updatedUser = await deps.updateUser(
         userId,
-        { email, emailVerified: true },
+        { email, emailVerified: true, emailChangedAt: new Date() },
         { email: oldEmail, password: user.password, provider: 'local' },
         tenantId,
       );
@@ -465,7 +463,9 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
     }
 
     /** Repeated after the commit: a reset token issued between the pre-commit
-     * cleanup and the update would otherwise outlive the address it was bound to. */
+     * cleanup and the update would otherwise outlive the address it was bound to.
+     * Tokens issued after this sweep are refused by the `emailChangedAt` check in
+     * `resetPassword`, which no longer honours address-less legacy tokens here. */
     await Promise.all([
       deleteTokensOrLog(
         deps,
