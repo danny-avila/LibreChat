@@ -1,6 +1,11 @@
+import path from 'path';
+import * as fs from 'fs';
 import JSZip from 'jszip';
 import { megabyte } from 'librechat-data-provider';
 import { assertSafeZipSize, ZipBombError } from './zipSafety';
+
+const fixturesDir = __dirname;
+const readFixture = (name: string): Buffer => fs.readFileSync(path.join(fixturesDir, name));
 
 /**
  * Build a ZIP archive whose entries inflate to exactly `decompressedBytes`
@@ -15,6 +20,24 @@ const buildBombArchive = async (
   const zip = new JSZip();
   for (const { name, decompressedBytes } of entries) {
     zip.file(name, Buffer.alloc(decompressedBytes, 0));
+  }
+  return zip.generateAsync({
+    type: 'nodebuffer',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 9 },
+  });
+};
+
+/**
+ * Build a ZIP of `count` one-byte entries. Both the compressed archive
+ * and the `count` inflated bytes sit far inside the size caps, so this
+ * isolates the per-entry openReadStream + inflate-teardown cost that
+ * only the entry cap bounds.
+ */
+const buildManyEntryArchive = async (count: number): Promise<Buffer> => {
+  const zip = new JSZip();
+  for (let i = 0; i < count; i++) {
+    zip.file(`entry${i}.bin`, 'x');
   }
   return zip.generateAsync({
     type: 'nodebuffer',
@@ -120,5 +143,67 @@ describe('assertSafeZipSize', () => {
     expect(buffer.length).toBeLessThan(1 * megabyte);
     /* And the validator catches it on default caps. */
     await expect(assertSafeZipSize(buffer)).rejects.toThrow(ZipBombError);
+  });
+
+  test('throws ZipBombError when the archive holds more entries than the entry cap', async () => {
+    /* Neither byte cap sees this: 64 one-byte entries inflate to 64
+     * bytes. The cost is the 64 stream setups, which only the entry
+     * cap bounds. */
+    const buffer = await buildManyEntryArchive(64);
+    await expect(assertSafeZipSize(buffer, { maxEntries: 32 })).rejects.toThrow(ZipBombError);
+  });
+
+  test('passes an archive sitting exactly on the entry cap', async () => {
+    const buffer = await buildManyEntryArchive(32);
+    await expect(assertSafeZipSize(buffer, { maxEntries: 32 })).resolves.toBeUndefined();
+  });
+
+  test('entry-count error names the archive and both counts', async () => {
+    const buffer = await buildManyEntryArchive(64);
+    await expect(assertSafeZipSize(buffer, { maxEntries: 8, name: 'evil.pptx' })).rejects.toThrow(
+      /evil\.pptx: entry count \(64\) exceeds the 8-entry cap/,
+    );
+  });
+
+  test('refuses an over-count archive without inflating a single entry', async () => {
+    /* The bomb is the FIRST entry and busts the per-entry byte cap on
+     * its own. A validator that enumerated entries before checking the
+     * count would inflate it and report the per-entry violation; only
+     * a pre-walk refusal reports the entry count. */
+    const zip = new JSZip();
+    zip.file('bomb.bin', Buffer.alloc(50 * megabyte, 0));
+    for (let i = 0; i < 8; i++) {
+      zip.file(`filler${i}.bin`, 'x');
+    }
+    const buffer = await zip.generateAsync({
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 9 },
+    });
+
+    await expect(
+      assertSafeZipSize(buffer, { maxEntries: 4, maxEntryBytes: 1 * megabyte }),
+    ).rejects.toThrow(/entry count \(9\) exceeds the 4-entry cap/);
+  });
+
+  test('default entry cap catches a many-tiny-entry archive both byte caps wave through', async () => {
+    /* 5,000 one-byte entries: ~5 KB inflated, well under 1 MB
+     * compressed, and yet thousands of stream setups per upload. */
+    const buffer = await buildManyEntryArchive(5000);
+    expect(buffer.length).toBeLessThan(1 * megabyte);
+    await expect(assertSafeZipSize(buffer)).rejects.toThrow(ZipBombError);
+  });
+
+  test.each([
+    'deck.pptx',
+    'sample.docx',
+    'structured.docx',
+    'empty.docx',
+    'sample.xlsx',
+    'empty.xlsx',
+    'sample.ods',
+    'sample.odt',
+  ])('real %s fixture passes the default caps', async (name) => {
+    await expect(assertSafeZipSize(readFixture(name))).resolves.toBeUndefined();
   });
 });

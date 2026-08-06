@@ -17,6 +17,20 @@ const DEFAULT_MAX_TOTAL_BYTES = 100 * megabyte;
  */
 const DEFAULT_MAX_ENTRY_BYTES = 25 * megabyte;
 
+/**
+ * Default per-archive entry-count cap. Neither byte cap bounds how many
+ * entries an archive may hold, yet every entry costs an openReadStream
+ * plus an inflate teardown no matter how little it decompresses to:
+ * 20,000 one-byte entries are 1.87MB on disk and 20,000 decompressed
+ * bytes — comfortably inside both byte caps — but take 835ms to walk
+ * (0.042ms/entry), so a 15MB upload buys roughly 6.7s of CPU. Real
+ * office documents are orders of magnitude below that: the largest
+ * fixture here (a 3-slide deck.pptx) holds 42 entries, the DOCX
+ * fixtures 9-19, and even a 700-slide deck carrying per-slide notes,
+ * rels and media stays under 4,000.
+ */
+const DEFAULT_MAX_ENTRIES = 4096;
+
 /** End-Of-Central-Directory record signature, `PK\x05\x06`. */
 const EOCD_SIGNATURE = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
 
@@ -45,6 +59,8 @@ export interface ZipSafetyOptions {
   maxTotalBytes?: number;
   /** Per-entry decompressed-byte cap. */
   maxEntryBytes?: number;
+  /** Per-archive entry-count cap. */
+  maxEntries?: number;
   /** Filename for error messages — does not need to match disk. */
   name?: string;
 }
@@ -62,7 +78,8 @@ export interface ZipSafetyOptions {
  * validator's own memory footprint is bounded by yauzl's stream
  * buffer regardless of payload size. CPU is bounded by `maxTotalBytes`
  * — once the cap fires, the underlying read stream is destroyed and
- * decompression stops.
+ * decompression stops — and by `maxEntries`, which bounds the
+ * per-entry stream setup that inflated bytes alone never account for.
  *
  * Throws `ZipBombError` on cap violation; throws plain `Error` on a
  * malformed ZIP. Resolves with `void` when the archive is fully walked
@@ -71,6 +88,7 @@ export interface ZipSafetyOptions {
 export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}): Promise<void> {
   const maxTotalBytes = options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES;
   const maxEntryBytes = options.maxEntryBytes ?? DEFAULT_MAX_ENTRY_BYTES;
+  const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
   const label = options.name ?? 'archive';
 
   return new Promise((resolve, reject) => {
@@ -102,6 +120,19 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
           resolve();
         }
       };
+
+      /* Refused before the first `readEntry`, so an over-long archive
+       * costs nothing beyond opening it. Unlike `uncompressedSize`, the
+       * declared entry count is safe to trust here: it is exactly the
+       * number of entries yauzl will emit before ending the walk, so
+       * understating it only buys the attacker less work, never more. */
+      if (zipfile.entryCount > maxEntries) {
+        return finish(
+          new ZipBombError(
+            `${label}: entry count (${zipfile.entryCount}) exceeds the ${maxEntries}-entry cap (zip bomb suspected)`,
+          ),
+        );
+      }
 
       zipfile.readEntry();
 
