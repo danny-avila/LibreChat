@@ -19,6 +19,7 @@ const mockGetTenantId = jest.requireMock('@librechat/data-schemas').getTenantId 
 
 const ENV_KEYS = [
   'CODEAPI_AUTH_PROVIDER',
+  'LIBRECHAT_CODE_API_KEY',
   'CODEAPI_JWT_ENABLED',
   'CODEAPI_JWT_PRIVATE_KEY',
   'CODEAPI_JWT_PRIVATE_KEY_BASE64',
@@ -115,6 +116,7 @@ describe('Code API JWT minting', () => {
     process.env.CODEAPI_JWT_MINT_CACHE_SECONDS = '30';
     delete process.env.CODEAPI_JWT_PRIVATE_KEY;
     delete process.env.CODEAPI_JWT_PRIVATE_KEY_BASE64;
+    delete process.env.LIBRECHAT_CODE_API_KEY;
     delete process.env.CODEAPI_JWT_SINGLE_TENANT_ID;
     delete process.env.TENANT_ISOLATION_STRICT;
     delete process.env.OPENID_REUSE_TOKENS;
@@ -273,9 +275,36 @@ describe('Code API JWT minting', () => {
     await expect(getCodeApiAuthHeaders(baseRequest())).resolves.toEqual({
       Authorization: expect.stringMatching(/^Bearer /),
     });
+  });
 
+  it('uses the configured legacy API key when managed JWT auth is disabled', async () => {
+    process.env.CODEAPI_AUTH_PROVIDER = 'legacy-api-key';
+    process.env.LIBRECHAT_CODE_API_KEY = '  sk-local-code-api  ';
+    delete process.env.CODEAPI_JWT_ENABLED;
+
+    await expect(getCodeApiAuthHeaders()).resolves.toEqual({
+      'x-api-key': 'sk-local-code-api',
+    });
+    await expect(getCodeApiAuthHeaders(baseRequest())).resolves.toEqual({
+      'x-api-key': 'sk-local-code-api',
+    });
+  });
+
+  it('returns no legacy auth header when the API key is missing or blank', async () => {
     process.env.CODEAPI_AUTH_PROVIDER = 'legacy-api-key';
     delete process.env.CODEAPI_JWT_ENABLED;
+
     await expect(getCodeApiAuthHeaders(baseRequest())).resolves.toEqual({});
+    process.env.LIBRECHAT_CODE_API_KEY = '   ';
+    await expect(getCodeApiAuthHeaders(baseRequest())).resolves.toEqual({});
+  });
+
+  it('prefers managed JWT auth when both auth modes are configured', async () => {
+    process.env.CODEAPI_AUTH_PROVIDER = 'both';
+    process.env.LIBRECHAT_CODE_API_KEY = 'sk-local-code-api';
+
+    await expect(getCodeApiAuthHeaders(baseRequest())).resolves.toEqual({
+      Authorization: expect.stringMatching(/^Bearer /),
+    });
   });
 });
