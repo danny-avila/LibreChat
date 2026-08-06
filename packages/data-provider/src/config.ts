@@ -591,7 +591,12 @@ export const defaultAssistantsVersion = {
 };
 
 export const baseEndpointSchema = z.object({
-  streamRate: z.number().optional(),
+  /**
+   * Milliseconds between visible streamed chunks. The agents SDK smooths
+   * adaptively at 25ms by default; set to override the cadence, 0 to disable
+   * smoothing entirely.
+   */
+  streamRate: z.number().min(0).optional(),
   baseURL: z.string().optional(),
   /**
    * Custom request headers forwarded to the provider on every request. Values

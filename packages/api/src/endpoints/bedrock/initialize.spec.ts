@@ -1106,3 +1106,44 @@ describe('initializeBedrock', () => {
     });
   });
 });
+
+describe('initializeBedrock streamRate resolution', () => {
+  beforeEach(() => {
+    process.env.BEDROCK_AWS_ACCESS_KEY_ID = 'test-access-key';
+    process.env.BEDROCK_AWS_SECRET_ACCESS_KEY = 'test-secret-key';
+    process.env.BEDROCK_AWS_DEFAULT_REGION = 'us-east-1';
+  });
+
+  async function delayFor(config: Record<string, unknown>): Promise<unknown> {
+    const result = await initializeBedrock(createMockParams({ config }));
+    return (result.llmConfig as Record<string, unknown>)._lc_stream_delay;
+  }
+
+  it('wires `endpoints.bedrock.streamRate` into llmConfig._lc_stream_delay', async () => {
+    await expect(
+      delayFor({ endpoints: { [EModelEndpoint.bedrock]: { streamRate: 25 } } }),
+    ).resolves.toBe(25);
+  });
+
+  it('preserves the endpoint streamRate when `endpoints.all` exists without one', async () => {
+    await expect(
+      delayFor({
+        endpoints: { [EModelEndpoint.bedrock]: { streamRate: 25 }, all: { activityLabel: true } },
+      }),
+    ).resolves.toBe(25);
+  });
+
+  it('lets `endpoints.all.streamRate` (including 0) override the endpoint value', async () => {
+    await expect(
+      delayFor({
+        endpoints: { [EModelEndpoint.bedrock]: { streamRate: 25 }, all: { streamRate: 0 } },
+      }),
+    ).resolves.toBe(0);
+  });
+
+  it('leaves the delay unset when neither level configures a streamRate', async () => {
+    await expect(
+      delayFor({ endpoints: { all: { activityLabel: true } } }),
+    ).resolves.toBeUndefined();
+  });
+});

@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
+import { GraphEvents } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
-import { GraphEvents, sleep } from '@librechat/agents';
 import type { Response as ServerResponse } from 'express';
 import type { Agent as HttpsAgent } from 'node:https';
 import type { Agent as HttpAgent } from 'node:http';
@@ -89,13 +89,5 @@ export function createStreamEventHandlers(res: ServerResponse): {
         sendEvent(res, event);
       }
     },
-  };
-}
-
-export function createHandleLLMNewToken(streamRate: number) {
-  return async function (): Promise<void> {
-    if (streamRate) {
-      await sleep(streamRate);
-    }
   };
 }
