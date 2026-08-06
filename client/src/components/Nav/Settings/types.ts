@@ -18,6 +18,7 @@ export type SectionId =
   | 'appearance'
   | 'layout'
   | 'accessibility'
+  | 'admin'
   | 'sending'
   | 'commands'
   | 'messages'
@@ -49,6 +50,7 @@ export interface SettingsContextValue {
   aboutEnabled: boolean;
   engineTTS: string;
   langfuseConnectionAccess: boolean;
+  adminPanelURL: string;
 }
 
 export interface SettingEntry {
@@ -96,6 +98,7 @@ export const TABS: TabMeta[] = [
       { id: 'appearance', labelKey: 'com_ui_settings_section_appearance' },
       { id: 'layout', labelKey: 'com_ui_settings_section_layout' },
       { id: 'accessibility', labelKey: 'com_ui_settings_section_accessibility' },
+      { id: 'admin', labelKey: 'com_ui_settings_section_admin' },
     ],
   },
   {

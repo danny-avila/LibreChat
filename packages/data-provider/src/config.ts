@@ -1590,6 +1590,8 @@ export type TStartupConfig = {
   emailEnabled: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
+  /** Admin panel link, only present for users with admin access */
+  adminPanelURL?: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
   modelDescriptions?: Record<string, Record<string, string>>;
