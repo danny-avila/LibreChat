@@ -927,7 +927,7 @@ function Palette({
             className={cn(
               'flex size-9 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors',
               'hover:bg-surface-hover hover:text-text-primary',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
               'disabled:cursor-not-allowed disabled:opacity-40',
               /* The close mark carries the same weight whichever job it is
                  doing: dimmer and unbacked while dictating read as a smaller
