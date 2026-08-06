@@ -25,6 +25,7 @@ function createDeps(overrides: Partial<EmailChangeDeps> = {}) {
     upsertToken: jest.fn().mockResolvedValue(undefined),
     deleteTokens: jest.fn().mockResolvedValue({ deletedCount: 1 }),
     verifyPassword: jest.fn().mockResolvedValue(true),
+    resolveAllowedDomains: jest.fn().mockResolvedValue(null),
     sendEmail: jest.fn().mockResolvedValue(undefined),
     isEmailChangeAllowed: jest.fn().mockReturnValue(true),
     clientDomain: 'https://chat.example.com/',
@@ -148,6 +149,25 @@ describe('email change service', () => {
       });
 
       expect(response).toMatchObject({ status: 409, code: 'email_in_use' });
+      expect(deps.upsertToken).not.toHaveBeenCalled();
+    });
+
+    it('does not issue a link when a concurrent confirmation moves the account', async () => {
+      const { deps, service } = createDeps({
+        getUserById: jest
+          .fn()
+          .mockResolvedValueOnce(user)
+          .mockResolvedValueOnce({ ...user, email: 'confirmed@example.com' }),
+      });
+
+      const response = await service.requestEmailChange({
+        body: { currentPassword: 'correct-password', newEmail: 'new@example.com' },
+        userId: '507f1f77bcf86cd799439011',
+        tenantId: 'tenant-1',
+        emailEnabled: true,
+      });
+
+      expect(response).toMatchObject({ status: 409, code: 'account_modified' });
       expect(deps.upsertToken).not.toHaveBeenCalled();
     });
 
@@ -306,6 +326,44 @@ describe('email change service', () => {
           template: 'emailChanged.handlebars',
         }),
       );
+    });
+
+    it('revokes reset tokens again after the commit to close the issuance race', async () => {
+      const { deps, service } = createDeps({
+        findToken: jest.fn().mockResolvedValue(await pendingToken()),
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'raw-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toMatchObject({ status: 200 });
+      const resetCleanups = (deps.deleteTokens as jest.Mock).mock.calls.filter(
+        ([query]) => query.type === 'password_reset',
+      );
+      expect(resetCleanups).toHaveLength(2);
+    });
+
+    it('rejects confirmation when the allowlist stopped permitting the pending address', async () => {
+      const { deps, service } = createDeps({
+        findToken: jest.fn().mockResolvedValue(await pendingToken()),
+        resolveAllowedDomains: jest.fn().mockResolvedValue(['allowed.com']),
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'raw-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toMatchObject({ status: 403, code: 'email_domain_not_allowed' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
     });
 
     it('rejects confirmation when the account moved to a federated provider', async () => {

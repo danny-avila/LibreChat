@@ -42,7 +42,9 @@ const confirmSchema = z.object({
 });
 
 export type EmailChangeUser = Pick<IUser, 'email'> &
-  Partial<Pick<IUser, 'id' | 'name' | 'username' | 'password' | 'provider' | 'tenantId'>> & {
+  Partial<
+    Pick<IUser, 'id' | 'name' | 'username' | 'password' | 'provider' | 'role' | 'tenantId'>
+  > & {
     _id?: IUser['_id'] | string;
   };
 
@@ -73,6 +75,9 @@ export interface EmailChangeDeps {
   upsertToken: (scope: string, data: TokenCreateData, tenantId?: string) => Promise<void>;
   deleteTokens: (query: TokenQuery, tenantId?: string) => Promise<{ deletedCount?: number }>;
   verifyPassword: (user: EmailChangeUser, password: string) => Promise<boolean>;
+  /** Resolves the tenant's current registration allowlist so confirmation cannot
+   * commit an address that policy stopped permitting while the link was pending. */
+  resolveAllowedDomains: (user: EmailChangeUser) => Promise<string[] | null | undefined>;
   sendEmail: (data: EmailData) => Promise<void>;
   isEmailChangeAllowed: () => boolean;
   clientDomain: string;
@@ -299,6 +304,20 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       token: tokenHash,
     };
 
+    const latestUser = await deps.getUserById(input.userId, input.tenantId);
+    if (
+      !latestUser ||
+      userIdOf(latestUser) !== userId ||
+      latestUser.provider !== 'local' ||
+      latestUser.password !== user.password ||
+      normalizeEmail(latestUser.email) !== oldEmail
+    ) {
+      logger.warn(
+        `[emailChange] Account changed while issuing [User ID: ${userId}] [New Email: ${newEmail}] [IP: ${ip}]`,
+      );
+      return result(409, 'Account was modified during the request', 'account_modified');
+    }
+
     await deps.upsertToken(
       tokenScope,
       {
@@ -391,6 +410,13 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
     }
 
+    if (!isEmailDomainAllowed(email, await deps.resolveAllowedDomains(user))) {
+      logger.warn(
+        `[emailChange] Domain no longer allowed [User ID: ${userId}] [New Email: ${email}] [IP: ${ip}]`,
+      );
+      return result(403, 'Email domain is not allowed', 'email_domain_not_allowed');
+    }
+
     const existingUser = await deps.findUserByEmail(email, tenantId);
     if (existingUser && userIdOf(existingUser) !== userId) {
       return result(409, 'Email address is already linked to another account', 'email_in_use');
@@ -438,12 +464,22 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(500, 'Failed to change email address');
     }
 
-    await deleteTokensOrLog(
-      deps,
-      { userId, type: EMAIL_CHANGE_TOKEN_TYPE },
-      tenantId,
-      'superseded email change tokens',
-    );
+    /** Repeated after the commit: a reset token issued between the pre-commit
+     * cleanup and the update would otherwise outlive the address it was bound to. */
+    await Promise.all([
+      deleteTokensOrLog(
+        deps,
+        { userId, type: EMAIL_CHANGE_TOKEN_TYPE },
+        tenantId,
+        'superseded email change tokens',
+      ),
+      deleteTokensOrLog(
+        deps,
+        { userId, type: PASSWORD_RESET_TOKEN_TYPE },
+        tenantId,
+        'password reset tokens issued during the change',
+      ),
+    ]);
     const confirmationPayload = {
       appName: deps.appName,
       name: displayName(user),
