@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
 import type { TFile } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import type { ExtendedFile } from '~/common';
 import { getFileType, cn } from '~/utils';
 import FilePreview from './FilePreview';
@@ -12,6 +12,7 @@ const FileContainer = ({
   subtitle,
   buttonClassName,
   containerClassName,
+  ariaLabel,
   onDelete,
   onClick,
 }: {
@@ -34,11 +35,19 @@ const FileContainer = ({
   subtitle?: ReactNode;
   buttonClassName?: string;
   containerClassName?: string;
+  /**
+   * Overrides the chip's accessible name. Callers that wire `onClick` to
+   * something other than "open this file" should say what it does, otherwise
+   * the bare filename leaves a screen reader user with no way to tell an
+   * interactive chip from an inert one.
+   */
+  ariaLabel?: string;
   onDelete?: () => void;
   onClick?: React.MouseEventHandler<HTMLButtonElement>;
 }) => {
   const fileType = getFileType(overrideType ?? file.type);
   const visibleName = displayName ?? file.filename ?? '';
+  const isInteractive = onClick != null;
 
   return (
     <div
@@ -47,9 +56,11 @@ const FileContainer = ({
       <button
         type="button"
         onClick={onClick}
-        aria-label={visibleName}
+        aria-label={ariaLabel ?? visibleName}
         className={cn(
           'relative overflow-hidden rounded-2xl border border-border-light bg-surface-hover-alt',
+          isInteractive &&
+            'group/chip cursor-pointer transition-colors hover:border-border-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
           buttonClassName,
         )}
       >
@@ -57,7 +68,16 @@ const FileContainer = ({
           <div className="flex flex-row items-center gap-2">
             <FilePreview file={file} fileType={fileType} className="relative" />
             <div className="overflow-hidden">
-              <div className="truncate font-medium" title={visibleName}>
+              {/* Underlined on hover and on keyboard focus rather than at rest:
+               * every chip variant is clickable, so a permanent underline would
+               * mark all of them without telling them apart. */}
+              <div
+                className={cn(
+                  'truncate font-medium decoration-dotted underline-offset-4',
+                  isInteractive && 'group-hover/chip:underline group-focus-visible/chip:underline',
+                )}
+                title={visibleName}
+              >
                 {visibleName}
               </div>
               {subtitle != null ? (

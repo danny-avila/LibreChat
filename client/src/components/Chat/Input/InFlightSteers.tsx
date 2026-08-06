@@ -553,6 +553,7 @@ const InFlightSteer = memo(function InFlightSteer({
           filePath={selectedFile?.filepath}
           fileType={selectedFile?.type ?? undefined}
           fileSize={(selectedFile as TFile | null)?.bytes}
+          source={selectedFile?.source}
         />
       )}
     </div>
