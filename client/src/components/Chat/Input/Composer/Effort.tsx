@@ -90,7 +90,9 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
     };
   }, [setting.options]);
 
-  const raw = conversation?.[setting.key as keyof TConversation];
+  /* Same resolution as the trigger: an untouched conversation falls back to
+     the setting's (possibly admin-overridden) default, not to Auto. */
+  const raw = conversation?.[setting.key as keyof TConversation] ?? setting.default;
   const current = raw == null ? undefined : String(raw);
   const isAuto = current == null || AUTO_VALUES.has(current);
   const activeIndex = isAuto ? -1 : levels.indexOf(current);
