@@ -30,7 +30,7 @@ import InterruptSteerButton from './InterruptSteerButton';
 import useComposerItems from '~/hooks/Input/useComposerItems';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import useAttachTarget from '~/hooks/Input/useAttachTarget';
-import Hints, { COMPOSER_HINT_ID } from './Composer/Hints';
+import Hints, { composerHintId } from './Composer/Hints';
 import DuringRunSendButton from './DuringRunSendButton';
 import useDictation from '~/hooks/Input/useDictation';
 import { useGetStartupConfig } from '~/data-provider';
@@ -559,7 +559,7 @@ const ChatForm = memo(function ChatForm({
                       rows={1}
                       onFocus={handleFocusOrClick}
                       aria-label={localize('com_ui_message_input')}
-                      aria-describedby={COMPOSER_HINT_ID}
+                      aria-describedby={composerHintId(index)}
                       onClick={handleFocusOrClick}
                       style={{ height: 44, overflowY: 'auto' }}
                       className={cn(
@@ -634,6 +634,7 @@ const ChatForm = memo(function ChatForm({
           {/* Sibling of the composer row, not a child: inside that flex-row it
               would lay out as a narrow column beside the box. */}
           <Hints
+            index={index}
             hasText={(textValue?.trim() ?? '') !== ''}
             isSubmitting={isSubmitting}
             duringRunActive={steering.duringRunActive}
