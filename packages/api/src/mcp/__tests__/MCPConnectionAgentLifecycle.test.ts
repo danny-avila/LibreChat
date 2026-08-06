@@ -615,6 +615,16 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('session lost'));
     expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
   });
+  it('does not blindly reconnect an OAuth challenge with the rejected token', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub();
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    fireSSEError(conn, transport, 401);
+
+    expect(emitSpy).toHaveBeenCalledWith('oauthError', expect.any(Error));
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+  });
 });
 
 describe('MCPConnection SSE stream disconnect handling', () => {

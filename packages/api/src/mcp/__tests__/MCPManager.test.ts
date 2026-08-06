@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
 import type { IUser } from '@librechat/data-schemas';
 import type { GraphTokenResolver } from '~/utils/graph';
@@ -1007,6 +1008,179 @@ describe('MCPManager', () => {
           Authorization: 'Bearer static-token',
         }),
       );
+    });
+  });
+
+  describe('callTool - runtime OAuth recovery', () => {
+    const mockUser = { id: 'oauth-user' } as IUser;
+    const mockFlowManager = {} as Parameters<MCPManager['callTool']>[0]['flowManager'];
+    const serverConfig: t.StreamableHTTPOptions = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+      requiresOAuth: true,
+      oauth: {
+        authorization_url: 'https://auth.example.com/authorize',
+      },
+    };
+    const toolResult = {
+      content: [{ type: 'text', text: 'Recovered result' }],
+      isError: false,
+    };
+
+    function createConnection(request: jest.Mock) {
+      const emitter = new EventEmitter();
+      return Object.assign(emitter, {
+        client: { request },
+        connect: jest.fn().mockResolvedValue(undefined),
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        getLastConnectionCheckError: jest.fn().mockReturnValue(undefined),
+        isConnected: jest.fn().mockResolvedValue(true),
+        isOAuthAuthenticationError: jest.fn((error: unknown) => {
+          return error instanceof Error && error.message.includes('401');
+        }),
+        setRequestHeaders: jest.fn(),
+        timeout: 30000,
+        url: serverConfig.url,
+      }) as unknown as MCPConnection;
+    }
+
+    function attachOAuthHandler(
+      handler: (connection: MCPConnection) => void = (connection) => {
+        connection.emit('oauthHandled');
+      },
+    ) {
+      (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mockImplementation(
+        (_basic, _oauth, connection: MCPConnection) => {
+          const listener = () => handler(connection);
+          connection.on('oauthReauthenticationRequired', listener);
+          return () => connection.off('oauthReauthenticationRequired', listener);
+        },
+      );
+    }
+
+    async function callTool(manager: MCPManager) {
+      return manager.callTool({
+        user: mockUser,
+        serverName,
+        toolName: 'oauth_tool',
+        provider: 'openai',
+        oauthStart: jest.fn(),
+        flowManager: mockFlowManager,
+      });
+    }
+
+    async function createManager(connection: MCPConnection) {
+      mockAppConnections({});
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
+      return manager;
+    }
+
+    beforeEach(() => {
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      mockProcessMCPEnv.mockReturnValue(serverConfig);
+    });
+
+    it('refreshes, rebuilds, and retries a rejected tool request once', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValueOnce(authError).mockResolvedValueOnce(toolResult);
+      const connection = createConnection(request);
+      attachOAuthHandler();
+      const manager = await createManager(connection);
+
+      await expect(callTool(manager)).resolves.toBeDefined();
+
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(request.mock.calls[1]).toEqual(request.mock.calls[0]);
+    });
+
+    it('recovers an OAuth failure found by the connection preflight check', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockResolvedValueOnce(toolResult);
+      const connection = createConnection(request);
+      (connection.isConnected as jest.Mock).mockResolvedValue(false);
+      (connection.getLastConnectionCheckError as jest.Mock).mockReturnValue(authError);
+      attachOAuthHandler();
+      const manager = await createManager(connection);
+
+      await expect(callTool(manager)).resolves.toBeDefined();
+
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not start a second recovery when the retried request is rejected', async () => {
+      const firstError = new Error('Non-200 status code (401)');
+      const secondError = new Error('Non-200 status code (401) again');
+      const request = jest
+        .fn()
+        .mockRejectedValueOnce(firstError)
+        .mockRejectedValueOnce(secondError);
+      const connection = createConnection(request);
+      attachOAuthHandler();
+      const manager = await createManager(connection);
+
+      await expect(callTool(manager)).rejects.toBe(secondError);
+
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns the original error when OAuth recovery fails', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValueOnce(authError);
+      const connection = createConnection(request);
+      attachOAuthHandler((currentConnection) => {
+        currentConnection.emit('oauthFailed', new Error('Refresh rejected'));
+      });
+      const manager = await createManager(connection);
+
+      await expect(callTool(manager)).rejects.toBe(authError);
+
+      expect(connection.connect).not.toHaveBeenCalled();
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not recover or retry non-authentication failures', async () => {
+      const toolError = new Error('Tool execution failed');
+      const request = jest.fn().mockRejectedValueOnce(toolError);
+      const connection = createConnection(request);
+      attachOAuthHandler();
+      const manager = await createManager(connection);
+
+      await expect(callTool(manager)).rejects.toBe(toolError);
+
+      expect(connection.connect).not.toHaveBeenCalled();
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    it('shares one connection rebuild across concurrent rejected calls', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest
+        .fn()
+        .mockRejectedValueOnce(authError)
+        .mockRejectedValueOnce(authError)
+        .mockResolvedValue(toolResult);
+      const connection = createConnection(request);
+      let finishConnect: (() => void) | undefined;
+      (connection.connect as jest.Mock).mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finishConnect = resolve;
+          }),
+      );
+      attachOAuthHandler();
+      const manager = await createManager(connection);
+
+      const firstCall = callTool(manager);
+      const secondCall = callTool(manager);
+      await new Promise((resolve) => setImmediate(resolve));
+      finishConnect?.();
+
+      await expect(Promise.all([firstCall, secondCall])).resolves.toHaveLength(2);
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(4);
     });
   });
 

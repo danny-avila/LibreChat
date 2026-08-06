@@ -28,6 +28,7 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
+import { mcpConfig } from './mcpConfig';
 import { processMCPEnv } from '~/utils/env';
 
 function createOboToolCallErrorMessage(
@@ -52,6 +53,7 @@ function createOboToolCallErrorMessage(
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
+  private readonly oauthRecoveries = new WeakMap<MCPConnection, Promise<void>>();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -330,6 +332,62 @@ ${formattedInstructions}
 Please follow these instructions when using tools from the respective MCP servers.`;
   }
 
+  private async recoverOAuthConnection(
+    connection: MCPConnection,
+    error: unknown,
+    serverName: string,
+    userId: string,
+  ): Promise<void> {
+    const existingRecovery = this.oauthRecoveries.get(connection);
+    if (existingRecovery) {
+      return existingRecovery;
+    }
+
+    const recovery = new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timeout);
+        connection.off('oauthHandled', handleSuccess);
+        connection.off('oauthFailed', handleFailure);
+      };
+      const handleSuccess = () => {
+        cleanup();
+        resolve();
+      };
+      const handleFailure = (oauthError: Error) => {
+        cleanup();
+        reject(oauthError);
+      };
+
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error(`OAuth recovery timeout after ${mcpConfig.OAUTH_HANDLING_TIMEOUT}ms`));
+      }, mcpConfig.OAUTH_HANDLING_TIMEOUT);
+
+      connection.once('oauthHandled', handleSuccess);
+      connection.once('oauthFailed', handleFailure);
+
+      const emitted = connection.emit('oauthReauthenticationRequired', {
+        serverName,
+        error,
+        serverUrl: connection.url,
+        userId,
+      });
+      if (!emitted) {
+        cleanup();
+        reject(new Error('OAuth recovery requested without an active request handler'));
+      }
+    }).then(() => connection.connect());
+
+    this.oauthRecoveries.set(connection, recovery);
+    try {
+      await recovery;
+    } finally {
+      if (this.oauthRecoveries.get(connection) === recovery) {
+        this.oauthRecoveries.delete(connection);
+      }
+    }
+  }
+
   /**
    * Calls a tool on an MCP server, using either a user-specific connection
    * (if userId is provided) or an app-level connection. Updates the last activity timestamp
@@ -402,10 +460,18 @@ Please follow these instructions when using tools from the respective MCP server
         serverConfig: providedConfig,
       });
 
-      if (!(await connection.isConnected())) {
+      const connectionIsActive = await connection.isConnected();
+      const connectionCheckError = connectionIsActive
+        ? undefined
+        : connection.getLastConnectionCheckError();
+
+      if (
+        !connectionIsActive &&
+        (!userId || !connection.isOAuthAuthenticationError(connectionCheckError))
+      ) {
         /** May happen if getUserConnection failed silently or app connection dropped */
         throw new McpError(
-          ErrorCode.InternalError, // Use InternalError for connection issues
+          ErrorCode.InternalError,
           `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
         );
       }
@@ -511,21 +577,62 @@ Please follow these instructions when using tools from the respective MCP server
 
       connection.setRequestHeaders(resolvedHeaders);
 
-      const result = await connection.client.request(
-        {
-          method: 'tools/call',
-          params: {
-            name: toolName,
-            arguments: toolArguments,
+      if (!connectionIsActive) {
+        if (!cleanupRequestOAuthHandler || !userId) {
+          throw new McpError(
+            ErrorCode.InternalError,
+            `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
+          );
+        }
+
+        try {
+          await this.recoverOAuthConnection(connection, connectionCheckError, serverName, userId);
+        } catch (recoveryError) {
+          logger.warn(
+            `${logPrefix}[${toolName}] Connection-check OAuth recovery failed`,
+            recoveryError,
+          );
+          throw connectionCheckError;
+        }
+      }
+
+      const requestTool = () =>
+        connection!.client.request(
+          {
+            method: 'tools/call',
+            params: {
+              name: toolName,
+              arguments: toolArguments,
+            },
           },
-        },
-        CallToolResultSchema,
-        {
-          timeout: connection.timeout,
-          resetTimeoutOnProgress: true,
-          ...options,
-        },
-      );
+          CallToolResultSchema,
+          {
+            timeout: connection!.timeout,
+            resetTimeoutOnProgress: true,
+            ...options,
+          },
+        );
+
+      let result: Awaited<ReturnType<typeof requestTool>>;
+      try {
+        result = await requestTool();
+      } catch (error) {
+        if (
+          !cleanupRequestOAuthHandler ||
+          !connection.isOAuthAuthenticationError(error) ||
+          !userId
+        ) {
+          throw error;
+        }
+
+        try {
+          await this.recoverOAuthConnection(connection, error, serverName, userId);
+        } catch (recoveryError) {
+          logger.warn(`${logPrefix}[${toolName}] Runtime OAuth recovery failed`, recoveryError);
+          throw error;
+        }
+        result = await requestTool();
+      }
       const hasPersistentUserConnections =
         !!userId && (this.userConnections.get(userId)?.size ?? 0) > 0;
       if (!ephemeralConnection && hasPersistentUserConnections) {
