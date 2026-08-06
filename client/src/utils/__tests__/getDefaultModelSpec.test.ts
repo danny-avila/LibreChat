@@ -683,4 +683,15 @@ describe('defaultSpecAwaitsAgents', () => {
       false,
     );
   });
+
+  it('does not await when model selection is disabled', () => {
+    persistAgentSelection('agent_123');
+
+    expect(
+      defaultSpecAwaitsAgents(
+        createStartupConfig([softSpec], { modelSelect: false }),
+        fullEndpointsConfig,
+      ),
+    ).toBe(false);
+  });
 });

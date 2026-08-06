@@ -194,16 +194,15 @@ export default function ChatRoute() {
 
     /** A stored agent pick can only be validated against the loaded agent list
      * (it may name an agent since deleted, or one from another org sharing this
-     * browser storage). Defer the first conversation until the list settles —
-     * unless the URL names its own selection, which takes precedence over the
-     * stored pick and must not wait on the agent catalog. */
-    if (
-      (isNewConvo || notFoundConvo) &&
+     * browser storage). Defer the first conversation until the list settles.
+     * A URL naming its own selection skips the wait only on the new-chat branch,
+     * where it takes precedence over the stored pick; the 404 fallback never
+     * applies query settings, so it always waits. */
+    const awaitsAgentList =
       agentsMap == null &&
       !agentsQuery.isError &&
-      !hasModelSelection(querySettings) &&
-      defaultSpecAwaitsAgents(startupConfig, endpointsQuery.data)
-    ) {
+      defaultSpecAwaitsAgents(startupConfig, endpointsQuery.data);
+    if (awaitsAgentList && (notFoundConvo || (isNewConvo && !hasModelSelection(querySettings)))) {
       return;
     }
 

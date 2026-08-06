@@ -491,6 +491,12 @@ export function defaultSpecAwaitsAgents(
     return false;
   }
 
+  /** With the selector disabled the soft default can never yield to a stored
+   * pick, so the decision is deterministic without the agent list. */
+  if (!startupConfig?.interface?.modelSelect) {
+    return false;
+  }
+
   const lastSetup = parseStoredModelSelection(
     localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
   );
