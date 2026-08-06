@@ -10,6 +10,7 @@ import {
   getHeaderPrefixForScreenReader,
 } from '~/utils';
 import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
+import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
@@ -77,6 +78,17 @@ function MessageParts(props: TMessageProps) {
       message?.endpoint,
       message?.isCreatedByUser,
     ],
+  );
+
+  const authorHeader = useMemo(
+    () =>
+      isCreatedByUser === true ? undefined : (
+        <AuthorHeader
+          icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}
+          label={name}
+        />
+      ),
+    [isCreatedByUser, iconData, assistant, agent, name],
   );
 
   const { hasParallelContent } = useContentMetadata(message);
@@ -153,6 +165,7 @@ function MessageParts(props: TMessageProps) {
                     searchResults={searchResults}
                     manualSkills={message.manualSkills}
                     messageId={message.messageId}
+                    authorHeader={authorHeader}
                     setSiblingIdx={setSiblingIdx}
                     isCreatedByUser={message.isCreatedByUser}
                     conversationId={conversation?.conversationId}

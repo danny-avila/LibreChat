@@ -61,8 +61,11 @@ jobs:
           fi
 
           # Run ESLint
+          # --no-warn-ignored: changed files under config-ignored paths
+          # (e.g. packages/data-schemas/misc/**) must not fail --max-warnings=0
           npx eslint --no-error-on-unmatched-pattern \
             --config eslint.config.mjs \
+            --no-warn-ignored \
             --max-warnings=0 \
             -- "${CHANGED_FILES[@]}"
 

@@ -492,6 +492,62 @@ describe('allowedAddressesSchema', () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it('accepts the field on speech.stt', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { stt: { allowedAddresses: ['127.0.0.1:8080'] } },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts the field on speech.tts', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { tts: { allowedAddresses: ['localhost:11434', 'ollama.internal:11434'] } },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts the field on ocr', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        ocr: { allowedAddresses: ['10.0.0.5:443'] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('omitting the field on ocr leaves it undefined', () => {
+      const result = configSchema.safeParse({ version: '1.0', ocr: {} });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.ocr?.allowedAddresses).toBeUndefined();
+      }
+    });
+
+    it('rejects a public IP at the speech.stt location', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { stt: { allowedAddresses: ['8.8.8.8:53'] } },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a bare host at the speech.tts location', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { tts: { allowedAddresses: ['localhost'] } },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a CIDR range at the ocr location', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        ocr: { allowedAddresses: ['10.0.0.0/24'] },
+      });
+      expect(result.success).toBe(false);
+    });
   });
 });
 

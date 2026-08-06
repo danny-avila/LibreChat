@@ -489,6 +489,63 @@ describe('useStepHandler', () => {
       );
     });
 
+    /**
+     * Regression: the preempt-fold incident. When the missing user message is
+     * restored while its abandoned (preempt-incomplete) sibling responses are
+     * already in the list, appending it at the tail orders those children
+     * BEFORE their parent — buildTree then hoists them into phantom root
+     * branches and the thread folds to the latest branch until a refetch.
+     */
+    it('inserts a missing user message before its abandoned sibling responses', () => {
+      const rootUser = createUserMessage({ messageId: 'user-1' });
+      const assist1 = createResponseMessage({ messageId: 'assist-1', parentMessageId: 'user-1' });
+      const user2 = createUserMessage({ messageId: 'user-2', parentMessageId: 'assist-1' });
+      const assist2 = createResponseMessage({ messageId: 'assist-2', parentMessageId: 'user-2' });
+      const abandoned1 = createResponseMessage({
+        messageId: 'abandoned-1',
+        parentMessageId: 'user-3',
+        unfinished: true,
+      });
+      const abandoned2 = createResponseMessage({
+        messageId: 'abandoned-2',
+        parentMessageId: 'user-3',
+        unfinished: true,
+      });
+      const user3 = createUserMessage({ messageId: 'user-3', parentMessageId: 'assist-2' });
+
+      const cachedMessages = [rootUser, assist1, user2, assist2, abandoned1, abandoned2];
+      mockGetMessages.mockReturnValue(cachedMessages);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep({ runId: 'assist-3' });
+      const submission = createSubmission({
+        userMessage: user3,
+        messages: cachedMessages,
+        initialResponse: createResponseMessage({
+          messageId: 'user-3_',
+          parentMessageId: 'user-3',
+        }),
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      expect(mockSetMessages).toHaveBeenCalled();
+      const written = mockSetMessages.mock.calls[0][0] as TMessage[];
+      expect(written.map((message) => message.messageId)).toEqual([
+        'user-1',
+        'assist-1',
+        'user-2',
+        'assist-2',
+        'user-3',
+        'abandoned-1',
+        'abandoned-2',
+        'assist-3',
+      ]);
+    });
+
     it('keeps the pending user message when replayed OAuth tool calls merge immediately', () => {
       const rootUser = createUserMessage({ messageId: 'root-user' });
       const selectedResponse = createResponseMessage({
@@ -1197,6 +1254,45 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('applies every entry of a multi-part text delta in order', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_MESSAGE_DELTA,
+            data: {
+              id: 'step-1',
+              delta: {
+                content: [
+                  { type: ContentTypes.TEXT, text: 'Hello ' },
+                  { type: ContentTypes.TEXT, text: 'streaming ' },
+                  { type: ContentTypes.TEXT, text: 'world' },
+                ],
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall[lastCall.length - 1];
+      expect(responseMsg.content).toContainEqual(
+        expect.objectContaining({ type: ContentTypes.TEXT, text: 'Hello streaming world' }),
+      );
+    });
+
     it('coalesces multiple deltas into a single flush per animation frame', () => {
       const rafQueue: FrameRequestCallback[] = [];
       (window.requestAnimationFrame as jest.Mock).mockImplementation((cb: FrameRequestCallback) => {
@@ -1403,6 +1499,47 @@ describe('useStepHandler', () => {
       const responseMsg = lastCall[lastCall.length - 1];
       expect(responseMsg.content).toContainEqual(
         expect.objectContaining({ type: ContentTypes.THINK, think: 'First thought' }),
+      );
+    });
+
+    it('applies every entry of a multi-part reasoning delta in order', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_REASONING_DELTA,
+            data: {
+              id: 'step-1',
+              delta: {
+                content: [
+                  { type: ContentTypes.THINK, think: 'First reasoning block. ' },
+                  { type: ContentTypes.THINK, think: 'Second reasoning block.' },
+                ],
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall[lastCall.length - 1];
+      expect(responseMsg.content).toContainEqual(
+        expect.objectContaining({
+          type: ContentTypes.THINK,
+          think: 'First reasoning block. Second reasoning block.',
+        }),
       );
     });
   });
@@ -3053,6 +3190,210 @@ describe('useStepHandler', () => {
       });
 
       expect(getProgress('call_keep')).not.toBeNull();
+    });
+  });
+
+  /**
+   * Edited resubmissions offset every incoming index past the prefix the
+   * client retained, because the server indexes only the NEW content. A
+   * resume SYNC invalidates that arrangement twice over: it REPLACES
+   * `initialResponse.content` with the server's completion-local snapshot
+   * (so the live array no longer measures the prefix), and when it also
+   * replaces the RENDERED content the prefix is gone entirely and server
+   * indices become absolute.
+   *
+   * Activity labels already honored both facts; run steps did not, so a
+   * batch's tool cards and its header could resolve in different index
+   * spaces. These cases pin the states no other suite constructs.
+   */
+  describe('edit-prefix index space across resume', () => {
+    const textPart = (text: string): TMessageContentParts =>
+      ({ type: ContentTypes.TEXT, [ContentTypes.TEXT]: text }) as TMessageContentParts;
+
+    /** A retained non-text part, so the trailing-text `-1` adjustment stays out
+     *  of offset assertions. */
+    const keptToolPart = (): TMessageContentParts =>
+      ({
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: {
+          id: 'kept-tool',
+          name: 'kept_tool',
+          args: '{}',
+          type: ToolCallTypes.TOOL_CALL,
+        },
+      }) as unknown as TMessageContentParts;
+
+    /** Renders the hook against a live message array and returns the response. */
+    const runToolStepAt = (serverIndex: number, submission: EventSubmission) => {
+      const responseMessage = submission.initialResponse as TMessage;
+      let currentMessages: TMessage[] = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages: TMessage[]) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createToolCallRunStep({ index: serverIndex, runId: responseMessage.messageId }),
+          },
+          submission,
+        );
+      });
+      return currentMessages.find((m) => !m.isCreatedByUser);
+    };
+
+    it('applies no offset for an unedited submission', () => {
+      const response = runToolStepAt(0, createSubmission());
+      expect(getToolCallName(response?.content?.[0])).toBe('test_tool');
+    });
+
+    it('offsets by the retained prefix for an edited submission', () => {
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({
+          content: [textPart('kept a'), textPart('kept b')],
+        }),
+      } as never);
+      (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+
+      const response = runToolStepAt(0, submission);
+      /** Server index 0 is the first NEW part, so it lands past the prefix. */
+      expect(getToolCallName(response?.content?.[2])).toBe('test_tool');
+      expect(response?.content?.[0]).toMatchObject({ [ContentTypes.TEXT]: 'kept a' });
+    });
+
+    /**
+     * The `preserveLoadedContent` shape: SYNC replaced `initialResponse.content`
+     * with an empty completion-local snapshot but KEPT the rendered prefix, so
+     * the flag stays clear. Measuring the live array would drop the offset to
+     * zero and overwrite retained content.
+     */
+    it('offsets by the captured length when sync replaced the live content array', () => {
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({ content: [] }),
+      } as never);
+      (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+
+      const response = runToolStepAt(0, submission);
+      expect(getToolCallName(response?.content?.[2])).toBe('test_tool');
+    });
+
+    /**
+     * Post-SYNC: the rendered content IS the completion-local snapshot, so
+     * incoming indices are already absolute — the same space activity labels
+     * switch to when the flag is set. Any offset here writes past the end.
+     */
+    it('applies no offset once the prefix is cleared by a resume sync', () => {
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({ content: [] }),
+      } as never);
+      Object.assign(submission, { editPrefixLength: 2, editPrefixCleared: true });
+
+      const response = runToolStepAt(0, submission);
+      /** Offset still applied, this would land at index 2 and leave a hole. */
+      expect(getToolCallName(response?.content?.[0])).toBe('test_tool');
+      expect(response?.content).toHaveLength(1);
+    });
+
+    it('keeps a cleared-prefix tool card at its absolute server index', () => {
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({
+          content: [textPart('snapshot a'), textPart('snapshot b')],
+        }),
+      } as never);
+      Object.assign(submission, { editPrefixLength: 2, editPrefixCleared: true });
+
+      const response = runToolStepAt(2, submission);
+      /** Absolute: index 2 stays 2, appending after the snapshot's own parts. */
+      expect(getToolCallName(response?.content?.[2])).toBe('test_tool');
+      expect(response?.content?.[0]).toMatchObject({ [ContentTypes.TEXT]: 'snapshot a' });
+    });
+
+    /**
+     * Deltas resolve through `calculateContentIndex`, which now receives the
+     * offset directly instead of measuring the prefix array. A prefix ending
+     * in a NON-text part isolates the offset from the separate `-1`
+     * adjustment that intentionally continues a retained trailing text part.
+     */
+    it('offsets message deltas by the same prefix as run steps', () => {
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({
+          content: [textPart('kept a'), keptToolPart()],
+        }),
+      } as never);
+      (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+
+      const responseMessage = submission.initialResponse as TMessage;
+      let currentMessages: TMessage[] = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages: TMessage[]) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({ index: 0, runId: responseMessage.messageId }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'streamed') },
+          submission,
+        );
+      });
+
+      const response = currentMessages.find((m) => !m.isCreatedByUser);
+      expect(response?.content?.[2]).toMatchObject({ [ContentTypes.TEXT]: 'streamed' });
+      expect(response?.content?.[0]).toMatchObject({ [ContentTypes.TEXT]: 'kept a' });
+    });
+
+    /**
+     * Post-sync a delta continues at the snapshot's NEXT absolute slot. With
+     * the offset still applied it would jump past that slot and leave a hole
+     * the label reservation could never line up with.
+     */
+    it('applies no delta offset once the prefix is cleared', () => {
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({ content: [keptToolPart(), keptToolPart()] }),
+      } as never);
+      Object.assign(submission, { editPrefixLength: 2, editPrefixCleared: true });
+
+      const responseMessage = submission.initialResponse as TMessage;
+      let currentMessages: TMessage[] = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages: TMessage[]) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({ index: 2, runId: responseMessage.messageId }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'streamed') },
+          submission,
+        );
+      });
+
+      const response = currentMessages.find((m) => !m.isCreatedByUser);
+      expect(response?.content?.[2]).toMatchObject({ [ContentTypes.TEXT]: 'streamed' });
+      expect(response?.content).toHaveLength(3);
     });
   });
 });

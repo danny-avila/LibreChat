@@ -10,6 +10,7 @@ import {
   getMessageAriaLabel,
 } from '~/utils';
 import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
+import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
@@ -131,6 +132,17 @@ const ContentRender = memo(function ContentRender({
     ],
   );
 
+  const authorHeader = useMemo(
+    () =>
+      msg?.isCreatedByUser === true ? undefined : (
+        <AuthorHeader
+          icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}
+          label={messageLabel ?? ''}
+        />
+      ),
+    [msg?.isCreatedByUser, iconData, assistant, agent, messageLabel],
+  );
+
   const { hasParallelContent } = useContentMetadata(msg);
 
   if (!msg) {
@@ -201,6 +213,7 @@ const ContentRender = memo(function ContentRender({
               attachments={attachments}
               searchResults={searchResults}
               manualSkills={msg.manualSkills}
+              authorHeader={authorHeader}
               setSiblingIdx={setSiblingIdx}
               isLatestMessage={isLatestMessage}
               isSubmitting={isSubmitting}

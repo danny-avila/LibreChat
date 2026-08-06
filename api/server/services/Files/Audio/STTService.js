@@ -3,7 +3,12 @@ const fs = require('fs').promises;
 const FormData = require('form-data');
 const { Readable } = require('stream');
 const { logger } = require('@librechat/data-schemas');
-const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@librechat/api');
+const {
+  genAzureEndpoint,
+  logAxiosError,
+  applyAxiosProxyConfig,
+  resolveConfigSecret,
+} = require('@librechat/api');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const { getAppConfig } = require('~/server/services/Config');
 
@@ -152,7 +157,7 @@ class STTService {
     }
 
     const providers = Object.entries(sttSchema).filter(
-      ([, value]) => Object.keys(value).length > 0,
+      ([key, value]) => key !== 'allowedAddresses' && Object.keys(value).length > 0,
     );
 
     if (providers.length !== 1) {
@@ -195,7 +200,7 @@ class STTService {
    */
   openAIProvider(sttSchema, audioReadStream, audioFile, language) {
     const url = sttSchema?.url || 'https://api.openai.com/v1/audio/transcriptions';
-    const apiKey = extractEnvVariable(sttSchema.apiKey) || '';
+    const apiKey = resolveConfigSecret(sttSchema.apiKey) || '';
 
     const data = {
       file: audioReadStream,
@@ -231,7 +236,7 @@ class STTService {
       azureOpenAIApiDeploymentName: extractEnvVariable(sttSchema?.deploymentName),
     })}/audio/transcriptions?api-version=${extractEnvVariable(sttSchema?.apiVersion)}`;
 
-    const apiKey = sttSchema.apiKey ? extractEnvVariable(sttSchema.apiKey) : '';
+    const apiKey = sttSchema.apiKey ? resolveConfigSecret(sttSchema.apiKey) || '' : '';
 
     if (audioBuffer.byteLength > 25 * 1024 * 1024) {
       throw new Error('The audio file size exceeds the limit of 25MB');

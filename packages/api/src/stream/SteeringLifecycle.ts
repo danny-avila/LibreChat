@@ -1,16 +1,29 @@
 import { logger } from '@librechat/data-schemas';
 import { ContentTypes, SteerEvents } from 'librechat-data-provider';
 import type { TPendingSteer } from 'librechat-data-provider';
-import type { IJobStore, SteerQueueItem } from '~/stream/interfaces/IJobStore';
+import type {
+  GenerationProtocolVersion,
+  IJobStoreV2,
+  SteerArmOutcome,
+  SteerArmResult,
+  SteerEnqueueReceiptResult,
+  SteerEnqueueVersionedResult,
+  SteerQueueItem,
+  SteerReceipt,
+  SteerReceiptInput,
+} from '~/stream/interfaces/IJobStore';
 import type { ServerSentEvent } from '~/types';
 
 /** Client-safe projection of a queued steer (drops the server-only userId). */
 export function toPendingSteer(item: SteerQueueItem): TPendingSteer {
   return {
     steerId: item.steerId,
+    ...(item.clientSteerId && { clientSteerId: item.clientSteerId }),
     text: item.text,
     createdAt: item.createdAt,
     ...(item.files && item.files.length > 0 && { files: item.files }),
+    ...(item.preempt === true && { preempt: true }),
+    ...(item.preemptRevision != null && { preemptRevision: item.preemptRevision }),
   };
 }
 
@@ -22,17 +35,19 @@ export interface SteerOwner {
 }
 
 interface ParkedSteers extends SteerOwner {
+  generationProtocolVersion?: GenerationProtocolVersion;
   steers: TPendingSteer[];
 }
 
-/** The exact JSON substring the stores gate the atomic claim on — matches the
- *  `userId` member as {@link SteeringLifecycle.park} serializes it. */
-export function toOwnerFragment(userId: string): string {
-  return `"userId":${JSON.stringify(userId)}`;
+export interface ParkedSteerRecovery {
+  generationProtocolVersion: GenerationProtocolVersion;
+  steers: TPendingSteer[];
 }
 
 /** Loosely-shaped content part for steer-id inspection across content views. */
-export type SteerContentView = Array<{ type?: string; steerId?: string } | undefined>;
+export type SteerContentView = Array<
+  { type?: string; steerId?: string; clientSteerId?: string } | undefined
+>;
 
 /**
  * Synthesize the `on_steer_applied` events a reconnecting subscriber missed in
@@ -68,6 +83,7 @@ export function synthesizeAppliedSteerEvents(
       event: SteerEvents.ON_STEER_APPLIED,
       data: {
         steerId: part.steerId,
+        ...(part.clientSteerId && { clientSteerId: part.clientSteerId }),
         index: i,
         part,
         conversationId: meta.conversationId,
@@ -94,15 +110,19 @@ export function synthesizeAppliedSteerEvents(
  * to the client, which converts them to queued follow-up turns.
  */
 export class SteeringLifecycle {
-  constructor(private readonly store: IJobStore) {}
+  constructor(private readonly store: IJobStoreV2) {}
 
   /**
    * Append a steer, guarded on the job being `running`. Returns the new queue
    * depth, or a rejection code ({@link STEER_ENQUEUE_NOT_RUNNING} /
    * {@link STEER_ENQUEUE_QUEUE_FULL}).
    */
-  async enqueue(streamId: string, item: SteerQueueItem): Promise<number> {
-    const depth = await this.store.enqueueSteer(streamId, item);
+  async enqueue(
+    streamId: string,
+    item: SteerQueueItem,
+    expectedCreatedAt?: number,
+  ): Promise<number> {
+    const depth = await this.store.enqueueSteer(streamId, item, expectedCreatedAt);
     if (depth > 0) {
       logger.debug(
         `[SteeringLifecycle] queued steer: ${streamId} steer=${item.steerId} depth=${depth}`,
@@ -111,10 +131,47 @@ export class SteeringLifecycle {
     return depth;
   }
 
+  enqueueVersioned(
+    streamId: string,
+    item: SteerQueueItem,
+    wantsPreempt: boolean,
+    expectedCreatedAt?: number,
+  ): Promise<SteerEnqueueVersionedResult> {
+    return this.store.enqueueSteerVersioned(streamId, item, wantsPreempt, expectedCreatedAt);
+  }
+
+  enqueueWithReceipt(
+    streamId: string,
+    item: SteerQueueItem,
+    receipt: SteerReceiptInput,
+    wantsPreempt: boolean,
+    expectedCreatedAt?: number,
+  ): Promise<SteerEnqueueReceiptResult> {
+    return this.store.enqueueSteerWithReceipt(
+      streamId,
+      item,
+      receipt,
+      wantsPreempt,
+      expectedCreatedAt,
+    );
+  }
+
+  getReceipt(streamId: string, clientSteerId: string): Promise<SteerReceipt | null> {
+    return this.store.getSteerReceipt(streamId, clientSteerId);
+  }
+
   /** Atomically take ALL queued steers, FIFO. `expectedCreatedAt` refuses the
    *  drain inside the store when the job was replaced. */
   drain(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
     return this.store.drainSteers(streamId, expectedCreatedAt);
+  }
+
+  restoreClaimed(
+    streamId: string,
+    items: SteerQueueItem[],
+    expectedCreatedAt?: number,
+  ): Promise<boolean> {
+    return this.store.restoreClaimedSteers(streamId, items, expectedCreatedAt);
   }
 
   /**
@@ -141,8 +198,69 @@ export class SteeringLifecycle {
    * inline part is authoritative) or the run ended (the terminal paths own
    * delivery), and the cancel is simply too late.
    */
-  cancel(streamId: string, steerId: string): Promise<boolean> {
-    return this.store.removeSteer(streamId, steerId);
+  cancel(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<boolean> {
+    return this.store.removeSteer(streamId, steerId, expectedCreatedAt);
+  }
+
+  discardLeftover(
+    streamId: string,
+    clientSteerId: string,
+    steerId: string,
+    owner: SteerOwner,
+    expectedGenerationCreatedAt?: number,
+  ): Promise<boolean> {
+    return this.store.discardSteerLeftover(
+      streamId,
+      clientSteerId,
+      steerId,
+      owner.userId,
+      owner.tenantId,
+      expectedGenerationCreatedAt,
+    );
+  }
+
+  consumeRecovered(
+    streamId: string,
+    steerId: string,
+    owner: SteerOwner,
+    expectedCreatedAt: number,
+  ): Promise<boolean> {
+    return this.store.consumeParkedSteer(
+      streamId,
+      steerId,
+      owner.userId,
+      owner.tenantId,
+      expectedCreatedAt,
+    );
+  }
+
+  /**
+   * Escalate a still-queued steer to an interrupt IN PLACE — the durable
+   * `preempt` flag flips on the existing item, so its FIFO position survives
+   * (the whole queue drains at the seal, in order). Races with a drain,
+   * cancel, or replacement run settle inside the store's atomic update as
+   * `missing`, and the owner's LIVE capability is part of the same predicate
+   * (`incapable`) — see {@link IJobStoreV2.armSteer}.
+   */
+  arm(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<SteerArmOutcome> {
+    return this.store.armSteer(streamId, steerId, expectedCreatedAt);
+  }
+
+  armVersioned(
+    streamId: string,
+    steerId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerArmResult> {
+    return this.store.armSteerVersioned(streamId, steerId, expectedCreatedAt);
+  }
+
+  /** Relabel durable interrupt requests as ordinary steers when HITL resume
+   * moves ownership to a replica that cannot seal mid-stream. */
+  downgradePreempts(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerQueueItem[] | null> {
+    return this.store.downgradeSteerPreempts(streamId, expectedCreatedAt);
   }
 
   /** Drop any queued steers (terminal cleanup backstop). */
@@ -182,23 +300,42 @@ export class SteeringLifecycle {
   }
 
   /**
-   * Claim-on-read: returns parked leftovers and clears them, so a second
-   * reload cannot re-mint chips the user already dismissed. The user check
-   * runs INSIDE the store's atomic claim (substring gate on the payload), so
-   * a non-owner probe never deletes the payload — not even transiently. The
-   * parse below stays authoritative (a steer text could embed the fragment);
-   * a tenant mismatch re-parks so it cannot destroy the owner's recovery.
+   * Owner-gated read of parked leftovers. The store keeps the payload until
+   * a recovered item starts its deterministic next generation, so losing this
+   * HTTP response cannot lose the user's words.
    */
   async claim(streamId: string, requester: SteerOwner): Promise<TPendingSteer[]> {
+    return (await this.claimDetailed(streamId, requester, 2)).steers;
+  }
+
+  /** Protocol-aware recovery read used by the status route during the
+   * rolling-upgrade bridge. Legacy stores fall back to destructive v1. */
+  async claimDetailed(
+    streamId: string,
+    requester: SteerOwner,
+    requestedProtocolVersion: GenerationProtocolVersion = 1,
+  ): Promise<ParkedSteerRecovery> {
     let raw: string | undefined;
+    let generationProtocolVersion: GenerationProtocolVersion = 1;
     try {
-      raw = await this.store.claimParkedSteers(streamId, toOwnerFragment(requester.userId));
+      const detailed = await this.store.claimParkedSteersDetailed?.(
+        streamId,
+        requester.userId,
+        requester.tenantId,
+        requestedProtocolVersion,
+      );
+      if (detailed != null) {
+        raw = detailed.payload;
+        generationProtocolVersion = detailed.generationProtocolVersion;
+      } else if (this.store.claimParkedSteersDetailed == null) {
+        raw = await this.store.claimParkedSteers(streamId, requester.userId, requester.tenantId);
+      }
     } catch (error) {
       logger.warn(`[SteeringLifecycle] Failed to claim leftover steers: ${streamId}`, error);
-      return [];
+      return { generationProtocolVersion, steers: [] };
     }
     if (!raw) {
-      return [];
+      return { generationProtocolVersion, steers: [] };
     }
     try {
       const parsed = JSON.parse(raw) as ParkedSteers;
@@ -206,13 +343,19 @@ export class SteeringLifecycle {
         parsed.userId === requester.userId &&
         (parsed.tenantId == null || parsed.tenantId === requester.tenantId);
       if (!ownerMatch) {
-        await this.store.parkSteers(streamId, raw);
-        return [];
+        return { generationProtocolVersion, steers: [] };
       }
-      return Array.isArray(parsed.steers) ? parsed.steers : [];
+      const payloadProtocol = parsed.generationProtocolVersion === 2 ? 2 : 1;
+      if (payloadProtocol !== generationProtocolVersion) {
+        return { generationProtocolVersion, steers: [] };
+      }
+      return {
+        generationProtocolVersion,
+        steers: Array.isArray(parsed.steers) ? parsed.steers : [],
+      };
     } catch (error) {
       logger.warn(`[SteeringLifecycle] Failed to parse leftover steers: ${streamId}`, error);
-      return [];
+      return { generationProtocolVersion, steers: [] };
     }
   }
 }

@@ -11,6 +11,7 @@ import {
   resolveAskUserQuestionPart,
   getSubmittedAskAnswer,
   findLiveAskUserQuestion,
+  collectLiveAskToolCallIds,
   isAnsweredAskUserQuestionPart,
   splitOtherOption,
 } from './approval';
@@ -374,6 +375,31 @@ describe('resolveAskUserQuestionPart', () => {
     expect(getSubmittedAskAnswer('unknown')).toBeUndefined();
     expect(getSubmittedAskAnswer(undefined)).toBeUndefined();
   });
+
+  it('stamps the exact tool_call when the payload carried tool_call_id (multi-ask turn)', () => {
+    const askToolCallPart = (id: string) =>
+      ({
+        type: 'tool_call',
+        tool_call: { id, name: 'ask_user_question', args: '', type: 'tool_call' },
+      }) as unknown as TMessageContentParts;
+    const base = msg({ content: [askToolCallPart('tc_a'), askToolCallPart('tc_b')] });
+    const withCard = applyPendingAction(
+      base,
+      askAction({
+        actionId: 'a-multi-ask',
+        payload: {
+          type: 'ask_user_question',
+          question: { question: 'Which region?' },
+          tool_call_id: 'tc_a',
+        },
+      }),
+    );
+    const resolved = resolveAskUserQuestionPart(withCard, 'a-multi-ask', 'us-east');
+    const content = resolved.content as Array<{ tool_call?: Record<string, unknown> }>;
+    // Without the id, the newest-unanswered fallback would stamp tc_b.
+    expect(content[0]?.tool_call?.output).toBe('us-east');
+    expect(content[1]?.tool_call?.output).toBeUndefined();
+  });
 });
 
 describe('splitOtherOption', () => {
@@ -449,6 +475,47 @@ describe('findLiveAskUserQuestion', () => {
     resolveAskUserQuestionPart(newer, 'a-done', 'Ada');
 
     expect(findLiveAskUserQuestion([older, newer])?.actionId).toBe('a-live');
+  });
+});
+
+describe('collectLiveAskToolCallIds', () => {
+  const attributedAsk = (actionId: string, toolCallId: string) =>
+    askAction({
+      actionId,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Q?' },
+        tool_call_id: toolCallId,
+      },
+    });
+
+  it('collects every live pause id, not just the newest, and drops answered ones', () => {
+    const first = applyPendingAction(msg({ content: [] }), attributedAsk('a-first', 'call_1'));
+    const both = applyPendingAction(first, attributedAsk('a-second', 'call_2'));
+
+    expect(collectLiveAskToolCallIds([both])).toEqual({
+      ids: ['call_1', 'call_2'],
+      hasUnattributed: false,
+    });
+
+    resolveAskUserQuestionPart(both, 'a-first', 'Ada');
+
+    // `both` is the pre-answer copy — the answered pause must still drop out.
+    expect(collectLiveAskToolCallIds([both])).toEqual({
+      ids: ['call_2'],
+      hasUnattributed: false,
+    });
+  });
+
+  it('flags unattributed pauses and handles non-array input', () => {
+    const unattributed = applyPendingAction(
+      msg({ content: [] }),
+      askAction({ actionId: 'a-unattributed' }),
+    );
+
+    expect(collectLiveAskToolCallIds([unattributed])).toEqual({ ids: [], hasUnattributed: true });
+    expect(collectLiveAskToolCallIds(null)).toEqual({ ids: [], hasUnattributed: false });
+    expect(collectLiveAskToolCallIds(undefined)).toEqual({ ids: [], hasUnattributed: false });
   });
 });
 

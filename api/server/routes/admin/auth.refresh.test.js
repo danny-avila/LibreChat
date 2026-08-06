@@ -3,6 +3,7 @@ const request = require('supertest');
 
 jest.mock('passport', () => ({
   authenticate: jest.fn(() => (req, res, next) => next()),
+  _strategy: jest.fn(),
 }));
 
 jest.mock('openid-client', () => ({
@@ -103,9 +104,15 @@ jest.mock('~/server/middleware', () => ({
   checkDomainAllowed: jest.fn((req, res, next) => next()),
 }));
 
+const passport = require('passport');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, applyAdminRefresh, buildOpenIDRefreshParams } = require('@librechat/api');
+const {
+  isEnabled,
+  applyAdminRefresh,
+  storeAndStripChallenge,
+  buildOpenIDRefreshParams,
+} = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies');
 const middleware = require('~/server/middleware');
 const adminAuthRouter = require('./auth');
@@ -113,6 +120,146 @@ const adminAuthRouter = require('./auth');
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
 const ORIGINAL_SESSION_EXPIRY = process.env.SESSION_EXPIRY;
+
+describe('admin auth OpenID route availability', () => {
+  let app;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    app = express();
+    app.use(express.json());
+    app.use('/api/admin', adminAuthRouter);
+  });
+
+  it('returns not configured for the OpenID availability check when config lookup throws', async () => {
+    getOpenIdConfig.mockImplementation(() => {
+      throw new Error('OpenID client is not initialized. Please call setupOpenId first.');
+    });
+
+    const response = await request(app).get('/api/admin/oauth/openid/check');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: 'OpenID configuration not found',
+      error_code: 'OPENID_NOT_CONFIGURED',
+    });
+  });
+
+  it('does not start OpenID admin login when config lookup throws', async () => {
+    getOpenIdConfig.mockImplementation(() => {
+      throw new Error('OpenID client is not initialized. Please call setupOpenId first.');
+    });
+
+    const response = await request(app).get('/api/admin/oauth/openid');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: 'OpenID configuration not found',
+      error_code: 'OPENID_NOT_CONFIGURED',
+    });
+    expect(storeAndStripChallenge).not.toHaveBeenCalled();
+    expect(passport.authenticate).not.toHaveBeenCalled();
+  });
+
+  it('does not run OpenID admin callback auth when config lookup throws', async () => {
+    getOpenIdConfig.mockImplementation(() => {
+      throw new Error('OpenID client is not initialized. Please call setupOpenId first.');
+    });
+
+    const response = await request(app).get('/api/admin/oauth/openid/callback?state=state');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: 'OpenID configuration not found',
+      error_code: 'OPENID_NOT_CONFIGURED',
+    });
+  });
+});
+
+describe('admin auth social route availability', () => {
+  let app;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    passport._strategy.mockReturnValue(undefined);
+
+    app = express();
+    app.use(express.json());
+    app.use('/api/admin', adminAuthRouter);
+  });
+
+  const startRoutes = [
+    ['saml', 'SAML'],
+    ['google', 'Google'],
+    ['github', 'GitHub'],
+    ['discord', 'Discord'],
+    ['facebook', 'Facebook'],
+    ['apple', 'Apple'],
+  ];
+
+  it.each(startRoutes)(
+    'does not start %s admin login when the strategy is not registered',
+    async (path, provider) => {
+      const response = await request(app).get(`/api/admin/oauth/${path}`);
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({
+        error: `${provider} configuration not found`,
+        error_code: `${provider.toUpperCase()}_NOT_CONFIGURED`,
+      });
+      expect(storeAndStripChallenge).not.toHaveBeenCalled();
+      expect(passport.authenticate).not.toHaveBeenCalled();
+    },
+  );
+
+  const callbackRoutes = [
+    [
+      'saml',
+      'SAML',
+      (agent) => agent.post('/api/admin/oauth/saml/callback').send({ RelayState: 'state' }),
+    ],
+    ['google', 'Google', (agent) => agent.get('/api/admin/oauth/google/callback?state=state')],
+    ['github', 'GitHub', (agent) => agent.get('/api/admin/oauth/github/callback?state=state')],
+    ['discord', 'Discord', (agent) => agent.get('/api/admin/oauth/discord/callback?state=state')],
+    [
+      'facebook',
+      'Facebook',
+      (agent) => agent.get('/api/admin/oauth/facebook/callback?state=state'),
+    ],
+    [
+      'apple',
+      'Apple',
+      (agent) => agent.post('/api/admin/oauth/apple/callback').send({ state: 'state' }),
+    ],
+  ];
+
+  it.each(callbackRoutes)(
+    'does not run %s admin callback auth when the strategy is not registered',
+    async (path, provider, makeRequest) => {
+      const response = await makeRequest(request(app));
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({
+        error: `${provider} configuration not found`,
+        error_code: `${provider.toUpperCase()}_NOT_CONFIGURED`,
+      });
+    },
+  );
+
+  it('starts admin login when the strategy is registered', async () => {
+    passport._strategy.mockReturnValue({ name: 'googleAdmin' });
+    storeAndStripChallenge.mockResolvedValue(true);
+
+    await request(app).get('/api/admin/oauth/google');
+
+    expect(storeAndStripChallenge).toHaveBeenCalledTimes(1);
+    expect(passport.authenticate).toHaveBeenCalledWith(
+      'googleAdmin',
+      expect.objectContaining({ session: false }),
+    );
+  });
+});
 
 describe('admin auth OpenID refresh route', () => {
   const openIdConfig = {

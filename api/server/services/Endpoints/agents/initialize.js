@@ -36,7 +36,12 @@ const {
   createBackgroundCodeResultHandler,
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
-const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+const {
+  loadAgentTools,
+  loadToolsForExecution,
+  getAccessibleMcpServerNames,
+  isExpectedMCPToolsUnavailableError,
+} = require('~/server/services/ToolService');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const {
   getSkillToolDeps,
@@ -88,6 +93,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
     provider,
     tool_options,
     tool_resources,
+    accessibleMcpServerNames,
   }) {
     const agent = { id: agentId, tools, provider, model, tool_options };
     try {
@@ -100,9 +106,13 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
         jobCreatedAt,
         tool_resources,
         definitionsOnly,
+        accessibleMcpServerNames,
       });
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);
+      if (isExpectedMCPToolsUnavailableError(error)) {
+        throw error;
+      }
     }
   };
 }
@@ -115,8 +125,16 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
  * @param {AbortSignal} params.signal
  * @param {Object} params.endpointOption
  * @param {number} [params.jobCreatedAt]
+ * @param {string} [params.checkpointNamespace] Immutable saver-level generation scope
  */
-const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt }) => {
+const initializeClient = async ({
+  req,
+  res,
+  signal,
+  endpointOption,
+  jobCreatedAt,
+  checkpointNamespace,
+}) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
   }
@@ -165,6 +183,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
   const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
   const backgroundToolsAvailable = enabledCapabilities.has(AgentCapabilities.run_in_background);
+  const toolIntentsAvailable = enabledCapabilities.has(AgentCapabilities.tool_intents);
   const statefulSessionsAvailable = enabledCapabilities.has(
     AgentCapabilities.stateful_code_sessions,
   );
@@ -272,11 +291,13 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,
         backgroundToolNames: ctx.backgroundToolNames,
+        intentToolNames: ctx.intentToolNames,
         mcpAvailableTools: ctx.mcpAvailableTools,
         requestScopedConnections: ctx.requestScopedConnections,
         userMCPAuthMap: ctx.userMCPAuthMap,
         tool_resources: ctx.tool_resources,
         actionsEnabled: ctx.actionsEnabled,
+        accessibleMcpServerNames: ctx.accessibleMcpServerNames,
         jobCreatedAt,
       });
 
@@ -455,6 +476,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
       skillAuthoringAvailable: primarySkillAuthoringAvailable,
       codeEnvAvailable,
       backgroundToolsAvailable,
+      toolIntentsAvailable,
       statefulSessionsAvailable,
       memoryAvailable,
       skillStates,
@@ -466,6 +488,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
       getUserKey: db.getUserKey,
       getMessages: db.getMessages,
       getConvoFiles: db.getConvoFiles,
+      getAccessibleMcpServerNames,
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
       getUserCodeFiles: db.getUserCodeFiles,
@@ -533,6 +556,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
       defaultActiveOnShare,
       codeEnvAvailable,
       backgroundToolsAvailable,
+      toolIntentsAvailable,
       statefulSessionsAvailable,
       memoryAvailable,
     },
@@ -545,6 +569,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
         getConvoFiles: db.getConvoFiles,
+        getAccessibleMcpServerNames,
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getUserCodeFiles: db.getUserCodeFiles,
@@ -607,6 +632,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
     defaultActiveOnShare,
     codeEnvAvailable,
     backgroundToolsAvailable,
+    toolIntentsAvailable,
     statefulSessionsAvailable,
     memoryAvailable,
   });
@@ -762,6 +788,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
           getUserKey: db.getUserKey,
           getMessages: db.getMessages,
           getConvoFiles: db.getConvoFiles,
+          getAccessibleMcpServerNames,
           updateFilesUsage: db.updateFilesUsage,
           getUserKeyValues: db.getUserKeyValues,
           getUserCodeFiles: db.getUserCodeFiles,
@@ -777,6 +804,9 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
       agentToolContexts.set(agentId, buildAgentToolContext({ agent, config }));
       return config;
     } catch (err) {
+      if (isExpectedMCPToolsUnavailableError(err)) {
+        throw err;
+      }
       logger.error(`[processAgent] Error processing subagent ${agentId}:`, err);
       skippedAgentIds.add(agentId);
       return null;
@@ -1052,6 +1082,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
     startupTelemetry,
     toolInputValidationErrors,
     jobCreatedAt,
+    checkpointNamespace,
   });
 
   if (streamId) {

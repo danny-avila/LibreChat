@@ -2,11 +2,13 @@ const express = require('express');
 const {
   isEnabled,
   GenerationJobManager,
+  TERMINAL_PUBLICATION_RECONNECT_ERROR,
   hasPersistableAbortContent,
   buildAbortedResponseMetadata,
   isPendingActionStale,
   toClientPendingAction,
   isHITLEnabled,
+  captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
   attachAskUserQuestionArgs,
   createMessageFilterPii,
@@ -23,6 +25,13 @@ const {
   messageUserLimiter,
 } = require('~/server/middleware');
 const SteerController = require('~/server/controllers/agents/steer');
+const {
+  GENERATION_PROTOCOL_HEADER,
+  GENERATION_PROTOCOL_V2,
+  getRequestedGenerationProtocol,
+  getServerGenerationProtocol,
+  negotiateExistingGenerationProtocol,
+} = require('~/server/controllers/agents/protocol');
 const { saveMessage } = require('~/models');
 const responses = require('./responses');
 const openai = require('./openai');
@@ -34,6 +43,52 @@ const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 /** Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check passes. */
 function hasTenantMismatch(job, user) {
   return job.metadata?.tenantId != null && job.metadata.tenantId !== user.tenantId;
+}
+
+/** Protocol selected before a job has been authorized/read. This is used for
+ * validation, not-found, and authorization envelopes; it never leaks an
+ * existing job's marker to an unauthorized caller. */
+function negotiateRequestGenerationProtocol(req) {
+  return Math.min(
+    getRequestedGenerationProtocol(req),
+    getServerGenerationProtocol(GenerationJobManager),
+  );
+}
+
+/** Every generation-control JSON envelope carries the exact numeric protocol
+ * that governs it. The response header is useful to fetch/Axios callers, while
+ * the body survives auth-refresh adapters and is the client's fail-closed
+ * source of truth. */
+function sendGenerationJson(res, status, body, generationProtocolVersion) {
+  res.set(GENERATION_PROTOCOL_HEADER, String(generationProtocolVersion));
+  return res.status(status).json({ ...body, generationProtocolVersion });
+}
+
+async function sendJoblessStatus(req, res, conversationId) {
+  // The default completeJob path deletes the job record immediately, so the
+  // jobless branch IS the common reload-after-terminal case — parked steers
+  // live under their own bounded-TTL key and authorize from their stored owner.
+  const requestedProtocolVersion = getRequestedGenerationProtocol(req);
+  const claimed = await GenerationJobManager.steering.claimDetailed(
+    conversationId,
+    {
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+    },
+    requestedProtocolVersion,
+  );
+  const generationProtocolVersion = Math.min(
+    requestedProtocolVersion,
+    claimed.steers.length > 0
+      ? claimed.generationProtocolVersion
+      : getServerGenerationProtocol(GenerationJobManager),
+  );
+  res.set(GENERATION_PROTOCOL_HEADER, String(generationProtocolVersion));
+  return res.json({
+    active: false,
+    generationProtocolVersion,
+    ...(claimed.steers.length > 0 && { unrecoveredSteers: claimed.steers }),
+  });
 }
 
 const router = express.Router();
@@ -71,6 +126,24 @@ router.use(uaParser);
 router.get('/chat/stream/:streamId', async (req, res) => {
   const { streamId } = req.params;
   const isResume = req.query.resume === 'true';
+  const requestProtocolVersion = negotiateRequestGenerationProtocol(req);
+  const rawGenerationCreatedAt = req.query.generationCreatedAt;
+  let expectedGenerationCreatedAt;
+  if (rawGenerationCreatedAt != null) {
+    if (
+      typeof rawGenerationCreatedAt !== 'string' ||
+      !/^\d+$/.test(rawGenerationCreatedAt) ||
+      !Number.isSafeInteger(Number(rawGenerationCreatedAt))
+    ) {
+      return sendGenerationJson(
+        res,
+        400,
+        { error: 'Invalid generation identity' },
+        requestProtocolVersion,
+      );
+    }
+    expectedGenerationCreatedAt = Number(rawGenerationCreatedAt);
+  }
   let result;
   const attachmentAbortController = new AbortController();
   req.on('close', () => {
@@ -84,20 +157,56 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     return;
   }
   if (!job) {
-    return res.status(404).json({
-      error: 'Stream not found',
-      message: 'The generation job does not exist or has expired.',
-    });
+    return sendGenerationJson(
+      res,
+      404,
+      {
+        error: 'Stream not found',
+        message: 'The generation job does not exist or has expired.',
+      },
+      requestProtocolVersion,
+    );
   }
 
-  if (job.metadata?.userId && job.metadata.userId !== req.user.id) {
-    return res.status(403).json({ error: 'Unauthorized' });
+  // Every job has an owner at creation time. Treat a missing/corrupt owner as
+  // unauthorized instead of turning malformed store state into a public
+  // stream for anyone who knows the conversation id.
+  if (job.metadata?.userId !== req.user.id) {
+    return sendGenerationJson(res, 403, { error: 'Unauthorized' }, requestProtocolVersion);
   }
 
   if (hasTenantMismatch(job, req.user)) {
-    return res.status(403).json({ error: 'Unauthorized' });
+    return sendGenerationJson(res, 403, { error: 'Unauthorized' }, requestProtocolVersion);
   }
 
+  const generationProtocolVersion = negotiateExistingGenerationProtocol(req, job);
+
+  if (expectedGenerationCreatedAt != null && job.createdAt !== expectedGenerationCreatedAt) {
+    // streamId is conversation-scoped and may now belong to a newer turn. A
+    // stale start/reconnect gets a dedicated handoff signal instead of either
+    // following the ordinary terminal path or receiving replacement content.
+    return sendGenerationJson(
+      res,
+      409,
+      {
+        code: 'GENERATION_REPLACED',
+        error: 'Generation replaced',
+        message: 'The requested generation has completed or was replaced.',
+      },
+      generationProtocolVersion,
+    );
+  }
+
+  /** Pin even legacy (unfenced-query) subscribers to the exact job snapshot
+   * that passed the owner + tenant checks above. `streamId` is conversation-
+   * scoped, so a replacement can otherwise land between this authorization
+   * read and the manager attachment and expose the replacement generation
+   * without ever authorizing its owner. */
+  const authorizedGenerationCreatedAt = job.createdAt;
+  if (!Number.isSafeInteger(authorizedGenerationCreatedAt) || authorizedGenerationCreatedAt < 0) {
+    logger.warn(`[AgentStream] Refusing stream with invalid generation identity: ${streamId}`);
+    return sendGenerationJson(res, 403, { error: 'Unauthorized' }, requestProtocolVersion);
+  }
   const streamTelemetry = createSseStreamTelemetry({ req, res, streamId, isResume });
 
   res.setHeader('Content-Encoding', 'identity');
@@ -105,12 +214,16 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader(GENERATION_PROTOCOL_HEADER, String(generationProtocolVersion));
   res.flushHeaders();
   streamTelemetry.recordHeadersFlushed();
 
   logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
 
   const writeEvent = (event, options = {}) => {
+    if (generationProtocolVersion < GENERATION_PROTOCOL_V2 && event?.event === 'on_steer_updated') {
+      return true;
+    }
     if (!res.writableEnded) {
       const eventName = options.eventName ?? 'message';
       const payload = `event: ${eventName}\ndata: ${JSON.stringify(event)}\n\n`;
@@ -127,14 +240,42 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
   const onDone = (event) => {
     streamTelemetry.recordFinalEventEmitted();
-    writeEvent(event, { final: true });
+    if (event?.reconcile === true && generationProtocolVersion < GENERATION_PROTOCOL_V2) {
+      /** Legacy clients treat an ordinary `final: true` as the completion of
+       * their optimistic submission. A reconciliation frame has no response
+       * payload and may describe a replacement, so expose it only as a
+       * transport error; the v1 reconnect/status path will refetch safely. */
+      writeEvent(
+        {
+          error: 'Generation state changed; reconnect to load the saved response.',
+          generationProtocolVersion,
+        },
+        { eventName: 'error', final: true },
+      );
+      res.end();
+      return;
+    }
+    writeEvent(
+      event != null && typeof event === 'object'
+        ? { ...event, generationProtocolVersion }
+        : { final: true, generationProtocolVersion },
+      { final: true },
+    );
     res.end();
   };
 
   const onError = (error) => {
     if (!res.writableEnded) {
       streamTelemetry.recordErrorEventEmitted();
-      writeEvent({ error }, { eventName: 'error' });
+      if (error === TERMINAL_PUBLICATION_RECONNECT_ERROR) {
+        /** A durable terminal payload exists, but cross-replica DONE publish
+         * failed. Tear down the HTTP stream without an application error frame:
+         * sse.js treats the transport close as reconnectable, and the retained
+         * terminal job then replays its authoritative final payload. */
+        res.destroy();
+        return;
+      }
+      writeEvent({ error, generationProtocolVersion }, { eventName: 'error' });
       res.end();
     }
   };
@@ -143,12 +284,13 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     const { subscription, resumeState, pendingEvents } =
       await GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError, {
         signal: attachmentAbortController.signal,
+        expectedCreatedAt: authorizedGenerationCreatedAt,
       });
 
     if (subscription && !attachmentAbortController.signal.aborted && !res.writableEnded) {
       if (resumeState) {
         writeEvent({ sync: true, resumeState, pendingEvents });
-        GenerationJobManager.markSyncSent(streamId);
+        GenerationJobManager.markSyncSent(streamId, authorizedGenerationCreatedAt);
         logger.debug(
           `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps, ${pendingEvents.length} pending events`,
         );
@@ -169,6 +311,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   } else {
     result = await GenerationJobManager.subscribe(streamId, writeEvent, onDone, onError, {
       signal: attachmentAbortController.signal,
+      expectedCreatedAt: authorizedGenerationCreatedAt,
     });
   }
 
@@ -178,6 +321,56 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   }
   if (!result) {
     streamTelemetry.recordSubscribeFailed();
+    {
+      let currentJob;
+      let currentJobReadSucceeded = false;
+      try {
+        currentJob = await GenerationJobManager.getJob(streamId);
+        currentJobReadSucceeded = true;
+      } catch (error) {
+        logger.warn(`[AgentStream] Failed to reconcile fenced subscription for ${streamId}`, error);
+      }
+
+      if (attachmentAbortController.signal.aborted || res.writableEnded) {
+        return;
+      }
+
+      const currentJobAuthorized =
+        currentJobReadSucceeded &&
+        (!currentJob ||
+          (currentJob.metadata?.userId === req.user.id &&
+            !hasTenantMismatch(currentJob, req.user)));
+      const generationReplaced =
+        currentJobAuthorized &&
+        currentJob != null &&
+        currentJob.createdAt !== authorizedGenerationCreatedAt;
+      const expectedGenerationTerminal =
+        currentJobAuthorized &&
+        currentJob?.createdAt === authorizedGenerationCreatedAt &&
+        ['complete', 'error', 'aborted'].includes(currentJob.status);
+
+      /** The route already flushed SSE headers before the manager's final
+       * generation fence ran. A generic error here would misreport the common
+       * snapshot-to-attach race where the requested run terminalized or was
+       * replaced. Send the same control-only reconciliation frame used by the
+       * manager so the client refetches authoritative state instead. */
+      if (
+        currentJobReadSucceeded &&
+        (generationReplaced || !currentJob || expectedGenerationTerminal)
+      ) {
+        onDone({
+          final: true,
+          reconcile: true,
+          reconcileReason: generationReplaced ? 'generation_replaced' : 'terminal_payload_missing',
+          ...(expectedGenerationTerminal && { terminalStatus: currentJob.status }),
+          generationCreatedAt: authorizedGenerationCreatedAt,
+          conversation: {
+            conversationId: currentJob?.conversationId ?? job.conversationId ?? streamId,
+          },
+        });
+        return;
+      }
+    }
     onError('Failed to subscribe to stream');
     return;
   }
@@ -205,36 +398,72 @@ router.get('/chat/active', async (req, res) => {
  */
 router.get('/chat/status/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
+  const requestProtocolVersion = negotiateRequestGenerationProtocol(req);
 
   // streamId === conversationId, so we can use getJob directly
-  const job = await GenerationJobManager.getJob(conversationId);
+  let job = await GenerationJobManager.getJob(conversationId);
 
   if (!job) {
-    // The default completeJob path deletes the job record immediately, so the
-    // jobless branch IS the common reload-after-terminal case — parked steers
-    // live under their own bounded-TTL key and the claim authorizes against
-    // the payload's stored owner (no job record is left to check).
-    const claimed = await GenerationJobManager.steering.claim(conversationId, {
-      userId: req.user.id,
-      tenantId: req.user.tenantId,
-    });
-    return res.json({
-      active: false,
-      ...(claimed.length > 0 && { unrecoveredSteers: claimed }),
-    });
+    return sendJoblessStatus(req, res, conversationId);
   }
 
-  if (job.metadata.userId !== req.user.id) {
-    return res.status(403).json({ error: 'Unauthorized' });
+  let resumeState;
+  let snapshotVerified = false;
+  /** `getResumeState` begins with its own streamId lookup. A replacement can
+   * land after this route authorizes A but before that lookup and make it read
+   * B's content. Verify the epoch after each read and discard mismatched
+   * snapshots; every replacement snapshot is re-authorized before use. */
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (job.metadata?.userId !== req.user.id || hasTenantMismatch(job, req.user)) {
+      return sendGenerationJson(res, 403, { error: 'Unauthorized' }, requestProtocolVersion);
+    }
+    if (!Number.isSafeInteger(job.createdAt) || job.createdAt < 0) {
+      return sendGenerationJson(res, 403, { error: 'Unauthorized' }, requestProtocolVersion);
+    }
+
+    const authorizedCreatedAt = job.createdAt;
+    resumeState = await GenerationJobManager.getResumeState(conversationId, authorizedCreatedAt);
+    const verifiedJob = await GenerationJobManager.getJob(conversationId);
+    if (!verifiedJob) {
+      return sendJoblessStatus(req, res, conversationId);
+    }
+    if (verifiedJob.createdAt === authorizedCreatedAt) {
+      if (
+        verifiedJob.metadata?.userId !== req.user.id ||
+        hasTenantMismatch(verifiedJob, req.user)
+      ) {
+        return sendGenerationJson(res, 403, { error: 'Unauthorized' }, requestProtocolVersion);
+      }
+      job = verifiedJob;
+      snapshotVerified = true;
+      break;
+    }
+    job = verifiedJob;
   }
 
-  if (hasTenantMismatch(job, req.user)) {
-    return res.status(403).json({ error: 'Unauthorized' });
+  if (!snapshotVerified) {
+    res.set('Retry-After', '1');
+    return sendGenerationJson(res, 503, { code: 'SERVER_NOT_READY' }, requestProtocolVersion);
   }
 
-  // Get resume state which contains aggregatedContent
-  // Avoid calling both getStreamInfo and getResumeState (both fetch content)
-  const resumeState = await GenerationJobManager.getResumeState(conversationId);
+  /** Abort has won terminal ownership, but its required message/checkpoint
+   * persistence has not finished yet. Reporting this snapshot as inactive
+   * would let a reloading client clear its live state and refetch history
+   * before the terminal owner has made that history authoritative. `getJob`
+   * recovers a stale pending marker; while the verified marker remains live,
+   * keep every status consumer on the same readiness path as duplicate starts. */
+  if (job.metadata?.terminalPersistencePending === true) {
+    res.set('Retry-After', '1');
+    return sendGenerationJson(
+      res,
+      503,
+      { code: 'SERVER_NOT_READY' },
+      negotiateExistingGenerationProtocol(req, job),
+    );
+  }
+  let generationProtocolVersion = negotiateExistingGenerationProtocol(req, job);
+  res.set(GENERATION_PROTOCOL_HEADER, String(generationProtocolVersion));
+
   // A job paused for human review is still active (consistent with /chat/active),
   // so the client resumes/subscribes rather than treating it as finished — but
   // only while it has a live, resolvable prompt: a missing/malformed or
@@ -244,21 +473,31 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   const isActive = job.status === 'running' || pendingLive;
 
   /** Acknowledged steers the terminal drains parked because no subscriber was
-   *  live to receive the final/abort event — claim-on-read (cleared once
-   *  returned) so the reloading client restores them as queued follow-ups. */
+   *  live to receive the final/abort event. Reads are replayable; a recovery
+   *  turn leases its exact source and removes it only after durable persistence. */
   let unrecoveredSteers;
-  if (!isActive) {
-    const claimed = await GenerationJobManager.steering.claim(conversationId, {
-      userId: req.user.id,
-      tenantId: req.user.tenantId,
-    });
-    if (claimed.length > 0) {
-      unrecoveredSteers = claimed;
+  if (!isActive || job.metadata.steersClosed === true) {
+    const claimed = await GenerationJobManager.steering.claimDetailed(
+      conversationId,
+      {
+        userId: req.user.id,
+        tenantId: req.user.tenantId,
+      },
+      getRequestedGenerationProtocol(req),
+    );
+    if (claimed.steers.length > 0) {
+      generationProtocolVersion = Math.min(
+        generationProtocolVersion,
+        claimed.generationProtocolVersion,
+      );
+      res.set(GENERATION_PROTOCOL_HEADER, String(generationProtocolVersion));
+      unrecoveredSteers = claimed.steers;
     }
   }
 
   res.json({
     active: isActive,
+    generationProtocolVersion,
     ...(unrecoveredSteers && { unrecoveredSteers }),
     streamId: conversationId,
     status: job.status,
@@ -282,157 +521,354 @@ router.get('/chat/status/:conversationId', async (req, res) => {
  * @access Private
  * @description Mounted before chatRouter to bypass buildEndpointOption middleware
  */
-router.post('/chat/abort', configMiddleware, async (req, res) => {
+router.post('/chat/abort', configMiddleware, async (req, res, next) => {
   logger.debug(`[AgentStream] ========== ABORT ENDPOINT HIT ==========`);
   logger.debug(`[AgentStream] Method: ${req.method}, Path: ${req.path}`);
   logger.debug(`[AgentStream] Body:`, req.body);
 
-  const { streamId, conversationId, abortKey } = req.body;
-  const userId = req.user?.id;
-
-  // streamId === conversationId, so try any of the provided IDs
-  // Skip "new" as it's a placeholder for new conversations, not an actual ID
-  let jobStreamId =
-    streamId ||
-    (conversationId !== 'new' ? conversationId : null) ||
-    abortKey?.split(':')[0] ||
-    null;
-  let job = jobStreamId ? await GenerationJobManager.getJob(jobStreamId) : null;
-
-  // Fallback: if job not found and we have a userId, look up active jobs for user
-  // This handles the case where frontend sends "new" but job was created with a UUID
-  if (!job && userId) {
-    logger.debug(`[AgentStream] Job not found by ID, checking active jobs for user: ${userId}`);
-    const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
-      userId,
-      req.user.tenantId,
-    );
-    for (const activeJobId of activeJobIds) {
-      const activeJob = await GenerationJobManager.getJob(activeJobId);
-      if (activeJob?.status !== 'running') {
-        continue;
+  const requestProtocolVersion = negotiateRequestGenerationProtocol(req);
+  let responseProtocolVersion = requestProtocolVersion;
+  try {
+    if (req.body == null || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return sendGenerationJson(res, 400, { code: 'INVALID_ABORT_TARGET' }, requestProtocolVersion);
+    }
+    const { streamId, conversationId, abortKey, generationCreatedAt } = req.body;
+    for (const value of [streamId, conversationId, abortKey]) {
+      if (
+        value != null &&
+        (typeof value !== 'string' || value.length === 0 || value.length > 512)
+      ) {
+        return sendGenerationJson(
+          res,
+          400,
+          { code: 'INVALID_ABORT_TARGET' },
+          requestProtocolVersion,
+        );
       }
-      jobStreamId = activeJobId;
-      job = activeJob;
-      logger.debug(`[AgentStream] Found active job for user: ${jobStreamId}`);
-      break;
     }
-  }
-
-  logger.debug(`[AgentStream] Computed jobStreamId: ${jobStreamId}`);
-
-  if (job && jobStreamId) {
-    if (job.metadata?.userId && job.metadata.userId !== userId) {
-      logger.warn(`[AgentStream] Unauthorized abort attempt for ${jobStreamId} by user ${userId}`);
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
-    if (hasTenantMismatch(job, req.user)) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
-    logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
-    // Re-attach a paused ask_user_question's args to the abort content BEFORE
-    // abortJob emits the final SSE. Redis reconstructs abort content from the
-    // chunk log, which never saw the pause-time stamp applied to the in-process
-    // contentParts — stamping inside abortJob (not after) means the LIVE client
-    // gets the question too, not just the saved message on reload.
-    const abortedAskPayload = job.metadata?.pendingAction?.payload;
-    const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
-      transformAbortContent: (content) =>
-        abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
-          ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
-          : content,
-    });
-    logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
-      abortResultSuccess: abortResult.success,
-      abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
-      abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
-    });
-
-    // HITL: prune the durable checkpoint of a run aborted while paused, so a new turn
-    // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
-    // reclaims it (thread_id is the stable conversationId). Idempotent / no-op when
-    // HITL is off or nothing was written. The pendingAction check covers ask-only
-    // pauses (ask_user_question attaches a checkpointer WITHOUT the approval policy):
-    // a job aborted while paused still carries its pendingAction in metadata, which is
-    // exactly the case whose checkpoint would otherwise go stale.
-    const agentsCfg = req.config?.endpoints?.agents;
-    if (isHITLEnabled(agentsCfg?.toolApproval) || job.metadata?.pendingAction != null) {
-      await deleteAgentCheckpoint(jobStreamId, agentsCfg?.checkpointer).catch((err) =>
-        logger.error(`[AgentStream] Failed to prune checkpoint on abort: ${jobStreamId}`, err),
+    const userId = req.user?.id;
+    if (
+      generationCreatedAt != null &&
+      (!Number.isSafeInteger(generationCreatedAt) || generationCreatedAt < 0)
+    ) {
+      return sendGenerationJson(
+        res,
+        400,
+        { code: 'INVALID_GENERATION_IDENTITY' },
+        requestProtocolVersion,
       );
     }
 
-    // CRITICAL: Save partial response BEFORE returning to prevent race condition.
-    // If user sends a follow-up immediately after abort, the parentMessageId must exist in DB.
-    // Only save if we have a valid responseMessageId (skip early aborts before generation started)
-    if (
-      abortResult.success &&
-      abortResult.jobData?.userMessage?.messageId &&
-      abortResult.jobData?.responseMessageId &&
-      hasPersistableAbortContent(abortResult.content)
-    ) {
-      const { jobData, text } = abortResult;
-      // `abortResult.content` is already stamped by `transformAbortContent`
-      // above (same content the final SSE carried), so the saved message and
-      // the live client agree.
-      const { content } = abortResult;
-      const responseMessage = {
-        messageId: jobData.responseMessageId,
-        parentMessageId: jobData.userMessage.messageId,
-        conversationId: jobData.conversationId,
-        content: content || [],
-        text: text || '',
-        sender: jobData.sender || 'AI',
-        endpoint: jobData.endpoint,
-        iconURL: jobData.iconURL,
-        model: jobData.model,
-        unfinished: true,
-        error: false,
-        isCreatedByUser: false,
-        user: userId,
-      };
+    // streamId === conversationId, so try any of the provided IDs
+    // Skip "new" as it's a placeholder for new conversations, not an actual ID.
+    const streamCandidate = streamId && streamId !== 'new' ? streamId : null;
+    const conversationCandidate =
+      conversationId && conversationId !== 'new' ? conversationId : null;
+    const abortCandidate = abortKey?.split(':')[0];
+    const abortKeyCandidate = abortCandidate && abortCandidate !== 'new' ? abortCandidate : null;
+    let jobStreamId = streamCandidate || conversationCandidate || abortKeyCandidate || null;
+    let job = jobStreamId ? await GenerationJobManager.getJob(jobStreamId) : null;
 
-      /** Persist the usage/cost rollup + context breakdown for the stopped
-       *  response (from the job's tracked tokenUsage/contextUsage) so its
-       *  branch/total cost and granular rows survive a reload — parity with the
-       *  normal completion path. */
-      const abortMetadata = buildAbortedResponseMetadata(jobData);
-      if (abortMetadata) {
-        responseMessage.metadata = abortMetadata;
+    /** Fallback only for the explicit new-conversation placeholder. An unknown
+     * concrete id (including a typo/stale tab) must never abort an unrelated
+     * active job. If several new-chat starts are active, the epoch selects the
+     * exact one; an unfenced legacy request is safe only when unambiguous. */
+    const canResolveNewPlaceholder =
+      !jobStreamId && (streamId === 'new' || conversationId === 'new') && userId;
+    if (!job && canResolveNewPlaceholder) {
+      logger.debug(`[AgentStream] Job not found by ID, checking active jobs for user: ${userId}`);
+      const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
+        userId,
+        req.user.tenantId,
+      );
+      const candidates = [];
+      for (const activeJobId of activeJobIds) {
+        const activeJob = await GenerationJobManager.getJob(activeJobId);
+        if (
+          !activeJob ||
+          (activeJob.status !== 'running' && activeJob.status !== 'requires_action') ||
+          activeJob.metadata?.userId !== userId ||
+          hasTenantMismatch(activeJob, req.user) ||
+          (generationCreatedAt != null && activeJob.createdAt !== generationCreatedAt)
+        ) {
+          continue;
+        }
+        candidates.push({ streamId: activeJobId, job: activeJob });
       }
-
-      try {
-        await saveMessage(
-          {
-            userId: req?.user?.id,
-            // Source from the job, not the request: the stop button posts only the
-            // conversationId, so trusting req.body.isTemporary would persist an aborted
-            // temporary-chat partial as a normal (orphaned) message.
-            isTemporary: jobData?.isTemporary ?? req?.body?.isTemporary,
-            interfaceConfig: req?.config?.interfaceConfig,
-          },
-          responseMessage,
-          { context: 'api/server/routes/agents/index.js - abort endpoint' },
+      if (candidates.length > 1) {
+        return sendGenerationJson(
+          res,
+          409,
+          { code: 'AMBIGUOUS_ACTIVE_RUN' },
+          requestProtocolVersion,
         );
-        logger.debug(`[AgentStream] Saved partial response for: ${jobStreamId}`);
-      } catch (saveError) {
-        logger.error(`[AgentStream] Failed to save partial response: ${saveError.message}`);
+      }
+      if (candidates.length === 1) {
+        jobStreamId = candidates[0].streamId;
+        job = candidates[0].job;
+        logger.debug(`[AgentStream] Found active job for user: ${jobStreamId}`);
       }
     }
 
-    return res.json({
-      success: true,
-      aborted: jobStreamId,
-      // Steers that never reached an injection boundary — restored client-side
-      // as queued chips so the user's words aren't dropped with the abort.
-      ...(abortResult.pendingSteers?.length > 0 && { pendingSteers: abortResult.pendingSteers }),
-    });
-  }
+    logger.debug(`[AgentStream] Computed jobStreamId: ${jobStreamId}`);
 
-  logger.warn(`[AgentStream] Job not found for streamId: ${jobStreamId}`);
-  return res.status(404).json({ error: 'Job not found', streamId: jobStreamId });
+    if (job && jobStreamId) {
+      if (job.metadata?.userId !== userId) {
+        logger.warn(
+          `[AgentStream] Unauthorized abort attempt for ${jobStreamId} by user ${userId}`,
+        );
+        return sendGenerationJson(res, 403, { error: 'Unauthorized' }, requestProtocolVersion);
+      }
+
+      if (hasTenantMismatch(job, req.user)) {
+        return sendGenerationJson(res, 403, { error: 'Unauthorized' }, requestProtocolVersion);
+      }
+      const generationProtocolVersion = negotiateExistingGenerationProtocol(req, job);
+      responseProtocolVersion = generationProtocolVersion;
+      res.set(GENERATION_PROTOCOL_HEADER, String(generationProtocolVersion));
+      if (generationCreatedAt != null && job.createdAt !== generationCreatedAt) {
+        return res.status(409).json({ code: 'RUN_REPLACED', generationProtocolVersion });
+      }
+
+      logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
+      // Re-attach a paused ask_user_question's args to the abort content BEFORE
+      // abortJob emits the final SSE. Redis reconstructs abort content from the
+      // chunk log, which never saw the pause-time stamp applied to the in-process
+      // contentParts — stamping inside abortJob (not after) means the LIVE client
+      // gets the question too, not just the saved message on reload.
+      const abortedAskPayload = job.metadata?.pendingAction?.payload;
+      const agentsCfg = req.config?.endpoints?.agents;
+      const shouldPruneCheckpoint =
+        isHITLEnabled(agentsCfg?.toolApproval) || job.metadata?.pendingAction != null;
+      const checkpointNamespace =
+        typeof job.metadata?.checkpointNamespace === 'string'
+          ? job.metadata.checkpointNamespace
+          : '';
+      /** New jobs have an immutable saver-level namespace, so the terminal
+       * owner can delete that entire namespace (including a checkpoint written
+       * after this route's initial read) without touching a replacement. Legacy
+       * jobs share the root namespace and still need an id snapshot before CAS. */
+      const checkpointGeneration =
+        shouldPruneCheckpoint && checkpointNamespace === ''
+          ? await captureAgentCheckpointGeneration(jobStreamId, agentsCfg?.checkpointer, {
+              throwOnError: true,
+            })
+          : undefined;
+      const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
+        expectedCreatedAt: job.createdAt,
+        transformAbortContent: (content) =>
+          abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
+            ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
+            : content,
+        /** Persist every parent-row prerequisite before publishing the ordinary
+         * abort FINAL. That frame can immediately drain a queued follow-up, whose
+         * parent must already exist and whose graph must not see a stale HITL
+         * checkpoint. Throwing makes the manager publish a conservative
+         * reconciliation frame instead of an unsafe normal FINAL. */
+        beforePublish: async (pendingAbortResult) => {
+          const persistenceErrors = [];
+          const { jobData, text, content } = pendingAbortResult;
+          /** `abortJob` treats a delivered `created` event as a real turn even
+           * when every streamed part is filtered out (for example, an
+           * interrupt before the model's first non-whitespace token). Its
+           * normal FINAL therefore carries an empty unfinished assistant.
+           * Persist that same row before publishing, including when its id is
+           * the underscore-suffixed preliminary id rendered by `created`.
+           * Otherwise interrupt-and-send immediately posts that unsaved id as
+           * its parent and the preliminary-parent fence correctly rejects it. */
+          const shouldPersistAbortedTurn =
+            hasPersistableAbortContent(content) || jobData?.createdEventEmitted === true;
+
+          if (
+            jobData?.userMessage?.messageId &&
+            jobData?.responseMessageId &&
+            shouldPersistAbortedTurn
+          ) {
+            const messageContext = {
+              userId: req?.user?.id,
+              // Source from the job: the stop request does not carry the
+              // original temporary-chat flag.
+              isTemporary: jobData?.isTemporary ?? req?.body?.isTemporary,
+              interfaceConfig: req?.config?.interfaceConfig,
+            };
+            const requestMessage = {
+              ...jobData.userMessage,
+              conversationId: jobData.conversationId,
+              sender: 'User',
+              endpoint: jobData.endpoint,
+              isCreatedByUser: true,
+              user: userId,
+            };
+            const responseMessage = {
+              messageId: jobData.responseMessageId,
+              parentMessageId: jobData.userMessage.messageId,
+              conversationId: jobData.conversationId,
+              content: content || [],
+              text: text || '',
+              sender: jobData.sender || 'AI',
+              endpoint: jobData.endpoint,
+              iconURL: jobData.iconURL,
+              model: jobData.model,
+              unfinished: true,
+              error: false,
+              isCreatedByUser: false,
+              user: userId,
+            };
+
+            const abortMetadata = buildAbortedResponseMetadata(jobData);
+            if (abortMetadata) {
+              responseMessage.metadata = abortMetadata;
+            }
+
+            /** `created` fires before BaseClient starts its asynchronous user
+             * write. A very early interrupt can therefore reach this barrier
+             * with neither row stored. Both writes are idempotent upserts;
+             * await the user prerequisite first, but still attempt the child
+             * write and checkpoint cleanup so every independently useful
+             * operation gets a chance to succeed. */
+            try {
+              const persistedRequest = await saveMessage(messageContext, requestMessage, {
+                context: 'api/server/routes/agents/index.js - abort user prerequisite',
+              });
+              if (!persistedRequest) {
+                throw new Error('Abort user prerequisite was not persisted');
+              }
+            } catch (error) {
+              persistenceErrors.push(error);
+            }
+
+            try {
+              const persistedResponse = await saveMessage(messageContext, responseMessage, {
+                context: 'api/server/routes/agents/index.js - abort endpoint',
+              });
+              if (!persistedResponse) {
+                throw new Error('Abort response was not persisted');
+              }
+              logger.debug(`[AgentStream] Saved partial response for: ${jobStreamId}`);
+            } catch (error) {
+              persistenceErrors.push(error);
+            }
+          }
+
+          /** Attempt checkpoint cleanup even when the message write failed, and
+           * attempt the message write even when cleanup will fail. Both are
+           * independently valuable; any failure still suppresses the normal
+           * FINAL after all required work has been attempted. */
+          if (shouldPruneCheckpoint) {
+            try {
+              await deleteAgentCheckpoint(
+                jobStreamId,
+                agentsCfg?.checkpointer,
+                checkpointGeneration,
+                checkpointNamespace !== ''
+                  ? { throwOnError: true, checkpointNamespace }
+                  : { throwOnError: true },
+              );
+            } catch (error) {
+              persistenceErrors.push(error);
+            }
+          }
+
+          if (persistenceErrors.length === 1) {
+            throw persistenceErrors[0];
+          }
+          if (persistenceErrors.length > 1) {
+            const error = new Error('Abort message persistence and checkpoint cleanup failed');
+            error.causes = persistenceErrors;
+            throw error;
+          }
+        },
+      });
+      if (abortResult.failureReason === 'generation_replaced') {
+        return res.status(409).json({ code: 'RUN_REPLACED', generationProtocolVersion });
+      }
+      if (abortResult.failureReason === 'job_still_active') {
+        res.set('Retry-After', '1');
+        return res.status(409).json({ code: 'RUN_STILL_ACTIVE', generationProtocolVersion });
+      }
+      if (!abortResult.success) {
+        // The route authorized a live generation, but the manager can lose its
+        // terminal CAS to natural completion/error (or observe deletion before
+        // its own lookup). Never claim that Stop won when no abort FINAL exists.
+        if (!abortResult.jobData) {
+          return res.status(404).json({
+            success: false,
+            error: 'Job not found',
+            streamId: jobStreamId,
+            generationProtocolVersion,
+          });
+        }
+
+        const currentJob = await GenerationJobManager.getJob(jobStreamId);
+        if (currentJob && currentJob.createdAt !== job.createdAt) {
+          return res.status(409).json({ code: 'RUN_REPLACED', generationProtocolVersion });
+        }
+        if (currentJob?.status === 'running' || currentJob?.status === 'requires_action') {
+          res.set('Retry-After', '1');
+          return res.status(409).json({ code: 'RUN_STILL_ACTIVE', generationProtocolVersion });
+        }
+
+        if (generationProtocolVersion < GENERATION_PROTOCOL_V2) {
+          return res.json({
+            success: true,
+            aborted: jobStreamId,
+            generationProtocolVersion,
+          });
+        }
+        return res.json({
+          success: false,
+          settled: true,
+          code: 'RUN_ALREADY_SETTLED',
+          streamId: jobStreamId,
+          generationProtocolVersion,
+          ...(currentJob?.status && { terminalStatus: currentJob.status }),
+        });
+      }
+      logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
+        abortResultSuccess: abortResult.success,
+        abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
+        abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
+      });
+
+      if (abortResult.persistenceFailed && generationProtocolVersion < GENERATION_PROTOCOL_V2) {
+        res.set('Retry-After', '1');
+        return res.status(409).json({
+          code: 'ABORT_PERSISTENCE_FAILED',
+          generationProtocolVersion,
+        });
+      }
+
+      return res.json({
+        success: true,
+        aborted: jobStreamId,
+        generationProtocolVersion,
+        ...(abortResult.persistenceFailed && { persistenceFailed: true }),
+        // Steers that never reached an injection boundary — restored client-side
+        // as queued chips so the user's words aren't dropped with the abort.
+        ...(!abortResult.persistenceFailed &&
+          abortResult.pendingSteers?.length > 0 && { pendingSteers: abortResult.pendingSteers }),
+      });
+    }
+
+    logger.warn(`[AgentStream] Job not found for streamId: ${jobStreamId}`);
+    return sendGenerationJson(
+      res,
+      404,
+      { error: 'Job not found', streamId: jobStreamId },
+      requestProtocolVersion,
+    );
+  } catch (error) {
+    logger.error('[AgentStream] Abort request failed', error);
+    if (res.headersSent) {
+      return next(error);
+    }
+    return sendGenerationJson(
+      res,
+      500,
+      { code: 'ABORT_FAILED', error: 'Failed to abort generation' },
+      responseProtocolVersion,
+    );
+  }
 });
 
 /**
@@ -472,6 +908,19 @@ router.post(
   configMiddleware,
   ...steerLimiters,
   SteerController.SteerCancelController,
+);
+
+/**
+ * @route POST /chat/steer/arm
+ * @desc Escalate a still-queued steer to an interrupt in place (no new
+ * model-bound content, so no PII/moderation pass — just the shared limiters)
+ * @access Private
+ */
+router.post(
+  '/chat/steer/arm',
+  configMiddleware,
+  ...steerLimiters,
+  SteerController.SteerArmController,
 );
 
 router.use('/', v1);

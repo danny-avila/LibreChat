@@ -32,6 +32,30 @@ jest.mock('@librechat/data-schemas', () => ({
   decryptV2: jest.fn(async (val: string) => val.replace(/^enc:/, '')),
 }));
 
+const credentialSetId = 'token-expiry-credential-set';
+const tokenMetadata = { credential_set_id: credentialSetId };
+
+function bindingMetadata(serverUrl: string) {
+  return {
+    authorization_endpoint: new URL('authorize', serverUrl).href,
+    token_endpoint: new URL('token', serverUrl).href,
+    server_url: new URL(serverUrl).href,
+    client_source: 'dynamic' as const,
+    resource: new URL(serverUrl).href,
+  };
+}
+
+async function seedStoredClient(tokenStore: InMemoryTokenStore, serverUrl: string) {
+  await tokenStore.createToken({
+    userId: 'u1',
+    type: 'mcp_oauth_client',
+    identifier: 'mcp:test-srv:client',
+    token: 'enc:{"client_id":"test-client"}',
+    expiresIn: 86400,
+    metadata: { ...tokenMetadata, ...bindingMetadata(serverUrl) },
+  });
+}
+
 describe('MCP OAuth Token Expiry Scenarios', () => {
   afterEach(() => {
     jest.clearAllMocks();
@@ -75,6 +99,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         identifier: 'mcp:test-srv',
         token: `enc:${initial.access_token}`,
         expiresIn: -1,
+        metadata: tokenMetadata,
       });
       await tokenStore.createToken({
         userId: 'u1',
@@ -82,7 +107,9 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         identifier: 'mcp:test-srv:refresh',
         token: `enc:${initial.refresh_token}`,
         expiresIn: 86400,
+        metadata: tokenMetadata,
       });
+      await seedStoredClient(tokenStore, server.url);
 
       const refreshCallback = async (refreshToken: string): Promise<MCPOAuthTokens> => {
         const res = await fetch(`${server.url}token`, {
@@ -174,6 +201,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
           identifier: 'mcp:test-srv',
           token: `enc:${initial.access_token}`,
           expiresIn: -1,
+          metadata: tokenMetadata,
         });
         await tokenStore.createToken({
           userId: 'u1',
@@ -181,7 +209,9 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
           identifier: 'mcp:test-srv:refresh',
           token: `enc:${initial.refresh_token}`,
           expiresIn: 86400,
+          metadata: tokenMetadata,
         });
+        await seedStoredClient(tokenStore, server.url);
 
         // Simulate server revoking the refresh token
         server.issuedRefreshTokens.clear();
@@ -226,6 +256,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         identifier: 'mcp:test-srv',
         token: 'enc:expired-token',
         expiresIn: -1,
+        metadata: tokenMetadata,
       });
       await tokenStore.createToken({
         userId: 'u1',
@@ -233,7 +264,9 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         identifier: 'mcp:test-srv:refresh',
         token: 'enc:some-refresh-token',
         expiresIn: 86400,
+        metadata: tokenMetadata,
       });
+      await seedStoredClient(tokenStore, 'https://mcp.example.com/');
 
       const refreshCallback = jest
         .fn()
@@ -408,6 +441,8 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         serverName: 'test-srv',
         tokens: initial,
         createToken: tokenStore.createToken,
+        clientInfo: { client_id: 'test-client' },
+        metadata: bindingMetadata(server.url),
       });
 
       // Step 3: Verify tokens work
@@ -498,6 +533,8 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         createToken: tokenStore.createToken,
         updateToken: tokenStore.updateToken,
         findToken: tokenStore.findToken,
+        clientInfo: { client_id: 'test-client' },
+        metadata: bindingMetadata(server.url),
       });
 
       // Step 11: Verify new tokens work
@@ -542,6 +579,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         identifier: 'mcp:test-srv',
         token: 'enc:expired-token',
         expiresIn: -1,
+        metadata: tokenMetadata,
       });
       await tokenStore.createToken({
         userId: 'u1',
@@ -549,7 +587,9 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         identifier: 'mcp:test-srv:refresh',
         token: 'enc:valid-refresh',
         expiresIn: 86400,
+        metadata: tokenMetadata,
       });
+      await seedStoredClient(tokenStore, 'https://mcp.example.com/');
 
       let refreshCallCount = 0;
       const refreshCallback = jest.fn().mockImplementation(async () => {

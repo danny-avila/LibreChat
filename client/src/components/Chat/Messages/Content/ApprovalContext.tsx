@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { atom, useRecoilState } from 'recoil';
 import { Constants } from 'librechat-data-provider';
+import { atom, useRecoilState, useRecoilValue } from 'recoil';
 import type { Agents } from 'librechat-data-provider';
 import {
   useSubmitToolApprovalMutation,
@@ -10,6 +10,7 @@ import {
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import { ChatContext } from '~/Providers/ChatContext';
 import { useGetEphemeralAgent } from '~/store/agents';
+import store from '~/store';
 
 /** Per-action submission lifecycle, surfaced to the cards so they can disable
  *  controls and explain a terminal outcome. */
@@ -284,17 +285,26 @@ export function useResumeSubmit() {
   /** React state cannot lock a second click in the same browser task. Keep a
    *  synchronous action-id guard alongside the rendered submission status. */
   const submittingToolActionIdsRef = useRef(new Set<string>());
+  const submittingAskActionIdsRef = useRef(new Set<string>());
   /** Ask status lives in Recoil so it works from the composer (outside the
    *  provider); tool-approval status stays on the context. */
   const { setAskStatus } = useAskSubmitStatus();
+  const activeGenerationCreatedAt = useRecoilValue(
+    store.activeGenerationCreatedAtByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
+  );
 
   const buildResumeFields = useCallback((): ResumeAgentFields | null => {
     const conversationId = conversation?.conversationId;
-    if (!conversationId || conversationId === Constants.NEW_CONVO) {
+    if (
+      !conversationId ||
+      conversationId === Constants.NEW_CONVO ||
+      activeGenerationCreatedAt == null
+    ) {
       return null;
     }
     return {
       conversationId,
+      generationCreatedAt: activeGenerationCreatedAt,
       endpoint: conversation?.endpoint,
       endpointType: conversation?.endpointType,
       agent_id: conversation?.agent_id,
@@ -305,7 +315,7 @@ export function useResumeSubmit() {
       promptPrefix: conversation?.promptPrefix,
       ephemeralAgent: getEphemeralAgent(conversationId),
     };
-  }, [conversation, getEphemeralAgent]);
+  }, [conversation, getEphemeralAgent, activeGenerationCreatedAt]);
 
   const submitToolApproval = useCallback(
     (actionId: string) => {
@@ -343,6 +353,10 @@ export function useResumeSubmit() {
       if (!fields || answer.length === 0) {
         return;
       }
+      if (submittingAskActionIdsRef.current.has(actionId)) {
+        return;
+      }
+      submittingAskActionIdsRef.current.add(actionId);
       setAskStatus(actionId, 'submitting');
       askMutation.mutate(
         { ...fields, actionId, answer },
@@ -379,7 +393,13 @@ export function useResumeSubmit() {
              */
             opts?.onSuccess?.();
           },
-          onError: (error) => setAskStatus(actionId, isExpiredError(error) ? 'expired' : 'error'),
+          onError: (error) => {
+            const expired = isExpiredError(error);
+            if (!expired) {
+              submittingAskActionIdsRef.current.delete(actionId);
+            }
+            setAskStatus(actionId, expired ? 'expired' : 'error');
+          },
         },
       );
     },

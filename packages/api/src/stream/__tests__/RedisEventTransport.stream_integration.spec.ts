@@ -150,7 +150,9 @@ describe('RedisEventTransport Integration Tests', () => {
         expect(replacement.createdAt).toBe(terminalJob.createdAt + 1);
 
         // A live replacement must reject the predecessor's delayed terminal event.
-        await transport.emitDone(streamId, { final: true, stale: true }, terminalJob.createdAt);
+        await expect(
+          transport.emitDone(streamId, { final: true, stale: true }, terminalJob.createdAt),
+        ).rejects.toThrow('fenced by a replacement');
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(received).toEqual([finalEvent]);
 
@@ -165,11 +167,13 @@ describe('RedisEventTransport Integration Tests', () => {
           }),
         ).resolves.toBe(true);
         await expect(store.getJob(streamId)).resolves.toBeNull();
-        await transport.emitDone(
-          streamId,
-          { final: true, staleAfterReplacement: true },
-          terminalJob.createdAt,
-        );
+        await expect(
+          transport.emitDone(
+            streamId,
+            { final: true, staleAfterReplacement: true },
+            terminalJob.createdAt,
+          ),
+        ).rejects.toThrow('fenced by a replacement');
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(received).toEqual([finalEvent]);
 
@@ -310,11 +314,13 @@ describe('RedisEventTransport Integration Tests', () => {
           }
         })();
         expect(claimedReplacement.createdAt).toBe(claimFirstLegacy.createdAt + 1);
-        await transport.emitError(
-          claimBeforeCreateId,
-          'stale after replacement',
-          claimFirstLegacy.createdAt,
-        );
+        await expect(
+          transport.emitError(
+            claimBeforeCreateId,
+            'stale after replacement',
+            claimFirstLegacy.createdAt,
+          ),
+        ).rejects.toThrow('fenced by a replacement');
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(claimedEvents).toEqual(['legacy claim won']);
 
@@ -340,18 +346,22 @@ describe('RedisEventTransport Integration Tests', () => {
           }
         })();
         expect(createFirstReplacement.createdAt).toBe(createFirstLegacy.createdAt + 1000);
-        await transport.emitError(
-          createBeforeClaimId,
-          'legacy claim lost',
-          createFirstLegacy.createdAt,
-        );
+        await expect(
+          transport.emitError(
+            createBeforeClaimId,
+            'legacy claim lost',
+            createFirstLegacy.createdAt,
+          ),
+        ).rejects.toThrow('fenced by a replacement');
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(createFirstEvents).toEqual([]);
 
         // With two unknowable pre-marker epochs and no live hash, Redis ordering
         // gives the marker to the first claimant and rejects the differing second.
         await transport.emitError(competingClaimsId, 'first claimant', 100);
-        await transport.emitError(competingClaimsId, 'second claimant', 200);
+        await expect(
+          transport.emitError(competingClaimsId, 'second claimant', 200),
+        ).rejects.toThrow('fenced by a replacement');
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(competingEvents).toEqual(['first claimant']);
         await expect(
@@ -1458,9 +1468,9 @@ describe('RedisEventTransport Integration Tests', () => {
       // Public callers retain Promise<void>; the internal manager capability receives failure
       // without creating an unhandled rejection.
       await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
-      await expect(emitChunkWithReceipt(transport, streamId, { data: 'test' })).resolves.toBe(
-        false,
-      );
+      await expect(
+        emitChunkWithReceipt(transport, streamId, { data: 'test' }),
+      ).resolves.toBeUndefined();
 
       transport.destroy();
     });
@@ -1485,9 +1495,9 @@ describe('RedisEventTransport Integration Tests', () => {
       const streamId = `error-prop-incr-${Date.now()}`;
 
       await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
-      await expect(emitChunkWithReceipt(transport, streamId, { data: 'test' })).resolves.toBe(
-        false,
-      );
+      await expect(
+        emitChunkWithReceipt(transport, streamId, { data: 'test' }),
+      ).resolves.toBeUndefined();
       expect(mockPublisher.publish).not.toHaveBeenCalled();
 
       transport.destroy();
@@ -1624,6 +1634,104 @@ describe('RedisEventTransport Integration Tests', () => {
 
       transport.destroy();
       subscriber.disconnect();
+    });
+  });
+
+  describe('Cross-Replica Preempt Delivery', () => {
+    test('delivers a fenced arm/clear payload across instances', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber1 = (ioredisClient as Redis).duplicate();
+      const subscriber2 = (ioredisClient as Redis).duplicate();
+      const transport1 = new RedisEventTransport(ioredisClient, subscriber1);
+      const transport2 = new RedisEventTransport(ioredisClient, subscriber2);
+      const streamId = `preempt-cross-${Date.now()}`;
+      const received: Array<{ op: string; createdAt: number; steerIds: string[] }> = [];
+
+      try {
+        await transport1.onPreempt(streamId, (msg) => {
+          received.push(msg);
+        });
+
+        transport2.emitPreempt(streamId, {
+          op: 'arm',
+          createdAt: 1234,
+          steerIds: ['steer-a', 'steer-b'],
+        });
+        transport2.emitPreempt(streamId, { op: 'clear', createdAt: 1234, steerIds: ['steer-a'] });
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        /**
+         * Payload fidelity and delivery, NOT ordering: two publishes from the
+         * same replica carry no cross-message ordering guarantee to a
+         * subscriber, which is exactly why the receiving side tombstones
+         * cleared ids rather than assuming arm-before-clear. Asserting order
+         * here would test something stronger than the protocol promises.
+         */
+        expect(received).toHaveLength(2);
+        expect(received).toContainEqual({
+          op: 'arm',
+          createdAt: 1234,
+          steerIds: ['steer-a', 'steer-b'],
+        });
+        expect(received).toContainEqual({
+          op: 'clear',
+          createdAt: 1234,
+          steerIds: ['steer-a'],
+        });
+      } finally {
+        transport1.cleanup(streamId);
+        transport1.destroy();
+        transport2.destroy();
+        subscriber1.disconnect();
+        subscriber2.disconnect();
+      }
+    });
+
+    test('unsubscribe removes only this registration and keeps the channel for a replacement', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber1 = (ioredisClient as Redis).duplicate();
+      const subscriber2 = (ioredisClient as Redis).duplicate();
+      const transport1 = new RedisEventTransport(ioredisClient, subscriber1);
+      const transport2 = new RedisEventTransport(ioredisClient, subscriber2);
+      const streamId = `preempt-unsub-${Date.now()}`;
+      const oldGeneration: string[] = [];
+      const newGeneration: string[] = [];
+
+      try {
+        const unsubscribeOld = await transport1.onPreempt(streamId, (msg) => {
+          oldGeneration.push(...msg.steerIds);
+        });
+        await transport1.onPreempt(streamId, (msg) => {
+          newGeneration.push(...msg.steerIds);
+        });
+
+        unsubscribeOld();
+        transport2.emitPreempt(streamId, { op: 'arm', createdAt: 99, steerIds: ['steer-live'] });
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        expect(oldGeneration).toEqual([]);
+        expect(newGeneration).toEqual(['steer-live']);
+      } finally {
+        transport1.cleanup(streamId);
+        transport1.destroy();
+        transport2.destroy();
+        subscriber1.disconnect();
+        subscriber2.disconnect();
+      }
     });
   });
 });

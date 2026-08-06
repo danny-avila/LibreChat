@@ -1,11 +1,16 @@
 import type { Agents } from 'librechat-data-provider';
 import type { EventEmitter } from 'events';
-import type { ServerSentEvent } from '~/types';
+import type { ServerSentEvent } from './events';
 
 export interface GenerationJobMetadata {
   userId: string;
   tenantId?: string;
   conversationId?: string;
+  /** Immutable per-generation saver scope. LangGraph's root `checkpoint_ns`
+   * remains empty; the checkpointer adapter maps this scope into storage. */
+  checkpointNamespace?: string;
+  /** Immutable generation protocol. Missing on legacy records means v1. */
+  generationProtocolVersion?: 1 | 2;
   /** User message data for rebuilding submission on reconnect */
   userMessage?: Agents.UserMessageMeta;
   /** Response message ID for tracking */
@@ -27,9 +32,20 @@ export interface GenerationJobMetadata {
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause. A resume
    * replays these into `createRun` because the rebuilt graph uses `messages: []`, so
-   * without them the paused deferred tool would be missing from the schema-only toolMap.
+   * without them the rebuilt model would lose the discovered tool schemas.
    */
   discoveredTools?: string[];
+  /** See `SerializableJobData.preemptCapable`. */
+  preemptCapable?: boolean;
+  /** Terminal close has atomically stopped new steer acceptance, even if the
+   * final status CAS has not yet run. */
+  steersClosed?: boolean;
+  /** Stable start-submission identity. Duplicate POSTs compare this with their
+   * claim before attaching to a conversation-scoped stream. */
+  idempotencyClientRequestId?: string;
+  /** Normal FINAL publication is waiting on required durable abort work. */
+  terminalPersistencePending?: boolean;
+  terminalPersistenceStartedAt?: number;
   /** Set when the job is paused for human review (status === 'requires_action') */
   pendingAction?: Agents.PendingAction;
 }
@@ -80,6 +96,10 @@ export interface SubscribeOptions {
   skipBufferReplay?: boolean;
   /** Cancels attachment work when the HTTP client disconnects. */
   signal?: AbortSignal;
+  /** Exact generation epoch the caller intends to observe. Conversation ids
+   * are reused by later turns, so a stale client must never attach to a
+   * replacement job that now occupies the same stream id. */
+  expectedCreatedAt?: number;
 }
 
 /** Result of an atomic subscribe-with-resume operation */

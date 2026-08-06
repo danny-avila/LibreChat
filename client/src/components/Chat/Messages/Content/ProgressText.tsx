@@ -6,15 +6,18 @@ import { cn } from '~/utils';
 const wrapperClass =
   'progress-text-wrapper text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5';
 
+/** `max-w-full` caps the absolutely-positioned line at the message column;
+ *  the label span truncates itself, so overflow stays visible for the
+ *  button's focus ring. */
+const contentClass =
+  'progress-text-content absolute left-0 top-0 max-w-full overflow-visible whitespace-nowrap';
+
 const Wrapper = ({ popover, children }: { popover: boolean; children: React.ReactNode }) => {
   if (popover) {
     return (
       <div className={wrapperClass}>
         <Popover.Trigger asChild>
-          <div
-            className="progress-text-content absolute left-0 top-0 overflow-visible whitespace-nowrap"
-            style={{ opacity: 1, transform: 'none' }}
-          >
+          <div className={contentClass} style={{ opacity: 1, transform: 'none' }}>
             {children}
           </div>
         </Popover.Trigger>
@@ -24,10 +27,7 @@ const Wrapper = ({ popover, children }: { popover: boolean; children: React.Reac
 
   return (
     <div className={wrapperClass}>
-      <div
-        className="progress-text-content absolute left-0 top-0 overflow-visible whitespace-nowrap"
-        style={{ opacity: 1, transform: 'none' }}
-      >
+      <div className={contentClass} style={{ opacity: 1, transform: 'none' }}>
         {children}
       </div>
     </div>
@@ -98,10 +98,12 @@ export default function ProgressText({
         aria-expanded={hasInput ? isExpanded : undefined}
       >
         {icon}
-        <span className={cn(showShimmer ? 'shimmer' : '', 'font-medium')}>{text}</span>
+        <span className={cn(showShimmer ? 'shimmer' : '', 'min-w-0 truncate font-medium')}>
+          {text}
+        </span>
         {subtitle && <span className="font-normal text-text-secondary">{subtitle}</span>}
         {errorSuffix && (
-          <span className="font-normal text-red-600 dark:text-red-400">— {errorSuffix}</span>
+          <span className="font-normal text-red-600 dark:text-red-400">· {errorSuffix}</span>
         )}
         {hasInput && (
           <ChevronDown

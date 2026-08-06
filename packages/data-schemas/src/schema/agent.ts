@@ -118,7 +118,7 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
       default: [],
       index: true,
     },
-    /** Per-tool configuration (defer_loading, allowed_callers) */
+    /** Per-tool configuration (defer_loading, allowed_callers, run_in_background, describe_intent) */
     tool_options: {
       type: Schema.Types.Mixed,
       default: undefined,

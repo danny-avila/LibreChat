@@ -6,6 +6,7 @@ import type { TAttachment, ValidSource, SearchResultData } from 'librechat-data-
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { StackedFavicons } from '~/components/Web/Sources';
 import { useLocalize, useExpandCollapse } from '~/hooks';
+import { useToolCallIntent } from './Parts/intent';
 import { useSearchContext } from '~/Providers';
 import cn from '~/utils/cn';
 import store from '~/store';
@@ -80,18 +81,23 @@ export default function WebSearch({
   initialProgress: progress = 0.1,
   isSubmitting,
   isLast,
+  args,
   output,
   attachments,
   onExpand,
 }: {
   isLast?: boolean;
   isSubmitting: boolean;
+  args?: string | Record<string, unknown>;
   output?: string | null;
   initialProgress: number;
   attachments?: TAttachment[];
   onExpand?: () => void;
 }) {
   const localize = useLocalize();
+  /** Model-authored live label (web_search carries `intent` natively);
+   *  persists as the settled label like the other tool cards. */
+  const intent = useToolCallIntent(args);
   const { searchResults } = useSearchContext();
   const error = typeof output === 'string' && output.toLowerCase().includes('error processing');
 
@@ -105,8 +111,12 @@ export default function WebSearch({
   const effectiveProgress = hasResults && !isSubmitting ? 1 : progress;
   const cancelled = (!isSubmitting && effectiveProgress < 1) || error === true;
 
-  const complete = !isLast && effectiveProgress === 1;
   const finalizing = isSubmitting && isLast && effectiveProgress === 1;
+  /** A search that is the message's FINAL part stays "finalizing" only while
+   *  the submission is live — afterwards it must settle like any other call,
+   *  or the completed label (and its settled intent announcement) never
+   *  renders and the card shimmers forever. */
+  const complete = effectiveProgress === 1 && !finalizing && (!isLast || !isSubmitting);
 
   const ownTurn = useMemo((): string => {
     if (!attachments) {
@@ -156,7 +166,10 @@ export default function WebSearch({
   }, [searchResults, complete, finalizing, ownTurn]);
 
   const showSources = streamingSources.length > 0;
-  const progressText = useMemo(() => {
+  /** Stable phase text: the live region must not re-announce the growing
+   *  intent on every delta, so it always gets this value while streaming;
+   *  the settled intent is announced once via the completed branch. */
+  const genericProgressText = useMemo(() => {
     let text: ProgressKeys =
       ownTurn !== '0' ? 'com_ui_web_searching_again' : 'com_ui_web_searching';
     if (showSources) {
@@ -167,6 +180,7 @@ export default function WebSearch({
     }
     return localize(text);
   }, [ownTurn, localize, showSources, finalizing]);
+  const progressText = intent ?? genericProgressText;
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const sourceCount = allSources.length;
@@ -195,7 +209,7 @@ export default function WebSearch({
 
   if (complete) {
     const hasSourceData = sourceCount > 0;
-    const completedText = localize('com_ui_web_searched');
+    const completedText = intent ?? localize('com_ui_web_searched');
 
     return (
       <div className="mb-2">
@@ -224,7 +238,7 @@ export default function WebSearch({
           ) : (
             <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
           )}
-          <span className="font-medium">{completedText}</span>
+          <span className="min-w-0 truncate font-medium">{completedText}</span>
           {hasSourceData && (
             <ChevronDown
               className={cn(
@@ -271,11 +285,11 @@ export default function WebSearch({
   return (
     <div className="my-1 flex items-center gap-2.5">
       <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {progressText}
+        {genericProgressText}
       </span>
       {showSources && <StackedFavicons sources={streamingSources} start={-5} />}
       <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-      <span className="tool-status-text shimmer font-medium text-text-secondary">
+      <span className="tool-status-text shimmer min-w-0 truncate font-medium text-text-secondary">
         {progressText}
       </span>
     </div>

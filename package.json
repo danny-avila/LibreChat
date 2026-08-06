@@ -40,6 +40,13 @@
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend:inspect": "cross-env NODE_ENV=production node --inspect --expose-gc api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
+    "redis:single": "bash scripts/redis-mode.sh single",
+    "redis:cluster": "bash scripts/redis-mode.sh cluster",
+    "redis:stop": "bash scripts/redis-mode.sh stop",
+    "backend:redis:single": "cross-env USE_REDIS=true USE_REDIS_CLUSTER=false REDIS_URI=redis://127.0.0.1:6379 npm run backend",
+    "backend:redis:cluster": "cross-env USE_REDIS=true USE_REDIS_CLUSTER=true REDIS_URI=redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003 npm run backend",
+    "backend:dev:redis:single": "cross-env USE_REDIS=true USE_REDIS_CLUSTER=false REDIS_URI=redis://127.0.0.1:6379 npm run backend:dev",
+    "backend:dev:redis:cluster": "cross-env USE_REDIS=true USE_REDIS_CLUSTER=true REDIS_URI=redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003 npm run backend:dev",
     "backend:experimental": "cross-env NODE_ENV=production node api/server/experimental.js",
     "backend:stop": "node config/stop-backend.js",
     "build:data-provider": "cd packages/data-provider && npm run build",
@@ -59,6 +66,7 @@
     "e2e:a11y": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.a11y.ts --headed",
     "e2e:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.ts",
     "e2e:mock": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
+    "e2e:mock:redis": "npm run e2e:prepare && cross-env E2E_STREAM_STORE=redis playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:benchmark:agents": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.benchmark.ts agent-startup.latency.spec.ts",
     "e2e:mock:enforce": "npm run e2e:prepare && cross-env E2E_MODEL_SPECS_ENFORCE=true playwright test --config=e2e/playwright.config.mock.ts enforced-model-specs.spec.ts",
     "e2e:mock:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
@@ -110,7 +118,10 @@
     "migrate:shared-link-permissions:batch": "node config/migrate-shared-link-permissions.js --batch-size=50",
     "migrate:orphaned-agent-files:dry-run": "node config/migrate-orphaned-agent-files.js --dry-run",
     "migrate:orphaned-agent-files": "node config/migrate-orphaned-agent-files.js",
-    "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50"
+    "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50",
+    "migrate:code-file-duplicates:dry-run": "node config/migrate-code-file-duplicates.js --dry-run",
+    "migrate:code-file-duplicates": "node config/migrate-code-file-duplicates.js",
+    "migrate:code-file-duplicates:batch": "node config/migrate-code-file-duplicates.js --batch-size=50"
   },
   "repository": {
     "type": "git",
@@ -187,7 +198,7 @@
     "monaco-editor": {
       "dompurify": "3.4.12"
     },
-    "svgo": "^2.8.2",
+    "test-exclude": "^8.0.0",
     "js-yaml": "^4.2.0",
     "ws": "^8.21.0",
     "@opentelemetry/core": "^2.9.0",

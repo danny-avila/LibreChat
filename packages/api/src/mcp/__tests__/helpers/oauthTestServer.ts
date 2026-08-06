@@ -536,6 +536,12 @@ export interface InMemoryToken {
 export class InMemoryTokenStore {
   private tokens: Map<string, InMemoryToken> = new Map();
 
+  private getCredentialSetId(token: InMemoryToken): unknown {
+    return token.metadata instanceof Map
+      ? token.metadata.get('credential_set_id')
+      : token.metadata?.credential_set_id;
+  }
+
   private key(filter: { userId?: string; type?: string; identifier?: string }): string {
     return `${filter.userId}:${filter.type}:${filter.identifier}`;
   }
@@ -544,12 +550,20 @@ export class InMemoryTokenStore {
     userId?: string;
     type?: string;
     identifier?: string;
+    token?: string;
+    metadataCredentialSetId?: string | null;
   }): Promise<InMemoryToken | null> => {
     for (const token of this.tokens.values()) {
       const matchUserId = !filter.userId || token.userId === filter.userId;
       const matchType = !filter.type || token.type === filter.type;
       const matchIdentifier = !filter.identifier || token.identifier === filter.identifier;
-      if (matchUserId && matchType && matchIdentifier) {
+      const matchToken = !filter.token || token.token === filter.token;
+      const matchCredentialSet =
+        filter.metadataCredentialSetId === undefined ||
+        (filter.metadataCredentialSetId === null
+          ? this.getCredentialSetId(token) == null
+          : this.getCredentialSetId(token) === filter.metadataCredentialSetId);
+      if (matchUserId && matchType && matchIdentifier && matchToken && matchCredentialSet) {
         return token;
       }
     }
@@ -579,19 +593,26 @@ export class InMemoryTokenStore {
   }) as unknown as TokenMethods['createToken'];
 
   updateToken = (async (
-    filter: { userId?: string; type?: string; identifier?: string },
+    filter: {
+      userId?: string;
+      type?: string;
+      identifier?: string;
+      token?: string;
+      metadataCredentialSetId?: string | null;
+    },
     data: {
       userId?: string;
       type?: string;
       identifier?: string;
       token?: string;
+      expiresAt?: Date;
       expiresIn?: number;
       metadata?: Record<string, unknown>;
     },
-  ): Promise<InMemoryToken> => {
+  ): Promise<InMemoryToken | null> => {
     const existing = (await this.findToken(filter)) as InMemoryToken | null;
     if (!existing) {
-      throw new Error(`Token not found for filter: ${JSON.stringify(filter)}`);
+      return null;
     }
     const existingKey = this.key(existing);
     const expiresIn =
@@ -599,7 +620,9 @@ export class InMemoryTokenStore {
     const updated: InMemoryToken = {
       ...existing,
       token: data.token ?? existing.token,
-      expiresAt: data.expiresIn ? new Date(Date.now() + expiresIn * 1000) : existing.expiresAt,
+      expiresAt:
+        data.expiresAt ??
+        (data.expiresIn ? new Date(Date.now() + expiresIn * 1000) : existing.expiresAt),
       metadata: data.metadata ?? existing.metadata,
     };
     this.tokens.set(existingKey, updated);
@@ -618,13 +641,20 @@ export class InMemoryTokenStore {
     userId?: string;
     type?: string;
     identifier?: string;
+    token?: string;
+    metadataCredentialSetId?: string | null;
   }): Promise<{ acknowledged: boolean; deletedCount: number }> => {
     let deletedCount = 0;
     for (const [key, token] of this.tokens.entries()) {
       const match =
         (!query.userId || token.userId === query.userId) &&
         (!query.type || token.type === query.type) &&
-        (!query.identifier || token.identifier === query.identifier);
+        (!query.identifier || token.identifier === query.identifier) &&
+        (!query.token || token.token === query.token) &&
+        (query.metadataCredentialSetId === undefined ||
+          (query.metadataCredentialSetId === null
+            ? this.getCredentialSetId(token) == null
+            : this.getCredentialSetId(token) === query.metadataCredentialSetId));
       if (match) {
         this.tokens.delete(key);
         deletedCount++;

@@ -23,6 +23,10 @@ export interface AskUserQuestionPart {
   [ASK_USER_QUESTION]: {
     actionId: string;
     question: Agents.AskUserQuestionRequest;
+    /** The ask tool call that raised the pause (present from
+     *  `@librechat/agents` > 3.3.8) — lets the answer stamp target the exact
+     *  tool-call part in multi-ask turns. */
+    tool_call_id?: string;
   };
 }
 
@@ -171,7 +175,11 @@ function applyAskUserQuestion(
   const content = Array.isArray(message.content) ? message.content : [];
   const askPart = {
     type: ASK_USER_QUESTION,
-    [ASK_USER_QUESTION]: { actionId, question: payload.question },
+    [ASK_USER_QUESTION]: {
+      actionId,
+      question: payload.question,
+      ...(payload.tool_call_id != null && { tool_call_id: payload.tool_call_id }),
+    },
   } as unknown as TMessageContentParts;
 
   const existingIdx = content.findIndex(
@@ -325,6 +333,10 @@ export function resolveAskUserQuestionPart(
     return message;
   }
   answeredAskActionIds.add(actionId);
+  /** Exact-attribution target when the payload carried the interrupting call's
+   *  id — several ask cards in one turn each resolve their own part. Absent
+   *  (older server/SDK), the newest-unanswered fallback below applies. */
+  const targetToolCallId = syntheticPart[ASK_USER_QUESTION].tool_call_id;
 
   let patched = false;
   const nextContent: TMessageContentParts[] = [];
@@ -340,10 +352,13 @@ export function resolveAskUserQuestionPart(
   for (let i = nextContent.length - 1; i >= 0; i--) {
     const part = nextContent[i] as { type?: string; tool_call?: Agents.ToolCall } | undefined;
     const toolCall = part?.tool_call;
+    if (part?.type !== ContentTypes.TOOL_CALL || toolCall?.name !== ASK_USER_QUESTION) {
+      continue;
+    }
     if (
-      part?.type !== ContentTypes.TOOL_CALL ||
-      toolCall?.name !== ASK_USER_QUESTION ||
-      (typeof toolCall.output === 'string' && toolCall.output.length > 0)
+      targetToolCallId != null
+        ? toolCall.id !== targetToolCallId
+        : typeof toolCall.output === 'string' && toolCall.output.length > 0
     ) {
       continue;
     }
@@ -430,6 +445,43 @@ export function findLiveAskUserQuestion(
     }
   }
   return null;
+}
+
+/**
+ * EVERY live (unanswered) ask pause across the conversation, as the set of
+ * tool_call_ids their synthetic parts attribute, plus whether any live part
+ * lacks attribution (older payloads). Unlike {@link findLiveAskUserQuestion}
+ * (newest-only, the popover's signal), this lets a per-call surface — the
+ * streaming progress card — test whether ITS OWN pause is live even when a
+ * newer sibling pause exists.
+ */
+export function collectLiveAskToolCallIds(messages: TMessage[] | null | undefined): {
+  ids: string[];
+  hasUnattributed: boolean;
+} {
+  const ids: string[] = [];
+  let hasUnattributed = false;
+  if (!Array.isArray(messages)) {
+    return { ids, hasUnattributed };
+  }
+  for (const message of messages) {
+    const content = message?.content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    for (const part of content) {
+      if (!isAskUserQuestionPart(part) || isAnsweredAskUserQuestionPart(part)) {
+        continue;
+      }
+      const toolCallId = (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION].tool_call_id;
+      if (toolCallId == null) {
+        hasUnattributed = true;
+      } else {
+        ids.push(toolCallId);
+      }
+    }
+  }
+  return { ids, hasUnattributed };
 }
 
 /**

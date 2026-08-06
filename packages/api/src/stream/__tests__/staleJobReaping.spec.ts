@@ -170,7 +170,7 @@ describe('InMemoryJobStore - stale running-job failsafe', () => {
       expect(await store.hasJob('s1')).toBe(false);
 
       // No finalization ever ran — the crashed run's queue must be claimable.
-      const claimed = await store.claimParkedSteers('s1', '"userId":"u1"');
+      const claimed = await store.claimParkedSteers('s1', 'u1', 'tenant-1');
       expect(claimed).toBeDefined();
       const parsed = JSON.parse(claimed as string) as {
         userId: string;

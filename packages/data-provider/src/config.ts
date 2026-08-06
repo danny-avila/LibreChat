@@ -20,6 +20,9 @@ export { MAX_SUBAGENTS } from './limits';
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
 export const BASE_ONLY_CONFIG_SECTIONS = [] as const;
+/** Sections that may be stored in the tenant's base config document but must
+ * not be overridden or tombstoned by role, group, or user config documents. */
+export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
 
 export const defaultRetrievalModels = [
   'gpt-4o',
@@ -579,6 +582,7 @@ export enum AgentCapabilities {
   chain = 'chain',
   ocr = 'ocr',
   run_in_background = 'run_in_background',
+  tool_intents = 'tool_intents',
 }
 
 export const defaultAssistantsVersion = {
@@ -613,6 +617,27 @@ export const baseEndpointSchema = z.object({
    * completes (legacy behavior).
    */
   titleTiming: z.union([z.literal('immediate'), z.literal('final')]).optional(),
+  /**
+   * Agent activity groups: collapse each contiguous block of reasoning and
+   * tool calls under a generated one-line header. Mirrors the title options
+   * above — `activityLabel` enables it (like `titleConvo`), the rest tune
+   * the fast model that writes the label.
+   *
+   * NOTE: fields added here reach `endpoints.all` automatically (that schema
+   * is `baseEndpointSchema.omit({ baseURL })`), but NOT Azure — see the
+   * enumerated `.pick()` in `azureEndpointSchema` below.
+   */
+  activityLabel: z.boolean().optional(),
+  /** Model used to write activity labels. Defaults to `titleModel`, then the agent's model. */
+  activityModel: z.string().optional(),
+  /** Endpoint whose credentials the label model runs on. Defaults to the agent's endpoint. */
+  activityEndpoint: z.string().optional(),
+  /** Overrides the system prompt used to write activity labels. */
+  activityPrompt: z.string().optional(),
+  /** Cost cap: maximum labels generated per run. Default 20. */
+  activityMaxPerRun: z.number().int().positive().optional(),
+  /** Per-entry truncation of tool input/output in the label prompt. Default 600. */
+  activityCharLimit: z.number().int().positive().optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
 });
@@ -666,6 +691,11 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
       ]),
     /* general */
     apiKey: z.string().optional(),
+    /** Masked preview of the API key, stored at write time so admin
+     * reads can show which key is configured without returning the secret.
+     * Shared by both `endpoints.assistants` and `endpoints.azureAssistants`,
+     * which both use this schema. */
+    apiKeyPreview: z.string().optional(),
     models: z
       .object({
         default: z.array(modelItemSchema).min(1),
@@ -886,6 +916,15 @@ export const agentsEndpointSchema = baseEndpointSchema
       recursionLimit: z.number().optional(),
       disableBuilder: z.boolean().optional().default(false),
       maxRecursionLimit: z.number().optional(),
+      /** Max cumulative bytes a single streamed tool call's arguments may reach before the run
+       * aborts. Defaults to 64 KiB in the agents SDK; `0` disables the guard. */
+      maxToolCallArgBytes: z.number().optional(),
+      /** Max streamed chunk events per model generation before the run aborts. Off by default. */
+      maxDeltaEventsPerTurn: z.number().optional(),
+      /** Per-tool overrides of `maxToolCallArgBytes`, keyed by model-facing tool name; `0`
+       * disables the guard for that tool only. Merged over LibreChat's shipped default of
+       * `{ create_file: 131072 }`. */
+      maxToolCallArgBytesByTool: z.record(z.number()).optional(),
       maxCitations: z.number().min(1).max(50).optional().default(30),
       maxCitationsPerFile: z.number().min(1).max(10).optional().default(7),
       minRelevanceScore: z.number().min(0.0).max(1.0).optional().default(0.45),
@@ -962,6 +1001,9 @@ export const endpointSchema = baseEndpointSchema.merge(
       ).join(', ')}`,
     }),
     apiKey: z.string(),
+    /** Masked preview of the API key, stored at write time so admin
+     * reads can show which key is configured without returning the secret. */
+    apiKeyPreview: z.string().optional(),
     baseURL: z.string(),
     models: z.object({
       default: z.array(modelItemSchema).min(1),
@@ -1019,6 +1061,13 @@ export const azureEndpointSchema = z
     assistants: z.boolean().optional(),
   })
   .and(
+    /**
+     * Azure carries only the base-endpoint fields enumerated here. This is a
+     * `.pick()`, NOT an omit, so a field added to `baseEndpointSchema` is
+     * silently unavailable on Azure endpoints until it is listed below —
+     * unlike `endpoints.all`, which omits and therefore inherits new fields
+     * automatically. Keep this list in sync when adding endpoint options.
+     */
     endpointSchema
       .pick({
         streamRate: true,
@@ -1028,6 +1077,12 @@ export const azureEndpointSchema = z
         titlePrompt: true,
         titleTiming: true,
         titlePromptTemplate: true,
+        activityLabel: true,
+        activityModel: true,
+        activityEndpoint: true,
+        activityPrompt: true,
+        activityMaxPerRun: true,
+        activityCharLimit: true,
       })
       .partial(),
   );
@@ -1096,9 +1151,14 @@ export const anthropicEndpointSchema = baseEndpointSchema.merge(
 
 export type TAnthropicEndpoint = z.infer<typeof anthropicEndpointSchema>;
 
+/** Masked preview of the API key, stored at write time so admin
+ * reads can show which key is configured without returning the secret. */
+const apiKeyPreviewSchema = z.string().optional();
+
 const ttsOpenaiSchema = z.object({
   url: z.string().optional(),
   apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
   model: z.string(),
   voices: z.array(z.string()),
 });
@@ -1106,6 +1166,7 @@ const ttsOpenaiSchema = z.object({
 const ttsAzureOpenAISchema = z.object({
   instanceName: z.string(),
   apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
   deploymentName: z.string(),
   apiVersion: z.string(),
   model: z.string(),
@@ -1116,6 +1177,7 @@ const ttsElevenLabsSchema = z.object({
   url: z.string().optional(),
   websocketUrl: z.string().optional(),
   apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
   model: z.string(),
   voices: z.array(z.string()),
   voice_settings: z
@@ -1132,11 +1194,13 @@ const ttsElevenLabsSchema = z.object({
 const ttsLocalaiSchema = z.object({
   url: z.string(),
   apiKey: z.string().optional(),
+  apiKeyPreview: apiKeyPreviewSchema,
   voices: z.array(z.string()),
   backend: z.string(),
 });
 
 const ttsSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenlabs: ttsElevenLabsSchema.optional(),
@@ -1146,17 +1210,20 @@ const ttsSchema = z.object({
 const sttOpenaiSchema = z.object({
   url: z.string().optional(),
   apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
   model: z.string(),
 });
 
 const sttAzureOpenAISchema = z.object({
   instanceName: z.string(),
   apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
   deploymentName: z.string(),
   apiVersion: z.string(),
 });
 
 const sttSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   openai: sttOpenaiSchema.optional(),
   azureOpenAI: sttAzureOpenAISchema.optional(),
 });
@@ -1490,6 +1557,8 @@ export type StartupConfigContext = 'share';
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
+  langfuseFanoutEnabled?: boolean;
+  langfuseConnectionAccess?: boolean;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
@@ -1634,17 +1703,23 @@ export enum SafeSearchTypes {
 
 export const webSearchSchema = z.object({
   serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
+  serperApiKeyPreview: apiKeyPreviewSchema,
   searxngInstanceUrl: z.string().optional().default('${SEARXNG_INSTANCE_URL}'),
   searxngApiKey: z.string().optional().default('${SEARXNG_API_KEY}'),
+  searxngApiKeyPreview: apiKeyPreviewSchema,
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
+  firecrawlApiKeyPreview: apiKeyPreviewSchema,
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
   tavilyApiKey: z.string().optional().default('${TAVILY_API_KEY}'),
+  tavilyApiKeyPreview: apiKeyPreviewSchema,
   tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
+  jinaApiKeyPreview: apiKeyPreviewSchema,
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
+  cohereApiKeyPreview: apiKeyPreviewSchema,
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
@@ -1715,8 +1790,10 @@ export const webSearchSchema = z.object({
 export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 
 export const ocrSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   mistralModel: z.string().optional(),
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
+  apiKeyPreview: apiKeyPreviewSchema,
   baseURL: z.string().optional().default('${OCR_BASEURL}'),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
@@ -1809,23 +1886,36 @@ export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
+/**
+ * Validates a messageFilter PII regex at config load. Defaults to native RegExp so browser
+ * builds add no extra engine; the server injects a check backed by the linear-time runtime
+ * engine (RE2) via setMessageFilterRegexValidator, so a pattern the runtime cannot compile
+ * (backreferences, lookaround, control escapes, and so on) is rejected at load rather than
+ * silently dropped at request time.
+ */
+let messageFilterRegexValidator: (pattern: string) => boolean = (value) => {
+  try {
+    new RegExp(value, 'g');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const setMessageFilterRegexValidator = (validate: (pattern: string) => boolean): void => {
+  messageFilterRegexValidator = validate;
+};
+
 const messageFilterPiiCustomPatternSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   regex: z
     .string()
     .min(1)
-    .refine(
-      (value) => {
-        try {
-          new RegExp(value, 'g');
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      { message: 'Invalid regex' },
-    ),
+    .refine((value) => messageFilterRegexValidator(value), {
+      message:
+        'Unsupported regex: not compatible with the RE2 engine (no backreferences, lookaround, or control escapes)',
+    }),
 });
 
 export const messageFilterPiiSchema = z.object({
@@ -1845,16 +1935,13 @@ export const langfuseConfigSchema = z.object({
   enabled: z.boolean().optional(),
   publicKey: z.string().optional(),
   secretKey: z.string().optional(),
-  /** Non-secret display value of the secret key, stored at write time so
+  /** Stable Langfuse project identity returned when credentials are verified. */
+  projectId: z.string().optional(),
+  /** Masked preview of the secret key, stored at write time so
    * admin reads can show which secret key is configured without returning the secret. */
-  displaySecretKey: z.string().optional(),
+  secretKeyPreview: z.string().optional(),
   /** Routing key for one of the deployment-configured tenant Langfuse destinations. */
   destination: z.string().optional(),
-  fanout: z
-    .object({
-      enabled: z.boolean().optional(),
-    })
-    .optional(),
 });
 
 export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
@@ -1912,6 +1999,13 @@ export const configSchema = z.object({
   endpoints: z
     .object({
       allowedAddresses: allowedAddressesSchema,
+      /**
+       * Defaults applied to every endpoint. Omit-based, so options added to
+       * `baseEndpointSchema` are inherited here automatically — no list to
+       * maintain (contrast `azureEndpointSchema`, which enumerates via
+       * `.pick()`). Resolution order at read sites is `all` > the named
+       * endpoint > a custom endpoint's own config.
+       */
       all: baseEndpointSchema.omit({ baseURL: true }).optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),
@@ -2627,6 +2721,10 @@ export enum SettingsTabValues {
    */
   SPEECH = 'speech',
   /**
+   * Tab for Langfuse Settings
+   */
+  LANGFUSE = 'langfuse',
+  /**
    * Tab for Beta Features
    */
   BETA = 'beta',
@@ -2799,6 +2897,71 @@ export function normalizeServerName(serverName: string): string {
  * is the deterministic tiebreak; resolving it properly needs the tool/server
  * mapping carried alongside the key rather than re-derived from the string.
  */
+/**
+ * Maps each configured server name's normalized form back to the raw config
+ * name. Model-facing tool keys embed `normalizeServerName(server)`, while the
+ * registry, config maps, tool cache, and plugin-auth rows are keyed by the raw
+ * name — any consumer that parses a server out of a tool key must resolve it
+ * through this map before those lookups. Identity entries are included so
+ * `aliases.get(name) ?? name` works uniformly.
+ *
+ * When two configured names normalize to the same value their tool keys are
+ * inherently ambiguous; the FIRST configured name wins deterministically here,
+ * and `resolveMCPServerContext` warns about the collision so the operator can
+ * rename one server.
+ */
+export function buildServerNameAliases(rawServerNames: readonly string[]): Map<string, string> {
+  const aliases = new Map<string, string>();
+  /** Identity entries claim their slot FIRST regardless of configuration
+   *  order: a server literally named `foo` must never have its keys rerouted
+   *  to a `foo!` whose normalized form collides with it. */
+  for (const raw of rawServerNames) {
+    if (raw && normalizeServerName(raw) === raw) {
+      aliases.set(raw, raw);
+    }
+  }
+  for (const raw of rawServerNames) {
+    if (!raw) {
+      continue;
+    }
+    const normalized = normalizeServerName(raw);
+    if (!aliases.has(normalized)) {
+      aliases.set(normalized, raw);
+    }
+  }
+  return aliases;
+}
+
+/**
+ * Rewrites a tool key's server segment into the normalized form model-facing
+ * keys carry, resolving the boundary against the configured raw names (longest
+ * suffix wins, mirroring {@link splitMCPToolKey}). Returns the key unchanged
+ * when no configured raw name matches — already-normalized keys, placeholder
+ * tokens, and keys for servers that are no longer configured all pass through.
+ * Idempotent: a normalized segment never matches a raw candidate that needs
+ * rewriting.
+ */
+export function normalizeMCPToolKey(toolKey: string, rawServerNames: readonly string[]): string {
+  let matched: string | undefined;
+  for (let i = 0; i < rawServerNames.length; i++) {
+    const raw = rawServerNames[i];
+    if (!raw || raw.length <= (matched?.length ?? 0)) {
+      continue;
+    }
+    if (toolKey.endsWith(`${Constants.mcp_delimiter}${raw}`)) {
+      matched = raw;
+    }
+  }
+  if (matched == null) {
+    return toolKey;
+  }
+  const normalized = normalizeServerName(matched);
+  if (normalized === matched) {
+    return toolKey;
+  }
+  return `${toolKey.slice(0, toolKey.length - matched.length)}${normalized}`;
+}
+
 export function splitMCPToolKey(
   toolKey: string,
   knownServerNames?: readonly string[],

@@ -1,24 +1,34 @@
 import { useCallback } from 'react';
+import { v4 } from 'uuid';
 import { useRecoilCallback } from 'recoil';
 import type { TPendingSteer } from 'librechat-data-provider';
-import type { QueuedMessage } from '~/store/families';
+import type { QueuedMessage, QueuedMessageOrigin } from '~/store/families';
+import type { GenerationProtocolVersion } from '~/data-provider';
 import type { SteerCarriedContext } from '~/utils';
-import { appendAppliedSteerIds, carriedSteerContext } from '~/utils';
-import { fetchStreamStatus } from '~/data-provider';
+import { appendAppliedSteerIds, carriedSteerContext, insertQueuedOrigin } from '~/utils';
+import { fetchStreamStatus, getGenerationProtocolVersion } from '~/data-provider';
 import store from '~/store';
 
 /** A server-reported steer, or a local one that carries its own client-only
  *  context (quotes / skill picks) because its chip may already be gone. */
-type ConvertibleSteer = TPendingSteer & SteerCarriedContext;
+type ConvertibleSteer = TPendingSteer &
+  SteerCarriedContext & { queuedOrigin?: QueuedMessageOrigin };
 
 interface SteerConvertOptions {
   /** Live-delivered terminal steers also have a parked server copy (the
    *  terminal drain parks before knowing the final reached a subscriber);
-   *  set on final/abort/error surfaces to claim-and-clear it. */
+   *  set on final/abort/error surfaces to reconcile that durable copy. */
   claimParked?: boolean;
   /** Server-side id the parked copy is keyed under when it differs from the
    *  chip landing key (a `new`-held abort claims under the resolved job id). */
   claimConversationId?: string;
+  /** Protocol selected for the source generation. V2 may bind the queued
+   * follow-up to a durable receipt; v1 must remain an ordinary local item. */
+  generationProtocolVersion?: GenerationProtocolVersion;
+  /** Exact recovery sources that a post-terminal status read proved were not
+   *  consumed by THIS recovery generation. Never set for an arbitrary or
+   *  pre-start status response: those can be stale after a successful start. */
+  allowPreviouslyConvertedIds?: readonly string[];
 }
 
 /**
@@ -31,26 +41,43 @@ interface SteerConvertOptions {
  * insertion both dedupe by steer id.
  *
  * `claimParked` fires ONE fire-and-forget /chat/status fetch per conversion
- * batch: its claim-on-read consumes the parked copy of steers just delivered
- * live, so a later reload cannot resurrect chips the user already dismissed.
- * Claimed steers re-run the same id-deduped conversion (no double-add).
- * Residual race: the claim no-ops if the job hasn't gone terminal by fetch
- * time — acceptable; the parked-copy TTL still bounds it.
+ * batch. The replayable response reconciles the durable parked copy through
+ * the same id-deduped conversion, so a lost final/status response cannot erase
+ * the only recovery source. Exact recovery or explicit dismissal commits the
+ * server-side removal.
  */
 export default function useSteerConvert() {
   const convert = useRecoilCallback(
     ({ snapshot, set }) =>
-      (conversationId: string, steers: ConvertibleSteer[]) => {
+      (
+        conversationId: string,
+        steers: ConvertibleSteer[],
+        generationProtocolVersion?: GenerationProtocolVersion,
+        allowPreviouslyConvertedIds: readonly string[] = [],
+      ) => {
         if (steers.length === 0) {
           return;
         }
+        const negotiatedVersion =
+          generationProtocolVersion ??
+          snapshot
+            .getLoadable(store.activeGenerationProtocolVersionByConvoId(conversationId))
+            .getValue();
+        const bindRecoverySource = negotiatedVersion === 2;
         // Quotes/skill picks never ride the server steer; restore them from
         // the local chip (matched by id) before the chips are dropped below.
         const localChips = snapshot
           .getLoadable(store.pendingSteersByConvoId(conversationId))
           .getValue();
         const chipById = new Map(localChips.map((chip) => [chip.steerId, chip]));
-        const steerIds = new Set(steers.map((steer) => steer.steerId));
+        const localChipFor = (steer: ConvertibleSteer) =>
+          chipById.get(steer.steerId) ??
+          (steer.clientSteerId ? chipById.get(steer.clientSteerId) : undefined);
+        const steerIds = new Set(
+          steers.flatMap((steer) =>
+            steer.clientSteerId ? [steer.steerId, steer.clientSteerId] : [steer.steerId],
+          ),
+        );
         // Steers already settled (applied on the server OR converted here on an
         // earlier delivery) must not re-enter the queue. Read BEFORE the append
         // below so a first-time conversion still queues, but a redelivery whose
@@ -60,44 +87,94 @@ export default function useSteerConvert() {
         const settledSteerIds = new Set(
           snapshot.getLoadable(store.appliedSteerIdsByConvoId(conversationId)).getValue(),
         );
+        const allowedRedeliveries = new Set(allowPreviouslyConvertedIds);
         set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
-          appendAppliedSteerIds(
-            prev,
-            steers.map((steer) => steer.steerId),
-          ),
+          appendAppliedSteerIds(prev, [...steerIds]),
         );
         set(store.pendingSteersByConvoId(conversationId), (prev) =>
           prev.filter((steer) => !steerIds.has(steer.steerId)),
         );
         set(store.queuedMessagesByConvoId(conversationId), (prev) => {
+          /** A legacy status read is destructive: if a v2 live-final path
+           * already created a receipt-bound item before the claim reached an
+           * old replica, that source no longer exists. Downgrade the existing
+           * item in place to an ordinary local follow-up. */
+          const existing = bindRecoverySource
+            ? prev
+            : prev.map((item) => {
+                const matchesClaimedSource =
+                  (item.recoverySteerId != null && steerIds.has(item.recoverySteerId)) ||
+                  (item.recoveryClientSteerId != null && steerIds.has(item.recoveryClientSteerId));
+                if (!matchesClaimedSource) {
+                  return item;
+                }
+                const {
+                  clientRequestId: _clientRequestId,
+                  recoverySteerId: _recoverySteerId,
+                  recoveryClientSteerId: _recoveryClientSteerId,
+                  ...ordinary
+                } = item;
+                return ordinary;
+              });
           const fresh = steers
             .filter(
               (steer) =>
-                !settledSteerIds.has(steer.steerId) &&
-                !prev.some((queued) => queued.id === steer.steerId),
+                allowedRedeliveries.has(steer.steerId) ||
+                (!settledSteerIds.has(steer.steerId) &&
+                  (steer.clientSteerId == null || !settledSteerIds.has(steer.clientSteerId))),
             )
-            .map((steer) => ({
-              id: steer.steerId,
-              text: steer.text,
-              createdAt: steer.createdAt ?? Date.now(),
-              ...(steer.files && steer.files.length > 0 && { files: steer.files }),
-              // The chip is the usual source, but a reclaimed steer may have
-              // lost its chip to a competing cancel mid-round-trip — it carries
-              // the context itself so the picks survive either way.
-              ...carriedSteerContext(chipById.get(steer.steerId) ?? steer),
-            }));
+            .map((steer) => {
+              const local = localChipFor(steer);
+              const source = local ?? steer;
+              const queuedOrigin = source.queuedOrigin;
+              const recoveryFields = bindRecoverySource
+                ? {
+                    // One UUID is stable for this queued attempt and all of
+                    // its POST retries. A later failed generation re-converts
+                    // the durable source and receives a new key, so the old
+                    // started idempotency tombstone cannot make it unsendable.
+                    clientRequestId: v4(),
+                    recoverySteerId: steer.steerId,
+                    ...(steer.clientSteerId && { recoveryClientSteerId: steer.clientSteerId }),
+                  }
+                : {};
+              const item =
+                queuedOrigin != null
+                  ? { ...queuedOrigin.item, ...recoveryFields }
+                  : ({
+                      id: steer.steerId,
+                      text: steer.text,
+                      createdAt: steer.createdAt ?? Date.now(),
+                      ...recoveryFields,
+                      ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+                      // The chip is the usual source, but a reclaimed steer may
+                      // have lost its chip to a competing cancel mid-round-trip.
+                      ...carriedSteerContext(source),
+                    } satisfies QueuedMessage);
+              return {
+                item,
+                queuedOrigin: queuedOrigin != null ? { ...queuedOrigin, item } : undefined,
+              };
+            })
+            .filter(({ item }) => !existing.some((queued) => queued.id === item.id));
           if (fresh.length === 0) {
-            return prev;
+            return existing;
           }
-          // Merge chronologically — a steer accepted BEFORE the user queued a
-          // later follow-up must drain first — EXCEPT explicit front-inserts
-          // ("Interrupt & send"), whose urgency outranks age.
-          const merged: QueuedMessage[] = [...prev, ...fresh];
-          return merged.sort(
+          /** Ordinary steer leftovers merge chronologically. A steer that
+           *  originated in this queue restores its exact object/identity and
+           *  captured position instead of being re-minted under the server id. */
+          const ordinary = fresh.filter(({ queuedOrigin }) => queuedOrigin == null);
+          let merged: QueuedMessage[] = [...existing, ...ordinary.map(({ item }) => item)].sort(
             (a, b) =>
               Number(b.priority ?? false) - Number(a.priority ?? false) ||
               a.createdAt - b.createdAt,
           );
+          for (const { queuedOrigin } of fresh) {
+            if (queuedOrigin != null) {
+              merged = insertQueuedOrigin(merged, queuedOrigin);
+            }
+          }
+          return merged;
         });
       },
     [],
@@ -105,7 +182,12 @@ export default function useSteerConvert() {
 
   return useCallback(
     (conversationId: string, steers: ConvertibleSteer[], options?: SteerConvertOptions) => {
-      convert(conversationId, steers);
+      convert(
+        conversationId,
+        steers,
+        options?.generationProtocolVersion,
+        options?.allowPreviouslyConvertedIds,
+      );
       if (options?.claimParked !== true || steers.length === 0) {
         return;
       }
@@ -113,7 +195,7 @@ export default function useSteerConvert() {
         .then((status) => {
           const unrecovered = status.unrecoveredSteers ?? [];
           if (unrecovered.length > 0) {
-            convert(conversationId, unrecovered);
+            convert(conversationId, unrecovered, getGenerationProtocolVersion(status));
           }
         })
         .catch(() => undefined);

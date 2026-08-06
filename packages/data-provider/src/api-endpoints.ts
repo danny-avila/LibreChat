@@ -230,6 +230,9 @@ export const cancelMCPOAuth = (serverName: string) => {
   return `${BASE_URL}/api/mcp/oauth/cancel/${serverName}`;
 };
 
+export const mcpOAuthStatus = (flowId: string) =>
+  `${BASE_URL}/api/mcp/oauth/status/${encodeURIComponent(flowId)}`;
+
 export const mcpOAuthBind = (serverName: string) => `${BASE_URL}/api/mcp/${serverName}/oauth/bind`;
 
 export const actionOAuthBind = (actionId: string) =>
@@ -440,6 +443,10 @@ export const skillTree = ({ skillId, path = '' }: { skillId: string; path?: stri
 
 /* Skill active states (per-user overrides) */
 export const skillStates = () => `${BASE_URL}/api/user/settings/skills/active`;
+
+/* Langfuse connection (admin) */
+export const adminLangfuseConnection = () => `${BASE_URL}/api/admin/langfuse/connection`;
+export const adminLangfuseConnectionTest = () => `${adminLangfuseConnection()}/test`;
 
 /* Tool favorites (starred marketplace items) */
 export const toolFavorites = () => `${BASE_URL}/api/user/settings/favorites/tools`;

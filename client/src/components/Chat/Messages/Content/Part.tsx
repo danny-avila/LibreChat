@@ -23,13 +23,13 @@ import {
   SubagentCall,
   SteerPart,
 } from './Parts';
+import { getCachedPreview, getActivityLabelPart, getActivityLabelText } from '~/utils';
 import { getAskUserQuestionPart } from '~/utils/approval';
 import AskUserQuestionCall from './AskUserQuestionCall';
 import { isBashProgrammaticToolCall } from './routing';
 import { ErrorMessage } from './MessageContent';
 import AskUserQuestion from './AskUserQuestion';
 import RetrievalCall from './RetrievalCall';
-import { getCachedPreview } from '~/utils';
 import ToolApproval from './ToolApproval';
 import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
@@ -153,6 +153,22 @@ const Part = memo(function Part({
         summarizing={part.summarizing}
       />
     );
+  } else if (part.type === ContentTypes.ACTIVITY_LABEL) {
+    /** Orphan label (its block's parts were filtered/hidden): renders as a
+     *  standalone line. Labeled blocks normally render via ToolCallGroup,
+     *  which consumes the label part as the group header instead. */
+    const display = getActivityLabelText(getActivityLabelPart(part));
+    if (!display) {
+      return null;
+    }
+    const failed = part.status === 'failed' || part.status === 'partial';
+    return (
+      <div
+        className={`my-1 break-words pl-1 text-sm italic ${failed ? 'text-amber-600 dark:text-amber-400' : 'text-text-secondary'}`}
+      >
+        {display}
+      </div>
+    );
   } else if (part.type === ContentTypes.TOOL_CALL) {
     const toolCall = part[ContentTypes.TOOL_CALL];
 
@@ -207,7 +223,7 @@ const Part = memo(function Part({
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
               toolName={toolCall.name}
-              args={typeof toolCall.args === 'string' ? toolCall.args : ''}
+              args={toolCall.args ?? ''}
               output={toolCall.output ?? ''}
               attachments={attachments}
               hideAttachments={hideAttachments}
@@ -222,6 +238,7 @@ const Part = memo(function Part({
               output={typeof toolCall.output === 'string' ? toolCall.output : ''}
               toolCallId={toolCall.id}
               isSubmitting={isSubmitting}
+              showCursor={showCursor}
               failed={'inputValidationError' in toolCall && toolCall.inputValidationError === true}
             />
           );
@@ -302,6 +319,7 @@ const Part = memo(function Part({
         } else if (toolCall.name === Tools.web_search) {
           return (
             <WebSearch
+              args={toolCall.args}
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
@@ -315,6 +333,7 @@ const Part = memo(function Part({
             <RetrievalCall
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
+              args={toolCall.args}
               output={toolCall.output ?? undefined}
               attachments={attachments}
               onExpand={onToolExpand}

@@ -275,7 +275,7 @@ async function mockActiveOAuthResumeStream({
     );
   }
 
-  await page.route(`**/api/agents/chat/status/${conversationId}`, (route) =>
+  await page.route(`**/api/agents/chat/status/${conversationId}**`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
