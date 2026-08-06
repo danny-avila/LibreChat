@@ -22,11 +22,11 @@ import {
   useCanSharePublic,
   useLocalize,
 } from '~/hooks';
+import { computeShareChanges, dedupeNewShares } from './shareChanges';
 import UnifiedPeopleSearch from './PeoplePicker/UnifiedPeopleSearch';
 import PeoplePickerAdminSettings from './PeoplePickerAdminSettings';
 import PublicSharingToggle from './PublicSharingToggle';
 import { SelectedPrincipalsList } from './PeoplePicker';
-import { computeShareChanges, dedupeNewShares } from './shareChanges';
 import { cn } from '~/utils';
 
 export default function GenericGrantAccessDialog({
