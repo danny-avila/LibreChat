@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
 import { filterFilesByEndpointConfig } from './filter';
@@ -940,6 +940,71 @@ describe('filterFilesByEndpointConfig', () => {
 
       const result = filterFilesByEndpointConfig(req, {
         files,
+        endpoint: Providers.OPENAI,
+      });
+
+      expect(result).toEqual([]);
+    });
+
+    it('should keep parsed-document records that carry their own extracted text', () => {
+      const req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              [Providers.OPENAI]: {
+                disabled: false,
+                supportedMimeTypes: ['^image/png$'],
+              },
+            },
+          },
+        },
+      } as unknown as ServerRequest;
+
+      const parsedPdf = {
+        ...createMockFile('parsed.pdf'),
+        type: 'application/pdf',
+        source: FileSources.text,
+        filepath: 'document_parser',
+        text: 'extracted contents',
+      } as IMongoFile;
+
+      const binaryPdf = {
+        ...createMockFile('binary.pdf'),
+        type: 'application/pdf',
+      } as IMongoFile;
+
+      const result = filterFilesByEndpointConfig(req, {
+        files: [parsedPdf, binaryPdf],
+        endpoint: Providers.OPENAI,
+      });
+
+      expect(result).toEqual([parsedPdf]);
+    });
+
+    it('should still apply size limits to parsed-document records', () => {
+      const req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              [Providers.OPENAI]: {
+                disabled: false,
+                fileSizeLimit: 1,
+                supportedMimeTypes: ['^image/png$'],
+              },
+            },
+          },
+        },
+      } as unknown as ServerRequest;
+
+      const parsedPdf = {
+        ...createMockFile('parsed.pdf'),
+        type: 'application/pdf',
+        source: FileSources.text,
+        bytes: 1024 * 1024 * 5 /** 5 MB */,
+      } as IMongoFile;
+
+      const result = filterFilesByEndpointConfig(req, {
+        files: [parsedPdf],
         endpoint: Providers.OPENAI,
       });
 

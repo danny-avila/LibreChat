@@ -73,12 +73,28 @@ export interface MistralOCRError {
   };
 }
 
-export interface MistralOCRUploadResult {
+/** Fields every text-extraction upload result carries, whichever engine produced it. */
+export interface ExtractedTextUploadResult {
   filename: string;
   bytes: number;
   filepath: string;
   text: string;
   images: string[];
+}
+
+/**
+ * Built-in document parser output. It is the only producer that can tell which pages
+ * held no extractable text, so `pagesNeedingOcr` belongs to this shape alone; the
+ * Mistral OCR endpoints return `ExtractedTextUploadResult`.
+ */
+export interface ParsedDocumentUploadResult extends ExtractedTextUploadResult {
   /** 1-indexed pages whose text could not be extracted and would need an OCR service. */
   pagesNeedingOcr?: number[];
 }
+
+/**
+ * Widest upload-result shape, kept for the existing consumers. New code should pick
+ * the precise one: `ExtractedTextUploadResult` for the Mistral OCR endpoints, which
+ * never report omitted pages, and `ParsedDocumentUploadResult` for `parseDocument`.
+ */
+export type MistralOCRUploadResult = ParsedDocumentUploadResult;
