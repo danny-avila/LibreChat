@@ -84,6 +84,31 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).toContain('xlink:href="#p"');
   });
 
+  it('preserves textPath labels with fragment-only path references', () => {
+    const raw =
+      '<svg viewBox="0 0 24 24"><defs><path id="curve" d="M0 10C5 0 15 0 20 10"/></defs><text><textPath href="#curve" startOffset="10%">Hi</textPath></text></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean).toContain('<textPath href="#curve"');
+    expect(clean).toContain('startOffset="10%"');
+
+    const external =
+      '<svg><text><textPath href="https://evil.example/x.svg#curve">Hi</textPath></text></svg>';
+    const cleanExternal = decode(
+      sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(external)}`),
+    );
+    expect(cleanExternal).toContain('<textPath');
+    expect(cleanExternal).not.toContain('href');
+  });
+
+  it('preserves color scopes that feed currentColor paint', () => {
+    const raw =
+      '<svg color="#e00"><path fill="currentColor" d="M0 0h1v1z"/><g color="#00f"><path stroke="currentColor" d="M2 2h1v1z"/></g></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean).toContain('color="#e00"');
+    expect(clean).toContain('fill="currentColor"');
+    expect(clean).toContain('color="#00f"');
+  });
+
   it('preserves marker definitions and fragment-only marker references', () => {
     const raw =
       '<svg viewBox="0 0 24 24"><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto"><path d="M0 0L10 5L0 10z"/></marker></defs><line x1="2" y1="2" x2="20" y2="20" stroke="#000" marker-end="url(#arrow)"/></svg>';
