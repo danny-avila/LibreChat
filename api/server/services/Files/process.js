@@ -17,6 +17,7 @@ const {
   removeNullishValues,
   isAssistantsEndpoint,
   getEndpointFileConfig,
+  documentParserSources,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -921,7 +922,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         text: annotated,
         bytes: annotated === text ? bytes : Buffer.byteLength(annotated, 'utf8'),
         filepath,
-        type: filepath === FileSources.document_parser ? file.mimetype : undefined,
+        type: documentParserSources.has(filepath) ? file.mimetype : undefined,
       });
     };
 
@@ -934,7 +935,11 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         filters: appConfig?.filters,
         extract: resolveDocumentText,
       });
-      if (ocrResult) {
+      /* Checked before annotation: a fully image-based document can come back with no
+       * text but a full `pagesNeedingOcr` list, and annotating that first would store a
+       * file whose entire content is the omission notice. Providers report emptiness
+       * rather than throwing, so this rule stays with the caller and applies to all. */
+      if (ocrResult?.text?.trim()) {
         return await createDocumentTextFile(ocrResult);
       }
       throw new Error(

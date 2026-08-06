@@ -14,8 +14,10 @@ import {
   getEndpointFileConfig,
   isParsedDocument,
   applicationMimeTypes,
+  defaultSTTMimeTypes,
   defaultOCRMimeTypes,
   supportedMimeTypes,
+  fileConfigSchema,
   mergeFileConfig,
   inferMimeType,
   textMimeTypes,
@@ -248,6 +250,74 @@ describe('documentParserMimeTypes', () => {
     'image/png',
   ])('does not match OCR-only or unsupported type: %s', (mimeType) => {
     expect(check(mimeType)).toBe(false);
+  });
+});
+
+describe('documentParser file config', () => {
+  const docx = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const matches = (types: RegExp[] | undefined, mimeType: string): boolean =>
+    (types ?? []).some((regex) => regex.test(mimeType));
+
+  it('defaults to the built-in parser MIME types when unconfigured', () => {
+    const merged = mergeFileConfig(undefined);
+
+    expect(merged.documentParser?.supportedMimeTypes).toEqual(documentParserMimeTypes);
+  });
+
+  it('keeps the default when other sub-configs are set', () => {
+    const merged = mergeFileConfig({ ocr: { supportedMimeTypes: ['^image\\/png$'] } });
+
+    expect(merged.documentParser?.supportedMimeTypes).toEqual(documentParserMimeTypes);
+  });
+
+  it('lets an admin allowlist take precedence over the provider default', () => {
+    const merged = mergeFileConfig({
+      documentParser: { supportedMimeTypes: ['^application\\/pdf$'] },
+    });
+
+    expect(matches(merged.documentParser?.supportedMimeTypes, 'application/pdf')).toBe(true);
+    expect(matches(merged.documentParser?.supportedMimeTypes, docx)).toBe(false);
+    /** The default still matches docx, so the override is what changed the answer */
+    expect(matches(documentParserMimeTypes, docx)).toBe(true);
+  });
+
+  it('survives schema parsing, so a configured value reaches mergeFileConfig', () => {
+    const parsed = fileConfigSchema.parse({
+      documentParser: { supportedMimeTypes: ['^application\\/pdf$'] },
+    });
+
+    expect(parsed.documentParser?.supportedMimeTypes).toEqual(['^application\\/pdf$']);
+    expect(matches(mergeFileConfig(parsed).documentParser?.supportedMimeTypes, docx)).toBe(false);
+  });
+
+  it('skips invalid patterns instead of throwing', () => {
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const merged = mergeFileConfig({
+      documentParser: { supportedMimeTypes: ['^application\\/pdf$', '([unclosed'] },
+    });
+
+    expect(merged.documentParser?.supportedMimeTypes).toHaveLength(1);
+    expect(logged).toHaveBeenCalledTimes(1);
+    logged.mockRestore();
+  });
+});
+
+describe('stt file config', () => {
+  it('defaults to the built-in STT MIME types when unconfigured', () => {
+    const merged = mergeFileConfig(undefined);
+
+    expect(merged.stt?.supportedMimeTypes).toEqual(defaultSTTMimeTypes);
+  });
+
+  it('lets an admin allowlist take precedence over the default', () => {
+    const parsed = fileConfigSchema.parse({ stt: { supportedMimeTypes: ['^audio\\/wav$'] } });
+    const merged = mergeFileConfig(parsed);
+    const matches = (mimeType: string): boolean =>
+      (merged.stt?.supportedMimeTypes ?? []).some((regex) => regex.test(mimeType));
+
+    expect(matches('audio/wav')).toBe(true);
+    expect(matches('audio/mp3')).toBe(false);
   });
 });
 

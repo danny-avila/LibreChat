@@ -2,17 +2,11 @@ import * as fs from 'fs';
 import yauzl from 'yauzl';
 import { logger } from '@librechat/data-schemas';
 import { megabyte, excelMimeTypes, FileSources } from 'librechat-data-provider';
-import type {
-  TextItem,
-  PDFDocumentProxy,
-  TextMarkedContent,
-  PDFDocumentLoadingTask,
-} from 'pdfjs-dist/types/src/display/api';
 import type { ParsedDocumentUploadResult } from '~/types';
-import { extractPagesMarkdownIsolated, extractTextIsolated } from './pdfNative';
 import { assertSafeZipSize, assertSafeZipSizeIfArchive } from './zipSafety';
+import { extractPdf } from '~/files/pdfInspector';
+import { extractDocumentText } from './pdfjs';
 import { extractPptxSlides } from './html';
-import { isEnabled } from '~/utils/common';
 
 type ParsedDocument = Pick<ParsedDocumentUploadResult, 'text' | 'pagesNeedingOcr'>;
 
@@ -20,13 +14,9 @@ type FileParseFn = (file: Express.Multer.File) => Promise<ParsedDocument>;
 
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
 const ODT_MAX_DECOMPRESSED_SIZE = 50 * megabyte;
-/** Above this share of dropped pages, whole-document plain text replaces interleaving. */
-const DROPPED_PAGE_MAJORITY = 0.5;
 /** Cap on pages named in the omission notice, so a mostly-scanned document cannot
  * turn the notice itself into hundreds of KB of text persisted on every turn. */
 const MAX_LISTED_MISSING_PAGES = 20;
-/** Cap on pages the pdfjs recovery walk will read; see `pdfToTextInspector`. */
-const MAX_RECOVERED_PAGES = 250;
 
 /**
  * Appends a visible notice naming the pages that hold no extractable text.
@@ -90,64 +80,8 @@ export async function parseDocument({
   };
 }
 
-/**
- * Maps a MIME type to its document parser function, or `undefined` if unsupported.
- *
- * With `DOCUMENT_PARSER_ANYDOC` enabled, the office formats are routed through
- * anydoc and fall back to the built-in parser if it throws. PDF is deliberately
- * excluded: it already goes through pdf-inspector directly, which is the same
- * engine anydoc would use for it, and the direct path also surfaces
- * `pagesNeedingOcr`. Every other handled type is an office format, so excluding
- * PDF is the whole of the routing decision.
- */
+/** Maps a MIME type to its built-in parser function, or `undefined` if unsupported. */
 function getParserForMimeType(mimetype: string): FileParseFn | undefined {
-  const builtIn = getBuiltInParser(mimetype);
-  if (!builtIn || !isEnabled(process.env.DOCUMENT_PARSER_ANYDOC)) {
-    return builtIn;
-  }
-  if (mimetype === 'application/pdf') {
-    return builtIn;
-  }
-  return (file) => officeToText(file, builtIn);
-}
-
-/**
- * Converts an office document to Markdown with anydoc, recovering headings, tables
- * and emphasis that the built-in extractors drop.
- *
- * anydoc applies no decompression limit of its own: a 158KB DOCX whose document.xml
- * inflates to 78MB is parsed in full, ~400MB RSS. The zip guard therefore has to run
- * on the raw buffer before anydoc sees it, exactly as it does for mammoth.
- *
- * The guard sits outside the try on purpose: a refused archive must propagate, not
- * be caught and mislogged as "anydoc failed" and then handed to the built-in parser,
- * which would defeat the guard for every format the built-in parser also inflates.
- */
-async function officeToText(
-  file: Express.Multer.File,
-  builtIn: FileParseFn,
-): Promise<ParsedDocument> {
-  const buffer = await fs.promises.readFile(file.path);
-  await assertSafeZipSizeIfArchive(buffer, { name: file.originalname ?? 'document' });
-
-  try {
-    const { toMarkdownBytes, formatFromPath } = await import('@firecrawl/anydoc');
-    const format = formatFromPath(file.originalname ?? file.path);
-    const text = await toMarkdownBytes(new Uint8Array(buffer), format);
-    if (text?.trim()) {
-      return { text };
-    }
-    logger.warn(`[parseDocument] anydoc returned no text for "${file.originalname}"`);
-  } catch (error) {
-    logger.warn(
-      `[parseDocument] anydoc failed for "${file.originalname}", falling back to the built-in parser:`,
-      error,
-    );
-  }
-  return builtIn(file);
-}
-
-function getBuiltInParser(mimetype: string): FileParseFn | undefined {
   if (mimetype === 'application/pdf') {
     return pdfToText;
   }
@@ -202,7 +136,7 @@ async function pdfToText(file: Express.Multer.File): Promise<ParsedDocument> {
   const data = await fs.promises.readFile(file.path);
 
   try {
-    return await pdfToTextInspector(file.path, data);
+    return await extractPdf(file.path, data);
   } catch (error) {
     logger.warn(
       `[parseDocument] pdf-inspector failed for "${file.originalname}", falling back to pdfjs:`,
@@ -210,163 +144,7 @@ async function pdfToText(file: Express.Multer.File): Promise<ParsedDocument> {
     );
   }
 
-  return { text: await pdfToTextLegacy(data) };
-}
-
-/**
- * Extracts a PDF per page: pdf-inspector's markdown where it produced any, the raw
- * text layer via pdfjs where it did not.
- *
- * pdf-inspector applies quality heuristics (garbled text, GID-encoded fonts) that
- * reject low-quality embedded OCR layers outright. On a 157-page scanned press kit
- * with a poor OCR layer it kept 5 pages and silently dropped 152 while reporting
- * only 13 as needing OCR, so neither its markdown nor its page accounting can be
- * trusted on its own. A degraded text layer still beats losing the page, so dropped
- * pages fall back to pdfjs, which reads the layer verbatim.
- *
- * Pages are reported as needing OCR only when both engines find nothing, an
- * empirical test that replaces trusting the reason codes.
- *
- * The pdf-inspector calls run on a worker thread (see `./pdfNative`); pdfjs reads
- * the already-loaded buffer inline, since it yields on its own.
- *
- * @throws {Error} when pdf-inspector reports no pages at all, so the caller falls
- * back to pdfjs instead of returning the empty string a page-less join produces.
- */
-async function pdfToTextInspector(filePath: string, data: Buffer): Promise<ParsedDocument> {
-  const pages = [...(await extractPagesMarkdownIsolated(filePath))].sort((a, b) => a.page - b.page);
-  if (!pages.length) {
-    throw new Error('pdf-inspector returned no pages');
-  }
-
-  const droppedPages = pages.filter((page) => !page.markdown?.trim());
-  if (!droppedPages.length) {
-    return { text: pages.map((page) => page.markdown).join('\n\n') };
-  }
-
-  /* Recovery reads one page at a time and cannot be batched, so its cost is linear
-   * in dropped pages (~20ms each) while a page object costs an attacker ~110 bytes.
-   * A 10MB PDF of empty pages therefore buys hours of CPU on the request path unless
-   * the walk is bounded. Past the cap, pages are reported as needing OCR rather than
-   * probed: the same conservative degradation this function already applies when
-   * pdfjs is unavailable. The cap sits above the 157-page document that motivated
-   * per-page recovery, so real scanned files are unaffected. */
-  const recoverablePages = droppedPages.slice(0, MAX_RECOVERED_PAGES);
-  if (droppedPages.length > recoverablePages.length) {
-    logger.warn(
-      `[parseDocument] ${droppedPages.length} pages lack extractable markdown; recovering the first ${MAX_RECOVERED_PAGES} and reporting the rest as needing OCR.`,
-    );
-  }
-
-  const recovered = await extractPageTextLegacy(
-    data,
-    recoverablePages.map((page) => page.page),
-  );
-  const pagesNeedingOcr = droppedPages
-    .filter((page) => !recovered.get(page.page)?.trim())
-    .map((page) => page.page + 1);
-  const ocrResult = pagesNeedingOcr.length ? pagesNeedingOcr : undefined;
-
-  /* When most pages were dropped, the letter-spacing baked into this kind of OCR
-   * layer makes item-level pdfjs assembly output mush ("m i s s i o n"): the word
-   * boundaries are not in the strings, only in the glyph positions. pdf-inspector's
-   * plain-text extractor re-segments words from those positions, so with structure
-   * available for only a sliver of pages, clean words for the whole document beat
-   * markdown islands in a sea of mush. Page accounting stays empirical either way. */
-  if (droppedPages.length > pages.length * DROPPED_PAGE_MAJORITY) {
-    try {
-      const plain = await extractTextIsolated(filePath);
-      if (plain.trim()) {
-        return { text: plain, pagesNeedingOcr: ocrResult };
-      }
-    } catch {
-      /* fall through to per-page interleaving */
-    }
-  }
-
-  const parts: string[] = [];
-  for (const page of pages) {
-    if (page.markdown?.trim()) {
-      parts.push(page.markdown);
-      continue;
-    }
-    const legacyText = recovered.get(page.page)?.trim();
-    if (legacyText) {
-      parts.push(legacyText);
-    }
-  }
-
-  return {
-    text: parts.join('\n\n'),
-    pagesNeedingOcr: ocrResult,
-  };
-}
-
-/**
- * Reads the raw text layer of specific 0-indexed pages with pdfjs.
- *
- * Failure here must not fail the document: pages that cannot be recovered are
- * reported in `pagesNeedingOcr` instead, so an unavailable or broken pdfjs
- * degrades to a visible omission notice rather than a parse error.
- */
-async function extractPageTextLegacy(
-  data: Buffer,
-  pageIndexes: number[],
-): Promise<Map<number, string>> {
-  const texts = new Map<number, string>();
-  let loadingTask: PDFDocumentLoadingTask | undefined;
-  try {
-    // Imported inline so that Jest can test other routes without failing due to loading ESM
-    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    loadingTask = getDocument({ data: new Uint8Array(data) });
-    const pdf: PDFDocumentProxy = await loadingTask.promise;
-
-    for (const pageIndex of pageIndexes) {
-      try {
-        const page = await pdf.getPage(pageIndex + 1);
-        const textContent = await page.getTextContent();
-        texts.set(pageIndex, joinTextItems(textContent.items));
-      } catch {
-        /* An unreadable page is reported in pagesNeedingOcr rather than failing the document. */
-      }
-    }
-  } catch (error) {
-    logger.warn('[parseDocument] pdfjs unavailable for page recovery:', error);
-  } finally {
-    /* pdfjs holds the decoded document and its worker until the loading task is
-     * destroyed; without this the buffer stays reachable for the whole request. */
-    await loadingTask?.destroy();
-  }
-  return texts;
-}
-
-async function pdfToTextLegacy(data: Buffer): Promise<string> {
-  // Imported inline so that Jest can test other routes without failing due to loading ESM
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-
-  const loadingTask = getDocument({ data: new Uint8Array(data) });
-  try {
-    const pdf: PDFDocumentProxy = await loadingTask.promise;
-
-    let fullText = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      fullText += joinTextItems(textContent.items) + '\n';
-    }
-
-    return fullText;
-  } finally {
-    await loadingTask.destroy();
-  }
-}
-
-/** Marked content items carry no `str`, so only genuine text items contribute. */
-function joinTextItems(items: (TextItem | TextMarkedContent)[]): string {
-  return items
-    .filter((item): item is TextItem => !('type' in item))
-    .map((item) => item.str)
-    .join(' ');
+  return { text: await extractDocumentText(data) };
 }
 
 /** Parses Word document, returns text inside. */

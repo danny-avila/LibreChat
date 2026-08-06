@@ -1,0 +1,252 @@
+import path from 'path';
+import * as fs from 'fs';
+import { logger } from '@librechat/data-schemas';
+import { uploadAnydoc } from './crud';
+
+type UploadContext = Parameters<typeof uploadAnydoc>[0];
+type UploadResult = ReturnType<typeof uploadAnydoc>;
+
+/** Fixtures are shared with the built-in parser suite and live alongside it. */
+const fixtures = path.join(__dirname, '..', 'documents');
+
+const upload = (file: Partial<Express.Multer.File>): UploadResult =>
+  uploadAnydoc({
+    file: file as Express.Multer.File,
+    req: {} as UploadContext['req'],
+    loadAuthValues: async () => ({}),
+  });
+
+const docxFile = (name: string): Partial<Express.Multer.File> => ({
+  originalname: name,
+  path: path.join(fixtures, name),
+  mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+});
+
+const pdfFile = (name: string): Partial<Express.Multer.File> => ({
+  originalname: name,
+  path: path.join(fixtures, name),
+  mimetype: 'application/pdf',
+});
+
+/**
+ * Runs `body` with `toMarkdownBytes` stubbed by a spy, in a scoped module registry.
+ * Format detection stays real, so the spy exercises the same routing production does.
+ * The finally is load-bearing: `doMock` outlives `isolateModulesAsync`, so a failing
+ * assertion would otherwise leak the stub into every later test.
+ */
+const withAnydocSpy = async (
+  toMarkdownBytes: jest.Mock,
+  body: (run: typeof upload) => Promise<void>,
+): Promise<void> => {
+  try {
+    await jest.isolateModulesAsync(async () => {
+      jest.doMock('@firecrawl/anydoc', () => ({
+        ...jest.requireActual('@firecrawl/anydoc'),
+        toMarkdownBytes,
+      }));
+      const { uploadAnydoc: uploadWithSpy } = await import('./crud');
+      await body((file) =>
+        uploadWithSpy({
+          file: file as Express.Multer.File,
+          req: {} as UploadContext['req'],
+          loadAuthValues: async () => ({}),
+        }),
+      );
+    });
+  } finally {
+    jest.dontMock('@firecrawl/anydoc');
+  }
+};
+
+describe('uploadAnydoc', () => {
+  test('converts an office document to Markdown', async () => {
+    const result = await upload(docxFile('structured.docx'));
+
+    expect(result.filename).toBe('structured.docx');
+    expect(result.filepath).toBe('anydoc');
+    expect(result.images).toEqual([]);
+    expect(result.bytes).toBe(Buffer.byteLength(result.text, 'utf8'));
+    expect(result.text).toContain('# Quarterly Report');
+    expect(result.text).toContain('| Region | Units | Revenue |');
+  });
+
+  test('converts a legacy .xls workbook, which is not a zip archive', async () => {
+    const result = await upload({
+      originalname: 'sample.xls',
+      path: path.join(fixtures, 'sample.xls'),
+      mimetype: 'application/vnd.ms-excel',
+    });
+
+    expect(result.text).toContain('Data');
+  });
+
+  test('never reports pagesNeedingOcr, which anydoc cannot produce', async () => {
+    const result = await upload(docxFile('structured.docx'));
+
+    expect(result.pagesNeedingOcr).toBeUndefined();
+  });
+
+  describe('zip decompression guard', () => {
+    test('rejects a zip bomb without handing it to anydoc', async () => {
+      /* anydoc applies no decompression cap of its own: measured on this fixture it
+       * returns 80MB of Markdown at ~400MB RSS from 158KB on disk. Asserting only that
+       * the upload rejects would pass even if anydoc had already inflated the file.
+       * What has to hold is that anydoc is never handed the bytes at all. */
+      const toMarkdownBytes = jest.fn();
+
+      await withAnydocSpy(toMarkdownBytes, async (run) => {
+        await expect(run(docxFile('bomb.docx'))).rejects.toThrow(
+          /exceeds the 25MB per-entry decompressed cap/,
+        );
+        expect(toMarkdownBytes).not.toHaveBeenCalled();
+      });
+    });
+
+    test('rejects a zip bomb padded with junk bytes ahead of the archive', async () => {
+      /* The bypass a leading-magic-byte check cannot see. anydoc's zip reader finds the
+       * central directory from the tail and tolerates prepended data, exactly as
+       * self-extracting archives rely on, so eight junk bytes made a magic-byte guard
+       * report "not a zip" while anydoc still inflated 162KB into 80MB of Markdown at
+       * ~336MB RSS. Detection scans the tail, and because yauzl does not compensate for
+       * the offset shift, the refusal surfaces as a malformed central directory rather
+       * than the cap message. Either way it must not reach the parser. */
+      const bomb = await fs.promises.readFile(path.join(fixtures, 'bomb.docx'));
+      const paddedPath = path.join(fixtures, 'anydoc-bomb-padded.docx');
+      await fs.promises.writeFile(paddedPath, Buffer.concat([Buffer.from('JUNKJUNK'), bomb]));
+
+      const toMarkdownBytes = jest.fn();
+      try {
+        await withAnydocSpy(toMarkdownBytes, async (run) => {
+          await expect(
+            run({
+              originalname: 'anydoc-bomb-padded.docx',
+              path: paddedPath,
+              mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            }),
+          ).rejects.toThrow(/central directory/i);
+          expect(toMarkdownBytes).not.toHaveBeenCalled();
+        });
+      } finally {
+        await fs.promises.unlink(paddedPath);
+      }
+    });
+
+    test('hands a safe document to anydoc', async () => {
+      /* The counterpart to the bomb cases: proves the spy above would have fired, so
+       * "not called" there is a real guarantee and not a broken mock. */
+      const toMarkdownBytes = jest.fn().mockResolvedValue('# stubbed');
+
+      await withAnydocSpy(toMarkdownBytes, async (run) => {
+        const result = await run(docxFile('structured.docx'));
+
+        expect(toMarkdownBytes).toHaveBeenCalledTimes(1);
+        expect(result.text).toBe('# stubbed');
+        expect(result.filepath).toBe('anydoc');
+      });
+    });
+  });
+
+  describe('declared format support', () => {
+    test('rejects an unsupported type before reading the file', async () => {
+      const toMarkdownBytes = jest.fn();
+
+      await withAnydocSpy(toMarkdownBytes, async (run) => {
+        await expect(
+          run({
+            originalname: 'notes.txt',
+            path: path.join(fixtures, 'does-not-exist.txt'),
+            mimetype: 'text/plain',
+          }),
+        ).rejects.toThrow(/Unsupported file type in the anydoc parser: "text\/plain"/);
+        expect(toMarkdownBytes).not.toHaveBeenCalled();
+      });
+    });
+
+    test('ignores MIME type parameters when matching the declared table', async () => {
+      const result = await upload({
+        ...docxFile('structured.docx'),
+        mimetype:
+          'Application/vnd.openxmlformats-officedocument.wordprocessingml.document; charset=binary',
+      });
+
+      expect(result.text).toContain('# Quarterly Report');
+    });
+
+    test('attempts a generic MIME type whose extension anydoc recognizes', async () => {
+      /* Browsers routinely send application/octet-stream for ordinary office documents,
+       * so the extension alone is enough to try, with the uncertainty logged. */
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+      const result = await upload({
+        ...docxFile('structured.docx'),
+        mimetype: 'application/octet-stream',
+      });
+
+      expect(result.text).toContain('# Quarterly Report');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('application/octet-stream'));
+    });
+
+    test('attempts a declared MIME type whose filename has no usable extension', async () => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+      const result = await upload({
+        originalname: 'structured',
+        path: path.join(fixtures, 'structured.docx'),
+        mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+
+      expect(result.text).toContain('# Quarterly Report');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('content detection'));
+    });
+  });
+
+  describe('PDF handling', () => {
+    test('converts a text-based PDF', async () => {
+      const result = await upload(pdfFile('sample.pdf'));
+
+      expect(result.filepath).toBe('anydoc');
+      expect(result.text).toContain('# Quarterly Report');
+    });
+
+    test('reports a scanned PDF as needing an OCR service', async () => {
+      /* anydoc converts PDFs with pdf-inspector, which refuses image-only pages with
+       * "unsupported input: PDF has no extractable text (Scanned, 1 pages): OCR is
+       * required". That is the one refusal a user can act on, so it is translated into
+       * the same sentence the rest of the upload path uses. */
+      await expect(upload(pdfFile('sample-scanned.pdf'))).rejects.toThrow(
+        /image-based and requires an OCR service to process/,
+      );
+    });
+
+    test('reports an empty PDF conversion as needing an OCR service', async () => {
+      const toMarkdownBytes = jest.fn().mockResolvedValue('   ');
+
+      await withAnydocSpy(toMarkdownBytes, async (run) => {
+        await expect(run(pdfFile('sample.pdf'))).rejects.toThrow(
+          /image-based and requires an OCR service to process/,
+        );
+      });
+    });
+
+    test('surfaces a malformed PDF as a provider failure, not as an OCR prompt', async () => {
+      await expect(upload(pdfFile('sample-badxref.pdf'))).rejects.toThrow(
+        /anydoc failed to extract text from "sample-badxref\.pdf"/,
+      );
+    });
+  });
+
+  describe('empty output', () => {
+    test('throws a provider-named error instead of returning empty text', async () => {
+      /* anydoc can succeed and still produce nothing. The shared parser's fallback
+       * chain owns what happens next, so this provider only has to say it failed. */
+      const toMarkdownBytes = jest.fn().mockResolvedValue('   ');
+
+      await withAnydocSpy(toMarkdownBytes, async (run) => {
+        await expect(run(docxFile('structured.docx'))).rejects.toThrow(
+          /anydoc extracted no text from "structured\.docx"/,
+        );
+        expect(toMarkdownBytes).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
+});

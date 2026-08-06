@@ -1,14 +1,14 @@
 import path from 'path';
 import * as fs from 'fs';
-import { extractPagesMarkdownIsolated, extractTextIsolated } from './pdfNative';
+import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
 
 /**
  * Exercises the real worker against the real native binding. Nothing is mocked
  * here on purpose: the point of this module is what happens at the thread
  * boundary, which a stubbed binding cannot demonstrate.
  */
-describe('pdfNative', () => {
-  const fixture = (name: string) => path.join(__dirname, name);
+describe('pdfInspector native', () => {
+  const fixture = (name: string) => path.join(__dirname, '..', 'documents', name);
 
   test('extracts per-page markdown off the main thread', async () => {
     const pages = await extractPagesMarkdownIsolated(fixture('sample.pdf'));
@@ -46,7 +46,7 @@ describe('pdfNative', () => {
      * across the thread boundary. The assertion is on the longest gap between timer
      * ticks, which tracks the whole blocked interval when the loop is pinned and
      * stays near the tick period when it is not. */
-    const wide = fixture('sample-wide.pdf');
+    const wide = path.join(__dirname, 'sample-wide.pdf');
     fs.writeFileSync(wide, buildManyPagePdf(20_000));
     try {
       let longestGap = 0;

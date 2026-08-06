@@ -1840,6 +1840,8 @@ export enum OCRStrategy {
   AZURE_MISTRAL_OCR = 'azure_mistral_ocr',
   VERTEXAI_MISTRAL_OCR = 'vertexai_mistral_ocr',
   DOCUMENT_PARSER = 'document_parser',
+  PDF_INSPECTOR = 'pdf_inspector',
+  ANYDOC = 'anydoc',
 }
 
 export enum SearchCategories {
