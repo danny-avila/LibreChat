@@ -11,7 +11,10 @@ function Probe() {
   return <div ref={ref} data-testid="probe" data-active={isActive ? 'true' : 'false'} />;
 }
 
-/** MutationObserver delivery can slip well past a microtask on a loaded machine. */
+/**
+ * Observer delivery lands on the next microtask in this environment; the wait exists so the
+ * test does not depend on that scheduling detail, with budget to ride out a stalled host.
+ */
 const OBSERVER_WAIT = { timeout: 4000 };
 
 /** One test chains two OBSERVER_WAITs, whose budget exceeds Jest's 5s default. */
@@ -21,9 +24,10 @@ const getProbe = (container: HTMLElement) =>
   container.querySelector('[data-testid="probe"]') as HTMLDivElement;
 
 /**
- * Resolves once the browser has delivered an attribute mutation on `element`. The hook
- * registers its observer at mount, so it is earlier in delivery order than this one and
- * has already run its callback by the time this resolves.
+ * Resolves once an attribute mutation on `element` has been delivered to observers. The
+ * hook's observer filters on `data-active-item`, so it is never notified of the unrelated
+ * mutation; this unfiltered observer proves delivery happened before the test asserts
+ * that the hook did not react.
  */
 const nextAttributeMutation = (element: HTMLElement): Promise<void> =>
   new Promise((resolve) => {
@@ -48,7 +52,6 @@ describe('useIsActiveItem', () => {
       probe.setAttribute('data-active-item', '');
     });
 
-    // MutationObserver delivery is not guaranteed within a single microtask
     await waitFor(() => expect(probe.getAttribute('data-active')).toBe('true'), OBSERVER_WAIT);
   });
 
