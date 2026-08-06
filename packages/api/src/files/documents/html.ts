@@ -1,7 +1,7 @@
 import yauzl from 'yauzl';
 import { excelMimeTypes, megabyte } from 'librechat-data-provider';
+import { assertSafeZipSize, assertSafeZipSizeIfArchive } from './zipSafety';
 import { tryLibreOfficePreview } from './libreoffice';
-import { assertSafeZipSize } from './zipSafety';
 
 /**
  * Maximum decompressed size we'll accept from a single PPTX entry. Mirrors the
@@ -755,20 +755,13 @@ function escapeHtml(input: string): string {
  * document. Each sheet is rendered as its own `<table>` and the document
  * carries a pure-CSS tab strip for sheet switching.
  *
- * Pre-flights ZIP-backed formats (`.xlsx`/`.ods`) through
- * `assertSafeZipSize` to reject zip bombs before SheetJS reaches them.
- * `.xls` is a binary CFB format, not a ZIP — it doesn't have the
- * decompression-amplification attack surface, so the safety check is
- * skipped for it (yauzl would reject it as malformed anyway).
+ * Pre-flights ZIP-backed formats (`.xlsx`/`.ods`) through the decompression
+ * guard to reject zip bombs before SheetJS reaches them. `.xls` is a binary
+ * CFB format, not a ZIP, so it has no decompression-amplification surface and
+ * skips the validator.
  */
 export async function excelSheetToHtml(buffer: Buffer): Promise<string> {
-  /* Cheap magic-byte check so we only run the ZIP validator on actual
-   * ZIP-backed inputs. `.xls` (BIFF/CFB) starts with `D0 CF 11 E0`; ZIPs
-   * start with `PK\x03\x04`. Skipping the validator on a non-ZIP input
-   * also avoids confusing yauzl errors leaking out as ZipBombError. */
-  if (buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
-    await assertSafeZipSize(buffer, { name: 'spreadsheet' });
-  }
+  await assertSafeZipSizeIfArchive(buffer, { name: 'spreadsheet' });
   const XLSX = await import('xlsx');
   const workbook = XLSX.read(buffer, { type: 'buffer' });
   const sheets = await renderWorkbookSheets(workbook, XLSX);
@@ -805,7 +798,7 @@ export async function csvToHtml(buffer: Buffer): Promise<string> {
  * PPTX → slide-list HTML
  * ============================================================================= */
 
-interface PptxSlide {
+export interface PptxSlide {
   number: number;
   title: string;
   body: string[];
