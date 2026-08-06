@@ -140,6 +140,9 @@ interface PaletteProps {
   /** A recording is running: the button drops the take instead of opening the
    *  palette, and its glyph turns into the close mark to say so. */
   dictating?: boolean;
+  /** Fired when the popover opens; the bar uses the first call to start
+   *  loading the full skills catalog. */
+  onOpened?: () => void;
   onCancel?: () => void;
   agentId?: string | null;
   endpoint?: string | null;
@@ -179,6 +182,7 @@ function Palette({
   index,
   disabled,
   dictating = false,
+  onOpened,
   onCancel,
   agentId,
   endpoint,
@@ -201,6 +205,11 @@ function Palette({
      was up reopened it instead of closing it. */
   const popover = Ariakit.usePopoverStore({ placement: 'bottom-start' });
   const open = popover.useState('open');
+  useEffect(() => {
+    if (open) {
+      onOpened?.();
+    }
+  }, [open, onOpened]);
   const mounted = popover.useState('mounted');
   const [search, setSearch] = useState('');
   /* Kept across openings rather than reset with the search: someone who uploads
