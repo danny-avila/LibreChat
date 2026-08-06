@@ -1,4 +1,9 @@
-import { getEndpointFileConfig, mergeFileConfig, fileConfig } from 'librechat-data-provider';
+import {
+  getEndpointFileConfig,
+  mergeFileConfig,
+  FileSources,
+  fileConfig,
+} from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { RegexLike } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
@@ -70,10 +75,15 @@ export function filterFilesByEndpointConfig(
     });
   }
 
-  /** Filter by MIME type */
+  /**
+   * Filter by MIME type. Records with `source: text` carry their own extracted text
+   * rather than the original binary, so they are never sent to the model as the type
+   * they advertise; narrowing `supportedMimeTypes` to keep binaries out of an endpoint
+   * must not also discard the parsed text that exists precisely to serve that case.
+   */
   if (supportedMimeTypes && supportedMimeTypes.length > 0) {
     filteredFiles = filteredFiles.filter((file) => {
-      return isMimeTypeSupported(file.type, supportedMimeTypes);
+      return file.source === FileSources.text || isMimeTypeSupported(file.type, supportedMimeTypes);
     });
   }
 

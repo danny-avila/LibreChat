@@ -848,6 +848,40 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       }
     };
 
+    /**
+     * Single entry point for every extraction result, so the OCR branch and the RAG
+     * fallback below store the same shape: omitted pages are always logged, annotated
+     * into the text and reflected in the byte count.
+     *
+     * Only built-in parser output keeps the document's real MIME type. Storing the
+     * default `text/plain` there would discard what kind of file this was, and every
+     * extracted-text affordance in the client keys on that type. Configured OCR keeps
+     * `text/plain`: its supported types include images, and an `image/*` record whose
+     * `filepath` is a marker string, not a URL, renders as a broken thumbnail.
+     *
+     * Model routing is unaffected either way: parsed records are short-circuited on
+     * `source === text` both in `filterFilesByEndpointConfig` (packages/api/src/files/filter.ts,
+     * which runs first, during agent initialization) and in `BaseClient#categorizeAttachments`,
+     * before any type-based categorization.
+     *
+     * @param {MistralOCRUploadResult} result
+     * @return {Promise<void>}
+     */
+    const createDocumentTextFile = async ({ text, bytes, filepath, pagesNeedingOcr }) => {
+      if (pagesNeedingOcr?.length) {
+        logger.warn(
+          `[processAgentFileUpload] "${file.originalname}" has no extractable text on page(s) ${pagesNeedingOcr.join(', ')}; those pages were omitted.`,
+        );
+      }
+      const annotated = annotateMissingPages(text, pagesNeedingOcr);
+      return await createTextFile({
+        text: annotated,
+        bytes: annotated === text ? bytes : Buffer.byteLength(annotated, 'utf8'),
+        filepath,
+        type: filepath === FileSources.document_parser ? file.mimetype : undefined,
+      });
+    };
+
     if (shouldUseConfiguredOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
       throw new Error('OCR capability is not enabled for Agents');
     }
@@ -855,24 +889,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     if (shouldUseOCR) {
       const ocrResult = await resolveDocumentText();
       if (ocrResult) {
-        const { text, bytes, filepath: ocrFileURL, pagesNeedingOcr } = ocrResult;
-        if (pagesNeedingOcr?.length) {
-          logger.warn(
-            `[processAgentFileUpload] "${file.originalname}" has no extractable text on page(s) ${pagesNeedingOcr.join(', ')}; those pages were omitted.`,
-          );
-        }
-        const annotated = annotateMissingPages(text, pagesNeedingOcr);
-        /* Keep the document's real MIME type on the record. Storing the default
-         * `text/plain` here would discard what kind of file this was, and every
-         * extracted-text affordance in the client keys on that type. Model routing
-         * is unaffected: BaseClient short-circuits on `source === text` before any
-         * type-based categorization. */
-        return await createTextFile({
-          text: annotated,
-          bytes: annotated === text ? bytes : Buffer.byteLength(annotated, 'utf8'),
-          filepath: ocrFileURL,
-          type: file.mimetype,
-        });
+        return await createDocumentTextFile(ocrResult);
       }
       throw new Error(
         `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
@@ -921,8 +938,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
             `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
           );
         }
-        const { text, bytes, filepath: docFileURL } = documentText;
-        return await createTextFile({ text, bytes, filepath: docFileURL });
+        return await createDocumentTextFile(documentText);
       }
       return await createTextFile({
         text: configuredText.text,

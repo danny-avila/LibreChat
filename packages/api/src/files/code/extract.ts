@@ -154,6 +154,8 @@ const documentMimeFromExtension = (name: string): string | null => {
       return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     case '.xlsx':
       return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    case '.pptx':
+      return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
     case '.xls':
       return 'application/vnd.ms-excel';
     case '.ods':

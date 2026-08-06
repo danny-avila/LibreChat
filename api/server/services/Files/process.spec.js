@@ -152,6 +152,7 @@ const {
   RetentionMode,
   AgentCapabilities,
 } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -228,9 +229,11 @@ describe('processAgentFileUpload', () => {
     mockRes.json.mockReturnValue({});
     checkCapability.mockResolvedValue(true);
     getStrategyFunctions.mockReturnValue({
-      handleFileUpload: jest
-        .fn()
-        .mockResolvedValue({ text: 'extracted text', bytes: 42, filepath: 'doc://result' }),
+      handleFileUpload: jest.fn().mockResolvedValue({
+        text: 'extracted text',
+        bytes: 42,
+        filepath: FileSources.document_parser,
+      }),
     });
     mergeFileConfig.mockReturnValue(makeFileConfig());
   });
@@ -267,7 +270,7 @@ describe('processAgentFileUpload', () => {
         handleFileUpload: jest.fn().mockResolvedValue({
           text: 'page one text',
           bytes: 13,
-          filepath: 'doc://result',
+          filepath: FileSources.document_parser,
           pagesNeedingOcr: [2, 3],
         }),
       });
@@ -294,11 +297,37 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile.mock.calls[0][0].type).toBe(PDF_MIME);
     });
 
+    test.each([
+      ['an image', 'image/png'],
+      ['a PDF', PDF_MIME],
+    ])('keeps configured OCR results on text/plain for %s', async (_, mime) => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [mime] }));
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockResolvedValue({
+          text: 'ocr text',
+          bytes: 8,
+          filepath: FileSources.mistral_ocr,
+        }),
+      });
+      const req = makeReq({ mimetype: mime, ocrConfig: { strategy: FileSources.mistral_ocr } });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      /* Configured OCR stores a marker string as `filepath`, not a URL. Advertising the
+       * original MIME type would make the client take its `image/*` branch and render
+       * the marker as an <img> source. */
+      const created = db.createFile.mock.calls[0][0];
+      expect(created.type).toBe('text/plain');
+      expect(created.filepath).toBe(FileSources.mistral_ocr);
+    });
+
     test('leaves text and byte count untouched when every page was extracted', async () => {
       getStrategyFunctions.mockReturnValue({
-        handleFileUpload: jest
-          .fn()
-          .mockResolvedValue({ text: 'complete text', bytes: 42, filepath: 'doc://result' }),
+        handleFileUpload: jest.fn().mockResolvedValue({
+          text: 'complete text',
+          bytes: 42,
+          filepath: FileSources.document_parser,
+        }),
       });
       const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
 
@@ -416,9 +445,11 @@ describe('processAgentFileUpload', () => {
     test('falls back to document_parser when configured OCR fails for a document MIME type', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
       const failingUpload = jest.fn().mockRejectedValue(new Error('OCR API returned 500'));
-      const fallbackUpload = jest
-        .fn()
-        .mockResolvedValue({ text: 'parsed text', bytes: 11, filepath: 'doc://result' });
+      const fallbackUpload = jest.fn().mockResolvedValue({
+        text: 'parsed text',
+        bytes: 11,
+        filepath: FileSources.document_parser,
+      });
       getStrategyFunctions
         .mockReturnValueOnce({ handleFileUpload: failingUpload })
         .mockReturnValueOnce({ handleFileUpload: fallbackUpload });
@@ -530,6 +561,33 @@ describe('processAgentFileUpload', () => {
       expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
     });
 
+    test('annotates omitted pages and keeps the real MIME type on the RAG fallback', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: DOCX_TEXT_REGEX }));
+      const { parseText } = require('@librechat/api');
+      parseText.mockRejectedValueOnce(new Error('native fallback is disabled'));
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockResolvedValue({
+          text: 'page one text',
+          bytes: 13,
+          filepath: FileSources.document_parser,
+          pagesNeedingOcr: [2, 3],
+        }),
+      });
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      /* Identical parser output must be stored identically whichever branch consumed it:
+       * the fallback used to drop the omitted pages and the document's MIME type. */
+      expect(annotateMissingPages).toHaveBeenCalledWith('page one text', [2, 3]);
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('page(s) 2, 3'));
+      const created = db.createFile.mock.calls[0][0];
+      expect(created.text).toBe('page one text\n[omitted:2,3]');
+      expect(created.bytes).toBe(Buffer.byteLength(created.text, 'utf8'));
+      expect(created.type).toBe(DOCX_MIME);
+    });
+
     test('surfaces a persistence failure without retrying via the document parser', async () => {
       process.env.RAG_API_URL = 'http://rag-api.test';
       mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: DOCX_TEXT_REGEX }));
@@ -555,7 +613,7 @@ describe('processAgentFileUpload', () => {
         handleFileUpload: jest.fn().mockResolvedValue({
           text: oversizedText,
           bytes: Buffer.byteLength(oversizedText, 'utf8'),
-          filepath: 'doc://result',
+          filepath: FileSources.document_parser,
         }),
       });
       const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
@@ -574,7 +632,7 @@ describe('processAgentFileUpload', () => {
         handleFileUpload: jest.fn().mockResolvedValue({
           text: okText,
           bytes: Buffer.byteLength(okText, 'utf8'),
-          filepath: 'doc://result',
+          filepath: FileSources.document_parser,
         }),
       });
       const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
