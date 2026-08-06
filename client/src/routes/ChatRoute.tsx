@@ -12,11 +12,11 @@ import {
   processValidSettings,
   getDefaultModelSpec,
   getModelSpecPreset,
+  hasModelSelection,
   isNotFoundError,
   isTemporaryConversation,
   logger,
   clearMessagesCache,
-  mapAgents,
 } from '~/utils';
 import {
   useGetConvoIdQuery,
@@ -32,7 +32,7 @@ import {
   useNewConvo,
   useLocalize,
 } from '~/hooks';
-import { ToolCallsMapProvider } from '~/Providers';
+import { ToolCallsMapProvider, useAgentsMapContext } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import { NotificationSeverity } from '~/common';
 import useAuthRedirect from './useAuthRedirect';
@@ -129,15 +129,18 @@ export default function ChatRoute() {
   });
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
+  const agentsMapContext = useAgentsMapContext();
   const agentsQuery = useListAgentsQuery(
     { requiredPermission: PermissionBits.VIEW },
-    { select: (res) => mapAgents(res.data), enabled: isAuthenticated },
+    { enabled: isAuthenticated },
   );
-  /** A failed agent list reads as empty: a stored agent pick that cannot be
-   * verified must not suppress the soft default indefinitely. */
+  /** The map itself comes from Root's shared context (one mapping pass app-wide);
+   * the select-less observer only tracks settle state. A failed agent list reads
+   * as empty: a stored agent pick that cannot be verified must not suppress the
+   * soft default indefinitely. */
   const agentsMap: TAgentsMap | undefined = agentsQuery.isError
     ? EMPTY_AGENTS_MAP
-    : agentsQuery.data;
+    : agentsMapContext;
 
   const isTemporaryChat = isTemporaryConversation(conversation);
 
@@ -179,26 +182,35 @@ export default function ChatRoute() {
       return;
     }
 
+    const queryParams: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      if (key !== 'prompt' && key !== 'q' && key !== 'submit' && key !== 'projectId') {
+        queryParams[key] = value;
+      }
+    });
+    const querySettings = processValidSettings(queryParams);
+
+    const notFoundConvo =
+      Boolean(conversationId) &&
+      !isNewConvo &&
+      initialConvoQuery.isError &&
+      isNotFoundError(initialConvoQuery.error);
+
     /** A stored agent pick can only be validated against the loaded agent list
      * (it may name an agent since deleted, or one from another org sharing this
-     * browser storage). Defer the first conversation until the list settles. */
+     * browser storage). Defer the first conversation until the list settles —
+     * unless the URL names its own selection, which takes precedence over the
+     * stored pick and must not wait on the agent catalog. */
     if (
-      isNewConvo &&
+      (isNewConvo || notFoundConvo) &&
       agentsMap == null &&
+      !hasModelSelection(querySettings) &&
       defaultSpecAwaitsAgents(startupConfig, endpointsQuery.data)
     ) {
       return;
     }
 
     const getNewConvoPreset = () => {
-      const queryParams: Record<string, string> = {};
-      searchParams.forEach((value, key) => {
-        if (key !== 'prompt' && key !== 'q' && key !== 'submit' && key !== 'projectId') {
-          queryParams[key] = value;
-        }
-      });
-      const querySettings = processValidSettings(queryParams);
-
       /** A spec named in the URL is an explicit selection: it must resolve to its own
        * full preset, or stale last-selection state (endpoint/agent) fills the gaps.
        * Names absent from the client config (e.g. `showInMenu: false`) stay in the

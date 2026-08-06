@@ -139,8 +139,8 @@ interface InitiatedTemplateResult {
 
 type StoredModelSelection = Pick<
   t.TConversation,
-  'endpoint' | 'model' | 'spec' | 'agent_id' | 'assistant_id'
->;
+  'model' | 'spec' | 'agent_id' | 'assistant_id'
+> & { endpoint?: EModelEndpoint | string | null };
 
 function hasSelectionValue(value?: string | null): boolean {
   return typeof value === 'string' && value.trim() !== '';

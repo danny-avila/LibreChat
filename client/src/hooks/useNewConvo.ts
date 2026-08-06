@@ -7,7 +7,6 @@ import {
   FileSources,
   Permissions,
   EModelEndpoint,
-  PermissionBits,
   isParamEndpoint,
   PermissionTypes,
   getEndpointField,
@@ -34,19 +33,14 @@ import {
   hasModelSelection,
   buildDefaultConvo,
   requestChatFocus,
-  mapAgents,
   logger,
 } from '~/utils';
-import {
-  useDeleteFilesMutation,
-  useGetEndpointsQuery,
-  useGetStartupConfig,
-  useListAgentsQuery,
-} from '~/data-provider';
+import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useGetConversation from './Conversations/useGetConversation';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
 import { useApplyModelSpecEffects } from './Agents';
+import { useAgentsMapContext } from '~/Providers';
 import { usePauseGlobalAudio } from './Audio';
 import { useHasAccess } from '~/hooks';
 import store from '~/store';
@@ -64,10 +58,7 @@ const useNewConvo = (index = 0) => {
   const saveBadgesState = useRecoilValue<boolean>(store.saveBadgesState);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
-  const { data: agentsMap } = useListAgentsQuery(
-    { requiredPermission: PermissionBits.VIEW },
-    { select: (res) => mapAgents(res.data) },
-  );
+  const agentsMap = useAgentsMapContext();
 
   const hasAgentAccess = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
