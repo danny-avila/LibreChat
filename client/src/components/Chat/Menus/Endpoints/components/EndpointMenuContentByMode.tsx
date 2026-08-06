@@ -42,9 +42,11 @@ export function EndpointMenuContentByMode({
   let content: React.ReactNode = null;
 
   if (mode === 'flat') {
-    content = mappedEndpoints.map((endpoint, index) => (
-      <EndpointMenuContent key={endpoint.value} endpoint={endpoint} endpointIndex={index} />
-    ));
+    content = searchResults
+      ? renderSearchResults(searchResults, localize, searchValue)
+      : mappedEndpoints.map((endpoint, index) => (
+          <EndpointMenuContent key={endpoint.value} endpoint={endpoint} endpointIndex={index} />
+        ));
   } else if (mode === 'auto' && mappedEndpoints.length === 1) {
     content = searchResults ? (
       renderSearchResults(searchResults, localize, searchValue)

@@ -103,7 +103,7 @@ export function EndpointModelItem({ modelId, endpoint }: EndpointModelItemProps)
     if (
       isFlatEndpointDropdown(modelSelectMenuMode, mappedEndpoints ?? []) &&
       endpoint.label &&
-      (endpoint.customParams?.showEndpointInModelName ?? true)
+      endpoint.customParams?.showEndpointInModelName === true
     ) {
       return `${endpoint.label}/${modelName}`;
     }
