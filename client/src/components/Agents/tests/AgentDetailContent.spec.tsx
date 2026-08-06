@@ -32,6 +32,7 @@ jest.mock(
     Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
       <button {...props}>{children}</button>
     ),
+    TooltipAnchor: ({ render }: { render: React.ReactNode }) => render,
     useToastContext: () => ({
       showToast: jest.fn(),
     }),

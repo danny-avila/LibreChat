@@ -84,7 +84,7 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
           <InfoHoverCard side={ESide.Bottom} text={localize('com_nav_balance_next_refill_info')} />
         </div>
 
-        <span className="text-sm font-medium text-gray-800 dark:text-gray-200" role="note">
+        <span className="text-sm font-medium text-text-primary" role="note">
           {refillEligibilityDate ? refillEligibilityDate.toLocaleString() : '-'}
         </span>
       </div>

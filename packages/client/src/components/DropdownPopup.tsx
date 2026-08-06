@@ -173,7 +173,7 @@ const Menu: React.FC<MenuProps> = ({
               )}
               {item.label}
               {item.kbd != null && (
-                <kbd className="ml-auto hidden font-sans text-xs text-black/50 group-hover:inline group-focus:inline dark:text-white/50">
+                <kbd className="ml-auto hidden font-sans text-xs text-text-tertiary group-hover:inline group-focus:inline">
                   ⌘{item.kbd}
                 </kbd>
               )}

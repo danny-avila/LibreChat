@@ -21,7 +21,7 @@ import {
   isDocumentSupportedProvider,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { TFile, EndpointFileConfig, FileConfig } from 'librechat-data-provider';
+import type { TFile, EndpointFileConfig, FileConfig, RegexLike } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ExtendedFile } from '~/common';
 
@@ -336,7 +336,7 @@ export type UploadOptionContext = {
   fileSearchAllowedByAgent: boolean;
   codeAllowedByAgent: boolean;
   fileConfig: FileConfig | null;
-  endpointSupportedMimeTypes?: RegExp[];
+  endpointSupportedMimeTypes?: RegexLike[];
 };
 
 const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean => {

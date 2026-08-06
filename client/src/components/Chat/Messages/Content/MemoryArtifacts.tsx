@@ -1,5 +1,5 @@
-import { Tools } from 'librechat-data-provider';
 import { useState, useRef, useMemo, useLayoutEffect, useEffect } from 'react';
+import { Tools } from 'librechat-data-provider';
 import type { MemoryArtifact, TAttachment } from 'librechat-data-provider';
 import MemoryInfo from './MemoryInfo';
 import { useLocalize } from '~/hooks';
@@ -87,10 +87,8 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
         <div className="inline-block">
           <button
             className={cn(
-              'outline-hidden my-1 flex items-center gap-1 text-sm font-semibold transition-colors',
-              hasErrors
-                ? 'text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-500'
-                : 'text-text-secondary-alt hover:text-text-primary',
+              'my-1 flex items-center gap-1 text-sm font-semibold transition-colors',
+              hasErrors ? 'text-status-error' : 'text-text-secondary-alt hover:text-text-primary',
             )}
             type="button"
             onClick={() => setShowInfo((prev) => !prev)}

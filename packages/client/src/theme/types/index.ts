@@ -9,6 +9,14 @@ export interface IThemeRGB {
   'rgb-text-secondary-alt'?: string;
   'rgb-text-tertiary'?: string;
   'rgb-text-warning'?: string;
+  'rgb-text-destructive'?: string;
+
+  // Link and accent colors
+  'rgb-link'?: string;
+  'rgb-link-hover'?: string;
+  'rgb-link-visited'?: string;
+  'rgb-accent-primary'?: string;
+  'rgb-accent-primary-hover'?: string;
 
   // Ring colors
   'rgb-ring-primary'?: string;
@@ -36,6 +44,12 @@ export interface IThemeRGB {
   'rgb-surface-destructive'?: string;
   'rgb-surface-destructive-hover'?: string;
   'rgb-surface-chat'?: string;
+  'rgb-surface-inverted'?: string;
+  'rgb-surface-inverted-hover'?: string;
+  'rgb-text-inverted'?: string;
+  'rgb-surface-fixed'?: string;
+  'rgb-surface-fixed-hover'?: string;
+  'rgb-text-fixed'?: string;
 
   // Border colors
   'rgb-border-light'?: string;
@@ -43,30 +57,30 @@ export interface IThemeRGB {
   'rgb-border-medium-alt'?: string;
   'rgb-border-heavy'?: string;
   'rgb-border-xheavy'?: string;
+  'rgb-border-destructive'?: string;
+
+  // Status colors
+  'rgb-status-success'?: string;
+  'rgb-status-success-subtle'?: string;
+  'rgb-status-success-border'?: string;
+  'rgb-status-info'?: string;
+  'rgb-status-info-subtle'?: string;
+  'rgb-status-info-border'?: string;
+  'rgb-status-warning'?: string;
+  'rgb-status-warning-subtle'?: string;
+  'rgb-status-warning-border'?: string;
+  'rgb-status-error'?: string;
+  'rgb-status-error-subtle'?: string;
+  'rgb-status-error-border'?: string;
+  'rgb-status-neutral'?: string;
+  'rgb-status-neutral-subtle'?: string;
+  'rgb-status-neutral-border'?: string;
 
   // Brand colors
   'rgb-brand-purple'?: string;
 
   // Presentation
   'rgb-presentation'?: string;
-
-  // Utility colors
-  'rgb-background'?: string;
-  'rgb-foreground'?: string;
-  'rgb-primary'?: string;
-  'rgb-primary-foreground'?: string;
-  'rgb-secondary'?: string;
-  'rgb-secondary-foreground'?: string;
-  'rgb-muted'?: string;
-  'rgb-muted-foreground'?: string;
-  'rgb-accent'?: string;
-  'rgb-accent-foreground'?: string;
-  'rgb-destructive-foreground'?: string;
-  'rgb-border'?: string;
-  'rgb-input'?: string;
-  'rgb-ring'?: string;
-  'rgb-card'?: string;
-  'rgb-card-foreground'?: string;
 }
 
 /**
@@ -78,6 +92,12 @@ export interface IThemeVariables {
   '--text-secondary-alt': string;
   '--text-tertiary': string;
   '--text-warning': string;
+  '--text-destructive': string;
+  '--link': string;
+  '--link-hover': string;
+  '--link-visited': string;
+  '--accent-primary': string;
+  '--accent-primary-hover': string;
   '--ring-primary': string;
   '--header-primary': string;
   '--header-hover': string;
@@ -99,31 +119,39 @@ export interface IThemeVariables {
   '--surface-destructive': string;
   '--surface-destructive-hover': string;
   '--surface-chat': string;
+  '--surface-inverted': string;
+  '--surface-inverted-hover': string;
+  '--text-inverted': string;
+  '--surface-fixed': string;
+  '--surface-fixed-hover': string;
+  '--text-fixed': string;
   '--border-light': string;
+  '--border-light-alpha': string;
   '--border-medium': string;
+  '--border-medium-alpha': string;
   '--border-medium-alt': string;
   '--border-heavy': string;
+  '--border-heavy-alpha': string;
   '--border-xheavy': string;
+  '--border-xheavy-alpha': string;
+  '--border-destructive': string;
+  '--status-success': string;
+  '--status-success-subtle': string;
+  '--status-success-border': string;
+  '--status-info': string;
+  '--status-info-subtle': string;
+  '--status-info-border': string;
+  '--status-warning': string;
+  '--status-warning-subtle': string;
+  '--status-warning-border': string;
+  '--status-error': string;
+  '--status-error-subtle': string;
+  '--status-error-border': string;
+  '--status-neutral': string;
+  '--status-neutral-subtle': string;
+  '--status-neutral-border': string;
   '--brand-purple': string;
   '--presentation': string;
-
-  // Utility variables
-  '--background': string;
-  '--foreground': string;
-  '--primary': string;
-  '--primary-foreground': string;
-  '--secondary': string;
-  '--secondary-foreground': string;
-  '--muted': string;
-  '--muted-foreground': string;
-  '--accent': string;
-  '--accent-foreground': string;
-  '--destructive-foreground': string;
-  '--border': string;
-  '--input': string;
-  '--ring': string;
-  '--card': string;
-  '--card-foreground': string;
 }
 
 /**
@@ -135,6 +163,12 @@ export interface IThemeColors {
   'text-secondary-alt'?: string;
   'text-tertiary'?: string;
   'text-warning'?: string;
+  'text-destructive'?: string;
+  link?: string;
+  'link-hover'?: string;
+  'link-visited'?: string;
+  'accent-primary'?: string;
+  'accent-primary-hover'?: string;
   'ring-primary'?: string;
   'header-primary'?: string;
   'header-hover'?: string;
@@ -156,31 +190,41 @@ export interface IThemeColors {
   'surface-destructive'?: string;
   'surface-destructive-hover'?: string;
   'surface-chat'?: string;
+  'surface-inverted'?: string;
+  'surface-inverted-hover'?: string;
+  'text-inverted'?: string;
+  'surface-fixed'?: string;
+  'surface-fixed-hover'?: string;
+  'text-fixed'?: string;
   'border-light'?: string;
   'border-medium'?: string;
   'border-medium-alt'?: string;
   'border-heavy'?: string;
   'border-xheavy'?: string;
+  'border-destructive'?: string;
+  'status-success'?: string;
+  'status-success-subtle'?: string;
+  'status-success-border'?: string;
+  'status-info'?: string;
+  'status-info-subtle'?: string;
+  'status-info-border'?: string;
+  'status-warning'?: string;
+  'status-warning-subtle'?: string;
+  'status-warning-border'?: string;
+  'status-error'?: string;
+  'status-error-subtle'?: string;
+  'status-error-border'?: string;
+  'status-neutral'?: string;
+  'status-neutral-subtle'?: string;
+  'status-neutral-border'?: string;
   'brand-purple'?: string;
   presentation?: string;
 
-  // Utility colors
+  // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
   background?: string;
-  foreground?: string;
   primary?: string;
   'primary-foreground'?: string;
-  secondary?: string;
-  'secondary-foreground'?: string;
-  muted?: string;
-  'muted-foreground'?: string;
-  accent?: string;
-  'accent-foreground'?: string;
-  'destructive-foreground'?: string;
-  border?: string;
-  input?: string;
   ring?: string;
-  card?: string;
-  'card-foreground'?: string;
 }
 
 export interface Theme {
