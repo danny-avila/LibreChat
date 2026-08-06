@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useState } from 'react';
+import React, { memo, useMemo, useState, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { TooltipAnchor, SendIcon } from '@librechat/client';
 import { Mic, Check, Square, ChevronDown } from 'lucide-react';
@@ -218,7 +218,17 @@ function Bar({
 }: BarProps) {
   const localize = useLocalize();
   const context = useBadgeRowContext();
-  const allEntries = usePaletteEntries({ conversationId, agentId, enabled: showTools });
+  /* Latched on the palette's first open and never released: the skills catalog
+     is only walked for composers whose palette was actually used, and closing
+     it keeps the pages cached rather than refetching per open. */
+  const [catalogWanted, setCatalogWanted] = useState(false);
+  const onPaletteOpen = useCallback(() => setCatalogWanted(true), []);
+  const allEntries = usePaletteEntries({
+    conversationId,
+    agentId,
+    enabled: showTools,
+    catalogEnabled: catalogWanted,
+  });
 
   /* Servers with required variables open this before they can be selected; it
      lives here rather than in the palette so dismissing the popover mid-config
@@ -339,6 +349,7 @@ function Bar({
             entries={entries}
             disabled={disabled}
             dictating={dictating}
+            onOpened={onPaletteOpen}
             onCancel={dictation.cancel}
             agentId={agentId}
             endpoint={endpoint}

@@ -80,14 +80,18 @@ function useAllSkills(enabled: boolean): TSkillSummary[] {
     { enabled },
   );
 
-  /* Sticky circuit breaker: once any page request fails, stop auto-fetching so
-     a transient API error does not turn into an unbounded retry loop. */
+  /* Circuit breaker: once any page request fails, stop auto-fetching so a
+     transient API error does not turn into an unbounded retry loop. A later
+     successful fetch (React Query refetching in the background, or the user
+     reopening the palette) re-arms pagination; a repeat failure re-trips it. */
   const blockedRef = useRef(false);
   useEffect(() => {
     if (isError) {
       blockedRef.current = true;
+    } else if (data != null) {
+      blockedRef.current = false;
     }
-  }, [isError]);
+  }, [isError, data]);
 
   useEffect(() => {
     if (blockedRef.current || isError || !enabled) {
@@ -116,12 +120,17 @@ export default function usePaletteEntries({
   conversationId,
   agentId,
   enabled = true,
+  catalogEnabled = true,
 }: {
   conversationId: string;
   agentId?: string | null;
   /** Endpoints without a tool row discard these, so there is nothing to fetch
    *  or build for them. */
   enabled?: boolean;
+  /** Whether to walk the full skills catalog. The bar keeps this off until the
+   *  palette has actually been opened: following every cursor on mount pulled
+   *  a deployment's whole catalog into every composer that was merely visited. */
+  catalogEnabled?: boolean;
 }): PaletteEntry[] {
   const localize = useLocalize();
   const context = useBadgeRowContext();
@@ -169,7 +178,7 @@ export default function usePaletteEntries({
   const canUseMemory = useHasMemoryAccess() && user?.personalization?.memories !== false;
 
   const skillsListable = enabled && canUseSkills && skillsEnabled;
-  const allSkills = useAllSkills(skillsListable);
+  const allSkills = useAllSkills(skillsListable && catalogEnabled);
 
   /* Mirrors backend `resolveAgentScopedSkillIds`: ephemeral agents see the full
      catalog; persisted agents gate on `skills_enabled` and fail closed while
@@ -358,7 +367,7 @@ export default function usePaletteEntries({
       );
     }
 
-    if (skillsListable && allSkills.length > 0) {
+    if (skillsListable) {
       const staged = new Set(pendingManualSkills);
       /* Manual skills are primed by name server-side (`resolveManualSkills`),
          so records sharing a name are one selectable thing however many of them
@@ -380,6 +389,25 @@ export default function usePaletteEntries({
           section: 'skill',
           active: staged.has(skill.name),
           onSelect: () => toggleSkill(skill.name),
+        });
+      }
+      /* Skills staged by name (the slash command, or a draft restored before
+         the catalog loads) still need an entry, or their chips in the bar
+         would vanish while the catalog is not held. */
+      for (const name of pendingManualSkills) {
+        if (listed.has(name)) {
+          continue;
+        }
+        listed.add(name);
+        entries.push({
+          key: `skill:staged:${name}`,
+          itemType: 'skill',
+          itemId: name,
+          label: name,
+          icon: <WandSparkles className={`icon-md ${ACCENT.skills}`} aria-hidden="true" />,
+          section: 'skill',
+          active: true,
+          onSelect: () => toggleSkill(name),
         });
       }
     }
