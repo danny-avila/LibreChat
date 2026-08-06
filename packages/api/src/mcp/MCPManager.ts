@@ -28,8 +28,8 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
-import { mcpConfig } from './mcpConfig';
 import { processMCPEnv } from '~/utils/env';
+import { mcpConfig } from './mcpConfig';
 
 function createOboToolCallErrorMessage(
   logPrefix: string,

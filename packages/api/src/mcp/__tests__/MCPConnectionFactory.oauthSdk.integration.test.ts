@@ -11,11 +11,11 @@ import {
   createOAuthMCPServer,
   type OAuthTestServer,
 } from './helpers/oauthTestServer';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { FlowStateManager } from '~/flow/manager';
-import { MCPManager } from '~/mcp/MCPManager';
 import { MCPConnection } from '~/mcp/connection';
+import { MCPManager } from '~/mcp/MCPManager';
 import { MCPTokenStorage } from '~/mcp/oauth';
 
 jest.mock('@librechat/data-schemas', () => ({
