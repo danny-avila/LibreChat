@@ -4,7 +4,9 @@ import type { ComposerHintState } from '~/hooks/Input/useComposerHint';
 import useComposerHint from '~/hooks/Input/useComposerHint';
 import store from '~/store';
 
-export const COMPOSER_HINT_ID = 'composer-hint';
+/** Scoped per pane: split view mounts one composer per index, and a shared id
+ *  would point every textarea's `aria-describedby` at the first pane's hint. */
+export const composerHintId = (index: number) => `composer-hint-${index}`;
 
 /**
  * The dim line under the composer carrying whatever the current state affords —
@@ -22,7 +24,7 @@ export const COMPOSER_HINT_ID = 'composer-hint';
  * here would re-announce on every keystroke as the hint flips between idle and
  * typing, so the description channel carries it instead.
  */
-function Hints(state: Omit<ComposerHintState, 'enterToSend'>) {
+function Hints({ index, ...state }: Omit<ComposerHintState, 'enterToSend'> & { index: number }) {
   const enterToSend = useRecoilValue(store.enterToSend);
   const hint = useComposerHint({ ...state, enterToSend });
   const showTips = useRecoilValue(store.showComposerTips);
@@ -39,7 +41,7 @@ function Hints(state: Omit<ComposerHintState, 'enterToSend'>) {
           {hint.text}
         </div>
       )}
-      <span id={COMPOSER_HINT_ID} className="sr-only">
+      <span id={composerHintId(index)} className="sr-only">
         {hint.text}
       </span>
     </>
