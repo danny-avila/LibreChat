@@ -1,7 +1,9 @@
+import type { GreetingSlot } from '../greeting';
 import {
   dayKeys,
   getGreetingKey,
   getGreetingSlot,
+  getGreetingOption,
   greetingSlotsByDay,
   defaultGreetingSlots,
   getMsUntilNextGreeting,
@@ -15,30 +17,40 @@ const dateForDay = (dayIndex: number, hours: number, minutes = 0, seconds = 0) =
 const slotsFor = (dayIndex: number) =>
   greetingSlotsByDay[dayKeys[dayIndex]] ?? defaultGreetingSlots;
 
+const allSlots: GreetingSlot[] = [
+  ...defaultGreetingSlots,
+  ...Object.values(greetingSlotsByDay).flatMap((slots) => slots ?? []),
+];
+
+const textFor = (key: string) => translationEn[key as keyof typeof translationEn];
+
 describe('greeting schedule', () => {
   it('references translation keys that exist in the English catalog', () => {
-    [defaultGreetingSlots, ...Object.values(greetingSlotsByDay)].forEach((slots) => {
-      slots?.forEach((slot) => {
-        expect(translationEn).toHaveProperty(slot.key);
-        expect(translationEn).toHaveProperty(slot.namedKey ?? '');
+    allSlots.forEach((slot) => {
+      slot.options.forEach((option) => {
+        expect(translationEn).toHaveProperty(option.key);
+        expect(translationEn).toHaveProperty(option.namedKey);
       });
     });
   });
 
-  /** Every slot must greet a signed-in user by name, at every hour of every day. */
-  it('offers a personalized variant for every slot', () => {
-    [defaultGreetingSlots, ...Object.values(greetingSlotsByDay)].forEach((slots) => {
-      slots?.forEach((slot) => {
-        expect(slot.namedKey).toBeDefined();
-        expect(translationEn[slot.namedKey as keyof typeof translationEn]).toContain('{{name}}');
+  /** Every variant must greet a signed-in user by name, at every hour of every day. */
+  it('pairs every variant with a personalized form', () => {
+    allSlots.forEach((slot) => {
+      expect(slot.options.length).toBeGreaterThan(0);
+      slot.options.forEach((option) => {
+        expect(textFor(option.namedKey)).toContain('{{name}}');
+        expect(textFor(option.key)).not.toContain('{{name}}');
       });
     });
   });
 
-  it('never interpolates a name into the anonymous variants', () => {
-    [defaultGreetingSlots, ...Object.values(greetingSlotsByDay)].forEach((slots) => {
-      slots?.forEach((slot) => {
-        expect(translationEn[slot.key]).not.toContain('{{name}}');
+  /** Matches the 56-character cutoff in Landing's getTextSizeClass. */
+  it('keeps every variant within the landing large-text budget for a long name', () => {
+    allSlots.forEach((slot) => {
+      slot.options.forEach((option) => {
+        const rendered = textFor(option.namedKey).replace('{{name}}', 'Alexandra Kowalski');
+        expect(rendered.length).toBeLessThan(56);
       });
     });
   });
@@ -63,8 +75,8 @@ describe('getGreetingSlot', () => {
 
   it('selects the first slot whose `until` exceeds the hour, for every boundary', () => {
     dayKeys.forEach((_key, dayIndex) => {
-      slotsFor(dayIndex).forEach((slot, slotIndex) => {
-        const slots = slotsFor(dayIndex);
+      const slots = slotsFor(dayIndex);
+      slots.forEach((slot, slotIndex) => {
         const start = slotIndex === 0 ? 0 : slots[slotIndex - 1].until;
         expect(getGreetingSlot(dateForDay(dayIndex, start))).toBe(slot);
         expect(getGreetingSlot(dateForDay(dayIndex, slot.until - 1, 59, 59))).toBe(slot);
@@ -90,18 +102,48 @@ describe('getGreetingSlot', () => {
   });
 });
 
+describe('getGreetingOption', () => {
+  it('holds the same variant for every hour within a slot', () => {
+    dayKeys.forEach((_key, dayIndex) => {
+      const slots = slotsFor(dayIndex);
+      slots.forEach((slot, slotIndex) => {
+        const start = slotIndex === 0 ? 0 : slots[slotIndex - 1].until;
+        const expected = getGreetingOption(dateForDay(dayIndex, start));
+        for (let hour = start; hour < slot.until; hour++) {
+          expect(getGreetingOption(dateForDay(dayIndex, hour, 30))).toBe(expected);
+        }
+      });
+    });
+  });
+
+  it('rotates the variant from one day to the next', () => {
+    const noon = (dayOffset: number) => new Date(2024, 0, 7 + dayOffset, 12, 0, 0, 0);
+    const firstThree = [0, 7, 14].map((offset) => getGreetingOption(noon(offset)).key);
+    expect(new Set(firstThree).size).toBeGreaterThan(1);
+  });
+
+  it('picks a variant that belongs to the active slot', () => {
+    dayKeys.forEach((_key, dayIndex) => {
+      for (let hour = 0; hour < 24; hour++) {
+        const date = dateForDay(dayIndex, hour);
+        expect(getGreetingSlot(date).options).toContain(getGreetingOption(date));
+      }
+    });
+  });
+});
+
 describe('getGreetingKey', () => {
   it('uses the personalized key only when a name is available', () => {
-    const wednesdayEvening = dateForDay(3, 20);
-    expect(getGreetingKey(wednesdayEvening, true)).toBe('com_ui_greeting_returns_named');
-    expect(getGreetingKey(wednesdayEvening, false)).toBe('com_ui_greeting_returns');
+    const date = dateForDay(3, 20);
+    const option = getGreetingOption(date);
+    expect(getGreetingKey(date, true)).toBe(option.namedKey);
+    expect(getGreetingKey(date, false)).toBe(option.key);
   });
 
   it('resolves a personalized key at every hour of every day', () => {
     dayKeys.forEach((_key, dayIndex) => {
       for (let hour = 0; hour < 24; hour++) {
-        const key = getGreetingKey(dateForDay(dayIndex, hour), true);
-        expect(translationEn[key as keyof typeof translationEn]).toContain('{{name}}');
+        expect(textFor(getGreetingKey(dateForDay(dayIndex, hour), true))).toContain('{{name}}');
       }
     });
   });
