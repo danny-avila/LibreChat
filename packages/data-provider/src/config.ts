@@ -591,7 +591,14 @@ export const defaultAssistantsVersion = {
 };
 
 export const baseEndpointSchema = z.object({
-  streamRate: z.number().optional(),
+  /**
+   * Milliseconds between visible streamed chunks. Agents SDK-backed
+   * providers (openAI, custom, anthropic, google, bedrock, agents) smooth
+   * adaptively at 25ms by default; set to override the cadence, 0 to
+   * disable smoothing. Legacy Assistants and Ollama paths instead sleep
+   * this long per provider chunk (default 1ms), with no adaptive smoothing.
+   */
+  streamRate: z.number().min(0).optional(),
   baseURL: z.string().optional(),
   /**
    * Custom request headers forwarded to the provider on every request. Values
