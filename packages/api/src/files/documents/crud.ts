@@ -229,22 +229,47 @@ async function pdfToText(file: Express.Multer.File): Promise<ParsedDocument> {
  * Pages are reported as needing OCR only when both engines find nothing, an
  * empirical test that replaces trusting the reason codes.
  */
+/** Above this share of dropped pages, whole-document plain text replaces interleaving. */
+const DROPPED_PAGE_MAJORITY = 0.5;
+
 async function pdfToTextInspector(data: Buffer): Promise<ParsedDocument> {
   // Imported inline so that Jest can test other routes without loading the native binding
-  const { extractPagesMarkdown } = await import('@firecrawl/pdf-inspector');
+  const { extractPagesMarkdown, extractText } = await import('@firecrawl/pdf-inspector');
   const result = extractPagesMarkdown(data);
   const pages = [...result.pages].sort((a, b) => a.page - b.page);
 
   const droppedPages = pages.filter((page) => !page.markdown?.trim());
-  const recovered = droppedPages.length
-    ? await extractPageTextLegacy(
-        data,
-        droppedPages.map((page) => page.page),
-      )
-    : new Map<number, string>();
+  if (!droppedPages.length) {
+    return { text: pages.map((page) => page.markdown).join('\n\n') };
+  }
+
+  const recovered = await extractPageTextLegacy(
+    data,
+    droppedPages.map((page) => page.page),
+  );
+  const pagesNeedingOcr = droppedPages
+    .filter((page) => !recovered.get(page.page)?.trim())
+    .map((page) => page.page + 1);
+  const ocrResult = pagesNeedingOcr.length ? pagesNeedingOcr : undefined;
+
+  /* When most pages were dropped, the letter-spacing baked into this kind of OCR
+   * layer makes item-level pdfjs assembly output mush ("m i s s i o n"): the word
+   * boundaries are not in the strings, only in the glyph positions. pdf-inspector's
+   * plain-text extractor re-segments words from those positions, so with structure
+   * available for only a sliver of pages, clean words for the whole document beat
+   * markdown islands in a sea of mush. Page accounting stays empirical either way. */
+  if (droppedPages.length > pages.length * DROPPED_PAGE_MAJORITY) {
+    try {
+      const plain = extractText(data);
+      if (plain.trim()) {
+        return { text: plain, pagesNeedingOcr: ocrResult };
+      }
+    } catch {
+      /* fall through to per-page interleaving */
+    }
+  }
 
   const parts: string[] = [];
-  const pagesNeedingOcr: number[] = [];
   for (const page of pages) {
     if (page.markdown?.trim()) {
       parts.push(page.markdown);
@@ -253,14 +278,12 @@ async function pdfToTextInspector(data: Buffer): Promise<ParsedDocument> {
     const legacyText = recovered.get(page.page)?.trim();
     if (legacyText) {
       parts.push(legacyText);
-      continue;
     }
-    pagesNeedingOcr.push(page.page + 1);
   }
 
   return {
     text: parts.join('\n\n'),
-    pagesNeedingOcr: pagesNeedingOcr.length ? pagesNeedingOcr : undefined,
+    pagesNeedingOcr: ocrResult,
   };
 }
 
