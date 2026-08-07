@@ -62,9 +62,13 @@ describe('HoverButtons edit affordance', () => {
     const editButton = renderHoverButtons(true);
 
     expect(editButton).toBeDisabled();
-    expect(editButton).toHaveClass('opacity-0', 'pointer-events-none');
+    expect(editButton).toHaveClass('pointer-events-none');
     expect(editButton.className).not.toMatch(/group-hover:opacity-100/);
     expect(editButton.className).not.toMatch(/group-focus-within:opacity-100/);
+    /** Must outrank the shared Button's `disabled:opacity-50`; a bare `opacity-0` loses to it,
+     *  and jsdom applies no stylesheet, so the important modifier is what we can assert here. */
+    expect(editButton).toHaveClass('!opacity-0');
+    expect(editButton).not.toHaveClass('opacity-0');
   });
 
   it('reveals on row hover once the generation settles', () => {
@@ -72,6 +76,6 @@ describe('HoverButtons edit affordance', () => {
 
     expect(editButton).toBeEnabled();
     expect(editButton).toHaveClass('group-hover:opacity-100');
-    expect(editButton).not.toHaveClass('pointer-events-none', 'opacity-0');
+    expect(editButton).not.toHaveClass('pointer-events-none', 'opacity-0', '!opacity-0');
   });
 });
