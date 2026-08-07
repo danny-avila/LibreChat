@@ -171,17 +171,22 @@ describePg('chat search route wiring', () => {
    * conversation ranked just below the cut.
    */
   it('fills the page from below the archived candidates', async () => {
+    /**
+     * The ids put the archived rows above the live one in the arms' tiebreak
+     * ordering, so a page that truncates before filtering starves rather than
+     * happening to contain the answer.
+     */
     for (let index = 0; index < 5; index++) {
-      await store(`c-arch-${index}`, `Quarterly report ${index}`, { isArchived: true });
-      await project(`c-arch-${index}`, `Quarterly report ${index}`, { isArchived: true });
+      await store(`c-z-arch-${index}`, `Quarterly report ${index}`, { isArchived: true });
+      await project(`c-z-arch-${index}`, `Quarterly report ${index}`, { isArchived: true });
     }
-    await store('c-live', 'Quarterly report live');
-    await project('c-live', 'Quarterly report live');
+    await store('c-a-live', 'Quarterly report live');
+    await project('c-a-live', 'Quarterly report live');
 
     const response = await request(app).get('/api/convos?search=quarterly&limit=5');
 
     expect(response.status).toBe(200);
-    expect(response.body.conversations.map((convo) => convo.conversationId)).toEqual(['c-live']);
+    expect(response.body.conversations.map((convo) => convo.conversationId)).toEqual(['c-a-live']);
   });
 
   /**

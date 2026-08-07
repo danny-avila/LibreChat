@@ -385,7 +385,19 @@ describePg('PostgresChatSearch', () => {
    * one rank below the cut.
    */
   describe('listing filters', () => {
-    const archivedIds = ['rec-0', 'rec-1', 'rec-2', 'rec-3', 'rec-4'];
+    /** Everything but the lowest-ranked row, so a truncate-then-filter page starves. */
+    const archivedIds = [
+      'rec-2',
+      'rec-3',
+      'rec-4',
+      'rec-5',
+      'rec-6',
+      'rec-7',
+      'rec-8',
+      'rec-9',
+      'rec-10',
+      'rec-11',
+    ];
 
     beforeAll(async () => {
       await pool.query(
@@ -419,10 +431,7 @@ describePg('PostgresChatSearch', () => {
         filters: { archived: false },
       });
 
-      expect(result.hits.length).toBe(5);
-      for (const hit of result.hits) {
-        expect(archivedIds).not.toContain(hit.recordId);
-      }
+      expect(result.hits.map((hit) => hit.recordId).sort()).toEqual(['rec-0', 'rec-1']);
     });
 
     it('returns only archived rows when the listing asks for them', async () => {
