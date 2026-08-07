@@ -6,16 +6,10 @@ import { useToast } from '~/hooks';
 export function Toast(): JSX.Element {
   const { toast, onOpenChange } = useToast();
   const severityClassName = {
-    /* Going up by 100 units in terms of darkness (eg bg-green-500 to bg-green-600) for
-     * bg colors produces colors that are too visually dissimilar to LibreChat's standard color palette.
-     * These colors were derived by adjusting the values in the HSV color space using CCA
-     * until the 4.5:1 contrast ratio threshold was met against white text while maintaining
-     * a relatively recognizable color scheme for toasts without compromising accessibility.
-     * */
-    [NotificationSeverity.INFO]: 'border-gray-500 bg-gray-500',
-    [NotificationSeverity.SUCCESS]: 'border-[#02855E] bg-[#02855E]',
-    [NotificationSeverity.WARNING]: 'border-[#C75209] bg-[#C75209]',
-    [NotificationSeverity.ERROR]: 'border-[#E02F1F] bg-[#E02F1F]',
+    [NotificationSeverity.INFO]: 'border-status-info-strong bg-status-info-strong',
+    [NotificationSeverity.SUCCESS]: 'border-status-success-strong bg-status-success-strong',
+    [NotificationSeverity.WARNING]: 'border-status-warning-strong bg-status-warning-strong',
+    [NotificationSeverity.ERROR]: 'border-status-error-strong bg-status-error-strong',
   };
 
   return (
@@ -30,7 +24,7 @@ export function Toast(): JSX.Element {
     >
       <div className="w-full p-1 text-center md:w-auto md:text-justify">
         <div
-          className={`alert-root pointer-events-auto inline-flex flex-row gap-2 rounded-md border px-3 py-2 font-bold text-white ${
+          className={`alert-root pointer-events-auto inline-flex flex-row gap-2 rounded-md border px-3 py-2 font-bold text-text-on-status ${
             severityClassName[toast.severity]
           }`}
         >

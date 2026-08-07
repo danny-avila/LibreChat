@@ -174,6 +174,7 @@ html {
   --surface-tertiary: var(--gray-100);
   --surface-tertiary-alt: var(--white);
   --surface-dialog: var(--white);
+  --surface-overlay: var(--gray-500);
   --surface-submit: var(--green-700);
   --surface-submit-hover: var(--green-800);
   --surface-destructive: var(--red-700);
@@ -192,18 +193,23 @@ html {
   --status-success: var(--green-600);
   --status-success-subtle: var(--green-50);
   --status-success-border: var(--green-300);
+  --status-success-strong: 2 133 94;
   --status-info: var(--blue-600);
   --status-info-subtle: var(--blue-50);
   --status-info-border: var(--blue-300);
+  --status-info-strong: var(--gray-500);
   --status-warning: var(--amber-600);
   --status-warning-subtle: var(--amber-50);
   --status-warning-border: var(--amber-300);
+  --status-warning-strong: 199 82 9;
   --status-error: var(--red-600);
   --status-error-subtle: var(--red-50);
   --status-error-border: var(--red-300);
+  --status-error-strong: 224 47 31;
   --status-neutral: var(--gray-600);
   --status-neutral-subtle: var(--gray-100);
   --status-neutral-border: var(--gray-300);
+  --text-on-status: var(--white);
 
   --surface-inverted: var(--gray-850);
   --surface-inverted-hover: var(--gray-700);
@@ -243,6 +249,7 @@ html {
   --surface-tertiary: var(--gray-700);
   --surface-tertiary-alt: var(--gray-700);
   --surface-dialog: var(--gray-850);
+  --surface-overlay: 0 0 0;
   --surface-submit: var(--green-700);
   --surface-submit-hover: var(--green-800);
   --surface-destructive: var(--red-800);
@@ -257,18 +264,23 @@ html {
   --status-success: var(--green-300);
   --status-success-subtle: var(--green-950);
   --status-success-border: var(--green-800);
+  --status-success-strong: var(--green-800);
   --status-info: var(--blue-300);
   --status-info-subtle: var(--blue-950);
   --status-info-border: var(--blue-800);
+  --status-info-strong: var(--gray-600);
   --status-warning: var(--amber-300);
   --status-warning-subtle: var(--amber-950);
   --status-warning-border: var(--amber-800);
+  --status-warning-strong: var(--amber-800);
   --status-error: var(--red-300);
   --status-error-subtle: var(--red-950);
   --status-error-border: var(--red-800);
+  --status-error-strong: var(--red-800);
   --status-neutral: var(--gray-300);
   --status-neutral-subtle: var(--gray-800);
   --status-neutral-border: var(--gray-700);
+  --text-on-status: var(--white);
 
   --surface-inverted: var(--white);
   --surface-inverted-hover: var(--gray-100);

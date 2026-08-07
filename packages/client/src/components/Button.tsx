@@ -27,7 +27,8 @@ const buttonVariants: (
     variants: {
       variant: {
         default: 'bg-surface-inverted text-text-inverted hover:bg-surface-inverted-hover',
-        destructive: 'bg-surface-destructive text-white hover:bg-surface-destructive-hover',
+        destructive:
+          'bg-surface-destructive text-text-on-status hover:bg-surface-destructive-hover',
         outline:
           'text-text-primary border border-border-light bg-transparent hover:bg-surface-hover hover:text-text-primary',
         subtle:
@@ -35,8 +36,7 @@ const buttonVariants: (
         secondary: 'bg-surface-secondary text-text-primary hover:bg-surface-hover',
         ghost: 'hover:bg-surface-hover hover:text-text-primary',
         link: 'text-text-primary underline-offset-4 hover:underline',
-        // hardcoded text color because of WCAG contrast issues (text-white)
-        submit: 'bg-surface-submit text-white hover:bg-surface-submit-hover',
+        submit: 'bg-surface-submit text-text-on-status hover:bg-surface-submit-hover',
       },
       size: {
         default: 'h-10 px-4 py-2',
