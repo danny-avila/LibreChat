@@ -37,6 +37,18 @@ imagePullSecrets: []
 nameOverride: ''
 fullnameOverride: ''
 
+serviceAccount:
+  create: false
+  automount: true
+  # Annotations to add to the service account.
+  # Can be used to set up workload identity, for example:
+  #   iam.gke.io/gcp-service-account: my-app@my-project.iam.gserviceaccount.com
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::111122223333:role/my-role
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ''
+
 podAnnotations: {}
 podLabels: {}
 
@@ -100,5 +112,7 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+initContainers: {}
 
 extraContainers: {}
