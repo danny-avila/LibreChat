@@ -1129,7 +1129,7 @@ interface MCPConnectionParams {
 /** Result of an MCP `tools/list` request: one page of tools plus an optional pagination cursor. */
 type MCPListToolsResult = Awaited<ReturnType<Client['listTools']>>;
 
-interface MCPToolsSnapshot {
+export interface MCPToolsSnapshot {
   tools: MCPListToolsResult['tools'];
   complete: boolean;
 }
@@ -2444,7 +2444,7 @@ export class MCPConnection extends EventEmitter {
    * Notification refreshes use `complete` to avoid replacing a known-good cache with an empty or
    * partial list after a transient `tools/list` failure.
    */
-  private async fetchToolsSnapshot(): Promise<MCPToolsSnapshot> {
+  public async fetchToolsSnapshot(): Promise<MCPToolsSnapshot> {
     const maxPages = mcpConfig.TOOLS_LIST_MAX_PAGES;
     const maxTools = mcpConfig.TOOLS_LIST_MAX_TOOLS;
     const maxBytes = mcpConfig.TOOLS_LIST_MAX_BYTES;

@@ -517,12 +517,33 @@ describe('createMCPToolCacheService', () => {
         builtin: { type: 'function', function: { name: 'builtin' } },
         [staleKey]: { type: 'function', function: { name: staleKey } },
       };
-      const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(cached) });
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(cached),
+        getCachedAppServerSnapshots: jest.fn().mockResolvedValue(['removed-server']),
+      });
       const { mergeAppTools } = createMCPToolCacheService(deps);
 
       await mergeAppTools({});
 
       expect(deps.setCachedTools).toHaveBeenCalledWith({ builtin: cached.builtin });
+    });
+
+    it('preserves non-MCP tools whose names contain the MCP delimiter', async () => {
+      const regularKey = `get${Constants.mcp_delimiter}status`;
+      const cached: LCAvailableTools = {
+        [regularKey]: { type: 'function', function: { name: regularKey } },
+      };
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(cached),
+        getAllServerConfigs: jest.fn().mockResolvedValue({
+          brave: { ...cacheableConfig, toolFunctions: {} },
+        }),
+      });
+      const { mergeAppTools } = createMCPToolCacheService(deps);
+
+      await mergeAppTools({});
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith(cached);
     });
 
     it('merges app tools with existing cached tools', async () => {

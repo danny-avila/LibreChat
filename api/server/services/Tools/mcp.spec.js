@@ -120,6 +120,24 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     });
   });
 
+  it('preserves cached tools when live recovery returns an incomplete snapshot', async () => {
+    mockGetConnection.mockResolvedValue({
+      fetchToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'partial', inputSchema: { type: 'object' } }],
+        complete: false,
+      }),
+    });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(result.tools).toBeNull();
+    expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
+  });
+
   it('passes request body and Graph resolver into connection creation', async () => {
     mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
     const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };
@@ -167,8 +185,8 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     );
   });
 
-  it('disconnects ephemeral BODY-scoped connections after loading tools', async () => {
-    const disconnect = jest.fn().mockResolvedValue(undefined);
+  it('disposes ephemeral BODY-scoped connections after loading tools', async () => {
+    const dispose = jest.fn().mockResolvedValue(undefined);
     const tools = [{ name: 'search', inputSchema: { type: 'object', properties: {} } }];
     const serverConfig = {
       type: 'streamable-http',
@@ -176,7 +194,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       source: 'yaml',
     };
     mockGetConnection.mockResolvedValue({
-      disconnect,
+      dispose,
       fetchTools: jest.fn().mockResolvedValue(tools),
     });
 
@@ -188,7 +206,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       userMCPAuthMap: undefined,
     });
 
-    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(dispose).toHaveBeenCalledTimes(1);
     expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
       expect.objectContaining({
         tools,
@@ -261,9 +279,8 @@ describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)'
   });
 
   it('connects normally when the request body provides the placeholder fields', async () => {
-    const disconnect = jest.fn().mockResolvedValue(undefined);
     mockGetConnection.mockResolvedValue({
-      disconnect,
+      dispose: jest.fn().mockResolvedValue(undefined),
       fetchTools: jest.fn().mockResolvedValue([]),
     });
 

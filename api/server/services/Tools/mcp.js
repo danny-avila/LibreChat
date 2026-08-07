@@ -259,7 +259,17 @@ async function reinitMCPServer({
     }
 
     if (connection && !oauthRequired) {
-      tools = await connection.fetchTools();
+      const snapshot =
+        typeof connection.fetchToolsSnapshot === 'function'
+          ? await connection.fetchToolsSnapshot()
+          : { tools: await connection.fetchTools(), complete: true };
+      if (snapshot.complete) {
+        tools = snapshot.tools;
+      } else {
+        logger.warn(
+          `[MCP Reinitialize] Preserving cached tools for ${serverName} because tools/list returned an incomplete snapshot`,
+        );
+      }
     }
 
     if (tools) {
@@ -325,12 +335,9 @@ async function reinitMCPServer({
   } finally {
     if (connection && ephemeralServer && !requestScopedConnections) {
       try {
-        await connection.disconnect();
+        await connection.dispose();
       } catch (error) {
-        logger.warn(
-          `[MCP Reinitialize] Failed to disconnect ephemeral server ${serverName}`,
-          error,
-        );
+        logger.warn(`[MCP Reinitialize] Failed to dispose ephemeral server ${serverName}`, error);
       }
     }
   }

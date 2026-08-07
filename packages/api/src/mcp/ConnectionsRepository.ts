@@ -10,6 +10,7 @@ const CONNECT_CONCURRENCY = 3;
 
 interface ConnectionLoadOptions {
   continueOnError?: boolean;
+  refreshTools?: boolean;
 }
 
 /**
@@ -48,7 +49,10 @@ export class ConnectionsRepository {
   }
 
   /** Gets or creates a connection for the specified server with lazy loading */
-  async get(serverName: string): Promise<MCPConnection | null> {
+  async get(
+    serverName: string,
+    options: ConnectionLoadOptions = {},
+  ): Promise<MCPConnection | null> {
     const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
       serverName,
       this.ownerId,
@@ -106,6 +110,18 @@ export class ConnectionsRepository {
     });
 
     this.connections.set(serverName, connection);
+    if (this.ownerId === undefined && options.refreshTools !== false) {
+      const snapshot = await connection.fetchToolsSnapshot();
+      if (snapshot.complete) {
+        await notifyMCPToolsChanged({
+          tools: snapshot.tools,
+          serverName,
+          serverConfig,
+        });
+      } else {
+        await connection.refreshToolList();
+      }
+    }
     return connection;
   }
 
@@ -120,7 +136,7 @@ export class ConnectionsRepository {
       const batchResults = await Promise.all(
         batch.map(async (name): Promise<[string, MCPConnection | null]> => {
           try {
-            return [name, await this.get(name)];
+            return [name, await this.get(name, options)];
           } catch (error) {
             if (!options.continueOnError) {
               throw error;
@@ -158,9 +174,9 @@ export class ConnectionsRepository {
     this.connections.delete(serverName);
     try {
       connection.removeAllListeners?.('toolsChanged');
-      await connection.disconnect();
+      await connection.dispose();
     } catch (err) {
-      logger.error(`${this.prefix(serverName)} Error disconnecting`, err);
+      logger.error(`${this.prefix(serverName)} Error disposing`, err);
     } finally {
       await cancelMCPToolsChanged({ userId: this.ownerId, serverName });
     }

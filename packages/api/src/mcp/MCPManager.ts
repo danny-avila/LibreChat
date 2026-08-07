@@ -128,8 +128,12 @@ export class MCPManager extends UserConnectionManager {
     try {
       const existingAppConnection = await this.appConnections?.get(serverName);
       if (existingAppConnection && (await existingAppConnection.isConnected())) {
-        const tools = await existingAppConnection.fetchTools();
-        return { tools, oauthRequired: false, oauthUrl: null };
+        const snapshot = await existingAppConnection.fetchToolsSnapshot();
+        return {
+          tools: snapshot.complete ? snapshot.tools : null,
+          oauthRequired: false,
+          oauthUrl: null,
+        };
       }
     } catch {
       logger.debug(`${logPrefix} [Discovery] App connection not available, trying discovery mode`);
@@ -187,9 +191,9 @@ export class MCPManager extends UserConnectionManager {
     ): Promise<t.ToolDiscoveryResult> => {
       if (result.connection) {
         try {
-          await result.connection.disconnect();
+          await result.connection.dispose();
         } catch (error) {
-          logger.warn(`${logPrefix} [Discovery] Failed to disconnect discovery connection`, error);
+          logger.warn(`${logPrefix} [Discovery] Failed to dispose discovery connection`, error);
         }
       }
       return {
@@ -254,6 +258,7 @@ export class MCPManager extends UserConnectionManager {
         .map(([serverName]) => serverName);
       const connections = await this.appConnections?.getMany(serverNames, {
         continueOnError: true,
+        refreshTools: false,
       });
       if (!connections) {
         return;

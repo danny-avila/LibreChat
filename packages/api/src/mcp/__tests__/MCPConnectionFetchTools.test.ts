@@ -203,7 +203,7 @@ describe('MCPConnection.fetchTools pagination', () => {
       .mockReturnValueOnce(1000)
       .mockReturnValueOnce(1001);
 
-    const snapshot = await conn['fetchToolsSnapshot']();
+    const snapshot = await conn.fetchToolsSnapshot();
 
     expect(snapshot.tools.map((t) => t.name)).toEqual(['a']);
     expect(snapshot.complete).toBe(false);
@@ -239,7 +239,7 @@ describe('MCPConnection.fetchTools pagination', () => {
     const listTools = jest.fn().mockResolvedValue({ tools: [makeTool('x')], nextCursor: 'same' });
     const conn = createConnectionWithListTools(listTools);
 
-    const snapshot = await conn['fetchToolsSnapshot']();
+    const snapshot = await conn.fetchToolsSnapshot();
 
     expect(listTools).toHaveBeenCalledTimes(2);
     // The second page's tools are collected before the repeated cursor is detected, hence two copies.

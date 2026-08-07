@@ -2,11 +2,13 @@ import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { setMCPToolsChangedHandler } from '~/mcp/toolsChanged';
 import { MCPConnection } from '~/mcp/connection';
 
 // Mock external dependencies
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
+    debug: jest.fn(),
     error: jest.fn(),
     info: jest.fn(),
     warn: jest.fn(),
@@ -55,6 +57,7 @@ describe('ConnectionsRepository', () => {
   let mockConnection: jest.Mocked<MCPConnection>;
 
   beforeEach(() => {
+    setMCPToolsChangedHandler(null);
     mockServerConfigs = {
       server1: { url: 'http://localhost:3001', type: 'sse' },
       server2: { command: 'test-command', args: ['--test'], type: 'stdio' },
@@ -75,6 +78,9 @@ describe('ConnectionsRepository', () => {
     mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
       disconnect: jest.fn().mockResolvedValue(undefined),
+      dispose: jest.fn().mockResolvedValue(undefined),
+      fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
+      refreshToolList: jest.fn().mockResolvedValue(undefined),
       createdAt: Date.now(),
       isStale: jest.fn().mockReturnValue(false),
       /* A real connection is an EventEmitter and the repository subscribes to it. */
@@ -91,6 +97,7 @@ describe('ConnectionsRepository', () => {
   });
 
   afterEach(() => {
+    setMCPToolsChangedHandler(null);
     jest.clearAllMocks();
   });
 
@@ -131,19 +138,61 @@ describe('ConnectionsRepository', () => {
         undefined,
       );
       expect(repository['connections'].get('server1')).toBe(mockConnection);
+      expect(mockConnection.fetchToolsSnapshot).toHaveBeenCalledTimes(1);
+      expect(mockConnection.refreshToolList).not.toHaveBeenCalled();
+    });
+
+    it('awaits initial app tool publication before returning a new connection', async () => {
+      let releasePublication: (() => void) | undefined;
+      const publication = new Promise<void>((resolve) => {
+        releasePublication = resolve;
+      });
+      const handler = jest.fn(() => publication);
+      setMCPToolsChangedHandler(handler);
+
+      let loaded = false;
+      const load = repository.get('server1').then((connection) => {
+        loaded = true;
+        return connection;
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName: 'server1', tools: [] }),
+      );
+      expect(loaded).toBe(false);
+
+      releasePublication?.();
+      await expect(load).resolves.toBe(mockConnection);
+    });
+
+    it('can defer the initial app tool refresh for startup synchronization', async () => {
+      await repository.get('server1', { refreshTools: false });
+
+      expect(mockConnection.fetchToolsSnapshot).not.toHaveBeenCalled();
+      expect(mockConnection.refreshToolList).not.toHaveBeenCalled();
+    });
+
+    it('queues the connection retry path when the initial app snapshot is incomplete', async () => {
+      mockConnection.fetchToolsSnapshot.mockResolvedValue({ tools: [], complete: false });
+
+      await repository.get('server1');
+
+      expect(mockConnection.refreshToolList).toHaveBeenCalledTimes(1);
     });
 
     it('should create new connection if existing connection is not connected', async () => {
       const oldConnection = {
         isConnected: jest.fn().mockResolvedValue(false),
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as jest.Mocked<MCPConnection>;
       repository['connections'].set('server1', oldConnection);
 
       const result = await repository.get('server1');
 
       expect(result).toBe(mockConnection);
-      expect(oldConnection.disconnect).toHaveBeenCalled();
+      expect(oldConnection.dispose).toHaveBeenCalled();
       expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
         {
           serverName: 'server1',
@@ -164,6 +213,7 @@ describe('ConnectionsRepository', () => {
       const staleConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
         createdAt: connectionCreatedAt,
         isStale: jest.fn().mockReturnValue(true),
       } as unknown as jest.Mocked<MCPConnection>;
@@ -183,7 +233,7 @@ describe('ConnectionsRepository', () => {
       expect(staleConnection.isStale).toHaveBeenCalledWith(configCachedAt);
 
       // Verify old connection was disconnected
-      expect(staleConnection.disconnect).toHaveBeenCalled();
+      expect(staleConnection.dispose).toHaveBeenCalled();
 
       // Verify new connection was created
       expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
@@ -213,6 +263,7 @@ describe('ConnectionsRepository', () => {
       const freshConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
         createdAt: connectionCreatedAt,
         isStale: jest.fn().mockReturnValue(false),
       } as unknown as jest.Mocked<MCPConnection>;
@@ -232,7 +283,7 @@ describe('ConnectionsRepository', () => {
       expect(freshConnection.isStale).toHaveBeenCalledWith(configCachedAt);
 
       // Verify connection was not disconnected
-      expect(freshConnection.disconnect).not.toHaveBeenCalled();
+      expect(freshConnection.dispose).not.toHaveBeenCalled();
 
       // Verify no new connection was created
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
@@ -251,7 +302,7 @@ describe('ConnectionsRepository', () => {
       await expect(repository.get('server1')).resolves.toBeNull();
 
       expect(mockConnection.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
-      expect(mockConnection.disconnect).toHaveBeenCalled();
+      expect(mockConnection.dispose).toHaveBeenCalled();
       expect(repository['connections'].has('server1')).toBe(false);
     });
     //todo revist later when async getAll(): in packages/api/src/mcp/ConnectionsRepository.ts is refactored
@@ -339,21 +390,21 @@ describe('ConnectionsRepository', () => {
 
       await repository.disconnect('server1');
 
-      expect(mockConnection.disconnect).toHaveBeenCalled();
+      expect(mockConnection.dispose).toHaveBeenCalled();
       expect(repository['connections'].has('server1')).toBe(false);
     });
 
     it('should handle disconnect error gracefully', async () => {
       const disconnectError = new Error('Disconnect failed');
-      mockConnection.disconnect.mockRejectedValue(disconnectError);
+      mockConnection.dispose.mockRejectedValue(disconnectError);
       repository['connections'].set('server1', mockConnection);
 
       await repository.disconnect('server1');
 
-      expect(mockConnection.disconnect).toHaveBeenCalled();
+      expect(mockConnection.dispose).toHaveBeenCalled();
       expect(repository['connections'].has('server1')).toBe(false);
       expect(mockLogger.error).toHaveBeenCalledWith(
-        '[MCP][server1] Error disconnecting',
+        '[MCP][server1] Error disposing',
         disconnectError,
       );
     });
@@ -363,12 +414,15 @@ describe('ConnectionsRepository', () => {
     it('should disconnect all active connections', () => {
       const mockConnection1 = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as jest.Mocked<MCPConnection>;
       const mockConnection2 = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as jest.Mocked<MCPConnection>;
       const mockConnection3 = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as jest.Mocked<MCPConnection>;
 
       repository['connections'].set('server1', mockConnection1);
@@ -522,7 +576,7 @@ describe('ConnectionsRepository', () => {
         const allowed = await repository.has('changingServer');
 
         expect(allowed).toBe(false);
-        expect(mockConnection.disconnect).toHaveBeenCalled();
+        expect(mockConnection.dispose).toHaveBeenCalled();
       });
     });
 

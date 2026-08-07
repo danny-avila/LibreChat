@@ -123,14 +123,24 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     }
   }
 
-  async function getStartupAppServerSnapshots(): Promise<string[] | null> {
-    if (!getAllServerConfigs || !setCachedAppServerSnapshots) {
-      return null;
+  async function getStartupAppServers(): Promise<{
+    names: string[];
+    snapshots: string[] | null;
+  }> {
+    if (!getAllServerConfigs) {
+      return { names: [], snapshots: null };
     }
-    const configs = await getAllServerConfigs();
-    return Object.entries(configs)
-      .filter(([, config]) => canUseAppConnection(config) && config.toolFunctions != null)
-      .map(([serverName]) => serverName);
+    const entries = Object.entries(await getAllServerConfigs()).filter(([, config]) =>
+      canUseAppConnection(config),
+    );
+    return {
+      names: entries.map(([serverName]) => serverName),
+      snapshots: setCachedAppServerSnapshots
+        ? entries
+            .filter(([, config]) => config.toolFunctions != null)
+            .map(([serverName]) => serverName)
+        : null,
+    };
   }
 
   async function resolveCacheConfig(
@@ -152,16 +162,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     }
   }
 
-  async function getAppServerBoundaries(serverName: string): Promise<AppServerBoundary[]> {
-    const names = getAllServerConfigs
-      ? Object.entries(await getAllServerConfigs())
-          .filter(([, config]) => canUseAppConnection(config))
-          .map(([name]) => name)
-      : [];
-    if (!names.includes(serverName)) {
-      names.push(serverName);
-    }
-
+  function buildAppServerBoundaries(serverNames: readonly string[]): AppServerBoundary[] {
+    const names = Array.from(new Set(serverNames));
     const boundaryOwners = new Map<string, string>();
     for (const rawName of names) {
       if (normalizeServerName(rawName) !== rawName) {
@@ -176,6 +178,23 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       serverName: rawName,
       suffix,
     })).sort((left, right) => right.suffix.length - left.suffix.length);
+  }
+
+  async function getAppServerNames(): Promise<string[]> {
+    if (!getAllServerConfigs) {
+      return [];
+    }
+    return Object.entries(await getAllServerConfigs())
+      .filter(([, config]) => canUseAppConnection(config))
+      .map(([name]) => name);
+  }
+
+  async function getAppServerBoundaries(serverName: string): Promise<AppServerBoundary[]> {
+    const names = await getAppServerNames();
+    if (!names.includes(serverName)) {
+      names.push(serverName);
+    }
+    return buildAppServerBoundaries(names);
   }
 
   function resolveToolServerName(
@@ -268,12 +287,17 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   async function mergeAppTools(appTools: LCAvailableTools): Promise<void> {
     try {
       const count = Object.keys(appTools).length;
-      const appServerSnapshots = await getStartupAppServerSnapshots();
+      const { names: appServerNames, snapshots: appServerSnapshots } = await getStartupAppServers();
       await withGlobalCacheLock(async () => {
         const cachedTools = (await getCachedTools()) ?? {};
+        const previousAppServerSnapshots = (await getCachedAppServerSnapshots?.()) ?? [];
+        const boundaries = buildAppServerBoundaries([
+          ...appServerNames,
+          ...previousAppServerSnapshots,
+        ]);
         const mergedTools: LCAvailableTools = {};
         for (const [name, tool] of Object.entries(cachedTools)) {
-          if (!name.includes(Constants.mcp_delimiter)) {
+          if (resolveToolServerName(name, boundaries) == null) {
             mergedTools[name] = tool;
           }
         }

@@ -299,7 +299,10 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       await manager.connectAppServers();
 
-      expect(getMany).toHaveBeenCalledWith(['dynamic'], { continueOnError: true });
+      expect(getMany).toHaveBeenCalledWith(['dynamic'], {
+        continueOnError: true,
+        refreshTools: false,
+      });
       expect(refreshToolList).toHaveBeenCalledTimes(1);
     });
   });
@@ -1441,7 +1444,9 @@ describe('MCPManager', () => {
     const mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
       fetchTools: jest.fn().mockResolvedValue(mockTools),
+      fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: mockTools, complete: true }),
       disconnect: jest.fn().mockResolvedValue(undefined),
+      dispose: jest.fn().mockResolvedValue(undefined),
     } as unknown as MCPConnection;
 
     beforeEach(() => {
@@ -1465,6 +1470,7 @@ describe('MCPManager', () => {
     it('should use MCPConnectionFactory.discoverTools when no app connection available', async () => {
       const discoveryConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as MCPConnection;
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
@@ -1489,7 +1495,7 @@ describe('MCPManager', () => {
       expect(result.tools).toEqual(mockTools);
       expect(result.oauthRequired).toBe(false);
       expect(MCPConnectionFactory.discoverTools).toHaveBeenCalled();
-      expect(discoveryConnection.disconnect).toHaveBeenCalledTimes(1);
+      expect(discoveryConnection.dispose).toHaveBeenCalledTimes(1);
     });
 
     it('should forward runtime context to discoverTools in the non-OAuth path', async () => {

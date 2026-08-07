@@ -730,8 +730,8 @@ export abstract class UserConnectionManager {
       if (connection) {
         logger.info(`[MCP][User: ${userId}][${serverName}] Disconnecting...`);
         connection.removeAllListeners?.('toolsChanged');
-        await connection.disconnect();
         this.removeUserConnection(userId, serverName);
+        await connection.dispose();
       }
     } finally {
       await cancelMCPToolsChanged({ userId, serverName });
