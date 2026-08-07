@@ -189,42 +189,61 @@ describe('createMCPToolCacheService', () => {
     });
 
     it('keeps an exact safe name authoritative over a normalized-name collision', async () => {
-      const exactServerKey = toolName('exact', 'foo_');
+      const exactServerKey = toolName('exact', 'foo_bar');
       const cached: LCAvailableTools = {
         [exactServerKey]: { type: 'function', function: { name: exactServerKey } },
       };
       const deps = createMockDeps({
         getCachedTools: jest.fn().mockResolvedValue(cached),
         getAllServerConfigs: jest.fn().mockResolvedValue({
-          'foo!': cacheableConfig,
-          foo_: cacheableConfig,
+          'foo bar': cacheableConfig,
+          foo_bar: cacheableConfig,
         }),
       });
       const service = createMCPToolCacheService(deps);
 
-      await service.replaceAppServerTools({ serverName: 'foo!', serverTools: {} });
+      await service.replaceAppServerTools({ serverName: 'foo bar', serverTools: {} });
 
       expect(deps.setCachedTools).toHaveBeenCalledWith(cached);
     });
 
+    it('excludes user-managed server names from app boundary ownership', async () => {
+      const operatorKey = toolName('operator', 'foo_bar');
+      const cached: LCAvailableTools = {
+        [operatorKey]: { type: 'function', function: { name: operatorKey } },
+      };
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(cached),
+        getAllServerConfigs: jest.fn().mockResolvedValue({
+          'foo bar': cacheableConfig,
+          foo_bar: { ...cacheableConfig, source: 'user' },
+        }),
+      });
+      const service = createMCPToolCacheService(deps);
+
+      await service.replaceAppServerTools({ serverName: 'foo bar', serverTools: {} });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith({});
+    });
+
     it('rejects a normalized-name collision that resolves to another server', async () => {
-      const shadowedKey = toolName('shadowed', 'foo_');
+      const shadowedKey = toolName('shadowed', 'foo_bar');
       const deps = createMockDeps({
         getAllServerConfigs: jest.fn().mockResolvedValue({
-          'foo!': cacheableConfig,
-          foo_: cacheableConfig,
+          'foo bar': cacheableConfig,
+          foo_bar: cacheableConfig,
         }),
       });
       const service = createMCPToolCacheService(deps);
 
       await expect(
         service.replaceAppServerTools({
-          serverName: 'foo!',
+          serverName: 'foo bar',
           serverTools: {
             [shadowedKey]: { type: 'function', function: { name: shadowedKey } },
           },
         }),
-      ).rejects.toThrow('belongs to app server foo_');
+      ).rejects.toThrow('belongs to app server foo_bar');
 
       expect(deps.getCachedTools).not.toHaveBeenCalled();
       expect(deps.setCachedTools).not.toHaveBeenCalled();

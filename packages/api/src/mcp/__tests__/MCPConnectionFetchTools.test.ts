@@ -239,11 +239,12 @@ describe('MCPConnection.fetchTools pagination', () => {
     const listTools = jest.fn().mockResolvedValue({ tools: [makeTool('x')], nextCursor: 'same' });
     const conn = createConnectionWithListTools(listTools);
 
-    const tools = await conn.fetchTools();
+    const snapshot = await conn['fetchToolsSnapshot']();
 
     expect(listTools).toHaveBeenCalledTimes(2);
     // The second page's tools are collected before the repeated cursor is detected, hence two copies.
-    expect(tools.map((t) => t.name)).toEqual(['x', 'x']);
+    expect(snapshot.tools.map((tool) => tool.name)).toEqual(['x', 'x']);
+    expect(snapshot.complete).toBe(false);
     expect(mockLogger.warn).toHaveBeenCalledWith(
       expect.stringContaining('repeated tools/list cursor'),
     );

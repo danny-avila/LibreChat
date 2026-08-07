@@ -153,7 +153,11 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   }
 
   async function getAppServerBoundaries(serverName: string): Promise<AppServerBoundary[]> {
-    const names = getAllServerConfigs ? Object.keys(await getAllServerConfigs()) : [];
+    const names = getAllServerConfigs
+      ? Object.entries(await getAllServerConfigs())
+          .filter(([, config]) => canUseAppConnection(config))
+          .map(([name]) => name)
+      : [];
     if (!names.includes(serverName)) {
       names.push(serverName);
     }

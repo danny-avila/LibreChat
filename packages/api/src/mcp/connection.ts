@@ -2514,7 +2514,7 @@ export class MCPConnection extends EventEmitter {
         logger.warn(
           `${this.getLogPrefix()} MCP server returned a repeated tools/list cursor; stopping pagination after ${page} page(s).`,
         );
-        return { tools: allTools, complete: true };
+        return { tools: allTools, complete: false };
       }
 
       seenCursors.add(nextCursor);

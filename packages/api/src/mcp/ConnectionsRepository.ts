@@ -56,9 +56,7 @@ export class ConnectionsRepository {
 
     const existingConnection = this.connections.get(serverName);
     if (!serverConfig || !this.isAllowedToConnectToServer(serverConfig)) {
-      if (existingConnection) {
-        await existingConnection.disconnect();
-      }
+      await this.disconnect(serverName);
       return null;
     }
     if (existingConnection) {

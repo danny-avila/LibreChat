@@ -79,6 +79,7 @@ describe('ConnectionsRepository', () => {
       isStale: jest.fn().mockReturnValue(false),
       /* A real connection is an EventEmitter and the repository subscribes to it. */
       on: jest.fn(),
+      removeAllListeners: jest.fn(),
     } as unknown as jest.Mocked<MCPConnection>;
 
     (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
@@ -241,6 +242,17 @@ describe('ConnectionsRepository', () => {
 
       // Verify repository still has the same connection
       expect(repository['connections'].get('server1')).toBe(freshConnection);
+    });
+
+    it('uses the repository cleanup path when a loaded server config is removed', async () => {
+      repository['connections'].set('server1', mockConnection);
+      delete mockServerConfigs.server1;
+
+      await expect(repository.get('server1')).resolves.toBeNull();
+
+      expect(mockConnection.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
+      expect(mockConnection.disconnect).toHaveBeenCalled();
+      expect(repository['connections'].has('server1')).toBe(false);
     });
     //todo revist later when async getAll(): in packages/api/src/mcp/ConnectionsRepository.ts is refactored
     it.skip('should throw error for non-existent server configuration', async () => {
