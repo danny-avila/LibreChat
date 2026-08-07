@@ -102,7 +102,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
             )}
 
             <AgentContact
-              agent={agent}
+              resource={agent}
               className="mt-1 text-xs text-text-secondary [&_a]:font-normal [&_a]:text-text-secondary"
             />
           </div>

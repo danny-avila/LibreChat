@@ -1,17 +1,22 @@
-import type t from 'librechat-data-provider';
+import type { AgentOwnerContact, SupportContact } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
+export type ContactResource = {
+  support_contact?: SupportContact;
+  owner_contact?: AgentOwnerContact;
+};
+
 type AgentContactProps = {
-  agent?: Pick<t.Agent, 'support_contact' | 'owner_contact'> | null;
+  resource?: ContactResource | null;
   className?: string;
 };
 
-export default function AgentContact({ agent, className = '' }: AgentContactProps) {
+export default function AgentContact({ resource, className = '' }: AgentContactProps) {
   const localize = useLocalize();
-  const supportName = agent?.support_contact?.name?.trim() ?? '';
-  const supportEmail = agent?.support_contact?.email?.trim() ?? '';
-  const ownerName = agent?.owner_contact?.name?.trim() ?? '';
+  const supportName = resource?.support_contact?.name?.trim() ?? '';
+  const supportEmail = resource?.support_contact?.email?.trim() ?? '';
+  const ownerName = resource?.owner_contact?.name?.trim() ?? '';
   let contact: { name: string; email: string } | null = null;
   if (supportName || supportEmail) {
     contact = { name: supportName, email: supportEmail };

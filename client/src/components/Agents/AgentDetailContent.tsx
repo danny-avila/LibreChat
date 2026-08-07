@@ -110,7 +110,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
         </h2>
       </div>
 
-      <AgentContact agent={agent} className="mt-1 justify-center text-center text-sm" />
+      <AgentContact resource={agent} className="mt-1 justify-center text-center text-sm" />
 
       {/* Agent description */}
       <div className="mt-4 whitespace-pre-wrap px-6 text-center text-base text-text-primary">

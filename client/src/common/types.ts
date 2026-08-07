@@ -212,6 +212,8 @@ export interface MCPServerInfo {
   isConfigured: boolean;
   isConnected: boolean;
   consumeOnly?: boolean;
+  support_contact?: t.SupportContact;
+  owner_contact?: t.AgentOwnerContact;
   metadata: t.TPlugin;
 }
 

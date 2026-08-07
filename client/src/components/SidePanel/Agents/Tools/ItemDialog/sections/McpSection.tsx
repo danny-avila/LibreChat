@@ -19,6 +19,7 @@ import {
   useMCPToolOptions,
 } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
+import AgentContact from '~/components/Agents/AgentContact';
 import { mcpAllToken, mcpServerToken } from '../../items/selectors';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
@@ -361,6 +362,8 @@ export default function McpSection({ item }: Props) {
           {item.description}
         </p>
       )}
+
+      <AgentContact resource={liveServer} className="text-sm" />
 
       <div className="flex flex-col">
         <div className="flex items-center justify-between rounded-xl border border-border-light bg-surface-secondary px-3 py-2.5">

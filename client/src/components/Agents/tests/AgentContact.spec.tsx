@@ -21,12 +21,10 @@ describe('AgentContact', () => {
   it('uses support contact before owner contact', () => {
     render(
       <AgentContact
-        agent={
-          {
-            support_contact: { name: 'Support Team', email: 'support@example.com' },
-            owner_contact: { name: 'Owner User' },
-          } as any
-        }
+        resource={{
+          support_contact: { name: 'Support Team', email: 'support@example.com' },
+          owner_contact: { name: 'Owner User' },
+        }}
       />,
     );
 
@@ -41,12 +39,10 @@ describe('AgentContact', () => {
   it('falls back to owner contact as a plain name without a mailto link', () => {
     render(
       <AgentContact
-        agent={
-          {
-            support_contact: undefined,
-            owner_contact: { name: 'Owner User', email: 'owner@example.com' },
-          } as any
-        }
+        resource={{
+          support_contact: undefined,
+          owner_contact: { name: 'Owner User' },
+        }}
       />,
     );
 
@@ -54,8 +50,24 @@ describe('AgentContact', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
+  it('uses the support email as the linked label when no name exists', () => {
+    render(<AgentContact resource={{ support_contact: { email: 'support@example.com' } }} />);
+
+    expect(screen.getByRole('link', { name: 'support@example.com' })).toHaveAttribute(
+      'href',
+      'mailto:support@example.com',
+    );
+  });
+
+  it('renders a support name without a link when no email exists', () => {
+    render(<AgentContact resource={{ support_contact: { name: 'Support Team' } }} />);
+
+    expect(screen.getByText('Support Team')).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('renders no-contact text when no contact is available', () => {
-    render(<AgentContact agent={{ support_contact: {}, owner_contact: undefined } as any} />);
+    render(<AgentContact resource={{ support_contact: {}, owner_contact: undefined }} />);
 
     expect(screen.getByText('No contact available')).toBeInTheDocument();
   });

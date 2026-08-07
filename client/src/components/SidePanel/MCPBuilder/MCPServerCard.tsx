@@ -6,6 +6,7 @@ import type { MCPServerDefinition } from '~/hooks';
 import MCPServerDialog from './MCPServerDialog';
 import { getStatusDotColor } from './MCPStatusBadge';
 import MCPCardActions from './MCPCardActions';
+import AgentContact from '~/components/Agents/AgentContact';
 import { useMCPServerManager, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -125,6 +126,7 @@ export default function MCPServerCard({
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-text-primary">{displayName}</div>
           {description && <p className="truncate text-xs text-text-secondary">{description}</p>}
+          <AgentContact resource={server} className="text-xs" />
         </div>
 
         {/* Actions */}
