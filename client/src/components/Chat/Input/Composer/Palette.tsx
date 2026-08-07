@@ -625,6 +625,26 @@ function Palette({
     [rows, popover, recent, showAllAttach],
   );
 
+  /**
+   * The popup is portaled but still a React descendant of the composer box, so
+   * a row's click bubbles into the box's own "focus the textarea" handler. On a
+   * row that leaves the palette open (a disclosure, or a catalog toggle meant to
+   * be flipped several times in one visit) that pulls focus off the combobox
+   * mid-visit and can dismiss the popup. Rows that dismiss it themselves are
+   * left alone: handing focus back to the composer is exactly what should
+   * happen there.
+   */
+  const handleRowClick = useCallback(
+    (event: React.MouseEvent, index: number) => {
+      const row = rows[index];
+      if (row != null && row.type !== 'attach' && row.type !== 'file') {
+        event.stopPropagation();
+      }
+      activate(index);
+    },
+    [rows, activate],
+  );
+
   const toggleFavoriteAt = useCallback(
     (index: number) => {
       const row = rows[index];
@@ -714,7 +734,7 @@ function Palette({
             id={paletteRowId(row.key)}
             role="option"
             aria-selected={isActive}
-            onClick={() => activate(index)}
+            onClick={(event) => handleRowClick(event, index)}
             onMouseEnter={() => {
               setActiveKey(row.key);
               setScrollToActive(false);
@@ -744,7 +764,7 @@ function Palette({
             id={paletteRowId(row.key)}
             role="option"
             aria-selected={isActive}
-            onClick={() => activate(index)}
+            onClick={(event) => handleRowClick(event, index)}
             onMouseEnter={() => {
               setActiveKey(row.key);
               setScrollToActive(false);
@@ -804,7 +824,7 @@ function Palette({
           aria-label={
             favorited ? `${label}, ${localize('com_ui_tools_view_favorites')}` : undefined
           }
-          onClick={() => activate(index)}
+          onClick={(event) => handleRowClick(event, index)}
           onMouseEnter={() => {
             setActiveKey(row.key);
             setScrollToActive(false);
@@ -899,7 +919,7 @@ function Palette({
     [
       rows,
       activeIndex,
-      activate,
+      handleRowClick,
       favorites,
       localize,
       expanded,

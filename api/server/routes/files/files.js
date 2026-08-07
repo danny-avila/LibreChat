@@ -66,12 +66,16 @@ router.get('/', async (req, res) => {
     /** Already sorted by `updatedAt` desc in `getFiles`; a limit returns the
      *  most recently touched files without loading the full history. */
     const files = await db.getFiles({ user: req.user.id }, null, null, limit);
+    /** `refreshS3FileUrls` copies rather than mutating, so the refreshed rows
+     *  only reach the client if its return value is the one sent. Falls back to
+     *  the original list whenever no refresh ran or one failed. */
+    let responseFiles = files;
     if (appConfig.fileStrategy === FileSources.s3) {
       try {
         const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
         const alreadyChecked = await cache.get(req.user.id);
         if (!alreadyChecked) {
-          await refreshS3FileUrls(files, db.batchUpdateFiles);
+          responseFiles = await refreshS3FileUrls(files, db.batchUpdateFiles);
           /** Only mark the user-wide interval after a full list: a limited
            *  palette request refreshes only the newest rows, and caching that
            *  would leave older signed URLs stale for the files panel. */
@@ -83,7 +87,7 @@ router.get('/', async (req, res) => {
         logger.warn('[/files] Error refreshing S3 file URLs:', error);
       }
     }
-    res.status(200).send(files);
+    res.status(200).send(responseFiles);
   } catch (error) {
     logger.error('[/files] Error getting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
