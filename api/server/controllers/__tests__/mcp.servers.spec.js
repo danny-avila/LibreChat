@@ -312,7 +312,7 @@ describe('getMCPServersList', () => {
     const dbId = new mongoose.Types.ObjectId();
     mockResolveAllMcpConfigs.mockResolvedValue({ dbServer: createDbConfig(dbId) });
     const ownerLookup = jest
-      .spyOn(db, 'findFirstUserOwnerIds')
+      .spyOn(db, 'aggregateAclEntries')
       .mockRejectedValueOnce(new Error('DB'));
 
     const res = createRes();
@@ -356,7 +356,7 @@ describe('getMCPServerById', () => {
 
   it('does not resolve owner contacts on the detail route', async () => {
     const reqUser = await createUser();
-    const ownerLookup = jest.spyOn(db, 'findFirstUserOwnerIds');
+    const ownerLookup = jest.spyOn(db, 'aggregateAclEntries');
     mockRegistryInstance.getServerConfig.mockResolvedValue({ ...yamlConfig });
 
     const res = createRes();

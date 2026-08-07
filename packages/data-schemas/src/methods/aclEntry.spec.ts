@@ -1277,56 +1277,6 @@ describe('AclEntry Model Tests', () => {
     });
   });
 
-  describe('findFirstUserOwnerIds', () => {
-    test('returns the earliest full-permission user owner for each resource', async () => {
-      const laterOwnerId = new mongoose.Types.ObjectId();
-      const earliestOwnerId = new mongoose.Types.ObjectId();
-      const ownerBits =
-        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
-
-      await AclEntry.create([
-        {
-          resourceType: ResourceType.MCPSERVER,
-          resourceId,
-          principalType: PrincipalType.USER,
-          principalModel: PrincipalModel.USER,
-          principalId: laterOwnerId,
-          permBits: ownerBits,
-          grantedBy: grantedById,
-          grantedAt: new Date('2025-02-01T00:00:00.000Z'),
-        },
-        {
-          resourceType: ResourceType.MCPSERVER,
-          resourceId,
-          principalType: PrincipalType.USER,
-          principalModel: PrincipalModel.USER,
-          principalId: earliestOwnerId,
-          permBits: ownerBits,
-          grantedBy: grantedById,
-          grantedAt: new Date('2025-01-01T00:00:00.000Z'),
-        },
-        {
-          resourceType: ResourceType.MCPSERVER,
-          resourceId,
-          principalType: PrincipalType.USER,
-          principalModel: PrincipalModel.USER,
-          principalId: userId,
-          permBits: PermissionBits.VIEW,
-          grantedBy: grantedById,
-          grantedAt: new Date('2024-01-01T00:00:00.000Z'),
-        },
-      ]);
-
-      const result = await methods.findFirstUserOwnerIds(
-        ResourceType.MCPSERVER,
-        [resourceId],
-        ownerBits,
-      );
-
-      expect(result).toEqual(new Map([[resourceId.toString(), earliestOwnerId.toString()]]));
-    });
-  });
-
   /**
    * These cases exercise the application-layer bitwise filtering that replaced
    * the `$bitsAllSet` query operator (which is not supported by MongoDB forks

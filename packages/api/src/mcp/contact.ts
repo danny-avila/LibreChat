@@ -1,5 +1,7 @@
-import { PermissionBits, ResourceType } from 'librechat-data-provider';
+import { Types } from 'mongoose';
+import { PermissionBits, PrincipalType, ResourceType } from 'librechat-data-provider';
 import type { MCPServerOwnerContact } from 'librechat-data-provider';
+import type { PipelineStage } from 'mongoose';
 
 import type { ParsedServerConfig } from '~/mcp/types';
 
@@ -12,6 +14,11 @@ type OwnerUser = {
   _id?: string | { toString(): string };
   name?: string | null;
   username?: string | null;
+};
+
+type OwnerAclEntry = {
+  _id?: string | { toString(): string };
+  principalId?: string | { toString(): string };
 };
 
 const normalizeContactValue = (value?: string | null): string | undefined => {
@@ -34,11 +41,7 @@ const resolveOwnerContact = (owner?: OwnerUser): MCPServerOwnerContact | undefin
 };
 
 export type MCPContactDependencies = {
-  findFirstUserOwnerIds: (
-    resourceType: string,
-    resourceIds: string[],
-    ownerPermissionBits: number,
-  ) => Promise<Map<string, string>>;
+  aggregateAclEntries: (pipeline: PipelineStage[]) => Promise<OwnerAclEntry[]>;
   findUsers: (query: { _id: { $in: string[] } }, projection: string) => Promise<OwnerUser[]>;
   warn: (message: string, error: unknown) => void;
 };
@@ -57,10 +60,30 @@ export async function resolveMCPServerOwnerContacts(
 
   let ownerIdsByResource = new Map<string, string>();
   try {
-    ownerIdsByResource = await dependencies.findFirstUserOwnerIds(
-      ResourceType.MCPSERVER,
-      candidates.map(([, config]) => config.dbId as string),
-      OWNER_PERMISSION_BITS,
+    const resourceIds = candidates.map(([, config]) => {
+      const resourceId = config.dbId as string;
+      return /^[a-f\d]{24}$/i.test(resourceId)
+        ? Types.ObjectId.createFromHexString(resourceId)
+        : resourceId;
+    });
+    const entries = await dependencies.aggregateAclEntries([
+      {
+        $match: {
+          resourceType: ResourceType.MCPSERVER,
+          resourceId: { $in: resourceIds },
+          principalType: PrincipalType.USER,
+          permBits: OWNER_PERMISSION_BITS,
+        },
+      },
+      { $sort: { grantedAt: 1, createdAt: 1, _id: 1 } },
+      { $group: { _id: '$resourceId', principalId: { $first: '$principalId' } } },
+    ]);
+    ownerIdsByResource = new Map(
+      entries.flatMap((entry) => {
+        const resourceId = entry._id?.toString();
+        const ownerId = entry.principalId?.toString();
+        return resourceId && ownerId ? [[resourceId, ownerId] as const] : [];
+      }),
     );
   } catch (error) {
     dependencies.warn('[MCP] Failed to resolve MCP server owner ACL entries', error);

@@ -1,4 +1,4 @@
-import { PermissionBits, ResourceType } from 'librechat-data-provider';
+import { PermissionBits, PrincipalType, ResourceType } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 import { resolveMCPServerOwnerContacts, type MCPContactDependencies } from '~/mcp/contact';
 
@@ -11,7 +11,7 @@ const createDependencies = (
   overrides: Partial<MCPContactDependencies> = {},
 ): jest.Mocked<MCPContactDependencies> =>
   ({
-    findFirstUserOwnerIds: jest.fn().mockResolvedValue(new Map()),
+    aggregateAclEntries: jest.fn().mockResolvedValue([]),
     findUsers: jest.fn().mockResolvedValue([]),
     warn: jest.fn(),
     ...overrides,
@@ -36,18 +36,16 @@ describe('resolveMCPServerOwnerContacts', () => {
     );
 
     expect(result).toEqual(new Map());
-    expect(dependencies.findFirstUserOwnerIds).not.toHaveBeenCalled();
+    expect(dependencies.aggregateAclEntries).not.toHaveBeenCalled();
     expect(dependencies.findUsers).not.toHaveBeenCalled();
   });
 
   it('uses the first ACL owner and batches owner lookups', async () => {
     const dependencies = createDependencies({
-      findFirstUserOwnerIds: jest.fn().mockResolvedValue(
-        new Map([
-          ['resource-1', 'owner-1'],
-          ['resource-2', 'owner-2'],
-        ]),
-      ),
+      aggregateAclEntries: jest.fn().mockResolvedValue([
+        { _id: 'resource-1', principalId: 'owner-1' },
+        { _id: 'resource-2', principalId: 'owner-2' },
+      ]),
       findUsers: jest.fn().mockResolvedValue([
         { _id: 'owner-1', name: 'First Owner' },
         { _id: 'owner-2', username: 'Second Owner' },
@@ -62,11 +60,18 @@ describe('resolveMCPServerOwnerContacts', () => {
       dependencies,
     );
 
-    expect(dependencies.findFirstUserOwnerIds).toHaveBeenCalledWith(
-      ResourceType.MCPSERVER,
-      ['resource-1', 'resource-2'],
-      OWNER_PERMISSION_BITS,
-    );
+    expect(dependencies.aggregateAclEntries).toHaveBeenCalledWith([
+      {
+        $match: {
+          resourceType: ResourceType.MCPSERVER,
+          resourceId: { $in: ['resource-1', 'resource-2'] },
+          principalType: PrincipalType.USER,
+          permBits: OWNER_PERMISSION_BITS,
+        },
+      },
+      { $sort: { grantedAt: 1, createdAt: 1, _id: 1 } },
+      { $group: { _id: '$resourceId', principalId: { $first: '$principalId' } } },
+    ]);
     expect(dependencies.findUsers).toHaveBeenCalledTimes(1);
     expect(dependencies.findUsers).toHaveBeenCalledWith(
       { _id: { $in: ['owner-1', 'owner-2'] } },
@@ -123,7 +128,7 @@ describe('resolveMCPServerOwnerContacts', () => {
   it('falls back to authors and logs when the ACL lookup fails', async () => {
     const error = new Error('ACL unavailable');
     const dependencies = createDependencies({
-      findFirstUserOwnerIds: jest.fn().mockRejectedValue(error),
+      aggregateAclEntries: jest.fn().mockRejectedValue(error),
       findUsers: jest.fn().mockResolvedValue([{ _id: 'author-1', name: 'Author Owner' }]),
     });
 

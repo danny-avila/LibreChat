@@ -311,7 +311,7 @@ const getMCPServersList = async (req, res) => {
     const [canEditByServer, ownerContacts] = await Promise.all([
       computeCanEditByServer(req, serverConfigs, { skipCapabilityWithoutDbIds: true }),
       resolveMCPServerOwnerContacts(serverConfigs, {
-        findFirstUserOwnerIds: db.findFirstUserOwnerIds,
+        aggregateAclEntries: db.aggregateAclEntries,
         findUsers: db.findUsers,
         warn: (message, error) => logger.warn(message, error),
       }),

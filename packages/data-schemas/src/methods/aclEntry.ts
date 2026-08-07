@@ -152,11 +152,6 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     requiredPermissions: number,
   ) => Promise<Types.ObjectId[]>;
   aggregateAclEntries: (pipeline: PipelineStage[]) => Promise<unknown[]>;
-  findFirstUserOwnerIds: (
-    resourceType: string,
-    resourceIds: Array<string | Types.ObjectId>,
-    ownerPermissionBits: number,
-  ) => Promise<Map<string, string>>;
   getSoleOwnedResourceIds: (
     userObjectId: Types.ObjectId,
     resourceTypes: string | string[],
@@ -564,36 +559,6 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     return AclEntry.aggregate(pipeline);
   }
 
-  async function findFirstUserOwnerIds(
-    resourceType: string,
-    resourceIds: Array<string | Types.ObjectId>,
-    ownerPermissionBits: number,
-  ): Promise<Map<string, string>> {
-    if (resourceIds.length === 0) {
-      return new Map();
-    }
-
-    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    const entries = await AclEntry.find({
-      resourceType,
-      resourceId: { $in: resourceIds },
-      principalType: PrincipalType.USER,
-      permBits: { $in: permissionBitSupersets(ownerPermissionBits) },
-    })
-      .sort({ grantedAt: 1, createdAt: 1, _id: 1 })
-      .lean<IAclEntry[]>();
-
-    const owners = new Map<string, string>();
-    for (const entry of entries) {
-      const resourceId = entry.resourceId?.toString();
-      const principalId = entry.principalId?.toString();
-      if (resourceId && principalId && !owners.has(resourceId)) {
-        owners.set(resourceId, principalId);
-      }
-    }
-    return owners;
-  }
-
   /**
    * Returns resource IDs solely owned by the given user (no other principals
    * hold DELETE on the same resource). Handles both single and array resource types.
@@ -658,7 +623,6 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     bulkWriteAclEntries,
     findPublicResourceIds,
     aggregateAclEntries,
-    findFirstUserOwnerIds,
     getSoleOwnedResourceIds,
   };
 }
