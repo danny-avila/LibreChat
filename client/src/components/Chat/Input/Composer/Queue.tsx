@@ -140,10 +140,10 @@ function QueueRow({
   drag(gripRef);
 
   const fileCount = message.files?.length ?? 0;
-  /** Paused-on-approval: `sendQueuedNow` can neither steer (no live reply
-   *  accepting input) nor send (a run is still active), so it would just
-   *  re-queue the message with nothing visible happening. */
-  const sendDisabled = steering.duringRunActive && !steering.canSteer;
+  /** Any submission-owned non-steerable state (approval pause, answer mode,
+   *  Assistants still generating): `sendQueuedNow` has no immediate route and
+   *  would no-op. Prefer the flag the hook already exposes over re-deriving it. */
+  const sendDisabled = !steering.canSendQueuedNow;
   /* A recovered item is consumed atomically only when it starts a normal
      generation. Escalating it would leave or duplicate the parked source. */
   const isRecovered = message.recoverySteerId != null;

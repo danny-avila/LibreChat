@@ -19,10 +19,35 @@ jest.mock('~/hooks', () => ({
 }));
 
 const mockShowToast = jest.fn();
-jest.mock('@librechat/client', () => ({
-  ...jest.requireActual('@librechat/client'),
-  useToastContext: () => ({ showToast: mockShowToast }),
-}));
+jest.mock('@librechat/client', () => {
+  const React = require('react');
+  const IconButton = React.forwardRef(
+    (
+      {
+        label,
+        children,
+        ...props
+      }: { label?: string; children?: React.ReactNode } & Record<string, unknown>,
+      ref: React.Ref<HTMLButtonElement>,
+    ) =>
+      React.createElement(
+        'button',
+        { ...props, ref, type: 'button', 'aria-label': label },
+        children,
+      ),
+  );
+  IconButton.displayName = 'IconButton';
+  return {
+    Button: ({
+      children,
+      ...props
+    }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      React.createElement('button', { type: 'button', ...props }, children),
+    IconButton,
+    useMediaQuery: () => true,
+    useToastContext: () => ({ showToast: mockShowToast }),
+  };
+});
 
 const CONVO_ID = 'convo-1';
 const mockSendQueuedNow = jest.fn();
@@ -38,6 +63,7 @@ const steeringWith = (over: Partial<SteeringControls> = {}): SteeringControls =>
     queueKey: CONVO_ID,
     duringRunActive: true,
     canSteer: true,
+    canSendQueuedNow: true,
     sendQueuedNow: mockSendQueuedNow,
     removeQueued: mockRemoveQueued,
     reorderQueued: mockReorderQueued,
@@ -47,10 +73,14 @@ const steeringWith = (over: Partial<SteeringControls> = {}): SteeringControls =>
   }) as SteeringControls;
 
 const steering = steeringWith();
-const pausedSteering = steeringWith({ canSteer: false });
+const pausedSteering = steeringWith({ canSteer: false, canSendQueuedNow: false });
 /** Paused on a tool approval: steering is unavailable, but the escalation
  *  control stays visible-and-disabled rather than vanishing mid-pause. */
-const approvalPausedSteering = steeringWith({ canSteer: false, pausedOnApproval: true });
+const approvalPausedSteering = steeringWith({
+  canSteer: false,
+  canSendQueuedNow: false,
+  pausedOnApproval: true,
+});
 
 const queued = (over: Partial<QueuedMessage> = {}): QueuedMessage =>
   ({
@@ -120,6 +150,20 @@ describe('Queue', () => {
     expect(sendButton).toBeDisabled();
     expect(sendButton).toHaveAttribute('title', 'com_ui_send_now_paused');
 
+    fireEvent.click(sendButton);
+    expect(mockSendQueuedNow).not.toHaveBeenCalled();
+  });
+
+  /* Answer mode (and Assistants still generating) leave duringRunActive false
+     while isSubmitting is true; sendQueuedNow would no-op, so the control must
+     not look actionable. */
+  it('disables send now when no immediate send route exists', () => {
+    renderQueue(
+      [queued()],
+      steeringWith({ duringRunActive: false, canSteer: false, canSendQueuedNow: false }),
+    );
+    const sendButton = screen.getByText('com_ui_send_now');
+    expect(sendButton).toBeDisabled();
     fireEvent.click(sendButton);
     expect(mockSendQueuedNow).not.toHaveBeenCalled();
   });
