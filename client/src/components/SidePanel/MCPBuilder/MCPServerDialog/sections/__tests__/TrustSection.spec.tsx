@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { FormProvider, useForm } from 'react-hook-form';
 import type { ChangeEvent, ReactNode } from 'react';
-import TrustSection from '../TrustSection';
 import type { MCPServerFormData } from '../../hooks/useMCPServerForm';
+import TrustSection from '../TrustSection';
 
 type LocalizedValue = string | Record<string, string>;
 

@@ -8,10 +8,10 @@ import {
   useUpdateMCPServerMutation,
   useDeleteMCPServerMutation,
 } from '~/data-provider/MCP';
+import { getSubmittedSupportContact, getSupportContactFormValues } from '../utils/contact';
 import { extractServerNameFromUrl, isValidUrl, normalizeUrl } from '../utils/urlUtils';
 import { getMCPServerErrorMessage } from '../utils/error';
 import { getOAuthConfig } from '../utils/oauth';
-import { getSubmittedSupportContact, getSupportContactFormValues } from '../utils/contact';
 import { useLocalize } from '~/hooks';
 
 // Auth type enum

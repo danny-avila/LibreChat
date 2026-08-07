@@ -3,11 +3,11 @@ import { MCPIcon } from '@librechat/client';
 import { PermissionBits, hasPermissions } from 'librechat-data-provider';
 import type { MCPServerStatusIconProps } from '~/components/MCP/MCPServerStatusIcon';
 import type { MCPServerDefinition } from '~/hooks';
-import MCPServerDialog from './MCPServerDialog';
-import { getStatusDotColor } from './MCPStatusBadge';
-import MCPCardActions from './MCPCardActions';
 import AgentContact from '~/components/Agents/AgentContact';
 import { useMCPServerManager, useLocalize } from '~/hooks';
+import { getStatusDotColor } from './MCPStatusBadge';
+import MCPServerDialog from './MCPServerDialog';
+import MCPCardActions from './MCPCardActions';
 import { cn } from '~/utils';
 
 interface MCPServerCardProps {

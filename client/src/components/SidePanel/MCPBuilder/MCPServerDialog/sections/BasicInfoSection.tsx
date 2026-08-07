@@ -2,8 +2,8 @@ import { useFormContext } from 'react-hook-form';
 import { Input, Label, Textarea } from '@librechat/client';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
-import { useLocalize } from '~/hooks';
 import { cn, validateEmail } from '~/utils';
+import { useLocalize } from '~/hooks';
 
 export default function BasicInfoSection() {
   const localize = useLocalize();

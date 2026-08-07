@@ -19,10 +19,10 @@ import {
   useMCPToolOptions,
 } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
-import AgentContact from '~/components/Agents/AgentContact';
 import { mcpAllToken, mcpServerToken } from '../../items/selectors';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
+import AgentContact from '~/components/Agents/AgentContact';
 import { useAgentPanelContext } from '~/Providers';
 import { getIconForItem } from '../../items/icons';
 import OptionToggle from '../../../OptionToggle';
