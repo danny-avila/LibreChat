@@ -52,7 +52,11 @@ function toCandidates(rows: readonly Row[]): readonly ArmCandidate[] {
  * an error string or an id expects to find the message containing it, not only a
  * message equal to it. Title matches outrank body matches.
  */
-export function buildExactArm(scoped: ScopedQuery, query: string, limit = ARM_LIMIT): ArmQuery {
+export function buildExactArm(
+  scoped: ScopedQuery,
+  query: string,
+  limit: number = ARM_LIMIT,
+): ArmQuery {
   const s = assertScopedQuery(scoped);
   const q = s.nextIndex;
   return {
@@ -68,7 +72,11 @@ export function buildExactArm(scoped: ScopedQuery, query: string, limit = ARM_LI
 }
 
 /** Fuzzy/typo tolerance over the GIN trigram indexes. */
-export function buildTrigramArm(scoped: ScopedQuery, query: string, limit = ARM_LIMIT): ArmQuery {
+export function buildTrigramArm(
+  scoped: ScopedQuery,
+  query: string,
+  limit: number = ARM_LIMIT,
+): ArmQuery {
   const s = assertScopedQuery(scoped);
   const q = s.nextIndex;
   return {
@@ -90,7 +98,11 @@ export function buildTrigramArm(scoped: ScopedQuery, query: string, limit = ARM_
  * `or`/`-` behave the way a user typing into a search box expects, and so a
  * malformed query degrades to no matches instead of raising.
  */
-export function buildFtsArm(scoped: ScopedQuery, query: string, limit = ARM_LIMIT): ArmQuery {
+export function buildFtsArm(
+  scoped: ScopedQuery,
+  query: string,
+  limit: number = ARM_LIMIT,
+): ArmQuery {
   const s = assertScopedQuery(scoped);
   const q = s.nextIndex;
   return {
@@ -119,7 +131,7 @@ export function buildVectorArm(
   scoped: ScopedQuery,
   embedding: readonly number[],
   space: string,
-  limit = ARM_LIMIT,
+  limit: number = ARM_LIMIT,
 ): ArmQuery {
   const s = assertScopedQuery(scoped);
   const v = s.nextIndex;
@@ -157,7 +169,7 @@ export async function runLexicalArms(
   client: SearchClient,
   scoped: ScopedQuery,
   query: string,
-  limit = ARM_LIMIT,
+  limit: number = ARM_LIMIT,
 ): Promise<LexicalArms> {
   const [exact, trigram, fts] = await Promise.all([
     run(client, buildExactArm(scoped, query, limit)),
@@ -172,7 +184,7 @@ export function runVectorArm(
   scoped: ScopedQuery,
   embedding: readonly number[],
   space: string,
-  limit = ARM_LIMIT,
+  limit: number = ARM_LIMIT,
 ): Promise<readonly ArmCandidate[]> {
   return run(client, buildVectorArm(scoped, embedding, space, limit));
 }
