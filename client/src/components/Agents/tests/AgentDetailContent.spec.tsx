@@ -8,6 +8,7 @@ import AgentDetailContent from '../AgentDetailContent';
 
 const mockNewConversation = jest.fn();
 let mockConversation: Partial<TConversation> | undefined;
+const mockIsFavoriteAgent = jest.fn(() => false);
 
 jest.mock('librechat-data-provider', () => ({
   QueryKeys: {
@@ -28,23 +29,27 @@ jest.mock('librechat-data-provider', () => ({
   },
 }));
 
-jest.mock('@librechat/client', () => ({
-  OGDialogContent: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="dialog-content">{children}</div>
-  ),
-  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button {...props}>{children}</button>
-  ),
-  TooltipAnchor: ({ render }: { render: React.ReactNode }) => render,
-  useToastContext: () => ({
-    showToast: jest.fn(),
-  }),
-}));
+jest.mock('@librechat/client', () => {
+  const { createPinMorphIconMock } = jest.requireActual('~/../test/mockMorphIcon');
+  return {
+    OGDialogContent: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="dialog-content">{children}</div>
+    ),
+    Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button {...props}>{children}</button>
+    ),
+    TooltipAnchor: ({ render }: { render: React.ReactNode }) => render,
+    MorphIcon: createPinMorphIconMock(),
+    useToastContext: () => ({
+      showToast: jest.fn(),
+    }),
+  };
+});
 
 jest.mock('~/hooks', () => ({
   useDefaultConvo: () => jest.fn((value) => value.conversation),
   useFavorites: () => ({
-    isFavoriteAgent: jest.fn(() => false),
+    isFavoriteAgent: mockIsFavoriteAgent,
     toggleFavoriteAgent: jest.fn(),
   }),
   useLocalize: () => (key: string, values?: Record<string, string>) => {
@@ -105,6 +110,7 @@ describe('AgentDetailContent', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockConversation = undefined;
+    mockIsFavoriteAgent.mockReturnValue(false);
   });
 
   it('renders support contact with mailto link', () => {
@@ -170,5 +176,17 @@ describe('AgentDetailContent', () => {
         modelLabel: null,
       }),
     });
+  });
+
+  it('shows pin icon when agent is not a favorite and pin-off when it is', () => {
+    const { unmount } = renderWithClient(<AgentDetailContent agent={baseAgent} />);
+    expect(screen.getByRole('button', { name: 'Pin' })).toBeInTheDocument();
+    expect(screen.getByTestId('morph-icon')).toHaveAttribute('data-icon', 'pin');
+    unmount();
+
+    mockIsFavoriteAgent.mockReturnValue(true);
+    renderWithClient(<AgentDetailContent agent={baseAgent} />);
+    expect(screen.getByRole('button', { name: 'Unpin' })).toBeInTheDocument();
+    expect(screen.getByTestId('morph-icon')).toHaveAttribute('data-icon', 'pin-off');
   });
 });
