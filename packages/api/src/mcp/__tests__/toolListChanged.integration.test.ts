@@ -231,6 +231,32 @@ describe('tools/list_changed', () => {
     expect(snapshots[0].map(({ name }) => name)).toEqual(['initial', 'added-while-disconnected']);
   });
 
+  it('publishes an empty snapshot when a reconnect no longer advertises tools', async () => {
+    harness = await createHarness([tool('initial')]);
+    const snapshots: Tool[][] = [];
+    harness.connection.on('toolsChanged', (tools: Tool[]) => snapshots.push(tools));
+    await harness.connection.fetchTools();
+    jest.spyOn(harness.connection.client, 'getServerCapabilities').mockReturnValue({});
+
+    harness.connection.emit('connectionChange', 'disconnected');
+    harness.connection.emit('connectionChange', 'connected');
+
+    await waitFor(() => snapshots.length === 1);
+    expect(snapshots[0]).toEqual([]);
+  });
+
+  it('clears a recreated connection when its current server no longer advertises tools', async () => {
+    harness = await createHarness([tool('initial')]);
+    const snapshots: Tool[][] = [];
+    harness.connection.on('toolsChanged', (tools: Tool[]) => snapshots.push(tools));
+    await harness.connection.fetchTools();
+    jest.spyOn(harness.connection.client, 'getServerCapabilities').mockReturnValue({});
+
+    await harness.connection.refreshToolList();
+
+    expect(snapshots).toEqual([[]]);
+  });
+
   it('retains the last good catalog and retries after a transient list failure', async () => {
     harness = await createHarness([tool('initial')]);
     const snapshots: Tool[][] = [];

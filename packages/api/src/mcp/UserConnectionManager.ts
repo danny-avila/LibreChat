@@ -527,6 +527,7 @@ export abstract class UserConnectionManager {
       }
 
       if (!ephemeralConnection) {
+        await connection.refreshToolList();
         if (!this.userConnections.has(userId)) {
           this.userConnections.set(userId, new Map());
         }

@@ -1776,8 +1776,14 @@ export class MCPConnection extends EventEmitter {
         this.isInitializing = false;
         this.shouldStopReconnecting = false;
         this.reconnectAttempts = 0;
-        if (isReconnect && this.client.getServerCapabilities()?.tools != null) {
-          this.toolListChangeGeneration++;
+        if (isReconnect) {
+          if (this.client.getServerCapabilities()?.tools != null) {
+            this.toolListChangeGeneration++;
+          } else {
+            this.handledToolListChangeGeneration = this.toolListChangeGeneration;
+            this.toolListRefreshFailures = 0;
+            this.dispatchToolsChanged([]);
+          }
         }
         if (this.handledToolListChangeGeneration < this.toolListChangeGeneration) {
           this.startToolListRefresh();
@@ -1908,6 +1914,9 @@ export class MCPConnection extends EventEmitter {
   /** Queues a live tool-list refresh through the same coalescing path used by notifications. */
   public async refreshToolList(): Promise<void> {
     if (this.client.getServerCapabilities()?.tools == null) {
+      if (this.connectionState === 'connected') {
+        this.dispatchToolsChanged([]);
+      }
       return;
     }
     this.toolListChangeGeneration++;
@@ -1985,11 +1994,15 @@ export class MCPConnection extends EventEmitter {
 
       this.toolListRefreshFailures = 0;
       this.handledToolListChangeGeneration = targetGeneration;
-      try {
-        this.emit('toolsChanged', snapshot.tools);
-      } catch (error) {
-        logger.error(`${this.getLogPrefix()} Failed to dispatch refreshed tools:`, error);
-      }
+      this.dispatchToolsChanged(snapshot.tools);
+    }
+  }
+
+  private dispatchToolsChanged(tools: MCPListToolsResult['tools']): void {
+    try {
+      this.emit('toolsChanged', tools);
+    } catch (error) {
+      logger.error(`${this.getLogPrefix()} Failed to dispatch refreshed tools:`, error);
     }
   }
 

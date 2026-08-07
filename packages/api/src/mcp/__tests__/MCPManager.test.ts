@@ -584,6 +584,8 @@ describe('MCPManager', () => {
 
     const mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
+      refreshToolList: jest.fn().mockResolvedValue(undefined),
+      disconnect: jest.fn().mockResolvedValue(undefined),
       on: jest.fn(),
       setRequestHeaders: jest.fn(),
       timeout: 30000,
@@ -1636,6 +1638,7 @@ describe('MCPManager', () => {
       isConnected: jest.fn().mockResolvedValue(true),
       isStale: jest.fn().mockReturnValue(false),
       disconnect: jest.fn().mockResolvedValue(undefined),
+      refreshToolList: jest.fn().mockResolvedValue(undefined),
       on: jest.fn(),
     } as unknown as MCPConnection;
 
@@ -1739,6 +1742,23 @@ describe('MCPManager', () => {
       } finally {
         notifySpy.mockRestore();
       }
+    });
+
+    it('refreshes a newly recreated durable user connection after subscribing', async () => {
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'yaml',
+        startup: false,
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({ serverName, user: mockUser });
+
+      expect(mockConnection.on).toHaveBeenCalledWith('toolsChanged', expect.any(Function));
+      expect(mockConnection.refreshToolList).toHaveBeenCalledTimes(1);
     });
 
     it('should detect OAuth after resolving trusted runtime URL placeholders', async () => {

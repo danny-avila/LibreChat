@@ -25,6 +25,11 @@ const lazyConfig: ParsedServerConfig = {
   startup: false,
 };
 
+const tenantConfig: ParsedServerConfig = {
+  ...cacheableConfig,
+  source: 'config',
+};
+
 function createMockDeps(overrides: Partial<MCPToolCacheDeps> = {}): MCPToolCacheDeps {
   return {
     getCachedTools: jest.fn().mockResolvedValue(null),
@@ -188,6 +193,29 @@ describe('createMCPToolCacheService', () => {
       expect(deps.setCachedTools).toHaveBeenCalledWith(cached);
     });
 
+    it('rejects a normalized-name collision that resolves to another server', async () => {
+      const shadowedKey = toolName('shadowed', 'foo_');
+      const deps = createMockDeps({
+        getAllServerConfigs: jest.fn().mockResolvedValue({
+          'foo!': cacheableConfig,
+          foo_: cacheableConfig,
+        }),
+      });
+      const service = createMCPToolCacheService(deps);
+
+      await expect(
+        service.replaceAppServerTools({
+          serverName: 'foo!',
+          serverTools: {
+            [shadowedKey]: { type: 'function', function: { name: shadowedKey } },
+          },
+        }),
+      ).rejects.toThrow('belongs to app server foo_');
+
+      expect(deps.getCachedTools).not.toHaveBeenCalled();
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
+    });
+
     it('serializes concurrent app-level replacements so one server cannot overwrite another', async () => {
       let cache: LCAvailableTools = {};
       const deps = createMockDeps({
@@ -261,6 +289,46 @@ describe('createMCPToolCacheService', () => {
       await updateMCPServerTools({ serverName: 'srv', tools: [] });
 
       expect(deps.setCachedTools).toHaveBeenCalledWith({});
+    });
+
+    it('restores an app-owned server to the global cache from a user reinitialization', async () => {
+      const deps = createMockDeps({
+        getAllServerConfigs: jest.fn().mockResolvedValue({ brave: cacheableConfig }),
+      });
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await updateMCPServerTools({
+        userId: 'u1',
+        serverName: 'brave',
+        serverConfig: cacheableConfig,
+        tools: [{ name: 'search' }],
+      });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith(result);
+      expect(deps.setCachedTools).not.toHaveBeenCalledWith(result, {
+        userId: 'u1',
+        serverName: 'brave',
+      });
+    });
+
+    it('keeps tenant config-only refreshes in the user cache', async () => {
+      const deps = createMockDeps({
+        getAllServerConfigs: jest.fn().mockResolvedValue({}),
+      });
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await updateMCPServerTools({
+        userId: 'tenant-user',
+        serverName: 'tenant-only',
+        serverConfig: tenantConfig,
+        tools: [{ name: 'search' }],
+      });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith(result, {
+        userId: 'tenant-user',
+        serverName: 'tenant-only',
+      });
+      expect(deps.setCachedTools).not.toHaveBeenCalledWith(result);
     });
 
     it('builds MODEL-FACING keys with the normalized server name, store keyed raw', async () => {
@@ -487,13 +555,13 @@ describe('createMCPToolCacheService', () => {
       },
     };
 
-    it('no-ops when serverTools is empty', async () => {
+    it('caches an empty user snapshot authoritatively', async () => {
       const deps = createMockDeps();
       const { cacheMCPServerTools } = createMCPToolCacheService(deps);
 
       await cacheMCPServerTools({ userId: 'u1', serverName: 'srv', serverTools: {} });
 
-      expect(deps.setCachedTools).not.toHaveBeenCalled();
+      expect(deps.setCachedTools).toHaveBeenCalledWith({}, { userId: 'u1', serverName: 'srv' });
     });
 
     it('caches server tools with userId and serverName', async () => {
@@ -524,6 +592,26 @@ describe('createMCPToolCacheService', () => {
         userId: 'u1',
         serverName: 'brave',
       });
+    });
+
+    it('keeps a tenant config-only server out of the global cache', async () => {
+      const deps = createMockDeps({
+        getAllServerConfigs: jest.fn().mockResolvedValue({}),
+      });
+      const { cacheMCPServerTools } = createMCPToolCacheService(deps);
+
+      await cacheMCPServerTools({
+        userId: 'tenant-user',
+        serverName: 'tenant-only',
+        serverTools,
+        serverConfig: tenantConfig,
+      });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith(serverTools, {
+        userId: 'tenant-user',
+        serverName: 'tenant-only',
+      });
+      expect(deps.setCachedTools).not.toHaveBeenCalledWith(serverTools);
     });
 
     it('keeps startup-disabled server tools in the user cache', async () => {
@@ -618,6 +706,24 @@ describe('createMCPToolCacheService', () => {
       expect(getCachedTools).not.toHaveBeenCalledWith({ userId: 'u1', serverName: 'brave' });
     });
 
+    it('reads a tenant config-only server from its user cache', async () => {
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(cachedTools),
+        getServerConfig: jest.fn().mockResolvedValue(tenantConfig),
+        getAllServerConfigs: jest.fn().mockResolvedValue({}),
+      });
+      const { getMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await getMCPServerTools('tenant-user', 'tenant-only', tenantConfig);
+
+      expect(result).toEqual(cachedTools);
+      expect(deps.getCachedTools).toHaveBeenCalledWith({
+        userId: 'tenant-user',
+        serverName: 'tenant-only',
+      });
+      expect(deps.getCachedTools).not.toHaveBeenCalledWith();
+    });
+
     it('does not include a longer delimiter-overlapping server in the global slice', async () => {
       const shortServerKey = `short${Constants.mcp_delimiter}bar`;
       const longServerKey = `long${Constants.mcp_delimiter}foo_mcp_bar`;
@@ -669,7 +775,7 @@ describe('createMCPToolCacheService', () => {
       expect(deps.getCachedTools).toHaveBeenCalledWith({ userId: 'u1', serverName: 'lazy' });
     });
 
-    it('treats a cached empty catalog as a miss so discovery remains enabled', async () => {
+    it('preserves a cached empty user catalog as an authoritative snapshot', async () => {
       const deps = createMockDeps({
         getCachedTools: jest.fn().mockResolvedValue({}),
         getServerConfig: jest.fn().mockResolvedValue(userScopedConfig),
@@ -678,7 +784,7 @@ describe('createMCPToolCacheService', () => {
 
       const result = await getMCPServerTools('u1', 'brave');
 
-      expect(result).toBeNull();
+      expect(result).toEqual({});
     });
 
     it('heals stale raw-keyed cache entries to the normalized key format at read time', async () => {
