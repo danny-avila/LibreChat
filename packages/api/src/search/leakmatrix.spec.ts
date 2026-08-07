@@ -12,6 +12,7 @@ import {
 import { describePg, dropIsolatedDatabase, migrateFresh } from './pg.helper';
 import { assertScopedQuery, scopedQuery } from './scope';
 import { applyScope, withTransaction } from './pool';
+import { acceptSnapshot } from './cursor';
 import { resolveScope } from './scope';
 import { READER_ROLE } from './roles';
 import { fuseByRrf } from './fusion';
@@ -243,6 +244,81 @@ describePg('leak matrix (PostgreSQL)', () => {
       expect(fused).toHaveLength(1);
       expect(fused[0].conversationId).toBe(conversationOf(CAROL, 'message'));
     });
+  });
+
+  /**
+   * Snapshot pagination is a second place scope could be lost: the frozen list
+   * outlives the request that made it. These cells assert the snapshot is bound
+   * to its creator and that each page re-reads through the scoped query rather
+   * than trusting the frozen ids.
+   */
+  describe('snapshot pagination', () => {
+    const PAIRS: ReadonlyArray<readonly [Principal, Principal]> = [
+      [ALICE, BOB],
+      [ALICE, CAROL],
+      [BOB, CAROL],
+      [CAROL, ALICE],
+    ];
+
+    it.each(PAIRS.map(([owner, thief]) => [owner.name, thief.name, owner, thief] as const))(
+      'refuses a cursor minted by %s when replayed by %s',
+      async (_ownerName, _thiefName, owner, thief) => {
+        const snapshot = {
+          tenantId: owner.tenantId,
+          userId: owner.userId,
+          target: 'messages' as const,
+          queryHash: 'q',
+          recordIds: [COLLIDING_RECORD_ID],
+          createdAt: Date.now(),
+        };
+
+        expect(acceptSnapshot(snapshot, scopeOf(owner), 'q').ok).toBe(true);
+
+        const replayed = acceptSnapshot(snapshot, scopeOf(thief), 'q');
+        expect(replayed.ok).toBe(false);
+        expect(replayed.ok === false && replayed.reason).toBe('scope-mismatch');
+      },
+    );
+
+    it('refuses a snapshot replayed against a different query', () => {
+      const snapshot = {
+        tenantId: ALICE.tenantId,
+        userId: ALICE.userId,
+        target: 'messages' as const,
+        queryHash: 'original',
+        recordIds: [COLLIDING_RECORD_ID],
+        createdAt: Date.now(),
+      };
+      const result = acceptSnapshot(snapshot, scopeOf(ALICE), 'different');
+      expect(result.ok === false && result.reason).toBe('query-mismatch');
+    });
+
+    /**
+     * Hydration cross-scope rejection: even if a frozen list somehow held another
+     * principal's record id, the per-page re-read is scoped, so it yields nothing.
+     * The colliding ids make this the realistic case rather than a contrived one.
+     */
+    it.each(PRINCIPALS.map((p) => [p.name, p] as const))(
+      'drops foreign ids from %s page re-read',
+      async (_name, principal) => {
+        const rows = await withTransaction(pool, async (client) => {
+          const scoped = scopedQuery(scopeOf(principal), 'message');
+          const result = await client.query<{ conversation_id: string }>(
+            `SELECT d.conversation_id
+               FROM chat_search.documents d
+               JOIN unnest($${scoped.nextIndex}::text[]) WITH ORDINALITY AS o(record_id, position)
+                 ON o.record_id = d.record_id
+              WHERE ${scoped.text}
+              ORDER BY o.position`,
+            [...scoped.values, [COLLIDING_RECORD_ID]],
+          );
+          return result.rows;
+        });
+
+        expect(rows).toHaveLength(1);
+        expect(rows[0].conversation_id).toBe(conversationOf(principal, 'message'));
+      },
+    );
   });
 
   describe('scope resolution', () => {
