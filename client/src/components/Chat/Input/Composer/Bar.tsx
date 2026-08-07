@@ -1,6 +1,6 @@
 import React, { memo, useMemo, useState, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { TooltipAnchor, SendIcon } from '@librechat/client';
+import { IconButton, TooltipAnchor, SendIcon } from '@librechat/client';
 import { Mic, Check, Square, ChevronDown } from 'lucide-react';
 import type { TConversation, EModelEndpoint, EndpointFileConfig } from 'librechat-data-provider';
 import type { PaletteEntry, PaletteMode } from '~/hooks/Input/usePaletteEntries';
@@ -83,22 +83,16 @@ function RoundButton({
       description={label}
       disabled={disabled}
       render={
-        <button
-          type="button"
+        <IconButton
+          label={label}
+          size="md"
+          variant={primary ? 'primary' : 'ghost'}
           onClick={onClick}
-          aria-label={label}
           disabled={disabled}
-          className={cn(
-            'flex size-9 shrink-0 items-center justify-center rounded-full transition-colors',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
-            'disabled:cursor-not-allowed disabled:opacity-40',
-            primary
-              ? 'bg-text-primary text-surface-primary hover:opacity-90'
-              : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-          )}
+          className={cn(!primary && 'text-text-secondary hover:text-text-primary')}
         >
           {children}
-        </button>
+        </IconButton>
       }
     />
   );
@@ -294,10 +288,8 @@ function Bar({
   const renderChip = (entry: PaletteEntry) => (
     <Chip
       key={entry.key}
-      tone="tool"
       label={entry.label}
       icon={entry.icon}
-      iconClassName={entry.accent}
       trailing={entry.modes != null ? <ChipModes modes={entry.modes} /> : undefined}
       onRemove={entry.onSelect}
       removeLabel={localize('com_ui_remove_var', { 0: entry.label })}

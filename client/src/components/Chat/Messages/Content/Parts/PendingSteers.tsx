@@ -67,7 +67,9 @@ function PendingSteers({ conversationId }: PendingSteersProps) {
           />
           {steer.status === 'failed' ? (
             <div className="-mt-2 mb-2 flex items-center gap-3 pl-9 text-xs">
-              <span className="text-red-500">{localize('com_ui_steer_failed_inline')}</span>
+              <span className="text-text-destructive">
+                {localize('com_ui_steer_failed_inline')}
+              </span>
               <button type="button" onClick={() => retry(steer.steerId)} className={ACTION_CLASS}>
                 {localize('com_ui_retry')}
               </button>

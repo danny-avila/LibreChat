@@ -27,23 +27,6 @@ import useLocalize from '~/hooks/useLocalize';
 export type PaletteSection = 'tool' | 'skill' | 'mcp';
 
 /**
- * One accent per tool, picked so the category reads before the label does:
- * blue for information, green for execution, amber for local files, violet for
- * capabilities, pink for recall, orange for produced output.
- *
- * The execute green is a literal because this project's `green` scale is the
- * brand teal — `text-green-500` would have meant "LibreChat", not "run".
- */
-const ACCENT = {
-  webSearch: 'text-blue-500',
-  runCode: 'text-[#22c55e]',
-  fileSearch: 'text-amber-500',
-  skills: 'text-purple-500',
-  memory: 'text-pink-500',
-  artifacts: 'text-orange-500',
-} as const;
-
-/**
  * One selectable row in the composer palette. Tools, skills and MCP servers are
  * normalized to the same shape so search, favouriting and rendering each run
  * once over a single list rather than per source.
@@ -68,9 +51,6 @@ export interface PaletteEntry {
   /** Refinements of this tool, rendered as inline pills on the row while it is
    *  on. Not separately favouritable — they only exist within the parent. */
   modes?: PaletteMode[];
-  /** Icon tint, carried over from each tool's original badge so the palette and
-   *  the chips stay recognisable instead of collapsing to one accent. */
-  accent?: string;
 }
 
 /** Accumulates skill pages so client-side search covers the full catalog. */
@@ -234,7 +214,6 @@ export default function usePaletteEntries({
       itemId: string,
       label: string,
       icon: React.ReactNode,
-      accent: string,
       active: boolean,
       onSelect: () => void,
       modes?: PaletteMode[],
@@ -245,7 +224,6 @@ export default function usePaletteEntries({
         itemId,
         label,
         icon,
-        accent,
         section: 'tool',
         active,
         onSelect,
@@ -266,7 +244,6 @@ export default function usePaletteEntries({
         'web_search',
         localize('com_ui_web_search'),
         <Globe className="icon-md" aria-hidden="true" />,
-        ACCENT.webSearch,
         webSearch.toggleState === true,
         () => webSearch.debouncedChange({ value: !webSearch.toggleState }),
         searchConfigurable && searchApiKeyForm != null
@@ -287,7 +264,6 @@ export default function usePaletteEntries({
         'execute_code',
         localize('com_ui_run_code'),
         <SquareChevronRight className="icon-md" aria-hidden="true" />,
-        ACCENT.runCode,
         codeInterpreter.toggleState === true,
         () => codeInterpreter.debouncedChange({ value: !codeInterpreter.toggleState }),
       );
@@ -298,7 +274,6 @@ export default function usePaletteEntries({
         'file_search',
         localize('com_assistants_file_search'),
         <FolderSearch className="icon-md" aria-hidden="true" />,
-        ACCENT.fileSearch,
         fileSearch.toggleState === true,
         () => fileSearch.debouncedChange({ value: !fileSearch.toggleState }),
       );
@@ -309,7 +284,6 @@ export default function usePaletteEntries({
         'skills',
         localize('com_ui_skills'),
         <WandSparkles className="icon-md" aria-hidden="true" />,
-        ACCENT.skills,
         skills.toggleState === true,
         () => skills.debouncedChange({ value: !skills.toggleState }),
       );
@@ -320,7 +294,6 @@ export default function usePaletteEntries({
         'memory',
         localize('com_ui_memory'),
         <Brain className="icon-md" aria-hidden="true" />,
-        ACCENT.memory,
         memory.toggleState === true,
         () => memory.debouncedChange({ value: !memory.toggleState }),
       );
@@ -349,7 +322,6 @@ export default function usePaletteEntries({
         'artifacts',
         localize('com_ui_artifacts'),
         <Layers className="icon-md" aria-hidden="true" />,
-        ACCENT.artifacts,
         artifactsOn,
         () => artifacts.debouncedChange({ value: artifactsOn ? '' : ArtifactModes.DEFAULT }),
         artifactsOn
@@ -385,7 +357,7 @@ export default function usePaletteEntries({
           itemId: skill._id,
           label: skill.displayTitle ?? skill.name,
           description: skill.description,
-          icon: <WandSparkles className={`icon-md ${ACCENT.skills}`} aria-hidden="true" />,
+          icon: <WandSparkles className="icon-md" aria-hidden="true" />,
           section: 'skill',
           active: staged.has(skill.name),
           onSelect: () => toggleSkill(skill.name),
@@ -404,7 +376,7 @@ export default function usePaletteEntries({
           itemType: 'skill',
           itemId: name,
           label: name,
-          icon: <WandSparkles className={`icon-md ${ACCENT.skills}`} aria-hidden="true" />,
+          icon: <WandSparkles className="icon-md" aria-hidden="true" />,
           section: 'skill',
           active: true,
           onSelect: () => toggleSkill(name),
