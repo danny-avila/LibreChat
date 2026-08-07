@@ -1,7 +1,7 @@
 import React, { memo, useMemo, useState, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { IconButton, TooltipAnchor, SendIcon } from '@librechat/client';
 import { Mic, Check, Square, ChevronDown } from 'lucide-react';
+import { IconButton, TooltipAnchor, SendIcon } from '@librechat/client';
 import type { TConversation, EModelEndpoint, EndpointFileConfig } from 'librechat-data-provider';
 import type { PaletteEntry, PaletteMode } from '~/hooks/Input/usePaletteEntries';
 import type { Dictation } from '~/hooks/Input/useDictation';
