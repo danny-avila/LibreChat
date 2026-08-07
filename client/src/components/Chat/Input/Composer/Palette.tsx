@@ -10,7 +10,7 @@ import React, {
 import * as Ariakit from '@ariakit/react';
 import { useSetRecoilState } from 'recoil';
 import { AutoSizer, List } from 'react-virtualized';
-import { FileUpload, TooltipAnchor } from '@librechat/client';
+import { FileUpload, IconButton, TooltipAnchor } from '@librechat/client';
 import { Star, Plus, Search, ChevronDown } from 'lucide-react';
 import type {
   TFile,
@@ -55,7 +55,7 @@ const LIFT_MS = 200;
 /** Ariakit portals to document.body by default, which puts the palette outside every landmark. */
 const getMainLandmark = () => document.querySelector<HTMLElement>('main');
 /** How long the folded destinations take to fade before they give up their
- *  space; matches `.animate-palette-row-out` in `style.css`. */
+ *  space; matches `.animate-composer-palette-row-out` in `style.css`. */
 const ROW_FADE_MS = 110;
 const MORE_ROW_KEY = 'attach:more';
 /** How long a row takes to reach a new offset, and on what curve. */
@@ -708,7 +708,7 @@ function Palette({
             role="presentation"
             className={cn(
               'flex items-end px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary',
-              arrived && 'animate-palette-row',
+              arrived && 'animate-composer-palette-row',
             )}
           >
             {row.label}
@@ -735,7 +735,7 @@ function Palette({
             className={cn(
               'flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm text-text-secondary',
               isActive && 'bg-surface-hover',
-              arrived && 'animate-palette-row',
+              arrived && 'animate-composer-palette-row',
             )}
           >
             <ChevronDown
@@ -765,7 +765,7 @@ function Palette({
             className={cn(
               'flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm text-text-secondary',
               isActive && 'bg-surface-hover',
-              arrived && 'animate-palette-row',
+              arrived && 'animate-composer-palette-row',
             )}
           >
             {/* Painted as a background rather than an `img`: these thumbnails
@@ -804,7 +804,6 @@ function Palette({
       const checked = isEntry ? row.entry.active : false;
       const favorited = isEntry && row.isFavorite;
       const modes = isEntry ? row.entry.modes : undefined;
-      const accent = isEntry ? row.entry.accent : undefined;
 
       return (
         <div
@@ -829,8 +828,8 @@ function Palette({
                than a tick competing with the keyboard highlight for meaning. */
             checked ? 'text-text-primary' : 'text-text-secondary',
             isActive && 'bg-surface-hover',
-            arrived && !departing && 'animate-palette-row',
-            departing && 'animate-palette-row-out pointer-events-none',
+            arrived && !departing && 'animate-composer-palette-row',
+            departing && 'animate-composer-palette-row-out pointer-events-none',
           )}
         >
           {checked && (
@@ -839,13 +838,7 @@ function Palette({
               className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-text-primary"
             />
           )}
-          <span
-            className={cn(
-              'shrink-0',
-              accent ?? (checked ? 'text-text-primary' : 'text-text-secondary'),
-            )}
-            aria-hidden="true"
-          >
+          <span className="shrink-0 text-accent-primary" aria-hidden="true">
             {icon}
           </span>
           <span className="flex min-w-0 flex-1 flex-col justify-center">
@@ -888,7 +881,7 @@ function Palette({
               className={cn(
                 'shrink-0 rounded p-1 transition-colors',
                 favorited
-                  ? 'text-amber-500 hover:text-amber-600'
+                  ? 'text-accent-primary hover:text-accent-primary-hover'
                   : 'text-text-secondary opacity-0 hover:text-text-primary group-hover/row:opacity-100',
               )}
             >
@@ -915,6 +908,10 @@ function Palette({
     ],
   );
 
+  const disclosureLabel = dictating
+    ? localize('com_ui_cancel')
+    : localize('com_ui_composer_palette');
+
   return (
     <>
       <FileUpload ref={attach.inputRef} handleFileChange={attach.onFileChange}>
@@ -931,7 +928,7 @@ function Palette({
                the control that replaced the attach menu it used to click. */
             id="attach-file-menu-button"
             disabled={disabled}
-            aria-label={dictating ? localize('com_ui_cancel') : localize('com_ui_composer_palette')}
+            aria-label={disclosureLabel}
             /* Kept as the disclosure while dictating rather than swapped for a
                plain cancel button: a swap would mount a fresh element already
                at its final angle, and the turn is the whole point. Ariakit
@@ -946,18 +943,13 @@ function Palette({
             }}
             render={
               <TooltipAnchor
-                description={
-                  dictating ? localize('com_ui_cancel') : localize('com_ui_composer_palette')
-                }
-                render={<button type="button" />}
+                description={disclosureLabel}
+                render={<IconButton label={disclosureLabel} size="md" />}
               />
             }
             data-testid="composer-palette-button"
             className={cn(
-              'flex size-9 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors',
-              'hover:bg-surface-hover hover:text-text-primary',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
-              'disabled:cursor-not-allowed disabled:opacity-40',
+              'text-text-secondary hover:text-text-primary',
               /* The close mark carries the same weight whichever job it is
                  doing: dimmer and unbacked while dictating read as a smaller
                  glyph next to the one the open palette shows. */
@@ -1055,9 +1047,9 @@ function Palette({
               role="listbox"
               aria-label={localize('com_ui_composer_palette')}
               className={cn(
-                'palette-rows',
+                'composer-palette-rows',
                 rows.length > 0 && 'p-1.5',
-                instant && 'palette-instant',
+                instant && 'composer-palette-instant',
               )}
             >
               <AutoSizer disableHeight>
@@ -1082,7 +1074,7 @@ function Palette({
                     height={Math.min(layout.height, LIST_MAX_HEIGHT)}
                     className={cn(
                       'focus:outline-none',
-                      layout.height > LIST_MAX_HEIGHT && 'palette-scroll',
+                      layout.height > LIST_MAX_HEIGHT && 'composer-palette-scroll',
                     )}
                   />
                 )}

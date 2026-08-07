@@ -1,9 +1,9 @@
 import { useEffect, useId, useSyncExternalStore } from 'react';
 import { ArrowUp } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
+import { IconButton } from '@librechat/client';
 import { useShortcutAriaKey, useShortcutDisplay } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 /** Longest message excerpt spoken as part of the button's accessible name;
  *  past this the row is identified by its opening words rather than read out. */
@@ -112,9 +112,10 @@ export default function EscalateNowButton({
     <Ariakit.TooltipProvider placement="top" timeout={300}>
       <Ariakit.TooltipAnchor
         render={
-          <button
-            type="button"
-            aria-label={accessibleLabel}
+          <IconButton
+            label={accessibleLabel}
+            size="xs"
+            variant="primary"
             aria-keyshortcuts={isActive ? ariaKey : undefined}
             data-escalate-steer={surface}
             data-escalate-steer-active={isActive ? 'true' : undefined}
@@ -125,15 +126,10 @@ export default function EscalateNowButton({
             onFocus={() => !disabled && updateActiveTarget('focus', targetId, true)}
             onBlur={() => updateActiveTarget('focus', targetId, false)}
             onClick={onClick}
-            className={cn(
-              'flex size-6 shrink-0 items-center justify-center rounded-full',
-              'bg-text-primary text-surface-primary transition-opacity hover:opacity-85',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
-              'disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:opacity-35',
-            )}
+            className="transition-opacity disabled:opacity-35"
           >
             <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.4} aria-hidden="true" />
-          </button>
+          </IconButton>
         }
       />
       <Ariakit.Tooltip className="z-50 rounded-lg bg-surface-tertiary px-2 py-1 text-xs text-text-primary shadow-lg">

@@ -1,7 +1,13 @@
 import { memo, useRef, useMemo, useState, useEffect, useCallback } from 'react';
 import { CircleHelp } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
-import { HoverCard, HoverCardTrigger, HoverCardContent, HoverCardPortal } from '@librechat/client';
+import {
+  HoverCard,
+  IconButton,
+  HoverCardTrigger,
+  HoverCardContent,
+  HoverCardPortal,
+} from '@librechat/client';
 import type { SettingDefinition, TConversation } from 'librechat-data-provider';
 import type { TSetOption, LocalizeFunction } from '~/common';
 import type { TranslationKeys } from '~/hooks';
@@ -295,8 +301,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
             isAuto ? 'border-border-heavy bg-transparent' : 'border-transparent bg-border-medium',
           )}
         />
-        {/* Filled in LibreChat's own accent: the thumb is white and needs a
-            colour to sit on, or it reads as a hole punched through the bar.
+        {/* The semantic accent keeps the track intentional in every theme.
             Always mounted — unmounting it at the first stop made the fill snap
             out of existence on the way down instead of shrinking, which reads
             as a glitch. */}
@@ -310,7 +315,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
                before the thumb starts uncovering the rail. */
             transition: `width ${moveMs}ms ease-out, opacity ${fadeMs}ms ease-out`,
           }}
-          className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-green-500"
+          className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-accent-primary"
         />
 
         {!isAuto &&
@@ -321,7 +326,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
               style={{ left: centerOf(index) }}
               className={cn(
                 'absolute top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-50 transition-colors',
-                index < activeIndex ? 'bg-white' : 'bg-text-secondary',
+                index < activeIndex ? 'bg-surface-fixed' : 'bg-text-secondary',
               )}
             />
           ))}
@@ -354,7 +359,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
               `opacity ${thumbFadeMs}ms ease-out ${isAuto ? `${fadeMs}ms` : '0ms'}`,
             ].join(', '),
           }}
-          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-md"
+          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-surface-fixed shadow-md"
         />
 
         {levels.map((value, index) => (
@@ -427,7 +432,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
                 className={cn(
                   'rounded-full px-2 py-0.5 text-[11px] transition-colors',
                   isAuto
-                    ? 'bg-green-500/15 text-green-500'
+                    ? 'bg-accent-primary/15 text-accent-primary'
                     : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
                 )}
               >
@@ -440,13 +445,13 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
                   {/* A button rather than a bare span: this is the only place
                       the provider's own explanation of the parameter appears,
                       and hovering was the only way to reach it. */}
-                  <button
-                    type="button"
-                    aria-label={localize('com_ui_more_info')}
-                    className="rounded-full text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+                  <IconButton
+                    label={localize('com_ui_more_info')}
+                    size="xs"
+                    className="text-text-secondary"
                   >
                     <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />
-                  </button>
+                  </IconButton>
                 </HoverCardTrigger>
                 <HoverCardPortal>
                   <HoverCardContent side="top" className="w-72 text-sm">
