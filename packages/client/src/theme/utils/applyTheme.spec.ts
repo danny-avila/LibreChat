@@ -72,7 +72,9 @@ describe('applyTheme', () => {
   it('ships status tokens in the bundled themes', () => {
     applyTheme(defaultTheme);
 
-    expect(document.documentElement.style.getPropertyValue('--status-error')).toBe('220 38 38');
+    expect(document.documentElement.style.getPropertyValue('--status-error')).toBe(
+      defaultTheme['rgb-status-error'],
+    );
     expect(document.documentElement.style.getPropertyValue('--surface-overlay')).toBe('89 89 89');
   });
 });

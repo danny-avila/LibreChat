@@ -9,7 +9,7 @@ export const darkTheme: IThemeRGB = {
   'rgb-text-primary': '236 236 236', // #ececec (gray-100)
   'rgb-text-secondary': '205 205 205', // #cdcdcd (gray-300)
   'rgb-text-secondary-alt': '153 150 150', // #999696 (gray-400)
-  'rgb-text-tertiary': '89 89 89', // #595959 (gray-500)
+  'rgb-text-tertiary': '153 150 150', // #999696 (gray-400)
   'rgb-text-warning': '245 158 11', // #f59e0b (amber-500)
   'rgb-text-destructive': '252 165 165', // #fca5a5 (red-300, matches status-error)
 
