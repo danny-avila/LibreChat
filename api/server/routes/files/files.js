@@ -51,10 +51,21 @@ const AGENT_TOOL_RESOURCE_KEYS = new Set([
 const isAgentToolResourceKey = (toolResource) =>
   typeof toolResource === 'string' && AGENT_TOOL_RESOURCE_KEYS.has(toolResource);
 
+/** Cap for `?limit=` so a recent-files palette request cannot request unbounded
+ *  history. Unbounded list (no limit) stays available for the files panel. */
+const FILES_LIST_LIMIT_MAX = 100;
+
 router.get('/', async (req, res) => {
   try {
     const appConfig = req.config;
-    const files = await db.getFiles({ user: req.user.id });
+    const rawLimit = Number(req.query.limit);
+    const limit =
+      Number.isFinite(rawLimit) && rawLimit > 0
+        ? Math.min(Math.floor(rawLimit), FILES_LIST_LIMIT_MAX)
+        : undefined;
+    /** Already sorted by `updatedAt` desc in `getFiles`; a limit returns the
+     *  most recently touched files without loading the full history. */
+    const files = await db.getFiles({ user: req.user.id }, null, null, limit);
     if (appConfig.fileStrategy === FileSources.s3) {
       try {
         const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
