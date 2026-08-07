@@ -1297,7 +1297,7 @@ describe('MCPManager', () => {
         connections: new Map([[`${mockUser.id}:${serverName}`, requestScopedConnection]]),
         pending: new Map(),
       };
-      const bodyScopedConfig: t.StreamableHTTPOptions = {
+      const bodyScopedConfig: t.ParsedServerConfig = {
         type: 'streamable-http',
         url: 'https://mcp.example.com/{{LIBRECHAT_BODY_MESSAGEID}}',
         source: 'yaml',
