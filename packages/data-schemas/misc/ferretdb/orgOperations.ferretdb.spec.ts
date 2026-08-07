@@ -1,36 +1,6 @@
 import mongoose, { Schema, type Connection, type Model } from 'mongoose';
-import {
-  actionSchema,
-  agentSchema,
-  agentApiKeySchema,
-  agentCategorySchema,
-  assistantSchema,
-  balanceSchema,
-  bannerSchema,
-  conversationTagSchema,
-  convoSchema,
-  fileSchema,
-  keySchema,
-  messageSchema,
-  pluginAuthSchema,
-  presetSchema,
-  projectSchema,
-  promptSchema,
-  promptGroupSchema,
-  roleSchema,
-  sessionSchema,
-  shareSchema,
-  tokenSchema,
-  toolCallSchema,
-  transactionSchema,
-  userSchema,
-  memorySchema,
-  groupSchema,
-} from '~/schema';
-import accessRoleSchema from '~/schema/accessRole';
-import mcpServerSchema from '~/schema/mcpServer';
-import aclEntrySchema from '~/schema/aclEntry';
 import { initializeOrgCollections, createIndexesWithRetry, retryWithBackoff } from '~/utils/retry';
+import { getModelSchemas } from './schemas';
 
 /**
  * Production operations tests for FerretDB multi-tenancy:
@@ -48,37 +18,7 @@ const describeIfFerretDB = FERRETDB_URI ? describe : describe.skip;
 
 const DB_PREFIX = 'ops_test_';
 
-const MODEL_SCHEMAS: Record<string, Schema> = {
-  User: userSchema,
-  Token: tokenSchema,
-  Session: sessionSchema,
-  Balance: balanceSchema,
-  Conversation: convoSchema,
-  Message: messageSchema,
-  Agent: agentSchema,
-  AgentApiKey: agentApiKeySchema,
-  AgentCategory: agentCategorySchema,
-  MCPServer: mcpServerSchema,
-  Role: roleSchema,
-  Action: actionSchema,
-  Assistant: assistantSchema,
-  File: fileSchema,
-  Banner: bannerSchema,
-  Project: projectSchema,
-  Key: keySchema,
-  PluginAuth: pluginAuthSchema,
-  Transaction: transactionSchema,
-  Preset: presetSchema,
-  Prompt: promptSchema,
-  PromptGroup: promptGroupSchema,
-  ConversationTag: conversationTagSchema,
-  SharedLink: shareSchema,
-  ToolCall: toolCallSchema,
-  MemoryEntry: memorySchema,
-  AccessRole: accessRoleSchema,
-  AclEntry: aclEntrySchema,
-  Group: groupSchema,
-};
+const MODEL_SCHEMAS: Record<string, Schema> = getModelSchemas(mongoose);
 
 const MODEL_COUNT = Object.keys(MODEL_SCHEMAS).length;
 

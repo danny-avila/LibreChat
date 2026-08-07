@@ -1,36 +1,6 @@
 import mongoose from 'mongoose';
 import { execSync } from 'child_process';
-import {
-  actionSchema,
-  agentSchema,
-  agentApiKeySchema,
-  agentCategorySchema,
-  assistantSchema,
-  balanceSchema,
-  bannerSchema,
-  conversationTagSchema,
-  convoSchema,
-  fileSchema,
-  keySchema,
-  messageSchema,
-  pluginAuthSchema,
-  presetSchema,
-  projectSchema,
-  promptSchema,
-  promptGroupSchema,
-  roleSchema,
-  sessionSchema,
-  shareSchema,
-  tokenSchema,
-  toolCallSchema,
-  transactionSchema,
-  userSchema,
-  memorySchema,
-  groupSchema,
-} from '~/schema';
-import accessRoleSchema from '~/schema/accessRole';
-import aclEntrySchema from '~/schema/aclEntry';
-import mcpServerSchema from '~/schema/mcpServer';
+import { getModelSchemas } from './schemas';
 
 /**
  * FerretDB Multi-Tenancy Benchmark
@@ -40,7 +10,7 @@ import mcpServerSchema from '~/schema/mcpServer';
  *
  * Phases:
  *   1. useDb schema mapping — verifies per-org PostgreSQL schema creation and data isolation
- *   2. Index initialization — validates all 29 collections + 97 indexes, tests for deadlocks
+ *   2. Index initialization — validates every current collection + its indexes, tests for deadlocks
  *   3. Scaling curve — measures catalog growth, init time, and query latency at 10/50/100 orgs
  *   4. Write amplification — compares update cost on high-index vs zero-index collections
  *   5. Shared-collection alternative — benchmarks orgId-discriminated shared collections
@@ -70,42 +40,12 @@ const SCALE_TIERS: number[] = process.env.SCALE_TIERS
 
 const WRITE_AMP_DOCS = parseInt(process.env.WRITE_AMP_DOCS || '200', 10);
 
-/** All 29 LibreChat schemas by Mongoose model name */
-const MODEL_SCHEMAS: Record<string, mongoose.Schema> = {
-  User: userSchema,
-  Token: tokenSchema,
-  Session: sessionSchema,
-  Balance: balanceSchema,
-  Conversation: convoSchema,
-  Message: messageSchema,
-  Agent: agentSchema,
-  AgentApiKey: agentApiKeySchema,
-  AgentCategory: agentCategorySchema,
-  MCPServer: mcpServerSchema,
-  Role: roleSchema,
-  Action: actionSchema,
-  Assistant: assistantSchema,
-  File: fileSchema,
-  Banner: bannerSchema,
-  Project: projectSchema,
-  Key: keySchema,
-  PluginAuth: pluginAuthSchema,
-  Transaction: transactionSchema,
-  Preset: presetSchema,
-  Prompt: promptSchema,
-  PromptGroup: promptGroupSchema,
-  ConversationTag: conversationTagSchema,
-  SharedLink: shareSchema,
-  ToolCall: toolCallSchema,
-  MemoryEntry: memorySchema,
-  AccessRole: accessRoleSchema,
-  AclEntry: aclEntrySchema,
-  Group: groupSchema,
-};
+/** Schema map derived from the live `createModels` registry (see ./schemas) */
+const MODEL_SCHEMAS: Record<string, mongoose.Schema> = getModelSchemas(mongoose);
 
 const MODEL_COUNT = Object.keys(MODEL_SCHEMAS).length;
 
-/** Register all 29 models on a given Mongoose Connection */
+/** Register every model in MODEL_SCHEMAS on a given Mongoose Connection */
 function registerModels(conn: mongoose.Connection): Record<string, mongoose.Model<unknown>> {
   const models: Record<string, mongoose.Model<unknown>> = {};
   for (const [name, schema] of Object.entries(MODEL_SCHEMAS)) {
@@ -234,7 +174,7 @@ describeIfFerretDB('FerretDB Multi-Tenancy Benchmark', () => {
       createdDbs.push(org1Db, org2Db);
     });
 
-    it('creates separate databases with all 29 collections via useDb()', async () => {
+    it('creates separate databases with all collections via useDb()', async () => {
       const c1 = mongoose.connection.useDb(org1Db, { useCache: true });
       const c2 = mongoose.connection.useDb(org2Db, { useCache: true });
 
@@ -513,7 +453,7 @@ describeIfFerretDB('FerretDB Multi-Tenancy Benchmark', () => {
       createdDbs.push(db);
       const conn = mongoose.connection.useDb(db, { useCache: false });
 
-      const HighIdx = conn.model('User', userSchema);
+      const HighIdx = conn.model('User', MODEL_SCHEMAS.User);
       await HighIdx.createCollection();
       await HighIdx.createIndexes();
 
