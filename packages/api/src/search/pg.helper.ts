@@ -30,12 +30,22 @@ function databaseUrl(database: string): string {
  * `DROP SCHEMA chat_search CASCADE`, which is silent when it wins and
  * bewildering when it loses.
  */
+/**
+ * `CREATE DATABASE` copies a template, and PostgreSQL refuses while another
+ * session is connected to it. Jest runs suites in parallel, so the calls collide
+ * unless they serialize — hence the advisory lock, held on the maintenance
+ * connection for the whole drop-and-create.
+ */
+const SETUP_LOCK_ID = 0x63735f7467;
+
 export async function createIsolatedDatabase(name: string): Promise<SearchPool> {
   const database = `chat_search_test_${name}`;
   const admin = new Pool({ connectionString: requireUrl(), max: 1 });
   try {
+    await admin.query('SELECT pg_advisory_lock($1)', [SETUP_LOCK_ID]);
     await admin.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(database)} WITH (FORCE)`);
     await admin.query(`CREATE DATABASE ${quoteIdentifier(database)}`);
+    await admin.query('SELECT pg_advisory_unlock($1)', [SETUP_LOCK_ID]);
   } finally {
     await admin.end();
   }
@@ -47,7 +57,9 @@ export async function dropIsolatedDatabase(pool: SearchPool, name: string): Prom
   const database = `chat_search_test_${name}`;
   const admin = new Pool({ connectionString: requireUrl(), max: 1 });
   try {
+    await admin.query('SELECT pg_advisory_lock($1)', [SETUP_LOCK_ID]);
     await admin.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(database)} WITH (FORCE)`);
+    await admin.query('SELECT pg_advisory_unlock($1)', [SETUP_LOCK_ID]);
   } finally {
     await admin.end();
   }
