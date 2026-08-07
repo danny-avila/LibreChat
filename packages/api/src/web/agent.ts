@@ -26,12 +26,12 @@ function getProxyExemptions(): string[] {
       continue;
     }
     try {
+      /** `hostname` keeps IPv6 brackets, which the exemption parser requires as `[ipv6]:port`. */
       const { hostname, port, protocol } = new URL(proxyUrl);
-      const host = hostname.replace(/^\[|\]$/g, '');
-      if (host.length === 0) {
+      if (hostname.length === 0) {
         continue;
       }
-      entries.add(`${host}:${port || (protocol === 'https:' ? '443' : '80')}`);
+      entries.add(`${hostname}:${port || (protocol === 'https:' ? '443' : '80')}`);
     } catch {
       continue;
     }

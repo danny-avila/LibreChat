@@ -152,6 +152,17 @@ describe('resolveWebSearchSSRFAgents', () => {
     expect(() => connect(httpAgent, '10.1.2.3', 3128)).not.toThrow();
   });
 
+  it('keeps an IPv6-literal proxy reachable, which needs the bracketed exemption form', () => {
+    process.env.HTTP_PROXY = 'http://[fd00::1]:3128';
+
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connect(httpAgent, 'fd00::1', 3128)).not.toThrow();
+    expect(() => connect(httpAgent, 'fd00::1', 9)).toThrow(
+      expect.objectContaining({ code: 'ESSRF' }),
+    );
+  });
+
   it('allows a public IP literal', () => {
     const { httpAgent } = resolveWebSearchSSRFAgents();
 
