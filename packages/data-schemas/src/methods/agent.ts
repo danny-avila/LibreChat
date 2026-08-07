@@ -450,6 +450,7 @@ export function createAgentMethods(
   }: {
     file_ids: string[];
   }) => Promise<{ matchedCount: number; modifiedCount: number }>;
+  getAgentIdsByFileIds: ({ file_ids }: { file_ids: string[] }) => Promise<Record<string, string>>;
 } {
   const { removeAllPermissions, getActions, getSoleOwnedResourceIds, isExternalSkillId } = deps;
 
@@ -860,6 +861,43 @@ export function createAgentMethods(
   }
 
   /**
+   * Maps file ids to the agent whose `file_search` knowledge base holds them.
+   *
+   * Knowledge-base files are embedded in the vector store under the agent's id
+   * rather than the uploader's, so reading or deleting their chunks has to name
+   * that entity. The agent document is the only durable record of which entity
+   * a given file was embedded under.
+   */
+  async function getAgentIdsByFileIds({
+    file_ids,
+  }: {
+    file_ids: string[];
+  }): Promise<Record<string, string>> {
+    if (!file_ids || file_ids.length === 0) {
+      return {};
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const fileIdsPath = `tool_resources.${EToolResources.file_search}.file_ids`;
+    const agents = await Agent.find(
+      { [fileIdsPath]: { $in: file_ids } },
+      { id: 1, [fileIdsPath]: 1 },
+    ).lean<Array<Pick<IAgent, 'id' | 'tool_resources'>>>();
+
+    const requested = new Set(file_ids);
+    const entityByFileId: Record<string, string> = {};
+    for (const agent of agents) {
+      const knowledgeFileIds = agent.tool_resources?.[EToolResources.file_search]?.file_ids ?? [];
+      for (const fileId of knowledgeFileIds) {
+        if (requested.has(fileId) && entityByFileId[fileId] == null) {
+          entityByFileId[fileId] = agent.id;
+        }
+      }
+    }
+    return entityByFileId;
+  }
+
+  /**
    * Deletes an agent based on the provided search parameter.
    */
   async function deleteAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
@@ -1183,6 +1221,7 @@ export function createAgentMethods(
     addAgentResourceFile,
     getListAgentsByAccess,
     removeAgentResourceFiles,
+    getAgentIdsByFileIds,
     generateActionMetadataHash,
     removeAgentFromUserFavorites,
     removeAgentResourceFilesFromAllAgents,

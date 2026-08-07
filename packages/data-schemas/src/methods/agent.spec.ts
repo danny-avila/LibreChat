@@ -56,6 +56,7 @@ let revertAgentVersion: AgentMethods['revertAgentVersion'];
 let addAgentResourceFile: AgentMethods['addAgentResourceFile'];
 let removeAgentResourceFiles: AgentMethods['removeAgentResourceFiles'];
 let removeAgentResourceFilesFromAllAgents: AgentMethods['removeAgentResourceFilesFromAllAgents'];
+let getAgentIdsByFileIds: AgentMethods['getAgentIdsByFileIds'];
 let getListAgentsByAccess: AgentMethods['getListAgentsByAccess'];
 let generateActionMetadataHash: AgentMethods['generateActionMetadataHash'];
 
@@ -103,6 +104,7 @@ beforeAll(async () => {
   addAgentResourceFile = methods.addAgentResourceFile;
   removeAgentResourceFiles = methods.removeAgentResourceFiles;
   removeAgentResourceFilesFromAllAgents = methods.removeAgentResourceFilesFromAllAgents;
+  getAgentIdsByFileIds = methods.getAgentIdsByFileIds;
   getListAgentsByAccess = methods.getListAgentsByAccess;
   generateActionMetadataHash = methods.generateActionMetadataHash;
 
@@ -3221,6 +3223,83 @@ describe('Agent Methods', () => {
         const result = await removeAgentResourceFilesFromAllAgents({ file_ids: [fileId] });
         expect(result.matchedCount).toBe(0);
         expect(result.modifiedCount).toBe(0);
+      });
+    });
+
+    describe('getAgentIdsByFileIds', () => {
+      beforeEach(async () => {
+        await Agent.deleteMany({});
+      });
+
+      test('maps a knowledge-base file to the agent that holds it', async () => {
+        const fileId = `file_${uuidv4()}`;
+        const agent = await createBasicAgent();
+
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.file_search,
+          file_id: fileId,
+        });
+
+        expect(await getAgentIdsByFileIds({ file_ids: [fileId] })).toEqual({
+          [fileId]: agent.id,
+        });
+      });
+
+      test('returns nothing for files no agent holds', async () => {
+        const agent = await createBasicAgent();
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.file_search,
+          file_id: `file_${uuidv4()}`,
+        });
+
+        expect(await getAgentIdsByFileIds({ file_ids: [`file_${uuidv4()}`] })).toEqual({});
+      });
+
+      test('ignores files held only by other tool resources', async () => {
+        const codeFileId = `file_${uuidv4()}`;
+        const agent = await createBasicAgent();
+
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.execute_code,
+          file_id: codeFileId,
+        });
+
+        expect(await getAgentIdsByFileIds({ file_ids: [codeFileId] })).toEqual({});
+      });
+
+      test('resolves each file in a batch independently', async () => {
+        const firstFileId = `file_${uuidv4()}`;
+        const secondFileId = `file_${uuidv4()}`;
+        const unheldFileId = `file_${uuidv4()}`;
+        const firstAgent = await createBasicAgent();
+        const secondAgent = await createBasicAgent();
+
+        await addAgentResourceFile({
+          agent_id: firstAgent.id,
+          tool_resource: EToolResources.file_search,
+          file_id: firstFileId,
+        });
+        await addAgentResourceFile({
+          agent_id: secondAgent.id,
+          tool_resource: EToolResources.file_search,
+          file_id: secondFileId,
+        });
+
+        expect(
+          await getAgentIdsByFileIds({
+            file_ids: [firstFileId, secondFileId, unheldFileId],
+          }),
+        ).toEqual({
+          [firstFileId]: firstAgent.id,
+          [secondFileId]: secondAgent.id,
+        });
+      });
+
+      test('queries nothing for an empty batch', async () => {
+        expect(await getAgentIdsByFileIds({ file_ids: [] })).toEqual({});
       });
     });
 
