@@ -1,94 +1,122 @@
 import { resolveWebSearchSSRFAgents } from './agent';
+import { isAddressAllowed } from '../auth';
+
+/** `options` exists on a Node agent at runtime but is absent from the bundled type. */
+interface AgentOptionsProbe {
+  options: { keepAlive?: boolean };
+}
+
+function agentOptions(agent: object): AgentOptionsProbe['options'] {
+  return (agent as AgentOptionsProbe).options;
+}
 
 describe('resolveWebSearchSSRFAgents', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    delete process.env.HTTP_PROXY;
-    delete process.env.HTTPS_PROXY;
-    delete process.env.http_proxy;
-    delete process.env.https_proxy;
-    delete process.env.NO_PROXY;
-    delete process.env.no_proxy;
+    for (const key of [
+      'PROXY',
+      'proxy',
+      'HTTP_PROXY',
+      'http_proxy',
+      'HTTPS_PROXY',
+      'https_proxy',
+      'NO_PROXY',
+      'no_proxy',
+    ]) {
+      delete process.env[key];
+    }
   });
 
   afterEach(() => {
     process.env = originalEnv;
   });
 
-  it('attaches both agents for direct public destinations', () => {
-    const agents = resolveWebSearchSSRFAgents({
-      searxngInstanceUrl: 'https://searx.example.com',
-      firecrawlApiUrl: 'https://api.firecrawl.dev/v2/scrape',
-    });
+  it('always returns a pooled agent pair', () => {
+    const { httpAgent, httpsAgent } = resolveWebSearchSSRFAgents();
 
-    expect(agents.httpAgent).toBeDefined();
-    expect(agents.httpsAgent).toBeDefined();
+    expect(httpAgent).toBeDefined();
+    expect(httpsAgent).toBeDefined();
+    expect(agentOptions(httpAgent).keepAlive).toBe(true);
+    expect(agentOptions(httpsAgent).keepAlive).toBe(true);
   });
 
-  it('attaches agents when no destination URL is configured', () => {
-    const agents = resolveWebSearchSSRFAgents({});
-
-    expect(agents.httpAgent).toBeDefined();
-    expect(agents.httpsAgent).toBeDefined();
-  });
-
-  it('rejects an IP-literal private destination that the connect-time lookup never sees', () => {
-    expect(() =>
-      resolveWebSearchSSRFAgents({ searxngInstanceUrl: 'http://169.254.169.254' }),
-    ).toThrow(expect.objectContaining({ code: 'ESSRF' }));
-  });
-
-  it('rejects an IP-literal private destination on any scraper URL key', () => {
-    expect(() => resolveWebSearchSSRFAgents({ firecrawlApiUrl: 'http://127.0.0.1:8080' })).toThrow(
-      expect.objectContaining({ code: 'ESSRF' }),
-    );
-  });
-
-  it('exempts an IP-literal destination listed in allowedAddresses', () => {
-    const agents = resolveWebSearchSSRFAgents({ searxngInstanceUrl: 'http://127.0.0.1:8888' }, [
-      '127.0.0.1:8888',
-    ]);
-
-    expect(agents.httpAgent).toBeDefined();
-    expect(agents.httpsAgent).toBeDefined();
-  });
-
-  it('throws on a non-http(s) destination scheme', () => {
-    expect(() =>
-      resolveWebSearchSSRFAgents({ searxngInstanceUrl: 'file:///etc/passwd' }),
-    ).toThrow();
-  });
-
-  it('withholds agents when a proxy owns egress for a destination', () => {
+  it('still returns agents when a proxy is configured, so direct routes stay guarded', () => {
     process.env.HTTPS_PROXY = 'http://proxy.internal:3128';
 
-    const agents = resolveWebSearchSSRFAgents({
-      searxngInstanceUrl: 'https://searx.example.com',
-    });
+    const { httpAgent, httpsAgent } = resolveWebSearchSSRFAgents();
 
-    expect(agents.httpAgent).toBeUndefined();
-    expect(agents.httpsAgent).toBeUndefined();
+    expect(httpAgent).toBeDefined();
+    expect(httpsAgent).toBeDefined();
   });
 
-  it('still validates an IP-literal destination when a proxy is configured', () => {
+  it('exempts the proxy endpoint so the proxy hop stays reachable', () => {
     process.env.HTTP_PROXY = 'http://proxy.internal:3128';
 
-    expect(() =>
-      resolveWebSearchSSRFAgents({ searxngInstanceUrl: 'http://169.254.169.254' }),
-    ).toThrow(expect.objectContaining({ code: 'ESSRF' }));
+    resolveWebSearchSSRFAgents();
+
+    expect(isAddressAllowed('proxy.internal', ['proxy.internal:3128'], '3128')).toBe(true);
   });
 
-  it('attaches agents when NO_PROXY bypasses the proxy for the destination', () => {
+  it('scopes the proxy exemption to its port, so another private port stays blocked', () => {
+    expect(isAddressAllowed('proxy.internal', ['proxy.internal:3128'], '9')).toBe(false);
+  });
+
+  it('derives the default proxy port from the proxy scheme', () => {
+    process.env.HTTP_PROXY = 'http://proxy.internal';
+    process.env.HTTPS_PROXY = 'https://secure-proxy.internal';
+
+    const first = resolveWebSearchSSRFAgents();
+
+    process.env.HTTP_PROXY = 'http://proxy.internal:80';
+    process.env.HTTPS_PROXY = 'https://secure-proxy.internal:443';
+
+    expect(resolveWebSearchSSRFAgents()).toBe(first);
+  });
+
+  it('reads the PROXY variable that other LibreChat egress paths honor', () => {
+    process.env.PROXY = 'http://proxy.internal:3128';
+    const viaProxyVar = resolveWebSearchSSRFAgents();
+
+    delete process.env.PROXY;
+    process.env.HTTP_PROXY = 'http://proxy.internal:3128';
     process.env.HTTPS_PROXY = 'http://proxy.internal:3128';
-    process.env.NO_PROXY = 'searx.example.com';
 
-    const agents = resolveWebSearchSSRFAgents({
-      searxngInstanceUrl: 'https://searx.example.com',
-    });
+    expect(resolveWebSearchSSRFAgents()).toBe(viaProxyVar);
+  });
 
-    expect(agents.httpAgent).toBeDefined();
-    expect(agents.httpsAgent).toBeDefined();
+  it('treats an empty proxy variable as unset, matching the value compose forwards', () => {
+    const withoutProxy = resolveWebSearchSSRFAgents();
+
+    process.env.HTTP_PROXY = '';
+    process.env.HTTPS_PROXY = '   ';
+
+    expect(resolveWebSearchSSRFAgents()).toBe(withoutProxy);
+  });
+
+  it('reuses one pair per exemption list and separates distinct lists', () => {
+    const first = resolveWebSearchSSRFAgents(['searxng:8080']);
+    const again = resolveWebSearchSSRFAgents(['searxng:8080']);
+    const other = resolveWebSearchSSRFAgents(['firecrawl:3002']);
+
+    expect(again).toBe(first);
+    expect(other).not.toBe(first);
+  });
+
+  it('keeps admin allowedAddresses entries alongside the derived proxy exemption', () => {
+    process.env.HTTP_PROXY = 'http://proxy.internal:3128';
+
+    expect(resolveWebSearchSSRFAgents(['searxng:8080'])).not.toBe(resolveWebSearchSSRFAgents([]));
+  });
+
+  it('does not throw for a private destination, leaving enforcement at connect time', () => {
+    expect(() => resolveWebSearchSSRFAgents(['127.0.0.1:8080'])).not.toThrow();
+  });
+
+  it('ignores an unparseable proxy value rather than throwing during tool load', () => {
+    process.env.HTTP_PROXY = 'not a url';
+
+    expect(() => resolveWebSearchSSRFAgents()).not.toThrow();
   });
 });

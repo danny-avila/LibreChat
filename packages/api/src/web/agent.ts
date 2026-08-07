@@ -1,60 +1,69 @@
-import type { TWebSearchConfig } from 'librechat-data-provider';
-import type { AxiosRequestConfig } from 'axios';
 import type https from 'node:https';
 import type http from 'node:http';
-import { applySSRFSafeAgentIfDirect, createSSRFSafeAgents } from '../auth';
-import { applyAxiosProxyConfig } from '../utils/proxy';
-
-/** Resolved web-search fields that carry an outbound destination. */
-const WEB_SEARCH_URL_KEYS = [
-  'searxngInstanceUrl',
-  'firecrawlApiUrl',
-  'jinaApiUrl',
-  'tavilySearchUrl',
-  'tavilyExtractUrl',
-] as const;
+import { getProxyEnvConfig } from '../utils/proxy';
+import { createSSRFSafeAgents } from '../auth';
 
 export interface WebSearchSSRFAgents {
-  httpAgent?: http.Agent;
-  httpsAgent?: https.Agent;
+  httpAgent: http.Agent;
+  httpsAgent: https.Agent;
 }
 
 /**
- * Extends the `applySSRFSafeAgentIfDirect` contract to the web-search tool, which
- * owns its own axios calls and accepts agents rather than a request config.
- *
- * Each configured destination is run through that helper so an IP-literal private
- * target (which Node's connect-time `lookup` never sees) throws before any request
- * is made. Agents are withheld when a proxy owns egress for any destination: one
- * agent pair is shared by every provider, so attaching a direct-connect agent to a
- * proxied connection would both break the request and assert protection the proxy's
- * network context cannot provide.
+ * For a plaintext http target Axios repoints the caller's agent at the proxy host, so the
+ * connect-time check would resolve the proxy itself and reject a private one. Exempting the
+ * proxy endpoint keeps that hop reachable while every direct and `NO_PROXY` destination stays
+ * guarded. Https targets are unaffected either way: Axios swaps in its own CONNECT tunnel.
  */
-export function resolveWebSearchSSRFAgents(
-  authResult: Partial<TWebSearchConfig>,
-  allowedAddresses?: string[] | null,
-): WebSearchSSRFAgents {
-  let proxied = false;
+function getProxyExemptions(): string[] {
+  const config = getProxyEnvConfig();
+  if (!config) {
+    return [];
+  }
 
-  for (const key of WEB_SEARCH_URL_KEYS) {
-    const url = authResult[key];
-    if (typeof url !== 'string' || url.length === 0) {
+  const entries = new Set<string>();
+  for (const proxyUrl of [config.httpProxy, config.httpsProxy]) {
+    if (!proxyUrl) {
       continue;
     }
-
-    const probe: AxiosRequestConfig = {};
-    applyAxiosProxyConfig(probe, url);
-    if (probe.proxy || probe.httpsAgent) {
-      proxied = true;
+    try {
+      const { hostname, port, protocol } = new URL(proxyUrl);
+      const host = hostname.replace(/^\[|\]$/g, '');
+      if (host.length === 0) {
+        continue;
+      }
+      entries.add(`${host}:${port || (protocol === 'https:' ? '443' : '80')}`);
+    } catch {
+      continue;
     }
+  }
+  return [...entries];
+}
 
-    /** Called for its validation side effect: throws `ESSRF` on a blocked literal target. */
-    applySSRFSafeAgentIfDirect({}, url, allowedAddresses);
+/** Keyed by exemption list so repeated tool loads reuse one pooled pair, as `oauth/tokens` does. */
+const agentsByExemptions = new Map<string, WebSearchSSRFAgents>();
+
+/**
+ * Connect-time SSRF agents for the web-search tool, which issues its own requests and accepts
+ * only a shared agent pair.
+ *
+ * Redirect hops traverse these agents, so a redirect to a private hostname is rejected. A
+ * redirect to a private IP literal is not: Node skips the lookup for literals and
+ * `HttpAgentConfig` exposes no `maxRedirects` to forward, so closing that needs a change in
+ * `@librechat/agents`. When a proxy carries the request the proxy resolves the destination, so
+ * enforcement there belongs to the proxy's own egress policy.
+ */
+export function resolveWebSearchSSRFAgents(
+  allowedAddresses?: string[] | null,
+): WebSearchSSRFAgents {
+  const exemptions = [...(allowedAddresses ?? []), ...getProxyExemptions()];
+  const cacheKey = exemptions.join('\n');
+
+  const cached = agentsByExemptions.get(cacheKey);
+  if (cached) {
+    return cached;
   }
 
-  if (proxied) {
-    return {};
-  }
-
-  return createSSRFSafeAgents(allowedAddresses);
+  const agents = createSSRFSafeAgents(exemptions, { keepAlive: true });
+  agentsByExemptions.set(cacheKey, agents);
+  return agents;
 }

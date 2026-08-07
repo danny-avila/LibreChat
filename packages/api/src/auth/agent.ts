@@ -116,14 +116,19 @@ function withSSRFProtection<T extends http.Agent>(agent: T, allowedAddresses?: s
  * pre-validation but to a private IP when the actual connection is made.
  *
  * @param allowedAddresses - Optional admin exemption list of host:port pairs that bypass the block.
+ * @param agentOptions - Agent options, e.g. `{ keepAlive: true }` to retain pooling that the
+ *   default global agents provide and a bare `new http.Agent()` does not.
  */
-export function createSSRFSafeAgents(allowedAddresses?: string[] | null): {
+export function createSSRFSafeAgents(
+  allowedAddresses?: string[] | null,
+  agentOptions?: http.AgentOptions & https.AgentOptions,
+): {
   httpAgent: http.Agent;
   httpsAgent: https.Agent;
 } {
   return {
-    httpAgent: withSSRFProtection(new http.Agent(), allowedAddresses),
-    httpsAgent: withSSRFProtection(new https.Agent(), allowedAddresses),
+    httpAgent: withSSRFProtection(new http.Agent(agentOptions), allowedAddresses),
+    httpsAgent: withSSRFProtection(new https.Agent(agentOptions), allowedAddresses),
   };
 }
 

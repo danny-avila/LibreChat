@@ -853,10 +853,7 @@ describe('Tool Handlers', () => {
       await toolMap[Tools.web_search]();
 
       expect(mockResolveWebSearchSSRFAgents).toHaveBeenCalledTimes(1);
-      expect(mockResolveWebSearchSSRFAgents).toHaveBeenCalledWith(
-        { searchProvider: 'serper' },
-        allowedAddresses,
-      );
+      expect(mockResolveWebSearchSSRFAgents).toHaveBeenCalledWith(allowedAddresses);
       expect(mockCreateSearchTool).toHaveBeenCalledWith(
         expect.objectContaining({
           httpAgent: mockHttpAgent,
@@ -875,10 +872,7 @@ describe('Tool Handlers', () => {
       });
       await toolMap[Tools.web_search]();
 
-      expect(mockResolveWebSearchSSRFAgents).toHaveBeenCalledWith(
-        { searchProvider: 'serper' },
-        undefined,
-      );
+      expect(mockResolveWebSearchSSRFAgents).toHaveBeenCalledWith(undefined);
       expect(mockCreateSearchTool).toHaveBeenCalledWith(
         expect.objectContaining({
           httpAgent: mockHttpAgent,

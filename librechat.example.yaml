@@ -883,6 +883,13 @@ endpoints:
 #   # so only list hosts you fully control and whose DNS cannot be repointed by an
 #   # attacker. Listing an attacker-controllable or DNS-rebindable host re-opens the
 #   # private-address path this guard closes. Prefer literal IPs where you can.
+#   #
+#   # Self-hosted endpoints need an entry. A private destination such as
+#   # `http://searxng:8080` or `http://firecrawl:3002` is blocked once this guard is
+#   # active, so list it here or those requests will fail. A configured proxy
+#   # (`PROXY`, `HTTP_PROXY`, `HTTPS_PROXY`) is exempted automatically and needs no
+#   # entry; when a proxy carries the request, destination egress policy is the
+#   # proxy's to enforce.
 #   # allowedAddresses:
 #   #   - 'searxng:8080'
 #   #   - '127.0.0.1:8080'
