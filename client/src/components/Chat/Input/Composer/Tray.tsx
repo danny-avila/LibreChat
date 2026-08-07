@@ -4,7 +4,7 @@ import type { TConversation } from 'librechat-data-provider';
 import type { ComposerItem, ComposerItemKind } from '~/hooks/Input/useComposerItems';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useFileHandlingNoChatContext, useLocalize } from '~/hooks';
-import Chip, { type ChipTone } from './Chip';
+import Chip from './Chip';
 import FileRow from '../Files/FileRow';
 
 const KIND_ICON: Record<ComposerItemKind, JSX.Element> = {
@@ -26,7 +26,6 @@ function ItemChip({ item }: ItemChipProps) {
 
   return (
     <Chip
-      tone={item.kind as ChipTone}
       label={item.label}
       title={item.title}
       icon={KIND_ICON[item.kind]}

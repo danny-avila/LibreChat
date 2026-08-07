@@ -2452,7 +2452,7 @@ html[data-input-modality='keyboard']
  * element out of overlay scrollbars altogether, which would spend 8px of gutter
  * on the platforms that never had the problem.
  */
-.palette-scroll {
+.composer-palette-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--border-medium) transparent;
   scrollbar-gutter: stable;
@@ -2469,16 +2469,16 @@ html[data-input-modality='keyboard']
  * about to run, and starring an entry re-inserts every row it passed. The
  * panel's own height has no such problem: the list box is never re-inserted.
  */
-.palette-rows .ReactVirtualized__Grid {
+.composer-palette-rows .ReactVirtualized__Grid {
   transition: height 260ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 /* Held for the frame a search redraws in: the list is being replaced rather
    than rearranged there, and growing into its new size reads as the panel
    lagging behind the typing. */
-.palette-instant .ReactVirtualized__Grid {
+.composer-palette-instant .ReactVirtualized__Grid {
   transition-duration: 0s;
 }
-@keyframes palette-row {
+@keyframes composer-palette-row {
   from {
     opacity: 0;
   }
@@ -2486,10 +2486,10 @@ html[data-input-modality='keyboard']
     opacity: 1;
   }
 }
-.animate-palette-row {
-  animation: palette-row 200ms cubic-bezier(0.32, 0.72, 0, 1) both;
+.animate-composer-palette-row {
+  animation: composer-palette-row 200ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
-@keyframes palette-row-out {
+@keyframes composer-palette-row-out {
   from {
     opacity: 1;
   }
@@ -2500,8 +2500,8 @@ html[data-input-modality='keyboard']
 /* Accelerating away, unlike everything else here: the shared decelerating curve
    spends this beat almost entirely at zero, leaving the rows gone well before
    the list starts closing over them. */
-.animate-palette-row-out {
-  animation: palette-row-out 110ms cubic-bezier(0.4, 0, 1, 1) both;
+.animate-composer-palette-row-out {
+  animation: composer-palette-row-out 110ms cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2509,11 +2509,11 @@ html[data-input-modality='keyboard']
   .animate-composer-popover[data-enter],
   .animate-composer-popover[data-leave],
   .animate-composer-icon,
-  .palette-rows .ReactVirtualized__Grid {
+  .composer-palette-rows .ReactVirtualized__Grid {
     transition-duration: 1ms;
   }
-  .animate-palette-row,
-  .animate-palette-row-out {
+  .animate-composer-palette-row,
+  .animate-composer-palette-row-out {
     animation-duration: 1ms;
   }
   .animate-composer-popover,
