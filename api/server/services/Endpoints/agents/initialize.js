@@ -955,6 +955,21 @@ const initializeClient = async ({
 
   await resolveSubagentTrees([primaryConfig, ...agentConfigs.values()]);
 
+  /** Snapshot pure-subagent configs BEFORE they are pruned from
+   *  `agentConfigs`. Their `agentContextAttachments` (resolved from
+   *  the agent's `tool_resources.file_search.file_ids` during
+   *  `initializeAgent`) must reach `buildAgentContextAttachmentsByAgentId`
+   *  so the subagent's file context is available when the child graph
+   *  builds its context window. Without this, a pure subagent spawns with
+   *  its Agent-Builder-attached files silently absent. */
+  const pureSubagentConfigs = [];
+  for (const id of pureSubagentIds) {
+    const config = agentConfigs.get(id);
+    if (config) {
+      pureSubagentConfigs.push(config);
+    }
+  }
+
   /** Drop pure-subagent entries now that every reachable config has
    *  had its subagents resolved. They stay in `agentToolContexts` so
    *  their tools still execute with the right scoping. */
@@ -980,6 +995,7 @@ const initializeClient = async ({
   const agentContextAttachmentsByAgentId = buildAgentContextAttachmentsByAgentId([
     primaryConfig,
     ...agentConfigs.values(),
+    ...pureSubagentConfigs,
   ]);
 
   let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];

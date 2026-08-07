@@ -1250,7 +1250,23 @@ export async function createRun({
 
     const systemContent = [toolInstructions, agent.instructions ?? ''].join('\n').trim();
 
-    const additionalInstructions = [dynamicToolInstructions, agent.additional_instructions ?? '']
+    /** Extract file context text from agent-level File Context attachments
+     *  (tool_resources.file_search.file_ids resolved during initializeAgent).
+     *  For subagents, this is the primary path through which their
+     *  Agent-Builder-attached files reach the child graph — the
+     *  `applyContextToAgent` loop in the host only covers primary + handoff
+     *  agents, not pure subagents pruned from `agentConfigs`. */
+    const agentContextText = (agent.agentContextAttachments ?? [])
+      .filter((file) => file?.text)
+      .map((file) => `# "${file.filename}"\n${file.text}`)
+      .join('\n\n');
+
+    const additionalInstructions = [
+      dynamicToolInstructions,
+      agent.additional_instructions ?? '',
+      agentContextText,
+    ]
+      .filter(Boolean)
       .join('\n')
       .trim();
 
