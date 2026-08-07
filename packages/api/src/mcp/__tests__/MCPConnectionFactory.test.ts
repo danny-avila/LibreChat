@@ -1416,7 +1416,7 @@ describe('MCPConnectionFactory', () => {
         }),
       );
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(refreshedTokens);
-      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled');
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled', 'silent-refresh');
       // Silent refresh succeeded — interactive flow must NOT be initiated.
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
     });
@@ -1561,7 +1561,7 @@ describe('MCPConnectionFactory', () => {
       await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
 
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(refreshedTokens);
-      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled');
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled', 'silent-refresh');
       // returnOnOAuth interactive path must NOT trigger when silent refresh succeeds.
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
       expect(oauthOptions.oauthStart).not.toHaveBeenCalled();
@@ -1743,7 +1743,7 @@ describe('MCPConnectionFactory', () => {
       // cached ones — that's the whole point of the fix.
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(freshlyRefreshedTokens);
       expect(mockConnectionInstance.setOAuthTokens).not.toHaveBeenCalledWith(staleCachedTokens);
-      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled');
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled', 'silent-refresh');
       // The cached `mcp_get_tokens` flow state is dropped so the next
       // `getOAuthTokens` call reads the freshly persisted tokens from storage.
       expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('flow123', 'mcp_get_tokens');
@@ -3273,7 +3273,7 @@ describe('MCPConnectionFactory', () => {
 
       expect(mockMCPTokenStorage.storeTokens).not.toHaveBeenCalled();
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(callbackTokens);
-      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled');
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled', 'interactive');
     });
 
     it('rejects callback tokens that do not identify a persisted credential generation', async () => {

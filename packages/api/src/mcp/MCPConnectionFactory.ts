@@ -990,7 +990,7 @@ export class MCPConnectionFactory {
         const refreshedTokens = await this.attemptSilentTokenRefresh();
         if (refreshedTokens) {
           connection.setOAuthTokens(refreshedTokens);
-          connection.emit('oauthHandled');
+          connection.emit('oauthHandled', 'silent-refresh' satisfies t.OAuthHandledSource);
           return;
         }
       }
@@ -1182,7 +1182,7 @@ export class MCPConnectionFactory {
 
       // Only emit oauthHandled if we actually got tokens (OAuth succeeded)
       if (result?.tokens) {
-        connection.emit('oauthHandled');
+        connection.emit('oauthHandled', 'interactive' satisfies t.OAuthHandledSource);
       } else {
         await this.clearStaleClientIfRejected(result?.reusedClientCredentialSetId, result?.error);
         logger.warn(`${this.logPrefix} OAuth failed, emitting oauthFailed event`);

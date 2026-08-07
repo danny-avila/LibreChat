@@ -16,7 +16,7 @@ import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { FlowStateManager } from '~/flow/manager';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
-import { MCPTokenStorage } from '~/mcp/oauth';
+import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -124,7 +124,7 @@ async function storeTokens(
   server: OAuthTestServer,
   tokens: MCPOAuthTokens,
   scope = 'read',
-): Promise<void> {
+): Promise<MCPOAuthTokens> {
   const clientInfo: OAuthClientInformation = {
     client_id: CLIENT_ID,
     redirect_uris: ['http://localhost'],
@@ -146,7 +146,7 @@ async function storeTokens(
     resource: server.resourceUrl,
   };
 
-  await MCPTokenStorage.storeTokens({
+  return MCPTokenStorage.storeTokens({
     userId: USER_ID,
     serverName: SERVER_NAME,
     tokens,
@@ -298,6 +298,83 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
         server.tokenRequests.filter((request) => request.grantType === 'refresh_token'),
       ).toHaveLength(1);
       expect(oauthStart).not.toHaveBeenCalled();
+    } finally {
+      isConnectedSpy.mockRestore();
+      registrySpy.mockRestore();
+    }
+  });
+
+  it('escalates to interactive OAuth when the resource rejects refreshed tokens during reconnect', async () => {
+    server = await createOAuthMCPServer({
+      issueRefreshTokens: true,
+      requireResourceParameter: true,
+      tokenScopes: ['read'],
+      scopesSupported: ['read'],
+      rejectRefreshTokens: 10,
+    });
+    const initialTokens = await issueTokens(server);
+    await storeTokens(tokenStore, server, initialTokens);
+    const flowManager = createFlowManager();
+    const tokenMethods = {
+      findToken: tokenStore.findToken,
+      createToken: tokenStore.createToken,
+      updateToken: tokenStore.updateToken,
+      deleteTokens: tokenStore.deleteTokens,
+    };
+    const serverConfig = {
+      type: 'streamable-http' as const,
+      url: server.url,
+      initTimeout: 15000,
+      requiresOAuth: true,
+    };
+
+    connection = await MCPConnectionFactory.create(
+      { serverName: SERVER_NAME, serverConfig },
+      {
+        useOAuth: true,
+        user: { id: USER_ID } as IUser,
+        flowManager,
+        tokenMethods,
+      },
+    );
+    server.issuedTokens.delete(initialTokens.access_token);
+    const isConnectedSpy = jest.spyOn(connection, 'isConnected').mockResolvedValueOnce(true);
+
+    const manager = new MCPManager();
+    jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
+    const registrySpy = jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
+      resolveAllowlists: jest.fn().mockResolvedValue({
+        allowedDomains: null,
+        allowedAddresses: null,
+        useSSRFProtection: false,
+      }),
+    } as unknown as MCPServersRegistry);
+    const oauthStart = jest.fn(async (): Promise<void> => {
+      const authorizedTokens = await issueTokens(server);
+      const storedTokens = await storeTokens(tokenStore, server, authorizedTokens);
+      const flowId = MCPOAuthHandler.generateFlowId(USER_ID, SERVER_NAME);
+      await flowManager.completeFlow(flowId, 'mcp_oauth', storedTokens);
+    });
+
+    try {
+      await expect(
+        manager.callTool({
+          user: { id: USER_ID } as IUser,
+          serverName: SERVER_NAME,
+          serverConfig,
+          toolName: 'echo',
+          toolArguments: { message: 'interactive fallback' },
+          provider: 'openai',
+          flowManager,
+          tokenMethods,
+          oauthStart,
+        }),
+      ).resolves.toBeDefined();
+
+      expect(
+        server.tokenRequests.filter((request) => request.grantType === 'refresh_token'),
+      ).toHaveLength(2);
+      expect(oauthStart).toHaveBeenCalledTimes(1);
     } finally {
       isConnectedSpy.mockRestore();
       registrySpy.mockRestore();

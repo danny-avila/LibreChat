@@ -53,7 +53,10 @@ function createOboToolCallErrorMessage(
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
-  private readonly oauthRecoveries = new WeakMap<MCPConnection, Promise<void>>();
+  private readonly oauthRecoveries = new WeakMap<
+    MCPConnection,
+    { promise: Promise<void>; allowsTakeover: boolean }
+  >();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -90,7 +93,7 @@ export class MCPManager extends UserConnectionManager {
     const connection = requestConnection ?? this.userConnections.get(userId)?.get(opts.serverName);
     const recovery = connection ? this.oauthRecoveries.get(connection) : undefined;
     if (recovery) {
-      await recovery.catch(() => undefined);
+      await recovery.promise.catch(() => undefined);
     }
 
     return super.getUserConnection(opts);
@@ -359,12 +362,16 @@ Please follow these instructions when using tools from the respective MCP server
     serverName: string,
     userId: string,
     attachRequestOAuthHandler: () => () => void,
+    allowsTakeover = true,
   ): Promise<void> {
     const existingRecovery = this.oauthRecoveries.get(connection);
     if (existingRecovery) {
       try {
-        return await existingRecovery;
-      } catch {
+        return await existingRecovery.promise;
+      } catch (recoveryError) {
+        if (!existingRecovery.allowsTakeover) {
+          throw recoveryError;
+        }
         if (this.oauthRecoveries.get(connection) === existingRecovery) {
           this.oauthRecoveries.delete(connection);
         }
@@ -374,6 +381,7 @@ Please follow these instructions when using tools from the respective MCP server
           serverName,
           userId,
           attachRequestOAuthHandler,
+          false,
         );
       }
     }
@@ -389,41 +397,77 @@ Please follow these instructions when using tools from the respective MCP server
             userId,
           }),
         );
-        await this.connectAfterOAuthRecovery(connection);
+        await this.connectAfterOAuthRecovery(connection, async (connectError) => {
+          await this.waitForOAuthRecovery(connection, () =>
+            connection.emit('oauthReauthenticationRequired', {
+              serverName,
+              error: connectError,
+              serverUrl: connection.url,
+              userId,
+              skipSilentRefresh: true,
+            }),
+          );
+        });
       } finally {
         cleanupRequestOAuthHandler();
       }
     })();
 
-    this.oauthRecoveries.set(connection, recovery);
+    const recoveryEntry = { promise: recovery, allowsTakeover };
+    this.oauthRecoveries.set(connection, recoveryEntry);
     try {
       await recovery;
     } finally {
-      if (this.oauthRecoveries.get(connection) === recovery) {
+      if (this.oauthRecoveries.get(connection) === recoveryEntry) {
         this.oauthRecoveries.delete(connection);
       }
     }
   }
 
-  private async connectAfterOAuthRecovery(connection: MCPConnection): Promise<void> {
-    let canRetryAfterInteractiveOAuth = true;
-    while (true) {
-      let oauthHandledDuringConnect = false;
-      const handleOAuth = () => {
-        oauthHandledDuringConnect = true;
-      };
-      connection.on('oauthHandled', handleOAuth);
-      try {
-        await connection.connect();
-        return;
-      } catch (error) {
-        if (!canRetryAfterInteractiveOAuth || !oauthHandledDuringConnect) {
-          throw error;
-        }
-        canRetryAfterInteractiveOAuth = false;
-      } finally {
-        connection.off('oauthHandled', handleOAuth);
+  private async connectAfterOAuthRecovery(
+    connection: MCPConnection,
+    requestInteractiveRecovery: (error: unknown) => Promise<void>,
+  ): Promise<void> {
+    const firstAttempt = await this.connectOnceAfterOAuth(connection);
+    if (firstAttempt.connected) {
+      return;
+    }
+    if (!firstAttempt.oauthHandled) {
+      throw firstAttempt.error;
+    }
+    if (firstAttempt.source === 'silent-refresh') {
+      await requestInteractiveRecovery(firstAttempt.error);
+    }
+
+    const secondAttempt = await this.connectOnceAfterOAuth(connection);
+    if (!secondAttempt.connected) {
+      throw secondAttempt.error;
+    }
+  }
+
+  private async connectOnceAfterOAuth(connection: MCPConnection): Promise<
+    | { connected: true }
+    | {
+        connected: false;
+        error: unknown;
+        oauthHandled: boolean;
+        source?: t.OAuthHandledSource;
       }
+  > {
+    let oauthHandled = false;
+    let source: t.OAuthHandledSource | undefined;
+    const handleOAuth = (handledSource?: t.OAuthHandledSource) => {
+      oauthHandled = true;
+      source = handledSource;
+    };
+    connection.on('oauthHandled', handleOAuth);
+    try {
+      await connection.connect();
+      return { connected: true };
+    } catch (error) {
+      return { connected: false, error, oauthHandled, source };
+    } finally {
+      connection.off('oauthHandled', handleOAuth);
     }
   }
 
