@@ -287,11 +287,10 @@ async function invalidateCachedTools(options = {}) {
   const keysToDelete = [];
 
   if (invalidateGlobal) {
-    keysToDelete.push(
-      ToolCacheKeys.GLOBAL,
-      ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS,
-      ToolCacheKeys.MCP_APP_SERVER_GENERATIONS,
-    );
+    // Keep publication generations: active app connections need the durable map to heal the
+    // global catalog after broad config invalidation. Startup synchronization replaces the map
+    // atomically when the actual app-server configuration changes.
+    keysToDelete.push(ToolCacheKeys.GLOBAL, ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
   }
 
   const invalidate = () => Promise.all(keysToDelete.map((key) => cache.delete(key)));

@@ -266,13 +266,25 @@ describe('getCachedTools', () => {
       expect(operation).toHaveBeenCalledTimes(1);
     });
 
-    it('invalidateCachedTools should use TOOL_CACHE namespace', async () => {
-      mockCache.delete.mockResolvedValue(true);
+    it('preserves app publication generations when invalidating global tools', async () => {
+      const generations = { dynamic: 'config-generation' };
+      const entries = new Map([
+        [ToolCacheKeys.GLOBAL, { stale: { type: 'function' } }],
+        [ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS, ['dynamic']],
+        [ToolCacheKeys.MCP_APP_SERVER_GENERATIONS, generations],
+      ]);
+      mockCache.get.mockImplementation(async (key) => entries.get(key));
+      mockCache.delete.mockImplementation(async (key) => entries.delete(key));
+
       await invalidateCachedTools({ invalidateGlobal: true });
+
+      await expect(getCachedAppServerGenerations()).resolves.toEqual(generations);
+      expect(entries.has(ToolCacheKeys.GLOBAL)).toBe(false);
+      expect(entries.has(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS)).toBe(false);
       expect(getLogStores).toHaveBeenCalledWith(CacheKeys.TOOL_CACHE);
       expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL);
       expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
-      expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_GENERATIONS);
+      expect(mockCache.delete).not.toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_GENERATIONS);
     });
 
     it('should NOT use CONFIG_STORE namespace', async () => {
