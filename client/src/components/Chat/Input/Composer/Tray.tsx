@@ -4,8 +4,8 @@ import type { TConversation } from 'librechat-data-provider';
 import type { ComposerItem, ComposerItemKind } from '~/hooks/Input/useComposerItems';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useFileHandlingNoChatContext, useLocalize } from '~/hooks';
-import Chip from './Chip';
 import FileRow from '../Files/FileRow';
+import Chip from './Chip';
 
 const KIND_ICON: Record<ComposerItemKind, JSX.Element> = {
   quote: <TextQuote className="h-4 w-4" aria-hidden="true" />,
