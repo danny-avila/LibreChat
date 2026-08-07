@@ -852,24 +852,38 @@ function Palette({
               click-focusable, which strands a reader inside a hidden subtree.
               The chip in the bar carries the keyboard-reachable equivalent. */}
           {modes != null &&
-            modes.map((mode) => (
-              <span
-                key={mode.id}
-                role="presentation"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  mode.onSelect();
-                }}
-                className={cn(
-                  'shrink-0 rounded-full border px-2 py-0.5 text-[11px] transition-colors',
-                  mode.active
-                    ? 'border-transparent bg-surface-active-alt text-text-primary'
-                    : 'border-border-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-                )}
-              >
-                {mode.label}
-              </span>
-            ))}
+            modes.map((mode) =>
+              mode.icon != null ? (
+                <span
+                  key={mode.id}
+                  role="presentation"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    mode.onSelect();
+                  }}
+                  className="shrink-0 rounded p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+                >
+                  {mode.icon}
+                </span>
+              ) : (
+                <span
+                  key={mode.id}
+                  role="presentation"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    mode.onSelect();
+                  }}
+                  className={cn(
+                    'shrink-0 rounded-full border px-2 py-0.5 text-[11px] transition-colors',
+                    mode.active
+                      ? 'border-transparent bg-surface-active-alt text-text-primary'
+                      : 'border-border-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+                  )}
+                >
+                  {mode.label}
+                </span>
+              ),
+            )}
           {isEntry && (
             <span
               role="presentation"
