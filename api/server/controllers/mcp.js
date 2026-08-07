@@ -340,7 +340,7 @@ function configHasObo(parsedConfig) {
  * (`url`, `proxy`, `headers`), change scopes (`obo`), or reroute auth (`oauth`,
  * `apiKey`, `customUserVars`) MUST stay locked.
  */
-const OBO_USER_EDITABLE_FIELDS = new Set(['title', 'description', 'iconPath']);
+const OBO_USER_EDITABLE_FIELDS = new Set(['title', 'description', 'iconPath', 'support_contact']);
 
 /**
  * Returns true when any non-allowlisted user-input field differs between the

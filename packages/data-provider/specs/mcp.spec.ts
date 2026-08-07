@@ -48,6 +48,52 @@ describe('MCPOptionsSchema', () => {
 });
 
 describe('MCP schemas', () => {
+  describe('support contact', () => {
+    const baseConfig = {
+      type: 'streamable-http' as const,
+      url: 'https://mcp-server.com/http',
+    };
+
+    it.each([
+      ['name and email', { name: 'Support Team', email: 'support@example.com' }],
+      ['name only', { name: 'Support Team' }],
+      ['email only', { email: 'support@example.com' }],
+      ['empty strings', { name: '', email: '' }],
+      ['an empty object', {}],
+    ])('should accept %s', (_case, support_contact) => {
+      const result = MCPServerUserInputSchema.safeParse({
+        ...baseConfig,
+        support_contact,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.support_contact).toEqual(support_contact);
+      }
+    });
+
+    it('should reject an invalid non-empty email', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        ...baseConfig,
+        support_contact: { name: 'Support Team', email: 'not-an-email' },
+      });
+
+      expect(result.success).toBe(false);
+    });
+
+    it('should strip response-only owner_contact from user input', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        ...baseConfig,
+        owner_contact: { name: 'Server Owner' },
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).not.toHaveProperty('owner_contact');
+      }
+    });
+  });
+
   describe('env variable exfiltration prevention', () => {
     it('should confirm admin schema resolves env vars (attack vector baseline)', () => {
       process.env.FAKE_SECRET = 'leaked-secret-value';
@@ -715,6 +761,7 @@ describe('MCP_USER_INPUT_FIELDS', () => {
     expect(MCP_USER_INPUT_FIELDS.has('title')).toBe(true);
     expect(MCP_USER_INPUT_FIELDS.has('description')).toBe(true);
     expect(MCP_USER_INPUT_FIELDS.has('iconPath')).toBe(true);
+    expect(MCP_USER_INPUT_FIELDS.has('support_contact')).toBe(true);
     expect(MCP_USER_INPUT_FIELDS.has('oauth')).toBe(true);
     expect(MCP_USER_INPUT_FIELDS.has('apiKey')).toBe(true);
     expect(MCP_USER_INPUT_FIELDS.has('obo')).toBe(true);

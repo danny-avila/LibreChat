@@ -1,3 +1,4 @@
+import type { AgentOwnerContact, SupportContact } from './assistants';
 import type { MCPOptions, MCPServerUserInput } from '../mcp';
 
 /**
@@ -44,6 +45,9 @@ export type MCPServerDBObjectResponse = {
   serverName: string;
   /** True if access is only via agent (not directly shared with user) */
   consumeOnly?: boolean;
+  support_contact?: SupportContact;
+  /** Response-only fallback resolved from the server's first owner. */
+  owner_contact?: AgentOwnerContact;
 } & MCPOptions;
 
 export type MCPServersListResponse = Record<string, MCPServerDBObjectResponse>;
