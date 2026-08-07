@@ -5,6 +5,8 @@ import { resolveMCPServerOwnerContacts, type MCPContactDependencies } from '~/mc
 const OWNER_PERMISSION_BITS =
   PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
 
+type ServerContactConfig = Pick<ParsedServerConfig, 'dbId' | 'author' | 'support_contact'>;
+
 const createDependencies = (
   overrides: Partial<MCPContactDependencies> = {},
 ): jest.Mocked<MCPContactDependencies> =>
@@ -15,8 +17,7 @@ const createDependencies = (
     ...overrides,
   }) as jest.Mocked<MCPContactDependencies>;
 
-const server = (values: Partial<ParsedServerConfig> = {}): ParsedServerConfig => ({
-  type: 'sse',
+const server = (values: Partial<ServerContactConfig> = {}): ServerContactConfig => ({
   dbId: 'resource-1',
   author: 'author-1',
   ...values,
