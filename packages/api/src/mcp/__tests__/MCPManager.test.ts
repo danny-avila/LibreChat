@@ -8,9 +8,9 @@ import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { isMCPDomainAllowed } from '~/auth/domain';
+import * as toolsChanged from '~/mcp/toolsChanged';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
-import * as toolsChanged from '~/mcp/toolsChanged';
 import * as graphUtils from '~/utils/graph';
 import { processMCPEnv } from '~/utils/env';
 

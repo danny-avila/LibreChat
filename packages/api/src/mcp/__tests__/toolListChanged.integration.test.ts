@@ -1,6 +1,6 @@
 /** Real-SDK integration coverage for `notifications/tools/list_changed` (#7117). */
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
   ErrorCode,
   ListToolsRequestSchema,

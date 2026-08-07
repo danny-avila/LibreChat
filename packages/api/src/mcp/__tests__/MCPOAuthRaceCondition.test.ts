@@ -67,6 +67,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       const manager = new TestManager();
 
       const mockConnection = {
+        on: jest.fn(),
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
         isStale: jest.fn().mockReturnValue(false),
@@ -144,6 +145,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       const manager = new TestManager();
 
       const mockConnection = {
+        on: jest.fn(),
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
         isStale: jest.fn().mockReturnValue(false),
@@ -229,6 +231,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       const manager = new TestManager();
 
       const mockConnection = {
+        on: jest.fn(),
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
         isStale: jest.fn().mockReturnValue(false),
@@ -335,6 +338,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
 
       let callCount = 0;
       const makeConnection = () => ({
+        on: jest.fn(),
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
         isStale: jest.fn().mockReturnValue(false),
