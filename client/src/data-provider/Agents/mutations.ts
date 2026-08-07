@@ -31,6 +31,18 @@ const hasEdgeWithAgent = (data: unknown, agentId: string): boolean => {
 };
 
 /**
+ * Mutation responses omit list-only `isEditable`. When merging into a cached list
+ * row, keep the ACL flag the list endpoint set rather than inferring it from
+ * write success (`MANAGE_AGENTS` can PATCH agents the ACL marks non-editable).
+ */
+const mergeAgentListRow = (previous: t.Agent, next: t.Agent): t.Agent => {
+  if (previous.isEditable === undefined) {
+    return next;
+  }
+  return { ...next, isEditable: previous.isEditable };
+};
+
+/**
  * Create a new agent
  */
 export const useCreateAgentMutation = (
@@ -99,9 +111,7 @@ export const useUpdateAgentMutation = (
               ...listRes,
               data: listRes.data.map((agent) => {
                 if (agent.id === variables.agent_id) {
-                  /** The update succeeded, so the caller can edit it. Mutation responses
-                   *  carry no `isEditable`; without this the row loses the field. */
-                  return { ...updatedAgent, isEditable: true };
+                  return mergeAgentListRow(agent, updatedAgent);
                 }
                 return agent;
               }),
@@ -242,7 +252,7 @@ export const useUploadAgentAvatarMutation = (
             ...listRes,
             data: listRes.data.map((agent) => {
               if (agent.id === variables.agent_id) {
-                return updatedAgent;
+                return mergeAgentListRow(agent, updatedAgent);
               }
               return agent;
             }),
@@ -293,7 +303,7 @@ export const useUpdateAgentAction = (
             ...listRes,
             data: listRes.data.map((agent) => {
               if (agent.id === variables.agent_id) {
-                return updatedAgent;
+                return mergeAgentListRow(agent, updatedAgent);
               }
               return agent;
             }),
@@ -429,7 +439,7 @@ export const useRevertAgentVersionMutation = (
                 ...listRes,
                 data: listRes.data.map((agent) => {
                   if (agent.id === variables.agent_id) {
-                    return revertedAgent;
+                    return mergeAgentListRow(agent, revertedAgent);
                   }
                   return agent;
                 }),

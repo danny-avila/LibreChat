@@ -1,10 +1,10 @@
 import { createElement } from 'react';
-import { dataService, QueryKeys } from 'librechat-data-provider';
+import { dataService, PermissionBits, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Agent, GraphEdge } from 'librechat-data-provider';
+import type { Agent, AgentListResponse, GraphEdge } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { useDeleteAgentMutation } from '../mutations';
+import { useDeleteAgentMutation, useUpdateAgentMutation } from '../mutations';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -13,11 +13,12 @@ jest.mock('librechat-data-provider', () => {
     dataService: {
       ...actual.dataService,
       deleteAgent: jest.fn(),
+      updateAgent: jest.fn(),
     },
   };
 });
 
-const createAgent = (id: string, edges: GraphEdge[] = []): Agent => ({
+const createAgent = (id: string, edges: GraphEdge[] = [], isEditable?: boolean): Agent => ({
   id,
   name: id,
   description: null,
@@ -35,6 +36,7 @@ const createAgent = (id: string, edges: GraphEdge[] = []): Agent => ({
     presence_penalty: null,
   },
   edges,
+  ...(isEditable !== undefined ? { isEditable } : {}),
 });
 
 const createWrapper = (queryClient: QueryClient) =>
@@ -109,5 +111,49 @@ describe('useDeleteAgentMutation', () => {
     expect(queryClient.getQueryData(unrelatedQueryKey)).toEqual(unrelatedAgent);
     expect(queryClient.getQueryData([QueryKeys.agent, targetId])).toBeUndefined();
     expect(queryClient.getQueryData([QueryKeys.agent, targetId, 'expanded'])).toBeUndefined();
+  });
+});
+
+describe('useUpdateAgentMutation', () => {
+  it('preserves the list-cache isEditable flag after a successful update', async () => {
+    /** MANAGE_AGENTS can PATCH agents the ACL marks non-editable. Mutation success must
+     *  not promote those VIEW rows into the editable-only "My Agents" subset. */
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const agentId = 'agent_view_only';
+    const listKey = [QueryKeys.agents, { requiredPermission: PermissionBits.VIEW }];
+    const cachedList: AgentListResponse = {
+      object: 'list',
+      data: [createAgent(agentId, [], false)],
+      first_id: agentId,
+      last_id: agentId,
+      has_more: false,
+    };
+    queryClient.setQueryData(listKey, cachedList);
+
+    const updatedAgent = createAgent(agentId);
+    updatedAgent.name = 'Renamed';
+    jest.mocked(dataService.updateAgent).mockResolvedValue(updatedAgent);
+
+    const { result } = renderHook(() => useUpdateAgentMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ agent_id: agentId, data: { name: 'Renamed' } });
+    });
+
+    const listRes = queryClient.getQueryData<AgentListResponse>(listKey);
+    expect(listRes?.data).toHaveLength(1);
+    expect(listRes?.data[0]).toMatchObject({
+      id: agentId,
+      name: 'Renamed',
+      isEditable: false,
+    });
   });
 });
