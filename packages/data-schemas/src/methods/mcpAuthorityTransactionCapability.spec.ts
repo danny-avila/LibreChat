@@ -67,11 +67,51 @@ describe('MCP authority snapshot-transaction capability', () => {
     }
   });
 
+  test('does not require collection-listing privileges after base role seeding', async () => {
+    const replicaSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    const connection = await mongoose.createConnection(replicaSet.getUri()).asPromise();
+
+    try {
+      await seedBaseRoles(connection);
+      jest.spyOn(connection.db!, 'listCollections').mockImplementation(() => {
+        throw new Error('not authorized to list collections');
+      });
+
+      await expect(getMCPAuthoritySnapshotTransactionCapability(connection)).resolves.toEqual({
+        capable: true,
+        capability: 'primary_snapshot_transactions',
+      });
+    } finally {
+      await connection.close();
+      await replicaSet.stop();
+    }
+  });
+
   test('reports missing base role seeding separately from database capability', async () => {
     const replicaSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     const connection = await mongoose.createConnection(replicaSet.getUri()).asPromise();
 
     try {
+      await expect(getMCPAuthoritySnapshotTransactionCapability(connection)).resolves.toMatchObject(
+        {
+          capable: false,
+          reason: 'prerequisite_missing',
+          retryable: true,
+        },
+      );
+    } finally {
+      await connection.close();
+      await replicaSet.stop();
+    }
+  });
+
+  test('rejects an empty roles collection as incomplete base role seeding', async () => {
+    const replicaSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    const connection = await mongoose.createConnection(replicaSet.getUri()).asPromise();
+
+    try {
+      await connection.db!.createCollection('roles');
+
       await expect(getMCPAuthoritySnapshotTransactionCapability(connection)).resolves.toMatchObject(
         {
           capable: false,

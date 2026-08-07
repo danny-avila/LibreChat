@@ -80,11 +80,10 @@ export async function assertMCPAuthoritySnapshotTransactionCapability(
     );
   }
 
-  let rolesExist: boolean;
+  let baseRoleExists: boolean;
   try {
-    rolesExist = await connection.db
-      .listCollections({ name: 'roles' }, { nameOnly: true })
-      .hasNext();
+    baseRoleExists =
+      (await connection.db.collection('roles').findOne({}, { projection: { _id: 1 } })) != null;
   } catch (error) {
     const databaseError = asError(error);
     throw new MCPAuthoritySnapshotTransactionCapabilityError(
@@ -93,7 +92,7 @@ export async function assertMCPAuthoritySnapshotTransactionCapability(
       isTransientDatabaseError(databaseError),
     );
   }
-  if (!rolesExist) {
+  if (!baseRoleExists) {
     throw new MCPAuthoritySnapshotTransactionCapabilityError(
       'prerequisite_missing',
       new Error('base role seeding has not completed'),
