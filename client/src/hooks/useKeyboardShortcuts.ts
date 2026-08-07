@@ -612,7 +612,10 @@ export function useShortcutActions(): ShortcutAction[] {
   const handleStopGenerating = useCallback(() => {
     /* Both split panes can be generating at once, each advertising this
        shortcut under its own composer; stop the run the user is focused in
-       rather than always the first pane's. */
+       rather than always the first pane's. The composer keeps its stop control
+       mounted (hidden) whenever the during-run send button takes the visible
+       slot, so typing a steer never costs the focused form its match. The
+       document-wide fallback is for focus that sits outside any composer. */
     const focusedPane = document.activeElement?.closest('form');
     const scoped = focusedPane?.querySelector<HTMLElement>(
       '[data-testid="stop-generation-button"]',
@@ -725,8 +728,20 @@ export function useShortcutActions(): ShortcutAction[] {
   ]);
 
   const handleUploadFile = useCallback(() => {
+    /* Same resolution as the stop shortcut, and for the same reason: both
+       split panes mount a composer advertising this shortcut, so attach to the
+       one the user is focused in rather than always the first in the document.
+       The document-wide lookups behind it cover focus sitting outside any
+       composer, and `#attach-file` is the single-instance legacy control. */
+    const focusedPane = document.activeElement?.closest('form');
+    const scoped = focusedPane?.querySelector<HTMLElement>(
+      '[data-testid="composer-palette-button"]',
+    );
+    if (scoped != null) {
+      return clickTarget(scoped);
+    }
     const btn =
-      document.querySelector<HTMLButtonElement>('#attach-file-menu-button') ??
+      document.querySelector<HTMLElement>('[data-testid="composer-palette-button"]') ??
       document.querySelector<HTMLButtonElement>('#attach-file');
     return clickTarget(btn);
   }, []);

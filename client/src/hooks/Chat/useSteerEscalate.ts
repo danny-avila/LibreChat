@@ -57,7 +57,7 @@ export default function useSteerEscalate(conversationId: string) {
     store.activeGenerationProtocolVersionByConvoId(conversationId),
   );
 
-  /** Relabels the chip in place once the server confirms the durable arm —
+  /** Relabels the chip in place once the server confirms the durable arm:
    *  same steerId, same position, only the `preempt` flag flips. */
   const markSteerPreempt = useRecoilCallback(
     ({ set }) =>
@@ -130,8 +130,8 @@ export default function useSteerEscalate(conversationId: string) {
             showToast({ message: localize('com_ui_steer_arm_unconfirmed'), status: 'warning' });
             return;
           }
-          /* `armed: false` is deliberately ambiguous — injected, cancelled,
-           * re-homed, or run over — so the message only says the escalation
+          /* `armed: false` is deliberately ambiguous (injected, cancelled,
+           * re-homed, or run over), so the message only says the escalation
            * lost, and the chip defers to the events for what happened. */
           showToast({
             message: localize(

@@ -12,15 +12,15 @@ import { useGetEndpointsQuery } from '~/data-provider';
 /**
  * Reasoning is spelled differently per provider: Anthropic exposes `effort`,
  * OpenAI and Bedrock `reasoning_effort`, Google `thinkingLevel`. Probed in
- * order, first hit wins — no endpoint defines more than one.
+ * order, first hit wins: no endpoint defines more than one.
  */
 const REASONING_KEYS = ['effort', 'reasoning_effort', 'thinkingLevel'] as const;
 
 /**
  * Resolves the reasoning-effort parameter definition for the active
  * conversation, or `null` when the model exposes none. Mirrors the resolution
- * in the Parameters panel — same `getSettingsKeys` lookup, same custom-param
- * overrides, same model-aware defaults — so the composer slider and the panel
+ * in the Parameters panel: same `getSettingsKeys` lookup, same custom-param
+ * overrides, same model-aware defaults, so the composer slider and the panel
  * control can never disagree about which key is in play.
  */
 export default function useThinkingSetting(
@@ -57,7 +57,7 @@ export default function useThinkingSetting(
     for (const param of modelAwareParams) {
       /* Merged, not replaced: an override that names only a default would
          otherwise drop the built-in `options`, and a reasoning setting without
-         options is not rendered at all — the control would simply vanish. */
+         options is not rendered at all: the control would simply vanish. */
       const override = overriddenParamsMap[param.key];
       const resolved: SettingDefinition = override != null ? { ...param, ...override } : param;
       byKey.set(resolved.key, resolved);

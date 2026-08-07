@@ -5,6 +5,7 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import { act, render, screen, within, fireEvent } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/store/families';
+import { hasQueuedIntent, releaseQueuedIntent } from '~/utils/queueIntent';
 import Queue from '../Queue';
 import store from '~/store';
 
@@ -264,7 +265,7 @@ describe('Queue', () => {
   });
 
   /* Edit used to drop the row first and hand the words over second, so a
-     composer that refuses — a paused question owns it — destroyed the message
+     composer that refuses (a paused question owns it) destroyed the message
      outright. Same restore-then-remove order as the trash. */
   it('keeps the message queued when the composer refuses to take it for editing', async () => {
     const onEdit = jest.fn().mockReturnValue(false);
@@ -277,6 +278,95 @@ describe('Queue', () => {
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'com_ui_queue_edit_blocked' }),
     );
+  });
+
+  /* The drain takes the head at run end, and both handoffs above span an await
+     before the row is dropped. Claiming the row for the whole handoff is what
+     stops the drain sending a message the user is taking back. */
+  describe('claiming a row for the handoff', () => {
+    afterEach(() => releaseQueuedIntent('q1'));
+
+    it.each([
+      ['com_ui_edit_message', 'onEditToComposer'] as const,
+      ['com_ui_remove_queued', 'onRestoreToComposer'] as const,
+    ])('holds the row across %s and lets it go afterwards', async (label, handler) => {
+      let settleDiscard: (value: boolean) => void = () => undefined;
+      mockDiscardQueued.mockReturnValueOnce(
+        new Promise<boolean>((resolve) => {
+          settleDiscard = resolve;
+        }),
+      );
+      renderQueue([queued({ id: 'q1' })], steering, {
+        [handler]: jest.fn().mockReturnValue(true),
+      });
+
+      fireEvent.click(screen.getByLabelText(label));
+      expect(hasQueuedIntent('q1')).toBe(true);
+
+      await act(async () => settleDiscard(true));
+      expect(hasQueuedIntent('q1')).toBe(false);
+      expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+    });
+
+    it('lets the row go when the handoff is refused', async () => {
+      renderQueue([queued({ id: 'q1' })], steering, {
+        onRestoreToComposer: jest.fn().mockReturnValue(false),
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+      });
+      expect(hasQueuedIntent('q1')).toBe(false);
+    });
+  });
+
+  /* Split view mounts two composers at once. A module-global id duplicated the
+     hint element and pointed every handle at whichever copy won. */
+  it('scopes the reorder hint to its own rail', () => {
+    render(
+      <DndProvider backend={HTML5Backend}>
+        <RecoilRoot
+          initializeState={({ set }) =>
+            set(store.queuedMessagesByConvoId(CONVO_ID), [
+              queued({ id: 'q1' }),
+              queued({ id: 'q2' }),
+            ])
+          }
+        >
+          <Queue
+            steering={steering}
+            conversationId={CONVO_ID}
+            onEditToComposer={jest.fn()}
+            onRestoreToComposer={jest.fn()}
+          />
+        </RecoilRoot>
+        <RecoilRoot
+          initializeState={({ set }) =>
+            set(store.queuedMessagesByConvoId(CONVO_ID), [
+              queued({ id: 'q3' }),
+              queued({ id: 'q4' }),
+            ])
+          }
+        >
+          <Queue
+            steering={steering}
+            conversationId={CONVO_ID}
+            onEditToComposer={jest.fn()}
+            onRestoreToComposer={jest.fn()}
+          />
+        </RecoilRoot>
+      </DndProvider>,
+    );
+
+    const hints = screen.getAllByText('com_ui_queue_reorder_hint');
+    expect(hints).toHaveLength(2);
+    expect(hints[0].id).not.toBe(hints[1].id);
+
+    const rails = screen.getAllByTestId('composer-queue');
+    for (const [railIndex, rail] of rails.entries()) {
+      for (const grip of within(rail).getAllByTestId('queued-message-grip')) {
+        expect(grip).toHaveAttribute('aria-describedby', hints[railIndex].id);
+      }
+    }
   });
 
   /* The region is removed with the rail and re-inserted with its old text
@@ -315,11 +405,11 @@ describe('Queue', () => {
 
   /* The rows move as the pointer crosses them, so the queue has already changed
      by the time a drag ends. Only a drag that never landed anywhere puts it
-     back — and `didDrop` reports a landing even though the rows declare no
+     back; and `didDrop` reports a landing even though the rows declare no
      `drop` handler, which is what makes the plain `hover` sortable work. */
   describe('drag reordering', () => {
     /* The handle only drags on a hover-capable pointer, and the suite's
-       `matchMedia` answers `false` to everything — which is the touch device
+       `matchMedia` answers `false` to everything, which is the touch device
        the rail deliberately refuses to drag on. */
     const realMatchMedia = window.matchMedia;
     beforeEach(() => {

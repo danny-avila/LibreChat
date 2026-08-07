@@ -7,7 +7,7 @@ import BadgeRowProvider, { useBadgeRowContext } from '../BadgeRowContext';
 /**
  * `BadgeRowProvider` is an inline child of `ChatForm`, which re-renders on every
  * keystroke in the composer. Its context value is memoized for exactly that
- * reason — but a memo is only worth as much as its dependencies, and two of them
+ * reason, but a memo is only worth as much as its dependencies, and two of them
  * were hooks handing back a fresh object literal every render. The value changed
  * on each character typed, and every consumer of it rebuilt: the palette's whole
  * tool, skill and MCP server catalog, per keystroke.

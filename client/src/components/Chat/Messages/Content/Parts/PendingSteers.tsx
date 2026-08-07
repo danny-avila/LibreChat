@@ -2,9 +2,9 @@ import { memo, useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import EscalateNowButton from '~/components/Chat/Input/EscalateNowButton';
-import { hasLiveToolApproval } from '~/hooks/Chat/useSteering';
 import useSteerEscalate from '~/hooks/Chat/useSteerEscalate';
 import useSteerRecovery from '~/hooks/Chat/useSteerRecovery';
+import { hasLiveRunPause } from '~/hooks/Chat/useSteering';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
@@ -17,7 +17,7 @@ const ACTION_CLASS =
 
 /**
  * Steers that have not been confirmed by the server yet, rendered at the tail
- * of the streaming reply — the place the words will land — instead of in a
+ * of the streaming reply (the place the words will land) instead of in a
  * floating overlay over the composer. Confirmation swaps them for the real
  * `ContentTypes.STEER` part (`useResumableSSE` removes the pending entry), so
  * the row's whole job is to hold the position and admit it is provisional.
@@ -34,10 +34,14 @@ function PendingSteers({ conversationId }: PendingSteersProps) {
   const escalating = useAtomValue(escalatingSteerFamily(conversationId));
   /* Reads the cache the composer already populates, so the escalation control
      is gated on the same pause the composer sees rather than round-tripping to
-     discover the run cannot accept an arm. Boolean `select` for the same reason
-     the composer uses one: streaming deltas must not re-render this row. */
+     discover the run cannot accept an arm. The shared predicate covers a live
+     `ask_user_question` as well as an unresolved tool approval: both suspend
+     the generation while holding its submission slot, and gating on approvals
+     alone left this control enabled while the composer correctly refused.
+     Boolean `select` for the same reason the composer uses one: streaming
+     deltas must not re-render this row. */
   const { data: paused } = useGetMessagesByConvoId<boolean>(conversationId, {
-    select: hasLiveToolApproval,
+    select: hasLiveRunPause,
   });
   /* Only one interrupt can be unresolved at a time: a second arm would seal the
      same run twice. The flag covers an arm's round trip, before its own chip

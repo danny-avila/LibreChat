@@ -133,7 +133,7 @@ const ChatForm = memo(function ChatForm({
     [conversation?.spec, startupConfig],
   );
   /** Agents and assistants carry their own tool configuration, so the composer's
-   *  ephemeral tool controls only apply elsewhere — and a spec can suppress them
+   *  ephemeral tool controls only apply elsewhere, and a spec can suppress them
    *  outright. Same gate the old `showEphemeralBadges` prop applied. */
   const showTools = useMemo(
     () =>
@@ -149,7 +149,7 @@ const ChatForm = memo(function ChatForm({
   );
   /**
    * The quote feature merges excerpts server-side in `BaseClient.sendMessage`,
-   * which the Assistants endpoints bypass — so hide the UI there rather than
+   * which the Assistants endpoints bypass, so hide the UI there rather than
    * letting users queue quotes the assistant never receives.
    */
   const quotesEnabled = useMemo(() => !isAssistantsEndpoint(endpoint), [endpoint]);
@@ -273,7 +273,7 @@ const ChatForm = memo(function ChatForm({
 
   /** ⌘/Ctrl+Enter = the non-default during-run action, ⌥/Alt+Enter =
    *  interrupt & send (discards the answer), ⌘/Ctrl+Shift+Enter = interrupt &
-   *  steer (keeps it) — all counterparts of Enter's `submitDuringRun`. */
+   *  steer (keeps it): all counterparts of Enter's `submitDuringRun`. */
   const handleDuringRunModifier = useCallback(
     (kind: 'other' | 'interrupt' | 'preempt') => {
       const text = methods.getValues('text');
@@ -365,9 +365,10 @@ const ChatForm = memo(function ChatForm({
     ask: dictationAsk,
     methods,
     /* Answer mode leaves the run submitting while handing the composer over,
-       which is exactly when speech must still reach it — the send button is
+       which is exactly when speech must still reach it: the send button is
        enabled on the same terms. */
     isSubmitting: isSubmitting && !answerModeActive,
+    filesLoading,
   });
   const uploadingCount = useMemo(() => {
     let count = 0;
@@ -385,7 +386,22 @@ const ChatForm = memo(function ChatForm({
   /* Memoized for `memo(Bar)`: an inline element is a new identity every render,
      and this component re-renders on every keystroke. */
   const duringRunSlot = useMemo(() => {
-    if (steering.duringRunActive && (textValue?.trim() ?? '') !== '') {
+    const sendOwnsSlot = steering.duringRunActive && (textValue?.trim() ?? '') !== '';
+    /* Stays mounted (hidden) behind the during-run send button: the stop
+       shortcut resolves against the focused form, so a half-typed steer would
+       otherwise leave it reaching into another pane or doing nothing. */
+    const stopButton = showStopButton ? (
+      <StopButton
+        stop={handleStopGenerating}
+        setShowStopButton={setShowStopButton}
+        /* The abort is generation-scoped and inert until the start POST
+           installs the epoch; assistants abort through their own path and
+           need no epoch. */
+        canStop={steering.canControlGeneration || isAssistantsEndpoint(endpoint)}
+        hidden={sendOwnsSlot}
+      />
+    ) : null;
+    if (sendOwnsSlot) {
       return (
         <>
           {steering.canControlGeneration && (
@@ -404,13 +420,11 @@ const ChatForm = memo(function ChatForm({
             onConsumed={() => methods.reset()}
             disabled={filesLoading}
           />
+          {stopButton}
         </>
       );
     }
-    if (showStopButton) {
-      return <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />;
-    }
-    return null;
+    return stopButton;
   }, [
     steering,
     textValue,
@@ -420,6 +434,7 @@ const ChatForm = memo(function ChatForm({
     showStopButton,
     handleStopGenerating,
     setShowStopButton,
+    endpoint,
   ]);
 
   /* Memoized for `memo(Bar)`: an inline element is a new identity every render,
@@ -511,7 +526,7 @@ const ChatForm = memo(function ChatForm({
     >
       {/* `min-w-0`: a flex item's automatic minimum size is its content's
           min-content width, and one long unbroken word in a queued message
-          propagates all the way up here — the composer stretched past the
+          propagates all the way up here: the composer stretched past the
           thread and its chips ran off the side. Zeroing it lets the width come
           from the form, so the chips inside truncate instead. */}
       <div className="relative flex h-full min-w-0 flex-1 items-stretch md:flex-col">
@@ -714,7 +729,7 @@ ChatForm.displayName = 'ChatForm';
 /**
  * Wrapper that subscribes to ChatContext and passes stable individual values
  * to the memo'd ChatForm. This prevents ChatForm from re-rendering on every
- * streaming chunk — it only re-renders when the specific values it uses change.
+ * streaming chunk: it only re-renders when the specific values it uses change.
  */
 function ChatFormWrapper({
   index = 0,

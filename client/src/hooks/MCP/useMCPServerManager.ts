@@ -139,7 +139,7 @@ export function useMCPServerManager({
 
   /* Destructured to the callables: react-query hands back a fresh result
      object every render, and the callbacks below that depended on the whole
-     object were new identities each time — which is what kept this hook's
+     object were new identities each time, which is what kept this hook's
      return, and `BadgeRowProvider`'s context value with it, changing on every
      keystroke in the composer. */
   const { mutateAsync: reinitializeServer } = useReinitializeMCPServerMutation();
@@ -466,8 +466,8 @@ export function useMCPServerManager({
       try {
         const response = await reinitializeServer(serverName);
         /** Record whether this attempt deferred to a chat turn (request-scoped
-         * server) so consumers that didn't await this call — e.g. the agent
-         * builder behind the customUserVars config dialog — can react to it. */
+         * server) so consumers that didn't await this call (e.g. the agent
+         * builder behind the customUserVars config dialog) can react to it. */
         updateServerInitState(serverName, {
           connectionDeferred: Boolean(response.connectionDeferred),
         });
@@ -586,7 +586,7 @@ export function useMCPServerManager({
     [serverInitStates],
   );
 
-  /** Clear a recorded deferred outcome without starting a new attempt — used
+  /** Clear a recorded deferred outcome without starting a new attempt: used
    * before routing into the customUserVars config dialog so a stale flag from
    * an earlier attempt can't trigger consumers while the dialog is open. */
   const resetConnectionDeferred = useCallback(

@@ -50,35 +50,55 @@ export default function useSteerRecovery(conversationId: string) {
     [conversationId],
   );
 
+  /**
+   * The retry's 202 ACK, resolved by the SHARED implementation the composer
+   * uses so the two cannot drift on epoch replacement, already-accepted client
+   * ids, or the applied-id check. All this call site contributes is its own
+   * observation of ordinary terminal state.
+   *
+   * @returns true when the caller must route the steer into the queue.
+   */
   const acknowledgeRetry = useRecoilCallback(
-    (cbInterface) => (localId: string, steer: PendingSteer) => {
-      resolveAcknowledgedSteer(
-        cbInterface,
-        conversationId,
-        localId,
-        steer,
-        isRunOver(cbInterface.snapshot),
-      );
-    },
+    (cbInterface) =>
+      (localId: string, steer: PendingSteer): boolean =>
+        resolveAcknowledgedSteer(
+          cbInterface,
+          conversationId,
+          localId,
+          steer,
+          isRunOver(cbInterface.snapshot),
+        ),
     [conversationId, isRunOver],
   );
 
   /** Routes a steer straight into the queue: reused for a retry that degrades
-   *  (no active run / paused / unsupported / queue full) and for `sendAsNew`,
-   *  so both get the same id-dedup, chronological merge, and applied-id
-   *  bookkeeping as every other steer-to-queue conversion — instead of a
-   *  blind append that a late ACK could still re-mint a chip for. */
+   *  (no active run / paused / unsupported / queue full), for an ACK the
+   *  resolver reports as unresolvable, and for `sendAsNew`, so all three get
+   *  the same id-dedup, chronological merge, and applied-id bookkeeping as
+   *  every other steer-to-queue conversion, instead of a blind append that a
+   *  late ACK could still re-mint a chip for. */
   const queueSteer = useCallback(
     (steer: PendingSteer) => {
-      convertSteersToQueued(conversationId, [
+      convertSteersToQueued(
+        conversationId,
+        [
+          {
+            steerId: steer.steerId,
+            ...(steer.clientSteerId && { clientSteerId: steer.clientSteerId }),
+            text: steer.text,
+            createdAt: steer.createdAt,
+            ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+            ...carriedSteerContext(steer),
+          },
+        ],
         {
-          steerId: steer.steerId,
-          text: steer.text,
-          createdAt: steer.createdAt,
-          ...(steer.files && steer.files.length > 0 && { files: steer.files }),
-          ...carriedSteerContext(steer),
+          /** The receipt belongs to the generation that produced it. The
+           * conversation may already advertise a replacement generation by the
+           * time a late ACK lands, and reading the protocol off that one would
+           * bind (or strip) the wrong recovery identity. */
+          generationProtocolVersion: steer.generationProtocolVersion,
         },
-      ]);
+      );
     },
     [conversationId, convertSteersToQueued],
   );
@@ -104,26 +124,44 @@ export default function useSteerRecovery(conversationId: string) {
            retry AS one. Resent without it the words land at the run's next tool
            step instead of sealing the stream, which is a different action than
            the one the user asked for and the chip still claims to be. */
+        /* The same identity fields the composer's retry sends. `clientSteerId`
+           is what the server dedupes a committed POST on, so an uncertain
+           transport cannot apply these words twice, and `generationCreatedAt`
+           pins the attempt to the generation the chip belongs to rather than
+           whichever turn now occupies the conversation-scoped stream id. */
+        const clientSteerId = steer.clientSteerId ?? steerId;
         steerMessage({
           conversationId,
+          clientSteerId,
           text: steer.text,
           files: steer.files,
+          ...(steer.generationCreatedAt != null && {
+            generationCreatedAt: steer.generationCreatedAt,
+          }),
           ...(steer.preempt === true && { preempt: true }),
         })
           .then((response) => {
-            acknowledgeRetry(steerId, {
+            const acknowledged: PendingSteer = {
               ...steer,
               steerId: response.steerId,
+              clientSteerId,
               status: 'pending',
               /* The server echoes what it actually armed: without the
                  capability it queues the steer and reports `preempt: false`,
                  which relabels the chip rather than failing it. */
               preempt: response.preempt === true,
-            });
+            };
+            /* The resolver owns the decision: an ACK for a run that already
+               ended, or for a generation since replaced, has no later SSE event
+               left to settle a `pending` chip, so the words go to the queue
+               instead of being stranded. */
+            if (acknowledgeRetry(steerId, acknowledged)) {
+              queueSteer(acknowledged);
+            }
           })
           .catch((error: unknown) => {
             const code = getSteerErrorCode(error);
-            // The run ended, is paused, or can't accept a steer right now —
+            // The run ended, is paused, or can't accept a steer right now:
             // none of that means the words are lost, just that a queued
             // follow-up is the only way left to send them.
             if (

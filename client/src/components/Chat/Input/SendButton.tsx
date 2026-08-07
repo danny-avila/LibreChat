@@ -22,7 +22,6 @@ const SubmitButton = React.memo(
           <button
             ref={ref}
             aria-label={localize('com_nav_send_message')}
-            id="send-button"
             disabled={props.disabled}
             className={cn(
               'flex size-9 items-center justify-center rounded-full bg-text-primary text-text-primary outline-offset-4 transition-all duration-200 disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-30',

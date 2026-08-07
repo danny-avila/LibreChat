@@ -44,10 +44,15 @@ export default function useDictation({
   ask,
   methods,
   isSubmitting,
+  filesLoading = false,
 }: {
   ask: TAskFunction;
   methods: ReturnType<typeof useChatFormContext>;
   isSubmitting: boolean;
+  /** Attachments still uploading. Send and steer both refuse to submit while
+   *  this is true, and a dictated turn must not be the one path that lets a
+   *  half-uploaded file ride along. */
+  filesLoading?: boolean;
 }): Dictation {
   const { setValue, reset, getValues } = methods;
   const localize = useLocalize();
@@ -61,6 +66,8 @@ export default function useDictation({
   const existingTextRef = useRef<string>('');
   const isSubmittingRef = useRef(isSubmitting);
   isSubmittingRef.current = isSubmitting;
+  const filesLoadingRef = useRef(filesLoading);
+  filesLoadingRef.current = filesLoading;
   /** Read when the transcription lands, which is after the stop that set it.
    *  The speech hooks have no notion of cancelling or of deferring a send. */
   const modeRef = useRef<StopMode>('compose');
@@ -70,20 +77,23 @@ export default function useDictation({
   const spentRef = useRef(false);
   /** Whether this take produced any words at all. A transcription that fails,
    *  or a take too short to reach the engine, reports nothing back and leaves
-   *  the composer holding the draft that was there before recording — which an
+   *  the composer holding the draft that was there before recording, which an
    *  armed stop-and-send would then send as if it had been dictated. */
   const heardRef = useRef(false);
 
   const submit = useCallback(
     (text: string) => {
-      if (spentRef.current) {
+      if (spentRef.current || !text) {
         return;
       }
       if (isSubmittingRef.current) {
         showToast({ message: localize('com_ui_speech_while_submitting'), status: 'error' });
         return;
       }
-      if (!text) {
+      /* The transcript stays in the composer so the turn can be sent by hand
+         once the upload finishes, rather than going out without its file. */
+      if (filesLoadingRef.current) {
+        showToast({ message: localize('com_ui_speech_while_uploading'), status: 'error' });
         return;
       }
       spentRef.current = true;

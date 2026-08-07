@@ -106,7 +106,7 @@ describe('useComposerRestore', () => {
     });
 
     /* A quote or a skill pick is staged context the restore would MERGE with,
-       gluing two submissions together — the box being empty is not enough. */
+       gluing two submissions together: the box being empty is not enough. */
     it.each([
       [
         'a quote',

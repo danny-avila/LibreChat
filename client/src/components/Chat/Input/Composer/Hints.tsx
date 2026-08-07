@@ -9,13 +9,13 @@ import store from '~/store';
 export const composerHintId = (index: number) => `composer-hint-${index}`;
 
 /**
- * The dim line under the composer carrying whatever the current state affords —
+ * The dim line under the composer carrying whatever the current state affords:
  * most importantly the during-run modifiers (`⌘⏎` queue, `⌥⏎` interrupt & send),
  * which had no on-screen presence at all before.
  *
  * Ambient tips are opt-in and off by default: they are discovery copy, and the
  * row they sit on costs the thread height on every turn. Live state (uploads, a
- * paused question, the during-run modifiers) reports itself either way — those
+ * paused question, the during-run modifiers) reports itself either way; those
  * are things happening now, not things worth teaching.
  *
  * The visible line is `aria-hidden`; the same string is mirrored into a

@@ -45,6 +45,7 @@ const useSpeechToTextBrowser = (
   const timeoutRef = useRef<NodeJS.Timeout | null>();
   const [autoSendText] = useRecoilState(store.autoSendText);
   const [languageSTT] = useRecoilState<string>(store.languageSTT);
+  const [speechToText] = useRecoilState<boolean>(store.speechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
   const {
@@ -166,15 +167,19 @@ const useSpeechToTextBrowser = (
   }, [resetTranscript]);
 
   useEffect(() => {
+    /* Gated on the browser engine actually being selected and on the Speech to
+       Text setting: the inverted check armed this alongside the external hook's
+       own shortcut, and with the setting off it could still start a capture no
+       control in the UI would show. */
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.altKey && e.code === 'KeyL' && !isBrowserSTTEnabled) {
+      if (e.shiftKey && e.altKey && e.code === 'KeyL' && isBrowserSTTEnabled && speechToText) {
         toggleListening();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isBrowserSTTEnabled, toggleListening]);
+  }, [isBrowserSTTEnabled, speechToText, toggleListening]);
 
   return {
     isListening,

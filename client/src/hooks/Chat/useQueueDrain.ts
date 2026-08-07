@@ -1,8 +1,10 @@
-import { useEffect, useMemo } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { DrainAfterAbort, QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
+import type { QueueSendLock } from '~/utils/queueIntent';
 import type { TAskFunction } from '~/common';
+import { acquireQueueSendLock, releaseQueueSendLock, hasQueuedIntent } from '~/utils/queueIntent';
 import { useMarkFilesUsageMutation } from '~/data-provider';
 import store from '~/store';
 
@@ -61,7 +63,7 @@ const matchesInterruptArm = (armed: DrainAfterAbort | false, end: RunEnd): boole
  *
  * Consumes the one-shot `runEndByIndex` signal written by the SSE handlers.
  * Rules:
- * - Drains only on a clean completion — a user Stop or an error leaves the
+ * - Drains only on a clean completion: a user Stop or an error leaves the
  *   queued chips for manual send, EXCEPT when the one-shot
  *   `drainAfterAbortByIndex` flag was armed by "interrupt & send".
  * - Waits for `isSubmitting` to be false so `ask()` isn't dropped by its
@@ -81,6 +83,10 @@ export default function useQueueDrain(
     store.pendingRunEndByConvoId(activeConversationId ?? Constants.NEW_CONVO),
   );
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  /** Keyed by pane, because the contended resource is this pane's submission
+   * slot: the rail's "Send now" reaches the same `ask` through the composer. */
+  const sendLockKey = String(index);
+  const sendLockRef = useRef<QueueSendLock | null>(null);
   const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
   const ownQueue = useRecoilValue(
     store.queuedMessagesByConvoId(activeConversationId ?? Constants.NEW_CONVO),
@@ -186,7 +192,7 @@ export default function useQueueDrain(
           end.conversationId !== activeConversationId
         ) {
           /**
-           * `ask` is the MOUNTED view's sender — draining another
+           * `ask` is the MOUNTED view's sender: draining another
            * conversation's follow-up here would submit it into the wrong
            * chat. Park the signal under ITS conversation (freeing the shared
            * index slot so a later run cannot overwrite it) and drain when
@@ -309,12 +315,18 @@ export default function useQueueDrain(
           return null;
         }
 
-        // Consume only after server authority has yielded the boundary — a
+        // Consume only after server authority has yielded the boundary: a
         // hard double-fire guard even if the effect re-runs before propagation.
         consumeEnd();
 
-        const next = shouldDrain ? (merged[0] ?? null) : null;
-        const remainder = next ? merged.slice(1) : merged;
+        /** A row the rail is mid-edit or mid-remove on is spoken for: its words
+         * are already on their way to the composer, and sending them from here
+         * would deliver the message the user is in the middle of taking back.
+         * Skipped rather than blocking the whole queue, so an untouched
+         * follow-up behind it still goes on this run end. */
+        const nextIndex = shouldDrain ? merged.findIndex((item) => !hasQueuedIntent(item.id)) : -1;
+        const next = nextIndex >= 0 ? merged[nextIndex] : null;
+        const remainder = nextIndex >= 0 ? merged.filter((_, at) => at !== nextIndex) : merged;
 
         if (shouldMigrate && newConvoQueue.length > 0) {
           set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), []);
@@ -328,8 +340,8 @@ export default function useQueueDrain(
               conversationId,
               queuedMessageOrigin: {
                 item: next,
-                beforeIds: [],
-                afterIds: remainder.map((item) => item.id),
+                beforeIds: merged.slice(0, nextIndex).map((item) => item.id),
+                afterIds: merged.slice(nextIndex + 1).map((item) => item.id),
               },
               expectedPredecessorCreatedAt:
                 end.generationCreatedAt ?? next.expectedPredecessorCreatedAt,
@@ -349,6 +361,21 @@ export default function useQueueDrain(
     [],
   );
 
+  /** Held only until the pane's submission state moves or it changes chat: past
+   * either, both callers gate on `isSubmitting` directly and the claim is spent.
+   *
+   * Released from a cleanup rather than an effect body, because React runs every
+   * cleanup in a commit before any effect body: a stale claim can never starve
+   * the acquire below, and this release can never free a slot the composer's own
+   * queued send claimed in the same commit. */
+  useEffect(
+    () => () => {
+      releaseQueueSendLock(sendLockRef.current);
+      sendLockRef.current = null;
+    },
+    [isSubmitting, sendLockKey, activeConversationId],
+  );
+
   useEffect(() => {
     if (
       runEnd != null &&
@@ -361,10 +388,20 @@ export default function useQueueDrain(
     if ((runEnd == null && parkedRunEnd == null) || isSubmitting) {
       return;
     }
-    const drained = drainNext();
-    if (drained == null) {
+    /** `isSubmitting` above is a render-old read: the rail's own "Send now"
+     * can already have called `ask` for this pane in the current browser task.
+     * Claimed BEFORE the signal is consumed so a refusal leaves the run end
+     * armed for the next commit instead of dropping the queue on the floor. */
+    const lock = acquireQueueSendLock(sendLockKey);
+    if (lock == null) {
       return;
     }
+    const drained = drainNext();
+    if (drained == null) {
+      releaseQueueSendLock(lock);
+      return;
+    }
+    sendLockRef.current = lock;
     const { next, conversationId, queuedMessageOrigin, expectedPredecessorCreatedAt } = drained;
     // The queued item is the FULL submission context: explicit (possibly
     // empty) overrides stop `ask` from vacuuming up files, quotes, or skill
@@ -390,6 +427,10 @@ export default function useQueueDrain(
       },
     );
     if (accepted === false) {
+      releaseQueueSendLock(lock);
+      if (sendLockRef.current === lock) {
+        sendLockRef.current = null;
+      }
       // `ask` refused without sending (e.g. the conversation history is not
       // in the query cache yet, right after navigating back). Restore the
       // item so the user's text is never silently dropped, the chip stays
@@ -407,6 +448,7 @@ export default function useQueueDrain(
     runEnd,
     parkedRunEnd,
     isSubmitting,
+    sendLockKey,
     activeConversationId,
     parkForeignRunEnd,
     drainNext,

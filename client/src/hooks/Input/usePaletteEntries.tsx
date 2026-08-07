@@ -60,7 +60,7 @@ export interface PaletteEntry {
   active: boolean;
   onSelect: () => void;
   /** Refinements of this tool, rendered as inline pills on the row while it is
-   *  on. Not separately favouritable — they only exist within the parent. */
+   *  on. Not separately favouritable: they only exist within the parent. */
   modes?: PaletteMode[];
 }
 
@@ -246,7 +246,7 @@ export default function usePaletteEntries({
       /* Same rule the old tools menu used for its gear: only credentials the
          user can actually provide are editable. Toggling opens the key dialog
          on its own while unauthenticated, so this pill is what keeps existing
-         credentials reachable — editing, switching provider or revoking. */
+         credentials reachable: editing, switching provider or revoking. */
       const authTypes = webSearch.authData?.authTypes ?? [];
       const searchConfigurable =
         authTypes.length === 0 ||
@@ -315,13 +315,13 @@ export default function usePaletteEntries({
       const stored = artifacts.toggleState;
       const mode = stored == null || stored === false ? '' : String(stored);
       const artifactsOn = mode !== '';
-      /* Anything on that is not an explicit generation mode counts as Default —
+      /* Anything on that is not an explicit generation mode counts as Default:
          the toggle has historically also held a bare `true`, which would
          otherwise leave every mode unchecked. */
       const isDefault =
         artifactsOn && mode !== ArtifactModes.SHADCNUI && mode !== ArtifactModes.CUSTOM;
       /* The two generation modes only mean anything once artifacts are on, and
-         each toggles back to DEFAULT rather than off — same semantics the old
+         each toggles back to DEFAULT rather than off; same semantics the old
          `ArtifactsSubMenu` had, as inline pills instead of two long rows. */
       const buildMode = (id: string, label: string, target: string): PaletteMode => ({
         id,
@@ -356,7 +356,7 @@ export default function usePaletteEntries({
       /* Manual skills are primed by name server-side (`resolveManualSkills`),
          so records sharing a name are one selectable thing however many of them
          the catalog holds. Listed once each: otherwise every copy lit up when
-         any was picked, while the tray — keyed by name — showed a single chip. */
+         any was picked, while the tray (keyed by name) showed a single chip. */
       const listed = new Set<string>();
       for (const skill of filterSkillsForPopover(allSkills, { agentSkillIds, isActive })) {
         if (listed.has(skill.name)) {
@@ -410,7 +410,7 @@ export default function usePaletteEntries({
         const title = server.config?.title || server.serverName;
         /* A row for a server that is not connected routes through the manager
            instead of blindly selecting: credentials first when the server wants
-           custom variables, otherwise a reinitialize — which runs the OAuth
+           custom variables, otherwise a reinitialize, which runs the OAuth
            flow when needed and selects the server itself once it is ready.
            Selecting an unusable server here used to be a dead end: every
            connect, authenticate and retry control lived in the menu this
@@ -420,8 +420,10 @@ export default function usePaletteEntries({
             toggleServerSelection?.(server.serverName);
             return;
           }
-          const status = connectionStatus?.[server.serverName];
-          if (status != null && status.connectionState !== 'connected') {
+          /* An unknown status means the server has not reported a connection
+             yet, which is not the same as being connected: treat it like a
+             disconnected server so it initializes before it can be selected. */
+          if (connectionStatus?.[server.serverName]?.connectionState !== 'connected') {
             const statusProps = getServerStatusIconProps?.(server.serverName);
             if (statusProps?.isInitializing) {
               return;
