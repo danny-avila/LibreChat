@@ -1165,6 +1165,7 @@ export class MCPConnection extends EventEmitter {
   private toolListRefreshRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private toolListRefreshEpoch = 0;
   private toolListRefreshSuspended = false;
+  private hasConnected = false;
   private isDisposed = false;
   iconPath?: string;
   timeout?: number;
@@ -1768,11 +1769,16 @@ export class MCPConnection extends EventEmitter {
     this.on('connectionChange', (state: t.ConnectionState) => {
       this.connectionState = state;
       if (state === 'connected') {
+        const isReconnect = this.hasConnected;
+        this.hasConnected = true;
         this.toolListRefreshSuspended = false;
         this.isReconnecting = false;
         this.isInitializing = false;
         this.shouldStopReconnecting = false;
         this.reconnectAttempts = 0;
+        if (isReconnect && this.client.getServerCapabilities()?.tools != null) {
+          this.toolListChangeGeneration++;
+        }
         if (this.handledToolListChangeGeneration < this.toolListChangeGeneration) {
           this.startToolListRefresh();
         }

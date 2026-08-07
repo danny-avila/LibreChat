@@ -217,6 +217,20 @@ describe('tools/list_changed', () => {
     expect(snapshots[0].map(({ name }) => name)).toEqual(['initial', 'latest-transport']);
   });
 
+  it('refreshes after reconnect when the server changed tools while notifications were unavailable', async () => {
+    harness = await createHarness([tool('initial')]);
+    const snapshots: Tool[][] = [];
+    harness.connection.on('toolsChanged', (tools: Tool[]) => snapshots.push(tools));
+    await harness.connection.fetchTools();
+
+    harness.connection.emit('connectionChange', 'disconnected');
+    harness.setTools([tool('initial'), tool('added-while-disconnected')]);
+    harness.connection.emit('connectionChange', 'connected');
+
+    await waitFor(() => snapshots.length === 1);
+    expect(snapshots[0].map(({ name }) => name)).toEqual(['initial', 'added-while-disconnected']);
+  });
+
   it('retains the last good catalog and retries after a transient list failure', async () => {
     harness = await createHarness([tool('initial')]);
     const snapshots: Tool[][] = [];
