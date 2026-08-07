@@ -1,9 +1,11 @@
 import React from 'react';
-import { act, renderHook } from '@testing-library/react';
+import { act, render, renderHook } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
+import type { ExtendedFile } from '~/common';
+import useUpdateFiles from '~/hooks/Files/useUpdateFiles';
 import useSteering from '../useSteering';
 import store from '~/store';
 
@@ -123,7 +125,7 @@ describe('useSteering', () => {
         set(store.duringRunDefaultAction, 'queue');
       });
       expect(result.current.effectiveAction).toBe('queue');
-      // The per-send menu can still override to steer — availability is
+      // The per-send menu can still override to steer: availability is
       // independent of the default action.
       expect(result.current.canSteer).toBe(true);
     });
@@ -303,7 +305,7 @@ describe('useSteering', () => {
         set(store.runEndByIndex(0), runEnd('completed'));
       });
       act(() => {
-        // The drain ran against an empty queue and consumed the signal — the
+        // The drain ran against an empty queue and consumed the signal; the
         // outcome was already captured during render.
         result.current.consumeIndexSignal(null);
       });
@@ -787,7 +789,7 @@ describe('useSteering', () => {
     /**
      * `canSteer` is false while paused, but routing that into
      * `interruptAndSend` would hard-abort the run and discard the partial
-     * answer — the opposite of what the action promises.
+     * answer: the opposite of what the action promises.
      */
     it('refuses while paused on tool approval instead of aborting', () => {
       mockMessages = [
@@ -1068,7 +1070,7 @@ describe('useSteering', () => {
       act(() => {
         acknowledge?.();
       });
-      // No pending chip may survive — its only removal event already passed.
+      // No pending chip may survive; its only removal event already passed.
       expect(result.current.chips).toEqual([]);
       expect(result.current.queue).toEqual([]);
     });
@@ -1232,7 +1234,7 @@ describe('useSteering', () => {
 
     it('carries the submit time through the ACK so the pending chip is not re-timestamped', () => {
       // A draft queued during the 202 round-trip must not drain ahead of a
-      // steer submitted before it — so the ACK'd chip keeps its SUBMIT time,
+      // steer submitted before it, so the ACK'd chip keeps its SUBMIT time,
       // not the (later) ACK time.
       const now = jest.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValue(9_000);
       try {
@@ -1305,7 +1307,7 @@ describe('useSteering', () => {
       });
       const { result } = setupWithState({}, ({ set }) => {
         // seedSteerChips already re-minted this chip from resumeState before
-        // the 202 ACK landed — the ACK must upsert, not append.
+        // the 202 ACK landed; the ACK must upsert, not append.
         set(store.pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'srv-3', text: 'reseeded', status: 'pending', createdAt: 1 },
         ]);
@@ -1339,7 +1341,7 @@ describe('useSteering', () => {
           afterIds: [second.id],
         },
       });
-      // `ask` refused without sending — the ORIGINAL item returns to its slot.
+      // `ask` refused without sending: the ORIGINAL item returns to its slot.
       expect(result.current.queue.map((item) => item.id)).toEqual([first.id, second.id]);
       expect(result.current.queue[0]).toEqual(first);
     });
@@ -1366,7 +1368,7 @@ describe('useSteering', () => {
           }),
         }),
       );
-      // The chip is already gone — a refused send must land in the queue, not drop.
+      // The chip is already gone: a refused send must land in the queue, not drop.
       expect(result.current.chips).toEqual([]);
       expect(result.current.queue).toEqual([
         expect.objectContaining({ text: 'refused words', files: steerFiles }),
@@ -1600,7 +1602,7 @@ describe('useSteering', () => {
       expect(discarded).toBe(false);
       expect(result.current.queue).toEqual([recovered]);
       expect(mockShowToast).toHaveBeenCalledWith({
-        message: 'Could not cancel the steering message — it may still reach the agent',
+        message: 'Could not cancel the steering message; it may still reach the agent',
         status: 'error',
       });
     });
@@ -1912,7 +1914,138 @@ describe('useSteering', () => {
         expect.anything(),
       );
       expect(result.current.queue).toEqual([]);
-      expect(setFiles).toHaveBeenCalledWith(new Map());
+      /* Functional, never a flat overwrite: uploads write through functional
+         updates of their own, and an assigned map races them. */
+      const clear = setFiles.mock.calls[0][0] as (
+        previous: Map<string, unknown>,
+      ) => Map<string, unknown>;
+      expect(typeof clear).toBe('function');
+      expect(clear(new Map([['file-1', composerFile]]))).toEqual(new Map());
+      /* Only the ids it took: anything staged since is left where it is. */
+      expect(clear(new Map<string, unknown>([['file-2', { file_id: 'file-2' }]]))).toEqual(
+        new Map([['file-2', { file_id: 'file-2' }]]),
+      );
+    });
+
+    /* An upload resolving between the read and the clear used to be reapplied
+       on top of the emptied map, so the attachment came back in the composer
+       and rode the user's next message as well. */
+    describe('uploads interleaved with a consuming submit', () => {
+      const extended = (file_id: string, progress: number): ExtendedFile => ({
+        file_id,
+        progress,
+        size: 128,
+        type: 'image/png',
+      });
+
+      function setupComposer() {
+        const sendNow = jest.fn();
+        const stopGenerating = jest.fn();
+        const observed: { files: Map<string, ExtendedFile> } = { files: new Map() };
+        let updates: ReturnType<typeof useUpdateFiles> | undefined;
+        let steering: ReturnType<typeof useSteering> | undefined;
+
+        /** Real composer state, so `useUpdateFiles` and `useSteering` write
+         *  through the same setter they share in `ChatForm`. */
+        const Composer = () => {
+          const [files, setFiles] = React.useState<Map<string, ExtendedFile>>(new Map());
+          observed.files = files;
+          updates = useUpdateFiles(setFiles);
+          steering = useSteering({
+            index: 0,
+            conversationId: CONVO_ID,
+            conversation: agentsConversation,
+            isSubmitting: true,
+            answerModeActive: false,
+            files,
+            setFiles,
+            sendNow,
+            stopGenerating,
+          });
+          return null;
+        };
+
+        render(
+          <RecoilRoot initializeState={withActiveGeneration()}>
+            <Composer />
+          </RecoilRoot>,
+        );
+        return {
+          observed,
+          getUpdates: () => updates!,
+          getSteering: () => steering!,
+        };
+      }
+
+      it('ignores a late callback for an attachment the steer already took', () => {
+        const { observed, getUpdates, getSteering } = setupComposer();
+
+        act(() => getUpdates().addFile(extended('file-consumed', 0.4)));
+        expect(observed.files.has('file-consumed')).toBe(true);
+
+        act(() => {
+          getSteering().steerFromComposer('use this image');
+        });
+        expect(mockMutate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            files: [expect.objectContaining({ file_id: 'file-consumed' })],
+          }),
+          expect.anything(),
+        );
+        expect(observed.files.size).toBe(0);
+
+        act(() => getUpdates().replaceFile(extended('file-consumed', 1)));
+        expect(observed.files.size).toBe(0);
+      });
+
+      it('still accepts an upload the user starts after the steer', () => {
+        const { observed, getUpdates, getSteering } = setupComposer();
+
+        act(() => getUpdates().addFile(extended('file-first', 1)));
+        act(() => {
+          getSteering().steerFromComposer('first one');
+        });
+        expect(observed.files.size).toBe(0);
+
+        act(() => getUpdates().addFile(extended('file-second', 0.2)));
+        act(() => getUpdates().replaceFile(extended('file-second', 1)));
+        expect(observed.files.get('file-second')?.progress).toBe(1);
+      });
+
+      /* Re-attaching the same library file reuses its server id, so a
+         permanent mark would make that attachment silently impossible. */
+      it('accepts the same file again when it is deliberately re-attached', () => {
+        const { observed, getUpdates, getSteering } = setupComposer();
+
+        act(() => getUpdates().addFile(extended('file-library', 1)));
+        act(() => {
+          getSteering().steerFromComposer('about this one');
+        });
+        expect(observed.files.size).toBe(0);
+
+        act(() => getUpdates().addFile(extended('file-library', 1)));
+        expect(observed.files.has('file-library')).toBe(true);
+        act(() => getUpdates().replaceFile(extended('file-library', 0.9)));
+        expect(observed.files.get('file-library')?.progress).toBe(0.9);
+      });
+
+      /* The composer map the submit reads is a render-old snapshot: an upload
+         that started after it must not be wiped by the clear. */
+      it('leaves an attachment staged after the submit read the composer', () => {
+        const { observed, getUpdates, getSteering } = setupComposer();
+
+        act(() => getUpdates().addFile(extended('file-taken', 1)));
+        act(() => {
+          getUpdates().addFile(extended('file-newer', 0.3));
+          getSteering().steerFromComposer('take the first one');
+        });
+
+        expect(mockMutate).toHaveBeenCalledWith(
+          expect.objectContaining({ files: [expect.objectContaining({ file_id: 'file-taken' })] }),
+          expect.anything(),
+        );
+        expect(Array.from(observed.files.keys())).toEqual(['file-newer']);
+      });
     });
 
     it('holds during-run submits while uploads are in flight', () => {
@@ -2051,7 +2184,7 @@ describe('useSteering', () => {
 
     it('restores an unchanged queued media item without re-marking its files', () => {
       // Paused on approval → steering unavailable while the run is live, so
-      // sendQueuedNow restores the item unchanged — its files were already marked.
+      // sendQueuedNow restores the item unchanged: its files were already marked.
       mockMessages = [
         {
           messageId: 'resp-1',
@@ -2424,7 +2557,7 @@ describe('useSteering', () => {
 
   describe('composer draft consumption', () => {
     /** `useAutoSave` drafts under PENDING_CONVO for the whole run, and the
-     *  composer clears via the form's programmatic `reset()` — which fires no
+     *  composer clears via the form's programmatic `reset()`, which fires no
      *  `input` event, so nothing else drops the draft. Left behind, run end
      *  migrates it onto the conversation and restores it into the textarea,
      *  resurfacing text the user already sent. */

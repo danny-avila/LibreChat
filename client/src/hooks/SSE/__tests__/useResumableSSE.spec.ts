@@ -654,7 +654,7 @@ describe('useResumableSSE', () => {
     expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONV_ID, parked, {
       generationProtocolVersion: 1,
     });
-    // The true outcome is unknown — the run-end signal must release parked
+    // The true outcome is unknown: the run-end signal must release parked
     // interrupt flags WITHOUT auto-sending queued messages.
     expect(mockSetRunEnd).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: CONV_ID, outcome: 'aborted' }),
@@ -3863,15 +3863,15 @@ describe('useResumableSSE', () => {
  * `abort` listener both call it, alongside the two failure-terminal paths
  * covered above) is a thin `useRecoilCallback` wrapper: read the conversation's
  * chips, run them through this selection, hand the result to `useSteerConvert`.
- * This file's `useRecoilCallback: () => jest.fn()` mock (see above — "the
+ * This file's `useRecoilCallback: () => jest.fn()` mock (see above, "the
  * hook's steer-chip/queue callbacks need a RecoilRoot; these tests render
  * bare") makes that wrapper, and every other recoil-callback in this hook
- * (`resolveSteerChip`, `seedSteerChips` included — neither has a direct test
+ * (`resolveSteerChip`, `seedSteerChips` included; neither has a direct test
  * in this file either), inert: calling it from the `final`/`abort` source
  * lines is invisible to `mockConvertSteersToQueued` assertions here, since the
  * mock discards the real closure before it can ever call through. Covering
  * the selection logic directly (this is the exact piece of logic finding 3
- * was about — which statuses survive a run end) rather than faking a
+ * was about: which statuses survive a run end) rather than faking a
  * RecoilRoot-backed integration around the rest of this large hook's mocks.
  *
  * The `statuses` parameter pins a second contract: the `final` handler and
@@ -3879,7 +3879,7 @@ describe('useResumableSSE', () => {
  * override (default `pending || failed`, the run is genuinely over), while
  * the intentional-close `abort` listener passes `{ statuses: ['failed'] }`
  * because that listener also fires on navigation away while the run
- * CONTINUES server-side — a server-ACK'd `pending` chip must be left alone
+ * CONTINUES server-side: a server-ACK'd `pending` chip must be left alone
  * there, not swept into the queue as a duplicate of the server's own injection.
  */
 describe('selectLocalSteersForQueue', () => {
@@ -3918,7 +3918,7 @@ describe('selectLocalSteersForQueue', () => {
   it('converts a failed local chip present at a run-end path into a queueable item', () => {
     // The leak finding 3 was about: a `failed` chip carries a local-* id the
     // server never reports, so `data.pendingSteers`/the abort response can
-    // never carry it — this selection is the ONLY place left that can catch
+    // never carry it: this selection is the ONLY place left that can catch
     // it before the `final`/`abort` paths hand off to `useSteerConvert`.
     const failed = chip({ steerId: 'local-failed', status: 'failed', text: 'redo this' });
     expect(selectLocalSteersForQueue([failed])).toEqual([
@@ -3927,7 +3927,7 @@ describe('selectLocalSteersForQueue', () => {
   });
 
   it('does not sweep a sending chip: its own POST callback owns it', () => {
-    // Converting it here too would race that callback — a late ACK's re-add
+    // Converting it here too would race that callback: a late ACK's re-add
     // in `resolveAcknowledgedSteer` could then double-queue the same words.
     const sending = chip({ steerId: 'in-flight', status: 'sending' });
     expect(selectLocalSteersForQueue([sending])).toEqual([]);

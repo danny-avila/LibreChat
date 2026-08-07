@@ -8,10 +8,25 @@ import {
   defaultOrderQuery,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { UseMutationResult } from '@tanstack/react-query';
+import type { QueryClient, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import { useGetStartupConfig } from '../Endpoints';
 import { useLocalize } from '~/hooks';
+
+/**
+ * Matches every `[QueryKeys.files, 'recent', limit]` cache entry regardless of
+ * the requested limit, so upload/delete mutations can keep the composer
+ * palette's recent-files list in sync alongside the plain `[QueryKeys.files]`
+ * cache they already patch.
+ */
+const isRecentFilesQueryKey = (queryKey: readonly unknown[]): boolean =>
+  queryKey[0] === QueryKeys.files && queryKey[1] === 'recent';
+
+const invalidateRecentFilesQueries = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({
+    predicate: (query) => isRecentFilesQueryKey(query.queryKey),
+  });
+};
 
 export const useUploadFileMutation = (
   _options?: t.UploadMutationOptions,
@@ -48,6 +63,7 @@ export const useUploadFileMutation = (
         data,
         ...(_files ?? []),
       ]);
+      invalidateRecentFilesQueries(queryClient);
 
       const endpoint = formData.get('endpoint');
       const message_file = formData.get('message_file');
@@ -195,6 +211,7 @@ export const useDeleteFilesMutation = (
 
         return (cachefiles ?? []).filter((file) => !fileMap.has(file.file_id));
       });
+      invalidateRecentFilesQueries(queryClient);
 
       showToast({
         message: localize('com_ui_delete_success'),

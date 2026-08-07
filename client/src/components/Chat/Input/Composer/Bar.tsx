@@ -47,7 +47,7 @@ export function chipsFitInline<T extends { key: string }>(
   for (const entry of entries) {
     const width = widths[entry.key];
     /* Before the first measuring pass nothing is known, so everything stays on
-       one row — the same unmeasured state the packing order starts from. */
+       one row, the same unmeasured state the packing order starts from. */
     if (width == null) {
       return true;
     }
@@ -115,7 +115,11 @@ function ChipModes({ modes }: ChipModesProps) {
   return (
     <Ariakit.MenuProvider open={open} setOpen={setOpen} placement="bottom">
       <Ariakit.MenuButton
-        aria-label={localize('com_ui_mode')}
+        aria-label={
+          active != null
+            ? localize('com_ui_mode_value', { 0: active.label })
+            : localize('com_ui_mode')
+        }
         onClick={(e) => e.stopPropagation()}
         className="-mr-0.5 flex shrink-0 items-center gap-0.5 rounded px-1 text-xs text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
       >
@@ -246,7 +250,7 @@ function Bar({
   const { ref: controlsRef, width: controlsWidth } = useElementSize<HTMLDivElement>();
 
   /* A row of their own once they need one, and it runs the full width of the
-     composer — the `+` corner included, since the buttons are on the row below
+     composer (the `+` corner included), since the buttons are on the row below
      it rather than in the flow. */
   const inlineChips = useMemo(
     () =>

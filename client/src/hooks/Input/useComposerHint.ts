@@ -67,7 +67,7 @@ export function composeHint(
   localize: LocalizeFunction,
   isMac: boolean,
   /** The live binding for `stopGenerating`, which the user can rebind or clear
-   *  outright — so the stop line is built from it rather than naming a key. */
+   *  outright, so the stop line is built from it rather than naming a key. */
   stopShortcut: string,
   /** The live `submitMessage` binding, for the same reason: the send chords
    *  named below follow the customization instead of asserting the stock one. */
@@ -122,7 +122,7 @@ export function composeHint(
       parts.push(`${sendChord} ${localize(chordVerb)}`);
     }
     /* Until the start POST installs the generation epoch, every chord that
-       reaches the live run refuses — only the default action survives, because
+       reaches the live run refuses; only the default action survives, because
        queueing is local. Naming the others through that window advertises keys
        that do nothing, the same failure as pointing at an unbound shortcut. */
     if (!state.canControlGeneration) {

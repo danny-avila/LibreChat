@@ -131,7 +131,7 @@ beforeEach(() => {
     .mockImplementation((parts) => parts.map((part) => ({ type: 'single', part })));
 });
 
-describe('ContentParts — interim skill cards', () => {
+describe('ContentParts: interim skill cards', () => {
   it('renders a PendingSkillCall per manual skill on assistant messages', () => {
     render(<ContentParts {...baseProps} manualSkills={['brand-guidelines', 'pptx']} />);
     const cards = screen.getAllByTestId('pending-skill-call');
@@ -201,7 +201,7 @@ describe('ContentParts — interim skill cards', () => {
   });
 });
 
-describe('ContentParts — post-steer author re-attribution', () => {
+describe('ContentParts: post-steer author re-attribution', () => {
   const steerPart = {
     type: ContentTypes.STEER,
     steer: 'go left',
@@ -460,7 +460,7 @@ describe('ContentParts — activity phase state', () => {
 
 /* The pending block belongs to the reply being written: shown under every
    message, or after the run has ended, it reads as unsent words piling up. */
-describe('ContentParts — pending steers', () => {
+describe('ContentParts: pending steers', () => {
   const withGate = (over: Partial<typeof baseProps> & { conversationId?: string }) =>
     render(<ContentParts {...baseProps} {...over} />);
 

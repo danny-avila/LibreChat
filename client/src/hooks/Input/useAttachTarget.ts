@@ -19,7 +19,7 @@ export interface AttachTarget {
 }
 
 /**
- * Resolves where an upload would go for the active conversation — the endpoint
+ * Resolves where an upload would go for the active conversation: the endpoint
  * type, its file config, and whether uploads are possible at all.
  *
  * Lifted out of `AttachFileChat` so the composer bar can pass it to the palette

@@ -25,7 +25,7 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
   const isEntityTool = options?.isEntityTool ?? true;
   /* `mutate` rather than the mutation object: react-query hands back a fresh
      result object on every render, and depending on it made both callbacks
-     below new identities each time — which travelled up through
+     below new identities each time, which travelled up through
      `useSearchApiKeyForm` into `BadgeRowProvider`'s context value. */
   const { mutate: updateUserPlugins } = useUpdateUserPluginsMutation({
     onMutate: (vars) => {

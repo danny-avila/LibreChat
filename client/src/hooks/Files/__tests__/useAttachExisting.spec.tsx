@@ -104,6 +104,24 @@ describe('useAttachExisting', () => {
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 
+  /* The palette's short recent request routinely beats the unbounded file-map
+     query on a cold load, so the row is clickable before `fileMap` has it. */
+  it('stages a file the shared file map has not caught up with yet', () => {
+    mockFileMap = {};
+    attach();
+    expect(mockAddFile).toHaveBeenCalledWith(
+      expect.objectContaining({ file_id: 'f1', filename: 'notes.pdf', size: MB }),
+    );
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  /* The shared record is the fresher of the two when both exist. */
+  it('prefers the shared file map over the row it was handed', () => {
+    mockFileMap = { f1: file({ filename: 'renamed.pdf' }) };
+    attach(file({ filename: 'stale.pdf' }));
+    expect(mockAddFile).toHaveBeenCalledWith(expect.objectContaining({ filename: 'renamed.pdf' }));
+  });
+
   describe('refusals', () => {
     const refused = (message: string) => {
       expect(mockAddFile).not.toHaveBeenCalled();
@@ -112,9 +130,9 @@ describe('useAttachExisting', () => {
       );
     };
 
-    it('refuses a file it cannot find on the server', () => {
+    it('refuses a file with nothing to identify where it is stored', () => {
       mockFileMap = {};
-      attach();
+      attach(file({ source: undefined }));
       refused('com_ui_attach_error');
     });
 

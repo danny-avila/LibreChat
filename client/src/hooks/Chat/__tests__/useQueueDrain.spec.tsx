@@ -4,6 +4,12 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import type { DrainAfterAbort, RunEnd, QueuedMessage } from '~/store/families';
+import {
+  claimQueuedIntent,
+  releaseQueuedIntent,
+  acquireQueueSendLock,
+  releaseQueueSendLock,
+} from '~/utils/queueIntent';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
 
@@ -691,5 +697,74 @@ describe('useQueueDrain', () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(ask).toHaveBeenCalledTimes(1);
+  });
+
+  /* Edit and Remove on the rail hand a row's words to the composer across an
+     await, and the run end can land inside that gap. Dequeuing there sent the
+     very message the user was in the middle of taking back. */
+  describe('rows the rail has claimed', () => {
+    afterEach(() => {
+      releaseQueuedIntent('q-claimed');
+      releaseQueuedIntent('q-only');
+    });
+
+    it('skips a claimed row and sends the next one instead', async () => {
+      claimQueuedIntent('q-claimed');
+      const { ask, setters } = setup(({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [
+          queuedMessage('q-claimed', 'being taken back'),
+          queuedMessage('q-next', 'still wanted'),
+        ]);
+      });
+
+      act(() => {
+        setters.setRunEnd!(runEnd());
+      });
+      await waitFor(() =>
+        expect(ask).toHaveBeenCalledWith({ text: 'still wanted' }, emptyOverrides),
+      );
+      expect(ask).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends nothing when the only queued row is claimed', async () => {
+      claimQueuedIntent('q-only');
+      const { ask, setters } = setup(({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q-only', 'mine for now')]);
+      });
+
+      act(() => {
+        setters.setRunEnd!(runEnd());
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(ask).not.toHaveBeenCalled();
+    });
+  });
+
+  /* `isSubmitting` is a render-old read on both sides, so the rail's own Send
+     now can already have called `ask` for this pane in the current task. */
+  it('refuses to drain while a queued send holds the pane', async () => {
+    const held = acquireQueueSendLock(String(INDEX));
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q-lock', 'after the hold')]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(ask).not.toHaveBeenCalled();
+
+    /* The signal was never consumed, so the queue is reconsidered rather than
+       dropped as soon as the pane's submission state moves again. */
+    releaseQueueSendLock(held);
+    act(() => {
+      setters.setIsSubmitting!(true);
+    });
+    act(() => {
+      setters.setIsSubmitting!(false);
+    });
+    await waitFor(() =>
+      expect(ask).toHaveBeenCalledWith({ text: 'after the hold' }, emptyOverrides),
+    );
   });
 });
