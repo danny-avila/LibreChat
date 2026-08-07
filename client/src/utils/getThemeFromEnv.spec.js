@@ -31,6 +31,12 @@ describe('getThemeFromEnv', () => {
         REACT_APP_THEME_TEXT_INVERTED: '19 20 21',
         REACT_APP_THEME_SURFACE_FIXED_HOVER: '22 23 24',
         REACT_APP_THEME_TEXT_FIXED: '25 26 27',
+        REACT_APP_THEME_SURFACE_OVERLAY: '28 29 30',
+        REACT_APP_THEME_STATUS_SUCCESS_STRONG: '31 32 33',
+        REACT_APP_THEME_STATUS_INFO_STRONG: '34 35 36',
+        REACT_APP_THEME_STATUS_WARNING_STRONG: '37 38 39',
+        REACT_APP_THEME_STATUS_ERROR_STRONG: '40 41 42',
+        REACT_APP_THEME_TEXT_ON_STATUS: '43 44 45',
       }),
     ).toEqual({
       'rgb-status-error': '1 2 3',
@@ -42,6 +48,12 @@ describe('getThemeFromEnv', () => {
       'rgb-text-inverted': '19 20 21',
       'rgb-surface-fixed-hover': '22 23 24',
       'rgb-text-fixed': '25 26 27',
+      'rgb-surface-overlay': '28 29 30',
+      'rgb-status-success-strong': '31 32 33',
+      'rgb-status-info-strong': '34 35 36',
+      'rgb-status-warning-strong': '37 38 39',
+      'rgb-status-error-strong': '40 41 42',
+      'rgb-text-on-status': '43 44 45',
     });
   });
 

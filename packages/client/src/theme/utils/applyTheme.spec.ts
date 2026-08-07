@@ -12,6 +12,9 @@ const semanticProperties = [
   '--status-success',
   '--status-success-subtle',
   '--status-success-border',
+  '--status-success-strong',
+  '--surface-overlay',
+  '--text-on-status',
   '--status-error',
   '--status-neutral-border',
 ];
@@ -46,8 +49,11 @@ describe('applyTheme', () => {
       'rgb-status-success': '26 27 28',
       'rgb-status-success-subtle': '29 30 31',
       'rgb-status-success-border': '32 33 34',
+      'rgb-status-success-strong': '33 34 35',
       'rgb-status-error': '35 36 37',
       'rgb-status-neutral-border': '38 39 40',
+      'rgb-surface-overlay': '39 40 41',
+      'rgb-text-on-status': '42 43 44',
     });
 
     const style = document.documentElement.style;
@@ -56,13 +62,17 @@ describe('applyTheme', () => {
     expect(style.getPropertyValue('--status-success')).toBe('26 27 28');
     expect(style.getPropertyValue('--status-success-subtle')).toBe('29 30 31');
     expect(style.getPropertyValue('--status-success-border')).toBe('32 33 34');
+    expect(style.getPropertyValue('--status-success-strong')).toBe('33 34 35');
     expect(style.getPropertyValue('--status-error')).toBe('35 36 37');
     expect(style.getPropertyValue('--status-neutral-border')).toBe('38 39 40');
+    expect(style.getPropertyValue('--surface-overlay')).toBe('39 40 41');
+    expect(style.getPropertyValue('--text-on-status')).toBe('42 43 44');
   });
 
   it('ships status tokens in the bundled themes', () => {
     applyTheme(defaultTheme);
 
     expect(document.documentElement.style.getPropertyValue('--status-error')).toBe('220 38 38');
+    expect(document.documentElement.style.getPropertyValue('--surface-overlay')).toBe('89 89 89');
   });
 });

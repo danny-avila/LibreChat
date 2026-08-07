@@ -137,7 +137,9 @@ function MyComponent() {
   return (
     <div className="border border-border-light bg-surface-primary text-text-primary">
       <h1 className="text-text-secondary">Hello World</h1>
-      <button className="bg-surface-submit text-white hover:bg-surface-submit-hover">Submit</button>
+      <button className="bg-surface-submit text-text-on-status hover:bg-surface-submit-hover">
+        Submit
+      </button>
     </div>
   );
 }
@@ -153,6 +155,7 @@ function MyComponent() {
 - `text-text-tertiary` - Tertiary text color
 - `text-text-warning` - Warning text color
 - `text-text-destructive` - Destructive/error text color
+- `text-text-on-status` - Text color for strong status surfaces
 
 ### Surface Colors
 
@@ -162,6 +165,7 @@ function MyComponent() {
 - `bg-surface-submit` - Submit button background
 - `bg-surface-destructive` - Destructive action background
 - `bg-surface-dialog` - Dialog/modal background
+- `bg-surface-overlay` - Dialog/modal scrim, adapted per theme
 - `bg-surface-chat` - Chat interface background
 
 ### Border Colors
@@ -174,13 +178,15 @@ function MyComponent() {
 
 ### Status Colors
 
-Each status family has a foreground, a `-subtle` background, and a `-border`:
+Each status family has a foreground, a `-subtle` background, a `-border`, and a
+`-strong` surface for high-contrast notifications:
 
 - `text-status-success` / `bg-status-success-subtle` / `border-status-success-border`
 - `text-status-info` / `bg-status-info-subtle` / `border-status-info-border`
 - `text-status-warning` / `bg-status-warning-subtle` / `border-status-warning-border`
 - `text-status-error` / `bg-status-error-subtle` / `border-status-error-border`
 - `text-status-neutral` / `bg-status-neutral-subtle` / `border-status-neutral-border`
+- `bg-status-success-strong` / `bg-status-info-strong` / `bg-status-warning-strong` / `bg-status-error-strong`
 
 ### Other Colors
 

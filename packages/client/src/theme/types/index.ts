@@ -39,6 +39,7 @@ export interface IThemeRGB {
   'rgb-surface-tertiary'?: string;
   'rgb-surface-tertiary-alt'?: string;
   'rgb-surface-dialog'?: string;
+  'rgb-surface-overlay'?: string;
   'rgb-surface-submit'?: string;
   'rgb-surface-submit-hover'?: string;
   'rgb-surface-destructive'?: string;
@@ -63,18 +64,23 @@ export interface IThemeRGB {
   'rgb-status-success'?: string;
   'rgb-status-success-subtle'?: string;
   'rgb-status-success-border'?: string;
+  'rgb-status-success-strong'?: string;
   'rgb-status-info'?: string;
   'rgb-status-info-subtle'?: string;
   'rgb-status-info-border'?: string;
+  'rgb-status-info-strong'?: string;
   'rgb-status-warning'?: string;
   'rgb-status-warning-subtle'?: string;
   'rgb-status-warning-border'?: string;
+  'rgb-status-warning-strong'?: string;
   'rgb-status-error'?: string;
   'rgb-status-error-subtle'?: string;
   'rgb-status-error-border'?: string;
+  'rgb-status-error-strong'?: string;
   'rgb-status-neutral'?: string;
   'rgb-status-neutral-subtle'?: string;
   'rgb-status-neutral-border'?: string;
+  'rgb-text-on-status'?: string;
 
   // Brand colors
   'rgb-brand-purple'?: string;
@@ -114,6 +120,7 @@ export interface IThemeVariables {
   '--surface-tertiary': string;
   '--surface-tertiary-alt': string;
   '--surface-dialog': string;
+  '--surface-overlay': string;
   '--surface-submit': string;
   '--surface-submit-hover': string;
   '--surface-destructive': string;
@@ -138,18 +145,23 @@ export interface IThemeVariables {
   '--status-success': string;
   '--status-success-subtle': string;
   '--status-success-border': string;
+  '--status-success-strong': string;
   '--status-info': string;
   '--status-info-subtle': string;
   '--status-info-border': string;
+  '--status-info-strong': string;
   '--status-warning': string;
   '--status-warning-subtle': string;
   '--status-warning-border': string;
+  '--status-warning-strong': string;
   '--status-error': string;
   '--status-error-subtle': string;
   '--status-error-border': string;
+  '--status-error-strong': string;
   '--status-neutral': string;
   '--status-neutral-subtle': string;
   '--status-neutral-border': string;
+  '--text-on-status': string;
   '--brand-purple': string;
   '--presentation': string;
 }
@@ -185,6 +197,7 @@ export interface IThemeColors {
   'surface-tertiary'?: string;
   'surface-tertiary-alt'?: string;
   'surface-dialog'?: string;
+  'surface-overlay'?: string;
   'surface-submit'?: string;
   'surface-submit-hover'?: string;
   'surface-destructive'?: string;
@@ -205,18 +218,23 @@ export interface IThemeColors {
   'status-success'?: string;
   'status-success-subtle'?: string;
   'status-success-border'?: string;
+  'status-success-strong'?: string;
   'status-info'?: string;
   'status-info-subtle'?: string;
   'status-info-border'?: string;
+  'status-info-strong'?: string;
   'status-warning'?: string;
   'status-warning-subtle'?: string;
   'status-warning-border'?: string;
+  'status-warning-strong'?: string;
   'status-error'?: string;
   'status-error-subtle'?: string;
   'status-error-border'?: string;
+  'status-error-strong'?: string;
   'status-neutral'?: string;
   'status-neutral-subtle'?: string;
   'status-neutral-border'?: string;
+  'text-on-status'?: string;
   'brand-purple'?: string;
   presentation?: string;
 
