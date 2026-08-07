@@ -9,15 +9,13 @@ services:
     ports:
       - 3080:3080
     depends_on:
-      mongodb:
-        condition: service_healthy
       mongodb-init:
         condition: service_completed_successfully
       rag_api:
         condition: service_started
     restart: always
     extra_hosts:
-    - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
     env_file:
       - .env
     environment:
@@ -90,7 +88,7 @@ services:
         ]
       interval: 5s
       timeout: 5s
-      retries: 24
+      retries: 60
       start_period: 5s
   mongodb-init:
     image: mongo:8.0.20
@@ -98,6 +96,8 @@ services:
     depends_on:
       mongodb:
         condition: service_started
+    environment:
+      - MONGO_URI=${MONGO_URI:-}
     volumes:
       - ./config/mongodb/init-replica-set.js:/scripts/init-replica-set.js:ro
       - ./config/mongodb/init-replica-set.sh:/scripts/init-replica-set.sh:ro

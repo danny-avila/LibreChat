@@ -15,10 +15,7 @@ function assert(condition, message) {
 if (mode === 'local') {
   const expectedMongoImage = process.env.EXPECTED_MONGO_IMAGE ?? 'mongo:8.0.20';
   assert(api.environment.MONGO_URI.endsWith('?replicaSet=rs0'), 'local URI must select rs0');
-  assert(
-    api.depends_on.mongodb.condition === 'service_healthy',
-    'local API must wait for MongoDB health',
-  );
+  assert(api.depends_on.mongodb == null, 'local API must not directly gate on MongoDB health');
   assert(
     api.depends_on['mongodb-init'].condition === 'service_completed_successfully',
     'local API must wait for replica-set initialization',
@@ -31,6 +28,10 @@ if (mode === 'local') {
   );
   assert(mongodb.healthcheck.test[0] !== 'NONE', 'local MongoDB healthcheck must be active');
   assert(
+    mongodb.healthcheck.retries >= 60,
+    'local MongoDB health budget must cover connection and primary-election deadlines',
+  );
+  assert(
     mongodb.healthcheck.test[1].includes('command -v mongosh') &&
       mongodb.healthcheck.test[1].includes('|| shell=mongo') &&
       mongodb.healthcheck.test[1].includes('isMaster'),
@@ -41,6 +42,10 @@ if (mode === 'local') {
     JSON.stringify(mongodbInit.entrypoint) ===
       JSON.stringify(['/bin/sh', '/scripts/init-replica-set.sh']),
     'local initializer must execute the bounded initialization script',
+  );
+  assert(
+    'MONGO_URI' in mongodbInit.environment,
+    'local initializer must detect legacy external mode',
   );
   assert(
     [
@@ -78,6 +83,23 @@ if (mode === 'local') {
   );
   assert(mongodbInit.entrypoint[0] === '/true', 'external initializer must execute /true');
   assert(mongodbInit.command.length === 0, 'external initializer must pass no arguments');
+} else if (mode === 'legacy-external') {
+  assert(
+    api.environment.MONGO_URI === process.env.MONGO_URI,
+    'legacy external URI must reach the API',
+  );
+  assert(
+    api.depends_on.mongodb == null,
+    'legacy external mode must not wait for the inherited local MongoDB health check',
+  );
+  assert(
+    api.depends_on['mongodb-init'].condition === 'service_completed_successfully',
+    'legacy external mode must wait for the compatibility-aware initializer',
+  );
+  assert(
+    mongodbInit.environment.MONGO_URI === process.env.MONGO_URI,
+    'legacy external URI must reach the compatibility-aware initializer',
+  );
 } else {
   throw new Error(`Unknown Compose assertion mode: ${mode}`);
 }

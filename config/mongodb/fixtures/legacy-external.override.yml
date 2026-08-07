@@ -1,0 +1,8 @@
+services:
+  api:
+    environment:
+      - MONGO_URI=${MONGO_URI}
+  mongodb:
+    image: tianon/true
+    command: ''
+    entrypoint: ''

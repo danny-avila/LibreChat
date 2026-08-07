@@ -108,6 +108,11 @@ jobs:
             -f config/mongodb/external-compose.override.yml \
             config --format json \
             | node config/mongodb/assert-compose.mjs external
+          docker compose \
+            -f docker-compose.yml \
+            -f config/mongodb/fixtures/legacy-external.override.yml \
+            config --format json \
+            | node config/mongodb/assert-compose.mjs legacy-external
           MONGO_URI= docker compose \
             -f docker-compose.yml \
             -f config/mongodb/external-compose.override.yml \
@@ -119,6 +124,44 @@ jobs:
           docker buildx imagetools inspect --raw \
             tianon/true:multiarch@sha256:9314ed25b116fe075b90f854b6959ace635e981c39e932dfc4c902322f60b13e \
             | node config/mongodb/assert-image-platforms.mjs
+
+      - name: Verify legacy external-Mongo override starts the compatibility initializer
+        env:
+          MONGO_URI: mongodb://external-mongodb.example:27017/LibreChat
+        run: |
+          set -eu
+          compose=(docker compose -p lc-legacy-external -f docker-compose.yml -f config/mongodb/fixtures/legacy-external.override.yml)
+          cp .env.example .env
+          cleanup() {
+            "${compose[@]}" down --remove-orphans || true
+            rm -f .env
+          }
+          trap cleanup EXIT
+
+          "${compose[@]}" up -d mongodb mongodb-init
+          init_id="$("${compose[@]}" ps --all --quiet mongodb-init)"
+          if [ -z "$init_id" ]; then
+            echo 'Legacy compatibility initializer container was not created' >&2
+            exit 1
+          fi
+
+          for _ in $(seq 1 30); do
+            if [ "$(docker inspect --format '{{.State.Status}}' "$init_id")" = 'exited' ]; then
+              break
+            fi
+            sleep 1
+          done
+
+          status="$(docker inspect --format '{{.State.Status}}' "$init_id")"
+          exit_code="$(docker inspect --format '{{.State.ExitCode}}' "$init_id")"
+          logs="$(docker logs "$init_id" 2>&1)"
+          echo "$logs"
+          test "$status" = 'exited'
+          test "$exit_code" = '0'
+          case "$logs" in
+            *'External MONGO_URI detected'*) ;;
+            *) echo 'Initializer did not select legacy external compatibility mode' >&2; exit 1 ;;
+          esac
 
       - name: Verify MongoDB initializer configuration contract
         run: npm run test:mongodb-deployment

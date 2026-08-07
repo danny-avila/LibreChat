@@ -2,10 +2,10 @@
 
 LibreChat's default Docker Compose stacks run MongoDB as the one-member replica set `rs0`. The
 `mongodb-init` service initializes a new or existing `data-node` volume idempotently, waits for a
-writable primary, and then exits. The API starts only after initialization succeeds and the MongoDB
-health check observes that primary. Use Docker Compose v2.20 or newer; the startup contract relies
-on long-form `depends_on` with `service_completed_successfully`. The legacy `docker-compose`
-command is not supported.
+writable primary, and then exits. The API waits for that initializer, while the MongoDB health check
+independently reports primary status with enough time for both the connection and election windows.
+Use Docker Compose v2.20 or newer; the startup contract relies on long-form `depends_on` with
+`service_completed_successfully`. The legacy `docker-compose` command is not supported.
 
 This one-member set provides the transaction semantics required by MCP authority, but it is not
 highly available. Losing or restarting its only member makes MongoDB unavailable until that member
@@ -41,6 +41,12 @@ successful one-shot placeholders from a digest-pinned amd64/arm64 image, so the 
 a local primary. An empty `MONGO_URI` still causes the API to reject startup, but it does not prevent
 administrative commands such as `docker compose pull` or `docker compose down`; set the URI before
 starting the API.
+
+Previously working amd64 installations that still use the formerly documented inline `tianon/true`
+external-Mongo override remain bootable: the initializer recognizes a non-bundled `MONGO_URI` and
+exits without contacting the placeholder, and the API does not gate on the placeholder's inherited
+health check. The old image is amd64-only. Migrate to the maintained override above, especially on
+arm64; it pins an amd64/arm64 no-op image and disables the irrelevant local health check explicitly.
 
 Older x86 CPUs without AVX can retain MongoDB 4.4 with:
 
@@ -91,7 +97,8 @@ rewrite, or delete LibreChat data. Re-running the initializer is safe because it
 
 ## Health and readiness
 
-The MongoDB container is healthy only while the server reports itself as the writable primary. The
+The MongoDB container is healthy only while the server reports itself as the writable primary. Its
+five-minute health budget covers the initializer's connection and primary-election deadlines. The
 initializer also validates the configured set name and waits up to two minutes for primary election.
 A failed election, a conflicting existing replica-set configuration, or an unavailable database
 leaves the API stopped instead of silently connecting without replica-set semantics.
