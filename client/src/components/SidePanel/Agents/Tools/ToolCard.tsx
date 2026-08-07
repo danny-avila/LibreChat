@@ -3,6 +3,7 @@ import { BadgeCheck, Check, Globe, Info, Settings, Star, User } from 'lucide-rea
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentItem } from './items/types';
 import { hasConfigurableSettings } from './items/configurable';
+import AgentContact from '~/components/Agents/AgentContact';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconForItem } from './items/icons';
 import { cn } from '~/utils';
@@ -118,6 +119,7 @@ function ToolCardImpl({
         aria-pressed={selected}
         className={cn(
           'flex h-full w-full cursor-pointer flex-col gap-2 rounded-2xl p-4 text-left',
+          item.kind === 'mcp' && 'pb-9',
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
         )}
       >
@@ -190,6 +192,12 @@ function ToolCardImpl({
           </div>
         ) : null}
       </button>
+      {item.kind === 'mcp' && (
+        <AgentContact
+          resource={item.server}
+          className="pointer-events-none absolute bottom-3 left-4 right-20 z-10 text-xs [&_a]:pointer-events-auto"
+        />
+      )}
       {(canFavorite || canConfigure || showInfoOnly) && (
         <div className="absolute bottom-2 right-2 flex items-center gap-1">
           {(canConfigure || showInfoOnly) && (
