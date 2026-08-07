@@ -844,7 +844,9 @@ describe('File Routes - Delete with Agent Access', () => {
       const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
 
       expect(response.status).toBe(404);
-      expect(response.body.toString()).toBe('File not found');
+      expect(response.text).toBe('File not found');
+      expect(response.headers['content-disposition']).toBeUndefined();
+      expect(response.headers['x-file-metadata']).toBeUndefined();
     });
 
     it('streams proxied downloads by default when a direct URL is available', async () => {

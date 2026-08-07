@@ -507,6 +507,13 @@ const getDownloadFileMetadata = (file) => {
   }, {});
 };
 
+/** Drops attachment headers so an error body isn't saved as the requested file. */
+const clearDownloadHeaders = (res) => {
+  res.removeHeader('Content-Disposition');
+  res.removeHeader('Content-Type');
+  res.removeHeader('X-File-Metadata');
+};
+
 router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
   try {
     const { userId, file_id } = req.params;
@@ -563,14 +570,14 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
     };
 
     if (file.source === FileSources.text) {
-      const textFile = await db.findFileById(file_id, { _id: file._id });
+      const textFile = await db.findFileById(file_id);
       if (!textFile || typeof textFile.text !== 'string') {
         logger.warn(`File download requested by user ${userId} has no stored text: ${file_id}`);
         return res.status(404).send('File content not found');
       }
 
       setHeaders();
-      return Readable.from([textFile.text]).pipe(res);
+      return res.send(textFile.text);
     }
 
     if (checkOpenAIStorage(file.source) && !file.model) {
@@ -640,6 +647,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
           return res.destroy(streamError);
         }
 
+        clearDownloadHeaders(res);
         if (streamError.code === 'ENOENT') {
           return res.status(404).send('File not found');
         }
