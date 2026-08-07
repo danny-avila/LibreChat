@@ -78,11 +78,13 @@ const ALLOWED_SVG_TAGS = [
 ];
 
 /**
- * Presentation and geometry attributes safe to keep. `href`/`xlink:href` are
- * allowed but restricted to same-document fragments (`#id`) by the tag
- * transform below, so local `<use>`/gradient references survive while external
- * references and `javascript:` URLs are stripped; `on*` handlers are never
- * allowed.
+ * Presentation and geometry attributes safe to keep. Gradient and pattern
+ * coordinate-system attributes (`gradientUnits`, `patternUnits`, …) are included
+ * so exporter artwork does not fall back to objectBoundingBox after save.
+ * `href`/`xlink:href` are allowed but restricted to same-document fragments
+ * (`#id`) by the tag transform below, so local `<use>`/gradient references
+ * survive while external references and `javascript:` URLs are stripped; `on*`
+ * handlers are never allowed.
  */
 const ALLOWED_SVG_ATTRS = [
   'viewBox',
@@ -106,6 +108,9 @@ const ALLOWED_SVG_ATTRS = [
   'transform',
   'gradientTransform',
   'gradientUnits',
+  'patternTransform',
+  'patternUnits',
+  'patternContentUnits',
   'offset',
   'startOffset',
   'color',

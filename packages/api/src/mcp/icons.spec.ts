@@ -171,6 +171,24 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).toContain('filter="url(#f)"');
   });
 
+  it('preserves pattern coordinate-system attributes (parity with client SVG profile)', () => {
+    const raw =
+      '<svg viewBox="0 0 24 24"><defs><pattern id="p" width="4" height="4" patternUnits="userSpaceOnUse" patternContentUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="2" fill="#000"/></pattern></defs><rect width="24" height="24" fill="url(#p)"/></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean).toContain('patternUnits="userSpaceOnUse"');
+    expect(clean).toContain('patternContentUnits="userSpaceOnUse"');
+    expect(clean).toContain('patternTransform="rotate(45)"');
+    expect(clean).toContain('fill="url(#p)"');
+  });
+
+  it('preserves gradient coordinate-system attributes', () => {
+    const raw =
+      '<svg><defs><linearGradient id="g" gradientUnits="userSpaceOnUse" gradientTransform="translate(1 2)" x1="0" y1="0" x2="10" y2="10"><stop offset="0" stop-color="#f00"/></linearGradient></defs><rect fill="url(#g)" width="10" height="10"/></svg>';
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+    expect(clean).toContain('gradientUnits="userSpaceOnUse"');
+    expect(clean).toContain('gradientTransform="translate(1 2)"');
+  });
+
   it('preserves case-sensitive SVG names and multi-color paint', () => {
     const raw =
       '<svg viewBox="0 0 24 24"><linearGradient id="g"><stop offset="0" stop-color="#f00"/></linearGradient><path d="M0 0h24v24H0z" fill="url(#g)"/></svg>';
