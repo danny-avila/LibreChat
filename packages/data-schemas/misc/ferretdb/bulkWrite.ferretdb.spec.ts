@@ -10,6 +10,7 @@ import { createTransactionMethods } from '~/methods/transaction';
 import { createConversationMethods } from '~/methods/conversation';
 import { createAclEntryMethods } from '~/methods/aclEntry';
 import { createMessageMethods } from '~/methods/message';
+import { runAsSystem } from '~/config/tenantContext';
 import { createFileMethods } from '~/methods/file';
 import { createModels } from '~/models';
 
@@ -52,7 +53,9 @@ let mongoServer: MongoMemoryServer;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
-  createModels(mongoose);
+  if (mongoose.modelNames().length === 0) {
+    createModels(mongoose);
+  }
 });
 
 afterAll(async () => {
@@ -68,12 +71,16 @@ afterAll(async () => {
  * building indexes for all ~37 models on every reconnect — these flows
  * only assert on data, and index builds racing the next flow's disconnect
  * otherwise log noisy (harmless) "Operation interrupted" errors.
+ *
+ * `work` runs inside `runAsSystem()` because these flows call production
+ * methods unscoped, exactly as a cross-tenant maintenance job would; without
+ * it the tenant-isolation middleware throws under `TENANT_ISOLATION_STRICT`.
  */
 async function withStore<T>(uri: string, work: () => Promise<T>): Promise<T> {
   await mongoose.connect(uri, { autoIndex: false });
   await mongoose.connection.dropDatabase().catch(() => undefined);
   try {
-    return await work();
+    return await runAsSystem(work);
   } finally {
     await mongoose.connection.dropDatabase().catch(() => undefined);
     await mongoose.disconnect();

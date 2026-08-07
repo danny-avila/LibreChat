@@ -5,7 +5,7 @@ import { getModelSchemas } from './schemas';
  * Sharding PoC — self-contained proof-of-concept that exercises:
  *   1. Multi-pool connection management via mongoose.createConnection()
  *   2. Persistent org→pool assignment table with capacity limits
- *   3. Lazy per-org model registration using every current LibreChat schema
+ *   3. Lazy per-org model registration using every current org-local LibreChat schema
  *   4. Cross-pool data isolation
  *   5. Routing overhead measurement
  *   6. Capacity overflow handling
@@ -37,7 +37,7 @@ interface PoolStats {
   available: number;
 }
 
-// ─── LIBRECHAT SCHEMAS (derived from the live model registry) ──────────────
+// ─── LIBRECHAT ORG-LOCAL SCHEMAS (derived from the live model registry) ────
 
 const MODEL_SCHEMAS: Record<string, Schema> = getModelSchemas(mongoose);
 

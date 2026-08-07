@@ -10,7 +10,8 @@ import { getModelSchemas } from './schemas';
  *
  * Phases:
  *   1. useDb schema mapping — verifies per-org PostgreSQL schema creation and data isolation
- *   2. Index initialization — validates every current collection + its indexes, tests for deadlocks
+ *   2. Index initialization — validates every current org-local collection + its
+ *      indexes, tests for deadlocks
  *   3. Scaling curve — measures catalog growth, init time, and query latency at 10/50/100 orgs
  *   4. Write amplification — compares update cost on high-index vs zero-index collections
  *   5. Shared-collection alternative — benchmarks orgId-discriminated shared collections
@@ -40,7 +41,7 @@ const SCALE_TIERS: number[] = process.env.SCALE_TIERS
 
 const WRITE_AMP_DOCS = parseInt(process.env.WRITE_AMP_DOCS || '200', 10);
 
-/** Schema map derived from the live `createModels` registry (see ./schemas) */
+/** Org-local schema map derived from the live `createModels` registry (see ./schemas) */
 const MODEL_SCHEMAS: Record<string, mongoose.Schema> = getModelSchemas(mongoose);
 
 const MODEL_COUNT = Object.keys(MODEL_SCHEMAS).length;
@@ -293,7 +294,13 @@ describeIfFerretDB('FerretDB Multi-Tenancy Benchmark', () => {
       console.log(
         `[Phase 2] User: ${userIdxs.length} total, ${sparseCount} sparse, ${ttlCount} TTL`,
       );
-      expect(sparseCount).toBeGreaterThanOrEqual(8);
+      /**
+       * Counts are deliberately not pinned — the point is that FerretDB reports
+       * each index *type* back, and the User schema's sparse/TTL declarations
+       * change independently of this harness.
+       */
+      expect(sparseCount).toBeGreaterThanOrEqual(1);
+      expect(ttlCount).toBeGreaterThanOrEqual(1);
 
       const fileIdxs = await conn.model('File').collection.indexes();
       const partialFile = fileIdxs.find(
@@ -453,7 +460,7 @@ describeIfFerretDB('FerretDB Multi-Tenancy Benchmark', () => {
       createdDbs.push(db);
       const conn = mongoose.connection.useDb(db, { useCache: false });
 
-      const HighIdx = conn.model('User', MODEL_SCHEMAS.User);
+      const HighIdx = conn.model('User', MODEL_SCHEMAS['User']);
       await HighIdx.createCollection();
       await HighIdx.createIndexes();
 
