@@ -6,6 +6,7 @@ import {
   getRequestMethod,
   getRequestPath,
   SYSTEM_TENANT_ID,
+  BASE_TENANT_ID,
   logger,
 } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
@@ -277,7 +278,25 @@ describe('tenantContextMiddleware', () => {
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({
-      error: 'System tenant is not allowed for request-scoped routes',
+      error: 'Reserved tenant is not allowed for request-scoped routes',
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects the base tenant sentinel as an inbound tenant id', async () => {
+    /**
+     * `__BASE__` is the projector's fallback for non-tenant data. Accepting it
+     * inbound would let a caller name itself after every OSS row in the store.
+     */
+    const req = mockReq({ tenantId: BASE_TENANT_ID, role: 'user' });
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await tenantContextMiddleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Reserved tenant is not allowed for request-scoped routes',
     });
     expect(next).not.toHaveBeenCalled();
   });
@@ -447,7 +466,21 @@ describe('restoreTenantContextFromReq', () => {
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({
-      error: 'System tenant is not allowed for request-scoped routes',
+      error: 'Reserved tenant is not allowed for request-scoped routes',
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects the base tenant sentinel for request-owned work', async () => {
+    const req = mockTenantReq({ role: 'user' }, BASE_TENANT_ID);
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await restoreTenantContextFromReq(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Reserved tenant is not allowed for request-scoped routes',
     });
     expect(next).not.toHaveBeenCalled();
   });
@@ -484,7 +517,7 @@ describe('restoreTenantContextFromReq', () => {
     expect(unlinkMock).toHaveBeenCalledWith('/tmp/system-tenant-extra');
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({
-      error: 'System tenant is not allowed for request-scoped routes',
+      error: 'Reserved tenant is not allowed for request-scoped routes',
     });
     expect(next).not.toHaveBeenCalled();
   });

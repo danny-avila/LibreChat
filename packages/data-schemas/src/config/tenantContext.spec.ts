@@ -4,7 +4,42 @@ import {
   getRequestId,
   runAsSystem,
   scopedCacheKey,
+  normalizeTenantId,
+  isReservedTenantId,
+  RESERVED_TENANT_IDS,
+  SYSTEM_TENANT_ID,
+  BASE_TENANT_ID,
 } from './tenantContext';
+
+describe('reserved tenant sentinels', () => {
+  it('defines the base tenant beside the system tenant', () => {
+    expect(BASE_TENANT_ID).toBe('__BASE__');
+    expect(SYSTEM_TENANT_ID).toBe('__SYSTEM__');
+    expect([...RESERVED_TENANT_IDS].sort()).toEqual(['__BASE__', '__SYSTEM__']);
+  });
+
+  it('treats both sentinels as reserved inbound values', () => {
+    expect(isReservedTenantId(BASE_TENANT_ID)).toBe(true);
+    expect(isReservedTenantId(SYSTEM_TENANT_ID)).toBe(true);
+  });
+
+  it('leaves ordinary and absent tenant ids unreserved', () => {
+    expect(isReservedTenantId('acme')).toBe(false);
+    expect(isReservedTenantId('')).toBe(false);
+    expect(isReservedTenantId(undefined)).toBe(false);
+    expect(isReservedTenantId(null)).toBe(false);
+  });
+
+  it('normalizes absent, null and empty stored tenants onto the base sentinel', () => {
+    expect(normalizeTenantId(undefined)).toBe(BASE_TENANT_ID);
+    expect(normalizeTenantId(null)).toBe(BASE_TENANT_ID);
+    expect(normalizeTenantId('')).toBe(BASE_TENANT_ID);
+  });
+
+  it('never rewrites a real tenant id', () => {
+    expect(normalizeTenantId('acme')).toBe('acme');
+  });
+});
 
 describe('scopedCacheKey', () => {
   it('returns base key when no ALS context is set', () => {

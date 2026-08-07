@@ -1,18 +1,21 @@
 import _ from 'lodash';
-import { parseTextParts } from 'librechat-data-provider';
 import { MeiliSearch, MeiliSearchTimeOutError } from 'meilisearch';
 import type {
   CallbackWithoutResultAndOptionalError,
   FilterQuery,
   Document,
   Schema,
-  Query,
   Types,
   Model,
 } from 'mongoose';
 import type { SearchResponse, SearchParams, Index, MeiliSearchErrorInfo } from 'meilisearch';
+import type { SearchSink, SearchSyncDocument, SearchSyncOrigin } from '~/models/plugins/projection';
 import type { IConversation, IMessage } from '~/types';
-import { buildRetentionVisibilityFilter, legacyPermanentExpirationFilter } from '~/utils/retention';
+import {
+  buildIndexableQuery,
+  isIndexableDocument,
+  preprocessObjectForIndex,
+} from '~/search/document';
 import logger from '~/config/meiliLogger';
 
 interface MongoMeiliOptions {
@@ -73,17 +76,23 @@ export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
   ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>>;
 }
 
-// Environment flags
 /**
- * Flag to indicate if search is enabled based on environment variables.
+ * Meilisearch is decoupled from the write path: every sink call is gated by
+ * `MEILI_WRITES_ENABLED` (default **false**), including the three post hooks
+ * that used to fire unconditionally whenever credentials were present. This
+ * takes precedence over `MEILI_NO_SYNC`, which keeps its narrower meaning of
+ * "skip the startup catch-up job only".
+ *
+ * Evaluated per call rather than cached at module load so a deployment can flip
+ * the flag for a legacy rollback without a code change.
  */
-const searchEnabled = process.env.SEARCH != null && process.env.SEARCH.toLowerCase() === 'true';
+export const meiliWritesEnabled = (): boolean =>
+  process.env.MEILI_HOST != null &&
+  process.env.MEILI_MASTER_KEY != null &&
+  process.env.MEILI_WRITES_ENABLED === 'true';
 
-/**
- * Flag to indicate if MeiliSearch is enabled based on required environment variables.
- */
-const meiliEnabled =
-  process.env.MEILI_HOST != null && process.env.MEILI_MASTER_KEY != null && searchEnabled;
+/** Model factories are re-entrant; one sink per schema, created once. */
+const MEILI_SINK = Symbol.for('librechat:meiliSink');
 
 /**
  * Get sync configuration from environment variables
@@ -92,49 +101,6 @@ const getSyncConfig = () => ({
   batchSize: parseInt(process.env.MEILI_SYNC_BATCH_SIZE || '100', 10),
   delayMs: parseInt(process.env.MEILI_SYNC_DELAY_MS || '100', 10),
 });
-
-const hasSchemaPath = (schema: Schema, path: string): boolean =>
-  Object.prototype.hasOwnProperty.call(schema.obj, path);
-
-const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
-
-const buildIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
-  if (!hasSchemaPath(schema, 'isTemporary')) {
-    return hasSchemaPath(schema, 'expiredAt') ? legacyPermanentExpirationFilter() : {};
-  }
-
-  return buildRetentionVisibilityFilter();
-};
-
-const hasActiveExpiration = (expiredAt?: Date | null): boolean =>
-  _.isNil(expiredAt) || new Date(expiredAt).getTime() > Date.now();
-
-/**
- * `isTemporary` defaults to `false` on the schema, so hydrated legacy documents
- * can appear non-temporary even when the field is absent from MongoDB. `$isDefault`
- * lets us distinguish that schema default from an explicit stored flag, and
- * `$locals` carries the pre-save answer into post hooks after Mongoose mutates
- * document state.
- */
-const hasExplicitTemporaryFlag = (doc: DocumentWithMeiliIndex): boolean =>
-  typeof doc.$locals?.[explicitTemporaryFlagKey] === 'boolean'
-    ? (doc.$locals[explicitTemporaryFlagKey] as boolean)
-    : doc.isTemporary != null && !doc.$isDefault('isTemporary');
-
-const captureExplicitTemporaryFlag = (doc: DocumentWithMeiliIndex): void => {
-  doc.$locals[explicitTemporaryFlagKey] = doc.isTemporary != null && !doc.$isDefault('isTemporary');
-};
-
-/**
- * Index only retained non-temporary records whose flag was explicitly stored,
- * plus legacy permanent records that have no retention deadline. Legacy records
- * with an expiration are treated as temporary and stay out of search.
- */
-const isIndexableDocument = (doc: DocumentWithMeiliIndex): boolean =>
-  (doc.isTemporary === false &&
-    hasExplicitTemporaryFlag(doc) &&
-    hasActiveExpiration(doc.expiredAt)) ||
-  (!hasExplicitTemporaryFlag(doc) && _.isNil(doc.expiredAt));
 
 /**
  * Validates the required options for configuring the mongoMeili plugin.
@@ -439,25 +405,7 @@ const createMeiliMongooseModel = ({
      * Preprocesses the current document for indexing
      */
     preprocessObjectForIndex(this: DocumentWithMeiliIndex): Record<string, unknown> {
-      const object = _.omitBy(_.pick(this.toJSON(), attributesToIndex), (v, k) =>
-        k.startsWith('$'),
-      );
-
-      if (
-        object.conversationId &&
-        typeof object.conversationId === 'string' &&
-        object.conversationId.includes('|')
-      ) {
-        object.conversationId = object.conversationId.replace(/\|/g, '--');
-      }
-
-      if (object.content && Array.isArray(object.content)) {
-        /** Search indexes the full conversational record, steered words included. */
-        object.text = parseTextParts(object.content, false, { includeSteer: true });
-        delete object.content;
-      }
-
-      return object;
+      return preprocessObjectForIndex(this.toJSON(), attributesToIndex);
     }
 
     /**
@@ -602,25 +550,22 @@ const createMeiliMongooseModel = ({
 };
 
 /**
- * Mongoose plugin to synchronize MongoDB collections with a MeiliSearch index.
+ * Registers the Meilisearch statics on a schema and returns the optional write
+ * sink behind them.
  *
- * This plugin:
- *   - Validates the provided options.
- *   - Adds a `_meiliIndex` field to the schema to track indexing status.
- *   - Sets up a MeiliSearch client and creates an index if it doesn't already exist.
- *   - Loads class methods for syncing, searching, and managing documents in MeiliSearch.
- *   - Registers Mongoose hooks (post-save, post-update, post-remove, etc.) to maintain index consistency.
- *
- * @param schema - The Mongoose schema to which the plugin is applied.
- * @param options - Configuration options.
- * @param options.host - The MeiliSearch host.
- * @param options.apiKey - The MeiliSearch API key.
- * @param options.indexName - The name of the MeiliSearch index.
- * @param options.primaryKey - The primary key field for indexing.
- * @param options.syncBatchSize - Batch size for sync operations.
- * @param options.syncDelayMs - Delay between batches in milliseconds.
+ * This plugin no longer registers write hooks of its own. `applySearchSync` owns
+ * every hook on the schema and Meilisearch is one sink it may fan out to, which
+ * is what removes the three post hooks that used to fire unconditionally
+ * whenever credentials were present. Every write here is gated by
+ * `MEILI_WRITES_ENABLED` (default false); the statics stay registered so the
+ * startup catch-up job and a legacy rollback still have something to call.
  */
-export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): void {
+export function createMeiliSink(schema: Schema, options: MongoMeiliOptions): SearchSink {
+  const cached = schema as Schema & { [MEILI_SINK]?: SearchSink };
+  if (cached[MEILI_SINK]) {
+    return cached[MEILI_SINK];
+  }
+
   const mongoose = options.mongoose;
   validateOptions(options);
 
@@ -717,123 +662,118 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     }),
   );
 
-  // Register Mongoose hooks
-  schema.pre('save', function (this: DocumentWithMeiliIndex, next) {
-    if (hasSchemaPath(schema, 'isTemporary')) {
-      captureExplicitTemporaryFlag(this);
+  const callHook = (
+    doc: DocumentWithMeiliIndex,
+    hook?: (next: CallbackWithoutResultAndOptionalError) => void,
+  ): Promise<void> =>
+    new Promise((resolve) => {
+      if (typeof hook !== 'function') {
+        resolve();
+        return;
+      }
+      hook.call(doc, () => resolve());
+    });
+
+  const asDocument = (doc: SearchSyncDocument): DocumentWithMeiliIndex | null =>
+    typeof (doc as unknown as DocumentWithMeiliIndex).postSaveHook === 'function'
+      ? (doc as unknown as DocumentWithMeiliIndex)
+      : null;
+
+  /**
+   * `saveConvo` rewrites a conversation on every turn, so re-indexing on each
+   * `findOneAndUpdate` would push an unchanged title repeatedly. Skip when the
+   * indexed title already matches.
+   */
+  const titleAlreadyIndexed = async (doc: DocumentWithMeiliIndex): Promise<boolean> => {
+    if (!doc.messages) {
+      return false;
     }
-    next();
-  });
-
-  schema.post('save', function (doc: DocumentWithMeiliIndex, next) {
-    doc.postSaveHook?.(next);
-  });
-
-  schema.post('updateOne', function (doc: DocumentWithMeiliIndex, next) {
-    doc.postUpdateHook?.(next);
-  });
-
-  schema.post('deleteOne', function (doc: DocumentWithMeiliIndex, next) {
-    doc.postRemoveHook?.(next);
-  });
-
-  // Pre-deleteMany hook: remove corresponding documents from MeiliSearch when multiple documents are deleted.
-  schema.pre('deleteMany', async function (next) {
-    if (!meiliEnabled) {
-      return next();
-    }
-
     try {
-      const conditions = (this as Query<unknown, unknown>).getQuery();
-      const { batchSize, delayMs } = syncOptions;
-
-      if (Object.prototype.hasOwnProperty.call(schema.obj, 'messages')) {
-        const convoIndex = client.index('convos');
-        const deletedConvos = await mongoose
-          .model('Conversation')
-          .find(conditions as FilterQuery<unknown>)
-          .select('conversationId')
-          .lean();
-
-        // Process deletions in batches
-        await processBatch(deletedConvos, batchSize, delayMs, async (batch) => {
-          const promises = batch.map((convo: Record<string, unknown>) =>
-            convoIndex.deleteDocument(convo.conversationId as string),
-          );
-          await Promise.all(promises);
-        });
-      }
-
-      if (Object.prototype.hasOwnProperty.call(schema.obj, 'messageId')) {
-        const messageIndex = client.index('messages');
-        const deletedMessages = await mongoose
-          .model('Message')
-          .find(conditions as FilterQuery<unknown>)
-          .select('messageId')
-          .lean();
-
-        // Process deletions in batches
-        await processBatch(deletedMessages, batchSize, delayMs, async (batch) => {
-          const promises = batch.map((message: Record<string, unknown>) =>
-            messageIndex.deleteDocument(message.messageId as string),
-          );
-          await Promise.all(promises);
-        });
-      }
-      return next();
+      const meiliDoc = await client.index('convos').getDocument(doc.conversationId as string);
+      return Boolean(meiliDoc) && meiliDoc.title === doc.title;
     } catch (error) {
-      if (meiliEnabled) {
+      logger.debug(
+        '[mongoMeili] Convo not found in MeiliSearch and will index ' + doc.conversationId,
+        error as Record<string, unknown>,
+      );
+      return false;
+    }
+  };
+
+  const sink: SearchSink = {
+    name: 'meilisearch',
+    isEnabled: meiliWritesEnabled,
+
+    async upsert(doc: SearchSyncDocument, origin: SearchSyncOrigin): Promise<void> {
+      const document = asDocument(doc);
+      if (!document) {
+        return;
+      }
+      if (origin === 'findOneAndUpdate' && (await titleAlreadyIndexed(document))) {
+        return;
+      }
+      await callHook(document, document.postSaveHook);
+    },
+
+    async remove(doc: SearchSyncDocument): Promise<void> {
+      const document = asDocument(doc);
+      if (!document) {
+        return;
+      }
+      await callHook(document, document.postRemoveHook);
+    },
+
+    /**
+     * `deleteMany` yields no documents, so the affected primary keys are read
+     * back from Mongo before the delete lands.
+     */
+    async removeMany(conditions: FilterQuery<unknown>): Promise<void> {
+      const { batchSize, delayMs } = syncOptions;
+      try {
+        if (Object.prototype.hasOwnProperty.call(schema.obj, 'messages')) {
+          const convoIndex = client.index('convos');
+          const deletedConvos = await mongoose
+            .model('Conversation')
+            .find(conditions)
+            .select('conversationId')
+            .lean();
+
+          await processBatch(deletedConvos, batchSize, delayMs, async (batch) => {
+            await Promise.all(
+              batch.map((convo: Record<string, unknown>) =>
+                convoIndex.deleteDocument(convo.conversationId as string),
+              ),
+            );
+          });
+        }
+
+        if (Object.prototype.hasOwnProperty.call(schema.obj, 'messageId')) {
+          const messageIndex = client.index('messages');
+          const deletedMessages = await mongoose
+            .model('Message')
+            .find(conditions)
+            .select('messageId')
+            .lean();
+
+          await processBatch(deletedMessages, batchSize, delayMs, async (batch) => {
+            await Promise.all(
+              batch.map((message: Record<string, unknown>) =>
+                messageIndex.deleteDocument(message.messageId as string),
+              ),
+            );
+          });
+        }
+      } catch (error) {
         logger.error(
-          '[MeiliMongooseModel.deleteMany] There was an issue deleting conversation indexes upon deletion. Next startup may trigger syncing.',
+          '[mongoMeili.removeMany] There was an issue deleting indexes upon deletion. Next startup may trigger syncing.',
           error,
         );
       }
-      return next();
-    }
-  });
-
-  // Post-findOneAndUpdate hook
-  schema.post(
-    'findOneAndUpdate',
-    async function (
-      res: DocumentWithMeiliIndex | { value: DocumentWithMeiliIndex | null } | null,
-      next: CallbackWithoutResultAndOptionalError,
-    ) {
-      if (!meiliEnabled) {
-        return next();
-      }
-
-      // `saveConvo` issues `findOneAndUpdate` with `includeResultMetadata: true`, so
-      // the hook receives the raw `{ value, ok, lastErrorObject }` result instead of
-      // the document. Unwrap `value` so indexing runs for that path too.
-      const doc = res instanceof mongoose.Document ? res : (res?.value ?? null);
-
-      if (!doc || doc.unfinished) {
-        return next();
-      }
-
-      let meiliDoc: Record<string, unknown> | undefined;
-      if (doc.messages) {
-        try {
-          meiliDoc = await client.index('convos').getDocument(doc.conversationId as string);
-        } catch (error: unknown) {
-          logger.debug(
-            '[MeiliMongooseModel.findOneAndUpdate] Convo not found in MeiliSearch and will index ' +
-              doc.conversationId,
-            error as Record<string, unknown>,
-          );
-        }
-      }
-
-      if (meiliDoc && meiliDoc.title === doc.title) {
-        return next();
-      }
-
-      if (typeof doc.postSaveHook === 'function') {
-        return doc.postSaveHook(next);
-      }
-
-      return next();
     },
-  );
+  };
+
+  cached[MEILI_SINK] = sink;
+  return sink;
 }
+
+export default createMeiliSink;

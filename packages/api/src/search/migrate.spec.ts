@@ -1,7 +1,7 @@
 import type { SearchPool } from './types';
+import { assertRoleCredentialsConfigured, migrate, readMigrations } from './migrate';
 import { describePg, dropIsolatedDatabase, migrateFresh } from './pg.helper';
 import { findRoleViolations, READER_ROLE } from './roles';
-import { migrate, readMigrations } from './migrate';
 
 /** Prose in a migration is not executable SQL; assertions target statements only. */
 const statementsOf = (sql: string): string => sql.replace(/--[^\n]*/g, '');
@@ -39,6 +39,44 @@ describe('migration files', () => {
     for (const migration of readMigrations()) {
       expect(statementsOf(migration.sql)).not.toContain('__SYSTEM__');
     }
+  });
+
+  it('ships no credential, connection string or working default', () => {
+    for (const migration of readMigrations()) {
+      const sql = statementsOf(migration.sql);
+      expect(sql).not.toMatch(/postgres(ql)?:\/\//i);
+      expect(sql).not.toMatch(/\bPASSWORD\b/i);
+      expect(sql).not.toMatch(/\bmyuser\b|\bmypassword\b/i);
+    }
+  });
+});
+
+describe('role credentials', () => {
+  const OLD_ENV = process.env;
+
+  afterEach(() => {
+    process.env = OLD_ENV;
+  });
+
+  it('requires every role password to be operator-supplied', () => {
+    process.env = { ...OLD_ENV };
+    delete process.env.CHAT_SEARCH_OWNER_PASSWORD;
+    delete process.env.CHAT_SEARCH_WRITER_PASSWORD;
+    delete process.env.CHAT_SEARCH_READER_PASSWORD;
+
+    expect(() => assertRoleCredentialsConfigured()).toThrow(
+      /missing required role credentials.*CHAT_SEARCH_OWNER_PASSWORD/,
+    );
+  });
+
+  it('passes once the operator supplies all three', () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: 'supplied',
+      CHAT_SEARCH_WRITER_PASSWORD: 'supplied',
+      CHAT_SEARCH_READER_PASSWORD: 'supplied',
+    };
+    expect(() => assertRoleCredentialsConfigured()).not.toThrow();
   });
 });
 

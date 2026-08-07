@@ -61,7 +61,11 @@ export {
   getRequestPath,
   runAsSystem,
   scopedCacheKey,
+  normalizeTenantId,
+  isReservedTenantId,
+  RESERVED_TENANT_IDS,
   SYSTEM_TENANT_ID,
+  BASE_TENANT_ID,
 } from './config/tenantContext';
 export type { TenantContext } from './config/tenantContext';
 export {

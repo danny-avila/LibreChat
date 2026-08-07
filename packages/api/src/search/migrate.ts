@@ -104,9 +104,13 @@ const ROLE_PASSWORD_ENV: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /**
- * Sets role passwords from the environment. Passwords never appear in the SQL
- * files; quoting is delegated to the server's own `format()` so nothing has to
- * be escaped by hand.
+ * Sets role passwords from the environment.
+ *
+ * Passwords are operator-supplied and never appear in the SQL files, in a
+ * default, or in a log line. Quoting is delegated to the server's own
+ * `format()` so nothing has to be escaped by hand — and the rendered statement,
+ * which contains the literal, is never logged and never allowed into an error
+ * message: a failing `ALTER ROLE` is re-thrown naming only the role.
  */
 export async function applyRolePasswords(pool: SearchPool): Promise<readonly string[]> {
   const updated: string[] = [];
@@ -120,9 +124,29 @@ export async function applyRolePasswords(pool: SearchPool): Promise<readonly str
         'SELECT format($1, $2::text, $3::text) AS statement',
         ['ALTER ROLE %I WITH LOGIN PASSWORD %L', role, password],
       );
-      await client.query(rows[0].statement);
+      try {
+        await client.query(rows[0].statement);
+      } catch {
+        throw new Error(`[chatSearch] failed to set the password for role ${role}`);
+      }
       updated.push(role);
     }
   });
   return updated;
+}
+
+/**
+ * Roles whose password must be operator-supplied before the stack is allowed to
+ * serve. There is deliberately no fallback: a working default is how the
+ * adjacent `vectordb` ended up reachable with a credential committed to four
+ * compose files and a Helm chart.
+ */
+export function assertRoleCredentialsConfigured(): void {
+  const missing = Object.values(ROLE_PASSWORD_ENV).filter((envKey) => !process.env[envKey]);
+  if (missing.length > 0) {
+    throw new Error(
+      `[chatSearch] missing required role credentials: ${missing.join(', ')} ` +
+        '(operator-supplied, no defaults)',
+    );
+  }
 }

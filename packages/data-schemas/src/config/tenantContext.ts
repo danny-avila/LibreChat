@@ -12,6 +12,30 @@ export interface TenantContext {
 export const SYSTEM_TENANT_ID = '__SYSTEM__';
 
 /**
+ * Sentinel tenant for non-tenant (OSS) data. Mongo documents with an absent or
+ * null `tenantId` normalize to this value everywhere a tenant is required:
+ * projector writes, query-path scope resolution, RLS session settings, cursors,
+ * and rag_api JWT claims.
+ */
+export const BASE_TENANT_ID = '__BASE__';
+
+/**
+ * Reserved sentinels. Neither may arrive as an *inbound* tenant id, so no real
+ * tenant can collide with the base-tenant fallback or inherit the system
+ * wildcard by naming itself after it.
+ */
+export const RESERVED_TENANT_IDS: ReadonlySet<string> = new Set([SYSTEM_TENANT_ID, BASE_TENANT_ID]);
+
+export function isReservedTenantId(tenantId?: string | null): boolean {
+  return tenantId != null && RESERVED_TENANT_IDS.has(tenantId);
+}
+
+/** Maps an absent or null stored tenant id onto the base-tenant sentinel. */
+export function normalizeTenantId(tenantId?: string | null): string {
+  return tenantId == null || tenantId === '' ? BASE_TENANT_ID : tenantId;
+}
+
+/**
  * AsyncLocalStorage instance for propagating tenant context.
  * Callbacks passed to `tenantStorage.run()` must be `async` for the context to propagate
  * through Mongoose query execution. Sync callbacks returning a Mongoose thenable will lose context.

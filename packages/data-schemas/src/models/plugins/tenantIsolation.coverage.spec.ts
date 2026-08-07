@@ -15,10 +15,19 @@ const TENANT_ISOLATION_APPLIED = Symbol.for('librechat:tenantIsolation');
  * status rows and tenant-scoped override rows, so its methods apply explicit
  * tenant filters instead of ambient ALS scoping. AuditLog composes its tenant
  * filter from the JWT-resolved caller and uses `{ tenantId: { $exists: false } }`
- * for platform-level entries. Adding an entry here must be a deliberate,
- * reviewed decision — that is the whole point of this guard.
+ * for platform-level entries. SearchEvent is the projection queue: it is written
+ * by request paths but read only by the cross-tenant projector, which must see
+ * every tenant's events, and each event already carries the normalized tenantId
+ * it applies to the destination row — ambient ALS scoping would blind the
+ * consumer to everything it exists to consume. Adding an entry here must be a
+ * deliberate, reviewed decision — that is the whole point of this guard.
  */
-const MANUAL_TENANT_SCOPING = new Set<string>(['SystemGrant', 'SkillSyncStatus', 'AuditLog']);
+const MANUAL_TENANT_SCOPING = new Set<string>([
+  'SystemGrant',
+  'SkillSyncStatus',
+  'AuditLog',
+  'SearchEvent',
+]);
 
 function isPluginApplied(schema: mongoose.Schema): boolean {
   return (schema as unknown as { [key: symbol]: boolean })[TENANT_ISOLATION_APPLIED] === true;

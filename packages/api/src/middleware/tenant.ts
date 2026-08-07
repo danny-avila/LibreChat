@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { unlink } from 'fs/promises';
 import { isMainThread } from 'worker_threads';
-import { tenantStorage, logger, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import { tenantStorage, logger, isReservedTenantId } from '@librechat/data-schemas';
 import type { TenantContext } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -29,7 +29,7 @@ export type ContextRequest = {
   };
 };
 
-const SYSTEM_TENANT_REJECTION_MESSAGE = 'System tenant is not allowed for request-scoped routes';
+const SYSTEM_TENANT_REJECTION_MESSAGE = 'Reserved tenant is not allowed for request-scoped routes';
 
 let _checkedThread = false;
 
@@ -146,8 +146,8 @@ export function tenantContextMiddleware(
   const context = buildTenantContext(req);
   const { tenantId } = context;
 
-  if (tenantId === SYSTEM_TENANT_ID) {
-    logger.warn('[tenantContextMiddleware] Rejected system tenant for request route', {
+  if (isReservedTenantId(tenantId)) {
+    logger.warn('[tenantContextMiddleware] Rejected reserved tenant for request route', {
       path: req.path,
     });
     res.status(403).json({ error: SYSTEM_TENANT_REJECTION_MESSAGE });
@@ -280,8 +280,8 @@ export function restoreTenantContextFromReq(
     return;
   }
 
-  if (resolvedTenantId === SYSTEM_TENANT_ID) {
-    logger.warn('[restoreTenantContextFromReq] Rejected system tenant for request route', {
+  if (isReservedTenantId(resolvedTenantId)) {
+    logger.warn('[restoreTenantContextFromReq] Rejected reserved tenant for request route', {
       path: req.path,
     });
     return rejectRequestWithUploadCleanup(req, res, SYSTEM_TENANT_REJECTION_MESSAGE);

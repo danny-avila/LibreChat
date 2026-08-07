@@ -10,7 +10,12 @@ const {
   RetentionMode,
   openAISettings,
 } = require('librechat-data-provider');
-const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages } = require('~/models');
+const {
+  bulkIncrementTagCounts,
+  bulkSaveConvos,
+  bulkSaveMessages,
+  enqueueSearchEvents,
+} = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
 /**
@@ -150,12 +155,56 @@ class ImportBatchBuilder {
         ),
       );
       await Promise.all(promises);
+      await this.enqueueProjectionEvents();
       logger.debug(
         `user: ${this.requestUserId} | Added ${this.conversations.length} conversations and ${this.messages.length} messages to the DB.`,
       );
     } catch (error) {
       logger.error('Error saving batch', error);
       throw error;
+    }
+  }
+
+  /**
+   * Announces imported records to the search projector.
+   *
+   * Imports are structurally invisible to the projector's `(updatedAt, _id)`
+   * safety poll: `bulkSaveConvos` hard-codes `timestamps: false` and message
+   * import passes `overrideTimestamp = true`, so imported rows carry historic or
+   * absent `updatedAt` values that sort behind any forward cursor. `bulkWrite`
+   * also skips Mongoose middleware entirely, so the search-sync hooks never fire.
+   * These explicit events are the only fast path this data has; without them it
+   * waits for the hourly reconciliation sweep.
+   * @returns {Promise<void>}
+   */
+  async enqueueProjectionEvents() {
+    const events = [];
+    for (const convo of this.conversations) {
+      events.push({
+        tenantId: convo.tenantId ?? null,
+        userId: this.requestUserId,
+        kind: 'conversation',
+        recordId: convo.conversationId,
+        op: 'upsert',
+      });
+    }
+    for (const message of this.messages) {
+      events.push({
+        tenantId: message.tenantId ?? null,
+        userId: this.requestUserId,
+        kind: 'message',
+        recordId: message.messageId,
+        op: 'upsert',
+      });
+    }
+    try {
+      await enqueueSearchEvents(events);
+    } catch (error) {
+      /**
+       * The queue is an accelerant, never load-bearing: a failed enqueue must not
+       * fail a user's import. The reconciliation sweep still picks these rows up.
+       */
+      logger.error('[ImportBatchBuilder] Failed to enqueue projection events', error);
     }
   }
 

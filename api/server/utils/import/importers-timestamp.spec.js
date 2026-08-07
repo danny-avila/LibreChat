@@ -8,6 +8,7 @@ jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn(),
   bulkSaveMessages: jest.fn(),
   bulkIncrementTagCounts: jest.fn(),
+  enqueueSearchEvents: jest.fn().mockResolvedValue(0),
 }));
 
 const mockGetEndpointsConfig = jest.fn().mockResolvedValue(null);

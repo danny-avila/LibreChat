@@ -12,6 +12,7 @@ import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
+import { enqueueSearchEvents } from '~/search/events';
 import logger from '~/config/winston';
 
 export interface ConversationMethods {
@@ -749,7 +750,7 @@ export function createConversationMethods(
       const { deleteMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
       const conversations = await Conversation.find(userFilter).select(
-        'conversationId chatProjectId tags',
+        'conversationId chatProjectId tags tenantId',
       );
       const conversationIds = conversations.map((c) => c.conversationId);
       const projectIds = new Set(
@@ -792,6 +793,22 @@ export function createConversationMethods(
       if (deleted) {
         await decrementTagCounts(mongoose, user, tagDecrements);
       }
+
+      /**
+       * Explicit tombstones alongside the `deleteMany` hook: this method already
+       * holds the exact keys it removed, so the projector learns them without a
+       * second read and without depending on middleware that bulk paths skip.
+       */
+      await enqueueSearchEvents(
+        mongoose,
+        conversations.map((conversation) => ({
+          tenantId: conversation.tenantId ?? null,
+          userId: user,
+          kind: 'conversation' as const,
+          recordId: conversation.conversationId,
+          op: 'tombstone' as const,
+        })),
+      );
 
       /**
        * Post-delete cleanup is best-effort: the conversations are already gone, so a
