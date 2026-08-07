@@ -4,9 +4,14 @@ const {
   registerShutdownTask,
   setMCPToolsChangedHandler,
   setMCPToolsChangedGenerationHandler,
+  setMCPToolsChangedGenerationRenewalHandler,
 } = require('@librechat/api');
 const { mergeAppTools, getAppConfig } = require('./Config');
-const { getMCPToolsCacheGeneration, updateMCPServerTools } = require('./Config/mcp');
+const {
+  getMCPToolsCacheGeneration,
+  renewMCPToolsCacheGeneration,
+  updateMCPServerTools,
+} = require('./Config/mcp');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
 
 /**
@@ -75,6 +80,7 @@ async function initializeMCPs() {
     const mcpManager = await createMCPManager(mcpServers || {});
     setMCPToolsChangedHandler(refreshChangedServerTools);
     setMCPToolsChangedGenerationHandler(getMCPToolsCacheGeneration);
+    setMCPToolsChangedGenerationRenewalHandler(renewMCPToolsCacheGeneration);
     registerShutdownTask('MCP app connections', () => mcpManager.disconnectAppServers());
 
     if (mcpServers && Object.keys(mcpServers).length > 0) {

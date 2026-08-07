@@ -37,6 +37,12 @@ export type MCPToolsChangedGenerationHandler = (
 
 let generationHandler: MCPToolsChangedGenerationHandler | null = null;
 
+export type MCPToolsChangedGenerationRenewalHandler = (
+  scope: MCPToolsChangedScope & { publicationGeneration: string },
+) => Promise<boolean> | boolean;
+
+let generationRenewalHandler: MCPToolsChangedGenerationRenewalHandler | null = null;
+
 function getChangeKey(event: MCPToolsChangedScope): string {
   return JSON.stringify([event.userId ?? null, event.serverName]);
 }
@@ -125,11 +131,25 @@ export function setMCPToolsChangedGenerationHandler(
   generationHandler = fn;
 }
 
+/** Registers the app-layer lease renewer for active durable user connections. */
+export function setMCPToolsChangedGenerationRenewalHandler(
+  fn: MCPToolsChangedGenerationRenewalHandler | null,
+): void {
+  generationRenewalHandler = fn;
+}
+
 /** Captures the current cache generation before a durable user connection is created. */
 export async function getMCPToolsChangedGeneration(
   scope: MCPToolsChangedScope,
 ): Promise<string | undefined> {
   return generationHandler?.(scope);
+}
+
+/** Renews a connection's publication lease without allowing a stale generation to revive. */
+export async function renewMCPToolsChangedGeneration(
+  scope: MCPToolsChangedScope & { publicationGeneration: string },
+): Promise<boolean | undefined> {
+  return generationRenewalHandler?.(scope);
 }
 
 /**

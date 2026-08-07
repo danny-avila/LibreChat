@@ -175,6 +175,25 @@ async function getMCPToolsCacheGeneration({ userId, serverName }) {
   });
 }
 
+/** Extends a durable connection's lease only while it still owns the publication generation. */
+async function renewMCPToolsCacheGeneration({ userId, serverName, publicationGeneration }) {
+  if (!userId || !serverName || !publicationGeneration) {
+    return false;
+  }
+  const cache = getLogStores(CacheKeys.TOOL_CACHE);
+  return runWithUserToolsQueue(userId, serverName, async () => {
+    const key = ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName);
+    const generation = await cache.get(key);
+    if (generation !== publicationGeneration) {
+      return false;
+    }
+    if ((await cache.set(key, generation, MCP_SERVER_GENERATION_TTL_MS)) === false) {
+      throw new Error('Tool publication generation cache rejected the lease refresh');
+    }
+    return true;
+  });
+}
+
 /** Writes a user tool snapshot only while its originating connection still owns the generation. */
 async function setCachedToolsIfCurrent(tools, options) {
   const { userId, serverName, publicationGeneration, ttl = Time.TWELVE_HOURS } = options;
@@ -275,6 +294,7 @@ module.exports = {
   setCachedTools,
   setCachedToolsIfCurrent,
   getMCPToolsCacheGeneration,
+  renewMCPToolsCacheGeneration,
   setCachedToolsWithinGlobalLock,
   getCachedAppServerSnapshots,
   setCachedAppServerSnapshots,

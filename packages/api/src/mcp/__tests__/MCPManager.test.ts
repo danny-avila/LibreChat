@@ -1908,6 +1908,46 @@ describe('MCPManager', () => {
       }
     });
 
+    it('renews the publication lease when an active durable connection is reused', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const renewalSpy = jest
+        .spyOn(toolsChanged, 'renewMCPToolsChangedGeneration')
+        .mockResolvedValue(true);
+      const serverConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'yaml',
+        startup: false,
+      };
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({ serverName, user: mockUser });
+        const internals = manager as unknown as {
+          toolPublicationLeaseRefreshes: WeakMap<MCPConnection, number>;
+        };
+        renewalSpy.mockClear();
+        internals.toolPublicationLeaseRefreshes.set(mockConnection, 0);
+
+        await manager.getUserConnection({ serverName, user: mockUser });
+
+        expect(renewalSpy).toHaveBeenCalledWith({
+          userId,
+          serverName,
+          publicationGeneration: 'generation-a',
+        });
+        expect(renewalSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        generationSpy.mockRestore();
+        renewalSpy.mockRestore();
+      }
+    });
+
     it('should detect OAuth after resolving trusted runtime URL placeholders', async () => {
       const runtimeUrlConfig: t.ParsedServerConfig = {
         type: 'streamable-http',

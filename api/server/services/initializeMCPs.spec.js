@@ -58,9 +58,11 @@ jest.mock('~/config', () => ({
 
 const mockSetMCPToolsChangedHandler = jest.fn();
 const mockSetMCPToolsChangedGenerationHandler = jest.fn();
+const mockSetMCPToolsChangedGenerationRenewalHandler = jest.fn();
 const mockRegisterShutdownTask = jest.fn();
 const mockUpdateMCPServerTools = jest.fn();
 const mockGetMCPToolsCacheGeneration = jest.fn();
+const mockRenewMCPToolsCacheGeneration = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   get registerShutdownTask() {
@@ -72,6 +74,9 @@ jest.mock('@librechat/api', () => ({
   get setMCPToolsChangedGenerationHandler() {
     return mockSetMCPToolsChangedGenerationHandler;
   },
+  get setMCPToolsChangedGenerationRenewalHandler() {
+    return mockSetMCPToolsChangedGenerationRenewalHandler;
+  },
 }));
 
 jest.mock('./Config/mcp', () => ({
@@ -80,6 +85,9 @@ jest.mock('./Config/mcp', () => ({
   },
   get getMCPToolsCacheGeneration() {
     return mockGetMCPToolsCacheGeneration;
+  },
+  get renewMCPToolsCacheGeneration() {
+    return mockRenewMCPToolsCacheGeneration;
   },
 }));
 
@@ -410,6 +418,9 @@ describe('refreshChangedServerTools', () => {
     expect(mockSetMCPToolsChangedHandler).toHaveBeenCalledWith(refreshChangedServerTools);
     expect(mockSetMCPToolsChangedGenerationHandler).toHaveBeenCalledWith(
       mockGetMCPToolsCacheGeneration,
+    );
+    expect(mockSetMCPToolsChangedGenerationRenewalHandler).toHaveBeenCalledWith(
+      mockRenewMCPToolsCacheGeneration,
     );
   });
 });

@@ -2,7 +2,9 @@ import type { MCPToolsChangedEvent } from './toolsChanged';
 import {
   setMCPToolsChangedHandler,
   setMCPToolsChangedGenerationHandler,
+  setMCPToolsChangedGenerationRenewalHandler,
   getMCPToolsChangedGeneration,
+  renewMCPToolsChangedGeneration,
   hasMCPToolsChangedHandler,
   cancelMCPToolsChanged,
   notifyMCPToolsChanged,
@@ -18,6 +20,7 @@ describe('MCP tools-changed dispatch', () => {
   afterEach(() => {
     setMCPToolsChangedHandler(null);
     setMCPToolsChangedGenerationHandler(null);
+    setMCPToolsChangedGenerationRenewalHandler(null);
     jest.useRealTimers();
   });
 
@@ -40,6 +43,19 @@ describe('MCP tools-changed dispatch', () => {
       userId: 'user-1',
       serverName: 'dynamic',
     });
+  });
+
+  it('renews a current connection-bound publication generation through the app layer', async () => {
+    const renewalHandler = jest.fn().mockResolvedValue(true);
+    setMCPToolsChangedGenerationRenewalHandler(renewalHandler);
+    const scope = {
+      userId: 'user-1',
+      serverName: 'dynamic',
+      publicationGeneration: 'generation-a',
+    };
+
+    await expect(renewMCPToolsChangedGeneration(scope)).resolves.toBe(true);
+    expect(renewalHandler).toHaveBeenCalledWith(scope);
   });
 
   it('passes a complete server snapshot and user scope to the handler', async () => {

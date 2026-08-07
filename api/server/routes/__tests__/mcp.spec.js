@@ -846,7 +846,7 @@ describe('MCP Routes', () => {
 
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -908,7 +908,7 @@ describe('MCP Routes', () => {
 
         const mockMcpManager = {
           getUserConnection: jest.fn().mockResolvedValue({
-            fetchTools: jest.fn().mockResolvedValue([]),
+            fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
           }),
         };
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -963,7 +963,9 @@ describe('MCP Routes', () => {
 
         const mockMcpManager = {
           getUserConnection: jest.fn().mockResolvedValue({
-            fetchTools: jest.fn().mockResolvedValue(fetchedTools),
+            fetchToolsSnapshot: jest
+              .fn()
+              .mockResolvedValue({ tools: fetchedTools, complete: true }),
           }),
         };
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -1033,7 +1035,9 @@ describe('MCP Routes', () => {
 
         const mockMcpManager = {
           getUserConnection: jest.fn().mockResolvedValue({
-            fetchTools: jest.fn().mockResolvedValue(fetchedTools),
+            fetchToolsSnapshot: jest
+              .fn()
+              .mockResolvedValue({ tools: fetchedTools, complete: true }),
           }),
         };
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -1096,7 +1100,9 @@ describe('MCP Routes', () => {
 
         const mockMcpManager = {
           getUserConnection: jest.fn().mockResolvedValue({
-            fetchTools: jest.fn().mockResolvedValue(fetchedTools),
+            fetchToolsSnapshot: jest
+              .fn()
+              .mockResolvedValue({ tools: fetchedTools, complete: true }),
           }),
         };
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -1212,13 +1218,16 @@ describe('MCP Routes', () => {
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
       const mockUserConnection = {
-        fetchTools: jest.fn().mockResolvedValue([
-          {
-            name: 'test-tool',
-            description: 'A test tool',
-            inputSchema: { type: 'object' },
-          },
-        ]),
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({
+          tools: [
+            {
+              name: 'test-tool',
+              description: 'A test tool',
+              inputSchema: { type: 'object' },
+            },
+          ],
+          complete: true,
+        }),
       };
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue(mockUserConnection),
@@ -1313,7 +1322,7 @@ describe('MCP Routes', () => {
       });
       require('~/config').getMCPManager.mockReturnValue({
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       });
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
@@ -1388,7 +1397,7 @@ describe('MCP Routes', () => {
       });
       require('~/config').getMCPManager.mockReturnValue({
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       });
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
@@ -1446,7 +1455,7 @@ describe('MCP Routes', () => {
       });
       require('~/config').getMCPManager.mockReturnValue({
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       });
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
@@ -1500,7 +1509,7 @@ describe('MCP Routes', () => {
       });
       require('~/config').getMCPManager.mockReturnValue({
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       });
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
@@ -1733,7 +1742,7 @@ describe('MCP Routes', () => {
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
       const mockUserConnection = {
-        fetchTools: jest.fn().mockResolvedValue([]),
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
       };
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue(mockUserConnection),
@@ -2392,10 +2401,13 @@ describe('MCP Routes', () => {
 
     it('should successfully reinitialize server and cache tools', async () => {
       const mockUserConnection = {
-        fetchTools: jest.fn().mockResolvedValue([
-          { name: 'tool1', description: 'Test tool 1', inputSchema: { type: 'object' } },
-          { name: 'tool2', description: 'Test tool 2', inputSchema: { type: 'object' } },
-        ]),
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({
+          tools: [
+            { name: 'tool1', description: 'Test tool 1', inputSchema: { type: 'object' } },
+            { name: 'tool2', description: 'Test tool 2', inputSchema: { type: 'object' } },
+          ],
+          complete: true,
+        }),
       };
 
       const mockMcpManager = {
@@ -2449,7 +2461,7 @@ describe('MCP Routes', () => {
 
     it('should handle server with custom user variables', async () => {
       const mockUserConnection = {
-        fetchTools: jest.fn().mockResolvedValue([]),
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
       };
 
       const mockMcpManager = {
@@ -2906,7 +2918,7 @@ describe('MCP Routes', () => {
 
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -2959,9 +2971,10 @@ describe('MCP Routes', () => {
 
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest
-            .fn()
-            .mockResolvedValue([{ name: 'test-tool', description: 'Test tool' }]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({
+            tools: [{ name: 'test-tool', description: 'Test tool' }],
+            complete: true,
+          }),
         }),
         getToolPublicationGeneration: jest.fn().mockReturnValue('oauth-connection-generation'),
       };
@@ -2985,6 +2998,52 @@ describe('MCP Routes', () => {
           tools: [{ name: 'test-tool', description: 'Test tool' }],
           publicationGeneration: 'oauth-connection-generation',
         }),
+      );
+    });
+
+    it('preserves cached tools when the post-OAuth snapshot is incomplete', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+      const mockTokens = {
+        access_token: 'edge-access-token',
+        refresh_token: 'edge-refresh-token',
+      };
+      const mockFlowManager = {
+        getFlowState: jest.fn(),
+        completeFlow: jest.fn(),
+      };
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: 'test-user-id:test-server',
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        metadata: { serverUrl: 'https://example.com', oauth: {} },
+        clientInfo: {},
+        codeVerifier: 'test-verifier',
+      });
+      mockOAuthCompletion(mockTokens);
+      MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockRegistryInstance.getServerConfig.mockResolvedValue({});
+      require('~/config').getMCPManager.mockReturnValue({
+        getUserConnection: jest.fn().mockResolvedValue({
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({
+            tools: [{ name: 'partial-tool', description: 'Only the first page' }],
+            complete: false,
+          }),
+        }),
+        getToolPublicationGeneration: jest.fn().mockReturnValue('oauth-connection-generation'),
+      });
+
+      const flowId = 'test-user-id:test-server';
+      const csrfToken = generateTestCsrfToken(flowId);
+      await request(app)
+        .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .expect(302);
+
+      expect(require('~/server/services/Config/mcp').updateMCPServerTools).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[MCP OAuth] Preserving cached tools for test-server because tools/list returned an incomplete snapshot',
       );
     });
   });

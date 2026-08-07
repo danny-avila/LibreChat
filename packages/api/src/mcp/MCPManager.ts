@@ -578,7 +578,7 @@ Please follow these instructions when using tools from the respective MCP server
       const hasPersistentUserConnections =
         !!userId && (this.userConnections.get(userId)?.size ?? 0) > 0;
       if (!ephemeralConnection && hasPersistentUserConnections) {
-        this.updateUserLastActivity(userId);
+        await this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
       return formatToolContent(result as t.MCPToolCallResponse, provider);

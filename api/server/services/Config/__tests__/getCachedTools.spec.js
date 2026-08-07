@@ -12,6 +12,7 @@ const {
   setCachedTools,
   setCachedToolsIfCurrent,
   getMCPToolsCacheGeneration,
+  renewMCPToolsCacheGeneration,
   getCachedAppServerSnapshots,
   setCachedAppServerSnapshots,
   runWithGlobalCacheLock,
@@ -135,6 +136,39 @@ describe('getCachedTools', () => {
         'generation-a',
         expect.any(Number),
       );
+    });
+
+    it('renews an active connection lease only for its current publication generation', async () => {
+      mockCache.get.mockResolvedValue('generation-a');
+      mockCache.set.mockResolvedValue(true);
+
+      await expect(
+        renewMCPToolsCacheGeneration({
+          userId: 'user1',
+          serverName: 'github',
+          publicationGeneration: 'generation-a',
+        }),
+      ).resolves.toBe(true);
+
+      expect(mockCache.set).toHaveBeenCalledWith(
+        ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
+        'generation-a',
+        expect.any(Number),
+      );
+    });
+
+    it('does not revive an expired or replaced publication generation', async () => {
+      mockCache.get.mockResolvedValue(null);
+
+      await expect(
+        renewMCPToolsCacheGeneration({
+          userId: 'user1',
+          serverName: 'github',
+          publicationGeneration: 'generation-a',
+        }),
+      ).resolves.toBe(false);
+
+      expect(mockCache.set).not.toHaveBeenCalled();
     });
 
     it('rejects stale user tools without writing them', async () => {

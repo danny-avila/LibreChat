@@ -543,15 +543,21 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           const oauthReconnectionManager = getOAuthReconnectionManager();
           oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
 
-          const tools = await userConnection.fetchTools();
-          const publicationGeneration = mcpManager.getToolPublicationGeneration?.(userConnection);
-          await updateMCPServerTools({
-            userId: flowState.userId,
-            serverName,
-            tools,
-            serverConfig,
-            publicationGeneration,
-          });
+          const snapshot = await userConnection.fetchToolsSnapshot();
+          if (snapshot.complete) {
+            const publicationGeneration = mcpManager.getToolPublicationGeneration?.(userConnection);
+            await updateMCPServerTools({
+              userId: flowState.userId,
+              serverName,
+              tools: snapshot.tools,
+              serverConfig,
+              publicationGeneration,
+            });
+          } else {
+            logger.warn(
+              `[MCP OAuth] Preserving cached tools for ${serverName} because tools/list returned an incomplete snapshot`,
+            );
+          }
         } else {
           logger.debug(`[MCP OAuth] System-level OAuth completed for ${serverName}`);
         }

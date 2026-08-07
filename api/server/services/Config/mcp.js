@@ -7,6 +7,7 @@ const {
   setCachedAppServerSnapshots,
   setCachedToolsIfCurrent,
   getMCPToolsCacheGeneration,
+  renewMCPToolsCacheGeneration,
 } = require('./getCachedTools');
 
 const { mergeAppTools, cacheMCPServerTools, updateMCPServerTools, getMCPServerTools } =
@@ -30,4 +31,5 @@ module.exports = {
   cacheMCPServerTools,
   updateMCPServerTools,
   getMCPToolsCacheGeneration,
+  renewMCPToolsCacheGeneration,
 };

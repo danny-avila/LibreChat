@@ -14,6 +14,7 @@ import {
   cancelMCPToolsChanged,
   getMCPToolsChangedGeneration,
   notifyMCPToolsChanged,
+  renewMCPToolsChangedGeneration,
 } from '~/mcp/toolsChanged';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { detectOAuthRequirement, MCPOAuthHandler } from '~/mcp/oauth';
@@ -63,6 +64,11 @@ export abstract class UserConnectionManager {
   private readonly forceNewConnectionQueues: Map<string, Promise<void>> = new Map();
   /** Fences durable connections whose credentials were invalidated on another replica. */
   protected readonly toolPublicationGenerations: WeakMap<MCPConnection, string> = new WeakMap();
+  /** Limits Redis lease refreshes while ensuring active connections cannot outlive their lease. */
+  private readonly toolPublicationLeaseRefreshes: WeakMap<MCPConnection, number> = new WeakMap();
+  /** Coalesces concurrent activity updates for the same durable connection. */
+  private readonly toolPublicationLeaseRenewals: WeakMap<MCPConnection, Promise<void>> =
+    new WeakMap();
 
   /** Returns the cache-publication generation captured for a durable connection. */
   public getToolPublicationGeneration(connection: MCPConnection): string | undefined {
@@ -85,13 +91,70 @@ export abstract class UserConnectionManager {
     return result;
   }
 
-  /** Updates the last activity timestamp for a user */
-  protected updateUserLastActivity(userId: string): void {
+  private async renewUserToolPublicationLeases(userId: string, now: number): Promise<void> {
+    const userConnections = this.userConnections.get(userId);
+    if (!userConnections) {
+      return;
+    }
+    const configuredIdleTimeout = Number(mcpConfig.USER_CONNECTION_IDLE_TIMEOUT);
+    const refreshInterval =
+      Number.isFinite(configuredIdleTimeout) && configuredIdleTimeout > 0
+        ? Math.max(1_000, configuredIdleTimeout / 2)
+        : 15 * 60 * 1000;
+    const renewals: Promise<void>[] = [];
+    for (const [serverName, connection] of userConnections) {
+      const publicationGeneration = this.toolPublicationGenerations.get(connection);
+      if (!publicationGeneration) {
+        continue;
+      }
+      const lastRefresh = this.toolPublicationLeaseRefreshes.get(connection) ?? 0;
+      if (now - lastRefresh < refreshInterval) {
+        continue;
+      }
+      const pendingRenewal = this.toolPublicationLeaseRenewals.get(connection);
+      if (pendingRenewal) {
+        renewals.push(pendingRenewal);
+        continue;
+      }
+      const renewal = renewMCPToolsChangedGeneration({
+        userId,
+        serverName,
+        publicationGeneration,
+      })
+        .then((renewed) => {
+          if (renewed === true) {
+            this.toolPublicationLeaseRefreshes.set(connection, now);
+          } else if (renewed === false) {
+            logger.info(
+              `[MCP][User: ${userId}][${serverName}] Publication lease is no longer current`,
+            );
+          }
+        })
+        .catch((error) => {
+          logger.warn(
+            `[MCP][User: ${userId}][${serverName}] Failed to renew tool publication lease`,
+            error,
+          );
+        });
+      this.toolPublicationLeaseRenewals.set(connection, renewal);
+      void renewal.finally(() => {
+        if (this.toolPublicationLeaseRenewals.get(connection) === renewal) {
+          this.toolPublicationLeaseRenewals.delete(connection);
+        }
+      });
+      renewals.push(renewal);
+    }
+    await Promise.all(renewals);
+  }
+
+  /** Updates activity and keeps every durable connection retained by that user leased. */
+  protected async updateUserLastActivity(userId: string): Promise<void> {
     const now = Date.now();
     this.userLastActivity.set(userId, now);
     logger.debug(
       `[MCP][User: ${userId}] Updated last activity timestamp: ${new Date(now).toISOString()}`,
     );
+    await this.renewUserToolPublicationLeases(userId, now);
   }
 
   /** Gets or creates a connection for a specific user, coalescing concurrent attempts */
@@ -486,7 +549,7 @@ export abstract class UserConnectionManager {
         connection = undefined;
       } else if (await connection.isConnected()) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
-        this.updateUserLastActivity(userId);
+        await this.updateUserLastActivity(userId);
         return connection;
       } else {
         // Connection exists but is not connected, attempt to remove potentially stale entry
@@ -606,7 +669,7 @@ export abstract class UserConnectionManager {
 
       logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
       if (!ephemeralConnection) {
-        this.updateUserLastActivity(userId);
+        await this.updateUserLastActivity(userId);
       }
       return connection;
     } catch (error) {
