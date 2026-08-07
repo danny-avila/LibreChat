@@ -1,4 +1,18 @@
-# BSON legibility spike — findings (Spike A executed, Spike B scoped)
+# Projecting FerretDB/DocumentDB BSON into readable PostgreSQL columns
+
+Can the `documentdb_core.bson` blob that FerretDB writes be exposed as typed,
+queryable PostgreSQL columns — and can those columns be replicated downstream by
+change-data-capture? Part one is answered here and passes; part two needs managed
+infrastructure and remains open.
+
+Three mechanisms are compared throughout:
+
+| Mechanism | What it is |
+|---|---|
+| **A. Generated columns + `publish_generated_columns`** | `GENERATED ALWAYS AS ... STORED` columns replicated directly. Needs PostgreSQL 18. |
+| **B. Trigger-maintained plain columns** | Ordinary columns filled by a `BEFORE INSERT OR UPDATE` row trigger. Works on PostgreSQL 17. |
+| **C. Separate projection tables** | Typed rows written alongside the collection tables, leaving DocumentDB's own tables untouched. |
+
 
 Executed 2026-08-02 against `ghcr.io/ferretdb/postgres-documentdb:17-0.107.0-ferretdb-2.7.0`
 (PostgreSQL 17.6, `documentdb` / `documentdb_core` 0.107-0) + `ghcr.io/ferretdb/ferretdb:2.7.0`,
@@ -7,28 +21,27 @@ driven through the real `mongodb` Node driver. Full accessor inventory (exit cri
 
 ## Verdict
 
-**Spike A passes on every gate: A1, A3, A4, and A5 all pass.** Typed generated columns and a
+**The local half passes on every gate.** Typed generated columns and a
 whole-document `jsonb` projection both work, and DocumentDB/FerretDB is completely indifferent
 to the extra columns.
 
-**Spike B remains open** (needs a managed PG18 + ClickPipes pipe, not provisionable locally),
-but two local findings change its framing:
+**The replication half remains open** (it needs a managed PostgreSQL 18 instance and a
+ClickPipes pipe, neither provisionable locally), but two local findings reframe it:
 
 1. **No PG18 build of the DocumentDB extension exists.** ghcr tags for
    `ferretdb/postgres-documentdb` cover PG 15/16/17 only (checked live 2026-08-02; upstream
    `microsoft/documentdb` unverified — GitHub API rate-limited). `publish_generated_columns`
-   is PG18-only, so **Option 1 cannot be deployed on a DocumentDB Postgres today even if
-   ClickPipes supports the parameter.** The B probe is still worth running to know whether
-   Option 1 becomes available when a PG18 extension build lands, but it no longer gates the
-   mechanism choice.
+   is PG18-only, so **mechanism A cannot be deployed on a DocumentDB PostgreSQL today even if
+   ClickPipes supports the parameter.** The probe is still worth running to know whether A
+   becomes available once a PG18 extension build lands, but it no longer gates the choice.
 2. **STORED generated-column values are already materialized in WAL tuples on PG17** —
    `test_decoding` prints them. The pre-18 limitation lives purely in the `pgoutput`
    publication layer that ClickPipes/PeerDB consumes. The data is there; the protocol drops it.
 
-**Matrix position: Option 2 — trigger-maintained plain columns.** Proven end-to-end locally:
+**Conclusion: mechanism B — trigger-maintained plain columns.** Proven end-to-end locally:
 a plain column maintained by a `BEFORE INSERT OR UPDATE` row trigger fires correctly on
-FerretDB's write path and its values flow through logical decoding on stock PG17. Option 1
-becomes an upgrade path if/when DocumentDB ships PG18 *and* the B probe passes.
+FerretDB's write path and its values flow through logical decoding on stock PG17. Mechanism A
+becomes an upgrade path if DocumentDB ships a PG18 build *and* the replication probe passes.
 
 ## A1 — accessor surface (pass)
 
@@ -59,7 +72,8 @@ Note the operators live in `documentdb_core`/`documentdb_api_catalog`, not on th
   `{"$date": {"$numberLong": "1785578400000"}}`, `{"$oid": "..."}`.
 - Missing field → SQL `NULL`; BSON `null` → the string `null`. Distinguishable, but remember it.
 - `text::timestamptz` is STABLE (GUC-dependent), so a direct `timestamptz` generated column
-  is rejected by Postgres — exactly the silent-corruption trap the handoff flagged. Project
+  is rejected by Postgres — the trap worth knowing about, since it fails loudly here but
+  would silently corrupt a hand-rolled equivalent. Project
   epoch millis as `bigint` (canonical `$date.$numberLong` via jsonb path ops, all immutable)
   and type it on the ClickHouse side.
 
@@ -97,7 +111,7 @@ A `ddl_command_end` event trigger filtering `CREATE TABLE` on
 created *implicitly by a FerretDB insert*, inside DocumentDB's own create path, and the
 insert succeeded. **Event trigger suffices; no `pg_cron` sweep needed** (a periodic
 reconciliation sweep is still cheap insurance). Caveat for managed Postgres: creating event
-triggers needs superuser-ish privilege — verify on the ClickHouse-managed instance.
+triggers needs superuser-ish privilege — verify on any managed instance before relying on it.
 
 ## Write amplification (exit criterion 4)
 
@@ -123,24 +137,24 @@ and ~a fifth more disk. Per-request in production, ~30µs/doc is noise next to n
   `FOR TABLES IN SCHEMA documentdb_data`.
 - The PK includes `object_id documentdb_core.bson` — a custom-type key column. Whether
   ClickPipes handles custom types (as their text representation or at all) is a real
-  question for the B probe; Option 3's projection tables sidestep it entirely with a clean
-  typed PK.
+  question for the replication probe; mechanism C's projection tables sidestep it entirely
+  with a clean typed PK.
 
-## What remains for Spike B (unchanged, plus one addition)
+## What remains for the replication probe
 
-The handoff's B probe stands as written (managed PG18, `cdc_gencol_probe`,
+The probe stands as originally scoped (managed PG18, `cdc_gencol_probe`,
 `publish_generated_columns = stored`, direct connection not PgBouncer, watch for
 ClickPipes building its own publication). Add one check: point a pipe at a table with a
 `documentdb_core.bson`-typed column — or any custom type — and observe how ClickPipes maps
-it, since that decides whether Option 2 can replicate the raw tables directly or Option 3's
-projection tables are required.
+it, since that decides whether mechanism B can replicate the raw tables directly or whether
+mechanism C's projection tables are required.
 
 ## Recommendation
 
-Proceed on **Option 2 mechanics**: plain columns + `BEFORE INSERT OR UPDATE` row triggers
-(the trigger body is three lines; scalar maintenance cost is unmeasurable). Choose between
-Option 2 and Option 3 based on the ClickPipes custom-type answer from the B probe — if
-ClickPipes chokes on `bson`-typed columns, projection tables (Option 3) become the
-replication surface and DocumentDB's tables stay untouched, which the handoff already
-called the more robust design. The DocumentDB-extension ask can now carry a concrete
-finding: the mechanism is proven, PG17 is sufficient, and no PG18 feature is required.
+Proceed on **mechanism B**: plain columns plus `BEFORE INSERT OR UPDATE` row triggers (the
+trigger body is three lines; scalar maintenance cost is unmeasurable). Choose between B and
+C once the ClickPipes custom-type question is answered — if ClickPipes chokes on
+`bson`-typed columns, projection tables (C) become the replication surface and DocumentDB's
+tables stay untouched, which is the more robust design regardless. Any upstream request to
+the DocumentDB extension can now carry a concrete finding: the mechanism is proven, PG17 is
+sufficient, and no PG18 feature is required.
