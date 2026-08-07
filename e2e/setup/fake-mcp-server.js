@@ -100,16 +100,18 @@ server.registerTool(
   },
 );
 
-server.registerTool(
-  'transport_probe',
-  {
-    description: 'Confirms that the real stdio MCP transport is connected.',
-    inputSchema: {},
-  },
-  async () => ({ content: [{ type: 'text', text: 'stdio connected' }] }),
-);
+if (process.env.E2E_MCP_LIST_CHANGED === 'true') {
+  server.registerTool(
+    'transport_probe',
+    {
+      description: 'Confirms that the real stdio MCP transport is connected.',
+      inputSchema: {},
+    },
+    async () => ({ content: [{ type: 'text', text: 'stdio connected' }] }),
+  );
 
-watchDynamicTool(server);
+  watchDynamicTool(server);
+}
 
 async function main() {
   await server.connect(new StdioServerTransport());

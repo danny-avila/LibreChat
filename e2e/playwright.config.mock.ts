@@ -30,6 +30,7 @@ const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml
 const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
 const reportPath = path.resolve(rootPath, 'e2e/playwright-report');
 const deploymentSkillsPath = path.resolve(rootPath, 'e2e/fixtures/deployment-skills');
+const enableDynamicMcp = process.env.E2E_MCP_LIST_CHANGED === 'true';
 
 const baseURL = getE2EBaseURL();
 const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
@@ -56,7 +57,7 @@ const baseEnv = {
   DEPLOYMENT_SKILLS_DIR: deploymentSkillsPath,
   /** Loaded in-process by `@librechat/api`'s `createRun` to swap in a fake model. */
   LIBRECHAT_TEST_RUN_HOOK: fakeModelHookPath,
-  E2E_MCP_STATE_PATH: MCP_STATE_PATH,
+  ...(enableDynamicMcp ? { E2E_MCP_LIST_CHANGED: 'true', E2E_MCP_STATE_PATH: MCP_STATE_PATH } : {}),
   ...vanillaOverrides,
 };
 
@@ -82,6 +83,34 @@ function writeRuntimeMockConfig() {
     process.env.E2E_MODEL_SPECS_ENFORCE === 'true'
       ? template.replace('\n  enforce: false\n', '\n  enforce: true\n')
       : template;
+  const dynamicMcpConfig = enableDynamicMcp
+    ? {
+        allowedDomain: '- http://127.0.0.1:8766',
+        stdioEnv: [
+          'env:',
+          '      E2E_MCP_LIST_CHANGED: "true"',
+          `      E2E_MCP_STATE_PATH: ${JSON.stringify(MCP_STATE_PATH)}`,
+        ].join('\n'),
+        networkServers: [
+          'e2e-streamable:',
+          '    type: streamable-http',
+          '    url: http://127.0.0.1:8766/mcp',
+          '    title: E2E Streamable HTTP',
+          '    description: Dynamic real-SDK Streamable HTTP fixture for mock end-to-end tests.',
+          '    timeout: 30000',
+          '  e2e-sse:',
+          '    type: sse',
+          '    url: http://127.0.0.1:8766/sse',
+          '    title: E2E SSE',
+          '    description: Dynamic real-SDK legacy SSE fixture for mock end-to-end tests.',
+          '    timeout: 30000',
+        ].join('\n'),
+      }
+    : { allowedDomain: '', stdioEnv: '', networkServers: '' };
+  config = config
+    .replace('# __E2E_DYNAMIC_MCP_ALLOWED_DOMAIN__', dynamicMcpConfig.allowedDomain)
+    .replace('# __E2E_DYNAMIC_MCP_STDIO_ENV__', dynamicMcpConfig.stdioEnv)
+    .replace('# __E2E_DYNAMIC_MCP_NETWORK_SERVERS__', dynamicMcpConfig.networkServers);
   /** Keep the generated config in lockstep with the overridable label-server
    *  port: the template hard-codes 8889, so an `E2E_LABEL_PORT` override that
    *  moved only the server and its health check would report ready while
@@ -89,14 +118,15 @@ function writeRuntimeMockConfig() {
   if (LABEL_PORT !== '8889') {
     config = config.split('127.0.0.1:8889').join(`127.0.0.1:${LABEL_PORT}`);
   }
-  if (MCP_DYNAMIC_PORT !== '8766') {
+  if (enableDynamicMcp && MCP_DYNAMIC_PORT !== '8766') {
     config = config.split('127.0.0.1:8766').join(`127.0.0.1:${MCP_DYNAMIC_PORT}`);
   }
-  config = config.replace('__E2E_MCP_STATE_PATH__', JSON.stringify(MCP_STATE_PATH));
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, config);
-  fs.mkdirSync(path.dirname(MCP_STATE_PATH), { recursive: true });
-  fs.writeFileSync(MCP_STATE_PATH, `${JSON.stringify({ revision: 0, tool: null })}\n`);
+  if (enableDynamicMcp) {
+    fs.mkdirSync(path.dirname(MCP_STATE_PATH), { recursive: true });
+    fs.writeFileSync(MCP_STATE_PATH, `${JSON.stringify({ revision: 0, tool: null })}\n`);
+  }
 }
 
 function neutralizeCredentialEnv(env: NodeJS.ProcessEnv, keep: Set<string>) {
@@ -177,20 +207,24 @@ export default defineConfig({
       timeout: 60_000,
       reuseExistingServer: false,
     },
-    {
-      // One real SDK server exposes both current HTTP and legacy SSE transports.
-      command: `node ${dynamicMcpServerPath}`,
-      cwd: rootPath,
-      env: {
-        ...process.env,
-        E2E_MCP_DYNAMIC_PORT: MCP_DYNAMIC_PORT,
-        E2E_MCP_STATE_PATH: MCP_STATE_PATH,
-      },
-      url: `http://127.0.0.1:${MCP_DYNAMIC_PORT}/`,
-      stdout: 'pipe',
-      timeout: 60_000,
-      reuseExistingServer: false,
-    },
+    ...(enableDynamicMcp
+      ? [
+          {
+            // One real SDK server exposes both current HTTP and legacy SSE transports.
+            command: `node ${dynamicMcpServerPath}`,
+            cwd: rootPath,
+            env: {
+              ...process.env,
+              E2E_MCP_DYNAMIC_PORT: MCP_DYNAMIC_PORT,
+              E2E_MCP_STATE_PATH: MCP_STATE_PATH,
+            },
+            url: `http://127.0.0.1:${MCP_DYNAMIC_PORT}/`,
+            stdout: 'pipe' as const,
+            timeout: 60_000,
+            reuseExistingServer: false,
+          },
+        ]
+      : []),
     {
       // Serves the activity-label model call (the custom endpoints' baseURL).
       command: `node ${labelServerPath}`,

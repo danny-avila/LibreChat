@@ -108,6 +108,11 @@ async function expectCatalog(
 }
 
 test.describe('MCP tools/list_changed transports', () => {
+  test.skip(
+    process.env.E2E_MCP_LIST_CHANGED !== 'true',
+    'runs only in the dedicated dynamic MCP topology matrix',
+  );
+
   test('refreshes the public tool catalog over stdio, Streamable HTTP, and SSE', async ({
     page,
   }) => {
