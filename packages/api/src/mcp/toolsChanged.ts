@@ -1,9 +1,41 @@
+import { createHash } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { MCPOptionsSchema } from 'librechat-data-provider';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import type { MCPOptions } from './types';
+import type { MCPOptions, ParsedServerConfig } from './types';
 
 const RETRY_BASE_DELAY_MS = 250;
 const RETRY_MAX_DELAY_MS = 30_000;
+
+type StableConfigValue =
+  | string
+  | number
+  | boolean
+  | null
+  | StableConfigValue[]
+  | { [key: string]: StableConfigValue | undefined };
+
+function sortConfigValue(value: StableConfigValue): StableConfigValue {
+  if (Array.isArray(value)) {
+    return value.map(sortConfigValue);
+  }
+  if (value == null || typeof value !== 'object') {
+    return value;
+  }
+  const sorted: { [key: string]: StableConfigValue | undefined } = {};
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = sortConfigValue(value[key] as StableConfigValue);
+  }
+  return sorted;
+}
+
+/** Returns a stable token for the connection-relevant portion of an app MCP config. */
+export function getMCPAppToolsPublicationGeneration(config: ParsedServerConfig): string {
+  const parsedConfig = MCPOptionsSchema.parse(config) as StableConfigValue;
+  return createHash('sha256')
+    .update(JSON.stringify(sortConfigValue(parsedConfig)))
+    .digest('hex');
+}
 
 /** A complete tool-list snapshot and the cache scope it belongs to. */
 export interface MCPToolsChangedEvent {

@@ -1,4 +1,5 @@
 import type { MCPToolsChangedEvent } from './toolsChanged';
+import type { ParsedServerConfig } from './types';
 import {
   setMCPToolsChangedHandler,
   setMCPToolsChangedGenerationHandler,
@@ -8,6 +9,7 @@ import {
   hasMCPToolsChangedHandler,
   cancelMCPToolsChanged,
   notifyMCPToolsChanged,
+  getMCPAppToolsPublicationGeneration,
 } from './toolsChanged';
 
 const createEvent = (name = 'one'): MCPToolsChangedEvent => ({
@@ -30,6 +32,34 @@ describe('MCP tools-changed dispatch', () => {
     expect(hasMCPToolsChangedHandler()).toBe(true);
     setMCPToolsChangedHandler(null);
     expect(hasMCPToolsChangedHandler()).toBe(false);
+  });
+
+  it('derives stable app publication generations from connection-relevant config', () => {
+    const first: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://mcp.example.com/sse',
+      headers: { Authorization: 'Bearer token', Accept: 'text/event-stream' },
+      updatedAt: 1,
+      toolFunctions: {},
+    };
+    const equivalent: ParsedServerConfig = {
+      headers: { Accept: 'text/event-stream', Authorization: 'Bearer token' },
+      url: 'https://mcp.example.com/sse',
+      type: 'sse',
+      updatedAt: 2,
+      inspectionFailed: true,
+    };
+    const changed: ParsedServerConfig = {
+      ...equivalent,
+      url: 'https://mcp.example.com/v2/sse',
+    };
+
+    expect(getMCPAppToolsPublicationGeneration(first)).toBe(
+      getMCPAppToolsPublicationGeneration(equivalent),
+    );
+    expect(getMCPAppToolsPublicationGeneration(first)).not.toBe(
+      getMCPAppToolsPublicationGeneration(changed),
+    );
   });
 
   it('captures a connection-bound publication generation from the app layer', async () => {

@@ -1,6 +1,7 @@
 import { Constants, normalizeServerName } from 'librechat-data-provider';
 import type { LCAvailableTools, ParsedServerConfig } from './types';
 import type { MCPToolInput, MCPToolCacheDeps } from './tools';
+import { getMCPAppToolsPublicationGeneration } from './toolsChanged';
 import { createMCPToolCacheService } from './tools';
 
 const requestScopedConfig: ParsedServerConfig = {
@@ -287,6 +288,55 @@ describe('createMCPToolCacheService', () => {
 
       expect(lockEntered).toHaveBeenCalledTimes(1);
     });
+
+    it('accepts an app publication only while its config generation is current', async () => {
+      const publicationGeneration = getMCPAppToolsPublicationGeneration(cacheableConfig);
+      const getCachedAppServerGenerations = jest
+        .fn()
+        .mockResolvedValue({ dynamic: publicationGeneration });
+      const setCachedAppServerGenerations = jest.fn().mockResolvedValue(true);
+      const deps = createMockDeps({
+        getCachedAppServerGenerations,
+        setCachedAppServerGenerations,
+      });
+      const service = createMCPToolCacheService(deps);
+
+      await expect(
+        service.replaceAppServerTools({
+          serverName: 'dynamic',
+          serverTools: {},
+          publicationGeneration,
+        }),
+      ).resolves.toBe(true);
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith({});
+      expect(setCachedAppServerGenerations).not.toHaveBeenCalled();
+    });
+
+    it('rejects an app publication from an obsolete config generation', async () => {
+      const oldGeneration = getMCPAppToolsPublicationGeneration(cacheableConfig);
+      const currentGeneration = getMCPAppToolsPublicationGeneration({
+        ...cacheableConfig,
+        url: 'https://mcp.example.com/v2/mcp',
+      });
+      const deps = createMockDeps({
+        getCachedAppServerGenerations: jest.fn().mockResolvedValue({ dynamic: currentGeneration }),
+        setCachedAppServerGenerations: jest.fn().mockResolvedValue(true),
+      });
+      const service = createMCPToolCacheService(deps);
+
+      await expect(
+        service.replaceAppServerTools({
+          serverName: 'dynamic',
+          serverTools: {},
+          publicationGeneration: oldGeneration,
+        }),
+      ).resolves.toBe(false);
+
+      expect(deps.getCachedTools).not.toHaveBeenCalled();
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
+      expect(deps.setCachedAppServerGenerations).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateMCPServerTools', () => {
@@ -395,6 +445,27 @@ describe('createMCPToolCacheService', () => {
         userId: 'u1',
         serverName: 'brave',
       });
+    });
+
+    it('ignores a tools-changed event captured by an obsolete app connection', async () => {
+      const oldConfig = cacheableConfig;
+      const currentConfig = { ...cacheableConfig, url: 'https://mcp.example.com/v2/mcp' };
+      const deps = createMockDeps({
+        getCachedAppServerGenerations: jest.fn().mockResolvedValue({
+          brave: getMCPAppToolsPublicationGeneration(currentConfig),
+        }),
+        setCachedAppServerGenerations: jest.fn().mockResolvedValue(true),
+      });
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      await updateMCPServerTools({
+        serverName: 'brave',
+        serverConfig: oldConfig,
+        tools: [{ name: 'stale-search' }],
+      });
+
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
+      expect(deps.setCachedAppServerGenerations).not.toHaveBeenCalled();
     });
 
     it('keeps tenant config-only refreshes in the user cache', async () => {
@@ -645,6 +716,21 @@ describe('createMCPToolCacheService', () => {
       await mergeAppTools({});
 
       expect(setCachedAppServerSnapshots).toHaveBeenCalledWith(['empty']);
+    });
+
+    it('publishes the startup app-config generations under the aggregate cache lock', async () => {
+      const setCachedAppServerGenerations = jest.fn().mockResolvedValue(true);
+      const deps = createMockDeps({
+        getAllServerConfigs: jest.fn().mockResolvedValue({ brave: cacheableConfig }),
+        setCachedAppServerGenerations,
+      });
+      const { mergeAppTools } = createMCPToolCacheService(deps);
+
+      await mergeAppTools({});
+
+      expect(setCachedAppServerGenerations).toHaveBeenCalledWith({
+        brave: getMCPAppToolsPublicationGeneration(cacheableConfig),
+      });
     });
 
     it('preserves a known-good server slice when startup inspection is incomplete', async () => {

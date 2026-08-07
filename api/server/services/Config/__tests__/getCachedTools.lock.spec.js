@@ -103,7 +103,7 @@ describe('global tool cache write lock', () => {
     ).resolves.toBe(true);
 
     expect(mockRedisClient.set).toHaveBeenCalledWith(
-      `${CacheKeys.TOOL_CACHE}:tools:mcp:user-1:server-1:write-lock`,
+      `${CacheKeys.TOOL_CACHE}:tools:mcp-write-lock:user-1:server-1`,
       expect.any(String),
       'PX',
       30_000,

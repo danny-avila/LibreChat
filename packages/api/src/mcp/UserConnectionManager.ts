@@ -552,11 +552,10 @@ export abstract class UserConnectionManager {
         await this.updateUserLastActivity(userId);
         return connection;
       } else {
-        // Connection exists but is not connected, attempt to remove potentially stale entry
         logger.warn(
           `[MCP][User: ${userId}][${serverName}] Found existing but disconnected connection object. Cleaning up.`,
         );
-        this.removeUserConnection(userId, serverName); // Clean up maps
+        await this.disconnectUserConnection(userId, serverName);
         connection = undefined;
       }
     }

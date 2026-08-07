@@ -34,11 +34,13 @@ const ToolCacheKeys = {
   GLOBAL: 'tools:global',
   /** App servers with an authoritative cached catalog, including an empty one */
   MCP_APP_SERVER_SNAPSHOTS: 'tools:mcp:app:snapshots',
+  /** Connection-config generations allowed to publish app-server tools */
+  MCP_APP_SERVER_GENERATIONS: 'tools:metadata:mcp:app-server-generations',
   /** MCP tools cached by user ID and server name */
   MCP_SERVER: (userId, serverName) => `tools:mcp:${userId}:${serverName}`,
   /** Leased generation fencing stale publications from replaced user connections */
   MCP_SERVER_GENERATION: (userId, serverName) =>
-    `tools:mcp:${userId}:${serverName}:publication-generation`,
+    `tools:metadata:mcp:user-generation:${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}`,
 };
 
 function usesSharedRedisToolCache() {
@@ -81,7 +83,7 @@ async function runWithRedisCacheLock(lockKey, ttl, wait, operation) {
 function runWithUserToolsQueue(userId, serverName, operation) {
   const scope = JSON.stringify([userId, serverName]);
   const previous = userToolsQueues.get(scope) ?? Promise.resolve();
-  const lockKey = `${CacheKeys.TOOL_CACHE}:tools:mcp:${userId}:${serverName}:write-lock`;
+  const lockKey = `${CacheKeys.TOOL_CACHE}:tools:mcp-write-lock:${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}`;
   const lockedOperation = () =>
     runWithRedisCacheLock(lockKey, USER_TOOLS_LOCK_TTL_MS, USER_TOOLS_LOCK_WAIT_MS, operation);
   const result = previous.then(lockedOperation, lockedOperation);
@@ -233,6 +235,21 @@ async function setCachedAppServerSnapshots(serverNames, ttl = Time.TWELVE_HOURS)
   return await cache.set(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS, serverNames, ttl);
 }
 
+/** Returns the app connection-config generations allowed to publish global tools. */
+async function getCachedAppServerGenerations() {
+  const cache = getLogStores(CacheKeys.TOOL_CACHE);
+  const generations = await cache.get(ToolCacheKeys.MCP_APP_SERVER_GENERATIONS);
+  return generations != null && typeof generations === 'object' && !Array.isArray(generations)
+    ? generations
+    : null;
+}
+
+/** Replaces app publication generations without expiring active, quiet connections. */
+async function setCachedAppServerGenerations(generations) {
+  const cache = getLogStores(CacheKeys.TOOL_CACHE);
+  return await cache.set(ToolCacheKeys.MCP_APP_SERVER_GENERATIONS, generations);
+}
+
 /** Serializes aggregate global-tool read/modify/write operations across Redis-backed workers. */
 async function runWithRedisGlobalCacheLock(operation) {
   return runWithRedisCacheLock(
@@ -270,7 +287,11 @@ async function invalidateCachedTools(options = {}) {
   const keysToDelete = [];
 
   if (invalidateGlobal) {
-    keysToDelete.push(ToolCacheKeys.GLOBAL, ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
+    keysToDelete.push(
+      ToolCacheKeys.GLOBAL,
+      ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS,
+      ToolCacheKeys.MCP_APP_SERVER_GENERATIONS,
+    );
   }
 
   const invalidate = () => Promise.all(keysToDelete.map((key) => cache.delete(key)));
@@ -298,6 +319,8 @@ module.exports = {
   setCachedToolsWithinGlobalLock,
   getCachedAppServerSnapshots,
   setCachedAppServerSnapshots,
+  getCachedAppServerGenerations,
+  setCachedAppServerGenerations,
   runWithGlobalCacheLock,
   invalidateCachedTools,
 };

@@ -5,6 +5,8 @@ const {
   runWithGlobalCacheLock,
   getCachedAppServerSnapshots,
   setCachedAppServerSnapshots,
+  getCachedAppServerGenerations,
+  setCachedAppServerGenerations,
   setCachedToolsIfCurrent,
   getMCPToolsCacheGeneration,
   renewMCPToolsCacheGeneration,
@@ -17,6 +19,8 @@ const { mergeAppTools, cacheMCPServerTools, updateMCPServerTools, getMCPServerTo
     setCachedToolsIfCurrent,
     getCachedAppServerSnapshots,
     setCachedAppServerSnapshots,
+    getCachedAppServerGenerations,
+    setCachedAppServerGenerations,
     runWithGlobalCacheLock,
     getServerConfig: (serverName, userId) =>
       MCPServersRegistry.getInstance().getServerConfig(serverName, userId),

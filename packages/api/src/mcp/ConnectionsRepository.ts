@@ -1,6 +1,10 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
-import { cancelMCPToolsChanged, notifyMCPToolsChanged } from './toolsChanged';
+import {
+  cancelMCPToolsChanged,
+  getMCPAppToolsPublicationGeneration,
+  notifyMCPToolsChanged,
+} from './toolsChanged';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { canUseAppConnection, isUserSourced } from './utils';
@@ -86,6 +90,8 @@ export class ConnectionsRepository {
     const registry = MCPServersRegistry.getInstance();
     const { allowedDomains, allowedAddresses, useSSRFProtection } =
       await registry.resolveAllowlists({ userId: this.ownerId });
+    const publicationGeneration =
+      this.ownerId === undefined ? getMCPAppToolsPublicationGeneration(serverConfig) : undefined;
     const connection = await MCPConnectionFactory.create(
       {
         serverName,
@@ -106,13 +112,19 @@ export class ConnectionsRepository {
         serverName,
         serverConfig,
         userId: this.ownerId,
+        publicationGeneration,
       });
     });
 
     this.connections.set(serverName, connection);
     if (this.ownerId === undefined && options.refreshTools !== false) {
       if (connection.client.getServerCapabilities()?.tools == null) {
-        await notifyMCPToolsChanged({ tools: [], serverName, serverConfig });
+        await notifyMCPToolsChanged({
+          tools: [],
+          serverName,
+          serverConfig,
+          publicationGeneration,
+        });
         return connection;
       }
       const snapshot = await connection.fetchToolsSnapshot();
@@ -121,6 +133,7 @@ export class ConnectionsRepository {
           tools: snapshot.tools,
           serverName,
           serverConfig,
+          publicationGeneration,
         });
       } else {
         await connection.refreshToolList();

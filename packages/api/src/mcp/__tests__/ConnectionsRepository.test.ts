@@ -2,7 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { setMCPToolsChangedHandler } from '~/mcp/toolsChanged';
+import { getMCPAppToolsPublicationGeneration, setMCPToolsChangedHandler } from '~/mcp/toolsChanged';
 import { MCPConnection } from '~/mcp/connection';
 
 // Mock external dependencies
@@ -161,7 +161,11 @@ describe('ConnectionsRepository', () => {
       await new Promise((resolve) => setImmediate(resolve));
 
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ serverName: 'server1', tools: [] }),
+        expect.objectContaining({
+          serverName: 'server1',
+          tools: [],
+          publicationGeneration: getMCPAppToolsPublicationGeneration(mockServerConfigs.server1),
+        }),
       );
       expect(loaded).toBe(false);
 

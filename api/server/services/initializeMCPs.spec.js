@@ -250,29 +250,31 @@ describe('initializeMCPs', () => {
   });
 
   describe('Tool merging behavior', () => {
-    it('should NOT merge tools when no configured servers exist', async () => {
+    it('should clear stale app tool metadata when no configured servers exist', async () => {
       mockGetAppConfig.mockResolvedValue({
         mcpConfig: null, // No configured servers
       });
 
       await initializeMCPs();
 
-      expect(mockMCPManagerInstance.getAppToolFunctions).not.toHaveBeenCalled();
-      expect(mockMergeAppTools).not.toHaveBeenCalled();
+      expect(mockMCPManagerInstance.getAppToolFunctions).toHaveBeenCalledTimes(1);
+      expect(mockMergeAppTools).toHaveBeenCalledWith({});
+      expect(mockMCPManagerInstance.connectAppServers).not.toHaveBeenCalled();
       expect(logger.debug).toHaveBeenCalledWith(
         '[MCP] No servers configured. MCPManager ready for UI-based servers.',
       );
     });
 
-    it('should NOT merge tools when mcpConfig is empty object', async () => {
+    it('should clear stale app tool metadata when mcpConfig is empty', async () => {
       mockGetAppConfig.mockResolvedValue({
         mcpConfig: {}, // Empty object
       });
 
       await initializeMCPs();
 
-      expect(mockMCPManagerInstance.getAppToolFunctions).not.toHaveBeenCalled();
-      expect(mockMergeAppTools).not.toHaveBeenCalled();
+      expect(mockMCPManagerInstance.getAppToolFunctions).toHaveBeenCalledTimes(1);
+      expect(mockMergeAppTools).toHaveBeenCalledWith({});
+      expect(mockMCPManagerInstance.connectAppServers).not.toHaveBeenCalled();
       expect(logger.debug).toHaveBeenCalledWith(
         '[MCP] No servers configured. MCPManager ready for UI-based servers.',
       );
