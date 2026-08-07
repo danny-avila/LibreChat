@@ -1,7 +1,15 @@
 import React, { useMemo, useEffect, useRef, useCallback } from 'react';
 import { MCPIcon } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { Brain, Globe, Layers, FolderSearch, WandSparkles, SquareChevronRight } from 'lucide-react';
+import {
+  Brain,
+  Globe,
+  Layers,
+  Settings,
+  FolderSearch,
+  WandSparkles,
+  SquareChevronRight,
+} from 'lucide-react';
 import {
   AuthType,
   Permissions,
@@ -36,6 +44,9 @@ export interface PaletteMode {
   label: string;
   active: boolean;
   onSelect: () => void;
+  /** When set, the palette row renders this instead of the text pill (e.g. a
+   *  gear for Configure). The bar chip menu still uses `label`. */
+  icon?: React.ReactNode;
 }
 
 export interface PaletteEntry {
@@ -252,6 +263,7 @@ export default function usePaletteEntries({
                 id: 'configure',
                 label: localize('com_ui_configure'),
                 active: false,
+                icon: <Settings className="h-4 w-4" aria-hidden="true" />,
                 onSelect: () => searchApiKeyForm.setIsDialogOpen(true),
               },
             ]
