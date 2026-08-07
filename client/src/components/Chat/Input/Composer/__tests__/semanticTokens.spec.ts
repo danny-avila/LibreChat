@@ -2,9 +2,19 @@ import { join } from 'node:path';
 import { readdirSync, readFileSync } from 'node:fs';
 
 const composerRoot = join(__dirname, '..');
-const composerModules = readdirSync(composerRoot, { withFileTypes: true })
-  .filter((entry) => entry.isFile() && /\.tsx?$/.test(entry.name))
-  .map((entry) => join(composerRoot, entry.name));
+
+const collectSourceModules = (directory: string): string[] =>
+  readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const sourcePath = join(directory, entry.name);
+
+    if (entry.isDirectory()) {
+      return entry.name === '__tests__' ? [] : collectSourceModules(sourcePath);
+    }
+
+    return entry.isFile() && /\.tsx?$/.test(entry.name) ? [sourcePath] : [];
+  });
+
+const composerModules = collectSourceModules(composerRoot);
 
 const protectedModules = [
   ...composerModules,
