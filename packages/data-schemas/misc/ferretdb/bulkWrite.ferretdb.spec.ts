@@ -14,9 +14,9 @@ import { createFileMethods } from '~/methods/file';
 import { createModels } from '~/models';
 
 /**
- * Differential bulkWrite specs for the five flows the search-stack plan names
- * as actually at risk on FerretDB (PLAN.md "FerretDB track"; PLAN-FINDINGS.md
- * "FerretDB bulkWrite/transaction claim contradicts in-repo evidence"):
+ * Differential bulkWrite specs. FerretDB's compatibility documentation lists
+ * `bulkWrite` as unsupported, so these measure what actually happens across
+ * the five bulkWrite call paths in this repo:
  *
  *   1. import — `bulkSaveConvos` + `bulkSaveMessages` (both hard-code/accept
  *      `timestamps:false`, matching `importBatchBuilder.saveBatch()`)
