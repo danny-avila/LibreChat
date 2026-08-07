@@ -4,13 +4,37 @@ import { migrate } from './migrate';
 
 /**
  * PostgreSQL-backed specs run against a real server addressed by
- * `CHAT_SEARCH_TEST_URL` and skip cleanly when it is unset, so the suite stays
- * green on machines without a container runtime. The URL must point at a role
- * that can CREATE DATABASE and CREATE ROLE.
+ * `CHAT_SEARCH_TEST_URL`. The URL must point at a role that can CREATE DATABASE
+ * and CREATE ROLE.
  */
 export const TEST_URL = process.env.CHAT_SEARCH_TEST_URL;
 
-export const describePg: jest.Describe = TEST_URL ? describe : describe.skip;
+export type PgDescribe = jest.Describe;
+
+/**
+ * Skipping is a local convenience, never a CI outcome.
+ *
+ * On a developer machine with no container runtime these suites skip so the rest
+ * of the package stays runnable. On a runner they must execute: an unconfigured
+ * CI reported all of this as green while executing none of it, which is how a
+ * component can be fully tested and still ship unreachable. Importing this
+ * helper without a URL under CI therefore fails the suite outright rather than
+ * quietly reclassifying it as skipped.
+ */
+function pgDescribe(): PgDescribe {
+  if (TEST_URL) {
+    return describe;
+  }
+  if (process.env.CI === 'true') {
+    throw new Error(
+      'CHAT_SEARCH_TEST_URL is unset in CI. The PostgreSQL-backed suites would skip and ' +
+        'report green without executing; start the pgvector service for this job.',
+    );
+  }
+  return describe.skip;
+}
+
+export const describePg: PgDescribe = pgDescribe();
 
 function requireUrl(): string {
   if (!TEST_URL) {

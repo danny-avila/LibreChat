@@ -27,11 +27,27 @@ jest.mock('~/server/middleware/requireJwtAuth', () => {
  * boots search the way the server does, projects a record the way the projector
  * does, and asks the real router for it over HTTP.
  *
- * Skips cleanly without `CHAT_SEARCH_TEST_URL`, like every other PostgreSQL
- * spec in the repo.
+ * Skips without `CHAT_SEARCH_TEST_URL` on a developer machine, and fails on a
+ * runner that has not configured one — mirroring `describePg` in
+ * `packages/api/src/search/pg.helper.ts`. A skip that reports green is how this
+ * wiring went missing in the first place.
  */
 const TEST_URL = process.env.CHAT_SEARCH_TEST_URL;
-const describePg = TEST_URL ? describe : describe.skip;
+
+function pgDescribe() {
+  if (TEST_URL) {
+    return describe;
+  }
+  if (process.env.CI === 'true') {
+    throw new Error(
+      'CHAT_SEARCH_TEST_URL is unset in CI. The PostgreSQL-backed suites would skip and ' +
+        'report green without executing; start the pgvector service for this job.',
+    );
+  }
+  return describe.skip;
+}
+
+const describePg = pgDescribe();
 
 const USER_ID = '65a000000000000000000001';
 const DB_NAME = 'chat_search_test_route_wiring';
