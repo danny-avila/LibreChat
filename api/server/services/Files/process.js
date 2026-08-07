@@ -17,6 +17,7 @@ const {
   isAssistantsEndpoint,
   getEndpointFileConfig,
   documentParserMimeTypes,
+  ragTextMimeTypes,
   isPermissiveMimeConfig,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
@@ -803,6 +804,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     const isDocumentParserEligible = documentParserMimeTypes.some((regex) =>
       regex.test(file.mimetype),
     );
+    const isRagTextEligible = ragTextMimeTypes.some((regex) => regex.test(file.mimetype));
 
     /**
      * When an admin narrows `fileConfig.text.supportedMimeTypes` to a non-permissive allowlist that
@@ -810,10 +812,13 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      * RAG `/text` instead of the built-in document parser. The permissive default catch-all is
      * excluded via `isPermissiveMimeConfig`, so RAG deployments that never customized text handling
      * keep the built-in parser introduced in #11900.
+     *
+     * Eligibility uses `ragTextMimeTypes` (not `documentParserMimeTypes`) since RAG `/text` does its
+     * own extraction; on RAG failure the catch below still falls back to the built-in parser.
      */
     const shouldUseConfiguredText =
       !!process.env.RAG_API_URL &&
-      isDocumentParserEligible &&
+      isRagTextEligible &&
       !isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
       fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || []);
 

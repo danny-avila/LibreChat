@@ -433,6 +433,26 @@ describe('processAgentFileUpload', () => {
       expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.document_parser);
     });
 
+    test('routes a non-parser OCR type (pptx) to RAG /text when admin narrows text config', async () => {
+      // pptx isn't in documentParserMimeTypes but is in ragTextMimeTypes → should route to RAG /text.
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      const PPTX_TEXT_REGEX = [
+        /^application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation$/,
+      ];
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: PPTX_TEXT_REGEX }));
+      const { parseText } = require('@librechat/api');
+      parseText.mockResolvedValueOnce({ text: 'rag extracted pptx', bytes: 18 });
+      const req = makeReq({ mimetype: PPTX_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(parseText).toHaveBeenCalledWith(
+        expect.objectContaining({ allowNativeFallback: false }),
+      );
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.document_parser);
+    });
+
     test('keeps the built-in document parser when text config is the permissive default', async () => {
       process.env.RAG_API_URL = 'http://rag-api.test';
       mergeFileConfig.mockReturnValue(
