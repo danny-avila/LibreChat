@@ -38,7 +38,10 @@ function readSources(messageId: string): BklSource[] | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const win = window as any;
   const mem = win.__bklSources?.[messageId];
-  if (Array.isArray(mem) && mem.length > 0) return mem;
+  // An empty array is a definitive "server returned no sources" (e.g. all
+  // ACL-filtered) — return it so the panel shows a message instead of
+  // polling forever. Only `undefined`/missing means "not loaded yet".
+  if (Array.isArray(mem)) return mem;
   try {
     const raw = localStorage.getItem('bkl_src_' + messageId);
     if (raw) {
@@ -184,6 +187,11 @@ function formatRelevance(raw: unknown): string | null {
 export default function BklSourcesPanel() {
   const [active, setActive] = useRecoilState(store.activeBklSource);
   const [sources, setSources] = useState<BklSource[] | null>(null);
+  // Flips true when the 20s cache-poll below gives up without sources —
+  // the panel then shows a "can't display" message instead of spinning
+  // forever (user report 2026-08-07: ACL 로 전부 걸러진 답변에서 "출처를
+  // 불러오는 중…" 이 영영 표시됨).
+  const [timedOut, setTimedOut] = useState(false);
 
   // Slide-in / slide-out animation, mirroring `Artifacts.tsx` so the citation
   // panel feels like a first-class LibreChat surface. `isVisible` drives the
@@ -200,6 +208,7 @@ export default function BklSourcesPanel() {
    * may land slightly after the user clicks the very first `[N]`).
    */
   useEffect(() => {
+    setTimedOut(false);
     if (!active) {
       setSources(null);
       return;
@@ -217,7 +226,10 @@ export default function BklSourcesPanel() {
         clearInterval(iv);
       }
     }, 400);
-    const to = setTimeout(() => clearInterval(iv), 20_000);
+    const to = setTimeout(() => {
+      clearInterval(iv);
+      if (!cancelled) setTimedOut(true);
+    }, 20_000);
     return () => {
       cancelled = true;
       clearInterval(iv);
@@ -359,10 +371,13 @@ export default function BklSourcesPanel() {
         <div className="flex-1 overflow-y-auto px-5 py-4 text-base">
           {current ? (
             <PanelBody source={current} />
-          ) : sources == null ? (
+          ) : sources == null && !timedOut ? (
             <p className="text-sm text-text-secondary">출처를 불러오는 중…</p>
           ) : (
-            <p className="text-sm text-text-secondary">출처 정보를 찾을 수 없습니다.</p>
+            <p className="text-sm text-text-secondary">
+              출처 정보를 표시할 수 없습니다. 접근 권한이 없거나 출처가 만료되었을 수
+              있습니다.
+            </p>
           )}
         </div>
       </div>

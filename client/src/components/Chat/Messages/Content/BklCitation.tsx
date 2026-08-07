@@ -88,6 +88,11 @@ function cacheSources(messageId: string, sources: BklSource[], rid?: string) {
     win.__bklSourcesByRid[rid] = sources;
   }
 
+  // Known-empty (e.g. every source was ACL-filtered out) is cached in session
+  // memory only: persisting `[]` to localStorage would keep the panel empty
+  // forever, even after the user later gains access to the matter.
+  if (sources.length === 0) return;
+
   try {
     _pruneLocalStorage();
     const payload = JSON.stringify({ s: sources, r: rid ?? null });
@@ -101,7 +106,9 @@ function loadSourcesFromStorage(messageId: string): BklSource[] | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const win = window as any;
   const mem = win.__bklSources?.[messageId];
-  if (Array.isArray(mem) && mem.length > 0) return mem;
+  // An empty array is a *definitive* answer ("server said no sources"), not
+  // "still loading" — return it so callers stop refetching / spinning.
+  if (Array.isArray(mem)) return mem;
 
   try {
     const raw = localStorage.getItem(_lsKey(messageId));
@@ -138,15 +145,25 @@ async function fetchSourcesForMessage(
   if (!rid) rid = win.__bklRids?.[messageId] ?? null;
   if (!rid) rid = getCachedRequestId(messageId);
 
+  // Tracks a 200 OK response whose sources array was empty (typically every
+  // source got ACL-filtered out server-side). That's a definitive "no
+  // sources for you" — cache `[]` so the UI shows a message instead of an
+  // infinite "출처를 불러오는 중…" spinner. `null` stays reserved for "could
+  // not reach the API / not persisted yet" so retries remain possible.
+  let sawEmpty = false;
+
   if (rid) {
     const resp = await fetchWithRetry(`${BKL_API}/v1/sources/${rid}`);
     if (resp) {
       try {
         const data = await resp.json();
         const sources = data.sources ?? data;
-        if (Array.isArray(sources) && sources.length > 0) {
-          cacheSources(messageId, sources, rid);
-          return sources;
+        if (Array.isArray(sources)) {
+          if (sources.length > 0) {
+            cacheSources(messageId, sources, rid);
+            return sources;
+          }
+          sawEmpty = true;
         }
       } catch {
         /* fall through */
@@ -162,18 +179,26 @@ async function fetchSourcesForMessage(
       try {
         const data = await byMsgResp.json();
         const sources: BklSource[] = data.sources ?? data;
-        if (Array.isArray(sources) && sources.length > 0) {
-          cacheSources(messageId, sources, data.request_id);
-          if (data.request_id) {
-            win.__bklRids = win.__bklRids ?? {};
-            win.__bklRids[messageId] = data.request_id;
+        if (Array.isArray(sources)) {
+          if (sources.length > 0) {
+            cacheSources(messageId, sources, data.request_id);
+            if (data.request_id) {
+              win.__bklRids = win.__bklRids ?? {};
+              win.__bklRids[messageId] = data.request_id;
+            }
+            return sources;
           }
-          return sources;
+          sawEmpty = true;
         }
       } catch {
         /* fall through */
       }
     }
+  }
+
+  if (sawEmpty) {
+    cacheSources(messageId, []);
+    return [];
   }
 
   return null;
