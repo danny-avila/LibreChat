@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
-import type { SearchClient, SearchPool, SearchScope } from './types';
-import { TENANT_GUC, USER_GUC } from './constants';
+import type { Scope } from '@librechat/data-schemas';
+import type { SearchClient, SearchPool } from './types';
+import { scopeGucStatement } from './scope';
 
 export type PoolOptions = {
   connectionString: string;
@@ -42,27 +43,20 @@ export async function withTransaction<T>(
 }
 
 /**
- * Applies tenant and user scope transaction-locally, so the RLS policies see it
- * for the life of the transaction and nothing leaks onto the pooled connection
- * after release. Empty scope is rejected here as well as at resolution time: an
- * unset GUC would make every policy predicate false, but an accidental empty
- * string is worth failing loudly rather than silently returning zero rows.
+ * Applies scope transaction-locally so the RLS policies see it for the life of
+ * the transaction and nothing leaks onto the pooled connection after release.
+ * The `Scope` is branded and can only come from the shared factory, so an unset
+ * or forged scope fails before any statement is sent rather than silently
+ * returning zero rows.
  */
-export async function applyScope(client: SearchClient, scope: SearchScope): Promise<void> {
-  if (!scope.tenantId || !scope.userId) {
-    throw new Error('[chatSearch] refusing to apply empty search scope');
-  }
-  await client.query('SELECT set_config($1, $2, true), set_config($3, $4, true)', [
-    TENANT_GUC,
-    scope.tenantId,
-    USER_GUC,
-    scope.userId,
-  ]);
+export async function applyScope(client: SearchClient, scope: Scope): Promise<void> {
+  const statement = scopeGucStatement(scope);
+  await client.query(statement.text, [...statement.values]);
 }
 
 export function withScope<T>(
   pool: SearchPool,
-  scope: SearchScope,
+  scope: Scope,
   fn: (client: SearchClient) => Promise<T>,
 ): Promise<T> {
   return withTransaction(pool, async (client) => {

@@ -1,5 +1,7 @@
+import { createScope } from '@librechat/data-schemas';
 import type { SearchClient, SearchPool } from './types';
 import { describePg, dropIsolatedDatabase, migrateFresh } from './pg.helper';
+import { scopeGucStatement } from './scope';
 import { READER_ROLE } from './roles';
 import { applyScope } from './pool';
 
@@ -52,7 +54,7 @@ describePg('chat_search row level security', () => {
 
   it('returns only the scoped tenant and user', async () => {
     const rows = await asReader(pool, async (client) => {
-      await applyScope(client, { tenantId: '__BASE__', userId: 'alice' });
+      await applyScope(client, createScope({ tenantId: '__BASE__', userId: 'alice' }));
       const result = await client.query<{ record_id: string }>(
         'SELECT record_id FROM chat_search.documents ORDER BY record_id',
       );
@@ -63,7 +65,7 @@ describePg('chat_search row level security', () => {
 
   it('does not leak across users inside one tenant', async () => {
     const rows = await asReader(pool, async (client) => {
-      await applyScope(client, { tenantId: '__BASE__', userId: 'bob' });
+      await applyScope(client, createScope({ tenantId: '__BASE__', userId: 'bob' }));
       const result = await client.query<{ record_id: string }>(
         'SELECT record_id FROM chat_search.documents ORDER BY record_id',
       );
@@ -74,7 +76,7 @@ describePg('chat_search row level security', () => {
 
   it('does not leak across tenants for the same user id', async () => {
     const rows = await asReader(pool, async (client) => {
-      await applyScope(client, { tenantId: 'acme', userId: 'alice' });
+      await applyScope(client, createScope({ tenantId: 'acme', userId: 'alice' }));
       const result = await client.query<{ record_id: string }>(
         'SELECT record_id FROM chat_search.documents ORDER BY record_id',
       );
@@ -84,8 +86,19 @@ describePg('chat_search row level security', () => {
   });
 
   it('treats the system sentinel as an ordinary literal, never a wildcard', async () => {
+    /**
+     * `createScope` refuses to mint this scope, so the GUCs are set raw here on
+     * purpose: the assertion is about the *policy*, which must never special-case
+     * `__SYSTEM__` even if some future caller bypasses the application gate. Two
+     * independent defences, tested independently.
+     */
     const rows = await asReader(pool, async (client) => {
-      await applyScope(client, { tenantId: '__SYSTEM__', userId: 'alice' });
+      await client.query('SELECT set_config($1, $2, true), set_config($3, $4, true)', [
+        'chat_search.tenant_id',
+        '__SYSTEM__',
+        'chat_search.user_id',
+        'alice',
+      ]);
       const result = await client.query<{ record_id: string }>(
         'SELECT record_id FROM chat_search.documents ORDER BY record_id',
       );
@@ -104,7 +117,7 @@ describePg('chat_search row level security', () => {
       [`[${new Array(1024).fill(0.01).join(',')}]`],
     );
     const rows = await asReader(pool, async (client) => {
-      await applyScope(client, { tenantId: '__BASE__', userId: 'alice' });
+      await applyScope(client, createScope({ tenantId: '__BASE__', userId: 'alice' }));
       const result = await client.query('SELECT record_id FROM chat_search.embeddings');
       return result.rows;
     });
@@ -116,7 +129,7 @@ describePg('chat_search row level security', () => {
     try {
       await client.query('BEGIN');
       await client.query(`SET LOCAL ROLE ${READER_ROLE}`);
-      await applyScope(client, { tenantId: '__BASE__', userId: 'alice' });
+      await applyScope(client, createScope({ tenantId: '__BASE__', userId: 'alice' }));
       await client.query('COMMIT');
 
       await client.query('BEGIN');
@@ -129,14 +142,24 @@ describePg('chat_search row level security', () => {
     }
   });
 
-  it('refuses to apply an empty scope', async () => {
-    const client = await pool.connect();
-    try {
-      await expect(applyScope(client, { tenantId: '', userId: 'alice' })).rejects.toThrow(
-        /empty search scope/,
-      );
-    } finally {
-      client.release();
-    }
+  it('cannot be handed an unbranded scope object at all', () => {
+    /**
+     * The compiler rejects this at the call site; the runtime gate is what
+     * protects a JavaScript caller and a bad `as` cast.
+     */
+    const forged = { tenantId: 'acme', userId: 'alice' } as unknown as Parameters<
+      typeof applyScope
+    >[1];
+    expect(() => scopeGucStatement(forged)).toThrow(/no Scope supplied/);
+  });
+
+  it('refuses to build a scope with an empty user', () => {
+    expect(() => createScope({ tenantId: 'acme', userId: '' })).toThrow(/userId is missing/);
+  });
+
+  it('refuses to build a scope naming the system tenant', () => {
+    expect(() => createScope({ tenantId: '__SYSTEM__', userId: 'alice' })).toThrow(
+      /query-time wildcard/,
+    );
   });
 });

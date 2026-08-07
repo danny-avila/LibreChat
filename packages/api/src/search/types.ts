@@ -1,3 +1,4 @@
+import type { Scope } from '@librechat/data-schemas';
 import type { Pool, PoolClient } from 'pg';
 
 export type SearchTarget = 'messages' | 'conversations' | 'shared-links';
@@ -11,10 +12,12 @@ export type SortField = 'title' | 'createdAt' | 'updatedAt';
 
 export type SortDirection = 'asc' | 'desc';
 
-export type SearchScope = Readonly<{
-  tenantId: string;
-  userId: string;
-}>;
+/**
+ * The branded scope from `data-schemas`. Deliberately not a local structural
+ * type: a second definition would be forgeable, and forgeability is the whole
+ * thing the brand exists to prevent.
+ */
+export type SearchScope = Scope;
 
 export type SearchFilters = {
   archived?: boolean;
