@@ -12,6 +12,10 @@ import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/erro
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { cacheConfig } from '~/cache/cacheConfig';
+import {
+  serializeMCPToolCatalogConfigContext,
+  withMCPToolCatalogConfigContext,
+} from '~/mcp/catalog';
 import { withTimeout } from '~/utils';
 
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
@@ -256,6 +260,20 @@ export class MCPServersRegistry {
     };
   }
 
+  /** Resolves the current catalog policy without falling back across an unavailable scope. */
+  public async resolveCatalogSecurityPolicy(ctx?: MCPAllowlistContext): Promise<{
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+  }> {
+    if (!this.allowlistResolver) {
+      return {
+        allowedDomains: this.allowedDomains,
+        allowedAddresses: this.allowedAddresses,
+      };
+    }
+    return await this.allowlistResolver(ctx);
+  }
+
   /**
    * Returns the config for a single server, mirroring the precedence used by
    * getAllServerConfigs so list views and single-server lookups agree on
@@ -392,7 +410,13 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true, source: 'yaml' };
+    const stubConfig: t.ParsedServerConfig = {
+      ...serializeMCPToolCatalogConfigContext(
+        withMCPToolCatalogConfigContext(config as t.ParsedServerConfig),
+      ),
+      inspectionFailed: true,
+      source: 'yaml',
+    };
     const result = await configRepo.add(serverName, stubConfig, userId);
     await this.invalidateServerReadCaches(result.serverName, userId);
     this.resetYamlServerNamesMemo();
@@ -427,7 +451,7 @@ export class MCPServersRegistry {
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
     const tagged = {
-      ...parsedConfig,
+      ...serializeMCPToolCatalogConfigContext(parsedConfig),
       source,
     };
     const result =
@@ -485,7 +509,10 @@ export class MCPServersRegistry {
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
 
-    const updatedConfig = { ...parsedConfig, updatedAt: Date.now() };
+    const updatedConfig = {
+      ...serializeMCPToolCatalogConfigContext(parsedConfig),
+      updatedAt: Date.now(),
+    };
     await configRepo.update(serverName, updatedConfig, userId);
     await this.invalidateServerReadCaches(serverName, userId);
     return { serverName, config: updatedConfig };
@@ -532,7 +559,7 @@ export class MCPServersRegistry {
       }
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
-    await configRepo.update(serverName, parsedConfig, userId);
+    await configRepo.update(serverName, serializeMCPToolCatalogConfigContext(parsedConfig), userId);
     await this.invalidateServerReadCaches(serverName, userId);
     return parsedConfig;
   }
@@ -677,7 +704,10 @@ export class MCPServersRegistry {
         `${prefix} Server initialization timed out`,
       );
 
-      const parsedConfig: t.ParsedServerConfig = { ...inspected, source: 'config' };
+      const parsedConfig: t.ParsedServerConfig = {
+        ...serializeMCPToolCatalogConfigContext(inspected),
+        source: 'config',
+      };
       await this.upsertConfigCache(cacheKey, parsedConfig);
 
       logger.info(
@@ -689,7 +719,9 @@ export class MCPServersRegistry {
       logger.error(`${prefix} Failed to initialize:`, error);
 
       const stubConfig: t.ParsedServerConfig = {
-        ...rawConfig,
+        ...serializeMCPToolCatalogConfigContext(
+          withMCPToolCatalogConfigContext(rawConfig as t.ParsedServerConfig),
+        ),
         inspectionFailed: true,
         source: 'config',
         updatedAt: Date.now(),

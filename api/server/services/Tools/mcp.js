@@ -1,5 +1,6 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
+  getMCPAuthorizationIdentity,
   getMissingCustomUserVars,
   requiresEphemeralUserConnection,
   getMissingRuntimeBodyPlaceholderFields,
@@ -166,6 +167,10 @@ async function reinitMCPServer({
     const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
     const mcpManager = getMCPManager();
     const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
+    const configuredOAuth = serverConfig?.requiresOAuth === true || serverConfig?.oauth != null;
+    const authorizationIdentityBeforeDiscovery = configuredOAuth
+      ? await getMCPAuthorizationIdentity({ userId: user.id, serverName, findToken })
+      : 'none';
 
     const oauthStart =
       _oauthStart ??
@@ -239,7 +244,7 @@ async function reinitMCPServer({
             oboTrustChecker: createOboTrustChecker(),
           });
 
-          if (discoveryResult.tools && discoveryResult.tools.length > 0) {
+          if (Array.isArray(discoveryResult.tools)) {
             tools = discoveryResult.tools;
             logger.info(
               `[MCP Reinitialize] Discovered ${tools.length} tools for ${serverName} without full auth`,
@@ -263,11 +268,24 @@ async function reinitMCPServer({
     }
 
     if (tools) {
+      const authorizationIdentityAfterDiscovery =
+        configuredOAuth || oauthRequired
+          ? await getMCPAuthorizationIdentity({ userId: user.id, serverName, findToken })
+          : 'none';
+      const authorizationIdentity =
+        authorizationIdentityBeforeDiscovery != null &&
+        authorizationIdentityAfterDiscovery === authorizationIdentityBeforeDiscovery
+          ? authorizationIdentityAfterDiscovery
+          : null;
       availableTools = await updateMCPServerTools({
+        tenantId: user.tenantId ?? getTenantId() ?? null,
         userId: user.id,
         serverName,
         tools,
         serverConfig,
+        customUserVars,
+        authorizationIdentity,
+        persistCatalog: authorizationIdentity != null,
       });
     }
 

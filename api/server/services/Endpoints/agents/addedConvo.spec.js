@@ -34,7 +34,7 @@ jest.mock('~/server/services/Files/permissions', () => ({
 }));
 
 jest.mock('~/server/services/Config', () => ({
-  getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
+  getScopedMCPServerTools: (...args) => mockGetMCPServerTools(...args),
 }));
 
 jest.mock('~/server/services/MCP', () => ({

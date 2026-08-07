@@ -50,14 +50,18 @@ function applyModelSpecSubagents(
 
 export interface LoadAddedAgentDeps {
   getAgent: (searchParameter: { id: string }) => Promise<Agent | null>;
-  getMCPServerTools: (
-    userId: string,
-    serverName: string,
-  ) => Promise<Record<string, unknown> | null>;
+  getMCPServerTools: (params: {
+    user: { id: string; tenantId?: string | null };
+    serverName: string;
+    serverConfig?: NonNullable<AppConfig['mcpConfig']>[string];
+  }) => Promise<Record<string, unknown> | null>;
 }
 
 interface LoadAddedAgentParams {
-  req: { user?: { id?: string }; config?: Record<string, unknown> };
+  req: {
+    user?: { id?: string; tenantId?: string | null };
+    config?: Record<string, unknown>;
+  };
   conversation: TConversation | null;
   primaryAgent?: Agent | null;
 }
@@ -224,7 +228,11 @@ export async function loadAddedAgent(
     const serverTools =
       overlayConfig && requiresEphemeralUserConnection(overlayConfig)
         ? null
-        : await deps.getMCPServerTools(userId, mcpServer);
+        : await deps.getMCPServerTools({
+            user: { id: userId, tenantId: req.user?.tenantId },
+            serverName: mcpServer,
+            serverConfig: overlayConfig,
+          });
     if (!serverTools) {
       tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
       addedServers.add(mcpServer);

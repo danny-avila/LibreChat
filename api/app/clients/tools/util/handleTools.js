@@ -57,9 +57,16 @@ const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSe
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
-const { getMCPServerTools, checkCapability } = require('~/server/services/Config');
+const { getScopedMCPServerTools, checkCapability } = require('~/server/services/Config');
 const { getMCPServersRegistry } = require('~/config');
-const { getRoleByName, setMemory, deleteMemory, getFormattedMemories } = require('~/models');
+const {
+  findToken,
+  getRoleByName,
+  setMemory,
+  deleteMemory,
+  getFormattedMemories,
+  findPluginAuthsByKeys,
+} = require('~/models');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -600,7 +607,14 @@ const loadTools = async ({
         }
         if (!availableTools) {
           try {
-            availableTools = await getMCPServerTools(safeUser.id, serverName, config.config);
+            availableTools = await getScopedMCPServerTools({
+              user: safeUser,
+              serverName,
+              serverConfig: config.config,
+              customUserVars: userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`],
+              findToken,
+              findPluginAuthsByKeys,
+            });
           } catch (error) {
             logger.error(`Error fetching available tools for MCP server ${serverName}:`, error);
           }

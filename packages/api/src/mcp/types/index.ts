@@ -48,7 +48,7 @@ export interface MCPResource {
 
 export interface LCFunctionTool {
   type: 'function';
-  ['function']: LCTool;
+  ['function']: LCTool & Pick<MCPTool, 'outputSchema' | 'annotations'>;
 }
 
 export type LCAvailableTools = Record<string, LCFunctionTool>;
@@ -176,6 +176,9 @@ export type ParsedServerConfig = MCPOptions & {
    * stored config remains safe if the author's role is downgraded.
    */
   author?: string;
+  /** Internal declarative values captured before MCP inspection mutates runtime metadata. */
+  catalogConfiguredRequiresOAuth?: boolean | null;
+  catalogConfiguredServerInstructions?: boolean | string | null;
 };
 
 export type AddServerResult = {

@@ -1,3 +1,5 @@
+const { createHash } = require('crypto');
+const { getTenantId } = require('@librechat/data-schemas');
 const { CacheKeys, Time } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 
@@ -8,7 +10,13 @@ const ToolCacheKeys = {
   /** Global tools available to all users */
   GLOBAL: 'tools:global',
   /** MCP tools cached by user ID and server name */
-  MCP_SERVER: (userId, serverName) => `tools:mcp:${userId}:${serverName}`,
+  MCP_SERVER: (userId, serverName, tenantId = getTenantId()) => {
+    const scope = `${tenantId ?? '__default_tenant__'}\u0000${userId}\u0000${serverName}`;
+    const digest = createHash('sha256').update(scope).digest('base64url');
+    return `tools:mcp:v2:${digest}`;
+  },
+  /** Removed after the single-tenant v2 catalog migration window. */
+  LEGACY_MCP_SERVER: (userId, serverName) => `tools:mcp:${userId}:${serverName}`,
 };
 
 /**
@@ -21,11 +29,15 @@ const ToolCacheKeys = {
  */
 async function getCachedTools(options = {}) {
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
-  const { userId, serverName } = options;
+  const { userId, serverName, tenantId = getTenantId() } = options;
 
   // Return MCP server-specific tools if requested
   if (serverName && userId) {
-    return await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName));
+    const scoped = await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName, tenantId));
+    if (scoped != null || tenantId != null) {
+      return scoped;
+    }
+    return await cache.get(ToolCacheKeys.LEGACY_MCP_SERVER(userId, serverName));
   }
 
   // Default to global tools
@@ -44,11 +56,11 @@ async function getCachedTools(options = {}) {
  */
 async function setCachedTools(tools, options = {}) {
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
-  const { userId, serverName, ttl = Time.TWELVE_HOURS } = options;
+  const { userId, serverName, tenantId = getTenantId(), ttl = Time.TWELVE_HOURS } = options;
 
   // Cache by MCP server if specified (requires userId)
   if (serverName && userId) {
-    return await cache.set(ToolCacheKeys.MCP_SERVER(userId, serverName), tools, ttl);
+    return await cache.set(ToolCacheKeys.MCP_SERVER(userId, serverName, tenantId), tools, ttl);
   }
 
   // Default to global cache
@@ -66,7 +78,7 @@ async function setCachedTools(tools, options = {}) {
  */
 async function invalidateCachedTools(options = {}) {
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
-  const { userId, serverName, invalidateGlobal = false } = options;
+  const { userId, serverName, tenantId = getTenantId(), invalidateGlobal = false } = options;
 
   const keysToDelete = [];
 
@@ -75,7 +87,10 @@ async function invalidateCachedTools(options = {}) {
   }
 
   if (serverName && userId) {
-    keysToDelete.push(ToolCacheKeys.MCP_SERVER(userId, serverName));
+    keysToDelete.push(ToolCacheKeys.MCP_SERVER(userId, serverName, tenantId));
+    if (tenantId == null) {
+      keysToDelete.push(ToolCacheKeys.LEGACY_MCP_SERVER(userId, serverName));
+    }
   }
 
   await Promise.all(keysToDelete.map((key) => cache.delete(key)));

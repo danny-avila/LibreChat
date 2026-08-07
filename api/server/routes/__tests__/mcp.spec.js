@@ -64,7 +64,8 @@ jest.mock('@librechat/api', () => {
     MCPConnection: {
       clearCooldown: jest.fn(),
     },
-    getUserMCPAuthMap: jest.fn(),
+    getUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+    getMCPAuthorizationIdentity: jest.fn().mockResolvedValue('none'),
     generateCheckAccess: jest.fn(({ permissionType, permissions }) => (req, res, next) => {
       const { PermissionTypes, Permissions } = require('librechat-data-provider');
       const isMCPUseCheck =
@@ -129,6 +130,7 @@ jest.mock('~/server/services/Config', () => ({
   setCachedTools: jest.fn(),
   getCachedTools: jest.fn(),
   getMCPServerTools: jest.fn(),
+  cacheMCPServerTools: jest.fn().mockResolvedValue(),
   loadCustomConfig: jest.fn(),
   getAppConfig: jest.fn().mockResolvedValue({ mcpConfig: {} }),
 }));
@@ -980,11 +982,57 @@ describe('MCP Routes', () => {
           expect.objectContaining({ serverConfig: mergedServerConfig }),
         );
         expect(updateMCPServerTools).toHaveBeenCalledWith({
+          tenantId: null,
           userId: 'test-user-id',
           serverName: 'test-server',
           tools: fetchedTools,
           serverConfig: mergedServerConfig,
+          customUserVars: undefined,
+          authorizationIdentity: 'none',
         });
+      });
+
+      it('should keep live callback tools but skip persistence when auth scope lookup fails', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
+          completeFlow: jest.fn().mockResolvedValue(true),
+          deleteFlow: jest.fn().mockResolvedValue(true),
+        };
+        const fetchedTools = [{ name: 'search', inputSchema: { type: 'object' } }];
+
+        getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+        MCPOAuthHandler.getFlowState.mockResolvedValue({
+          state: flowId,
+          serverName: 'test-server',
+          userId: 'test-user-id',
+          metadata: {},
+          clientInfo: {},
+          codeVerifier: 'test-verifier',
+        });
+        mockOAuthCompletion({ access_token: 'test-token' });
+        MCPTokenStorage.storeTokens.mockResolvedValue();
+        mockResolveAllMcpConfigs.mockResolvedValueOnce({
+          'test-server': { type: 'streamable-http', url: 'https://mcp.example.com' },
+        });
+        require('~/config').getMCPManager.mockReturnValue({
+          getUserConnection: jest.fn().mockResolvedValue({
+            fetchTools: jest.fn().mockResolvedValue(fetchedTools),
+          }),
+        });
+        require('~/config').getOAuthReconnectionManager.mockReturnValue({
+          clearReconnection: jest.fn(),
+        });
+        require('@librechat/api').getMCPAuthorizationIdentity.mockResolvedValueOnce(null);
+        const { updateMCPServerTools } = require('~/server/services/Config/mcp');
+
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .query({ code: 'test-code', state: flowId });
+
+        expect(response.status).toBe(302);
+        expect(updateMCPServerTools).not.toHaveBeenCalled();
       });
 
       it('should resolve and forward customUserVars so header templates are substituted on first post-callback connection', async () => {
@@ -3062,6 +3110,100 @@ describe('MCP Routes', () => {
       expect(response.status).toBe(403);
       expect(response.body).toEqual({ message: 'Forbidden: Insufficient permissions' });
       expect(mockResolveAllMcpConfigs).not.toHaveBeenCalled();
+    });
+
+    it('should skip catalog reads and writes when OAuth identity lookup fails', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const { getMCPAuthorizationIdentity } = require('@librechat/api');
+      const { getMCPServerTools, cacheMCPServerTools } = require('~/server/services/Config');
+      const liveTools = {
+        [`search${Constants.mcp_delimiter}protected`]: {
+          type: 'function',
+          function: {
+            name: `search${Constants.mcp_delimiter}protected`,
+            description: 'Search',
+            parameters: { type: 'object' },
+          },
+        },
+      };
+
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({
+        protected: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com',
+          requiresOAuth: true,
+        },
+      });
+      getMCPAuthorizationIdentity.mockResolvedValueOnce(null);
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctions: jest.fn().mockResolvedValue(liveTools),
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers.protected.tools).toHaveLength(1);
+      expect(getMCPServerTools).not.toHaveBeenCalled();
+      expect(cacheMCPServerTools).not.toHaveBeenCalled();
+    });
+
+    it('isolates credential lookup failures to servers that declare custom user variables', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const { getUserMCPAuthMap } = require('@librechat/api');
+      const { getMCPServerTools } = require('~/server/services/Config');
+      const publicToolKey = `search${Constants.mcp_delimiter}public`;
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({
+        public: { type: 'streamable-http', url: 'https://public.example.com' },
+        private: {
+          type: 'streamable-http',
+          url: 'https://private.example.com',
+          customUserVars: { API_KEY: { title: 'API key' } },
+        },
+      });
+      getUserMCPAuthMap.mockRejectedValueOnce(new Error('credential storage unavailable'));
+      getMCPServerTools.mockResolvedValueOnce({
+        [publicToolKey]: {
+          type: 'function',
+          function: {
+            name: publicToolKey,
+            description: 'Search',
+            parameters: { type: 'object' },
+          },
+        },
+      });
+      const getServerToolFunctions = jest.fn();
+      require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctions });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers.public.tools).toHaveLength(1);
+      expect(response.body.servers.private.tools).toEqual([]);
+      expect(getMCPServerTools).toHaveBeenCalledTimes(1);
+      expect(getServerToolFunctions).not.toHaveBeenCalled();
+    });
+
+    it('should persist an authoritative empty discovery without caching generic empty fallbacks', async () => {
+      const { getMCPServerTools, cacheMCPServerTools } = require('~/server/services/Config');
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({
+        empty: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com',
+          toolFunctions: {},
+        },
+      });
+      getMCPServerTools.mockResolvedValueOnce(null);
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctions: jest.fn().mockResolvedValue({}),
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers.empty.tools).toEqual([]);
+      expect(cacheMCPServerTools).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName: 'empty', serverTools: {}, authoritative: true }),
+      );
     });
 
     it('should continue returning MCP tools when one server cache lookup fails', async () => {

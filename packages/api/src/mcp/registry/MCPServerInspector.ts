@@ -13,6 +13,7 @@ import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { normalizeJsonSchema, resolveJsonSchemaRefs } from '~/mcp/zod';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
+import { withMCPToolCatalogConfigContext } from '~/mcp/catalog';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isEnabled } from '~/utils';
 
@@ -47,8 +48,13 @@ export class MCPServerInspector {
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
   ): Promise<t.ParsedServerConfig> {
+    const catalogConfig = withMCPToolCatalogConfigContext(rawConfig as t.ParsedServerConfig);
     // Validate domain against allowlist BEFORE attempting connection
-    const isDomainAllowed = await isMCPDomainAllowed(rawConfig, allowedDomains, allowedAddresses);
+    const isDomainAllowed = await isMCPDomainAllowed(
+      catalogConfig,
+      allowedDomains,
+      allowedAddresses,
+    );
     if (!isDomainAllowed) {
       const domain = extractMCPServerDomain(rawConfig);
       throw new MCPDomainNotAllowedError(domain ?? 'unknown');
@@ -58,7 +64,7 @@ export class MCPServerInspector {
     const start = Date.now();
     const inspector = new MCPServerInspector(
       serverName,
-      rawConfig,
+      catalogConfig,
       connection,
       useSSRFProtection,
       allowedDomains,

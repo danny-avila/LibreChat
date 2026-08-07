@@ -6,9 +6,11 @@
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
 const { randomUUID } = require('crypto');
-const { logger, SystemCapabilities } = require('@librechat/data-schemas');
+const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   checkAccess,
+  getUserMCPAuthMap,
+  getMCPAuthorizationIdentity,
   isUserSourced,
   MCPConnection,
   MCPErrorCodes,
@@ -126,6 +128,33 @@ const getMCPTools = async (req, res) => {
       return res.status(200).json({ servers: {} });
     }
 
+    let userMCPAuthMap = {};
+    let customUserVarsAvailable = true;
+    try {
+      userMCPAuthMap = await getUserMCPAuthMap({
+        userId,
+        servers: configuredServers,
+        findPluginAuthsByKeys: db.findPluginAuthsByKeys,
+      });
+    } catch (error) {
+      customUserVarsAvailable = false;
+      logger.error('[getMCPTools] Failed to load user MCP credentials:', error);
+    }
+    const authorizationIdentities = new Map(
+      await Promise.all(
+        configuredServers.map(async (serverName) => [
+          serverName,
+          mcpConfig[serverName]?.requiresOAuth === true || mcpConfig[serverName]?.oauth != null
+            ? await getMCPAuthorizationIdentity({
+                userId,
+                serverName,
+                findToken: db.findToken,
+              })
+            : 'none',
+        ]),
+      ),
+    );
+
     const mcpManager = getMCPManager();
     const mcpServers = {};
 
@@ -133,19 +162,39 @@ const getMCPTools = async (req, res) => {
     const cacheResults = await Promise.all(
       configuredServers.map(async (serverName) => {
         try {
+          const requiresCustomUserVars =
+            Object.keys(mcpConfig[serverName]?.customUserVars ?? {}).length > 0;
+          if (!customUserVarsAvailable && requiresCustomUserVars) {
+            return { serverName, tools: null, credentialsUnavailable: true };
+          }
+          const authorizationIdentity = authorizationIdentities.get(serverName);
           return {
             serverName,
-            tools: await getMCPServerTools(userId, serverName, mcpConfig[serverName]),
+            credentialsUnavailable: false,
+            tools:
+              authorizationIdentity == null
+                ? null
+                : await getMCPServerTools(
+                    userId,
+                    serverName,
+                    mcpConfig[serverName],
+                    userMCPAuthMap[`${Constants.mcp_prefix}${serverName}`],
+                    req.user.tenantId ?? getTenantId() ?? null,
+                    authorizationIdentity,
+                  ),
           };
         } catch (error) {
           logger.error(`[getMCPTools] Error fetching cached tools for ${serverName}:`, error);
-          return { serverName, tools: null };
+          return { serverName, tools: null, credentialsUnavailable: false };
         }
       }),
     );
-    for (const { serverName, tools } of cacheResults) {
+    for (const { serverName, tools, credentialsUnavailable } of cacheResults) {
       if (tools) {
         serverToolsMap.set(serverName, tools);
+        continue;
+      }
+      if (credentialsUnavailable) {
         continue;
       }
 
@@ -162,13 +211,33 @@ const getMCPTools = async (req, res) => {
       }
       serverToolsMap.set(serverName, serverTools);
 
-      if (Object.keys(serverTools).length > 0) {
+      const authorizationIdentityAfterDiscovery =
+        mcpConfig[serverName]?.requiresOAuth === true || mcpConfig[serverName]?.oauth != null
+          ? await getMCPAuthorizationIdentity({
+              userId,
+              serverName,
+              findToken: db.findToken,
+            })
+          : 'none';
+      const authorizationIdentityBeforeDiscovery = authorizationIdentities.get(serverName);
+      const authorizationIdentityStable =
+        authorizationIdentityBeforeDiscovery != null &&
+        authorizationIdentityAfterDiscovery === authorizationIdentityBeforeDiscovery;
+      const authoritative = Object.prototype.hasOwnProperty.call(
+        mcpConfig[serverName],
+        'toolFunctions',
+      );
+      if ((Object.keys(serverTools).length > 0 || authoritative) && authorizationIdentityStable) {
         // Cache asynchronously without blocking
         cacheMCPServerTools({
+          tenantId: req.user.tenantId ?? getTenantId() ?? null,
           userId,
           serverName,
           serverTools,
           serverConfig: mcpConfig[serverName],
+          customUserVars: userMCPAuthMap[`${Constants.mcp_prefix}${serverName}`],
+          authorizationIdentity: authorizationIdentityAfterDiscovery,
+          authoritative,
         }).catch((err) =>
           logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
         );

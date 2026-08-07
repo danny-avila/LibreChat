@@ -20,13 +20,49 @@ describe('getCachedTools', () => {
   });
 
   describe('ToolCacheKeys.MCP_SERVER', () => {
-    it('should generate cache keys that include userId', () => {
-      const key = ToolCacheKeys.MCP_SERVER('user123', 'github');
-      expect(key).toBe('tools:mcp:user123:github');
+    it('should generate opaque cache keys scoped to tenant, user, and server', () => {
+      const key = ToolCacheKeys.MCP_SERVER('user123', 'github', 'tenant-a');
+      expect(key).toMatch(/^tools:mcp:v2:/);
+      expect(key).not.toContain('tenant-a');
+      expect(key).not.toContain('user123');
+      expect(key).not.toContain('github');
+      expect(ToolCacheKeys.MCP_SERVER('user123', 'github', 'tenant-a')).toBe(key);
+      expect(ToolCacheKeys.MCP_SERVER('user123', 'github', 'tenant-b')).not.toBe(key);
     });
   });
 
   describe('TOOL_CACHE namespace usage', () => {
+    it('surfaces a legacy key only to the single-tenant cold-cache validator', async () => {
+      const legacyTools = { tool1: {} };
+      mockCache.get.mockResolvedValueOnce(null).mockResolvedValueOnce(legacyTools);
+
+      await expect(
+        getCachedTools({ userId: 'user1', serverName: 'github', tenantId: undefined }),
+      ).resolves.toBe(legacyTools);
+
+      expect(mockCache.get).toHaveBeenNthCalledWith(
+        1,
+        ToolCacheKeys.MCP_SERVER('user1', 'github', undefined),
+      );
+      expect(mockCache.get).toHaveBeenNthCalledWith(
+        2,
+        ToolCacheKeys.LEGACY_MCP_SERVER('user1', 'github'),
+      );
+    });
+
+    it('never reads an unscoped legacy key for a tenant-scoped request', async () => {
+      mockCache.get.mockResolvedValue(null);
+
+      await expect(
+        getCachedTools({ userId: 'user1', serverName: 'github', tenantId: 'tenant-a' }),
+      ).resolves.toBeNull();
+
+      expect(mockCache.get).toHaveBeenCalledTimes(1);
+      expect(mockCache.get).toHaveBeenCalledWith(
+        ToolCacheKeys.MCP_SERVER('user1', 'github', 'tenant-a'),
+      );
+    });
+
     it('getCachedTools should use TOOL_CACHE namespace', async () => {
       mockCache.get.mockResolvedValue(null);
       await getCachedTools();
@@ -65,6 +101,21 @@ describe('getCachedTools', () => {
       await invalidateCachedTools({ invalidateGlobal: true });
       expect(getLogStores).toHaveBeenCalledWith(CacheKeys.TOOL_CACHE);
       expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL);
+    });
+
+    it('does not delete an unscoped legacy key from a tenant-scoped invalidation', async () => {
+      mockCache.delete.mockResolvedValue(true);
+
+      await invalidateCachedTools({
+        userId: 'user1',
+        serverName: 'github',
+        tenantId: 'tenant-a',
+      });
+
+      expect(mockCache.delete).toHaveBeenCalledTimes(1);
+      expect(mockCache.delete).toHaveBeenCalledWith(
+        ToolCacheKeys.MCP_SERVER('user1', 'github', 'tenant-a'),
+      );
     });
 
     it('should NOT use CONFIG_STORE namespace', async () => {

@@ -280,6 +280,13 @@ describe('MCPServersRegistry', () => {
       });
     });
 
+    it('fails closed when the catalog security policy cannot be resolved', async () => {
+      const resolver = jest.fn().mockRejectedValue(new Error('DB down'));
+      const reg = createWith(['yaml.com'], null, resolver);
+
+      await expect(reg.resolveCatalogSecurityPolicy({ userId: 'u1' })).rejects.toThrow('DB down');
+    });
+
     it('inspects against the resolved (admin-panel) allowlist, not the YAML base', async () => {
       const resolver = jest.fn().mockResolvedValue({
         allowedDomains: ['admin-added.com'],

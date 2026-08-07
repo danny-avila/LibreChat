@@ -82,10 +82,10 @@ describe('loadAgent', () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 
     // Mock getMCPServerTools to return tools for each server
-    mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => {
-      if (server === 'server1') {
+    mockGetMCPServerTools.mockImplementation(async ({ serverName }: { serverName: string }) => {
+      if (serverName === 'server1') {
         return { tool1_mcp_server1: {} };
-      } else if (server === 'server2') {
+      } else if (serverName === 'server2') {
         return { tool2_mcp_server2: {} };
       }
       return null;
@@ -162,7 +162,9 @@ describe('loadAgent', () => {
     );
 
     expect(mockGetMCPServerTools).toHaveBeenCalledTimes(1);
-    expect(mockGetMCPServerTools).toHaveBeenCalledWith('user123', 'server1');
+    expect(mockGetMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({ user: { id: 'user123' }, serverName: 'server1' }),
+    );
     expect(result?.tools).toContain(`${Constants.mcp_all}${Constants.mcp_delimiter}body-scoped`);
     expect(result?.tools).toContain('tool1_mcp_server1');
   });
@@ -923,8 +925,8 @@ describe('loadAgent', () => {
       }
 
       // Mock getMCPServerTools to return all tools for server1
-      mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => {
-        if (server === 'server1') {
+      mockGetMCPServerTools.mockImplementation(async ({ serverName }: { serverName: string }) => {
+        if (serverName === 'server1') {
           return availableTools; // All 100 tools belong to server1
         }
         return null;
@@ -992,11 +994,11 @@ describe('loadAgent', () => {
       const { EPHEMERAL_AGENT_ID } = Constants;
 
       // Mock getMCPServerTools to return only tools matching the server
-      mockGetMCPServerTools.mockImplementation(async (_userId: string, server: string) => {
-        if (server === 'server1') {
+      mockGetMCPServerTools.mockImplementation(async ({ serverName }: { serverName: string }) => {
+        if (serverName === 'server1') {
           // Only return tool that correctly matches server1 format
           return { tool_mcp_server1: {} };
-        } else if (server === 'server2') {
+        } else if (serverName === 'server2') {
           return { tool_mcp_server2: {} };
         }
         return null;

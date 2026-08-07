@@ -10,6 +10,7 @@ const mockGetAllServerConfigs = jest.fn();
 const mockUserCanUseMCPServers = jest.fn();
 
 jest.mock('~/server/services/Config', () => ({
+  getScopedMCPServerTools: jest.fn(),
   getCachedTools: jest.fn().mockResolvedValue({
     web_search: true,
     execute_code: true,

@@ -26,15 +26,16 @@ type ModelParametersWithPromptPrefix = AgentModelParameters & { promptPrefix?: s
 
 export interface LoadAgentDeps {
   getAgent: (searchParameter: { id: string }) => Promise<Agent | null>;
-  getMCPServerTools: (
-    userId: string,
-    serverName: string,
-  ) => Promise<Record<string, unknown> | null>;
+  getMCPServerTools: (params: {
+    user: { id: string; tenantId?: string | null };
+    serverName: string;
+    serverConfig?: NonNullable<AppConfig['mcpConfig']>[string];
+  }) => Promise<Record<string, unknown> | null>;
 }
 
 export interface LoadAgentParams {
   req: {
-    user?: { id?: string };
+    user?: { id?: string; tenantId?: string | null };
     config?: AppConfig;
     body?: {
       promptPrefix?: string;
@@ -100,7 +101,11 @@ export async function loadEphemeralAgent(
       const serverTools =
         overlayConfig && requiresEphemeralUserConnection(overlayConfig)
           ? null
-          : await deps.getMCPServerTools(userId, mcpServer);
+          : await deps.getMCPServerTools({
+              user: { id: userId, tenantId: req.user?.tenantId },
+              serverName: mcpServer,
+              serverConfig: overlayConfig,
+            });
       if (!serverTools) {
         tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
         addedServers.add(mcpServer);

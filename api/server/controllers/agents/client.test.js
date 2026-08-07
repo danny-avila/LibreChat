@@ -117,7 +117,7 @@ describe('AgentClient - interrupt discovery persistence', () => {
 });
 
 jest.mock('~/server/services/Config', () => ({
-  getMCPServerTools: jest.fn(),
+  getScopedMCPServerTools: jest.fn(),
 }));
 
 jest.mock('~/server/services/MCP', () => ({

@@ -7,7 +7,7 @@ jest.mock('~/server/services/PermissionService', () => ({
 
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn(),
-  getMCPServerTools: jest.fn(),
+  getScopedMCPServerTools: jest.fn(),
 }));
 
 const mongoose = require('mongoose');

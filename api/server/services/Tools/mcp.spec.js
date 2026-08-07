@@ -4,6 +4,12 @@ const mockGetConnection = jest.fn();
 const mockDiscoverServerTools = jest.fn();
 const mockGetGraphApiToken = jest.fn();
 const mockUpdateMCPServerTools = jest.fn();
+const mockGetMCPAuthorizationIdentity = jest.fn();
+
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  getMCPAuthorizationIdentity: (...args) => mockGetMCPAuthorizationIdentity(...args),
+}));
 
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
@@ -45,6 +51,34 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUpdateMCPServerTools.mockResolvedValue({});
+    mockGetMCPAuthorizationIdentity.mockResolvedValue('none');
+  });
+
+  it('keeps live tools but skips persistence when the grant rotates during discovery', async () => {
+    const tools = [{ name: 'search', inputSchema: { type: 'object' } }];
+    mockGetMCPAuthorizationIdentity
+      .mockResolvedValueOnce('grant-a')
+      .mockResolvedValueOnce('grant-b');
+    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue(tools) });
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: {
+        type: 'streamable-http',
+        url: 'https://thingy.example.com/mcp',
+        requiresOAuth: true,
+      },
+    });
+
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools,
+        authorizationIdentity: null,
+        persistCatalog: false,
+      }),
+    );
+    expect(mockGetMCPAuthorizationIdentity).toHaveBeenCalledTimes(2);
   });
 
   it('does not connect and exposes no tools when a required customUserVar is unset', async () => {
@@ -112,12 +146,15 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       userMCPAuthMap: undefined,
     });
 
-    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith({
-      userId: user.id,
-      serverName,
-      tools: [],
-      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
-    });
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: user.id,
+        serverName,
+        tools: [],
+        serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      }),
+    );
+    expect(mockGetMCPAuthorizationIdentity).not.toHaveBeenCalled();
   });
 
   it('passes request body and Graph resolver into connection creation', async () => {
@@ -164,6 +201,9 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
         requestBody,
         graphTokenResolver: mockGetGraphApiToken,
       }),
+    );
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({ tools: [], persistCatalog: true }),
     );
   });
 

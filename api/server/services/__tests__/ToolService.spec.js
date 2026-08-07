@@ -24,6 +24,7 @@ jest.mock('~/server/services/Config', () => ({
 
 const mockLoadToolDefinitions = jest.fn();
 const mockGetUserMCPAuthMap = jest.fn();
+const mockGetMCPAuthorizationIdentity = jest.fn();
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
@@ -31,6 +32,7 @@ jest.mock('@librechat/api', () => ({
     ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
   loadToolDefinitions: (...args) => mockLoadToolDefinitions(...args),
   getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
+  getMCPAuthorizationIdentity: (...args) => mockGetMCPAuthorizationIdentity(...args),
   sendEvent: (...args) => mockSendEvent(...args),
   GenerationJobManager: {
     emitChunk: (...args) => mockEmitChunk(...args),
@@ -82,6 +84,7 @@ jest.mock('~/server/services/Threads', () => ({
   recordUsage: jest.fn(),
 }));
 jest.mock('~/models', () => ({
+  findToken: jest.fn().mockResolvedValue(null),
   findPluginAuthsByKeys: jest.fn(),
 }));
 jest.mock('~/config', () => ({
@@ -155,10 +158,50 @@ describe('ToolService - Action Capability Gating', () => {
     mockGetMCPServerTools.mockResolvedValue(null);
     mockGetCachedTools.mockResolvedValue(null);
     mockGetUserMCPAuthMap.mockResolvedValue({});
+    mockGetMCPAuthorizationIdentity.mockResolvedValue('none');
     mockGetServerConfig.mockResolvedValue(undefined);
     mockFlowManager.getFlowState.mockResolvedValue(undefined);
     mockResolveConfigServers.mockResolvedValue({});
     mockResolveMcpServerNames.mockResolvedValue([]);
+  });
+
+  it('does not query OAuth grant identity for a non-OAuth MCP server', async () => {
+    const serverName = 'public-server';
+    const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+    const req = createMockReq([AgentCapabilities.tools]);
+    mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig([AgentCapabilities.tools]));
+    mockResolveConfigServers.mockResolvedValue({
+      [serverName]: { type: 'streamable-http', url: 'https://mcp.example.com' },
+    });
+    mockGetMCPServerTools.mockResolvedValue({
+      [mcpTool]: { function: { name: mcpTool, description: 'Search', parameters: {} } },
+    });
+    mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+      const tools = await deps.getOrFetchMCPServerTools(params.userId, serverName);
+      return {
+        toolDefinitions: tools ? Object.keys(tools) : [],
+        toolRegistry: new Map(),
+        hasDeferredTools: false,
+      };
+    });
+
+    const result = await loadAgentTools({
+      req,
+      res: {},
+      agent: { id: 'agent_123', tools: [mcpTool] },
+      definitionsOnly: true,
+    });
+
+    expect(result.toolDefinitions).toEqual([mcpTool]);
+    expect(mockGetMCPAuthorizationIdentity).not.toHaveBeenCalled();
+    expect(mockGetMCPServerTools).toHaveBeenCalledWith(
+      req.user.id,
+      serverName,
+      expect.any(Object),
+      undefined,
+      null,
+      'none',
+    );
   });
 
   describe('resolveAgentCapabilities', () => {
@@ -785,6 +828,9 @@ describe('ToolService - Action Capability Gating', () => {
         req.user.id,
         serverName,
         expect.objectContaining({ requiresOAuth: true }),
+        undefined,
+        null,
+        'none',
       );
       expect(reinitMCPServer).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -859,6 +905,9 @@ describe('ToolService - Action Capability Gating', () => {
         req.user.id,
         serverName,
         expect.objectContaining({ requiresOAuth: true }),
+        undefined,
+        null,
+        'none',
       );
       expect(reinitMCPServer).toHaveBeenCalledTimes(1);
       expect(reinitMCPServer).toHaveBeenCalledWith(
@@ -1082,6 +1131,9 @@ describe('ToolService - Action Capability Gating', () => {
         expect.objectContaining({
           url: expect.stringContaining('LIBRECHAT_BODY_MESSAGEID'),
         }),
+        undefined,
+        null,
+        'none',
       );
     });
 
@@ -1133,6 +1185,9 @@ describe('ToolService - Action Capability Gating', () => {
         expect.objectContaining({
           url: expect.stringContaining('LIBRECHAT_BODY_MESSAGEID'),
         }),
+        undefined,
+        null,
+        'none',
       );
     });
 
@@ -1233,6 +1288,9 @@ describe('ToolService - Action Capability Gating', () => {
         req.user.id,
         serverName,
         expect.objectContaining({ url: 'https://config.example.com/mcp' }),
+        { TOKEN: 'secret' },
+        null,
+        'none',
       );
     });
   });

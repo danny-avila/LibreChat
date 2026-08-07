@@ -23,6 +23,7 @@ const {
   OAUTH_SESSION_COOKIE,
   mcpConfig: mcpSettings,
   getServerCustomUserVars,
+  getMCPAuthorizationIdentity,
 } = require('@librechat/api');
 const {
   createMCPServerController,
@@ -520,6 +521,11 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             }
           }
           const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
+          const authorizationIdentityBeforeDiscovery = await getMCPAuthorizationIdentity({
+            userId: flowState.userId,
+            serverName,
+            findToken: db.findToken,
+          });
 
           const userConnection = await mcpManager.getUserConnection({
             user,
@@ -543,12 +549,25 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
 
           const tools = await userConnection.fetchTools();
-          await updateMCPServerTools({
+          const authorizationIdentityAfterDiscovery = await getMCPAuthorizationIdentity({
             userId: flowState.userId,
             serverName,
-            tools,
-            serverConfig,
+            findToken: db.findToken,
           });
+          if (
+            authorizationIdentityBeforeDiscovery != null &&
+            authorizationIdentityAfterDiscovery === authorizationIdentityBeforeDiscovery
+          ) {
+            await updateMCPServerTools({
+              tenantId: flowState.tenantId ?? getTenantId() ?? null,
+              userId: flowState.userId,
+              serverName,
+              tools,
+              serverConfig,
+              customUserVars,
+              authorizationIdentity: authorizationIdentityAfterDiscovery,
+            });
+          }
         } else {
           logger.debug(`[MCP OAuth] System-level OAuth completed for ${serverName}`);
         }

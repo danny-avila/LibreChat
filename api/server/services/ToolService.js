@@ -1,4 +1,4 @@
-const { logger, redactMessage } = require('@librechat/data-schemas');
+const { logger, getTenantId, redactMessage } = require('@librechat/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 const {
   sleep,
@@ -10,6 +10,7 @@ const {
 const {
   sendEvent,
   getToolkitKey,
+  getMCPAuthorizationIdentity,
   getUserMCPAuthMap,
   loadToolDefinitions,
   GenerationJobManager,
@@ -84,7 +85,7 @@ const {
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
-const { findPluginAuthsByKeys } = require('~/models');
+const { findToken, findPluginAuthsByKeys } = require('~/models');
 const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 
@@ -888,7 +889,21 @@ async function loadToolDefinitionsWrapper({
       return mcpAvailableTools[serverName];
     }
 
-    const cached = await getMCPServerTools(userId, serverName, serverConfig);
+    const configuredOAuth = serverConfig.requiresOAuth === true || serverConfig.oauth != null;
+    const authorizationIdentity = configuredOAuth
+      ? await getMCPAuthorizationIdentity({ userId, serverName, findToken })
+      : 'none';
+    const cached =
+      authorizationIdentity == null
+        ? null
+        : await getMCPServerTools(
+            userId,
+            serverName,
+            serverConfig,
+            customUserVars,
+            req.user.tenantId ?? getTenantId() ?? null,
+            authorizationIdentity,
+          );
     if (cached) {
       rememberMCPAvailableTools(serverName, cached);
       await addPendingOAuthServer();
