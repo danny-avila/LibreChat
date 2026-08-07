@@ -18,6 +18,7 @@ import {
   createMCPAuthorityMethods,
   createMCPAuthorityBootRevision,
 } from './mcpAuthority';
+import { MCP_AUTHORITY_SNAPSHOT_TRANSACTION_OPTIONS } from './mcpAuthorityTransaction';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { tenantStorage } from '~/config/tenantContext';
 import { createModels } from '~/models';
@@ -296,11 +297,7 @@ describe('MCP authority proofs', () => {
       await session.endSession();
     }
 
-    expect(startTransactionSpy).toHaveBeenCalledWith({
-      readPreference: 'primary',
-      readConcern: { level: 'snapshot' },
-      writeConcern: { w: 'majority' },
-    });
+    expect(startTransactionSpy.mock.calls[0]?.[0]).toBe(MCP_AUTHORITY_SNAPSHOT_TRANSACTION_OPTIONS);
     expect(querySessionSpy).toHaveBeenCalledTimes(12);
     expect(querySessionSpy.mock.calls.every(([attached]) => attached === session)).toBe(true);
     expect(aggregateSessionSpy).toHaveBeenCalledTimes(2);

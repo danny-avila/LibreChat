@@ -115,14 +115,26 @@ import {
   type MCPAuthorityConfigSourceDocument,
   type MCPAuthorityCredentialSourceDocument,
 } from './mcpAuthority';
+import {
+  MCPAuthoritySnapshotTransactionCapabilityError,
+  getMCPAuthoritySnapshotTransactionCapability,
+  assertMCPAuthoritySnapshotTransactionCapability,
+  type MCPAuthoritySnapshotTransactionCapability,
+  type MCPAuthoritySnapshotTransactionCapabilityReason,
+} from './mcpAuthorityTransactionCapability';
+import { MCP_AUTHORITY_SNAPSHOT_TRANSACTION_OPTIONS } from './mcpAuthorityTransaction';
 
 export {
   RoleConflictError,
   MCPAuthorityProofError,
+  MCPAuthoritySnapshotTransactionCapabilityError,
+  MCP_AUTHORITY_SNAPSHOT_TRANSACTION_OPTIONS,
   MAX_MCP_AUTHORITY_TARGETS,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
   DEFAULT_SESSION_EXPIRY,
   createMCPAuthorityBootRevision,
+  getMCPAuthoritySnapshotTransactionCapability,
+  assertMCPAuthoritySnapshotTransactionCapability,
   createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
@@ -374,6 +386,8 @@ export type {
   ConfigMethods,
   MCPAuthorityMethods,
   MCPAuthorityMethodHooks,
+  MCPAuthoritySnapshotTransactionCapability,
+  MCPAuthoritySnapshotTransactionCapabilityReason,
   MCPAuthorityConfigSourceDocument,
   MCPAuthorityCredentialSourceDocument,
 };

@@ -75,17 +75,12 @@
 #     restart: always
 
 # # USE MONGODB V4.4.18 - FOR OLDER CPU WITHOUT AVX SUPPORT
-#   mongodb:
-#     image: mongo:4.4.18
+# # docker compose -f docker-compose.yml -f config/mongodb/legacy-compose.override.yml up -d
 
-# # DISABLE THE MONGODB CONTAINER - YOU NEED TO SET AN ALTERNATIVE MONGODB URI IN THE .ENV FILE
-#   api:
-#     environment:
-#       - MONGO_URI=${MONGO_URI}
-#   mongodb:
-#     image: tianon/true
-#     command: ""
-#     entrypoint: ""
+# # USE AN EXTERNAL MONGODB DEPLOYMENT
+# # Set MONGO_URI in .env, then include the maintained override so the API does not wait for the
+# # bundled MongoDB replica set:
+# # docker compose -f docker-compose.yml -f config/mongodb/external-compose.override.yml up -d
 
 # # EXPOSE MONGODB PORTS - USE CAREFULLY, THIS MAKES YOUR DATABASE VULNERABLE TO ATTACKS
 #   mongodb:

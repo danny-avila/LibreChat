@@ -1,0 +1,24 @@
+services:
+  api:
+    depends_on:
+      mongodb:
+        condition: service_completed_successfully
+      mongodb-init:
+        condition: service_completed_successfully
+    environment:
+      - MONGO_URI=${MONGO_URI}
+  mongodb:
+    image: tianon/true:multiarch@sha256:9314ed25b116fe075b90f854b6959ace635e981c39e932dfc4c902322f60b13e
+    restart: 'no'
+    command: []
+    entrypoint: ['/true']
+    healthcheck:
+      disable: true
+  mongodb-init:
+    image: tianon/true:multiarch@sha256:9314ed25b116fe075b90f854b6959ace635e981c39e932dfc4c902322f60b13e
+    restart: 'no'
+    depends_on:
+      mongodb:
+        condition: service_completed_successfully
+    command: []
+    entrypoint: ['/true']

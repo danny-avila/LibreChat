@@ -1,3 +1,4 @@
 # Domain language
 
 - **Agent run envelope**: the versioned, JSON-safe request contract created after ingress authentication and protocol validation but before agent, provider, tool, or MCP initialization. It carries only the validated protocol payload and the minimum trusted principal identifiers. The execution host rehydrates all runtime state from those identifiers.
+- **MCP authority snapshot-transaction capability**: the post-role-seeding, read-only proof that a database can start a primary snapshot transaction, read from the base `roles` collection, and commit with majority write concern. This proves database transaction semantics only; authority schema readiness is a separate integration responsibility. Unsupported deployments disable authority-dependent MCP work without changing general application availability.

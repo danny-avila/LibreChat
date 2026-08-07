@@ -7,6 +7,9 @@ on:
       - '.github/workflows/docker-smoke.yml'
       - '.dockerignore'
       - 'Dockerfile.multi'
+      - 'deploy-compose.yml'
+      - 'docker-compose.yml'
+      - 'docker-compose.override.yml.example'
       - 'package.json'
       - 'package-lock.json'
       - 'api/**'
@@ -80,7 +83,58 @@ jobs:
           docker run --rm librechat-api-smoke:ci \
             node -e "require('@librechat/api'); require('@librechat/api/telemetry'); console.log('module resolution OK')"
 
-      # Boot the real entrypoint against a real MongoDB so the *entire* server
+      - name: Validate local and external MongoDB Compose modes
+        env:
+          MONGO_URI: mongodb://external-mongodb.example:27017/LibreChat
+        run: |
+          cp .env.example .env
+          trap 'rm -f .env' EXIT
+          docker compose -f docker-compose.yml config --format json \
+            | node config/mongodb/assert-compose.mjs local
+          docker compose -f deploy-compose.yml config --format json \
+            | node config/mongodb/assert-compose.mjs local
+          EXPECTED_MONGO_IMAGE=mongo:4.4.18 docker compose \
+            -f docker-compose.yml \
+            -f config/mongodb/legacy-compose.override.yml \
+            config --format json \
+            | EXPECTED_MONGO_IMAGE=mongo:4.4.18 node config/mongodb/assert-compose.mjs local
+          docker compose \
+            -f docker-compose.yml \
+            -f config/mongodb/external-compose.override.yml \
+            config --format json \
+            | node config/mongodb/assert-compose.mjs external
+          docker compose \
+            -f deploy-compose.yml \
+            -f config/mongodb/external-compose.override.yml \
+            config --format json \
+            | node config/mongodb/assert-compose.mjs external
+          MONGO_URI= docker compose \
+            -f docker-compose.yml \
+            -f config/mongodb/external-compose.override.yml \
+            config --format json \
+            | MONGO_URI= node config/mongodb/assert-compose.mjs external
+
+      - name: Verify external MongoDB no-op image platforms
+        run: |
+          docker buildx imagetools inspect --raw \
+            tianon/true:multiarch@sha256:9314ed25b116fe075b90f854b6959ace635e981c39e932dfc4c902322f60b13e \
+            | node config/mongodb/assert-image-platforms.mjs
+
+      - name: Verify MongoDB initializer configuration contract
+        run: npm run test:mongodb-deployment
+
+      - name: Verify MongoDB existing-volume migration and rollback
+        run: sh config/mongodb/smoke-migration.sh
+
+      - name: Verify MongoDB initializer rejects unknown persisted configuration
+        run: sh config/mongodb/smoke-invalid-config.sh
+
+      - name: Verify MongoDB 4.4 replica-set compatibility
+        env:
+          MONGO_SERVER_IMAGE: mongo:4.4.18
+        run: sh config/mongodb/smoke-migration.sh
+
+      # Boot the real entrypoint against the default one-node MongoDB replica set so the *entire* server
       # require graph loads (api/db throws at module scope without MONGO_URI, and
       # is imported before models/services/routes), then gate on /readyz AND the
       # container staying alive. /readyz only returns 200 after the post-listen
@@ -91,11 +145,18 @@ jobs:
         run: |
           set -u
           docker network create lc-smoke
-          docker run -d --name lc-mongo --network lc-smoke mongo:8.0.20
+          docker run -d --name lc-mongo --network lc-smoke --network-alias mongodb \
+            mongo:8.0.20 mongod --noauth --replSet rs0 --bind_ip_all
+          docker run --rm --network lc-smoke \
+            -v "$PWD/config/mongodb/init-replica-set.js:/scripts/init-replica-set.js:ro" \
+            -v "$PWD/config/mongodb/init-replica-set.sh:/scripts/init-replica-set.sh:ro" \
+            -v "$PWD/config/mongodb/replica-set-config.js:/scripts/replica-set-config.js:ro" \
+            --entrypoint /bin/sh \
+            mongo:8.0.20 /scripts/init-replica-set.sh
           docker run -d --name lc-api --network lc-smoke -p 3080:3080 \
             -e HOST=0.0.0.0 -e PORT=3080 \
             -e NODE_ENV=production \
-            -e MONGO_URI=mongodb://lc-mongo:27017/LibreChat \
+            -e 'MONGO_URI=mongodb://mongodb:27017/LibreChat?replicaSet=rs0' \
             -e CREDS_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
             -e CREDS_IV=0123456789abcdef0123456789abcdef \
             -e JWT_SECRET=docker-smoke-jwt-secret \

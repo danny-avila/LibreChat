@@ -9,8 +9,12 @@ services:
     ports:
       - 3080:3080
     depends_on:
-      - mongodb
-      - rag_api
+      mongodb:
+        condition: service_healthy
+      mongodb-init:
+        condition: service_completed_successfully
+      rag_api:
+        condition: service_started
     restart: always
     extra_hosts:
     - "host.docker.internal:host-gateway"
@@ -19,7 +23,7 @@ services:
     environment:
       - HOST=0.0.0.0
       - NODE_ENV=production
-      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat?replicaSet=rs0
       - MEILI_HOST=http://meilisearch:7700
       - LIBRECHAT_TEMP_CREDENTIALS_PATH=/app/data/.env.temp
       - RAG_PORT=${RAG_PORT:-8000}
@@ -77,7 +81,28 @@ services:
     restart: always
     volumes:
       - ./data-node:/data/db
-    command: mongod --noauth
+    command: mongod --noauth --replSet rs0 --bind_ip_all
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "shell=mongosh; command -v mongosh >/dev/null 2>&1 || shell=mongo; $$shell --quiet --host mongodb:27017 --eval 'const status = db.adminCommand({ isMaster: 1 }); quit(status.ismaster ? 0 : 1)'",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 5s
+  mongodb-init:
+    image: mongo:8.0.20
+    restart: 'no'
+    depends_on:
+      mongodb:
+        condition: service_started
+    volumes:
+      - ./config/mongodb/init-replica-set.js:/scripts/init-replica-set.js:ro
+      - ./config/mongodb/init-replica-set.sh:/scripts/init-replica-set.sh:ro
+      - ./config/mongodb/replica-set-config.js:/scripts/replica-set-config.js:ro
+    entrypoint: ['/bin/sh', '/scripts/init-replica-set.sh']
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.35.1

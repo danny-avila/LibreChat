@@ -32,6 +32,7 @@ import type {
   MCPAuthorityImmutableConfig,
   MCPAuthorityServerSource,
 } from '~/types';
+import { MCP_AUTHORITY_SNAPSHOT_TRANSACTION_OPTIONS } from './mcpAuthorityTransaction';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { MCP_AUTHORITY_PROOF_VERSION } from '~/types';
 import { getTenantId } from '~/config/tenantContext';
@@ -1544,11 +1545,7 @@ export function createMCPAuthorityMethods(
     const session = suppliedSession ?? (await mongoose.startSession());
     const ownsSession = suppliedSession == null;
     try {
-      session.startTransaction({
-        readPreference: 'primary',
-        readConcern: { level: 'snapshot' },
-        writeConcern: { w: 'majority' },
-      });
+      session.startTransaction(MCP_AUTHORITY_SNAPSHOT_TRANSACTION_OPTIONS);
       const proof = await loadCurrentProof(userId, tenantId, boot, targets, session);
       await session.commitTransaction();
       return proof;
