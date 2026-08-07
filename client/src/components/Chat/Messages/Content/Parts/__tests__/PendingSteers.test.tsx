@@ -1,9 +1,12 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryKeys } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Agents, TMessage } from 'librechat-data-provider';
 import type { PendingSteer } from '~/store/families';
+import { applyPendingAction } from '~/utils/approval';
 import PendingSteers from '../PendingSteers';
 import store from '~/store';
 
@@ -40,13 +43,16 @@ const pending = (over: Partial<PendingSteer> = {}): PendingSteer => ({
   ...over,
 });
 
-function renderPending(steers: PendingSteer[]) {
-  /* The escalation control reads the message cache to gate on an approval
-     pause, which is route-scoped — the same providers the chat view supplies
-     around this row in the app. */
+function renderPending(steers: PendingSteer[], messages?: TMessage[]) {
+  /* The escalation control reads the message cache to gate on a run pause,
+     which is route-scoped: the same providers the chat view supplies around
+     this row in the app. */
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  if (messages) {
+    queryClient.setQueryData([QueryKeys.messages, CONVO_ID], messages);
+  }
   return render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
@@ -130,6 +136,26 @@ describe('PendingSteers', () => {
         pending({ status: 'pending', steerId: 's-arming', preempt: true }),
         pending({ status: 'pending', steerId: 's-other' }),
       ]);
+      expect(screen.getByTestId('steer-escalate-now')).toBeDisabled();
+    });
+
+    /* Both an unresolved tool approval and a live `ask_user_question` suspend
+       the generation while keeping its submission slot occupied, so an arm
+       would be refused either way. Gating on approvals alone left this control
+       enabled through a question while the composer correctly refused. */
+    it('disables escalation while the run is paused on a question', () => {
+      const askAction = {
+        actionId: 'a1',
+        streamId: 's1',
+        createdAt: 0,
+        payload: { type: 'ask_user_question', question: { question: 'Which one?' } },
+      } as unknown as Agents.PendingAction;
+      const paused = applyPendingAction(
+        { messageId: 'm1', isCreatedByUser: false, content: [] } as unknown as TMessage,
+        askAction,
+      );
+
+      renderPending([pending({ status: 'pending', steerId: 's-paused' })], [paused]);
       expect(screen.getByTestId('steer-escalate-now')).toBeDisabled();
     });
 

@@ -8,7 +8,7 @@ import useAttachItems from '../useAttachItems';
 /**
  * Ports the destination-visibility cases from the deleted `AttachFileMenu`
  * spec, which is where this logic used to live. They cover the rule that
- * decides which upload destinations exist at all — the one that silently lost
+ * decides which upload destinations exist at all: the one that silently lost
  * both tool destinations when the palette stopped passing the ephemeral agent.
  */
 

@@ -7,7 +7,7 @@ import store from '~/store';
 
 /**
  * What the palette is offered, before it decides how to draw it. Every row here
- * is gated twice — by a permission and by an agent capability — and a row that
+ * is gated twice (by a permission and by an agent capability) and a row that
  * appears without both is a tool the user cannot actually use.
  */
 
@@ -74,6 +74,8 @@ interface ContextFixture {
     selectableServers?: ServerFixture[];
     mcpValues: string[];
     toggleServerSelection: jest.Mock;
+    connectionStatus?: Record<string, { connectionState: string }>;
+    initializeServer?: jest.Mock;
   };
   [key: string]: unknown;
 }
@@ -375,10 +377,23 @@ describe('usePaletteEntries', () => {
 
     it('toggles a server by its own name, not by its title', () => {
       const context = fullContext();
+      /* Already connected, so the row goes straight to the toggle rather than
+         through the initialize/configure branch an unknown status now takes. */
+      context.mcpServerManager.connectionStatus = { github: { connectionState: 'connected' } };
       mockContext = context;
       const row = entries().result.current.find((item) => item.key === 'mcp:github');
       act(() => row?.onSelect());
       expect(context.mcpServerManager.toggleServerSelection).toHaveBeenCalledWith('github');
+    });
+
+    it('initializes rather than toggles a server whose connection status is still unknown', () => {
+      const context = fullContext();
+      context.mcpServerManager.initializeServer = jest.fn();
+      mockContext = context;
+      const row = entries().result.current.find((item) => item.key === 'mcp:github');
+      act(() => row?.onSelect());
+      expect(context.mcpServerManager.initializeServer).toHaveBeenCalledWith('github');
+      expect(context.mcpServerManager.toggleServerSelection).not.toHaveBeenCalled();
     });
 
     it('lists none while the manager has no selectable servers', () => {

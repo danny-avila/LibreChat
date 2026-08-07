@@ -18,7 +18,7 @@ import useUpdateFiles from './useUpdateFiles';
 /**
  * Stages an already-uploaded file onto the next message.
  *
- * Every check the endpoint would apply to a fresh upload applies here too — the
+ * Every check the endpoint would apply to a fresh upload applies here too: the
  * file exists, but nothing guarantees the endpoint the user has since switched
  * to accepts its storage backend, type or size.
  */
@@ -45,18 +45,21 @@ export default function useAttachExisting(context: AttachExistingContext): (file
 
   return useCallback(
     (file: TFile) => {
-      if (!fileMap?.[file.file_id] || !conversation?.endpoint) {
+      /* The palette's recent page is a small, separate request that regularly
+         resolves before the unbounded file-map query behind it, so a row can be
+         on screen while `fileMap` is still empty. Prefer the shared record when
+         it is there and fall back to the row's own, which came from the same
+         endpoint; `source` is what tells a real server file apart from one we
+         know nothing about. */
+      const fileData = fileMap?.[file.file_id] ?? file;
+
+      if (!fileData.source || !conversation?.endpoint) {
         showToast({ message: localize('com_ui_attach_error'), status: 'error' });
         return;
       }
 
-      const fileData = fileMap[file.file_id];
       const endpoint = conversation.endpoint;
       const endpointType = conversation.endpointType;
-
-      if (!fileData.source) {
-        return;
-      }
 
       const isOpenAIStorage = checkOpenAIStorage(fileData.source);
       const isAssistants = isAssistantsEndpoint(endpoint);

@@ -13,7 +13,7 @@ export interface ToolFavorites {
 export const favoriteKey = (itemType: TToolFavoriteType, itemId: string) => `${itemType}:${itemId}`;
 
 /**
- * Server-persisted favourites for anything the composer palette can list —
+ * Server-persisted favourites for anything the composer palette can list:
  * built-in tools, plugin tools, MCP servers and skills.
  *
  * A shape adapter over the marketplace's own hook rather than a second copy of

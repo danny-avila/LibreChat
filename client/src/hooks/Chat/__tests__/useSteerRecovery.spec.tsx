@@ -42,6 +42,7 @@ function setup(initialize?: (snapshot: MutableSnapshot) => void) {
       chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
       queue: useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID)),
       applied: useRecoilValue(store.appliedSteerIdsByConvoId(CONVO_ID)),
+      accepted: useRecoilValue(store.acceptedSteerClientIdsByConvoId(CONVO_ID)),
     }),
     { wrapper },
   );
@@ -84,7 +85,7 @@ describe('useSteerRecovery', () => {
         result.current.recovery.retry('local-1');
       });
       await flush();
-      // The old local id must be gone entirely — leaving it behind is what let
+      // The old local id must be gone entirely: leaving it behind is what let
       // the applied SteerPart and a stale pending copy render together.
       expect(result.current.chips).toEqual([
         expect.objectContaining({ steerId: 'srv-9', text: 'redo this', status: 'pending' }),
@@ -371,6 +372,173 @@ describe('useSteerRecovery', () => {
           manualSkills: ['carried-skill'],
         }),
       ]);
+    });
+
+    /* The identity fields are what make a retry safe. Without `clientSteerId`
+       the server cannot dedupe a POST that already committed, so an uncertain
+       transport applies the same words twice; without `generationCreatedAt` the
+       retry targets whichever turn currently occupies the conversation-scoped
+       stream id rather than the one the chip belongs to. The composer's retry
+       has always sent both, and the in-thread one sent neither. */
+    it('posts the same identity fields the composer retry sends', async () => {
+      mockMutateAsync.mockResolvedValue({
+        steerId: 'srv-id',
+        status: 'queued',
+        position: 1,
+        conversationId: CONVO_ID,
+      });
+      const { result } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          {
+            steerId: 'local-id',
+            text: 'pin me to my generation',
+            status: 'failed',
+            createdAt: 8,
+            generationCreatedAt: 4242,
+          },
+        ]);
+      });
+      act(() => {
+        result.current.recovery.retry('local-id');
+      });
+      await flush();
+      expect(mockMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationId: CONVO_ID,
+          clientSteerId: 'local-id',
+          generationCreatedAt: 4242,
+        }),
+      );
+    });
+
+    /* A chip that was already acknowledged once carries the client id the
+       server knows it by; retrying under its server id instead would defeat the
+       dedupe the field exists for. */
+    it('keeps the client id an earlier ack already assigned', async () => {
+      mockMutateAsync.mockResolvedValue({
+        steerId: 'srv-again',
+        status: 'queued',
+        position: 1,
+        conversationId: CONVO_ID,
+      });
+      const { result } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          {
+            steerId: 'srv-known',
+            clientSteerId: 'local-known',
+            text: 'second attempt',
+            status: 'failed',
+            createdAt: 9,
+          },
+        ]);
+      });
+      act(() => {
+        result.current.recovery.retry('srv-known');
+      });
+      await flush();
+      expect(mockMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ clientSteerId: 'local-known' }),
+      );
+    });
+
+    /* The ack is resolved by the one implementation the composer also uses, so
+       these cover rules this hook used to approximate on its own. */
+    describe('consolidated ack resolution', () => {
+      const ack = (steerId: string) => ({
+        steerId,
+        status: 'queued',
+        position: 1,
+        conversationId: CONVO_ID,
+      });
+
+      /* A replacement generation already owns the conversation, so no apply
+         event for the source generation is ever coming, even though the chat
+         is still submitting and looks live. */
+      it('queues an ack whose source generation was replaced', async () => {
+        mockMutateAsync.mockResolvedValue(ack('srv-epoch'));
+        const { result } = setup(({ set }) => {
+          set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), 900);
+          set(store.pendingSteersByConvoId(CONVO_ID), [
+            {
+              steerId: 'local-epoch',
+              text: 'older generation',
+              status: 'failed',
+              createdAt: 2,
+              generationCreatedAt: 100,
+            },
+          ]);
+        });
+        act(() => {
+          result.current.recovery.retry('local-epoch');
+        });
+        await flush();
+        expect(result.current.chips).toEqual([]);
+        expect(result.current.queue).toEqual([
+          expect.objectContaining({ id: 'srv-epoch', text: 'older generation' }),
+        ]);
+      });
+
+      /* The steer is still aimed at the generation that owns the conversation,
+         so the server will inject it and the chip waits for that event. */
+      it('keeps an ack pending while its own generation is still the active one', async () => {
+        mockMutateAsync.mockResolvedValue(ack('srv-live'));
+        const { result } = setup(({ set }) => {
+          set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), 100);
+          set(store.pendingSteersByConvoId(CONVO_ID), [
+            {
+              steerId: 'local-live',
+              text: 'same generation',
+              status: 'failed',
+              createdAt: 2,
+              generationCreatedAt: 100,
+            },
+          ]);
+        });
+        act(() => {
+          result.current.recovery.retry('local-live');
+        });
+        await flush();
+        expect(result.current.chips).toEqual([
+          expect.objectContaining({ steerId: 'srv-live', status: 'pending' }),
+        ]);
+        expect(result.current.queue).toEqual([]);
+      });
+
+      /* `on_steer_applied` rides the SSE and can land before the HTTP response.
+         Minting a pending chip then strands it forever, and queueing the words
+         sends them a second time: the resolver must do neither. */
+      it('drops the chip without queueing when the apply event beat the ack', async () => {
+        mockMutateAsync.mockResolvedValue(ack('srv-applied'));
+        const { result } = setup(({ set }) => {
+          set(store.isSubmittingFamily(0), false);
+          set(store.appliedSteerIdsByConvoId(CONVO_ID), ['srv-applied']);
+          set(store.pendingSteersByConvoId(CONVO_ID), [
+            { steerId: 'local-applied', text: 'already injected', status: 'failed', createdAt: 3 },
+          ]);
+        });
+        act(() => {
+          result.current.recovery.retry('local-applied');
+        });
+        await flush();
+        expect(result.current.chips).toEqual([]);
+        expect(result.current.queue).toEqual([]);
+      });
+
+      /* Server ownership is recorded whatever the outcome, so a duplicate ack
+         for the same attempt cannot re-mint a chip that was already settled. */
+      it('records the accepted client id', async () => {
+        mockMutateAsync.mockResolvedValue(ack('srv-accepted'));
+        const { result } = setup(({ set }) => {
+          set(store.pendingSteersByConvoId(CONVO_ID), [
+            { steerId: 'local-accepted', text: 'note the id', status: 'failed', createdAt: 4 },
+          ]);
+        });
+        act(() => {
+          result.current.recovery.retry('local-accepted');
+        });
+        await flush();
+        expect(result.current.accepted).toEqual(['local-accepted']);
+      });
     });
 
     it('no-ops when the steer id is no longer pending', () => {

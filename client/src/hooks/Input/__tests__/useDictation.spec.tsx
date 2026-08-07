@@ -8,8 +8,8 @@ import store from '~/store';
 /**
  * The engines only report a completed transcription when Auto Send Text is
  * configured, so the composer's own stop-and-send cannot be built on that
- * callback alone. These cases pin the three ways a take can be spent — sent on
- * request, sent by the setting, or thrown away — against both engines.
+ * callback alone. These cases pin the three ways a take can be spent, sent on
+ * request, sent by the setting, or thrown away, against both engines.
  */
 
 let mockSpeechEndpoint: 'browser' | 'external';
@@ -41,8 +41,10 @@ jest.mock('../useGetAudioSettings', () => ({
   default: () => ({ speechToTextEndpoint: mockSpeechEndpoint }),
 }));
 
+const mockShowToast = jest.fn();
+
 jest.mock('@librechat/client', () => ({
-  useToastContext: () => ({ showToast: jest.fn() }),
+  useToastContext: () => ({ showToast: mockShowToast }),
 }));
 
 jest.mock('../../useLocalize', () => ({
@@ -56,8 +58,15 @@ function setup({
   autoSendText = -1,
   draft = '',
   isSubmitting = false,
-}: { autoSendText?: number; draft?: string; isSubmitting?: boolean } = {}) {
+  filesLoading = false,
+}: {
+  autoSendText?: number;
+  draft?: string;
+  isSubmitting?: boolean;
+  filesLoading?: boolean;
+} = {}) {
   let text = draft;
+  let uploading = filesLoading;
   const methods = {
     setValue: jest.fn((_name: string, value: string) => {
       text = value;
@@ -78,10 +87,18 @@ function setup({
         ask: ask as unknown as TAskFunction,
         methods: methods as never,
         isSubmitting,
+        filesLoading: uploading,
       }),
     { wrapper },
   );
-  return { ...view, methods, currentText: () => text };
+  return {
+    ...view,
+    methods,
+    currentText: () => text,
+    setFilesLoading: (value: boolean) => {
+      uploading = value;
+    },
+  };
 }
 
 /** Ends the take the way an engine does: listening clears, then the settle
@@ -234,6 +251,54 @@ describe('useDictation', () => {
     await settle(rerender);
 
     expect(ask).toHaveBeenCalledWith({ text: 'answer the question' });
+  });
+
+  /* Send and steer both refuse to submit while an attachment is still
+     uploading, and a dictated turn must not be the one path that lets a
+     half-uploaded file ride along. */
+  describe('an attachment still uploading', () => {
+    it('refuses the dictated turn and says why', async () => {
+      const { result, rerender, currentText } = setup({ filesLoading: true });
+      act(() => result.current.start());
+      mockIsListening = true;
+      act(() => rerender());
+
+      act(() => mockSetTextCallback('describe this file'));
+      act(() => result.current.stopAndSend());
+      await settle(rerender);
+
+      expect(ask).not.toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith({
+        message: 'com_ui_speech_while_uploading',
+        status: 'error',
+      });
+      /* Refused, not discarded: the words are still there to send by hand. */
+      expect(currentText()).toBe('describe this file');
+    });
+
+    it('sends once the upload finishes', async () => {
+      const { result, rerender, setFilesLoading } = setup({ filesLoading: true });
+      act(() => result.current.start());
+      mockIsListening = true;
+      act(() => rerender());
+
+      act(() => mockSetTextCallback('describe this file'));
+      act(() => result.current.stopAndSend());
+      await settle(rerender);
+      expect(ask).not.toHaveBeenCalled();
+
+      setFilesLoading(false);
+      act(() => rerender());
+
+      act(() => result.current.start());
+      mockIsListening = true;
+      act(() => rerender());
+      act(() => mockSetTextCallback('now send it'));
+      act(() => result.current.stopAndSend());
+      await settle(rerender);
+
+      expect(ask).toHaveBeenCalledWith({ text: 'describe this file now send it' });
+    });
   });
 
   /* The armed send reads whatever the transcript left in the composer. A take

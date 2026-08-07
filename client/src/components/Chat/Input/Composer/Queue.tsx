@@ -1,4 +1,4 @@
-import { memo, useRef, useMemo, useState, useCallback } from 'react';
+import { memo, useId, useRef, useMemo, useState, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useDrag, useDrop } from 'react-dnd';
@@ -7,6 +7,7 @@ import { Button, IconButton, useMediaQuery, useToastContext } from '@librechat/c
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/store/families';
+import { claimQueuedIntent, releaseQueuedIntent } from '~/utils/queueIntent';
 import EscalateNowButton from '~/components/Chat/Input/EscalateNowButton';
 import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
@@ -14,8 +15,6 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 const DRAG_TYPE = 'queued-message';
-/** Shared by every handle, so the keys are stated once per rail. */
-const REORDER_HINT_ID = 'composer-queue-reorder-hint';
 
 interface DragItem {
   id: string;
@@ -25,8 +24,8 @@ interface DragItem {
 }
 
 /** Restores a message's text into the composer, or refuses (false) when the
- *  composer is occupied / on another chat — see `restoreReclaimedSteer` in
- *  `ChatForm`. Used by the queue rail's edit/trash actions. */
+ *  composer is occupied / on another chat (see `restoreReclaimedSteer` in
+ *  `ChatForm`). Used by the queue rail's edit/trash actions. */
 export type RestoreToComposer = (
   text: string,
   files: TMessage['files'],
@@ -57,6 +56,9 @@ interface QueueRowProps {
   conversationId: string;
   /** One interrupt at a time: an arm is already unresolved somewhere. */
   interruptPending: boolean;
+  /** Owned by the rail, so the keys are stated once rather than once per row,
+   *  and scoped to THIS rail, so a split view has one hint per pane. */
+  reorderHintId: string;
   onEditToComposer: QueueProps['onEditToComposer'];
   onRestoreToComposer: RestoreToComposer;
   onAnnounce: (message: string) => void;
@@ -70,6 +72,7 @@ function QueueRow({
   steering,
   conversationId,
   interruptPending,
+  reorderHintId,
   onEditToComposer,
   onRestoreToComposer,
   onAnnounce,
@@ -112,7 +115,7 @@ function QueueRow({
     item: (): DragItem => ({ id: message.id, index, order }),
     collect: (monitor) => ({ isDragging: monitor.isDragging() }),
     /* The rows are moved as the pointer crosses them, so a drag the user
-       abandons — Escape, or a release outside the rail — has already changed
+       abandons (Escape, or a release outside the rail) has already changed
        the queue. Dropping nowhere puts the order back. */
     end: (item, monitor) => {
       if (!monitor.didDrop()) {
@@ -136,6 +139,79 @@ function QueueRow({
     [index, total, reorderable, reorderQueued, message.id, onAnnounce, localize],
   );
 
+  /* Edit and Remove both hand this row's words somewhere else across an await
+     (discarding the parked server copy) and only drop the row afterwards. The
+     run-end drain can land inside that gap and send the very message being
+     taken back, so the row is claimed for the whole handoff and the drain skips
+     anything claimed. A second click while one is open is refused rather than
+     racing it. */
+  const handOff = useCallback(
+    async (transfer: () => Promise<void>) => {
+      if (!claimQueuedIntent(message.id)) {
+        return;
+      }
+      try {
+        await transfer();
+      } finally {
+        releaseQueuedIntent(message.id);
+      }
+    },
+    [message.id],
+  );
+
+  const editToComposer = useCallback(
+    () =>
+      handOff(async () => {
+        /* A recovered row still has a parked copy on the server; discard it
+           through its durable receipt first, or the edited words would come
+           back as a second message on the next reload. */
+        if (!(await steering.discardQueued(message))) {
+          return;
+        }
+        /* Same order as the trash below: dropped only once the words are
+           somewhere else. A paused question owns the composer, and removing
+           the row anyway would leave the message nowhere at all. */
+        const taken = onEditToComposer(message.text, message.files, {
+          quotes: message.quotes,
+          manualSkills: message.manualSkills,
+        });
+        if (taken) {
+          steering.removeQueued(message.id);
+          return;
+        }
+        showToast({ message: localize('com_ui_queue_edit_blocked'), status: 'warning' });
+      }),
+    [handOff, steering, message, onEditToComposer, showToast, localize],
+  );
+
+  const removeToComposer = useCallback(
+    () =>
+      handOff(async () => {
+        /* Discard the parked server copy first, as on Edit above. */
+        if (!(await steering.discardQueued(message))) {
+          return;
+        }
+        /* Only dropped once the words are somewhere else. The composer refuses
+           when it is occupied or the user has moved to another chat, and
+           removing the message anyway destroyed it. */
+        const restored = onRestoreToComposer(
+          message.text,
+          message.files,
+          { quotes: message.quotes, manualSkills: message.manualSkills },
+          conversationId,
+        );
+        if (restored) {
+          steering.removeQueued(message.id);
+          return;
+        }
+        /* Refusing silently reads as a dead button: the row stays, nothing
+           moves, and the reason (a draft in the box, another chat on screen)
+           is somewhere the click was not. */
+        showToast({ message: localize('com_ui_queue_remove_blocked'), status: 'warning' });
+      }),
+    [handOff, steering, message, onRestoreToComposer, conversationId, showToast, localize],
+  );
+
   drop(rowRef);
   drag(gripRef);
 
@@ -147,7 +223,7 @@ function QueueRow({
   /* A recovered item is consumed atomically only when it starts a normal
      generation. Escalating it would leave or duplicate the parked source. */
   const isRecovered = message.recoverySteerId != null;
-  /** Shown for the whole run, disabled whenever steering cannot reach it —
+  /** Shown for the whole run, disabled whenever steering cannot reach it:
    *  an approval pause, or the window before the start POST installs the
    *  generation epoch. Both are states the control must sit out, and hiding it
    *  through them is the discoverability gap this button closes: the pause is
@@ -180,7 +256,7 @@ function QueueRow({
         aria-disabled={!reorderable}
         /* A handle announces what it is but not how to work it, and the keys
            are the only way through it without a pointer. */
-        aria-describedby={reorderable ? REORDER_HINT_ID : undefined}
+        aria-describedby={reorderable ? reorderHintId : undefined}
         onKeyDown={(event) => {
           if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
             return;
@@ -238,29 +314,7 @@ function QueueRow({
       <IconButton
         label={localize('com_ui_edit_message')}
         size="xs"
-        onClick={async () => {
-          /* A recovered row still has a parked copy on the server; discard it
-             through its durable receipt first, or the edited words would come
-             back as a second message on the next reload. */
-          if (!(await steering.discardQueued(message))) {
-            return;
-          }
-          /* Same order as the trash below: dropped only once the words are
-             somewhere else. A paused question owns the composer, and removing
-             the row anyway would leave the message nowhere at all. */
-          const taken = onEditToComposer(message.text, message.files, {
-            quotes: message.quotes,
-            manualSkills: message.manualSkills,
-          });
-          if (taken) {
-            steering.removeQueued(message.id);
-            return;
-          }
-          showToast({
-            message: localize('com_ui_queue_edit_blocked'),
-            status: 'warning',
-          });
-        }}
+        onClick={editToComposer}
         className="text-text-secondary hover:text-text-primary"
       >
         <Pencil className="h-4 w-4" aria-hidden="true" />
@@ -268,32 +322,7 @@ function QueueRow({
       <IconButton
         label={localize('com_ui_remove_queued')}
         size="xs"
-        onClick={async () => {
-          /* Discard the parked server copy first, as on Edit above. */
-          if (!(await steering.discardQueued(message))) {
-            return;
-          }
-          /* Only dropped once the words are somewhere else. The composer
-             refuses when it is occupied or the user has moved to another
-             chat, and removing the message anyway destroyed it. */
-          const restored = onRestoreToComposer(
-            message.text,
-            message.files,
-            { quotes: message.quotes, manualSkills: message.manualSkills },
-            conversationId,
-          );
-          if (restored) {
-            steering.removeQueued(message.id);
-            return;
-          }
-          /* Refusing silently reads as a dead button: the row stays, nothing
-             moves, and the reason (a draft in the box, another chat on screen)
-             is somewhere the click was not. */
-          showToast({
-            message: localize('com_ui_queue_remove_blocked'),
-            status: 'warning',
-          });
-        }}
+        onClick={removeToComposer}
         className="text-text-secondary hover:text-text-primary"
       >
         <X className="h-4 w-4" aria-hidden="true" />
@@ -322,6 +351,10 @@ function QueueRow({
  */
 function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer }: QueueProps) {
   const localize = useLocalize();
+  /* Per rail, not per module: split view mounts two composers at once, and a
+     shared constant id would duplicate the element and point every handle's
+     `aria-describedby` at whichever copy the document happened to keep. */
+  const reorderHintId = useId();
   const queued = useRecoilValue(store.queuedMessagesByConvoId(steering.queueKey));
   const pendingSteers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const escalating = useAtomValue(escalatingSteerFamily(conversationId));
@@ -341,7 +374,7 @@ function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer
 
   /* Cleared when the rail empties or the conversation changes: the region is
      removed with the rail and re-inserted with its old text still in it, which
-     readers announce on insertion — so an unrelated new message replayed the
+     readers announce on insertion, so an unrelated new message replayed the
      last move. */
   const [spokenFor, setSpokenFor] = useState(steering.queueKey);
   if (spokenFor !== steering.queueKey || (queued.length === 0 && announcement !== '')) {
@@ -376,6 +409,7 @@ function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer
             steering={steering}
             conversationId={conversationId}
             interruptPending={interruptPending}
+            reorderHintId={reorderHintId}
             onEditToComposer={onEditToComposer}
             onRestoreToComposer={onRestoreToComposer}
             onAnnounce={setAnnouncement}
@@ -383,7 +417,7 @@ function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer
         ))}
       </div>
       {queued.length > 1 && (
-        <span id={REORDER_HINT_ID} className="sr-only">
+        <span id={reorderHintId} className="sr-only">
           {localize('com_ui_queue_reorder_hint')}
         </span>
       )}

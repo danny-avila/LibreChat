@@ -40,7 +40,7 @@ const ARROW_STEP: Record<string, number | undefined> = {
 
 const THUMB_FADE_MS = 140;
 /**
- * `enumMappings` maps a raw value to a translation KEY, not to display text —
+ * `enumMappings` maps a raw value to a translation KEY, not to display text:
  * rendering it directly is what leaks `com_ui_medium` into the UI. Shared with
  * the trigger button, which is the only place the level is named.
  */
@@ -70,8 +70,8 @@ interface EffortProps {
  * Reasoning effort as a filled track running from faster to smarter.
  *
  * The stops are named choices, not a continuum, so the interactive layer is a
- * radiogroup of segment hit-targets — correct arrow-key and screen-reader
- * behaviour for free — with pointer drag layered on top so the thumb can also
+ * radiogroup of segment hit-targets, giving correct arrow-key and screen-reader
+ * behaviour for free, with pointer drag layered on top so the thumb can also
  * be swept the way a touch control behaves.
  *
  * The level is deliberately not named in here: the button that opens this owns
@@ -254,7 +254,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
           try {
             e.currentTarget.setPointerCapture(e.pointerId);
           } catch {
-            /* no capture available — the drag still tracks via pointermove */
+            /* no capture available: the drag still tracks via pointermove */
           }
           draggingRef.current = true;
           setDragging(true);
@@ -302,7 +302,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
           )}
         />
         {/* The semantic accent keeps the track intentional in every theme.
-            Always mounted — unmounting it at the first stop made the fill snap
+            Always mounted: unmounting it at the first stop made the fill snap
             out of existence on the way down instead of shrinking, which reads
             as a glitch. */}
         <span
@@ -332,7 +332,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
           ))}
 
         {/* Auto has no position on the track, so rather than leave an empty rail
-            the rail says so outright — otherwise it just looks broken. */}
+            the rail says so outright; otherwise it just looks broken. */}
         {isAuto && (
           <span
             aria-hidden="true"
@@ -420,7 +420,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
             {localize('com_ui_composer_thinking')}
           </span>
           <span className="flex shrink-0 items-center gap-2">
-            {/* Only offered as a way back — the button that opened this already
+            {/* Only offered as a way back: the button that opened this already
               reads "Auto" while it is active. */}
             {/* Always present, so Auto reads as a mode you turn on and off
                 rather than a one-way escape hatch that vanishes once used. */}

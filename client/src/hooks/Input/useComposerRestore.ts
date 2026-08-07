@@ -9,7 +9,7 @@ import store from '~/store';
 export interface ComposerRestore {
   /** Chip "Edit message": replaces the draft outright, since the caller has
    *  already decided that is wanted. Returns whether the composer took the
-   *  words — only a paused question, which owns the box, refuses. */
+   *  words: only a paused question, which owns the box, refuses. */
   editToComposer: (
     text: string,
     files?: TMessage['files'],
@@ -42,7 +42,7 @@ interface UseComposerRestoreParams {
  *
  * Extracted from `ChatForm` because the guarded path is the only one in the
  * composer that can destroy text outright, and every one of its conditions is
- * about time passing between a click and its answer — which is exactly what a
+ * about time passing between a click and its answer, which is exactly what a
  * component holding half a dozen other concerns makes impossible to test.
  */
 export default function useComposerRestore({
@@ -81,7 +81,7 @@ export default function useComposerRestore({
 
   /** The text replaces the composer draft and the chip's attachments merge back
    *  into the composer file map (already uploaded, so they restore as completed
-   *  entries — same shape as draft recovery).
+   *  entries, same shape as draft recovery).
    *
    *  A paused `ask_user_question` is the one thing that refuses: `onSubmit`
    *  hands the composer's text to `answerMode.submitText` before any send
@@ -124,7 +124,7 @@ export default function useComposerRestore({
 
   /** Read at call time, not captured: a reclaim resolves into the callback from
    *  the render it was clicked in, so the closure's `conversationId` is the OLD
-   *  chat — comparing it against itself would pass while `methods` (one form,
+   *  chat: comparing it against itself would pass while `methods` (one form,
    *  reused across conversations) writes into the chat now on screen. */
   const liveConversationIdRef = useRef(conversationId);
   liveConversationIdRef.current = conversationId;
@@ -133,7 +133,7 @@ export default function useComposerRestore({
   liveFilesRef.current = files;
   /** A reclaim can resolve after the composer unmounts (left the route, closed
    *  the pane). Its refs still hold the origin chat, so the restore would pass
-   *  its checks and write into a dead form — reporting success and making the
+   *  its checks and write into a dead form, reporting success and making the
    *  caller drop the steer, losing the text. Track mount so the restore refuses
    *  and the caller queues it instead. */
   const mountedRef = useRef(true);

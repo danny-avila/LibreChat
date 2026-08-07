@@ -9,22 +9,22 @@ import { getModelSchemas } from './schemas';
  * at scale using database-per-org isolation via Mongoose useDb().
  *
  * Phases:
- *   1. useDb schema mapping — verifies per-org PostgreSQL schema creation and data isolation
- *   2. Index initialization — validates every current org-local collection + its
+ *   1. useDb schema mapping: verifies per-org PostgreSQL schema creation and data isolation
+ *   2. Index initialization: validates every current org-local collection + its
  *      indexes, tests for deadlocks
- *   3. Scaling curve — measures catalog growth, init time, and query latency at 10/50/100 orgs
- *   4. Write amplification — compares update cost on high-index vs zero-index collections
- *   5. Shared-collection alternative — benchmarks orgId-discriminated shared collections
+ *   3. Scaling curve: measures catalog growth, init time, and query latency at 10/50/100 orgs
+ *   4. Write amplification: compares update cost on high-index vs zero-index collections
+ *   5. Shared-collection alternative: benchmarks orgId-discriminated shared collections
  *
  * Run:
  *   FERRETDB_URI="mongodb://ferretdb:ferretdb@127.0.0.1:27020/mt_bench" \
  *     npx jest multiTenancy.ferretdb --testTimeout=600000
  *
  * Env vars:
- *   FERRETDB_URI     — Required. FerretDB connection string.
- *   PG_CONTAINER     — Docker container name for psql (default: librechat-ferretdb-postgres-1)
- *   SCALE_TIERS      — Comma-separated org counts (default: 10,50,100)
- *   WRITE_AMP_DOCS   — Number of docs for write amp test (default: 200)
+ *   FERRETDB_URI     : Required. FerretDB connection string.
+ *   PG_CONTAINER     : Docker container name for psql (default: librechat-ferretdb-postgres-1)
+ *   SCALE_TIERS      : Comma-separated org counts (default: 10,50,100)
+ *   WRITE_AMP_DOCS   : Number of docs for write amp test (default: 200)
  */
 
 const FERRETDB_URI = process.env.FERRETDB_URI;
@@ -275,10 +275,10 @@ describeIfFerretDB('FerretDB Multi-Tenancy Benchmark', () => {
       const t0 = Date.now();
       try {
         await Promise.all(Object.values(models).map((m) => m.createIndexes()));
-        console.log(`[Phase 2] Concurrent: ${Date.now() - t0}ms — no deadlock`);
+        console.log(`[Phase 2] Concurrent: ${Date.now() - t0}ms, no deadlock`);
       } catch (err) {
         console.warn(
-          `[Phase 2] Concurrent: DEADLOCKED after ${Date.now() - t0}ms — ${(err as Error).message}`,
+          `[Phase 2] Concurrent: DEADLOCKED after ${Date.now() - t0}ms: ${(err as Error).message}`,
         );
       }
     }, 120_000);
@@ -340,7 +340,7 @@ describeIfFerretDB('FerretDB Multi-Tenancy Benchmark', () => {
     beforeAll(() => {
       const baseline = catalogMetrics();
       console.log(
-        `[Phase 3] Baseline — collections: ${baseline.collections}, ` +
+        `[Phase 3] Baseline, collections: ${baseline.collections}, ` +
           `databases: ${baseline.databases}, catalog indexes: ${baseline.catalogIndexes}, ` +
           `data tables: ${baseline.dataTables}, pg_class: ${baseline.pgClassTotal}`,
       );

@@ -14,6 +14,7 @@ const mockAbortListening = jest.fn();
 const mockStopListening = jest.fn();
 const mockResetTranscript = jest.fn();
 let mockFinalTranscript = '';
+let mockEndpoint: 'browser' | 'external' = 'browser';
 
 jest.mock('react-speech-recognition', () => ({
   __esModule: true,
@@ -42,7 +43,7 @@ jest.mock('librechat-data-provider/react-query', () => ({
 
 jest.mock('../useGetAudioSettings', () => ({
   __esModule: true,
-  default: () => ({ speechToTextEndpoint: 'browser' }),
+  default: () => ({ speechToTextEndpoint: mockEndpoint }),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -51,11 +52,16 @@ jest.mock('~/hooks', () => ({
 
 const AUTO_SEND_SECONDS = 3;
 
-function setup() {
+function setup({ speechToText = true }: { speechToText?: boolean } = {}) {
   const setText = jest.fn();
   const onTranscriptionComplete = jest.fn();
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <RecoilRoot initializeState={({ set }) => set(store.autoSendText, AUTO_SEND_SECONDS)}>
+    <RecoilRoot
+      initializeState={({ set }) => {
+        set(store.autoSendText, AUTO_SEND_SECONDS);
+        set(store.speechToText, speechToText);
+      }}
+    >
       {children}
     </RecoilRoot>
   );
@@ -70,6 +76,7 @@ describe('useSpeechToTextBrowser', () => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     mockFinalTranscript = '';
+    mockEndpoint = 'browser';
   });
 
   afterEach(() => {
@@ -123,5 +130,36 @@ describe('useSpeechToTextBrowser', () => {
     expect(mockStopListening).toHaveBeenCalled();
     expect(onTranscriptionComplete).not.toHaveBeenCalled();
     speech.abortListening = abort;
+  });
+
+  /* The shortcut is the one dictation control with no button behind it, so
+     nothing on screen would show a take it started by mistake: it belongs to
+     the browser engine only, and only while Speech to Text is on. */
+  describe('the Shift+Alt+L shortcut', () => {
+    const press = () =>
+      act(() => {
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', { code: 'KeyL', shiftKey: true, altKey: true }),
+        );
+      });
+
+    it('toggles the take when the browser engine is the selected one', () => {
+      setup();
+      press();
+      expect(mockStopListening).toHaveBeenCalled();
+    });
+
+    it('leaves the take to the external engine when that is what is selected', () => {
+      mockEndpoint = 'external';
+      setup();
+      press();
+      expect(mockStopListening).not.toHaveBeenCalled();
+    });
+
+    it('does nothing while Speech to Text is off', () => {
+      setup({ speechToText: false });
+      press();
+      expect(mockStopListening).not.toHaveBeenCalled();
+    });
   });
 });

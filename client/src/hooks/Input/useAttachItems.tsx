@@ -100,7 +100,7 @@ interface UseAttachItemsParams {
  * searchable rows alongside tools, skills and MCP servers.
  *
  * Returns the entries plus the hidden file input and SharePoint dialog state
- * the caller must mount — the picker has to live in the DOM outside the
+ * the caller must mount: the picker has to live in the DOM outside the
  * popover so selecting a file does not race the popover unmounting.
  */
 export default function useAttachItems({

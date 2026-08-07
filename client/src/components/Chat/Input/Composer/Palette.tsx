@@ -152,8 +152,8 @@ interface PaletteProps {
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   /** Attach destinations are hidden when the endpoint cannot take uploads. */
   canAttach: boolean;
-  /** Owned by `Bar`, which also renders the active ones as chips — derived once
-   *  there so the skills catalog is not walked twice per render. */
+  /** Owned by `Bar`, which also renders the active ones as chips (derived once
+   *  there so the skills catalog is not walked twice per render). */
   entries: PaletteEntry[];
   /** The composer box the popover anchors to, so it matches its width. */
   anchorRef: React.RefObject<HTMLElement>;
@@ -165,7 +165,7 @@ interface PaletteProps {
  * input and all favouritable.
  *
  * Replaces the old split between the attach `+` menu and the tools gear, and
- * the pin/drag/wiggle badge row — a starred row floats into Favourites, which
+ * the pin/drag/wiggle badge row: a starred row floats into Favourites, which
  * is server-persisted and shared with the tools marketplace.
  *
  * The list is virtualized (catalogs run to hundreds of skills and MCP servers),
@@ -219,8 +219,8 @@ function Palette({
   /* What the disclosure says it is: the moment it is clicked shut it reads as
      closed, while the rows it is closing over are still fading out. */
   const expanded = showAllAttach && !collapsing;
-  /* The row itself, not where it currently sits. A row that moves — starred
-     into favourites, pushed down by a disclosure — keeps the highlight, and the
+  /* The row itself, not where it currently sits. A row that moves (starred
+     into favourites, pushed down by a disclosure) keeps the highlight, and the
      id the combobox points at keeps naming something that exists. */
   const [activeKey, setActiveKey] = useState('');
   /* Only a keyboard move scrolls the list. Driving this from the highlight
@@ -235,13 +235,13 @@ function Palette({
   const { ref: popoverRef, height: popupHeight } = useElementSize<HTMLDivElement>();
   const reducedMotion = useReducedMotion();
 
-  /* Rather than let the popup push the document taller — which puts a scrollbar
-     on a page that had none — the landing screen raises itself by whatever the
+  /* Rather than let the popup push the document taller (which puts a scrollbar
+     on a page that had none), the landing screen raises itself by whatever the
      popup cannot fit, and follows the popup as searching grows and shrinks it.
 
      The room needed is measured against where the composer sits *unlifted*,
      captured on opening while the lift is still zero. Measuring it live would
-     read a composer that has already moved out of the way — the overflow would
+     read a composer that has already moved out of the way: the overflow would
      look solved, the page would drop back, and the two would fight. */
   /* The composer moves under a transform, which is not a layout change and so
      nothing tells the popup its anchor has shifted. Repositioning it for the
@@ -442,8 +442,8 @@ function Palette({
 
   /* Rows that gain or lose a neighbour travel to their new offsets, and the
      rows that caused it fade in where they land. Any change to the row set
-     earns this — a starred entry moving up into favourites, an upload landing
-     in the files section, the attach disclosure folding — except one: a change
+     earns this (a starred entry moving up into favourites, an upload landing
+     in the files section, the attach disclosure folding) except one: a change
      that came with the query. Under a search the list is being replaced rather
      than rearranged, and sliding one set of contents into the place of another
      reads as the list lagging behind the typing.
@@ -485,8 +485,8 @@ function Palette({
   /* Two things happen here, both after the list has already been redrawn.
 
      The list measures each row once and keeps the offsets, so a row that
-     changes height in place — a two-line entry starred into a section that
-     starts one row higher — is drawn at a stale offset and lands on top of its
+     changes height in place (a two-line entry starred into a section that
+     starts one row higher) is drawn at a stale offset and lands on top of its
      neighbour. Only the widget holds that cache, so only the widget can drop
      it.
 
@@ -510,7 +510,7 @@ function Palette({
     previousTops.current = layout.tops;
     const body = listBodyRef.current;
     /* Where there is no Web Animations API to play the move with, the rows just
-       arrive where they belong — the same as asking for no motion. */
+       arrive where they belong, the same as asking for no motion. */
     if (instant || body == null || typeof body.animate !== 'function' || reducedMotion) {
       return;
     }
@@ -684,8 +684,8 @@ function Palette({
   const rowRenderer = useCallback(
     ({ index, style }: { index: number; style: React.CSSProperties }) => {
       const row = rows[index];
-      /* A row that had no neighbour to arrive from — a section header the
-         starred entry brought with it, the destinations behind the fold —
+      /* A row that had no neighbour to arrive from (a section header the
+         starred entry brought with it, the destinations behind the fold)
          appears where it lands rather than travelling there. */
       const arrived = entering.has(row.key);
       if (row.type === 'header') {
@@ -927,9 +927,12 @@ function Palette({
               disclosure's own click handler and the popover never opened. */}
           <Ariakit.PopoverDisclosure
             ref={disclosureRef}
-            /* The upload-file shortcut resolves its target by id, and this is
-               the control that replaced the attach menu it used to click. */
-            id="attach-file-menu-button"
+            /* The upload-file shortcut clicks this control, resolving it by the
+               `data-testid` below rather than by an `id`: both split panes
+               mount a composer, so a shared `id` is invalid HTML and pins the
+               shortcut to whichever pane comes first in the document. A test id
+               may repeat, which lets the shortcut scope itself to the focused
+               form. */
             disabled={disabled}
             aria-label={disclosureLabel}
             /* Kept as the disclosure while dictating rather than swapped for a
@@ -995,7 +998,7 @@ function Palette({
 
                 The popup is portaled but still a React descendant of the
                 composer box, so its clicks bubble through the React tree into
-                the box's own "focus the textarea" handler — which would take
+                the box's own "focus the textarea" handler, which would take
                 the focus straight back off the field. */}
             <div
               onClick={(event) => {
@@ -1020,12 +1023,13 @@ function Palette({
                     : undefined
                 }
                 aria-describedby={helpId}
+                aria-label={localize('com_ui_composer_palette_search')}
                 placeholder={localize('com_ui_composer_palette_search')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={handleKeyDown}
                 data-testid="composer-palette-search"
-                className="w-full border-0 bg-transparent text-sm text-text-primary shadow-none ring-0 placeholder:text-text-secondary focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                className="w-full rounded-md border-0 bg-transparent text-sm text-text-primary shadow-none ring-0 placeholder:text-text-secondary focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
               />
               <span id={helpId} className="sr-only">
                 {localize('com_ui_composer_palette_help', { 0: FAVORITE_MODIFIER })}

@@ -39,7 +39,7 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
   /* The conversation only holds a value once the user touches the control; an
      admin can still override the setting's default (e.g. reasoning_effort:
      high), and labelling that state Auto would disagree with what actually
-     runs — and with the Parameters panel. */
+     runs, and with the Parameters panel. */
   const raw = conversation?.[setting.key as keyof TConversation] ?? setting.default;
   const value = raw == null ? undefined : String(raw);
   const isAuto = value == null || AUTO_VALUES.has(value);
@@ -86,7 +86,7 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
       <Ariakit.PopoverDisclosure
         ref={disclosureRef}
         data-testid="composer-thinking-button"
-        aria-label={localize('com_ui_composer_thinking')}
+        aria-label={localize('com_ui_composer_thinking_value', { 0: display })}
         render={
           <TooltipAnchor
             description={localize('com_ui_composer_thinking')}
@@ -95,7 +95,7 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
         }
         className={cn(
           'flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-sm transition-colors',
-          'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
+          'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
           'text-text-primary',
           open && 'bg-surface-hover',
         )}
@@ -153,7 +153,7 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
            click immediately re-opened it. Excluding the trigger leaves a single
            clean toggle. */
         hideOnInteractOutside={(event) => !disclosureRef.current?.contains(event.target as Node)}
-        aria-label={localize('com_ui_composer_thinking')}
+        aria-label={localize('com_ui_composer_thinking_value', { 0: display })}
         /* `border-light` resolves to the same value as `surface-tertiary`, so
            the edge was invisible against the popup's own background. */
         className="animate-composer-popover z-50 rounded-2xl border border-border-medium bg-surface-tertiary shadow-lg outline-none"
@@ -172,7 +172,7 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
  * Model and agent selection deliberately stay in the header; this owns effort
  * only. Renders nothing at all for models that expose no reasoning parameter,
  * and nothing when `interface.parameters` is off (the same gate as the
- * Parameters side panel — model specs default that flag to false).
+ * Parameters side panel; model specs default that flag to false).
  *
  * Split in two so the control's hooks are never behind that early return.
  */
