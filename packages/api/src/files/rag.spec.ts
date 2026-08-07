@@ -7,6 +7,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('~/crypto/jwt', () => ({
+  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank' },
   generateShortLivedToken: jest.fn().mockReturnValue('mock-jwt-token'),
 }));
 
@@ -50,17 +51,58 @@ describe('deleteRagFile', () => {
       const result = await deleteRagFile({ userId: 'user123', file });
 
       expect(result).toBe(true);
-      expect(mockedGenerateShortLivedToken).toHaveBeenCalledWith('user123');
+      expect(mockedGenerateShortLivedToken).toHaveBeenCalledWith({
+        userId: 'user123',
+        tenantId: undefined,
+        entityIds: [],
+        scopes: ['rag:embed'],
+      });
       expect(mockedAxios.delete).toHaveBeenCalledWith('http://localhost:8000/documents', {
         headers: {
           Authorization: 'Bearer mock-jwt-token',
           'Content-Type': 'application/json',
           accept: 'application/json',
         },
+        params: undefined,
         data: ['file-123'],
       });
       expect(mockedLogger.debug).toHaveBeenCalledWith(
         '[deleteRagFile] Successfully deleted document file-123 from RAG API',
+      );
+    });
+
+    it('scopes the delete to the agent when the file belongs to a knowledge base', async () => {
+      const file = { file_id: 'file-123', embedded: true, entity_id: 'agent_abc' };
+      mockedAxios.delete.mockResolvedValueOnce({ status: 200 });
+
+      const result = await deleteRagFile({ userId: 'user123', file, tenantId: 'tenant-1' });
+
+      expect(result).toBe(true);
+      expect(mockedGenerateShortLivedToken).toHaveBeenCalledWith({
+        userId: 'user123',
+        tenantId: 'tenant-1',
+        entityIds: ['agent_abc'],
+        scopes: ['rag:embed'],
+      });
+      expect(mockedAxios.delete).toHaveBeenCalledWith(
+        'http://localhost:8000/documents',
+        expect.objectContaining({ params: { entity_id: 'agent_abc' }, data: ['file-123'] }),
+      );
+    });
+
+    it('returns false without calling the RAG API when the token cannot be minted', async () => {
+      const file = { file_id: 'file-123', embedded: true };
+      mockedGenerateShortLivedToken.mockImplementationOnce(() => {
+        throw new Error('RAG_AUTH_ACCEPT_LEGACY=false requires RAG_JWT_SECRET');
+      });
+
+      const result = await deleteRagFile({ userId: 'user123', file });
+
+      expect(result).toBe(false);
+      expect(mockedAxios.delete).not.toHaveBeenCalled();
+      expect(mockedLogger.error).toHaveBeenCalledWith(
+        '[deleteRagFile] Unable to mint a RAG API token:',
+        'RAG_AUTH_ACCEPT_LEGACY=false requires RAG_JWT_SECRET',
       );
     });
 

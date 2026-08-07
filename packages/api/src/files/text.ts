@@ -4,8 +4,8 @@ import { createReadStream } from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
+import { RagScopes, generateShortLivedToken } from '~/crypto/jwt';
 import { logAxiosError, readFileAsString } from '~/utils';
-import { generateShortLivedToken } from '~/crypto/jwt';
 
 const MARKDOWN_MIME_TYPES = new Set([
   'text/markdown',
@@ -99,7 +99,14 @@ export async function parseText({
   }
 
   try {
-    const jwtToken = generateShortLivedToken(userId);
+    /** Text extraction never reaches a knowledge base, so the token carries no
+     * entity — the upload is stored under the user alone. */
+    const jwtToken = generateShortLivedToken({
+      userId,
+      entityIds: [],
+      tenantId: req.user?.tenantId,
+      scopes: [RagScopes.embed],
+    });
     const formData = new FormData();
     formData.append('file_id', file_id);
     formData.append('file', createReadStream(file.path));

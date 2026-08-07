@@ -3,6 +3,7 @@ const { ResourceType } = require('librechat-data-provider');
 
 jest.mock('axios');
 jest.mock('@librechat/api', () => ({
+  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank' },
   generateShortLivedToken: jest.fn(),
   logAxiosError: jest.fn(),
 }));
@@ -314,5 +315,64 @@ describe('entity_id scoping by file origin', () => {
     });
     await tool.func({ query: 'q' });
     expect(bodiesSent()[0].entity_id).toBeUndefined();
+  });
+
+  it('names the agent in the token when a knowledge-base file is searched', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      entity_id: 'agent_123',
+      tenantId: 'tenant-a',
+      files: [{ file_id: 'kb-1', filename: 'kb.pdf', fromAgent: true }],
+    });
+    await tool.func({ query: 'q' });
+
+    expect(generateShortLivedToken).toHaveBeenCalledWith({
+      userId: 'user1',
+      tenantId: 'tenant-a',
+      entityIds: ['agent_123'],
+      scopes: ['rag:embed'],
+    });
+  });
+
+  it('omits the entity from the token when only user attachments are searched', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      entity_id: 'agent_123',
+      files: [{ file_id: 'user-1', filename: 'attachment.txt', fromAgent: false }],
+    });
+    await tool.func({ query: 'q' });
+
+    expect(generateShortLivedToken).toHaveBeenCalledWith({
+      userId: 'user1',
+      tenantId: undefined,
+      entityIds: [],
+      scopes: ['rag:embed'],
+    });
+  });
+
+  it('never requests the rerank scope for a search', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      files: [{ file_id: 'f1', filename: 'a.txt' }],
+    });
+    await tool.func({ query: 'q' });
+
+    const { scopes } = generateShortLivedToken.mock.calls[0][0];
+    expect(scopes).not.toContain('rag:rerank');
+  });
+
+  it('reports an authentication error instead of querying when minting fails', async () => {
+    generateShortLivedToken.mockImplementationOnce(() => {
+      throw new Error('RAG_AUTH_ACCEPT_LEGACY=false requires RAG_JWT_SECRET');
+    });
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      files: [{ file_id: 'f1', filename: 'a.txt' }],
+    });
+
+    const [message] = await tool.func({ query: 'q' });
+
+    expect(message).toBe('There was an error authenticating the file search request.');
+    expect(axios.post).not.toHaveBeenCalled();
   });
 });

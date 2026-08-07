@@ -761,21 +761,21 @@ export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise
     } catch (headErr) {
       if ((headErr as { name?: string }).name === 'NotFound') {
         logger.warn(`[deleteFileFromS3] File does not exist: ${key}`);
-        await deleteRagFile({ userId: ownerId, file });
+        await deleteRagFile({ userId: ownerId, file, tenantId: fileTenantId });
         return;
       }
       throw headErr;
     }
 
     await s3.send(new DeleteObjectCommand(params));
-    await deleteRagFile({ userId: ownerId, file });
+    await deleteRagFile({ userId: ownerId, file, tenantId: fileTenantId });
     logger.debug('[deleteFileFromS3] S3 File deletion completed');
   } catch (error) {
     logger.error(`[deleteFileFromS3] Error deleting file from S3: ${(error as Error).message}`);
     logger.error((error as Error).stack);
 
     if ((error as { name?: string }).name === 'NoSuchKey') {
-      await deleteRagFile({ userId: ownerId, file });
+      await deleteRagFile({ userId: ownerId, file, tenantId: fileTenantId });
       return;
     }
     throw error;

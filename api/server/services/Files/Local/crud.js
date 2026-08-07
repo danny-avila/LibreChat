@@ -234,7 +234,7 @@ const deleteLocalFile = async (req, file) => {
   /** Filepath stripped of query parameters (e.g., ?manual=true) */
   const cleanFilepath = file.filepath.split('?')[0];
 
-  await deleteRagFile({ userId: req.user.id, file });
+  await deleteRagFile({ userId: req.user.id, file, tenantId: req.user.tenantId });
 
   if (cleanFilepath.startsWith(`/uploads/${req.user.id}`)) {
     const userUploadDir = path.join(uploads, req.user.id);

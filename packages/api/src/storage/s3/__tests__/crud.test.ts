@@ -857,7 +857,11 @@ describe('S3 CRUD', () => {
       const { deleteFileFromS3 } = await import('../crud');
       await deleteFileFromS3(mockReq, mockFile);
 
-      expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user123', file: mockFile });
+      expect(deleteRagFile).toHaveBeenCalledWith({
+        userId: 'user123',
+        file: mockFile,
+        tenantId: null,
+      });
       expect(s3Mock.commandCalls(HeadObjectCommand)).toHaveLength(1);
       expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(1);
     });
@@ -875,7 +879,11 @@ describe('S3 CRUD', () => {
       const { deleteFileFromS3 } = await import('../crud');
       await deleteFileFromS3(requesterReq, mockFile);
 
-      expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user123', file: mockFile });
+      expect(deleteRagFile).toHaveBeenCalledWith({
+        userId: 'user123',
+        file: mockFile,
+        tenantId: null,
+      });
       expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(1);
     });
 
@@ -895,7 +903,11 @@ describe('S3 CRUD', () => {
       expect(s3Mock.commandCalls(DeleteObjectCommand)[0].args[0].input.Key).toBe(
         'r/us-east-2/t/tenantA/images/user123/file.jpg',
       );
-      expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user123', file: mockFile });
+      expect(deleteRagFile).toHaveBeenCalledWith({
+        userId: 'user123',
+        file: mockFile,
+        tenantId: 'tenantA',
+      });
     });
 
     it('prefers storageKey when deleting legacy filepath records', async () => {
@@ -930,7 +942,11 @@ describe('S3 CRUD', () => {
       await deleteFileFromS3(mockReq, mockFile);
 
       expect(logger.warn).toHaveBeenCalled();
-      expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user123', file: mockFile });
+      expect(deleteRagFile).toHaveBeenCalledWith({
+        userId: 'user123',
+        file: mockFile,
+        tenantId: null,
+      });
       expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(0);
     });
 
@@ -972,7 +988,11 @@ describe('S3 CRUD', () => {
 
       const { deleteFileFromS3 } = await import('../crud');
       await expect(deleteFileFromS3(mockReq, mockFile)).resolves.toBeUndefined();
-      expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user123', file: mockFile });
+      expect(deleteRagFile).toHaveBeenCalledWith({
+        userId: 'user123',
+        file: mockFile,
+        tenantId: null,
+      });
     });
 
     it('rejects tenant-prefixed keys when the file record lacks tenantId', async () => {

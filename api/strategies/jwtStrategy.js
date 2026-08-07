@@ -1,3 +1,4 @@
+const { isRagAudience } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
@@ -12,6 +13,13 @@ const jwtLogin = () =>
     },
     async (payload, done) => {
       try {
+        /** Tokens minted for the RAG service are signed with a separate key and
+         * are never application session tokens; refuse them by audience too so
+         * a shared-secret misconfiguration cannot turn one into the other. */
+        if (isRagAudience(payload?.aud)) {
+          logger.warn('[jwtLogin] JwtStrategy => refused a token minted for the RAG service');
+          return done(null, false);
+        }
         const user = await getUserById(payload?.id, '-password -__v -totpSecret -backupCodes');
         if (user) {
           user.id = user._id.toString();

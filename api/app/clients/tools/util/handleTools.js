@@ -385,6 +385,7 @@ const loadTools = async ({
           userId: user,
           files,
           entity_id: agent?.id,
+          tenantId: options.req?.user?.tenantId,
           fileCitations,
         });
       };

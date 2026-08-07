@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { logger } from '@librechat/data-schemas';
-import { generateShortLivedToken } from '~/crypto/jwt';
+import { RagScopes, generateShortLivedToken } from '~/crypto/jwt';
 
 interface DeleteRagFileParams {
   /** The user ID. Required for authentication. If not provided, the function returns false and logs an error. */
@@ -9,7 +9,15 @@ interface DeleteRagFileParams {
   file: {
     file_id: string;
     embedded?: boolean;
+    /**
+     * The entity (agent) whose knowledge base the file was embedded under, when
+     * it was not embedded under the user. Its chunks are owned by that entity,
+     * so a delete that names only the user matches nothing.
+     */
+    entity_id?: string;
   };
+  /** The tenant the file belongs to. */
+  tenantId?: string | null;
 }
 
 /**
@@ -20,9 +28,14 @@ interface DeleteRagFileParams {
  * @param params - The parameters object.
  * @param params.userId - The user ID for authentication.
  * @param params.file - The file object. Must have `embedded` and `file_id` properties.
+ * @param params.tenantId - The tenant the file belongs to.
  * @returns Returns true if deletion was successful or skipped, false if there was an error.
  */
-export async function deleteRagFile({ userId, file }: DeleteRagFileParams): Promise<boolean> {
+export async function deleteRagFile({
+  userId,
+  file,
+  tenantId,
+}: DeleteRagFileParams): Promise<boolean> {
   if (!file.embedded || !process.env.RAG_API_URL) {
     return true;
   }
@@ -32,7 +45,20 @@ export async function deleteRagFile({ userId, file }: DeleteRagFileParams): Prom
     return false;
   }
 
-  const jwtToken = generateShortLivedToken(userId);
+  const entityIds = file.entity_id ? [file.entity_id] : [];
+
+  let jwtToken: string;
+  try {
+    jwtToken = generateShortLivedToken({
+      userId,
+      tenantId,
+      entityIds,
+      scopes: [RagScopes.embed],
+    });
+  } catch (error) {
+    logger.error('[deleteRagFile] Unable to mint a RAG API token:', (error as Error).message);
+    return false;
+  }
 
   try {
     await axios.delete(`${process.env.RAG_API_URL}/documents`, {
@@ -41,6 +67,7 @@ export async function deleteRagFile({ userId, file }: DeleteRagFileParams): Prom
         'Content-Type': 'application/json',
         accept: 'application/json',
       },
+      params: file.entity_id ? { entity_id: file.entity_id } : undefined,
       data: [file.file_id],
     });
     logger.debug(`[deleteRagFile] Successfully deleted document ${file.file_id} from RAG API`);

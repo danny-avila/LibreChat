@@ -185,7 +185,7 @@ function extractFirebaseFilePath(urlString) {
  *          Throws an error if there is an issue with deletion.
  */
 const deleteFirebaseFile = async (req, file) => {
-  await deleteRagFile({ userId: req.user.id, file });
+  await deleteRagFile({ userId: req.user.id, file, tenantId: req.user.tenantId });
 
   const fileName = extractFirebaseFilePath(file.filepath);
   if (!fileName.includes(req.user.id)) {
