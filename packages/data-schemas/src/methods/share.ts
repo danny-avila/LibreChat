@@ -1,7 +1,6 @@
 import { nanoid } from 'nanoid';
 import { Constants, ContentTypes, FileSources } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
-import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import { activeExpirationFilter } from '~/utils/retention';
 import { enqueueSearchEvents } from '~/search/events';
@@ -468,7 +467,8 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     pageSize?: number,
     sortBy?: string,
     sortDirection?: string,
-    search?: string,
+    /** Externally resolved candidate conversation ids; `[]` means no matches. */
+    searchIds?: string[] | null,
   ) => Promise<t.SharedLinksResult>;
   createSharedLink: (
     user: string,
@@ -593,11 +593,10 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     pageSize: number = 10,
     sortBy: string = 'createdAt',
     sortDirection: string = 'desc',
-    search?: string,
+    searchIds?: string[] | null,
   ): Promise<t.SharedLinksResult> {
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
-      const Conversation = mongoose.models.Conversation as SchemaWithMeiliMethods;
       const query: FilterQuery<t.ISharedLink> = {
         user,
         ...activeExpirationFilter<t.ISharedLink>(),
@@ -611,33 +610,20 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         }
       }
 
-      if (search && search.trim()) {
-        try {
-          const searchResults = await Conversation.meiliSearch(search, {
-            filter: `user = "${user}"`,
-          });
-
-          if (!searchResults?.hits?.length) {
-            return {
-              links: [],
-              nextCursor: undefined,
-              hasNextPage: false,
-            };
-          }
-
-          const conversationIds = searchResults.hits.map((hit) => hit.conversationId);
-          query['conversationId'] = { $in: conversationIds };
-        } catch (searchError) {
-          logger.error('[getSharedLinks] Meilisearch error', {
-            error: searchError instanceof Error ? searchError.message : 'Unknown error',
-            user,
-          });
+      /**
+       * Candidate conversation ids arrive already resolved. An empty array means
+       * "searched, matched nothing" and returns nothing; `undefined` means this
+       * is not a search.
+       */
+      if (searchIds) {
+        if (searchIds.length === 0) {
           return {
             links: [],
             nextCursor: undefined,
             hasNextPage: false,
           };
         }
+        query['conversationId'] = { $in: searchIds };
       }
 
       const sort: Record<string, 1 | -1> = {};
@@ -745,9 +731,9 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
     }
     try {
-      const Message = mongoose.models.Message as SchemaWithMeiliMethods;
+      const Message = mongoose.models.Message as Model<t.IMessage>;
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
-      const Conversation = mongoose.models.Conversation as SchemaWithMeiliMethods;
+      const Conversation = mongoose.models.Conversation as Model<t.IConversation>;
 
       const [existingShare, conversationMessages] = await Promise.all([
         SharedLink.findOne({
@@ -892,7 +878,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
 
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
-      const Message = mongoose.models.Message as SchemaWithMeiliMethods;
+      const Message = mongoose.models.Message as Model<t.IMessage>;
       const share = (await SharedLink.findOne({ shareId, user })
         .select('-_id -__v -user')
         .lean()) as t.ISharedLink | null;

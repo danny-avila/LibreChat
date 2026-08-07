@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const express = require('express');
+const { resolveCandidates } = require('~/server/services/Search/candidates');
 const {
   isEnabled,
   generateCheckAccess,
@@ -401,13 +402,22 @@ router.get('/', requireJwtAuth, async (req, res) => {
       search: req.query.search ? decodeURIComponent(req.query.search.trim()) : undefined,
     };
 
+    /**
+     * Shared-link search matches on the conversation, so the candidates are
+     * conversation ids. `undefined` when this is not a search.
+     */
+    const searchIds = params.search
+      ? (await resolveCandidates('shared-links', params.search, { limit: params.pageSize }))
+          .conversationIds
+      : undefined;
+
     const result = await getSharedLinks(
       req.user.id,
       params.pageParam,
       params.pageSize,
       params.sortBy,
       params.sortDirection,
-      params.search,
+      searchIds,
     );
 
     res.status(200).send({

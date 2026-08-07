@@ -18,6 +18,7 @@ const {
   prepareMessageRequestValidation,
 } = require('~/server/middleware');
 const db = require('~/models');
+const { resolveCandidates } = require('~/server/services/Search/candidates');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -51,45 +52,35 @@ router.get('/', async (req, res) => {
         { sortField, sortOrder, limit: pageSize, cursor },
       );
     } else if (search) {
-      const searchResults = await db.searchMessages(search, { filter: `user = "${user}"` }, true);
+      /**
+       * The search branch lives in the route, not in the persistence method: the
+       * data-schemas package cannot reach the search module, so it takes resolved
+       * candidate ids and owns only hydration.
+       */
+      const { recordIds } = await resolveCandidates('messages', search, { limit: pageSize });
+      const candidates = await db.searchMessages(user, recordIds);
 
-      const messages = searchResults.hits || [];
-
-      const result = await db.getConvosQueried(req.user.id, messages, cursor);
-
-      const messageIds = [];
-      const cleanedMessages = [];
-      for (let i = 0; i < messages.length; i++) {
-        let message = messages[i];
-        if (result.convoMap[message.conversationId]) {
-          messageIds.push(message.messageId);
-          cleanedMessages.push(message);
-        }
-      }
-
-      const dbMessages = await db.getMessages({
-        user,
-        messageId: { $in: messageIds },
-      });
-
-      const dbMessageMap = {};
-      for (const dbMessage of dbMessages) {
-        dbMessageMap[dbMessage.messageId] = dbMessage;
-      }
+      /** Keeps only candidates whose conversation is still visible to this user. */
+      const result = await db.getConvosQueried(
+        req.user.id,
+        candidates.map((message) => ({ conversationId: message.conversationId })),
+        cursor,
+      );
 
       const activeMessages = [];
-      for (const message of cleanedMessages) {
+      for (const message of candidates) {
         const convo = result.convoMap[message.conversationId];
-        const dbMessage = dbMessageMap[message.messageId];
-
+        if (!convo) {
+          continue;
+        }
         activeMessages.push({
           ...message,
           title: convo.title,
           conversationId: message.conversationId,
           model: convo.model,
-          isCreatedByUser: dbMessage?.isCreatedByUser,
-          endpoint: dbMessage?.endpoint,
-          iconURL: dbMessage?.iconURL,
+          isCreatedByUser: message.isCreatedByUser,
+          endpoint: message.endpoint,
+          iconURL: message.iconURL,
         });
       }
 

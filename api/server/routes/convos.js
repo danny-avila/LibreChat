@@ -23,6 +23,7 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const getLogStores = require('~/cache/getLogStores');
 const db = require('~/models');
+const { resolveCandidates } = require('~/server/services/Search/candidates');
 
 const assistantClients = {
   [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
@@ -56,12 +57,17 @@ router.get('/', async (req, res) => {
   }
 
   try {
+    /** `undefined` when this is not a search; `[]` when it matched nothing. */
+    const searchIds = search
+      ? (await resolveCandidates('conversations', search, { limit })).recordIds
+      : undefined;
+
     const result = await db.getConvosByCursor(req.user.id, {
       cursor,
       limit,
       isArchived,
       tags,
-      search,
+      searchIds,
       sortBy,
       sortDirection,
       projectId,

@@ -738,14 +738,8 @@ describe('Share Methods', () => {
       expect(result.links[0].shareId).toBe('active_share');
     });
 
-    test('should handle search with mocked meiliSearch and user filter', async () => {
+    test('filters shares to the externally resolved candidate conversations', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
-
-      // Mock meiliSearch method
-      const meiliSearchMock = jest.fn().mockResolvedValue({
-        hits: [{ conversationId: 'conv1' }],
-      });
-      Conversation.meiliSearch = meiliSearchMock;
 
       await SharedLink.create([
         {
@@ -762,20 +756,35 @@ describe('Share Methods', () => {
         },
       ]);
 
+      const result = await shareMethods.getSharedLinks(userId, undefined, 10, 'createdAt', 'desc', [
+        'conv1',
+      ]);
+
+      expect(result.links).toHaveLength(1);
+      expect(result.links[0].title).toBe('Matching Share');
+    });
+
+    test('returns nothing when the search matched no conversations', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      await SharedLink.create({
+        shareId: 'share1',
+        conversationId: 'conv1',
+        user: userId,
+        title: 'Some Share',
+      });
+
+      /** `[]` means "searched, matched nothing" — distinct from not searching. */
       const result = await shareMethods.getSharedLinks(
         userId,
         undefined,
         10,
         'createdAt',
         'desc',
-        'search term',
+        [],
       );
 
-      expect(result.links).toHaveLength(1);
-      expect(result.links[0].title).toBe('Matching Share');
-
-      // Verify that meiliSearch was called with the correct user filter
-      expect(meiliSearchMock).toHaveBeenCalledWith('search term', { filter: `user = "${userId}"` });
+      expect(result.links).toHaveLength(0);
+      expect(result.hasNextPage).toBe(false);
     });
 
     test('should handle empty results', async () => {
@@ -787,33 +796,10 @@ describe('Share Methods', () => {
       expect(result.nextCursor).toBeUndefined();
     });
 
-    test('should only return shares from search results for the current user', async () => {
+    test('never returns another user shares even when the candidate list contains them', async () => {
       const userId1 = new mongoose.Types.ObjectId().toString();
       const userId2 = new mongoose.Types.ObjectId().toString();
 
-      // Mock meiliSearch to simulate finding conversations from both users
-      const meiliSearchMock = jest.fn().mockImplementation((searchTerm, params) => {
-        // Simulate MeiliSearch filtering by user
-        const filter = params?.filter;
-        if (filter && filter.includes(userId1)) {
-          return Promise.resolve({
-            hits: [{ conversationId: 'conv1' }, { conversationId: 'conv3' }],
-          });
-        } else if (filter && filter.includes(userId2)) {
-          return Promise.resolve({ hits: [{ conversationId: 'conv2' }] });
-        }
-        // Without filter, would return all conversations (security issue)
-        return Promise.resolve({
-          hits: [
-            { conversationId: 'conv1' },
-            { conversationId: 'conv2' },
-            { conversationId: 'conv3' },
-          ],
-        });
-      });
-      Conversation.meiliSearch = meiliSearchMock;
-
-      // Create shares for different users
       await SharedLink.create([
         {
           shareId: 'share1',
@@ -835,43 +821,35 @@ describe('Share Methods', () => {
         },
       ]);
 
-      // Search as userId1
+      /**
+       * A deliberately over-broad candidate list, spanning both users. Scope is
+       * enforced by this method's own `user` filter, so a search store that
+       * over-returns cannot leak — the candidate list is a narrowing hint, never
+       * an authorization decision.
+       */
+      const everyConversation = ['conv1', 'conv2', 'conv3'];
+
       const result1 = await shareMethods.getSharedLinks(
         userId1,
         undefined,
         10,
         'createdAt',
         'desc',
-        'search term',
+        everyConversation,
       );
-
-      // Should only get shares from conversations belonging to userId1
       expect(result1.links).toHaveLength(2);
       expect(result1.links.every((link) => link.title.includes('User 1'))).toBe(true);
 
-      // Verify correct filter was used
-      expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
-        filter: `user = "${userId1}"`,
-      });
-
-      // Search as userId2
       const result2 = await shareMethods.getSharedLinks(
         userId2,
         undefined,
         10,
         'createdAt',
         'desc',
-        'search term',
+        everyConversation,
       );
-
-      // Should only get shares from conversations belonging to userId2
       expect(result2.links).toHaveLength(1);
       expect(result2.links[0].title).toBe('User 2 Share');
-
-      // Verify correct filter was used for second user
-      expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
-        filter: `user = "${userId2}"`,
-      });
     });
 
     test('should only return shares for the specified user', async () => {
