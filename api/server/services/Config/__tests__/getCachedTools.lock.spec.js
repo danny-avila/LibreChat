@@ -7,6 +7,7 @@ const mockRedisClient = {
 
 jest.mock('@librechat/api', () => ({
   cacheConfig: { FORCED_IN_MEMORY_CACHE_NAMESPACES: [] },
+  mcpConfig: { USER_CONNECTION_IDLE_TIMEOUT: 15 * 60 * 1000 },
   ioredisClient: mockRedisClient,
   keyvRedisClient: {},
 }));

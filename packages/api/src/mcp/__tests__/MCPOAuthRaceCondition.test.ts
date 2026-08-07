@@ -345,6 +345,8 @@ describe('MCP OAuth Race Condition Fixes', () => {
         isConnected: jest.fn().mockResolvedValue(true),
         refreshToolList: jest.fn().mockResolvedValue(undefined),
         disconnect: jest.fn().mockResolvedValue(undefined),
+        removeAllListeners: jest.fn(),
+        dispose: jest.fn().mockResolvedValue(undefined),
         isStale: jest.fn().mockReturnValue(false),
       });
 
@@ -408,6 +410,8 @@ describe('MCP OAuth Race Condition Fixes', () => {
 
         expect(callCount).toBe(2);
         expect(conn1).not.toBe(conn2);
+        expect(conn1.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
+        expect(conn1.dispose).toHaveBeenCalledTimes(1);
       } finally {
         createSpy.mockRestore();
         registrySpy.mockRestore();

@@ -1,4 +1,4 @@
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, Time } = require('librechat-data-provider');
 
 jest.mock('~/cache/getLogStores');
 const getLogStores = require('~/cache/getLogStores');
@@ -107,6 +107,7 @@ describe('getCachedTools', () => {
       expect(mockCache.set).toHaveBeenCalledWith(
         ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
         created,
+        expect.any(Number),
       );
       expect(existing).toBe('existing-generation');
     });
@@ -127,6 +128,11 @@ describe('getCachedTools', () => {
       expect(mockCache.set).toHaveBeenCalledWith(
         ToolCacheKeys.MCP_SERVER('user1', 'github'),
         tools,
+        expect.any(Number),
+      );
+      expect(mockCache.set).toHaveBeenCalledWith(
+        ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
+        'generation-a',
         expect.any(Number),
       );
     });
@@ -159,7 +165,9 @@ describe('getCachedTools', () => {
       expect(mockCache.set).toHaveBeenCalledWith(
         ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
         expect.any(String),
+        expect.any(Number),
       );
+      expect(mockCache.set.mock.calls[0][2]).toBeGreaterThanOrEqual(Time.ONE_DAY);
       expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.MCP_SERVER('user1', 'github'));
       expect(generationWrite).toBeLessThan(toolDelete);
     });

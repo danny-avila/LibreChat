@@ -59,12 +59,30 @@ export abstract class UserConnectionManager {
   protected userLastActivity: Map<string, number> = new Map();
   /** In-flight connection promises keyed by `userId:serverName` — coalesces concurrent attempts */
   protected pendingConnections: Map<string, PendingConnection> = new Map();
+  /** Serializes explicit durable replacements without coalescing their callers. */
+  private readonly forceNewConnectionQueues: Map<string, Promise<void>> = new Map();
   /** Fences durable connections whose credentials were invalidated on another replica. */
   protected readonly toolPublicationGenerations: WeakMap<MCPConnection, string> = new WeakMap();
 
   /** Returns the cache-publication generation captured for a durable connection. */
   public getToolPublicationGeneration(connection: MCPConnection): string | undefined {
     return this.toolPublicationGenerations.get(connection);
+  }
+
+  private runWithForceNewConnectionQueue<T>(key: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.forceNewConnectionQueues.get(key) ?? Promise.resolve();
+    const result = previous.then(operation, operation);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.forceNewConnectionQueues.set(key, tail);
+    void tail.then(() => {
+      if (this.forceNewConnectionQueues.get(key) === tail) {
+        this.forceNewConnectionQueues.delete(key);
+      }
+    });
+    return result;
   }
 
   /** Updates the last activity timestamp for a user */
@@ -177,17 +195,22 @@ export abstract class UserConnectionManager {
     }
 
     const pendingOAuth = this.createPendingOAuthState(opts.oauthStart);
-    const connectionPromise = this.createUserConnectionInternal(
-      {
-        ...opts,
-        forceNew: forceNewConnection,
-        ephemeralConnection,
-        serverConfig: config,
-        oauthStart: this.createPendingOAuthStart(serverName, userId, pendingOAuth),
-      },
-      userId,
-      clearCooldown,
-    );
+    const createConnection = () =>
+      this.createUserConnectionInternal(
+        {
+          ...opts,
+          forceNew: forceNewConnection,
+          ephemeralConnection,
+          serverConfig: config,
+          oauthStart: this.createPendingOAuthStart(serverName, userId, pendingOAuth),
+        },
+        userId,
+        clearCooldown,
+      );
+    const connectionPromise =
+      forceNew === true && !ephemeralConnection
+        ? this.runWithForceNewConnectionQueue(lockKey, createConnection)
+        : createConnection();
 
     if (!forceNewConnection) {
       this.pendingConnections.set(lockKey, { promise: connectionPromise, oauth: pendingOAuth });
@@ -410,7 +433,16 @@ export abstract class UserConnectionManager {
       : await getMCPToolsChangedGeneration({ userId, serverName });
 
     const userServerMap = this.userConnections.get(userId);
-    let connection = forceNew ? undefined : userServerMap?.get(serverName);
+    let connection = userServerMap?.get(serverName);
+    if (forceNew && connection && !ephemeralConnection) {
+      logger.info(
+        `[MCP][User: ${userId}][${serverName}] Disposing existing connection before forced replacement`,
+      );
+      await this.disconnectUserConnection(userId, serverName);
+      connection = undefined;
+    } else if (forceNew) {
+      connection = undefined;
+    }
     if (clearCooldown) {
       MCPConnection.clearCooldown(serverName);
     }

@@ -1809,6 +1809,46 @@ describe('MCPManager', () => {
       expect(mockConnection.refreshToolList).toHaveBeenCalledTimes(1);
     });
 
+    it('disposes the tracked durable connection before a forced replacement', async () => {
+      const createConnection = () =>
+        ({
+          isConnected: jest.fn().mockResolvedValue(true),
+          isStale: jest.fn().mockReturnValue(false),
+          refreshToolList: jest.fn().mockResolvedValue(undefined),
+          on: jest.fn(),
+          removeAllListeners: jest.fn(),
+          dispose: jest.fn().mockResolvedValue(undefined),
+        }) as unknown as MCPConnection;
+      const previousConnection = createConnection();
+      const replacementConnection = createConnection();
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'yaml',
+        startup: false,
+      });
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockResolvedValueOnce(previousConnection)
+        .mockResolvedValueOnce(replacementConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({ serverName, user: mockUser });
+      const result = await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        forceNew: true,
+      });
+
+      expect(previousConnection.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
+      expect(previousConnection.dispose).toHaveBeenCalledTimes(1);
+      expect((previousConnection.dispose as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+        (MCPConnectionFactory.create as jest.Mock).mock.invocationCallOrder[1],
+      );
+      expect(result).toBe(replacementConnection);
+      expect(manager.getUserConnections(userId)?.get(serverName)).toBe(replacementConnection);
+    });
+
     it('binds durable tool publications to the generation captured before connection creation', async () => {
       const generationSpy = jest
         .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')

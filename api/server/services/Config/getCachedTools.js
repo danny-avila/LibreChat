@@ -1,7 +1,7 @@
 const { randomUUID } = require('crypto');
 const { CacheKeys, Time } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
-const { cacheConfig, ioredisClient, keyvRedisClient } = require('@librechat/api');
+const { cacheConfig, ioredisClient, keyvRedisClient, mcpConfig } = require('@librechat/api');
 const getLogStores = require('~/cache/getLogStores');
 
 const GLOBAL_TOOLS_LOCK_KEY = `${CacheKeys.TOOL_CACHE}:tools:global:write-lock`;
@@ -10,6 +10,13 @@ const GLOBAL_TOOLS_LOCK_RETRY_MS = 25;
 const GLOBAL_TOOLS_LOCK_WAIT_MS = GLOBAL_TOOLS_LOCK_TTL_MS + GLOBAL_TOOLS_LOCK_RETRY_MS;
 const USER_TOOLS_LOCK_TTL_MS = 30_000;
 const USER_TOOLS_LOCK_WAIT_MS = USER_TOOLS_LOCK_TTL_MS + GLOBAL_TOOLS_LOCK_RETRY_MS;
+const configuredUserConnectionIdleTimeout = Number(mcpConfig.USER_CONNECTION_IDLE_TIMEOUT);
+const MCP_SERVER_GENERATION_TTL_MS = Math.max(
+  Time.ONE_DAY,
+  Number.isFinite(configuredUserConnectionIdleTimeout)
+    ? configuredUserConnectionIdleTimeout * 2
+    : 0,
+);
 let globalToolsQueue = Promise.resolve();
 const userToolsQueues = new Map();
 const RELEASE_GLOBAL_TOOLS_LOCK_SCRIPT = `
@@ -29,7 +36,7 @@ const ToolCacheKeys = {
   MCP_APP_SERVER_SNAPSHOTS: 'tools:mcp:app:snapshots',
   /** MCP tools cached by user ID and server name */
   MCP_SERVER: (userId, serverName) => `tools:mcp:${userId}:${serverName}`,
-  /** Durable generation fencing stale publications from replaced user connections */
+  /** Leased generation fencing stale publications from replaced user connections */
   MCP_SERVER_GENERATION: (userId, serverName) =>
     `tools:mcp:${userId}:${serverName}:publication-generation`,
 };
@@ -144,7 +151,7 @@ async function setCachedTools(tools, options = {}) {
   return runWithGlobalCacheLock(() => setCachedToolsWithinGlobalLock(tools, options));
 }
 
-/** Returns the durable generation a user connection must present when publishing tools. */
+/** Returns the leased generation a user connection must present when publishing tools. */
 async function getMCPToolsCacheGeneration({ userId, serverName }) {
   if (!userId || !serverName) {
     return undefined;
@@ -161,7 +168,7 @@ async function getMCPToolsCacheGeneration({ userId, serverName }) {
       return current;
     }
     const generation = randomUUID();
-    if ((await cache.set(key, generation)) === false) {
+    if ((await cache.set(key, generation, MCP_SERVER_GENERATION_TTL_MS)) === false) {
       throw new Error('Tool publication generation cache rejected the write');
     }
     return generation;
@@ -176,6 +183,15 @@ async function setCachedToolsIfCurrent(tools, options) {
     const generation = await cache.get(ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName));
     if (generation !== publicationGeneration) {
       return false;
+    }
+    if (
+      (await cache.set(
+        ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName),
+        generation,
+        MCP_SERVER_GENERATION_TTL_MS,
+      )) === false
+    ) {
+      throw new Error('Tool publication generation cache rejected the lease refresh');
     }
     const written = await cache.set(ToolCacheKeys.MCP_SERVER(userId, serverName), tools, ttl);
     if (written === false) {
@@ -245,7 +261,7 @@ async function invalidateCachedTools(options = {}) {
   if (serverName && userId) {
     await runWithUserToolsQueue(userId, serverName, async () => {
       const generationKey = ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName);
-      if ((await cache.set(generationKey, randomUUID())) === false) {
+      if ((await cache.set(generationKey, randomUUID(), MCP_SERVER_GENERATION_TTL_MS)) === false) {
         throw new Error('Tool publication generation cache rejected invalidation');
       }
       await cache.delete(ToolCacheKeys.MCP_SERVER(userId, serverName));
