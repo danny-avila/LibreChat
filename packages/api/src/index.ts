@@ -1,4 +1,5 @@
 export * from './app';
+export * from './credentials';
 /* Artifacts */
 export * from './artifacts';
 /* Admin */
