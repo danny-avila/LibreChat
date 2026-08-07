@@ -43,8 +43,10 @@ export function chatSearchConfigured(): boolean {
  * Null is a supported outcome, not a failure: a deployment that never sets the
  * chat-search variables must boot exactly as it did before, which is why nothing
  * here throws on absence. Misconfiguration *does* throw — a missing cursor
- * secret with the feature switched on is an operator error, and failing at boot
- * is far better than failing on the first paginated search.
+ * secret with the feature switched on is an operator error, and surfacing it at
+ * boot beats surfacing it on someone's first paginated search. The caller
+ * decides how loud that is; the server logs it and keeps serving without search
+ * rather than refusing to start.
  *
  * The connection string is the reader role's. The projector's writer URL is
  * deliberately a different variable: a request pod holds no grant that can
