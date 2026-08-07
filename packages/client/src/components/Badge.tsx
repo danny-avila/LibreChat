@@ -117,6 +117,7 @@ export default function Badge({
   if (isEditing) {
     return (
       <motion.div
+        {...(buttonProps as React.ComponentProps<typeof motion.div>)}
         onClick={handleRootClick}
         className={badgeClassName}
         animate={{

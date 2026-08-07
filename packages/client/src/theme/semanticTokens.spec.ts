@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 const sharedComponents = [
   'AnimatedSearchInput.tsx',

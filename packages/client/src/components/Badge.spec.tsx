@@ -15,4 +15,24 @@ describe('Badge', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove Tool' }));
     expect(onBadgeAction).toHaveBeenCalledTimes(1);
   });
+
+  it('forwards editing-mode attributes and event handlers to the wrapper', () => {
+    const onMouseDown = jest.fn();
+    render(
+      <Badge
+        label="Tool"
+        isAvailable={true}
+        isEditing
+        aria-label="Editable tool"
+        data-testid="editable-badge"
+        onMouseDown={onMouseDown}
+      />,
+    );
+
+    const badge = screen.getByTestId('editable-badge');
+    expect(badge).toHaveAttribute('aria-label', 'Editable tool');
+
+    fireEvent.mouseDown(badge);
+    expect(onMouseDown).toHaveBeenCalledTimes(1);
+  });
 });
