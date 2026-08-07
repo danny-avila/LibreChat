@@ -1081,7 +1081,7 @@ describe('MCPManager', () => {
       );
     }
 
-    async function callTool(manager: MCPManager) {
+    async function callTool(manager: MCPManager, signal?: AbortSignal) {
       return manager.callTool({
         user: mockUser,
         serverName,
@@ -1089,6 +1089,7 @@ describe('MCPManager', () => {
         provider: 'openai',
         oauthStart: jest.fn(),
         flowManager: mockFlowManager,
+        options: signal ? { signal } : undefined,
       });
     }
 
@@ -1303,6 +1304,34 @@ describe('MCPManager', () => {
       expect(oauthHandler).toHaveBeenCalledTimes(1);
       expect(connection.connect).toHaveBeenCalledTimes(1);
       expect(request).toHaveBeenCalledTimes(4);
+      expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
+    });
+
+    it('lets an aborted runtime waiter leave without cancelling the recovery owner', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValue(authError);
+      const connection = createConnection(request);
+      attachOAuthHandler(() => undefined);
+      const manager = await createManager(connection);
+      const controller = new AbortController();
+      const abortReason = new Error('waiter aborted');
+
+      const ownerCall = callTool(manager);
+      await new Promise((resolve) => setImmediate(resolve));
+      const waiterCall = callTool(manager, controller.signal);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledTimes(1);
+      controller.abort(abortReason);
+
+      await expect(waiterCall).rejects.toBe(abortReason);
+      expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(1);
+
+      connection.emit('oauthFailed', new Error('Recovery owner aborted'));
+
+      await expect(ownerCall).rejects.toBe(authError);
+      expect(connection.connect).not.toHaveBeenCalled();
+      expect(request).toHaveBeenCalledTimes(2);
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
 

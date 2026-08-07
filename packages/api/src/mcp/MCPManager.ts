@@ -93,7 +93,10 @@ export class MCPManager extends UserConnectionManager {
     const connection = requestConnection ?? this.userConnections.get(userId)?.get(opts.serverName);
     const recovery = connection ? this.oauthRecoveries.get(connection) : undefined;
     if (recovery) {
-      await this.waitForActiveRecovery(recovery.promise, opts.signal);
+      await this.waitForActiveRecovery(
+        recovery.promise.catch(() => undefined),
+        opts.signal,
+      );
     }
 
     return super.getUserConnection(opts);
@@ -101,13 +104,17 @@ export class MCPManager extends UserConnectionManager {
 
   private waitForActiveRecovery(recovery: Promise<void>, signal?: AbortSignal): Promise<void> {
     if (!signal) {
-      return recovery.catch(() => undefined);
+      return recovery;
     }
 
     return new Promise<void>((resolve, reject) => {
-      const onRecoverySettled = () => {
+      const onRecoveryResolved = () => {
         signal.removeEventListener('abort', onAbort);
         resolve();
+      };
+      const onRecoveryRejected = (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
       };
       const onAbort = () => {
         signal.removeEventListener('abort', onAbort);
@@ -121,7 +128,7 @@ export class MCPManager extends UserConnectionManager {
       }
 
       signal.addEventListener('abort', onAbort, { once: true });
-      recovery.then(onRecoverySettled, onRecoverySettled);
+      recovery.then(onRecoveryResolved, onRecoveryRejected);
     });
   }
 
@@ -388,13 +395,17 @@ Please follow these instructions when using tools from the respective MCP server
     serverName: string,
     userId: string,
     attachRequestOAuthHandler: () => () => void,
+    signal?: AbortSignal,
     allowsTakeover = true,
   ): Promise<void> {
     const existingRecovery = this.oauthRecoveries.get(connection);
     if (existingRecovery) {
       try {
-        return await existingRecovery.promise;
+        return await this.waitForActiveRecovery(existingRecovery.promise, signal);
       } catch (recoveryError) {
+        if (signal?.aborted) {
+          throw recoveryError;
+        }
         if (!existingRecovery.allowsTakeover) {
           throw recoveryError;
         }
@@ -407,6 +418,7 @@ Please follow these instructions when using tools from the respective MCP server
           serverName,
           userId,
           attachRequestOAuthHandler,
+          signal,
           false,
         );
       }
@@ -750,8 +762,12 @@ Please follow these instructions when using tools from the respective MCP server
             serverName,
             userId,
             attachRequestOAuthHandler,
+            options?.signal,
           );
         } catch (recoveryError) {
+          if (options?.signal?.aborted) {
+            throw recoveryError;
+          }
           logger.warn(
             `${logPrefix}[${toolName}] Connection-check OAuth recovery failed`,
             recoveryError,
@@ -796,8 +812,12 @@ Please follow these instructions when using tools from the respective MCP server
             serverName,
             userId,
             attachRequestOAuthHandler,
+            options?.signal,
           );
         } catch (recoveryError) {
+          if (options?.signal?.aborted) {
+            throw recoveryError;
+          }
           logger.warn(`${logPrefix}[${toolName}] Runtime OAuth recovery failed`, recoveryError);
           throw error;
         }
