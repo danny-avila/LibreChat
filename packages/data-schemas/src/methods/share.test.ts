@@ -5,6 +5,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import { createShareMethods, anonymizeSharedContent, type ShareMethods } from './share';
+import { MEILI_SEARCH_LIMIT } from '~/common/search';
 
 describe('Share Methods', () => {
   let mongoServer: MongoMemoryServer;
@@ -775,7 +776,10 @@ describe('Share Methods', () => {
       expect(result.links[0].title).toBe('Matching Share');
 
       // Verify that meiliSearch was called with the correct user filter
-      expect(meiliSearchMock).toHaveBeenCalledWith('search term', { filter: `user = "${userId}"` });
+      expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
+        filter: `user = "${userId}"`,
+        limit: MEILI_SEARCH_LIMIT,
+      });
     });
 
     test('should handle empty results', async () => {
@@ -852,6 +856,7 @@ describe('Share Methods', () => {
       // Verify correct filter was used
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId1}"`,
+        limit: MEILI_SEARCH_LIMIT,
       });
 
       // Search as userId2
@@ -871,6 +876,7 @@ describe('Share Methods', () => {
       // Verify correct filter was used for second user
       expect(meiliSearchMock).toHaveBeenCalledWith('search term', {
         filter: `user = "${userId2}"`,
+        limit: MEILI_SEARCH_LIMIT,
       });
     });
 
