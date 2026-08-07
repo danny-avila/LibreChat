@@ -170,22 +170,40 @@ function sniffMime(buffer: Buffer): string | undefined {
   return undefined;
 }
 
+function isImageMime(mime: string): boolean {
+  return mime.startsWith('image/');
+}
+
 /**
  * `metadata.attachments[].mime_type` is what ChatGPT itself recorded for the
  * file, so it wins; the original filename's extension is the next best
  * signal, and content sniffing covers assets that have neither.
+ *
+ * With one exception: an *image* claim is only ever honoured by the bytes.
+ * Both the manifest and the filename are attacker-controlled export content,
+ * and the resolved type decides which backend the asset lands on — an
+ * `image/*` type sends it to the `images` base, which on the local strategy
+ * is `client/public/images`, served with no auth unless `secureImageLinks`
+ * is on. So a crafted `image/png` wrapping SVG or HTML would otherwise be
+ * anonymously retrievable. A file that claims to be an image and does not
+ * sniff as one takes the sniffed type, or `application/octet-stream`, and
+ * goes to `uploads` behind the authenticated download route. Image formats
+ * the sniffer does not know (SVG among them) intentionally land there too.
  */
 function resolveMime(
   attachment: ChatGptAttachment | undefined,
   originalName: string,
   buffer: Buffer,
 ): string {
-  return (
-    attachment?.mime_type ??
-    mimeFromExtension(originalName) ??
-    sniffMime(buffer) ??
-    'application/octet-stream'
-  );
+  const declared = attachment?.mime_type ?? mimeFromExtension(originalName);
+  const sniffed = sniffMime(buffer);
+  if (declared === undefined) {
+    return sniffed ?? 'application/octet-stream';
+  }
+  if (!isImageMime(declared)) {
+    return declared;
+  }
+  return sniffed ?? 'application/octet-stream';
 }
 
 /**

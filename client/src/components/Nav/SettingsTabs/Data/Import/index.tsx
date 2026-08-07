@@ -54,6 +54,15 @@ export default function Import() {
    */
   const isSettled = job != null && SETTLED_PHASES.has(job.phase);
   const isGone = isJobError && isJobGone(jobError);
+  /**
+   * Only a job the server says no longer exists is lost. A transient failure
+   * on the way there — a 503, a dropped connection — leaves the import
+   * running, so the last status we hold keeps rendering while the query
+   * retries; swapping in the "job lost" card there hid a live import behind a
+   * dead end. With no status to fall back on there is nothing to show but the
+   * card.
+   */
+  const isLost = isGone || (isJobError && job == null);
   useEffect(() => {
     if (isSettled || isGone) {
       writeActiveJobId(null);
@@ -149,11 +158,11 @@ export default function Import() {
         />
       )}
 
-      {jobId != null && isJobError && <Lost onReset={handleReset} />}
+      {jobId != null && isLost && <Lost onReset={handleReset} />}
 
-      {jobId != null && !isJobError && job == null && <Loading />}
+      {jobId != null && !isLost && job == null && <Loading />}
 
-      {job != null && !isJobError && showSummary && job.summary != null && (
+      {job != null && !isLost && showSummary && job.summary != null && (
         <Summary
           summary={job.summary}
           onConfirm={handleConfirm}
@@ -163,7 +172,7 @@ export default function Import() {
         />
       )}
 
-      {job != null && !isJobError && !showSummary && (
+      {job != null && !isLost && !showSummary && (
         <Progress
           job={job}
           onCancel={handleCancel}

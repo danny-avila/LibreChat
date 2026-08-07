@@ -404,6 +404,12 @@ describe('runImport', () => {
     });
     const { sink, recorded } = recorder();
     let checks = 0;
+    /** The run reads cancellation at most once per second so a Redis-backed
+     * job store is not hit once per conversation, so the clock has to move
+     * for the second conversation's check to reach the store at all. */
+    const start = Date.now();
+    let elapsed = 0;
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => start + elapsed);
 
     const report = await runImport({
       filepath,
@@ -417,9 +423,12 @@ describe('runImport', () => {
        * many times the run checks along the way. */
       isCancelled: async () => {
         checks += 1;
+        elapsed += 2000;
         return recorded.conversations.length >= 1;
       },
     });
+
+    now.mockRestore();
 
     expect(checks).toBeGreaterThan(0);
     expect(recorded.conversations).toHaveLength(1);

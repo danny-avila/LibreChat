@@ -577,6 +577,26 @@ describe('Import panel', () => {
   });
 
   /**
+   * A 503 or a dropped connection says nothing about the import, which is
+   * still running on the server. Replacing the progress panel with the "job
+   * lost" card there told the user their import was gone and offered them a
+   * reset, while the run went on writing conversations behind it.
+   */
+  it('keeps showing a running job through a transient poll failure', () => {
+    window.localStorage.setItem('importJobId', 'job-99');
+    dataProvider.useImportJobQuery.mockReturnValue({
+      data: job({ phase: 'conversations', status: 'active' }),
+      isError: true,
+      error: { response: { status: 503 } },
+    });
+
+    render(<Import />);
+
+    expect(screen.getByRole('button', { name: /cancel import/i })).toBeInTheDocument();
+    expect(window.localStorage.getItem('importJobId')).toBe('job-99');
+  });
+
+  /**
    * The buttons were only ever asserted on for their labels and disabled
    * state, so the panel could have called mutate with undefined, an empty
    * string, or a stale id and every test still passed. On a multi-minute

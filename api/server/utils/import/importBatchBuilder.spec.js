@@ -4,9 +4,10 @@ jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn().mockResolvedValue(undefined),
   bulkSaveMessages: jest.fn().mockResolvedValue(undefined),
   bulkIncrementTagCounts: jest.fn().mockResolvedValue(undefined),
+  deleteMessages: jest.fn().mockResolvedValue({ deletedCount: 0 }),
 }));
 
-const { bulkSaveConvos, bulkSaveMessages } = require('~/models');
+const { bulkSaveConvos, bulkSaveMessages, deleteMessages } = require('~/models');
 
 describe('ImportBatchBuilder flushing', () => {
   beforeEach(() => {
@@ -89,5 +90,24 @@ describe('ImportBatchBuilder flushing', () => {
     await expect(builder.saveBatch()).rejects.toThrow('message write failed');
 
     expect(bulkSaveConvos).not.toHaveBeenCalled();
+  });
+
+  /** Messages go in first, so a failed conversation write leaves rows nothing
+   * points at. A retry mints fresh message ids, so they are never reused and
+   * would otherwise pile up on every re-import. */
+  it('removes the messages it wrote when the conversation write fails', async () => {
+    bulkSaveConvos.mockRejectedValueOnce(new Error('conversation write failed'));
+
+    const builder = new ImportBatchBuilder('u1', undefined, { flushThreshold: 5 });
+    builder.startConversation();
+    const message = builder.addUserMessage('hello');
+    builder.finishConversation('Chat', new Date());
+
+    await expect(builder.saveBatch()).rejects.toThrow('conversation write failed');
+
+    expect(deleteMessages).toHaveBeenCalledWith({
+      user: 'u1',
+      messageId: { $in: [message.messageId] },
+    });
   });
 });

@@ -139,8 +139,18 @@ async function buildMixedAssetExportZip() {
     'conversation_asset_file_names.json',
     JSON.stringify({ 'asset-img.dat': 'photo.jpg', 'asset-aud.dat': 'voice.wav' }),
   );
-  zip.file('asset-img.dat', Buffer.from([1, 2, 3, 4]));
-  zip.file('asset-aud.dat', Buffer.from([5, 6, 7, 8]));
+  /** Real magic bytes: the importer classifies an asset as an image from the
+   * content, not from the name or the export's declared mime type, so a
+   * placeholder here would land the "image" on the document backend. */
+  zip.file('asset-img.dat', Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]));
+  zip.file(
+    'asset-aud.dat',
+    Buffer.concat([
+      Buffer.from('RIFF', 'ascii'),
+      Buffer.from([0x24, 0x00, 0x00, 0x00]),
+      Buffer.from('WAVE', 'ascii'),
+    ]),
+  );
 
   const buffer = await zip.generateAsync({ type: 'nodebuffer' });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-route-fixture-'));

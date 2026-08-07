@@ -43,24 +43,45 @@ function findParent(
   startId: string | null,
   mapping: Record<string, ChatGptNode>,
   ids: Map<string, string>,
+  resolved: Map<string, string>,
 ): string {
   const visited = new Set<string>();
+  const walked: string[] = [];
   let current = startId;
+  let result = Constants.NO_PARENT as string;
 
   while (current && !visited.has(current)) {
+    const cached = resolved.get(current);
+    if (cached !== undefined) {
+      result = cached;
+      break;
+    }
     visited.add(current);
+    walked.push(current);
     const node = mapping[current];
     if (!node) {
-      return Constants.NO_PARENT;
+      break;
     }
     const mapped = ids.get(current);
     if (mapped && isEmitted(node)) {
-      return mapped;
+      result = mapped;
+      break;
     }
     current = node.parent;
   }
 
-  return Constants.NO_PARENT;
+  /** Every node this walk crossed resolves to the same nearest emitted
+   * ancestor, so recording them all means the next sibling branch stops at the
+   * first shared node instead of re-walking the chain. Exports interleave long
+   * runs of skipped `system`/`thoughts`/`reasoning_recap` nodes, and a fresh
+   * walk per message over those runs is what makes a deep thread quadratic
+   * (the same trap `tree.ts` documents). `ids` is fully built before the
+   * conversion loop, so a resolved answer never changes mid-conversation. */
+  for (const nodeId of walked) {
+    resolved.set(nodeId, result);
+  }
+
+  return result;
 }
 
 function findThinking(startId: string | null, mapping: Record<string, ChatGptNode>): string | null {
@@ -156,6 +177,9 @@ export function convertConversation(
     }
   }
 
+  /** Shared by every `findParent` call in this conversation; see the backfill
+   * there. Scoped per conversation because `mapping` and `ids` are. */
+  const resolvedParents = new Map<string, string>();
   const fallbackTime = conv.create_time ? conv.create_time * 1000 : Date.now();
   const messages: ConvertedMessage[] = [];
 
@@ -180,7 +204,7 @@ export function convertConversation(
 
     const converted: ConvertedMessage = {
       messageId,
-      parentMessageId: findParent(node.parent, mapping, ids),
+      parentMessageId: findParent(node.parent, mapping, ids, resolvedParents),
       text,
       sender: isCreatedByUser ? 'user' : sender,
       isCreatedByUser,

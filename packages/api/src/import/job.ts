@@ -13,6 +13,11 @@ function emptyProgress(): ImportJob['progress'] {
   };
 }
 
+export type CancelResult = {
+  cancelled: boolean;
+  previousPhase: ImportJob['phase'] | null;
+};
+
 export type StartTransitionResult =
   | { status: 'started'; job: ImportJob }
   | { status: 'not_found' }
@@ -115,12 +120,29 @@ export class ImportJobStore {
     );
   }
 
-  async cancel(userId: string, jobId: string): Promise<boolean> {
-    const updated = await this.patch(userId, jobId, {
-      status: 'cancelled',
-      phase: 'cancelled',
+  /**
+   * Cancels a job and reports the phase it was actually cancelled *from*,
+   * read under the same lock as the write. The caller removes the temporary
+   * upload only for a job that never left `awaiting_confirmation`; a phase
+   * snapshotted before the lock can be stale by the time the cancellation
+   * lands, which would delete the archive out from under a run that has just
+   * claimed it.
+   */
+  async cancel(userId: string, jobId: string): Promise<CancelResult> {
+    return this.withTransitionLock(this.key(userId, jobId), async () => {
+      const existing = await this.get(userId, jobId);
+      if (!existing) {
+        return { cancelled: false, previousPhase: null };
+      }
+      const updated = await this.applyPatch(userId, jobId, {
+        status: 'cancelled',
+        phase: 'cancelled',
+      });
+      if (!updated) {
+        return { cancelled: false, previousPhase: null };
+      }
+      return { cancelled: true, previousPhase: existing.phase };
     });
-    return updated !== null;
   }
 
   async isCancelled(userId: string, jobId: string): Promise<boolean> {

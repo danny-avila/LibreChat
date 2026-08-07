@@ -720,6 +720,14 @@ router.post(
  * unique index (a deliberate choice, see Task 13), so a duplicate run
  * would otherwise duplicate conversations the first run has not yet
  * committed.
+ *
+ * That guarantee, and the concurrency ceilings below, hold within one
+ * process. Both the transition lock and the counters are process-local, so a
+ * deployment running several replicas behind a shared job store can admit the
+ * same job twice from two replicas, and its aggregate ceiling is
+ * `replicas × CONVERSATION_IMPORT_MAX_CONCURRENT`. Making that airtight needs
+ * a distributed compare-and-set and a distributed semaphore; until then,
+ * imports belong on a single node.
  * @route POST /import/jobs/:jobId/start
  * @returns {object} 202 - the job has started
  * @returns {object} 404 - no such job for this user
@@ -821,8 +829,8 @@ router.delete('/import/jobs/:jobId', async (req, res) => {
     res.status(404).json({ message: 'Import job not found' });
     return;
   }
-  await importJobs.cancel(req.user.id, job.jobId);
-  if (job.phase === 'awaiting_confirmation') {
+  const { previousPhase } = await importJobs.cancel(req.user.id, job.jobId);
+  if (previousPhase === 'awaiting_confirmation') {
     await fs.promises.unlink(job.filepath).catch(() => undefined);
   }
   res.status(200).json({ jobId: job.jobId });

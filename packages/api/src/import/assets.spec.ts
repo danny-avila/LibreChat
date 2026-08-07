@@ -168,6 +168,64 @@ describe('ingestAssets', () => {
     );
 
     const result = await ingestAssets({
+      archive: withAssetNames(archive, JSON.stringify({ 'file-one.dat': 'first.pdf' })),
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      pointers: ['file-service://file-one'],
+      attachments: new Map([['file-one', { id: 'file-one', mime_type: 'audio/ogg' }]]),
+      deps: {
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(result.map.get('file-service://file-one')?.type).toBe('audio/ogg');
+
+    archive.close();
+  });
+
+  it('keeps a declared image type when the bytes are that image', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    const result = await ingestAssets({
+      archive,
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      pointers: ['file-service://file_generated'],
+      attachments: new Map([['file_generated', { id: 'file_generated', mime_type: 'image/png' }]]),
+      deps: {
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(result.map.get('file-service://file_generated')?.type).toBe('image/png');
+
+    archive.close();
+  });
+
+  it('does not honour an image type the bytes do not back', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    const result = await ingestAssets({
       archive: withAssetNames(archive, JSON.stringify({ 'file-one.dat': 'first.bin' })),
       layout,
       userId: 'u1',
@@ -183,7 +241,7 @@ describe('ingestAssets', () => {
       },
     });
 
-    expect(result.map.get('file-service://file-one')?.type).toBe('image/heic');
+    expect(result.map.get('file-service://file-one')?.type).toBe('application/octet-stream');
 
     archive.close();
   });
@@ -482,7 +540,7 @@ describe('ingestAssets', () => {
     const result = await ingestAssets({
       archive: withAssetNames(
         archive,
-        JSON.stringify({ 'file-one.dat': 'first.jpg', 'file-two.dat': 'clip.xyz' }),
+        JSON.stringify({ 'file-one.dat': 'first.pdf', 'file-two.dat': 'clip.xyz' }),
       ),
       layout,
       userId: 'u1',
@@ -497,7 +555,7 @@ describe('ingestAssets', () => {
       },
     });
 
-    expect(result.map.get('file-service://file-one')?.type).toBe('image/jpeg');
+    expect(result.map.get('file-service://file-one')?.type).toBe('application/pdf');
     expect(result.map.get('file-service://file-two')?.type).toBe('application/octet-stream');
 
     archive.close();

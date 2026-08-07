@@ -47,6 +47,35 @@ interface ExportScan {
 
 class ShardShapeError extends Error {}
 
+/** Minimum gap between cancellation reads inside the conversation loop. The
+ * job store can be Redis, so an unthrottled check is a network round trip per
+ * conversation — tens of thousands of them on a large export, for a signal a
+ * user produces at most once. The first check is never delayed, and a second
+ * of extra work after a cancel is under the client's own poll interval. */
+const CANCEL_CHECK_INTERVAL_MS = 1000;
+
+/** Wraps a cancellation check so it hits the store at most once per interval
+ * and answers from the last read in between. */
+function throttleCancelCheck(isCancelled?: () => Promise<boolean>): () => Promise<boolean> {
+  if (!isCancelled) {
+    return async () => false;
+  }
+  let lastCheck = 0;
+  let lastResult = false;
+  return async () => {
+    if (lastResult) {
+      return true;
+    }
+    const now = Date.now();
+    if (now - lastCheck < CANCEL_CHECK_INTERVAL_MS) {
+      return false;
+    }
+    lastCheck = now;
+    lastResult = await isCancelled();
+    return lastResult;
+  };
+}
+
 async function readShardJson(archive: Archive, shard: string): Promise<unknown> {
   return JSON.parse((await archive.read(shard)).toString('utf8')) as unknown;
 }
@@ -383,6 +412,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
     await input.onPhase?.('conversations');
 
     let cancelled = false;
+    const checkCancelled = throttleCancelCheck(input.isCancelled);
     for (const shard of scan.shards) {
       if (cancelled) {
         break;
@@ -397,7 +427,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       }
 
       for (const conv of conversations) {
-        if (input.isCancelled && (await input.isCancelled())) {
+        if (await checkCancelled()) {
           cancelled = true;
           break;
         }

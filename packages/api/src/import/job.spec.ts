@@ -55,14 +55,20 @@ describe('ImportJobStore', () => {
     const job = await store.create({ userId: 'u1', filepath: '/tmp/a.zip', filename: 'a.zip' });
 
     expect(await store.isCancelled('u1', job.jobId)).toBe(false);
-    expect(await store.cancel('u1', job.jobId)).toBe(true);
+    expect(await store.cancel('u1', job.jobId)).toEqual({
+      cancelled: true,
+      previousPhase: 'queued',
+    });
     expect(await store.isCancelled('u1', job.jobId)).toBe(true);
     expect((await store.get('u1', job.jobId))?.status).toBe('cancelled');
   });
 
   it('does not cancel another user’s job', async () => {
     const job = await store.create({ userId: 'u1', filepath: '/tmp/a.zip', filename: 'a.zip' });
-    expect(await store.cancel('u2', job.jobId)).toBe(false);
+    expect(await store.cancel('u2', job.jobId)).toEqual({
+      cancelled: false,
+      previousPhase: null,
+    });
     expect((await store.get('u1', job.jobId))?.status).toBe('active');
   });
 

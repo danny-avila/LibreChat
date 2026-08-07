@@ -10,7 +10,12 @@ const {
   RetentionMode,
   openAISettings,
 } = require('librechat-data-provider');
-const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages } = require('~/models');
+const {
+  deleteMessages,
+  bulkSaveConvos,
+  bulkSaveMessages,
+  bulkIncrementTagCounts,
+} = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
 /**
@@ -175,7 +180,34 @@ class ImportBatchBuilder {
       );
     } catch (error) {
       logger.error('Error saving batch', error);
+      await this.discardOrphanedMessages(messages);
       throw error;
+    }
+  }
+
+  /**
+   * Removes messages whose conversations never made it to the DB. Messages are
+   * written first on purpose, so a failed conversation write leaves rows no
+   * conversation points at: invisible to the user, not skipped by a retry
+   * (every run mints fresh message ids), and so duplicated on every re-import.
+   * Scoped to this user and to the ids this flush wrote. Best effort, and
+   * never allowed to mask the original failure.
+   * @param {Array<{ messageId: string }>} messages - the messages this flush wrote
+   */
+  async discardOrphanedMessages(messages) {
+    if (messages.length === 0) {
+      return;
+    }
+    try {
+      await deleteMessages({
+        user: this.requestUserId,
+        messageId: { $in: messages.map((message) => message.messageId) },
+      });
+    } catch (cleanupError) {
+      logger.error(
+        `user: ${this.requestUserId} | Could not remove the messages of a failed import batch`,
+        cleanupError,
+      );
     }
   }
 
