@@ -59,6 +59,8 @@ export interface MCPScopedServerToolReadParams {
   tenantId: string | null;
   role?: string;
   authorizationIdentity: string | null;
+  authorizationKind?: MCPConnectionProvenance['authorizationKind'];
+  securityPolicyIdentity?: string;
 }
 
 export interface MCPToolCatalogPrincipal {
@@ -135,6 +137,8 @@ export interface MCPToolCacheService {
     tenantId: string | null;
     role?: string;
     authorizationIdentity: string;
+    authorizationKind?: MCPConnectionProvenance['authorizationKind'];
+    securityPolicyIdentity?: string;
   }) => Promise<MCPToolCatalogResult>;
 }
 
@@ -318,6 +322,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
               securityPolicyIdentity,
               customUserVars,
               authorizationIdentity,
+              authorizationKind: discoveryProvenance?.authorizationKind,
             };
             if (hasMatchingDiscoveryProvenance(discoveryProvenance, scopeInput)) {
               const persisted = await persistMCPToolCatalog(
@@ -422,6 +427,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         securityPolicyIdentity,
         customUserVars,
         authorizationIdentity,
+        authorizationKind: discoveryProvenance?.authorizationKind,
       };
       if (!hasMatchingDiscoveryProvenance(discoveryProvenance, scopeInput)) {
         return serverTools;
@@ -535,6 +541,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         securityPolicyIdentity,
         customUserVars,
         authorizationIdentity,
+        authorizationKind: discoveryProvenance?.authorizationKind,
       };
       if (!hasMatchingDiscoveryProvenance(discoveryProvenance, scopeInput)) {
         logger.debug(`[MCP Cache] Skipped catalog write with stale provenance for ${serverName}`);
@@ -645,6 +652,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     tenantId?: string | null;
     role?: string;
     authorizationIdentity?: string | null;
+    authorizationKind?: MCPConnectionProvenance['authorizationKind'];
+    securityPolicyIdentity?: string;
   }): Promise<LCAvailableTools | null> {
     const {
       userId,
@@ -654,6 +663,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       tenantId,
       role,
       authorizationIdentity,
+      authorizationKind,
+      securityPolicyIdentity,
     } = params;
     if (tenantId === undefined || authorizationIdentity == null) {
       return null;
@@ -674,6 +685,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       tenantId: tenantId ?? null,
       role,
       authorizationIdentity: authorizationIdentity ?? 'none',
+      authorizationKind,
+      securityPolicyIdentity,
     });
     return result.status === 'ready' ? result.tools : null;
   }
@@ -729,6 +742,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     tenantId: string | null;
     role?: string;
     authorizationIdentity: string;
+    authorizationKind?: MCPConnectionProvenance['authorizationKind'];
+    securityPolicyIdentity?: string;
   }): Promise<MCPToolCatalogResult> {
     const {
       userId,
@@ -738,6 +753,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       tenantId,
       role,
       authorizationIdentity,
+      authorizationKind,
+      securityPolicyIdentity: suppliedSecurityPolicyIdentity,
     } = params;
     if (!isMCPToolCatalogFingerprintAvailable()) {
       return { status: 'pending_activation', reason: 'authorization_unavailable' };
@@ -754,7 +771,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     if (getMissingCustomUserVars(serverConfig, customUserVars).length > 0) {
       return { status: 'pending_activation', reason: 'missing_credentials' };
     }
-    const securityPolicyIdentity = await getSecurityPolicyIdentity({ userId, tenantId, role });
+    const securityPolicyIdentity =
+      suppliedSecurityPolicyIdentity ??
+      (await getSecurityPolicyIdentity({ userId, tenantId, role }));
     if (!securityPolicyIdentity) {
       return { status: 'pending_activation', reason: 'authorization_unavailable' };
     }
@@ -768,6 +787,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         securityPolicyIdentity,
         customUserVars,
         authorizationIdentity,
+        authorizationKind,
       });
       if (result.status !== 'ready') {
         return result;

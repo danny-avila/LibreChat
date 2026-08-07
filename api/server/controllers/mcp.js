@@ -6,7 +6,7 @@
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
 const { randomUUID } = require('crypto');
-const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
+const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   checkAccess,
   getUserMCPAuthMap,
@@ -43,17 +43,18 @@ const {
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  userCanUseMCPServersFresh,
 } = require('~/server/services/MCP');
 const { resolveMCPDiscoveryConfigSnapshot } = require('~/server/services/MCPConfigResolver');
-const {
-  cacheScopedMCPServerTools,
-  getScopedCachedMCPServerTools,
-} = require('~/server/services/Config');
+const { cacheScopedMCPServerTools, getMCPServerCatalog } = require('~/server/services/Config');
 const { getResourcePermissionsMap } = require('~/server/services/PermissionService');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
-const { resolveCurrentMCPPrincipal } = require('~/server/services/MCPDiscoveryScope');
+const {
+  resolveCurrentMCPAuthoritySnapshot,
+  resolveCurrentMCPPrincipal,
+} = require('~/server/services/MCPDiscoveryScope');
 const db = require('~/models');
 
 /**
@@ -151,7 +152,21 @@ const getMCPTools = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const mcpConfig = await resolveAllMcpConfigs(userId, req.user);
+    const authoritySnapshot = await resolveCurrentMCPAuthoritySnapshot(req.user, 'tool catalog');
+    if (!authoritySnapshot) {
+      logger.warn('[getMCPTools] Current MCP authority is unavailable');
+      return res.status(200).json({ servers: {} });
+    }
+    if (!(await userCanUseMCPServersFresh(authoritySnapshot.user))) {
+      logger.warn('[getMCPTools] Current MCP permission is unavailable');
+      return res.status(200).json({ servers: {} });
+    }
+    const {
+      configs: mcpConfig,
+      securityPolicyIdentity: catalogSecurityPolicyIdentity,
+      tenantId,
+      user: authorityUser,
+    } = authoritySnapshot;
     /**
      * A server whose normalized name is claimed by an earlier server produces
      * IDENTICAL model-facing tool keys — selecting its tools would silently
@@ -184,8 +199,9 @@ const getMCPTools = async (req, res) => {
       customUserVarsAvailable = false;
       logger.error('[getMCPTools] Failed to load user MCP credentials:', error);
     }
-    const oauthServerNames = configuredServers.filter((serverName) =>
-      isOAuthServer(mcpConfig[serverName]),
+    const oauthServerNames = configuredServers.filter(
+      (serverName) =>
+        isOAuthServer(mcpConfig[serverName]) || shouldDetectRuntimeOAuth(mcpConfig[serverName]),
     );
     const oauthAuthorizationIdentities = oauthServerNames.length
       ? await getMCPAuthorizationIdentities({
@@ -208,19 +224,6 @@ const getMCPTools = async (req, res) => {
 
     const mcpManager = getMCPManager();
     const mcpServers = {};
-    const tenantId = req.user.tenantId ?? getTenantId() ?? null;
-    let catalogSecurityPolicyIdentityPromise;
-    const getCatalogSecurityPolicyIdentity = () => {
-      catalogSecurityPolicyIdentityPromise ??= getMCPServersRegistry()
-        .resolveCatalogSecurityPolicy({ userId, role: req.user?.role, tenantId })
-        .then(createMCPToolCatalogSecurityPolicyIdentity)
-        .catch((error) => {
-          logger.error('[getMCPTools] Failed to resolve current MCP catalog policy:', error);
-          return null;
-        });
-      return catalogSecurityPolicyIdentityPromise;
-    };
-
     const serverToolsMap = new Map();
     const cacheResults = await Promise.all(
       configuredServers.map(async (serverName) => {
@@ -231,21 +234,46 @@ const getMCPTools = async (req, res) => {
             return { serverName, tools: null, credentialsUnavailable: true };
           }
           const authorizationIdentity = authorizationIdentities.get(serverName);
+          if (authorizationIdentity == null || catalogSecurityPolicyIdentity == null) {
+            return { serverName, credentialsUnavailable: false, tools: null };
+          }
+          const readCatalog = async (authorizationKind, catalogAuthorizationIdentity) =>
+            await getMCPServerCatalog({
+              userId,
+              serverName,
+              serverConfig: mcpConfig[serverName],
+              customUserVars: userMCPAuthMap[`${Constants.mcp_prefix}${serverName}`],
+              tenantId,
+              role: authorityUser.role,
+              authorizationIdentity: catalogAuthorizationIdentity,
+              authorizationKind,
+              securityPolicyIdentity: catalogSecurityPolicyIdentity,
+            });
+          let authorizationKind = 'none';
+          if (mcpConfig[serverName]?.obo != null) {
+            authorizationKind = 'obo';
+          } else if (authorizationIdentity !== 'none' || isOAuthServer(mcpConfig[serverName])) {
+            authorizationKind = 'oauth';
+          }
+          let catalog = await readCatalog(authorizationKind, authorizationIdentity);
+          if (
+            catalog.status !== 'ready' &&
+            authorizationKind === 'none' &&
+            shouldDetectRuntimeOAuth(mcpConfig[serverName])
+          ) {
+            const runtimeAuthorizationIdentity = oauthAuthorizationIdentities.get(serverName);
+            if (runtimeAuthorizationIdentity != null) {
+              authorizationKind = 'oauth';
+              catalog = await readCatalog(authorizationKind, runtimeAuthorizationIdentity);
+            }
+          }
           return {
             serverName,
             credentialsUnavailable: false,
             tools:
-              authorizationIdentity == null
-                ? null
-                : await getScopedCachedMCPServerTools({
-                    userId,
-                    serverName,
-                    serverConfig: mcpConfig[serverName],
-                    customUserVars: userMCPAuthMap[`${Constants.mcp_prefix}${serverName}`],
-                    tenantId,
-                    role: req.user?.role,
-                    authorizationIdentity,
-                  }),
+              catalog.status === 'ready' && catalog.metadata.authorizationKind === authorizationKind
+                ? catalog.tools
+                : null,
           };
         } catch (error) {
           logger.error(`[getMCPTools] Error fetching cached tools for ${serverName}:`, error);
@@ -269,15 +297,17 @@ const getMCPTools = async (req, res) => {
       const authorizationIdentityBeforeDiscovery = authorizationIdentities.get(serverName);
       try {
         if (typeof mcpManager.getServerToolFunctionsWithProvenance === 'function') {
-          const securityPolicyIdentity = await getCatalogSecurityPolicyIdentity();
-          if (authorizationIdentityBeforeDiscovery == null || securityPolicyIdentity == null) {
+          if (
+            authorizationIdentityBeforeDiscovery == null ||
+            catalogSecurityPolicyIdentity == null
+          ) {
             continue;
           }
           const serverConfig = mcpConfig[serverName];
           const customUserVars = userMCPAuthMap[`${Constants.mcp_prefix}${serverName}`];
           const effectiveServerConfig = await resolveEffectiveMCPServerConfig({
             serverConfig,
-            user: req.user,
+            user: authorityUser,
             body: req.body,
             customUserVars,
           });
@@ -287,7 +317,7 @@ const getMCPTools = async (req, res) => {
             serverName,
             serverConfig,
             effectiveServerConfig,
-            securityPolicyIdentity,
+            securityPolicyIdentity: catalogSecurityPolicyIdentity,
             customUserVars,
             authorizationIdentity: authorizationIdentityBeforeDiscovery,
           };

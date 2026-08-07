@@ -612,7 +612,11 @@ export class MCPServersRegistry {
    */
   public async ensureConfigServers(
     resolvedMcpConfig: Record<string, t.MCPOptions>,
-    options?: { failClosed?: boolean; allowlists?: ResolvedMCPAllowlists },
+    options?: {
+      failClosed?: boolean;
+      initializeMissing?: boolean;
+      allowlists?: ResolvedMCPAllowlists;
+    },
   ): Promise<Record<string, t.ParsedServerConfig>> {
     if (!resolvedMcpConfig || Object.keys(resolvedMcpConfig).length === 0) {
       return {};
@@ -640,6 +644,9 @@ export class MCPServersRegistry {
     const settled = await Promise.allSettled(
       Object.entries(resolvedMcpConfig).map(async ([serverName, rawConfig]) => {
         if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
+          if (options?.initializeMissing === false) {
+            result[serverName] = yamlSnapshot[serverName];
+          }
           return;
         }
         const parsed = await this.ensureSingleConfigServer(
@@ -647,6 +654,7 @@ export class MCPServersRegistry {
           rawConfig,
           allowlists,
           configCacheSnapshot,
+          options?.initializeMissing !== false,
         );
         if (parsed) {
           result[serverName] = parsed;
@@ -705,6 +713,7 @@ export class MCPServersRegistry {
     rawConfig: t.MCPOptions,
     allowlists: ResolvedMCPAllowlists,
     cacheSnapshot?: Record<string, t.ParsedServerConfig>,
+    initializeMissing = true,
   ): Promise<t.ParsedServerConfig | undefined> {
     const cacheKey = this.configCacheKey(serverName, rawConfig, allowlists);
 
@@ -714,10 +723,19 @@ export class MCPServersRegistry {
     if (cached) {
       const isStaleStub =
         cached.inspectionFailed && Date.now() - (cached.updatedAt ?? 0) > CONFIG_STUB_RETRY_MS;
-      if (!isStaleStub) {
+      if (!cached.inspectionFailed) {
         return cached;
       }
-      logger.info(`[MCP][config][${serverName}] Retrying stale failure stub`);
+      if (!isStaleStub && initializeMissing) {
+        return cached;
+      }
+      if (initializeMissing) {
+        logger.info(`[MCP][config][${serverName}] Retrying stale failure stub`);
+      }
+    }
+
+    if (!initializeMissing) {
+      return undefined;
     }
 
     const pending = this.pendingConfigInits.get(cacheKey);

@@ -152,6 +152,16 @@ jest.mock('~/server/services/Config', () => {
     getCachedTools: jest.fn(),
     getMCPServerTools,
     getScopedCachedMCPServerTools: getMCPServerTools,
+    getMCPServerCatalog: jest.fn(async (params) => {
+      const tools = await getMCPServerTools(params);
+      return tools
+        ? {
+            status: 'ready',
+            tools,
+            metadata: { authorizationKind: params.authorizationKind ?? 'none' },
+          }
+        : { status: 'pending_activation', reason: 'cold' };
+    }),
     cacheMCPServerTools,
     cacheScopedMCPServerTools: cacheMCPServerTools,
     loadCustomConfig: jest.fn(),
@@ -165,9 +175,11 @@ jest.mock('~/server/services/Config/mcp', () => ({
 
 const mockResolveCurrentMCPDiscoveryScope = jest.fn();
 const mockResolveCurrentMCPPrincipal = jest.fn();
+const mockResolveCurrentMCPAuthoritySnapshot = jest.fn();
 jest.mock('~/server/services/MCPDiscoveryScope', () => ({
   resolveCurrentMCPDiscoveryScope: (...args) => mockResolveCurrentMCPDiscoveryScope(...args),
   resolveCurrentMCPPrincipal: (...args) => mockResolveCurrentMCPPrincipal(...args),
+  resolveCurrentMCPAuthoritySnapshot: (...args) => mockResolveCurrentMCPAuthoritySnapshot(...args),
 }));
 
 const mockResolveAllMcpConfigs = jest.fn().mockResolvedValue({});
@@ -179,6 +191,7 @@ jest.mock('~/server/services/MCP', () => ({
   resolveMcpConfigNames: (...args) => mockResolveMcpConfigNames(...args),
   resolveAllMcpConfigs: (...args) => mockResolveAllMcpConfigs(...args),
   resolveAllMcpConfigsFresh: (...args) => mockResolveAllMcpConfigsFresh(...args),
+  userCanUseMCPServersFresh: jest.fn().mockResolvedValue(true),
   getServerConnectionStatus: jest.fn(),
 }));
 
@@ -281,6 +294,28 @@ describe('MCP Routes', () => {
       }),
     );
     mockResolveCurrentMCPPrincipal.mockImplementation(async (user) => user);
+    mockResolveCurrentMCPAuthoritySnapshot.mockImplementation(async (user) => {
+      const currentUser = await mockResolveCurrentMCPPrincipal(user, 'tool catalog');
+      if (!currentUser) {
+        return null;
+      }
+      const configs = await mockResolveAllMcpConfigs(currentUser.id, currentUser);
+      const securityPolicy = await mockRegistryInstance.resolveCatalogSecurityPolicy({
+        userId: currentUser.id,
+        role: currentUser.role,
+        tenantId: currentUser.tenantId ?? null,
+        refresh: true,
+      });
+      return {
+        configs,
+        securityPolicy,
+        securityPolicyIdentity: jest
+          .requireActual('@librechat/api')
+          .createMCPToolCatalogSecurityPolicyIdentity(securityPolicy),
+        tenantId: currentUser.tenantId ?? null,
+        user: currentUser,
+      };
+    });
     mockResolveMcpConfigNames.mockResolvedValue([]);
     require('~/models').findUser.mockResolvedValue({ role: undefined, tenantId: undefined });
     const { MCPOAuthHandler } = require('@librechat/api');
@@ -3414,6 +3449,81 @@ describe('MCP Routes', () => {
       expect(mockResolveAllMcpConfigs).not.toHaveBeenCalled();
     });
 
+    it('does not list or discover a warm catalog after current Config access is revoked', async () => {
+      const { getMCPServerTools } = require('~/server/services/Config');
+      const manager = {
+        getServerToolFunctionsWithProvenance: jest.fn(),
+        getServerToolFunctions: jest.fn(),
+      };
+      mockResolveCurrentMCPAuthoritySnapshot.mockResolvedValueOnce({
+        configs: {},
+        securityPolicy: { allowedDomains: null, allowedAddresses: null },
+        securityPolicyIdentity: 'current-policy-identity',
+        tenantId: null,
+        user: { id: 'test-user-id' },
+      });
+      require('~/config').getMCPManager.mockReturnValue(manager);
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ servers: {} });
+      expect(getMCPServerTools).not.toHaveBeenCalled();
+      expect(manager.getServerToolFunctionsWithProvenance).not.toHaveBeenCalled();
+      expect(manager.getServerToolFunctions).not.toHaveBeenCalled();
+    });
+
+    it('does not list a warm catalog after current MCP USE permission is revoked', async () => {
+      const { getMCPServerTools } = require('~/server/services/Config');
+      const { userCanUseMCPServersFresh } = require('~/server/services/MCP');
+      mockResolveCurrentMCPAuthoritySnapshot.mockResolvedValueOnce({
+        configs: {
+          current: { type: 'streamable-http', url: 'https://mcp.example.com' },
+        },
+        securityPolicy: { allowedDomains: null, allowedAddresses: null },
+        securityPolicyIdentity: 'current-policy-identity',
+        tenantId: null,
+        user: { id: 'test-user-id', role: 'USER' },
+      });
+      userCanUseMCPServersFresh.mockResolvedValueOnce(false);
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ servers: {} });
+      expect(getMCPServerTools).not.toHaveBeenCalled();
+    });
+
+    it('passes the authoritative policy identity to warm catalog validation', async () => {
+      const { createMCPToolCatalogSecurityPolicyIdentity } = jest.requireActual('@librechat/api');
+      const { getMCPServerTools } = require('~/server/services/Config');
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://current.example.com/mcp',
+      };
+      const currentPolicy = {
+        allowedDomains: ['current.example.com'],
+        allowedAddresses: null,
+      };
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({ current: serverConfig });
+      mockRegistryInstance.resolveCatalogSecurityPolicy.mockResolvedValueOnce(currentPolicy);
+      getMCPServerTools.mockResolvedValueOnce({});
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctionsWithProvenance: jest.fn(),
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(getMCPServerTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'current',
+          serverConfig,
+          securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity(currentPolicy),
+        }),
+      );
+    });
+
     it('should reject live schemas and skip catalog access when OAuth identity lookup fails', async () => {
       const { Constants } = require('librechat-data-provider');
       const { getMCPAuthorizationIdentity } = require('@librechat/api');
@@ -3668,7 +3778,54 @@ describe('MCP Routes', () => {
         'runtime-oauth',
         expect.objectContaining({ authorizationIdentity: 'none' }),
       );
-      expect(getMCPAuthorizationIdentity).toHaveBeenCalledTimes(1);
+      expect(getMCPAuthorizationIdentity).toHaveBeenCalledTimes(2);
+    });
+
+    it('rechecks a warm runtime OAuth catalog with the current grant without live discovery', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const { getMCPAuthorizationIdentity } = require('@librechat/api');
+      const { getMCPServerTools } = require('~/server/services/Config');
+      const serverName = 'runtime-oauth-warm';
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/users/{{LIBRECHAT_USER_ID}}',
+        source: 'yaml',
+      };
+      const toolKey = `search${Constants.mcp_delimiter}${serverName}`;
+      const cachedTools = {
+        [toolKey]: {
+          type: 'function',
+          function: {
+            name: toolKey,
+            description: 'Search',
+            parameters: { type: 'object' },
+          },
+        },
+      };
+      const getServerToolFunctionsWithProvenance = jest.fn();
+      mockResolveAllMcpConfigs.mockResolvedValue({ [serverName]: serverConfig });
+      getMCPAuthorizationIdentity.mockResolvedValue('grant-current');
+      getMCPServerTools.mockResolvedValueOnce(null).mockResolvedValueOnce(cachedTools);
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctionsWithProvenance,
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers[serverName].tools).toHaveLength(1);
+      expect(getMCPServerTools).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ authorizationIdentity: 'none', authorizationKind: 'none' }),
+      );
+      expect(getMCPServerTools).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          authorizationIdentity: 'grant-current',
+          authorizationKind: 'oauth',
+        }),
+      );
+      expect(getServerToolFunctionsWithProvenance).not.toHaveBeenCalled();
     });
 
     it('returns live OBO tools using lifecycle provenance without cataloging the grant', async () => {

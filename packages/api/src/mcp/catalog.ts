@@ -9,7 +9,7 @@ import type {
   ParsedServerConfig,
 } from './types';
 export type { MCPConnectionProvenance } from './types';
-import { isUserSourced } from './utils';
+import { isOAuthServer, isUserSourced } from './utils';
 import { processMCPEnv } from '~/utils/env';
 
 export const MCP_TOOL_CATALOG_VERSION = 1 as const;
@@ -41,6 +41,7 @@ export interface MCPToolCatalogMetadata {
   version: typeof MCP_TOOL_CATALOG_VERSION;
   source: MCPServerSource | 'unknown';
   revision: string;
+  authorizationKind: MCPConnectionProvenance['authorizationKind'];
   cachedAt: number;
   freshUntil: number;
   scope: MCPToolCatalogScope;
@@ -70,6 +71,8 @@ export interface MCPToolCatalogScopeInput {
   securityPolicyIdentity: string;
   customUserVars?: Record<string, string>;
   authorizationIdentity: string;
+  /** Authorization mode proven by the connection that discovered these schemas. */
+  authorizationKind?: MCPConnectionProvenance['authorizationKind'];
   /** Exact post-placeholder config used to construct the discovering connection. */
   effectiveServerConfig?: MCPOptions;
 }
@@ -214,6 +217,7 @@ export function createMCPToolCatalogScope({
   securityPolicyIdentity,
   customUserVars,
   authorizationIdentity,
+  authorizationKind,
   effectiveServerConfig,
 }: MCPToolCatalogScopeInput): MCPToolCatalogScope {
   return {
@@ -225,6 +229,8 @@ export function createMCPToolCatalogScope({
     credentials: fingerprint({
       customUserVars: customUserVars ?? {},
       authorizationIdentity: authorizationIdentity ?? 'none',
+      authorizationKind:
+        authorizationKind ?? getMCPAuthorizationKind(authorizationIdentity, serverConfig),
       effectiveServerConfig: declarativeConfig(
         effectiveConfig({
           tenantId,
@@ -234,6 +240,7 @@ export function createMCPToolCatalogScope({
           securityPolicyIdentity,
           customUserVars,
           authorizationIdentity,
+          authorizationKind,
           effectiveServerConfig,
         }) as ParsedServerConfig,
       ),
@@ -243,11 +250,14 @@ export function createMCPToolCatalogScope({
 
 function getMCPAuthorizationKind(
   authorizationIdentity: string,
+  serverConfig?: ParsedServerConfig,
 ): MCPConnectionProvenance['authorizationKind'] {
   if (authorizationIdentity === MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY) {
     return 'obo';
   }
-  return authorizationIdentity === 'none' ? 'none' : 'oauth';
+  return authorizationIdentity === 'none' && !(serverConfig && isOAuthServer(serverConfig))
+    ? 'none'
+    : 'oauth';
 }
 
 export function createMCPConnectionProvenance(
@@ -255,6 +265,7 @@ export function createMCPConnectionProvenance(
   principalKind: MCPConnectionProvenance['principalKind'],
   authorizationKind: MCPConnectionProvenance['authorizationKind'] = getMCPAuthorizationKind(
     input.authorizationIdentity,
+    input.serverConfig,
   ),
 ): MCPConnectionProvenance | null {
   if (!isMCPToolCatalogFingerprintAvailable()) {
@@ -262,7 +273,7 @@ export function createMCPConnectionProvenance(
   }
   return {
     version: MCP_TOOL_CATALOG_VERSION,
-    scope: createMCPToolCatalogScope(input),
+    scope: createMCPToolCatalogScope({ ...input, authorizationKind }),
     principalKind,
     authorizationKind,
   };
@@ -493,6 +504,9 @@ export function createMCPToolCatalogEnvelope(
       version: MCP_TOOL_CATALOG_VERSION,
       source: input.serverConfig.source ?? 'unknown',
       revision: getMCPToolCatalogRevision(input.serverConfig),
+      authorizationKind:
+        input.authorizationKind ??
+        getMCPAuthorizationKind(input.authorizationIdentity, input.serverConfig),
       cachedAt: now,
       freshUntil: now + MCP_TOOL_CATALOG_TTL_MS,
       scope: createMCPToolCatalogScope(input),
@@ -514,6 +528,7 @@ export function isMCPToolCatalogEnvelope(value: unknown): value is MCPToolCatalo
     metadata?.version === MCP_TOOL_CATALOG_VERSION &&
     ['yaml', 'config', 'user', 'unknown'].includes(metadata.source ?? '') &&
     isScopeIdentity(metadata.revision) &&
+    ['none', 'oauth', 'obo'].includes(metadata.authorizationKind ?? '') &&
     typeof metadata.cachedAt === 'number' &&
     Number.isFinite(metadata.cachedAt) &&
     metadata.cachedAt >= 0 &&

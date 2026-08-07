@@ -67,6 +67,7 @@ async function reinitMCPServer({
   let oauthExpiresAt;
   let ephemeralServer = false;
   let discoveryProvenance = null;
+  let authorityScope = null;
   let discoveryScopeRejected = false;
   let mcpManager;
 
@@ -295,6 +296,7 @@ async function reinitMCPServer({
           }
         }
       } else {
+        authorityScope = currentScope.catalogScope ?? null;
         availableTools = await updateMCPServerTools({
           tenantId: currentScope.tenantId,
           userId: user.id,
@@ -345,6 +347,8 @@ async function reinitMCPServer({
     }
     const result = {
       availableTools,
+      authorityScope,
+      discoveryProvenance,
       success,
       message: getResponseMessage(),
       failureReason,

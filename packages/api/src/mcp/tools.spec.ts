@@ -28,11 +28,13 @@ function createTestProvenance({
   serverName,
   serverConfig = cacheableConfig,
   authorizationIdentity = 'none',
+  authorizationKind,
 }: {
   userId?: string;
   serverName: string;
   serverConfig?: ParsedServerConfig;
   authorizationIdentity?: string;
+  authorizationKind?: 'none' | 'oauth' | 'obo';
 }) {
   return createMCPConnectionProvenance(
     {
@@ -44,6 +46,7 @@ function createTestProvenance({
       authorizationIdentity,
     },
     'user',
+    authorizationKind,
   );
 }
 
@@ -369,12 +372,18 @@ describe('createMCPToolCacheService', () => {
         tools: [],
         tenantId: null,
         authorizationIdentity: 'none',
-        discoveryProvenance: createTestProvenance({ serverName: 'srv' }),
+        discoveryProvenance: createTestProvenance({
+          serverName: 'srv',
+          authorizationKind: 'oauth',
+        }),
       });
 
       expect(result).toEqual({});
       expect(deps.setMCPServerCatalog).toHaveBeenCalledWith(
-        expect.objectContaining({ tools: {} }),
+        expect.objectContaining({
+          tools: {},
+          metadata: expect.objectContaining({ authorizationKind: 'oauth' }),
+        }),
         {
           userId: 'u1',
           serverName: 'srv',
@@ -434,7 +443,10 @@ describe('createMCPToolCacheService', () => {
         tools,
         tenantId: null,
         authorizationIdentity: 'none',
-        discoveryProvenance: createTestProvenance({ serverName: 'brave' }),
+        discoveryProvenance: createTestProvenance({
+          serverName: 'brave',
+          authorizationKind: 'oauth',
+        }),
       });
 
       const expectedKey = `search${Constants.mcp_delimiter}brave`;
@@ -448,7 +460,10 @@ describe('createMCPToolCacheService', () => {
       });
       expect(result[expectedKey]['function'].annotations).toEqual({ readOnlyHint: true });
       expect(deps.setMCPServerCatalog).toHaveBeenCalledWith(
-        expect.objectContaining({ tools: result }),
+        expect.objectContaining({
+          tools: result,
+          metadata: expect.objectContaining({ authorizationKind: 'oauth' }),
+        }),
         {
           userId: 'u1',
           serverName: 'brave',
@@ -674,11 +689,17 @@ describe('createMCPToolCacheService', () => {
         serverTools,
         tenantId: null,
         authorizationIdentity: 'none',
-        discoveryProvenance: createTestProvenance({ serverName: 'brave' }),
+        discoveryProvenance: createTestProvenance({
+          serverName: 'brave',
+          authorizationKind: 'oauth',
+        }),
       });
 
       expect(deps.setMCPServerCatalog).toHaveBeenCalledWith(
-        expect.objectContaining({ tools: serverTools }),
+        expect.objectContaining({
+          tools: serverTools,
+          metadata: expect.objectContaining({ authorizationKind: 'oauth' }),
+        }),
         { userId: 'u1', serverName: 'brave', tenantId: null },
       );
     });
@@ -760,6 +781,51 @@ describe('createMCPToolCacheService', () => {
         tenantId: 'tenant-a',
         role: 'ADMIN',
       });
+    });
+
+    it('validates a warm catalog with the supplied authoritative policy identity', async () => {
+      const policyA = createMCPToolCatalogSecurityPolicyIdentity({
+        allowedDomains: ['mcp.example.com'],
+      });
+      const policyB = createMCPToolCatalogSecurityPolicyIdentity({
+        allowedDomains: ['mcp.internal.example.com'],
+      });
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(
+          createMCPToolCatalogEnvelope(cachedTools, {
+            tenantId: 'tenant-a',
+            userId: 'u1',
+            serverName: 'brave',
+            serverConfig: cacheableConfig,
+            securityPolicyIdentity: policyA,
+            authorizationIdentity: 'none',
+          }),
+        ),
+        getScopedSecurityPolicy: jest.fn().mockRejectedValue(new Error('must not be consulted')),
+      });
+      const { getScopedMCPServerTools } = createMCPToolCacheService(deps);
+
+      await expect(
+        getScopedMCPServerTools({
+          tenantId: 'tenant-a',
+          userId: 'u1',
+          serverName: 'brave',
+          serverConfig: cacheableConfig,
+          authorizationIdentity: 'none',
+          securityPolicyIdentity: policyB,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        getScopedMCPServerTools({
+          tenantId: 'tenant-a',
+          userId: 'u1',
+          serverName: 'brave',
+          serverConfig: cacheableConfig,
+          authorizationIdentity: 'none',
+          securityPolicyIdentity: policyA,
+        }),
+      ).resolves.toEqual(cachedTools);
+      expect(deps.getScopedSecurityPolicy).not.toHaveBeenCalled();
     });
 
     it('returns an empty ready catalog distinctly from a cold cache', async () => {

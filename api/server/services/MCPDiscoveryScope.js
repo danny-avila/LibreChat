@@ -1,11 +1,13 @@
 const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+  createMCPToolCatalogScope,
   createSafeUser,
   getMCPAuthorizationIdentity,
   getServerCustomUserVars,
   getUserMCPAuthMap,
   getMissingCustomUserVars,
+  findShadowedServerNames,
   createMCPToolCatalogSecurityPolicyIdentity,
   isMCPToolCatalogFingerprintAvailable,
   matchesMCPConnectionProvenance,
@@ -53,18 +55,25 @@ async function resolveDiscoveryAuthorizationScope({
   if (serverConfig.obo != null) {
     return {
       authorizationIdentity: MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+      authorizationKind: 'obo',
       provenanceServerConfig: serverConfig,
     };
   }
 
   const runtimeOAuthDetected =
-    discoveryProvenance?.authorizationKind === 'oauth' && shouldDetectRuntimeOAuth(serverConfig);
+    shouldDetectRuntimeOAuth(serverConfig) &&
+    (discoveryProvenance?.authorizationKind === 'oauth' ||
+      (discoveryProvenance == null && oauthRequiredHint === true));
   const oauthConnection =
     isOAuthServer(serverConfig) ||
     runtimeOAuthDetected ||
     (discoveryProvenance == null && oauthRequiredHint === true);
   if (!oauthConnection) {
-    return { authorizationIdentity: 'none', provenanceServerConfig: serverConfig };
+    return {
+      authorizationIdentity: 'none',
+      authorizationKind: 'none',
+      provenanceServerConfig: serverConfig,
+    };
   }
 
   const authorizationIdentity = await getMCPAuthorizationIdentity({
@@ -75,6 +84,7 @@ async function resolveDiscoveryAuthorizationScope({
   });
   return {
     authorizationIdentity,
+    authorizationKind: 'oauth',
     provenanceServerConfig: runtimeOAuthDetected
       ? { ...serverConfig, requiresOAuth: true }
       : serverConfig,
@@ -114,6 +124,140 @@ async function resolveCurrentMCPPrincipal(user, serverName) {
     idOnTheSource: storedUser.idOnTheSource == null ? null : String(storedUser.idOnTheSource),
   };
   return currentUser;
+}
+
+async function resolveCurrentMCPAuthoritySnapshot(user, label, options = {}) {
+  const currentUser = await resolveCurrentMCPPrincipal(user, label);
+  if (!currentUser) {
+    return null;
+  }
+
+  try {
+    const { configs, securityPolicy, collisionServerNames } =
+      await resolveMCPDiscoveryConfigSnapshot(currentUser.id, currentUser, {
+        initializeMissing: options.initializeMissing === true,
+        ...(options.serverNames && { serverNames: options.serverNames }),
+      });
+    const securityPolicyIdentity = isMCPToolCatalogFingerprintAvailable()
+      ? createMCPToolCatalogSecurityPolicyIdentity(securityPolicy)
+      : null;
+    if (!securityPolicyIdentity) {
+      logger.warn('[MCP Authority] Catalog fingerprint key is unavailable');
+      return null;
+    }
+    return {
+      configs,
+      collisionServerNames,
+      securityPolicy,
+      securityPolicyIdentity,
+      tenantId: currentUser.tenantId ?? null,
+      user: currentUser,
+    };
+  } catch (error) {
+    logger.warn(`[MCP Authority] Current authority snapshot failed for ${label}`, error);
+    return null;
+  }
+}
+
+async function resolveCurrentMCPToolAuthority({
+  user,
+  serverName,
+  requestBody,
+  oauthRequiredHint,
+  snapshot,
+}) {
+  const currentSnapshot =
+    snapshot ??
+    (await resolveCurrentMCPAuthoritySnapshot(user, serverName, { serverNames: [serverName] }));
+  if (!currentSnapshot) {
+    return null;
+  }
+  if (
+    findShadowedServerNames(
+      currentSnapshot.collisionServerNames ?? Object.keys(currentSnapshot.configs),
+    ).has(serverName)
+  ) {
+    return null;
+  }
+
+  const serverConfig = currentSnapshot.configs[serverName];
+  if (!serverConfig) {
+    return null;
+  }
+
+  try {
+    let customUserVars;
+    if (Object.keys(serverConfig.customUserVars ?? {}).length > 0) {
+      const currentAuthMap = await getUserMCPAuthMap({
+        userId: currentSnapshot.user.id,
+        servers: [serverName],
+        findPluginAuthsByKeys,
+      });
+      customUserVars = getServerCustomUserVars(currentAuthMap, serverName);
+      if (getMissingCustomUserVars(serverConfig, customUserVars).length > 0) {
+        return null;
+      }
+    }
+
+    const authorizationScope = await resolveDiscoveryAuthorizationScope({
+      userId: currentSnapshot.user.id,
+      serverName,
+      serverConfig,
+      oauthRequiredHint,
+    });
+    if (authorizationScope.authorizationIdentity == null) {
+      return null;
+    }
+
+    const effectiveServerConfig = processMCPEnv({
+      user: currentSnapshot.user,
+      body: requestBody,
+      dbSourced: isUserSourced(authorizationScope.provenanceServerConfig),
+      options: authorizationScope.provenanceServerConfig,
+      customUserVars,
+    });
+    const scopeInput = {
+      tenantId: currentSnapshot.tenantId,
+      userId: currentSnapshot.user.id,
+      serverName,
+      serverConfig: authorizationScope.provenanceServerConfig,
+      effectiveServerConfig,
+      securityPolicyIdentity: currentSnapshot.securityPolicyIdentity,
+      customUserVars,
+      authorizationIdentity: authorizationScope.authorizationIdentity,
+      authorizationKind: authorizationScope.authorizationKind,
+    };
+
+    return {
+      ...currentSnapshot,
+      serverName,
+      serverConfig,
+      provenanceServerConfig: authorizationScope.provenanceServerConfig,
+      effectiveServerConfig,
+      customUserVars,
+      authorizationIdentity: authorizationScope.authorizationIdentity,
+      authorizationKind: authorizationScope.authorizationKind,
+      catalogScope: createMCPToolCatalogScope(scopeInput),
+      scopeInput,
+    };
+  } catch (error) {
+    logger.warn(`[MCP Authority] Current server authority failed for ${serverName}`, error);
+    return null;
+  }
+}
+
+function matchesMCPToolAuthorityScope(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+  return (
+    left.tenant === right.tenant &&
+    left.principal === right.principal &&
+    left.server === right.server &&
+    left.policy === right.policy &&
+    left.config === right.config &&
+    left.credentials === right.credentials
+  );
 }
 
 async function resolveCurrentMCPDiscoveryScope({
@@ -193,26 +337,44 @@ async function resolveCurrentMCPDiscoveryScope({
       options: graphProcessedConfig,
       customUserVars: currentCustomUserVars,
     });
-    const current = matchesMCPConnectionProvenance(discoveryProvenance, {
+    const securityPolicyIdentity = createMCPToolCatalogSecurityPolicyIdentity({
+      allowedDomains,
+      allowedAddresses,
+    });
+    const scopeInput = {
       tenantId,
       userId: user.id,
       serverName,
       serverConfig: authorizationScope.provenanceServerConfig,
       effectiveServerConfig,
-      securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
-        allowedDomains,
-        allowedAddresses,
-      }),
+      securityPolicyIdentity,
       customUserVars: currentCustomUserVars,
       authorizationIdentity: authorizationScope.authorizationIdentity,
+    };
+    const current = matchesMCPConnectionProvenance(discoveryProvenance, scopeInput);
+    const localEffectiveServerConfig = processMCPEnv({
+      user: currentUser,
+      body: requestBody,
+      dbSourced,
+      options: authorizationScope.provenanceServerConfig,
+      customUserVars: currentCustomUserVars,
+    });
+    const authorityScope = createMCPToolCatalogScope({
+      ...scopeInput,
+      effectiveServerConfig: localEffectiveServerConfig,
     });
     return current
       ? {
           tenantId,
           user: currentUser,
           serverConfig: currentServerConfig,
+          provenanceServerConfig: authorizationScope.provenanceServerConfig,
+          effectiveServerConfig,
+          securityPolicyIdentity,
           customUserVars: currentCustomUserVars,
           authorizationIdentity: authorizationScope.authorizationIdentity,
+          authorizationKind: authorizationScope.authorizationKind,
+          catalogScope: authorityScope,
         }
       : null;
   } catch (error) {
@@ -221,4 +383,10 @@ async function resolveCurrentMCPDiscoveryScope({
   }
 }
 
-module.exports = { resolveCurrentMCPDiscoveryScope, resolveCurrentMCPPrincipal };
+module.exports = {
+  matchesMCPToolAuthorityScope,
+  resolveCurrentMCPAuthoritySnapshot,
+  resolveCurrentMCPDiscoveryScope,
+  resolveCurrentMCPPrincipal,
+  resolveCurrentMCPToolAuthority,
+};

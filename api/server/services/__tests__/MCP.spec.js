@@ -3,6 +3,8 @@ const mockRegistry = {
   getAllServerConfigs: jest.fn(),
   getAllServerConfigsFresh: jest.fn(),
 };
+const mockResolveCurrentMCPToolAuthority = jest.fn();
+const mockGetRoleByName = jest.fn();
 
 jest.mock('~/config', () => ({
   getMCPServersRegistry: jest.fn(() => mockRegistry),
@@ -21,6 +23,9 @@ jest.mock('~/server/services/Config', () => ({
   setCachedTools: jest.fn(),
   getCachedTools: jest.fn(),
   getMCPServerTools: jest.fn(),
+  getMCPServerCatalog: jest
+    .fn()
+    .mockResolvedValue({ status: 'pending_activation', reason: 'cold' }),
   loadCustomConfig: jest.fn(),
 }));
 
@@ -54,6 +59,11 @@ jest.mock('~/models', () => ({
   findToken: jest.fn(),
   createToken: jest.fn(),
   updateToken: jest.fn(),
+  getRoleByName: mockGetRoleByName,
+  findRolesByNames: jest.fn(async ([roleName]) => {
+    const role = await mockGetRoleByName(roleName);
+    return role ? [role] : [];
+  }),
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
@@ -66,6 +76,11 @@ jest.mock('~/server/services/OboPolicyService', () => ({
 }));
 jest.mock('~/server/services/Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
+}));
+jest.mock('~/server/services/MCPDiscoveryScope', () => ({
+  matchesMCPToolAuthorityScope: (left, right) =>
+    left != null && right != null && JSON.stringify(left) === JSON.stringify(right),
+  resolveCurrentMCPToolAuthority: (...args) => mockResolveCurrentMCPToolAuthority(...args),
 }));
 
 const { Constants } = require('librechat-data-provider');
@@ -447,7 +462,20 @@ describe('resolveCollisionAuditNames', () => {
 });
 
 describe('createMCPTool', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockResolveCurrentMCPToolAuthority.mockImplementation(
+      async ({ user, serverName, expectedServerConfig }) => ({
+        user,
+        serverName,
+        serverConfig: expectedServerConfig ?? {},
+        customUserVars: undefined,
+        authorizationIdentity: 'none',
+        catalogScope: null,
+        securityPolicy: { allowedDomains: null, allowedAddresses: null },
+      }),
+    );
+  });
 
   const rawServerName = 'Connector: Company';
   const legacyToolKey = `search${Constants.mcp_delimiter}${rawServerName}`;

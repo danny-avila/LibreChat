@@ -69,6 +69,7 @@ const { reinitMCPServer } = require('./mcp');
 const {
   MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
   createMCPConnectionProvenance,
+  createMCPToolCatalogScope,
   createMCPToolCatalogSecurityPolicyIdentity,
 } = require('@librechat/api');
 
@@ -276,6 +277,24 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     const result = await reinitMCPServer({ user, serverName, serverConfig: runtimeConfig });
 
     expect(result.tools).toEqual(tools);
+    expect(result.discoveryProvenance).toBe(provenance);
+    expect(result.authorityScope).toEqual(
+      createMCPToolCatalogScope({
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig: detectedConfig,
+        effectiveServerConfig: {
+          ...detectedConfig,
+          url: `https://mcp.example.com/users/${user.id}`,
+        },
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: 'grant-runtime',
+      }),
+    );
     expect(provenance.authorizationKind).toBe('oauth');
     expect(mockGetMCPAuthorizationIdentity).toHaveBeenCalledTimes(1);
     expect(mockResolveAllMcpConfigsFresh).toHaveBeenCalledWith(

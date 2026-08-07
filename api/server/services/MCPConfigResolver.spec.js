@@ -15,6 +15,9 @@ jest.mock('@librechat/api', () => ({
     idOnTheSource: user?.idOnTheSource,
     tenantId,
   }),
+  getMCPToolCatalogRevision: (config) =>
+    JSON.stringify({ type: config.type, url: config.url, command: config.command }),
+  normalizeServerName: (serverName) => serverName.replace(/[^a-zA-Z0-9_.-]/g, '_'),
 }));
 
 jest.mock('~/config', () => ({
@@ -78,5 +81,79 @@ describe('MCPConfigResolver', () => {
       user.role,
     );
     expect(mockResolveAllowlists).not.toHaveBeenCalled();
+  });
+
+  it('uses cache-only Config resolution for authority validation', async () => {
+    const user = { id: 'user-1', role: 'USER', tenantId: 'tenant-a' };
+    const rawConfig = { type: 'streamable-http', url: 'https://mcp.example.com' };
+    const securityPolicy = { allowedDomains: ['mcp.example.com'], allowedAddresses: null };
+    mockGetAppConfig.mockResolvedValue({
+      mcpConfig: { search: rawConfig },
+      mcpSettings: securityPolicy,
+    });
+    mockEnsureConfigServers.mockResolvedValue({});
+    mockGetAllServerConfigsFresh.mockResolvedValue({});
+
+    await resolveMCPDiscoveryConfigSnapshot(user.id, user, { initializeMissing: false });
+
+    expect(mockEnsureConfigServers).toHaveBeenCalledWith(
+      { search: rawConfig },
+      { failClosed: true, initializeMissing: false, allowlists: securityPolicy },
+    );
+  });
+
+  it('restricts cache-only validation to the requested server', async () => {
+    const user = { id: 'user-1', role: 'USER', tenantId: 'tenant-a' };
+    const requested = { type: 'streamable-http', url: 'https://requested.example.com' };
+    const unrelated = { type: 'streamable-http', url: 'https://cold.example.com' };
+    mockGetAppConfig.mockResolvedValue({
+      mcpConfig: { 'Requested: Server': requested, cold: unrelated },
+    });
+    mockEnsureConfigServers.mockResolvedValue({
+      'Requested: Server': { ...requested, source: 'config' },
+    });
+    mockGetAllServerConfigsFresh.mockResolvedValue({
+      'Requested: Server': { ...requested, source: 'config' },
+      yaml: { type: 'stdio', command: 'node', source: 'yaml' },
+    });
+
+    await expect(
+      resolveMCPDiscoveryConfigSnapshot(user.id, user, {
+        initializeMissing: false,
+        serverNames: ['Requested__Server'],
+      }),
+    ).resolves.toEqual({
+      collisionServerNames: ['Requested: Server', 'yaml', 'cold'],
+      configs: { 'Requested: Server': { ...requested, source: 'config' } },
+      securityPolicy: { allowedDomains: undefined, allowedAddresses: undefined },
+    });
+    expect(mockEnsureConfigServers).toHaveBeenCalledWith(
+      { 'Requested: Server': requested },
+      expect.objectContaining({ initializeMissing: false }),
+    );
+  });
+
+  it('keeps warm servers while omitting an unrelated cold Config override', async () => {
+    const user = { id: 'user-1', role: 'USER', tenantId: 'tenant-a' };
+    const warm = { type: 'streamable-http', url: 'https://warm.example.com' };
+    const cold = { type: 'streamable-http', url: 'https://new.example.com' };
+    const warmParsed = { ...warm, source: 'config' };
+    mockGetAppConfig.mockResolvedValue({ mcpConfig: { warm, cold } });
+    mockEnsureConfigServers.mockResolvedValue({ warm: warmParsed });
+    mockGetAllServerConfigsFresh.mockResolvedValue({
+      warm: warmParsed,
+      cold: { ...cold, url: 'https://old.example.com', source: 'yaml' },
+      stable: { type: 'stdio', command: 'node', source: 'yaml' },
+    });
+
+    await expect(
+      resolveMCPDiscoveryConfigSnapshot(user.id, user, { initializeMissing: false }),
+    ).resolves.toEqual({
+      configs: {
+        warm: warmParsed,
+        stable: { type: 'stdio', command: 'node', source: 'yaml' },
+      },
+      securityPolicy: { allowedDomains: undefined, allowedAddresses: undefined },
+    });
   });
 });

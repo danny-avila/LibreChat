@@ -78,6 +78,42 @@ describe('MCP tool catalogs', () => {
     });
   });
 
+  it('binds the discovered authorization kind into catalog metadata and scope', () => {
+    const oauthScope = { ...scope, authorizationKind: 'oauth' as const };
+    const envelope = createMCPToolCatalogEnvelope(tools, oauthScope, 100);
+
+    expect(envelope.metadata.authorizationKind).toBe('oauth');
+    expect(resolveMCPToolCatalog(envelope, oauthScope, 101)).toEqual({
+      status: 'ready',
+      tools,
+      metadata: envelope.metadata,
+    });
+    expect(resolveMCPToolCatalog(envelope, { ...scope, authorizationKind: 'none' }, 101)).toEqual({
+      status: 'pending_activation',
+      reason: 'credentials_changed',
+    });
+  });
+
+  it('derives configured OAuth metadata even before a grant exists', () => {
+    const envelope = createMCPToolCatalogEnvelope(tools, {
+      ...scope,
+      serverConfig: { ...serverConfig, requiresOAuth: true },
+    });
+
+    expect(envelope.metadata.authorizationKind).toBe('oauth');
+  });
+
+  it('treats versioned catalogs without authorization provenance as a schema mismatch', () => {
+    const envelope = createMCPToolCatalogEnvelope(tools, scope, 100);
+    const metadata = { ...envelope.metadata } as Partial<typeof envelope.metadata>;
+    delete metadata.authorizationKind;
+
+    expect(resolveMCPToolCatalog({ ...envelope, metadata }, scope, 101)).toEqual({
+      status: 'pending_activation',
+      reason: 'schema_mismatch',
+    });
+  });
+
   it('does not expose tenant or principal identities in catalog scope values', () => {
     const digests = createMCPToolCatalogScope(scope);
 
