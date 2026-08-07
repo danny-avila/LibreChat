@@ -8,8 +8,8 @@ jest.mock('../MCPServerDialog', () => () => null);
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => {
     const translations: Record<string, string> = {
-      com_ui_contact: 'Contact',
-      com_ui_no_contact_available: 'No contact available',
+      com_ui_mcp_contact: 'Contact',
+      com_ui_mcp_no_contact_available: 'No contact available',
       com_nav_mcp_status_unknown: 'Unknown',
     };
     return translations[key] ?? key;

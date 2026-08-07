@@ -19,14 +19,14 @@ export default function MCPServerContact({ server, className = '' }: MCPServerCo
 
   return (
     <div className={cn('flex min-w-0 items-center gap-1 text-text-secondary', className)}>
-      <span className="shrink-0">{localize('com_ui_contact')}:</span>
+      <span className="shrink-0">{localize('com_ui_mcp_contact')}:</span>
       <span className="min-w-0 truncate">
         {supportEmail ? (
           <a href={`mailto:${supportEmail}`} className="text-primary hover:underline">
             {name}
           </a>
         ) : (
-          name || localize('com_ui_no_contact_available')
+          name || localize('com_ui_mcp_no_contact_available')
         )}
       </span>
     </div>
