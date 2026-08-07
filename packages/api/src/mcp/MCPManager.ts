@@ -129,6 +129,19 @@ export class MCPManager extends UserConnectionManager {
     });
   }
 
+  protected override getActiveConnectionRecovery(
+    connection: MCPConnection,
+  ): Promise<void> | undefined {
+    return this.oauthRecoveries.get(connection)?.promise;
+  }
+
+  protected override waitForConnectionRecovery(
+    recovery: Promise<void>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return this.waitForActiveRecovery(recovery, signal);
+  }
+
   /** Retrieves an app-level or user-specific connection based on provided arguments */
   public async getConnection(
     args: {

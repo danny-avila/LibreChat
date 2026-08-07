@@ -1570,6 +1570,58 @@ describe('MCPManager', () => {
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
     });
 
+    it('rechecks recovery after yielding to load connection configuration', async () => {
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      let resolveConfig: ((config: t.ParsedServerConfig) => void) | undefined;
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockReturnValue(
+        new Promise<t.ParsedServerConfig>((resolve) => {
+          resolveConfig = resolve;
+        }),
+      );
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      let recovered = false;
+      const connection = {
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        isConnected: jest.fn().mockImplementation(async () => recovered),
+        isStale: jest.fn().mockReturnValue(false),
+      } as unknown as MCPConnection;
+      let resolveRecovery: (() => void) | undefined;
+      const recovery = new Promise<void>((resolve) => {
+        resolveRecovery = resolve;
+      });
+      const internals = manager as unknown as {
+        oauthRecoveries: WeakMap<
+          MCPConnection,
+          { promise: Promise<void>; allowsTakeover: boolean }
+        >;
+        userConnections: Map<string, Map<string, MCPConnection>>;
+      };
+      internals.userConnections.set(mockUser.id, new Map([[serverName, connection]]));
+
+      const connectionPromise = manager.getUserConnection({
+        serverName,
+        user: mockUser,
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      internals.oauthRecoveries.set(connection, { promise: recovery, allowsTakeover: true });
+      resolveConfig?.(serverConfig);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(connection.disconnect).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+
+      recovered = true;
+      resolveRecovery?.();
+
+      await expect(connectionPromise).resolves.toBe(connection);
+      expect(connection.isConnected).toHaveBeenCalledTimes(1);
+      expect(connection.disconnect).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
     it('lets an aborted waiter leave without cancelling the shared recovery', async () => {
       mockAppConnections({
         has: jest.fn().mockResolvedValue(false),

@@ -99,6 +99,11 @@ export abstract class UserConnectionManager {
         | MCPConnection
         | undefined;
       if (existing) {
+        const activeRecovery = this.getActiveConnectionRecovery(existing);
+        let awaitedRecovery = activeRecovery;
+        if (activeRecovery) {
+          await this.waitForConnectionRecovery(activeRecovery, opts.signal);
+        }
         if (!config || (config.updatedAt && existing.isStale(config.updatedAt))) {
           await existing.disconnect().catch((error) => {
             logger.warn(
@@ -107,10 +112,19 @@ export abstract class UserConnectionManager {
             );
           });
           requestScopedConnections.connections.delete(requestConnectionKey);
-        } else if (await existing.isConnected()) {
-          logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing request-scoped connection`);
-          return existing;
         } else {
+          let connected = await existing.isConnected();
+          let recovery = this.getActiveConnectionRecovery(existing);
+          while (recovery && recovery !== awaitedRecovery) {
+            awaitedRecovery = recovery;
+            await this.waitForConnectionRecovery(recovery, opts.signal);
+            connected = await existing.isConnected();
+            recovery = this.getActiveConnectionRecovery(existing);
+          }
+          if (connected) {
+            logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing request-scoped connection`);
+            return existing;
+          }
           requestScopedConnections.connections.delete(requestConnectionKey);
           await this.disposeEvictedConnection(existing, `[MCP][User: ${userId}][${serverName}]`);
         }
@@ -399,6 +413,11 @@ export abstract class UserConnectionManager {
 
     const userServerMap = this.userConnections.get(userId);
     let connection = forceNew ? undefined : userServerMap?.get(serverName);
+    const activeRecovery = connection ? this.getActiveConnectionRecovery(connection) : undefined;
+    let awaitedRecovery = activeRecovery;
+    if (activeRecovery) {
+      await this.waitForConnectionRecovery(activeRecovery, signal);
+    }
     if (clearCooldown) {
       MCPConnection.clearCooldown(serverName);
     }
@@ -424,11 +443,20 @@ export abstract class UserConnectionManager {
         }
         await this.disconnectUserConnection(userId, serverName);
         connection = undefined;
-      } else if (await connection.isConnected()) {
-        logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
-        this.updateUserLastActivity(userId);
-        return connection;
       } else {
+        let connected = await connection.isConnected();
+        let recovery = this.getActiveConnectionRecovery(connection);
+        while (recovery && recovery !== awaitedRecovery) {
+          awaitedRecovery = recovery;
+          await this.waitForConnectionRecovery(recovery, signal);
+          connected = await connection.isConnected();
+          recovery = this.getActiveConnectionRecovery(connection);
+        }
+        if (connected) {
+          logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
+          this.updateUserLastActivity(userId);
+          return connection;
+        }
         // Connection exists but is not connected, attempt to remove potentially stale entry
         logger.warn(
           `[MCP][User: ${userId}][${serverName}] Found existing but disconnected connection object. Cleaning up.`,
@@ -720,6 +748,17 @@ export abstract class UserConnectionManager {
   protected retainConnection(connection: MCPConnection): void {
     const borrowers = this.connectionBorrowers.get(connection) ?? 0;
     this.connectionBorrowers.set(connection, borrowers + 1);
+  }
+
+  protected getActiveConnectionRecovery(_connection: MCPConnection): Promise<void> | undefined {
+    return undefined;
+  }
+
+  protected waitForConnectionRecovery(
+    recovery: Promise<void>,
+    _signal?: AbortSignal,
+  ): Promise<void> {
+    return recovery;
   }
 
   protected holdDeferredConnectionDisposal(connection: MCPConnection): void {
