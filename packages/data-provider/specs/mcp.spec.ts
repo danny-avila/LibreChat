@@ -7,6 +7,22 @@ import {
 } from '../src/mcp';
 
 describe('MCPOptionsSchema', () => {
+  it('should accept support contact in operator configuration', () => {
+    const result = MCPOptionsSchema.safeParse({
+      type: 'sse',
+      url: 'https://mcp-server.com/sse',
+      support_contact: { name: 'Platform Team', email: 'platform@example.com' },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.support_contact).toEqual({
+        name: 'Platform Team',
+        email: 'platform@example.com',
+      });
+    }
+  });
+
   describe('OBO transport support', () => {
     it('should accept obo on SSE transport', () => {
       const result = MCPOptionsSchema.safeParse({
