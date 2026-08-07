@@ -76,6 +76,50 @@ describe('chat search backend selection', () => {
   });
 
   /**
+   * The probe this replaced called Meilisearch's health endpoint, so readiness
+   * has to mean reachable rather than merely configured — otherwise a
+   * deployment whose Meilisearch is down newly advertises a search that cannot
+   * answer. Meilisearch itself is the only thing stubbed: it is the external
+   * service whose being down is the condition under test.
+   */
+  describe('Meilisearch readiness', () => {
+    beforeEach(() => {
+      process.env.MEILI_HOST = 'http://localhost:7700';
+      process.env.MEILI_MASTER_KEY = 'key';
+    });
+
+    const backendFor = (meiliSearch: unknown) =>
+      new MeiliChatSearch({ mongoose: { models: { Conversation: { meiliSearch } } } });
+
+    it('is ready when the index answers', async () => {
+      const backend = backendFor(async () => ({ hits: [] }));
+
+      await expect(backend.isReady()).resolves.toBe(true);
+    });
+
+    it('is not ready when the index cannot answer', async () => {
+      const backend = backendFor(async () => {
+        throw new Error('connect ECONNREFUSED');
+      });
+
+      await expect(backend.isReady()).resolves.toBe(false);
+    });
+
+    it('is not ready when the index was never registered', async () => {
+      const backend = new MeiliChatSearch({ mongoose: { models: {} } });
+
+      await expect(backend.isReady()).resolves.toBe(false);
+    });
+
+    it('is not ready without credentials', async () => {
+      delete process.env.MEILI_HOST;
+      const backend = backendFor(async () => ({ hits: [] }));
+
+      await expect(backend.isReady()).resolves.toBe(false);
+    });
+  });
+
+  /**
    * A missing cursor secret is an operator error, and a search that only fails
    * on the second page is far worse to diagnose than one that fails at boot.
    */

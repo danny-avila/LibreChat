@@ -35,8 +35,17 @@ type MeiliSearchable = {
   ): Promise<{ hits?: readonly MeiliHit[] }>;
 };
 
+/**
+ * All this backend needs of Mongoose: the registry the Meilisearch statics were
+ * attached to. Narrower than the module so the dependency is honest, and so the
+ * failure paths can be exercised without a live Meilisearch to fail against.
+ */
+export type MeiliModelRegistry = Readonly<{
+  models: Readonly<Record<string, unknown>>;
+}>;
+
 export type MeiliChatSearchDeps = Readonly<{
-  mongoose: typeof import('mongoose');
+  mongoose: MeiliModelRegistry;
   resolveScope?: () => Scope;
 }>;
 
@@ -78,8 +87,30 @@ export class MeiliChatSearch implements ChatSearch {
     this.deps = deps;
   }
 
+  /**
+   * Reachability, not just configuration.
+   *
+   * The probe this replaced called Meilisearch's health endpoint, so returning
+   * true on credentials alone would newly advertise search on a deployment whose
+   * Meilisearch is down. A zero-row query against the index the routes actually
+   * read is a stricter signal than `/health` — it proves the index exists and
+   * answers, not merely that the server is up.
+   */
   async isReady(): Promise<boolean> {
-    return meiliSearchConfigured();
+    if (!meiliSearchConfigured()) {
+      return false;
+    }
+    const model = this.model('conversations');
+    if (!model) {
+      return false;
+    }
+    try {
+      await model.meiliSearch('', { limit: 1 });
+      return true;
+    } catch (error) {
+      logger.error('[chatSearch] Meilisearch readiness probe failed', error);
+      return false;
+    }
   }
 
   private model(target: SearchTarget): MeiliSearchable | null {
