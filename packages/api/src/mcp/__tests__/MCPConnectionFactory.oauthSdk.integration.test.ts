@@ -66,6 +66,16 @@ async function safeDisconnect(conn: MCPConnection | null): Promise<void> {
   await conn.disconnect().catch(() => undefined);
 }
 
+async function waitFor(condition: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error('Timed out waiting for condition');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 function createFlowManager(): FlowStateManager<MCPOAuthTokens | null> {
   return new FlowStateManager(new MockKeyv<MCPOAuthTokens | null>() as unknown as Keyv, {
     ttl: 30000,
@@ -304,7 +314,7 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
     }
   });
 
-  it('retries an in-flight request closed by a concurrent OAuth recovery', async () => {
+  it('lets an in-flight request finish before a concurrent OAuth reconnect', async () => {
     let markSlowRequestStarted: (() => void) | undefined;
     let releaseFirstSlowRequest: (() => void) | undefined;
     const slowRequestStarted = new Promise<void>((resolve) => {
@@ -352,6 +362,7 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
         tokenMethods,
       },
     );
+    const connectSpy = jest.spyOn(connection, 'connect');
     const isConnectedSpy = jest.spyOn(connection, 'isConnected').mockResolvedValue(true);
 
     const manager = new MCPManager();
@@ -383,15 +394,25 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
       server.issuedTokens.delete(initialTokens.access_token);
 
       const recoveringCall = callTool('recovery owner');
+      await waitFor(
+        () =>
+          server.tokenRequests.filter((request) => request.grantType === 'refresh_token').length ===
+          1,
+      );
+
+      expect(connectSpy).not.toHaveBeenCalled();
+      expect(slowRequestCount).toBe(1);
+      releaseFirstSlowRequest?.();
 
       await expect(Promise.all([slowCall, recoveringCall])).resolves.toHaveLength(2);
       expect(
         server.tokenRequests.filter((request) => request.grantType === 'refresh_token'),
       ).toHaveLength(1);
-      expect(slowRequestCount).toBe(2);
+      expect(slowRequestCount).toBe(1);
       expect(oauthStart).not.toHaveBeenCalled();
     } finally {
       releaseFirstSlowRequest?.();
+      connectSpy.mockRestore();
       isConnectedSpy.mockRestore();
       registrySpy.mockRestore();
     }

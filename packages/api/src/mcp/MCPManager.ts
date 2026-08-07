@@ -463,6 +463,7 @@ Please follow these instructions when using tools from the respective MCP server
     connection: MCPConnection,
     requestInteractiveRecovery: (error: unknown) => Promise<void>,
   ): Promise<void> {
+    await this.waitForConnectionBorrowersToDrain(connection);
     const firstAttempt = await this.connectOnceAfterOAuth(connection);
     if (firstAttempt.connected) {
       return;
@@ -602,6 +603,29 @@ Please follow these instructions when using tools from the respective MCP server
     let disconnectAfterCall = false;
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
+    const retainConnectionLease = () => {
+      if (!connection || connectionRetained) {
+        return;
+      }
+      this.retainConnection(connection);
+      connectionRetained = true;
+    };
+    const releaseConnectionLease = async () => {
+      if (!connection || !connectionRetained) {
+        return;
+      }
+      connectionRetained = false;
+      await this.releaseConnection(connection);
+    };
+    const waitForRecoveryWithoutLease = async (startRecovery: () => Promise<void>) => {
+      const recovery = startRecovery();
+      await releaseConnectionLease();
+      try {
+        await recovery;
+      } finally {
+        retainConnectionLease();
+      }
+    };
 
     try {
       connection = await this.getConnection({
@@ -620,8 +644,7 @@ Please follow these instructions when using tools from the respective MCP server
         requestScopedConnections,
         serverConfig: providedConfig,
       });
-      this.retainConnection(connection);
-      connectionRetained = true;
+      retainConnectionLease();
 
       const connectionIsActive = await connection.isConnected();
       const connectionCheckError = connectionIsActive
@@ -748,7 +771,8 @@ Please follow these instructions when using tools from the respective MCP server
       connection.setRequestHeaders(resolvedHeaders);
 
       if (!connectionIsActive) {
-        if (!attachRequestOAuthHandler || !userId) {
+        const requestOAuthHandler = attachRequestOAuthHandler;
+        if (!requestOAuthHandler || !userId) {
           throw new McpError(
             ErrorCode.InternalError,
             `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
@@ -756,13 +780,15 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         try {
-          await this.recoverOAuthConnection(
-            connection,
-            connectionCheckError,
-            serverName,
-            userId,
-            attachRequestOAuthHandler,
-            options?.signal,
+          await waitForRecoveryWithoutLease(() =>
+            this.recoverOAuthConnection(
+              connection!,
+              connectionCheckError,
+              serverName,
+              userId,
+              requestOAuthHandler,
+              options?.signal,
+            ),
           );
         } catch (recoveryError) {
           if (options?.signal?.aborted) {
@@ -797,31 +823,26 @@ Please follow these instructions when using tools from the respective MCP server
       try {
         result = await requestTool();
       } catch (error) {
-        if (!attachRequestOAuthHandler || !userId) {
+        const requestOAuthHandler = attachRequestOAuthHandler;
+        if (!requestOAuthHandler || !userId) {
           throw error;
         }
 
-        const activeRecovery =
-          error instanceof McpError && error.code === ErrorCode.ConnectionClosed
-            ? this.oauthRecoveries.get(connection)
-            : undefined;
-        if (!activeRecovery && !connection.isOAuthAuthenticationError(error)) {
+        if (!connection.isOAuthAuthenticationError(error)) {
           throw error;
         }
 
         try {
-          if (activeRecovery) {
-            await this.waitForActiveRecovery(activeRecovery.promise, options?.signal);
-          } else {
-            await this.recoverOAuthConnection(
-              connection,
+          await waitForRecoveryWithoutLease(() =>
+            this.recoverOAuthConnection(
+              connection!,
               error,
               serverName,
               userId,
-              attachRequestOAuthHandler,
+              requestOAuthHandler,
               options?.signal,
-            );
-          }
+            ),
+          );
         } catch (recoveryError) {
           if (options?.signal?.aborted) {
             throw recoveryError;
@@ -844,9 +865,7 @@ Please follow these instructions when using tools from the respective MCP server
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
     } finally {
-      if (connectionRetained && connection) {
-        await this.releaseConnection(connection);
-      }
+      await releaseConnectionLease();
       // Ephemeral connections are never stored in userConnections, so disconnecting
       // is the only cleanup needed; removing the map entry here could orphan a
       // still-connected cached connection from before a config change.

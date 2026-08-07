@@ -55,6 +55,8 @@ export abstract class UserConnectionManager {
   /** In-flight connection promises keyed by `userId:serverName` — coalesces concurrent attempts */
   protected pendingConnections: Map<string, PendingConnection> = new Map();
   private readonly connectionBorrowers = new WeakMap<MCPConnection, number>();
+  private readonly connectionBorrowerDrainWaiters = new WeakMap<MCPConnection, Set<() => void>>();
+
   private readonly deferredConnectionDisposals = new WeakMap<MCPConnection, string>();
 
   /** Updates the last activity timestamp for a user */
@@ -728,12 +730,30 @@ export abstract class UserConnectionManager {
 
     this.connectionBorrowers.delete(connection);
     const logPrefix = this.deferredConnectionDisposals.get(connection);
-    if (!logPrefix) {
-      return;
+    if (logPrefix) {
+      this.deferredConnectionDisposals.delete(connection);
+      await this.disconnectEvictedConnection(connection, logPrefix);
     }
 
-    this.deferredConnectionDisposals.delete(connection);
-    await this.disconnectEvictedConnection(connection, logPrefix);
+    const drainWaiters = this.connectionBorrowerDrainWaiters.get(connection);
+    if (drainWaiters) {
+      this.connectionBorrowerDrainWaiters.delete(connection);
+      for (const resolve of drainWaiters) {
+        resolve();
+      }
+    }
+  }
+
+  protected waitForConnectionBorrowersToDrain(connection: MCPConnection): Promise<void> {
+    if ((this.connectionBorrowers.get(connection) ?? 0) === 0) {
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve) => {
+      const drainWaiters = this.connectionBorrowerDrainWaiters.get(connection) ?? new Set();
+      drainWaiters.add(resolve);
+      this.connectionBorrowerDrainWaiters.set(connection, drainWaiters);
+    });
   }
 
   private async disposeEvictedConnection(
