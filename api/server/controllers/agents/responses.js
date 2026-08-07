@@ -60,7 +60,7 @@ const {
 const {
   loadAgentTools,
   loadToolsForExecution,
-  isExpectedMCPToolsUnavailableError,
+  isFatalAgentInitializationError,
 } = require('~/server/services/ToolService');
 const {
   findAccessibleResources,
@@ -116,10 +116,10 @@ function createToolLoader(signal, definitionsOnly = true) {
         streamId: null,
       });
     } catch (error) {
-      logger.error('Error loading tools for agent ' + agentId, error);
-      if (isExpectedMCPToolsUnavailableError(error)) {
+      if (isFatalAgentInitializationError(error)) {
         throw error;
       }
+      logger.error('Error loading tools for agent ' + agentId, error);
     }
   };
 }
@@ -1093,7 +1093,12 @@ const executeResponse = async (envelope, { req, res }) => {
           ? error.status
           : 500;
       const errorType = statusCode >= 400 && statusCode < 500 ? 'invalid_request' : 'server_error';
-      sendResponsesErrorResponse(res, statusCode, errorMessage, errorType);
+      const errorCode = typeof error?.code === 'string' ? error.code : undefined;
+      if (errorCode === undefined) {
+        sendResponsesErrorResponse(res, statusCode, errorMessage, errorType);
+      } else {
+        sendResponsesErrorResponse(res, statusCode, errorMessage, errorType, errorCode);
+      }
     }
   }
 };

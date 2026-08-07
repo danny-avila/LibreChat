@@ -64,6 +64,7 @@ import {
 } from './tools';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
+import { isFatalAgentInitializationError } from './errors';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -1024,6 +1025,9 @@ export async function initializeAgent(
   try {
     loadToolsResult = await callLoadTools(requestedToolNames);
   } catch (err) {
+    if (isFatalAgentInitializationError(err, { allowExpectedMCPFallback: true })) {
+      throw err;
+    }
     if (extraAllowedToolNames.length > 0) {
       logger.warn(
         `[allowedTools] loadTools threw with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them:`,

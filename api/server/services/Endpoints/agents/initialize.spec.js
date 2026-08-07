@@ -7,6 +7,7 @@ const {
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_GRAPH_NODES,
   Constants,
+  ErrorTypes,
 } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -58,8 +59,8 @@ const mockLoadToolsForExecution = jest.fn();
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn(),
   loadToolsForExecution: (...args) => mockLoadToolsForExecution(...args),
-  isExpectedMCPToolsUnavailableError: (error) =>
-    error?.code === 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+  isFatalAgentInitializationError: (error) =>
+    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
 }));
 
 jest.mock('~/server/controllers/ModelController', () => ({
@@ -709,6 +710,40 @@ describe('initializeClient — subagent loading', () => {
         endpointOption: makeEndpointOption(),
       }),
     ).rejects.toBe(toolError);
+  });
+
+  it('aborts the run when a pure subagent requires CodeAPI resource recovery', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Code Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['execute_code'],
+    });
+    await grantView(subAgent);
+
+    const resourceRecoveryError = Object.assign(new Error('resource recovery required'), {
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      status: 409,
+      statusCode: 409,
+    });
+    mockInitializeAgent
+      .mockResolvedValueOnce(
+        makePrimaryConfig({
+          subagents: { enabled: true, allowSelf: true, agent_ids: [SUBAGENT_ID] },
+        }),
+      )
+      .mockRejectedValueOnce(resourceRecoveryError);
+
+    await expect(
+      initializeClient({
+        req: makeSubagentReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toBe(resourceRecoveryError);
   });
 
   it('loads a configured subagent, populates `subagentAgentConfigs`, and keeps it out of `agentConfigs`', async () => {

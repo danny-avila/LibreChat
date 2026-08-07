@@ -2637,6 +2637,10 @@ export enum ErrorTypes {
    */
   GOOGLE_VIDEO_UNPROCESSABLE = 'google_video_unprocessable',
   /**
+   * Required CodeAPI resources could not be restored before model invocation.
+   */
+  RESOURCE_RECOVERY_REQUIRED = 'resource_recovery_required',
+  /**
    * Invalid Agent Provider (excluded by Admin)
    */
   INVALID_AGENT_PROVIDER = 'invalid_agent_provider',
