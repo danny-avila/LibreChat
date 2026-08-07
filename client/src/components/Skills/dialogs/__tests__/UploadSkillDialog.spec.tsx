@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { FileConfigInput } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import UploadSkillDialog from '../UploadSkillDialog';
@@ -70,14 +70,12 @@ jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
 }));
 
-function findFileInput(container: HTMLElement): Promise<HTMLInputElement> {
-  return waitFor(() => {
-    const input = container.querySelector('input[type="file"]');
-    if (!(input instanceof HTMLInputElement)) {
-      throw new Error('Upload input was not rendered');
-    }
-    return input;
-  });
+function getFileInput(container: HTMLElement): HTMLInputElement {
+  const input = container.querySelector('input[type="file"]');
+  if (!(input instanceof HTMLInputElement)) {
+    throw new Error('Upload input was not rendered');
+  }
+  return input;
 }
 
 describe('UploadSkillDialog', () => {
@@ -108,13 +106,13 @@ describe('UploadSkillDialog', () => {
     expect(screen.getByText('File size must not exceed 1.06 MB')).toBeInTheDocument();
   });
 
-  it('rejects files above the configured skill import limit before upload', async () => {
+  it('rejects files above the configured skill import limit before upload', () => {
     const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
     const file = new File([new Uint8Array(1024 * 1024 + 1)], 'too-large.skill', {
       type: 'application/zip',
     });
 
-    fireEvent.change(await findFileInput(container), {
+    fireEvent.change(getFileInput(container), {
       target: {
         files: [file],
       },
@@ -127,41 +125,47 @@ describe('UploadSkillDialog', () => {
     });
   });
 
-  it('uploads files exactly at the configured skill import limit', async () => {
+  it('uploads files exactly at the configured skill import limit', () => {
     const appendSpy = jest.spyOn(FormData.prototype, 'append');
-    const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
-    const file = new File([new Uint8Array(1024 * 1024)], 'exact-limit.skill', {
-      type: 'application/zip',
-    });
+    try {
+      const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+      const file = new File([new Uint8Array(1024 * 1024)], 'exact-limit.skill', {
+        type: 'application/zip',
+      });
 
-    fireEvent.change(await findFileInput(container), {
-      target: {
-        files: [file],
-      },
-    });
+      fireEvent.change(getFileInput(container), {
+        target: {
+          files: [file],
+        },
+      });
 
-    expect(mockShowToast).not.toHaveBeenCalled();
-    expect(appendSpy).toHaveBeenCalledWith('file', file, file.name);
-    expect(mockMutate).toHaveBeenCalledWith(expect.any(FormData));
-    appendSpy.mockRestore();
+      expect(mockShowToast).not.toHaveBeenCalled();
+      expect(appendSpy).toHaveBeenCalledWith('file', file, file.name);
+      expect(mockMutate).toHaveBeenCalledWith(expect.any(FormData));
+    } finally {
+      appendSpy.mockRestore();
+    }
   });
 
-  it('uploads files under the configured skill import limit', async () => {
+  it('uploads files under the configured skill import limit', () => {
     const appendSpy = jest.spyOn(FormData.prototype, 'append');
-    const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
-    const file = new File([new Uint8Array(1024)], 'small.skill', {
-      type: 'application/zip',
-    });
+    try {
+      const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+      const file = new File([new Uint8Array(1024)], 'small.skill', {
+        type: 'application/zip',
+      });
 
-    fireEvent.change(await findFileInput(container), {
-      target: {
-        files: [file],
-      },
-    });
+      fireEvent.change(getFileInput(container), {
+        target: {
+          files: [file],
+        },
+      });
 
-    expect(mockShowToast).not.toHaveBeenCalled();
-    expect(appendSpy).toHaveBeenCalledWith('file', file, file.name);
-    expect(mockMutate).toHaveBeenCalledWith(expect.any(FormData));
-    appendSpy.mockRestore();
+      expect(mockShowToast).not.toHaveBeenCalled();
+      expect(appendSpy).toHaveBeenCalledWith('file', file, file.name);
+      expect(mockMutate).toHaveBeenCalledWith(expect.any(FormData));
+    } finally {
+      appendSpy.mockRestore();
+    }
   });
 });
