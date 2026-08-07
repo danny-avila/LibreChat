@@ -5,6 +5,7 @@ import {
   createMCPConnectionProvenance,
   createMCPToolCatalogEnvelope,
   createMCPToolCatalogSecurityPolicyIdentity,
+  isMCPToolCatalogEnvelope,
 } from './catalog';
 import { createMCPToolCacheService } from './tools';
 
@@ -50,8 +51,16 @@ const originalCredsKey = process.env.CREDS_KEY;
 const originalJwtSecret = process.env.JWT_SECRET;
 
 function createMockDeps(overrides: Partial<MCPToolCacheDeps> = {}): MCPToolCacheDeps {
+  const getCachedTools = overrides.getCachedTools ?? jest.fn().mockResolvedValue(null);
+  const getMCPServerCatalog =
+    overrides.getMCPServerCatalog ??
+    (async (options: { userId: string; serverName: string; tenantId: string | null }) => {
+      const cached = await getCachedTools(options);
+      return isMCPToolCatalogEnvelope(cached) ? cached : null;
+    });
   return {
-    getCachedTools: jest.fn().mockResolvedValue(null),
+    getCachedTools,
+    getMCPServerCatalog,
     setCachedTools: jest.fn().mockResolvedValue(true),
     setMCPServerCatalog: jest.fn().mockResolvedValue(true),
     getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
@@ -175,6 +184,57 @@ describe('createMCPToolCacheService', () => {
       serverName: 'srv',
     });
     expect(deps.getCachedTools).toHaveBeenCalledWith({ userId: 'u1', serverName: 'srv' });
+  });
+
+  it('keeps legacy raw maps independent from strict scoped catalog envelopes', async () => {
+    const legacyTools: LCAvailableTools = {
+      [`search${Constants.mcp_delimiter}srv`]: {
+        type: 'function',
+        function: {
+          name: `search${Constants.mcp_delimiter}srv`,
+          description: 'Legacy search',
+          parameters: { type: 'object', properties: {} },
+        },
+      },
+    };
+    const scopedTools: LCAvailableTools = {
+      [`read${Constants.mcp_delimiter}srv`]: {
+        type: 'function',
+        function: {
+          name: `read${Constants.mcp_delimiter}srv`,
+          description: 'Scoped read',
+          parameters: { type: 'object', properties: {} },
+        },
+      },
+    };
+    const getCachedTools = jest.fn().mockResolvedValue(legacyTools);
+    const getMCPServerCatalog = jest.fn().mockResolvedValue(
+      createMCPToolCatalogEnvelope(scopedTools, {
+        tenantId: 'tenant-a',
+        userId: 'u1',
+        serverName: 'srv',
+        serverConfig: cacheableConfig,
+        securityPolicyIdentity: testSecurityPolicyIdentity(),
+        authorizationIdentity: 'none',
+      }),
+    );
+    const service = createMCPToolCacheService(
+      createMockDeps({ getCachedTools, getMCPServerCatalog }),
+    );
+
+    await expect(service.getMCPServerTools('u1', 'srv')).resolves.toEqual(legacyTools);
+    await expect(
+      service.getMCPServerCatalog({
+        tenantId: 'tenant-a',
+        userId: 'u1',
+        serverName: 'srv',
+        serverConfig: cacheableConfig,
+        authorizationIdentity: 'none',
+      }),
+    ).resolves.toEqual(expect.objectContaining({ status: 'ready', tools: scopedTools }));
+
+    expect(getCachedTools).toHaveBeenCalledTimes(1);
+    expect(getMCPServerCatalog).toHaveBeenCalledTimes(1);
   });
 
   it('accepts the original strict legacy setter callback signature', async () => {

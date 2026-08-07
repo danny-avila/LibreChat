@@ -11,7 +11,12 @@
 import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
+import type { ParsedServerConfig } from '~/mcp/types';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
+import {
+  createMCPConnectionProvenance,
+  createMCPToolCatalogSecurityPolicyIdentity,
+} from '~/mcp/catalog';
 import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
 import { MockKeyv, createOAuthMCPServer } from './helpers/oauthTestServer';
 import { FlowStateManager } from '~/flow/manager';
@@ -53,6 +58,41 @@ describe('MCP OAuth Race Condition Fixes', () => {
   });
 
   describe('Fix 1: Connection mutex coalesces concurrent attempts', () => {
+    const originalCredsKey = process.env.CREDS_KEY;
+
+    beforeAll(() => {
+      process.env.CREDS_KEY = 'oauth-race-connection-scope-key';
+    });
+
+    afterAll(() => {
+      if (originalCredsKey == null) {
+        delete process.env.CREDS_KEY;
+      } else {
+        process.env.CREDS_KEY = originalCredsKey;
+      }
+    });
+
+    const connectionProvenance = (
+      config: ParsedServerConfig,
+      userId: string,
+      authorizationIdentity = 'none',
+    ) =>
+      createMCPConnectionProvenance(
+        {
+          tenantId: null,
+          userId,
+          serverName: 'test-server',
+          serverConfig: config,
+          effectiveServerConfig: config,
+          securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+            allowedDomains: null,
+            allowedAddresses: null,
+          }),
+          authorizationIdentity,
+        },
+        'user',
+      );
+
     it('should return the same pending promise for concurrent getUserConnection calls', async () => {
       const { UserConnectionManager } = await import('~/mcp/UserConnectionManager');
 
@@ -70,6 +110,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
         isStale: jest.fn().mockReturnValue(false),
+        getDiscoveryProvenance: jest.fn(),
       };
 
       const mockAppConnections = { has: jest.fn().mockResolvedValue(false) };
@@ -80,7 +121,10 @@ describe('MCP OAuth Race Condition Fixes', () => {
         url: 'http://localhost:9999/',
         updatedAt: undefined,
         dbId: undefined,
-      };
+      } satisfies ParsedServerConfig;
+      mockConnection.getDiscoveryProvenance.mockReturnValue(
+        connectionProvenance(mockConfig, 'user-1'),
+      );
 
       const registrySpy = jest
         .spyOn(
@@ -147,6 +191,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
         isStale: jest.fn().mockReturnValue(false),
+        getDiscoveryProvenance: jest.fn(),
       };
 
       const mockAppConnections = { has: jest.fn().mockResolvedValue(false) };
@@ -157,7 +202,10 @@ describe('MCP OAuth Race Condition Fixes', () => {
         url: 'http://localhost:9999/',
         updatedAt: undefined,
         dbId: undefined,
-      };
+      } satisfies ParsedServerConfig;
+      mockConnection.getDiscoveryProvenance.mockReturnValue(
+        connectionProvenance(mockConfig, 'user-oauth'),
+      );
 
       const registrySpy = jest
         .spyOn(
@@ -232,6 +280,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
         isStale: jest.fn().mockReturnValue(false),
+        getDiscoveryProvenance: jest.fn(),
       };
 
       const mockAppConnections = { has: jest.fn().mockResolvedValue(false) };
@@ -243,7 +292,10 @@ describe('MCP OAuth Race Condition Fixes', () => {
         requiresOAuth: true,
         updatedAt: undefined,
         dbId: undefined,
-      };
+      } satisfies ParsedServerConfig;
+      mockConnection.getDiscoveryProvenance.mockReturnValue(
+        connectionProvenance(mockConfig, 'user-oauth-emitted'),
+      );
 
       const registrySpy = jest
         .spyOn(
@@ -288,6 +340,12 @@ describe('MCP OAuth Race Condition Fixes', () => {
         });
         const user = { id: 'user-oauth-emitted' };
         const serverName = 'test-server';
+        const tokenMethods = {
+          findToken: jest.fn().mockResolvedValue(null),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        };
         await flowManager.initFlow(`${user.id}:${serverName}`, 'mcp_oauth', { authorizationUrl });
 
         const firstOAuthStart = jest.fn().mockResolvedValue(undefined);
@@ -295,6 +353,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
           serverName,
           user: user as never,
           flowManager: flowManager as never,
+          tokenMethods: tokenMethods as never,
           oauthStart: firstOAuthStart,
         });
         for (let i = 0; i < 20 && firstOAuthStart.mock.calls.length === 0; i++) {
@@ -307,6 +366,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
           serverName,
           user: user as never,
           flowManager: flowManager as never,
+          tokenMethods: tokenMethods as never,
           oauthStart: joinedOAuthStart,
         });
 

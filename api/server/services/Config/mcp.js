@@ -7,7 +7,12 @@ const {
   isOAuthServer,
 } = require('@librechat/api');
 const { Constants } = require('librechat-data-provider');
-const { getCachedTools, setCachedTools } = require('./getCachedTools');
+const {
+  getCachedTools,
+  setCachedTools,
+  getCachedMCPServerCatalog,
+  setCachedMCPServerCatalog,
+} = require('./getCachedTools');
 
 const {
   mergeAppTools,
@@ -20,7 +25,8 @@ const {
 } = createMCPToolCacheService({
   getCachedTools,
   setCachedTools,
-  setMCPServerCatalog: (envelope, options) => setCachedTools(envelope, options),
+  getMCPServerCatalog: getCachedMCPServerCatalog,
+  setMCPServerCatalog: setCachedMCPServerCatalog,
   getServerConfig: (serverName, userId) =>
     MCPServersRegistry.getInstance().getServerConfig(serverName, userId),
   getScopedSecurityPolicy: (principal) =>

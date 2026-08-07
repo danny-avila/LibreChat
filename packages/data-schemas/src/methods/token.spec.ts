@@ -454,6 +454,48 @@ describe('Token Methods - Detailed Tests', () => {
       ]);
       expect(records.every((record) => !('token' in record))).toBe(true);
     });
+
+    test('rejects an empty batch selector instead of matching every token', async () => {
+      await expect(methods.findTokens!({})).rejects.toThrow(
+        'At least one query parameter must be provided',
+      );
+    });
+
+    test('returns duplicate identities newest-first without exposing token secrets', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const identifier = 'mcp:duplicate';
+      await Token.create([
+        {
+          token: 'old-secret',
+          userId,
+          type: 'mcp_oauth',
+          identifier,
+          metadata: { credential_set_id: 'grant-old' },
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          expiresAt: new Date('2027-01-01T00:00:00.000Z'),
+        },
+        {
+          token: 'new-secret',
+          userId,
+          type: 'mcp_oauth',
+          identifier,
+          metadata: { credential_set_id: 'grant-new', private_hint: 'do-not-project' },
+          createdAt: new Date('2026-02-01T00:00:00.000Z'),
+          expiresAt: new Date('2027-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+      const records = await methods.findTokens!({
+        userId: userId.toString(),
+        type: 'mcp_oauth',
+        identifier,
+      });
+
+      expect(records).toHaveLength(2);
+      expect(records[0]?.metadata).toMatchObject({ credential_set_id: 'grant-new' });
+      expect(records[0]?.metadata).not.toHaveProperty('private_hint');
+      expect(records.every((record) => !('token' in record))).toBe(true);
+    });
   });
 
   describe('updateToken', () => {

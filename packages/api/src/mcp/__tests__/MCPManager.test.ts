@@ -3,6 +3,7 @@ import type { IUser } from '@librechat/data-schemas';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type * as t from '~/mcp/types';
 import {
+  MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
   createMCPConnectionProvenance,
   createMCPToolCatalogSecurityPolicyIdentity,
 } from '~/mcp/catalog';
@@ -1923,6 +1924,176 @@ describe('MCPManager', () => {
         expect.objectContaining({ serverName }),
         expect.not.objectContaining({ useOAuth: true }),
       );
+    });
+
+    it('reuses OBO connections with non-catalog lifecycle provenance', async () => {
+      const originalCredsKey = process.env.CREDS_KEY;
+      process.env.CREDS_KEY = 'manager-obo-lifecycle-key';
+      const oboConfig = {
+        type: 'streamable-http',
+        url: 'https://obo.example.com/mcp',
+        requiresOAuth: false,
+        obo: { scopes: 'api://mcp/.default' },
+      } satisfies t.ParsedServerConfig;
+      const oboTokenResolver = jest.fn();
+      const provenance = createMCPConnectionProvenance(
+        {
+          tenantId: null,
+          userId,
+          serverName,
+          serverConfig: oboConfig,
+          effectiveServerConfig: oboConfig,
+          securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+            allowedDomains: null,
+            allowedAddresses: null,
+          }),
+          authorizationIdentity: MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+        },
+        'user',
+      );
+      const oboConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        isStale: jest.fn().mockReturnValue(false),
+        disconnect: jest.fn(),
+        getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+      } as unknown as MCPConnection;
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(oboConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(oboConnection);
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const options = {
+          serverName,
+          user: mockUser,
+          flowManager: mockFlowManager as unknown as t.UserMCPConnectionOptions['flowManager'],
+          oboTokenResolver,
+        };
+
+        const first = await manager.getUserConnection(options);
+        const second = await manager.getUserConnection(options);
+
+        expect(first).toBe(oboConnection);
+        expect(second).toBe(oboConnection);
+        expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+      } finally {
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+      }
+    });
+
+    it('does not coalesce concurrent connections across tenant, policy, and credential scopes', async () => {
+      const originalCredsKey = process.env.CREDS_KEY;
+      process.env.CREDS_KEY = 'manager-pending-scope-key';
+      const customConfig = {
+        type: 'streamable-http',
+        url: 'https://private.example.com/mcp',
+        customUserVars: { API_KEY: { title: 'API key', description: 'API key' } },
+        headers: { Authorization: 'Bearer {{API_KEY}}' },
+      } satisfies t.ParsedServerConfig;
+      const tenantAUser = { ...mockUser, tenantId: 'tenant-a', role: 'USER' } as IUser;
+      const tenantBUser = { ...mockUser, tenantId: 'tenant-b', role: 'ADMIN' } as IUser;
+      const policyForTenant = (tenantId: string) => ({
+        allowedDomains: [`${tenantId}.example.com`],
+        allowedAddresses: null,
+      });
+      const makeProvenance = (user: IUser, customUserVars: Record<string, string>) =>
+        createMCPConnectionProvenance(
+          {
+            tenantId: user.tenantId ?? null,
+            userId,
+            serverName,
+            serverConfig: customConfig,
+            effectiveServerConfig: customConfig,
+            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity(
+              policyForTenant(user.tenantId!),
+            ),
+            customUserVars,
+            authorizationIdentity: 'none',
+          },
+          'user',
+        );
+      const tenantAConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        getDiscoveryProvenance: jest
+          .fn()
+          .mockReturnValue(makeProvenance(tenantAUser, { API_KEY: 'key-a' })),
+      } as unknown as MCPConnection;
+      const tenantBConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        getDiscoveryProvenance: jest
+          .fn()
+          .mockReturnValue(makeProvenance(tenantBUser, { API_KEY: 'key-b' })),
+      } as unknown as MCPConnection;
+      let releaseTenantA: () => void = () => undefined;
+      const tenantAGate = new Promise<void>((resolve) => {
+        releaseTenantA = resolve;
+      });
+
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(customConfig);
+      (mockRegistryInstance.resolveAllowlists as jest.Mock).mockImplementation(
+        async ({ tenantId }: { tenantId?: string | null }) => ({
+          ...policyForTenant(tenantId ?? 'default'),
+          useSSRFProtection: false,
+        }),
+      );
+      (MCPConnectionFactory.create as jest.Mock).mockImplementation(
+        async (_basic, options: t.UserConnectionContext) => {
+          if (options.user?.tenantId === 'tenant-a') {
+            await tenantAGate;
+            return tenantAConnection;
+          }
+          return tenantBConnection;
+        },
+      );
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const firstPromise = manager.getUserConnection({
+          serverName,
+          serverConfig: customConfig,
+          user: tenantAUser,
+          customUserVars: { API_KEY: 'key-a' },
+        });
+        for (
+          let i = 0;
+          i < 20 && (MCPConnectionFactory.create as jest.Mock).mock.calls.length < 1;
+          i++
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+        }
+        const secondPromise = manager.getUserConnection({
+          serverName,
+          serverConfig: customConfig,
+          user: tenantBUser,
+          customUserVars: { API_KEY: 'key-b' },
+        });
+        for (
+          let i = 0;
+          i < 20 && (MCPConnectionFactory.create as jest.Mock).mock.calls.length < 2;
+          i++
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+        }
+
+        expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
+        releaseTenantA();
+        await expect(Promise.all([firstPromise, secondPromise])).resolves.toEqual([
+          tenantAConnection,
+          tenantBConnection,
+        ]);
+      } finally {
+        releaseTenantA();
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+      }
     });
 
     it('replaces a cached user connection after custom credentials rotate', async () => {

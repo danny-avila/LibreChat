@@ -15,6 +15,12 @@ const ToolCacheKeys = {
     const digest = createHash('sha256').update(scope).digest('base64url');
     return `tools:mcp:v2:${digest}`;
   },
+  /** Scoped schema catalogs are isolated from legacy raw tool maps. */
+  MCP_CATALOG: (userId, serverName, tenantId = getTenantId()) => {
+    const scope = `${tenantId ?? '__default_tenant__'}\u0000${userId}\u0000${serverName}`;
+    const digest = createHash('sha256').update(scope).digest('base64url');
+    return `tools:mcp:catalog:v1:${digest}`;
+  },
   /** Removed after the single-tenant v2 catalog migration window. */
   LEGACY_MCP_SERVER: (userId, serverName) => `tools:mcp:${userId}:${serverName}`,
 };
@@ -67,6 +73,20 @@ async function setCachedTools(tools, options = {}) {
   return await cache.set(ToolCacheKeys.GLOBAL, tools, ttl);
 }
 
+/** Retrieves a scoped MCP tool-catalog envelope without consulting legacy raw maps. */
+async function getCachedMCPServerCatalog(options) {
+  const cache = getLogStores(CacheKeys.TOOL_CACHE);
+  const { userId, serverName, tenantId = getTenantId() } = options;
+  return await cache.get(ToolCacheKeys.MCP_CATALOG(userId, serverName, tenantId));
+}
+
+/** Stores a scoped MCP tool-catalog envelope separately from legacy raw maps. */
+async function setCachedMCPServerCatalog(catalog, options) {
+  const cache = getLogStores(CacheKeys.TOOL_CACHE);
+  const { userId, serverName, tenantId = getTenantId(), ttl = Time.TWELVE_HOURS } = options;
+  return await cache.set(ToolCacheKeys.MCP_CATALOG(userId, serverName, tenantId), catalog, ttl);
+}
+
 /**
  * Invalidates cached tools
  * @function invalidateCachedTools
@@ -88,6 +108,7 @@ async function invalidateCachedTools(options = {}) {
 
   if (serverName && userId) {
     keysToDelete.push(ToolCacheKeys.MCP_SERVER(userId, serverName, tenantId));
+    keysToDelete.push(ToolCacheKeys.MCP_CATALOG(userId, serverName, tenantId));
     if (tenantId == null) {
       keysToDelete.push(ToolCacheKeys.LEGACY_MCP_SERVER(userId, serverName));
     }
@@ -99,6 +120,8 @@ async function invalidateCachedTools(options = {}) {
 module.exports = {
   ToolCacheKeys,
   getCachedTools,
+  getCachedMCPServerCatalog,
   setCachedTools,
+  setCachedMCPServerCatalog,
   invalidateCachedTools,
 };

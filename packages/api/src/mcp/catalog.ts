@@ -14,6 +14,7 @@ import { processMCPEnv } from '~/utils/env';
 
 export const MCP_TOOL_CATALOG_VERSION = 1 as const;
 export const MCP_TOOL_CATALOG_TTL_MS: number = 12 * 60 * 60 * 1000;
+export const MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY = 'obo_lifecycle';
 
 export type MCPToolCatalogPendingReason =
   | 'cold'
@@ -318,8 +319,30 @@ const MCP_AUTHORIZATION_TOKEN_TYPES = [
   'mcp_oauth',
 ] as const;
 
+const MCP_AUTHORIZATION_IDENTITY_QUERY_OPTIONS = {
+  sort: { createdAt: -1, _id: -1 },
+  projection: {
+    _id: 1,
+    createdAt: 1,
+    'metadata.credential_set_id': 1,
+  },
+} as const;
+
 function authorizationRecordKey(type: string, identifier: string): string {
   return `${type}\0${identifier}`;
+}
+
+function authorizationRecordOrder(record: MCPAuthorizationIdentityRecord): [number, string] {
+  return [record.createdAt?.getTime() ?? 0, String(record._id ?? '')];
+}
+
+function isNewerAuthorizationRecord(
+  candidate: MCPAuthorizationIdentityRecord,
+  current: MCPAuthorizationIdentityRecord,
+): boolean {
+  const [candidateTime, candidateId] = authorizationRecordOrder(candidate);
+  const [currentTime, currentId] = authorizationRecordOrder(current);
+  return candidateTime > currentTime || (candidateTime === currentTime && candidateId > currentId);
 }
 
 function resolveAuthorizationIdentity(
@@ -377,8 +400,13 @@ export async function getMCPAuthorizationIdentities({
     });
     const recordsByIdentity = new Map<string, MCPAuthorizationIdentityRecord>();
     for (const record of records) {
-      if (record.type && record.identifier) {
-        recordsByIdentity.set(authorizationRecordKey(record.type, record.identifier), record);
+      if (!record.type || !record.identifier) {
+        continue;
+      }
+      const key = authorizationRecordKey(record.type, record.identifier);
+      const current = recordsByIdentity.get(key);
+      if (!current || isNewerAuthorizationRecord(record, current)) {
+        recordsByIdentity.set(key, record);
       }
     }
     return new Map(
@@ -420,9 +448,18 @@ export async function getMCPAuthorizationIdentity({
   const identifier = `mcp:${serverName}`;
   try {
     const [access, refresh, client] = await Promise.all([
-      findToken({ userId, type: 'mcp_oauth', identifier }),
-      findToken({ userId, type: 'mcp_oauth_refresh', identifier: `${identifier}:refresh` }),
-      findToken({ userId, type: 'mcp_oauth_client', identifier: `${identifier}:client` }),
+      findToken(
+        { userId, type: 'mcp_oauth', identifier },
+        MCP_AUTHORIZATION_IDENTITY_QUERY_OPTIONS,
+      ),
+      findToken(
+        { userId, type: 'mcp_oauth_refresh', identifier: `${identifier}:refresh` },
+        MCP_AUTHORIZATION_IDENTITY_QUERY_OPTIONS,
+      ),
+      findToken(
+        { userId, type: 'mcp_oauth_client', identifier: `${identifier}:client` },
+        MCP_AUTHORIZATION_IDENTITY_QUERY_OPTIONS,
+      ),
     ]);
     return (
       getRecordIdentity(client) ?? getRecordIdentity(refresh) ?? getRecordIdentity(access) ?? 'none'

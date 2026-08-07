@@ -16,6 +16,7 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { MCPConnectionProvenance } from './types';
 import type * as t from './types';
 import {
+  MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
   createMCPConnectionProvenance,
   createMCPToolCatalogSecurityPolicyIdentity,
   isMCPToolCatalogFingerprintAvailable,
@@ -359,12 +360,15 @@ export class MCPConnectionFactory {
   private createDiscoveryProvenance(
     oauthTokens: MCPOAuthTokens | null,
   ): MCPConnectionProvenance | null {
-    if (this.usesObo || !isMCPToolCatalogFingerprintAvailable()) {
+    if (!isMCPToolCatalogFingerprintAvailable()) {
       return null;
     }
-    const authorizationIdentity = this.useOAuth
-      ? (oauthTokens?.credential_set_id ?? (oauthTokens ? null : 'none'))
-      : 'none';
+    let authorizationIdentity: string | null = 'none';
+    if (this.usesObo) {
+      authorizationIdentity = MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY;
+    } else if (this.useOAuth) {
+      authorizationIdentity = oauthTokens?.credential_set_id ?? (oauthTokens ? null : 'none');
+    }
     if (authorizationIdentity == null) {
       return null;
     }

@@ -296,6 +296,8 @@ describe('MCP tool catalogs', () => {
     await expect(
       getMCPAuthorizationIdentity({ userId: 'user-a', serverName: 'docs', findToken }),
     ).resolves.toBe('grant-generation');
+    expect(findToken).toHaveBeenCalledTimes(3);
+    expect(findToken.mock.calls.every(([, options]) => options?.sort?.createdAt === -1)).toBe(true);
   });
 
   it('resolves an OAuth grant identity with one indexed batch query when available', async () => {
@@ -333,6 +335,35 @@ describe('MCP tool catalogs', () => {
       },
     });
     expect(findToken).not.toHaveBeenCalled();
+  });
+
+  it('selects the same newest duplicate authorization generation from an unordered batch', async () => {
+    const findToken = jest.fn();
+    const findTokens = jest.fn().mockResolvedValue([
+      {
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:docs:client',
+        _id: 'older-record',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        metadata: new Map([['credential_set_id', 'grant-old']]),
+      },
+      {
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:docs:client',
+        _id: 'newer-record',
+        createdAt: new Date('2026-02-01T00:00:00.000Z'),
+        metadata: new Map([['credential_set_id', 'grant-new']]),
+      },
+    ]);
+
+    await expect(
+      getMCPAuthorizationIdentity({
+        userId: 'user-a',
+        serverName: 'docs',
+        findToken,
+        findTokens,
+      }),
+    ).resolves.toBe('grant-new');
   });
 
   it('resolves multiple OAuth server identities with one request-scoped query', async () => {

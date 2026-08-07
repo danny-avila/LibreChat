@@ -1,10 +1,12 @@
 import { logger, getTenantId } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import type { MCPAuthorizationTokenBatchFinder } from './catalog';
+import type { MCPAuthorizationTokenBatchFinder, MCPToolCatalogScopeInput } from './catalog';
 import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
 import type { FlowState } from '~/flow/types';
 import type * as t from './types';
 import {
+  MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+  createMCPConnectionProvenance,
   createMCPToolCatalogSecurityPolicyIdentity,
   getMCPAuthorizationIdentity,
   isMCPToolCatalogFingerprintAvailable,
@@ -14,6 +16,7 @@ import {
   getMissingRuntimeBodyPlaceholderFields,
   hasRuntimeUrlPlaceholders,
   isUserSourced,
+  isOAuthServer,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
 } from './utils';
@@ -40,9 +43,22 @@ type PendingOAuthState = {
   lastOAuthStart?: PendingOAuthStart;
 };
 
+type ConnectionScopeContext = Pick<
+  t.UserMCPConnectionOptions,
+  | 'serverName'
+  | 'user'
+  | 'customUserVars'
+  | 'requestBody'
+  | 'graphTokenResolver'
+  | 'tokenMethods'
+  | 'oboTokenResolver'
+> & { userId: string };
+
 type PendingConnection = {
   promise: Promise<MCPConnection>;
   oauth: PendingOAuthState;
+  config?: t.ParsedServerConfig;
+  context: ConnectionScopeContext;
 };
 
 /**
@@ -181,13 +197,55 @@ export abstract class UserConnectionManager {
     const clearCooldown = forceNew === true;
 
     const lockKey = `${userId}:${serverName}`;
+    const connectionScopeContext: ConnectionScopeContext = {
+      userId,
+      serverName,
+      user,
+      customUserVars: opts.customUserVars,
+      requestBody: opts.requestBody,
+      graphTokenResolver: opts.graphTokenResolver,
+      tokenMethods: opts.tokenMethods,
+      oboTokenResolver: opts.oboTokenResolver,
+    };
 
     if (!forceNewConnection) {
       const pending = this.pendingConnections.get(lockKey);
       if (pending) {
-        logger.debug(`[MCP][User: ${userId}][${serverName}] Joining in-flight connection attempt`);
-        await this.addPendingOAuthStart(pending.oauth, opts, userId);
-        return pending.promise;
+        const [pendingScope, requestedScope] = await Promise.all([
+          pending.config
+            ? this.resolveCurrentConnectionScope(pending.config, pending.context)
+            : null,
+          config ? this.resolveCurrentConnectionScope(config, connectionScopeContext) : null,
+        ]);
+        const pendingProvenance = pendingScope
+          ? createMCPConnectionProvenance(pendingScope, 'user')
+          : null;
+        if (
+          pendingProvenance &&
+          requestedScope &&
+          matchesMCPConnectionProvenance(pendingProvenance, requestedScope)
+        ) {
+          logger.debug(
+            `[MCP][User: ${userId}][${serverName}] Joining in-flight connection attempt`,
+          );
+          await this.addPendingOAuthStart(pending.oauth, opts, userId);
+          const connection = await pending.promise;
+          const provenanceCurrent = await this.isConnectionProvenanceCurrent(
+            connection,
+            config!,
+            connectionScopeContext,
+          );
+          if (provenanceCurrent) {
+            return connection;
+          }
+        }
+        logger.info(
+          `[MCP][User: ${userId}][${serverName}] In-flight connection scope changed; creating an isolated replacement`,
+        );
+        return this.getUserConnectionInternal(
+          { ...opts, serverConfig: config, forceNew: true },
+          allowAppLevelServer,
+        );
       }
     }
 
@@ -205,7 +263,12 @@ export abstract class UserConnectionManager {
     );
 
     if (!forceNewConnection) {
-      this.pendingConnections.set(lockKey, { promise: connectionPromise, oauth: pendingOAuth });
+      this.pendingConnections.set(lockKey, {
+        promise: connectionPromise,
+        oauth: pendingOAuth,
+        config,
+        context: connectionScopeContext,
+      });
     }
 
     try {
@@ -447,6 +510,7 @@ export abstract class UserConnectionManager {
           requestBody,
           graphTokenResolver,
           tokenMethods,
+          oboTokenResolver,
         });
         if (provenanceCurrent) {
           logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
@@ -583,21 +647,12 @@ export abstract class UserConnectionManager {
     }
   }
 
-  private async isConnectionProvenanceCurrent(
-    connection: MCPConnection,
+  private async resolveCurrentConnectionScope(
     config: t.ParsedServerConfig,
-    context: Pick<
-      t.UserMCPConnectionOptions,
-      | 'serverName'
-      | 'user'
-      | 'customUserVars'
-      | 'requestBody'
-      | 'graphTokenResolver'
-      | 'tokenMethods'
-    > & { userId: string },
-  ): Promise<boolean> {
+    context: ConnectionScopeContext,
+  ): Promise<MCPToolCatalogScopeInput | null> {
     if (!isMCPToolCatalogFingerprintAvailable()) {
-      return true;
+      return null;
     }
     const {
       userId,
@@ -607,24 +662,29 @@ export abstract class UserConnectionManager {
       requestBody,
       graphTokenResolver,
       tokenMethods,
+      oboTokenResolver,
     } = context;
-    const configuredOAuth = requiresOAuthMachinery(config);
+    const configuredOAuth = isOAuthServer(config);
     if (configuredOAuth && !tokenMethods?.findToken) {
-      return false;
+      return null;
     }
     const batchTokenMethods = tokenMethods as
       | { findTokens?: MCPAuthorizationTokenBatchFinder }
       | undefined;
-    const authorizationIdentity = configuredOAuth
-      ? await getMCPAuthorizationIdentity({
-          userId,
-          serverName,
-          findToken: tokenMethods!.findToken!,
-          findTokens: batchTokenMethods?.findTokens,
-        })
-      : 'none';
+    const usesObo = config.obo != null && oboTokenResolver != null && user != null;
+    let authorizationIdentity: string | null = 'none';
+    if (usesObo) {
+      authorizationIdentity = MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY;
+    } else if (configuredOAuth) {
+      authorizationIdentity = await getMCPAuthorizationIdentity({
+        userId,
+        serverName,
+        findToken: tokenMethods!.findToken!,
+        findTokens: batchTokenMethods?.findTokens,
+      });
+    }
     if (authorizationIdentity == null) {
-      return false;
+      return null;
     }
     const registry = MCPServersRegistry.getInstance();
     const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
@@ -639,7 +699,7 @@ export abstract class UserConnectionManager {
       requestBody,
       graphTokenResolver,
     });
-    return matchesMCPConnectionProvenance(connection.getDiscoveryProvenance(), {
+    return {
       tenantId: user?.tenantId ?? getTenantId() ?? null,
       userId,
       serverName,
@@ -651,7 +711,21 @@ export abstract class UserConnectionManager {
       }),
       customUserVars,
       authorizationIdentity,
-    });
+    };
+  }
+
+  private async isConnectionProvenanceCurrent(
+    connection: MCPConnection,
+    config: t.ParsedServerConfig,
+    context: ConnectionScopeContext,
+  ): Promise<boolean> {
+    if (!isMCPToolCatalogFingerprintAvailable()) {
+      return true;
+    }
+    const scope = await this.resolveCurrentConnectionScope(config, context);
+    return (
+      scope != null && matchesMCPConnectionProvenance(connection.getDiscoveryProvenance(), scope)
+    );
   }
 
   /**

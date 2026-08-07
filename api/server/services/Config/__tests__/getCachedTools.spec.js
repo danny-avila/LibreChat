@@ -9,7 +9,9 @@ getLogStores.mockReturnValue(mockCache);
 const {
   ToolCacheKeys,
   getCachedTools,
+  getCachedMCPServerCatalog,
   setCachedTools,
+  setCachedMCPServerCatalog,
   invalidateCachedTools,
 } = require('../getCachedTools');
 
@@ -28,6 +30,17 @@ describe('getCachedTools', () => {
       expect(key).not.toContain('github');
       expect(ToolCacheKeys.MCP_SERVER('user123', 'github', 'tenant-a')).toBe(key);
       expect(ToolCacheKeys.MCP_SERVER('user123', 'github', 'tenant-b')).not.toBe(key);
+    });
+
+    it('uses a distinct opaque namespace for scoped catalog envelopes', () => {
+      const rawKey = ToolCacheKeys.MCP_SERVER('user123', 'github', 'tenant-a');
+      const catalogKey = ToolCacheKeys.MCP_CATALOG('user123', 'github', 'tenant-a');
+
+      expect(catalogKey).toMatch(/^tools:mcp:catalog:v1:/);
+      expect(catalogKey).not.toBe(rawKey);
+      expect(catalogKey).not.toContain('tenant-a');
+      expect(catalogKey).not.toContain('user123');
+      expect(catalogKey).not.toContain('github');
     });
   });
 
@@ -96,6 +109,39 @@ describe('getCachedTools', () => {
       );
     });
 
+    it('keeps legacy raw tools and scoped catalogs in independent keys', async () => {
+      const rawTools = { legacy: { type: 'function' } };
+      const catalog = { metadata: { version: 1 }, tools: {} };
+      const stored = new Map();
+      mockCache.set.mockImplementation(async (key, value) => {
+        stored.set(key, value);
+        return true;
+      });
+      mockCache.get.mockImplementation(async (key) => stored.get(key) ?? null);
+
+      await setCachedTools(rawTools, {
+        userId: 'user1',
+        serverName: 'github',
+        tenantId: 'tenant-a',
+      });
+      await setCachedMCPServerCatalog(catalog, {
+        userId: 'user1',
+        serverName: 'github',
+        tenantId: 'tenant-a',
+      });
+
+      await expect(
+        getCachedTools({ userId: 'user1', serverName: 'github', tenantId: 'tenant-a' }),
+      ).resolves.toBe(rawTools);
+      await expect(
+        getCachedMCPServerCatalog({
+          userId: 'user1',
+          serverName: 'github',
+          tenantId: 'tenant-a',
+        }),
+      ).resolves.toBe(catalog);
+    });
+
     it('invalidateCachedTools should use TOOL_CACHE namespace', async () => {
       mockCache.delete.mockResolvedValue(true);
       await invalidateCachedTools({ invalidateGlobal: true });
@@ -112,9 +158,12 @@ describe('getCachedTools', () => {
         tenantId: 'tenant-a',
       });
 
-      expect(mockCache.delete).toHaveBeenCalledTimes(1);
+      expect(mockCache.delete).toHaveBeenCalledTimes(2);
       expect(mockCache.delete).toHaveBeenCalledWith(
         ToolCacheKeys.MCP_SERVER('user1', 'github', 'tenant-a'),
+      );
+      expect(mockCache.delete).toHaveBeenCalledWith(
+        ToolCacheKeys.MCP_CATALOG('user1', 'github', 'tenant-a'),
       );
     });
 

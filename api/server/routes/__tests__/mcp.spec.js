@@ -177,6 +177,10 @@ jest.mock('~/server/services/PluginService', () => ({
   getUserPluginAuthValue: jest.fn(),
 }));
 
+jest.mock('~/server/services/GraphTokenService', () => ({
+  getGraphApiToken: jest.fn().mockResolvedValue({ access_token: 'graph-access-token' }),
+}));
+
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(),
   getFlowStateManager: jest.fn(),
@@ -3280,6 +3284,123 @@ describe('MCP Routes', () => {
           discoveryProvenance,
         }),
       );
+    });
+
+    it('validates live runtime-identity tools against the fully resolved user scope', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const { createMCPConnectionProvenance } = require('@librechat/api');
+      const { getMCPServerTools } = require('~/server/services/Config');
+      const { getGraphApiToken } = require('~/server/services/GraphTokenService');
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/users/{{LIBRECHAT_USER_ID}}',
+        headers: {
+          'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      };
+      const toolKey = `search${Constants.mcp_delimiter}runtime`;
+      let receivedScope;
+
+      currentUser = {
+        id: 'runtime-user',
+        email: 'runtime@example.com',
+        provider: 'openid',
+        openidId: 'runtime-openid-id',
+        federatedTokens: {
+          access_token: 'upstream-access-token',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        },
+        tenantId: 'tenant-runtime',
+        role: 'USER',
+      };
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({ runtime: serverConfig });
+      getMCPServerTools.mockResolvedValueOnce(null);
+      getGraphApiToken.mockResolvedValueOnce({ access_token: 'rotated-graph-token' });
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctionsWithProvenance: jest.fn(async (userId, serverName, scope) => {
+          receivedScope = scope;
+          return {
+            tools: {
+              [toolKey]: {
+                type: 'function',
+                function: {
+                  name: toolKey,
+                  description: 'Search',
+                  parameters: { type: 'object' },
+                },
+              },
+            },
+            provenance: createMCPConnectionProvenance(scope, 'user'),
+          };
+        }),
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers.runtime.tools).toHaveLength(1);
+      expect(receivedScope).toEqual(
+        expect.objectContaining({
+          tenantId: 'tenant-runtime',
+          userId: 'runtime-user',
+          serverName: 'runtime',
+          effectiveServerConfig: expect.objectContaining({
+            url: 'https://mcp.example.com/users/runtime-user',
+            headers: {
+              'X-User-Email': 'runtime@example.com',
+              Authorization: 'Bearer rotated-graph-token',
+            },
+          }),
+        }),
+      );
+    });
+
+    it('returns live OBO tools using lifecycle provenance without cataloging the grant', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const {
+        MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+        createMCPConnectionProvenance,
+        getMCPAuthorizationIdentities,
+      } = require('@librechat/api');
+      const { getMCPServerTools } = require('~/server/services/Config');
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://obo.example.com/mcp',
+        requiresOAuth: false,
+        obo: { scopes: 'api://mcp/.default' },
+      };
+      const toolKey = `read${Constants.mcp_delimiter}obo`;
+
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({ obo: serverConfig });
+      getMCPServerTools.mockResolvedValueOnce(null);
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctionsWithProvenance: jest.fn(async (userId, serverName, scope) => ({
+          tools: {
+            [toolKey]: {
+              type: 'function',
+              function: {
+                name: toolKey,
+                description: 'Read',
+                parameters: { type: 'object' },
+              },
+            },
+          },
+          provenance: createMCPConnectionProvenance(
+            {
+              ...scope,
+              authorizationIdentity: MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+            },
+            'user',
+          ),
+        })),
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers.obo.tools).toHaveLength(1);
+      expect(getMCPAuthorizationIdentities).not.toHaveBeenCalled();
     });
 
     it('preserves converted output schemas and annotations through catalog persistence', async () => {

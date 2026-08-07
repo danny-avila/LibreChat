@@ -12,7 +12,7 @@ import logger from '~/config/winston';
 // Factory function that takes mongoose instance and returns the methods
 export function createTokenMethods(mongoose: typeof import('mongoose')): {
   findToken: (query: TokenQuery, options?: QueryOptions) => Promise<IToken | null>;
-  findTokens?: (query: TokenQuery, options?: QueryOptions) => Promise<TokenIdentityRecord[]>;
+  findTokens?: (query: TokenQuery) => Promise<TokenIdentityRecord[]>;
   createToken: (tokenData: TokenCreateData) => Promise<IToken>;
   updateToken: (query: TokenQuery, updateData: TokenUpdateData) => Promise<IToken | null>;
   deleteTokens: (query: TokenQuery) => Promise<TokenDeleteResult>;
@@ -144,10 +144,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
   }
 
   /** Finds non-secret token identity metadata matching the provided query. */
-  async function findTokens(
-    query: TokenQuery,
-    options?: QueryOptions,
-  ): Promise<TokenIdentityRecord[]> {
+  async function findTokens(query: TokenQuery): Promise<TokenIdentityRecord[]> {
     try {
       const Token = mongoose.models.Token;
       const conditions = [];
@@ -172,8 +169,13 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
         conditions.push({ 'metadata.credential_set_id': query.metadataCredentialSetId });
       }
 
-      return await Token.find({ $and: conditions }, null, options)
-        .select('_id type identifier createdAt metadata')
+      if (conditions.length === 0) {
+        throw new Error('At least one query parameter must be provided');
+      }
+
+      return await Token.find({ $and: conditions })
+        .sort({ createdAt: -1, _id: -1 })
+        .select('_id type identifier createdAt metadata.credential_set_id')
         .lean<TokenIdentityRecord[]>();
     } catch (error) {
       logger.debug('An error occurred while finding tokens:', error);

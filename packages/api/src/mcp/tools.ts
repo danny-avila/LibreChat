@@ -77,6 +77,11 @@ export interface MCPToolCacheDeps {
     tools: LCAvailableTools,
     options?: { userId?: string; serverName?: string },
   ) => Promise<boolean>;
+  getMCPServerCatalog?: (options: {
+    userId: string;
+    serverName: string;
+    tenantId: string | null;
+  }) => Promise<MCPToolCatalogEnvelope | null>;
   setMCPServerCatalog?: (
     envelope: MCPToolCatalogEnvelope,
     options: { userId: string; serverName: string; tenantId: string | null },
@@ -137,6 +142,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   const {
     getCachedTools,
     setCachedTools,
+    getMCPServerCatalog: getCachedMCPServerCatalog,
     setMCPServerCatalog,
     getServerConfig,
     getScopedSecurityPolicy,
@@ -736,6 +742,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     if (!isMCPToolCatalogFingerprintAvailable()) {
       return { status: 'pending_activation', reason: 'authorization_unavailable' };
     }
+    if (!getCachedMCPServerCatalog) {
+      return { status: 'pending_activation', reason: 'authorization_unavailable' };
+    }
     if (await isRequestScoped(userId, serverName, serverConfig)) {
       return { status: 'pending_activation', reason: 'request_scoped' };
     }
@@ -750,7 +759,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       return { status: 'pending_activation', reason: 'authorization_unavailable' };
     }
     try {
-      const cached = await getCachedTools({ userId, serverName, tenantId });
+      const cached = await getCachedMCPServerCatalog({ userId, serverName, tenantId });
       const result = resolveMCPToolCatalog(cached, {
         tenantId,
         userId,

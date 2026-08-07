@@ -32,7 +32,9 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('./getCachedTools', () => ({
   getCachedTools: jest.fn(),
+  getCachedMCPServerCatalog: jest.fn(),
   setCachedTools: jest.fn(),
+  setCachedMCPServerCatalog: jest.fn(),
 }));
 
 const { getScopedMCPServerTools } = require('./mcp');

@@ -1,5 +1,6 @@
 const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
+  MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
   getMCPAuthorizationIdentity,
   getServerCustomUserVars,
   getUserMCPAuthMap,
@@ -368,15 +369,17 @@ async function reinitMCPServer({
     }
 
     if (tools) {
-      const authorizationIdentity =
-        configuredOAuth || oauthRequired
-          ? await getMCPAuthorizationIdentity({
-              userId: user.id,
-              serverName,
-              findToken,
-              findTokens,
-            })
-          : 'none';
+      let authorizationIdentity = 'none';
+      if (serverConfig.obo) {
+        authorizationIdentity = MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY;
+      } else if (configuredOAuth || oauthRequired) {
+        authorizationIdentity = await getMCPAuthorizationIdentity({
+          userId: user.id,
+          serverName,
+          findToken,
+          findTokens,
+        });
+      }
       const currentScope = await resolveCurrentDiscoveryScope({
         registry,
         user,

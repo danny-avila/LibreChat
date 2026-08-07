@@ -48,6 +48,7 @@ jest.mock('~/cache', () => ({
 
 const { reinitMCPServer } = require('./mcp');
 const {
+  MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
   createMCPConnectionProvenance,
   createMCPToolCatalogSecurityPolicyIdentity,
 } = require('@librechat/api');
@@ -195,6 +196,49 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
         process.env.CREDS_KEY = originalCredsKey;
       }
     }
+  });
+
+  it('accepts OBO lifecycle provenance without querying persistent OAuth grants', async () => {
+    process.env.CREDS_KEY = 'reinit-obo-lifecycle-key';
+    const tools = [{ name: 'read', inputSchema: { type: 'object' } }];
+    const oboConfig = {
+      type: 'streamable-http',
+      url: 'https://obo.example.com/mcp',
+      requiresOAuth: false,
+      obo: { scopes: 'api://mcp/.default' },
+    };
+    const provenance = createMCPConnectionProvenance(
+      {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig: oboConfig,
+        effectiveServerConfig: oboConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+      },
+      'user',
+    );
+    mockGetServerConfig.mockResolvedValue(oboConfig);
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue(tools),
+      getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+    });
+
+    const result = await reinitMCPServer({ user, serverName, serverConfig: oboConfig });
+
+    expect(result.tools).toEqual(tools);
+    expect(mockGetMCPAuthorizationIdentity).not.toHaveBeenCalled();
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools,
+        authorizationIdentity: MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+        discoveryProvenance: provenance,
+      }),
+    );
   });
 
   it('rejects live tools when custom credentials rotate after connection discovery', async () => {

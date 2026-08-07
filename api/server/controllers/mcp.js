@@ -11,10 +11,13 @@ const {
   checkAccess,
   getUserMCPAuthMap,
   getMCPAuthorizationIdentities,
+  MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
   createMCPToolCatalogSecurityPolicyIdentity,
   matchesMCPConnectionProvenance,
   isOAuthServer,
   isUserSourced,
+  preProcessGraphTokens,
+  processMCPEnv,
   MCPConnection,
   MCPErrorCodes,
   splitMCPToolKey,
@@ -47,6 +50,7 @@ const {
 const { getResourcePermissionsMap } = require('~/server/services/PermissionService');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
+const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const db = require('~/models');
 
 /**
@@ -100,6 +104,16 @@ function handleMCPError(error, res) {
   }
 
   return null;
+}
+
+function getServerAuthorizationIdentity(serverName, config, oauthIdentities) {
+  if (config?.obo != null) {
+    return MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY;
+  }
+  if (isOAuthServer(config)) {
+    return oauthIdentities.get(serverName) ?? null;
+  }
+  return 'none';
 }
 
 /**
@@ -160,9 +174,11 @@ const getMCPTools = async (req, res) => {
     const authorizationIdentities = new Map(
       configuredServers.map((serverName) => [
         serverName,
-        isOAuthServer(mcpConfig[serverName])
-          ? (oauthAuthorizationIdentities.get(serverName) ?? null)
-          : 'none',
+        getServerAuthorizationIdentity(
+          serverName,
+          mcpConfig[serverName],
+          oauthAuthorizationIdentities,
+        ),
       ]),
     );
 
@@ -233,13 +249,31 @@ const getMCPTools = async (req, res) => {
           if (authorizationIdentityBeforeDiscovery == null || securityPolicyIdentity == null) {
             continue;
           }
+          const serverConfig = mcpConfig[serverName];
+          const customUserVars = userMCPAuthMap[`${Constants.mcp_prefix}${serverName}`];
+          const dbSourced = isUserSourced(serverConfig);
+          const graphProcessedConfig = dbSourced
+            ? serverConfig
+            : await preProcessGraphTokens(serverConfig, {
+                user: req.user,
+                graphTokenResolver: getGraphApiToken,
+                scopes: process.env.GRAPH_API_SCOPES,
+              });
+          const effectiveServerConfig = processMCPEnv({
+            user: req.user,
+            body: req.body,
+            dbSourced,
+            options: graphProcessedConfig,
+            customUserVars,
+          });
           expectedScope = {
             tenantId,
             userId,
             serverName,
-            serverConfig: mcpConfig[serverName],
+            serverConfig,
+            effectiveServerConfig,
             securityPolicyIdentity,
-            customUserVars: userMCPAuthMap[`${Constants.mcp_prefix}${serverName}`],
+            customUserVars,
             authorizationIdentity: authorizationIdentityBeforeDiscovery,
           };
           const discovery = await mcpManager.getServerToolFunctionsWithProvenance(
@@ -288,9 +322,11 @@ const getMCPTools = async (req, res) => {
       expectedScope,
       authorizationIdentityBeforeDiscovery,
     } of liveDiscoveryResults) {
-      const authorizationIdentityAfterDiscovery = isOAuthServer(mcpConfig[serverName])
-        ? (postDiscoveryOAuthIdentities.get(serverName) ?? null)
-        : 'none';
+      const authorizationIdentityAfterDiscovery = getServerAuthorizationIdentity(
+        serverName,
+        mcpConfig[serverName],
+        postDiscoveryOAuthIdentities,
+      );
       const authorizationIdentityStable =
         authorizationIdentityBeforeDiscovery != null &&
         authorizationIdentityAfterDiscovery === authorizationIdentityBeforeDiscovery;

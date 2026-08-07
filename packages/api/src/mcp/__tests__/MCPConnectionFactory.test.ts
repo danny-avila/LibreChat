@@ -4,11 +4,12 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
 import type * as t from '~/mcp/types';
 import {
+  MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
   createMCPToolCatalogSecurityPolicyIdentity,
   matchesMCPConnectionProvenance,
 } from '~/mcp/catalog';
+import { MCPOAuthHandler, MCPTokenStorage, resolveOboToken } from '~/mcp/oauth';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPOAuthHandler, MCPTokenStorage } from '~/mcp/oauth';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPConnection } from '~/mcp/connection';
@@ -285,6 +286,57 @@ describe('MCPConnectionFactory', () => {
             authorizationIdentity: 'none',
           }),
         ).toBe(false);
+      } finally {
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+      }
+    });
+
+    it('creates lifecycle provenance for OBO connections without making them catalog eligible', async () => {
+      const originalCredsKey = process.env.CREDS_KEY;
+      process.env.CREDS_KEY = 'obo-provenance-test-key';
+      const oboConfig = {
+        type: 'streamable-http',
+        url: 'https://obo.example.com/mcp',
+        requiresOAuth: false,
+        obo: { scopes: 'api://mcp/.default' },
+      } satisfies t.ParsedServerConfig;
+      mockProcessMCPEnv.mockReturnValue(oboConfig);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+      (resolveOboToken as jest.MockedFunction<typeof resolveOboToken>).mockResolvedValue({
+        access_token: 'obo-access-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      });
+
+      try {
+        await MCPConnectionFactory.create(
+          { serverName: 'obo-server', serverConfig: oboConfig },
+          {
+            useOAuth: true,
+            user: mockUser,
+            flowManager: mockFlowManager,
+            tokenMethods: {} as TokenMethods,
+            oboTokenResolver: jest.fn(),
+          },
+        );
+
+        const provenance = mockMCPConnection.mock.calls[0]?.[0].provenance;
+        expect(provenance).toEqual(expect.objectContaining({ principalKind: 'user' }));
+        expect(
+          matchesMCPConnectionProvenance(provenance, {
+            tenantId: null,
+            userId: mockUser!.id,
+            serverName: 'obo-server',
+            serverConfig: oboConfig,
+            effectiveServerConfig: oboConfig,
+            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({}),
+            authorizationIdentity: MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+          }),
+        ).toBe(true);
       } finally {
         if (originalCredsKey == null) {
           delete process.env.CREDS_KEY;
