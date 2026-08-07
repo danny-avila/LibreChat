@@ -53,6 +53,7 @@ function createMockDeps(overrides: Partial<MCPToolCacheDeps> = {}): MCPToolCache
   return {
     getCachedTools: jest.fn().mockResolvedValue(null),
     setCachedTools: jest.fn().mockResolvedValue(true),
+    setMCPServerCatalog: jest.fn().mockResolvedValue(true),
     getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
     getScopedSecurityPolicy: jest.fn().mockResolvedValue({
       allowedDomains: null,
@@ -111,7 +112,7 @@ describe('createMCPToolCacheService', () => {
         reason: 'authorization_unavailable',
       });
       expect(deps.getCachedTools).not.toHaveBeenCalled();
-      expect(deps.setCachedTools).not.toHaveBeenCalled();
+      expect(deps.setMCPServerCatalog).not.toHaveBeenCalled();
     } finally {
       process.env.CREDS_KEY = 'tool-cache-test-key';
     }
@@ -148,7 +149,7 @@ describe('createMCPToolCacheService', () => {
       status: 'pending_activation',
       reason: 'authorization_unavailable',
     });
-    expect(deps.setCachedTools).not.toHaveBeenCalled();
+    expect(deps.setMCPServerCatalog).not.toHaveBeenCalled();
     expect(legacyGetSecurityPolicy).not.toHaveBeenCalled();
   });
 
@@ -174,6 +175,34 @@ describe('createMCPToolCacheService', () => {
       serverName: 'srv',
     });
     expect(deps.getCachedTools).toHaveBeenCalledWith({ userId: 'u1', serverName: 'srv' });
+  });
+
+  it('accepts the original strict legacy setter callback signature', async () => {
+    const writes: Array<{
+      tools: LCAvailableTools;
+      options?: { userId?: string; serverName?: string };
+    }> = [];
+    const setCachedTools = async (
+      tools: LCAvailableTools,
+      options?: { userId?: string; serverName?: string },
+    ): Promise<boolean> => {
+      writes.push({ tools, options });
+      return true;
+    };
+    const deps: MCPToolCacheDeps = {
+      getCachedTools: async () => null,
+      setCachedTools,
+      getServerConfig: async () => cacheableConfig,
+    };
+    const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+    const tools = await updateMCPServerTools({
+      userId: 'u1',
+      serverName: 'srv',
+      tools: [{ name: 'search' }],
+    });
+
+    expect(writes).toEqual([{ tools, options: { userId: 'u1', serverName: 'srv' } }]);
   });
 
   it('keeps the separately named scoped reader fail-closed without auth identity', async () => {
@@ -219,7 +248,7 @@ describe('createMCPToolCacheService', () => {
     ).resolves.toEqual({ status: 'pending_activation', reason: 'missing_credentials' });
 
     expect(deps.getCachedTools).not.toHaveBeenCalled();
-    expect(deps.setCachedTools).not.toHaveBeenCalled();
+    expect(deps.setMCPServerCatalog).not.toHaveBeenCalled();
   });
 
   it('does not persist an authoritative empty catalog with unresolved custom credentials', async () => {
@@ -239,7 +268,7 @@ describe('createMCPToolCacheService', () => {
       authorizationIdentity: 'none',
     });
 
-    expect(deps.setCachedTools).not.toHaveBeenCalled();
+    expect(deps.setMCPServerCatalog).not.toHaveBeenCalled();
   });
 
   describe('updateMCPServerTools', () => {
@@ -267,11 +296,14 @@ describe('createMCPToolCacheService', () => {
       });
 
       expect(result).toEqual({});
-      expect(deps.setCachedTools).toHaveBeenCalledWith(expect.objectContaining({ tools: {} }), {
-        userId: 'u1',
-        serverName: 'srv',
-        tenantId: null,
-      });
+      expect(deps.setMCPServerCatalog).toHaveBeenCalledWith(
+        expect.objectContaining({ tools: {} }),
+        {
+          userId: 'u1',
+          serverName: 'srv',
+          tenantId: null,
+        },
+      );
     });
 
     it('builds MODEL-FACING keys with the normalized server name, store keyed raw', async () => {
@@ -296,11 +328,14 @@ describe('createMCPToolCacheService', () => {
       const expectedKey = `search${Constants.mcp_delimiter}Connector__Company`;
       expect(result[expectedKey]).toBeDefined();
       expect(result[expectedKey]['function'].name).toBe(expectedKey);
-      expect(deps.setCachedTools).toHaveBeenCalledWith(expect.objectContaining({ tools: result }), {
-        userId: 'u1',
-        serverName: 'Connector: Company',
-        tenantId: null,
-      });
+      expect(deps.setMCPServerCatalog).toHaveBeenCalledWith(
+        expect.objectContaining({ tools: result }),
+        {
+          userId: 'u1',
+          serverName: 'Connector: Company',
+          tenantId: null,
+        },
+      );
     });
 
     it('constructs tool names with mcp_delimiter and caches them', async () => {
@@ -335,11 +370,14 @@ describe('createMCPToolCacheService', () => {
         properties: { result: { type: 'string' } },
       });
       expect(result[expectedKey]['function'].annotations).toEqual({ readOnlyHint: true });
-      expect(deps.setCachedTools).toHaveBeenCalledWith(expect.objectContaining({ tools: result }), {
-        userId: 'u1',
-        serverName: 'brave',
-        tenantId: null,
-      });
+      expect(deps.setMCPServerCatalog).toHaveBeenCalledWith(
+        expect.objectContaining({ tools: result }),
+        {
+          userId: 'u1',
+          serverName: 'brave',
+          tenantId: null,
+        },
+      );
     });
 
     it('builds tool names without caching when the resolved config is request-scoped', async () => {
@@ -366,7 +404,7 @@ describe('createMCPToolCacheService', () => {
       const expectedKey = `search${Constants.mcp_delimiter}body-scoped`;
       expect(result[expectedKey]).toBeDefined();
       expect(deps.getServerConfig).toHaveBeenCalledWith('body-scoped', 'u1');
-      expect(deps.setCachedTools).not.toHaveBeenCalled();
+      expect(deps.setMCPServerCatalog).not.toHaveBeenCalled();
     });
 
     it('uses a provided serverConfig without calling the resolver', async () => {
@@ -382,7 +420,7 @@ describe('createMCPToolCacheService', () => {
       });
 
       expect(deps.getServerConfig).not.toHaveBeenCalled();
-      expect(deps.setCachedTools).not.toHaveBeenCalled();
+      expect(deps.setMCPServerCatalog).not.toHaveBeenCalled();
     });
 
     it('builds live tools but skips persistence when authorization scope is unavailable', async () => {
@@ -398,7 +436,7 @@ describe('createMCPToolCacheService', () => {
       });
 
       expect(Object.keys(result)).toEqual([`search${Constants.mcp_delimiter}oauth`]);
-      expect(deps.setCachedTools).not.toHaveBeenCalled();
+      expect(deps.setMCPServerCatalog).not.toHaveBeenCalled();
     });
 
     it('skips persistent writes when config resolution fails', async () => {
@@ -420,12 +458,12 @@ describe('createMCPToolCacheService', () => {
         expect.objectContaining({ [`search${Constants.mcp_delimiter}srv`]: expect.any(Object) }),
       );
 
-      expect(deps.setCachedTools).not.toHaveBeenCalled();
+      expect(deps.setMCPServerCatalog).not.toHaveBeenCalled();
     });
 
     it('keeps live tools usable when the catalog write fails', async () => {
       const deps = createMockDeps({
-        setCachedTools: jest.fn().mockRejectedValue(new Error('Redis down')),
+        setMCPServerCatalog: jest.fn().mockRejectedValue(new Error('Redis down')),
       });
       const { updateMCPServerTools } = createMCPToolCacheService(deps);
       const tools: MCPToolInput[] = [{ name: 'tool1' }];
@@ -562,7 +600,7 @@ describe('createMCPToolCacheService', () => {
         discoveryProvenance: createTestProvenance({ serverName: 'brave' }),
       });
 
-      expect(deps.setCachedTools).toHaveBeenCalledWith(
+      expect(deps.setMCPServerCatalog).toHaveBeenCalledWith(
         expect.objectContaining({ tools: serverTools }),
         { userId: 'u1', serverName: 'brave', tenantId: null },
       );
@@ -581,7 +619,7 @@ describe('createMCPToolCacheService', () => {
 
     it('does not fail live discovery when the catalog write fails', async () => {
       const deps = createMockDeps({
-        setCachedTools: jest.fn().mockRejectedValue(new Error('write failed')),
+        setMCPServerCatalog: jest.fn().mockRejectedValue(new Error('write failed')),
       });
       const { cacheMCPServerTools } = createMCPToolCacheService(deps);
 

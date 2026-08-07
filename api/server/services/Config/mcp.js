@@ -20,6 +20,7 @@ const {
 } = createMCPToolCacheService({
   getCachedTools,
   setCachedTools,
+  setMCPServerCatalog: (envelope, options) => setCachedTools(envelope, options),
   getServerConfig: (serverName, userId) =>
     MCPServersRegistry.getInstance().getServerConfig(serverName, userId),
   getScopedSecurityPolicy: (principal) =>

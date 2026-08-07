@@ -31,7 +31,7 @@ export interface LoadAgentDeps {
     serverName: string,
   ) => Promise<Record<string, unknown> | null>;
   getScopedMCPServerTools?: (params: {
-    user: { id: string; tenantId?: string | null };
+    user: { id: string; role?: string; tenantId?: string | null };
     serverName: string;
     serverConfig?: NonNullable<AppConfig['mcpConfig']>[string];
   }) => Promise<Record<string, unknown> | null>;
@@ -39,7 +39,7 @@ export interface LoadAgentDeps {
 
 export interface LoadAgentParams {
   req: {
-    user?: { id?: string; tenantId?: string | null };
+    user?: { id?: string; role?: string; tenantId?: string | null };
     config?: AppConfig;
     body?: {
       promptPrefix?: string;
@@ -116,7 +116,7 @@ export async function loadEphemeralAgent(
         overlayConfig && requiresEphemeralUserConnection(overlayConfig)
           ? null
           : await loadMCPServerTools(deps, {
-              user: { id: userId, tenantId: req.user?.tenantId },
+              user: { id: userId, role: req.user?.role, tenantId: req.user?.tenantId },
               serverName: mcpServer,
               serverConfig: overlayConfig,
             });

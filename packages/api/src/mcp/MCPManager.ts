@@ -137,7 +137,7 @@ export class MCPManager extends UserConnectionManager {
       if (appConnectionMatchesPrincipal) {
         return existingAppConnection;
       }
-      return this.getUserConnection({
+      return this.getIsolatedUserConnection({
         ...args,
         serverConfig: effectiveConfig,
       } as Parameters<typeof this.getUserConnection>[0]);
@@ -162,6 +162,7 @@ export class MCPManager extends UserConnectionManager {
   public async discoverServerTools(args: t.ToolDiscoveryOptions): Promise<t.ToolDiscoveryResult> {
     const { serverName, user } = args;
     const logPrefix = user?.id ? `[MCP][User: ${user.id}][${serverName}]` : `[MCP][${serverName}]`;
+    const tenantId = user?.tenantId ?? getTenantId() ?? null;
 
     const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
       serverName,
@@ -190,7 +191,7 @@ export class MCPManager extends UserConnectionManager {
       await registry.resolveAllowlists({
         userId: user?.id,
         role: user?.role,
-        tenantId: user?.tenantId ?? null,
+        tenantId,
       });
     await this.assertResolvedRuntimeConfigAllowed({
       config: serverConfig,
@@ -216,7 +217,7 @@ export class MCPManager extends UserConnectionManager {
         const appConnectionMatchesScope =
           !isMCPToolCatalogFingerprintAvailable() ||
           matchesMCPConnectionProvenance(existingAppConnection.getDiscoveryProvenance(), {
-            tenantId: user?.tenantId ?? null,
+            tenantId,
             userId: user?.id ?? '__app__',
             serverName,
             serverConfig,

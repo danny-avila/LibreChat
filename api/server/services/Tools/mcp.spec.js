@@ -5,25 +5,36 @@ const mockDiscoverServerTools = jest.fn();
 const mockGetGraphApiToken = jest.fn();
 const mockUpdateMCPServerTools = jest.fn();
 const mockGetMCPAuthorizationIdentity = jest.fn();
+const mockGetUserMCPAuthMap = jest.fn();
+const mockGetServerConfig = jest.fn();
+const mockResolveAllowlists = jest.fn();
+const mockDisconnectUserConnection = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   getMCPAuthorizationIdentity: (...args) => mockGetMCPAuthorizationIdentity(...args),
+  getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
 }));
 
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
     getConnection: mockGetConnection,
     discoverServerTools: mockDiscoverServerTools,
+    disconnectUserConnection: mockDisconnectUserConnection,
   })),
-  getMCPServersRegistry: jest.fn(() => ({ getServerConfig: jest.fn() })),
+  getMCPServersRegistry: jest.fn(() => ({
+    getServerConfig: mockGetServerConfig,
+    resolveAllowlists: mockResolveAllowlists,
+  })),
   getFlowStateManager: jest.fn(() => ({})),
 }));
 jest.mock('~/models', () => ({
   findToken: jest.fn(),
+  findTokens: jest.fn(),
   createToken: jest.fn(),
   updateToken: jest.fn(),
   deleteTokens: jest.fn(),
+  findPluginAuthsByKeys: jest.fn(),
 }));
 jest.mock('~/server/services/Config', () => ({
   updateMCPServerTools: mockUpdateMCPServerTools,
@@ -36,6 +47,31 @@ jest.mock('~/cache', () => ({
 }));
 
 const { reinitMCPServer } = require('./mcp');
+const {
+  createMCPConnectionProvenance,
+  createMCPToolCatalogSecurityPolicyIdentity,
+} = require('@librechat/api');
+
+const originalCredsKey = process.env.CREDS_KEY;
+const originalJwtSecret = process.env.JWT_SECRET;
+
+beforeEach(() => {
+  delete process.env.CREDS_KEY;
+  delete process.env.JWT_SECRET;
+});
+
+afterAll(() => {
+  if (originalCredsKey == null) {
+    delete process.env.CREDS_KEY;
+  } else {
+    process.env.CREDS_KEY = originalCredsKey;
+  }
+  if (originalJwtSecret == null) {
+    delete process.env.JWT_SECRET;
+  } else {
+    process.env.JWT_SECRET = originalJwtSecret;
+  }
+});
 
 describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   const user = { id: 'user-123' };
@@ -52,33 +88,163 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     jest.clearAllMocks();
     mockUpdateMCPServerTools.mockResolvedValue({});
     mockGetMCPAuthorizationIdentity.mockResolvedValue('none');
+    mockGetServerConfig.mockResolvedValue(undefined);
+    mockResolveAllowlists.mockResolvedValue({
+      allowedDomains: null,
+      allowedAddresses: null,
+      useSSRFProtection: false,
+    });
+    mockDisconnectUserConnection.mockResolvedValue(undefined);
   });
 
-  it('keeps live tools but skips persistence when the grant rotates during discovery', async () => {
+  it('rejects live tools when a stale connection grant differs from the current grant', async () => {
+    const originalCredsKey = process.env.CREDS_KEY;
+    process.env.CREDS_KEY = 'reinit-stale-grant-key';
     const tools = [{ name: 'search', inputSchema: { type: 'object' } }];
-    mockGetMCPAuthorizationIdentity
-      .mockResolvedValueOnce('grant-a')
-      .mockResolvedValueOnce('grant-b');
-    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue(tools) });
+    const oauthConfig = {
+      type: 'streamable-http',
+      url: 'https://thingy.example.com/mcp',
+      requiresOAuth: true,
+    };
+    const provenance = createMCPConnectionProvenance(
+      {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig: oauthConfig,
+        effectiveServerConfig: oauthConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: 'grant-a',
+      },
+      'user',
+    );
+    mockGetMCPAuthorizationIdentity.mockResolvedValue('grant-b');
+    mockGetServerConfig.mockResolvedValue(oauthConfig);
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue(tools),
+      getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+    });
 
-    await reinitMCPServer({
+    try {
+      const result = await reinitMCPServer({ user, serverName, serverConfig: oauthConfig });
+
+      expect(result).toMatchObject({ availableTools: null, tools: null, success: false });
+      expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
+      expect(mockDisconnectUserConnection).toHaveBeenCalledWith(user.id, serverName);
+      expect(mockGetMCPAuthorizationIdentity).toHaveBeenCalledTimes(1);
+    } finally {
+      if (originalCredsKey == null) {
+        delete process.env.CREDS_KEY;
+      } else {
+        process.env.CREDS_KEY = originalCredsKey;
+      }
+    }
+  });
+
+  it('accepts a newly authorized connection whose provenance matches the current grant', async () => {
+    const originalCredsKey = process.env.CREDS_KEY;
+    process.env.CREDS_KEY = 'reinit-current-grant-key';
+    const tools = [{ name: 'search', inputSchema: { type: 'object' } }];
+    const oauthConfig = {
+      type: 'streamable-http',
+      url: 'https://thingy.example.com/mcp',
+      requiresOAuth: true,
+    };
+    const provenance = createMCPConnectionProvenance(
+      {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig: oauthConfig,
+        effectiveServerConfig: oauthConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: 'grant-b',
+      },
+      'user',
+    );
+    mockGetMCPAuthorizationIdentity.mockResolvedValue('grant-b');
+    mockGetServerConfig.mockResolvedValue(oauthConfig);
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue(tools),
+      getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+    });
+
+    try {
+      const result = await reinitMCPServer({ user, serverName, serverConfig: oauthConfig });
+
+      expect(result.tools).toEqual(tools);
+      expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tools,
+          authorizationIdentity: 'grant-b',
+          persistCatalog: true,
+          discoveryProvenance: provenance,
+        }),
+      );
+      expect(mockDisconnectUserConnection).not.toHaveBeenCalled();
+    } finally {
+      if (originalCredsKey == null) {
+        delete process.env.CREDS_KEY;
+      } else {
+        process.env.CREDS_KEY = originalCredsKey;
+      }
+    }
+  });
+
+  it('rejects live tools when custom credentials rotate after connection discovery', async () => {
+    process.env.CREDS_KEY = 'reinit-custom-credential-key';
+    const tools = [{ name: 'search', inputSchema: { type: 'object' } }];
+    const customConfig = {
+      ...serverConfig,
+      source: 'yaml',
+    };
+    const oldCustomUserVars = { THINGY_TOKEN: 'old-token' };
+    const provenance = createMCPConnectionProvenance(
+      {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig: customConfig,
+        effectiveServerConfig: customConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        customUserVars: oldCustomUserVars,
+        authorizationIdentity: 'none',
+      },
+      'user',
+    );
+    mockGetServerConfig.mockResolvedValue(customConfig);
+    mockGetUserMCPAuthMap.mockResolvedValue({
+      [`${Constants.mcp_prefix}${serverName}`]: { THINGY_TOKEN: 'new-token' },
+    });
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue(tools),
+      getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+    });
+
+    const result = await reinitMCPServer({
       user,
       serverName,
-      serverConfig: {
-        type: 'streamable-http',
-        url: 'https://thingy.example.com/mcp',
-        requiresOAuth: true,
+      serverConfig: customConfig,
+      userMCPAuthMap: {
+        [`${Constants.mcp_prefix}${serverName}`]: oldCustomUserVars,
       },
     });
 
-    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tools,
-        authorizationIdentity: null,
-        persistCatalog: false,
-      }),
+    expect(result).toMatchObject({ availableTools: null, tools: null, success: false });
+    expect(mockGetUserMCPAuthMap).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: user.id, servers: [serverName] }),
     );
-    expect(mockGetMCPAuthorizationIdentity).toHaveBeenCalledTimes(2);
+    expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
+    expect(mockDisconnectUserConnection).toHaveBeenCalledWith(user.id, serverName);
   });
 
   it('does not connect and exposes no tools when a required customUserVar is unset', async () => {

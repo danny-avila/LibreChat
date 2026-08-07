@@ -136,7 +136,7 @@ describe('loadAgent', () => {
     mockGetMCPServerTools.mockResolvedValue({ tool1_mcp_server1: {} });
 
     const mockReq = {
-      user: { id: 'user123' },
+      user: { id: 'user123', role: 'admin', tenantId: 'tenant-a' },
       config: {
         mcpConfig: {
           'body-scoped': {
@@ -164,7 +164,10 @@ describe('loadAgent', () => {
 
     expect(mockGetMCPServerTools).toHaveBeenCalledTimes(1);
     expect(mockGetMCPServerTools).toHaveBeenCalledWith(
-      expect.objectContaining({ user: { id: 'user123' }, serverName: 'server1' }),
+      expect.objectContaining({
+        user: { id: 'user123', role: 'admin', tenantId: 'tenant-a' },
+        serverName: 'server1',
+      }),
     );
     expect(result?.tools).toContain(`${Constants.mcp_all}${Constants.mcp_delimiter}body-scoped`);
     expect(result?.tools).toContain('tool1_mcp_server1');
@@ -672,6 +675,36 @@ describe('loadAgent', () => {
     );
 
     expect(result?.subagents).toBeUndefined();
+  });
+
+  test('forwards role and tenant scope when added agents load MCP tools', async () => {
+    mockGetMCPServerTools.mockResolvedValue({ search_mcp_docs: {} });
+
+    const result = await loadAddedAgent(
+      {
+        req: {
+          user: { id: 'user123', role: 'admin', tenantId: 'tenant-a' },
+          config: {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
+          },
+        },
+        conversation: {
+          endpoint: 'openai',
+          model: 'gpt-4',
+          ephemeralAgent: { mcp: ['docs'] },
+        } as unknown as TConversation,
+      },
+      deps,
+    );
+
+    expect(mockGetMCPServerTools).toHaveBeenCalledWith({
+      user: { id: 'user123', role: 'admin', tenantId: 'tenant-a' },
+      serverName: 'docs',
+      serverConfig: undefined,
+    });
+    expect(result?.tools).toContain('search_mcp_docs');
   });
 
   test('should enable full skill scope for added ephemeral model spec with skills true', async () => {

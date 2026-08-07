@@ -73,10 +73,30 @@ export abstract class UserConnectionManager {
 
   /** Gets or creates a connection for a specific user, coalescing concurrent attempts */
   public async getUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
+    return this.getUserConnectionInternal(opts, false);
+  }
+
+  /** Creates a tenant-policy-isolated connection for an otherwise app-owned server. */
+  protected async getIsolatedUserConnection(
+    opts: t.UserMCPConnectionOptions,
+  ): Promise<MCPConnection> {
+    return this.getUserConnectionInternal(opts, true);
+  }
+
+  private async getUserConnectionInternal(
+    opts: t.UserMCPConnectionOptions,
+    allowAppLevelServer: boolean,
+  ): Promise<MCPConnection> {
     const { serverName, forceNew, user } = opts;
     const userId = user?.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
+    }
+    if (!allowAppLevelServer && (await this.appConnections!.has(serverName))) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `[MCP][User: ${userId}] Trying to create user-specific connection for app-level server "${serverName}"`,
+      );
     }
 
     const config =
@@ -387,13 +407,6 @@ export abstract class UserConnectionManager {
     userId: string,
     clearCooldown: boolean,
   ): Promise<MCPConnection> {
-    if (await this.appConnections!.has(serverName)) {
-      throw new McpError(
-        ErrorCode.InvalidRequest,
-        `[MCP][User: ${userId}] Trying to create user-specific connection for app-level server "${serverName}"`,
-      );
-    }
-
     const config =
       providedConfig ??
       (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));

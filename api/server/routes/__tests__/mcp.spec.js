@@ -135,6 +135,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/models', () => ({
   findToken: jest.fn(),
+  findTokens: jest.fn(),
   updateToken: jest.fn(),
   createToken: jest.fn(),
   deleteTokens: jest.fn(),
@@ -3406,12 +3407,66 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.servers.protected.tools).toEqual([]);
-      expect(getMCPAuthorizationIdentities).toHaveBeenCalledTimes(1);
+      expect(getMCPAuthorizationIdentities).toHaveBeenCalledTimes(2);
       expect(getMCPAuthorizationIdentities).toHaveBeenCalledWith(
         expect.objectContaining({ serverNames: ['protected'], userId: 'test-user-id' }),
       );
       expect(disconnectUserConnection).toHaveBeenCalledWith('test-user-id', 'protected');
       expect(cacheMCPServerTools).not.toHaveBeenCalled();
+    });
+
+    it('batches post-discovery OAuth identity validation across cold servers', async () => {
+      const {
+        createMCPConnectionProvenance,
+        createMCPToolCatalogSecurityPolicyIdentity,
+        getMCPAuthorizationIdentities,
+        getMCPAuthorizationIdentity,
+      } = require('@librechat/api');
+      const { getMCPServerTools } = require('~/server/services/Config');
+      const serverNames = ['protected-a', 'protected-b'];
+      const serverConfigs = Object.fromEntries(
+        serverNames.map((name) => [
+          name,
+          {
+            type: 'streamable-http',
+            url: `https://mcp.example.com/${name}`,
+            requiresOAuth: true,
+          },
+        ]),
+      );
+      const policyIdentity = createMCPToolCatalogSecurityPolicyIdentity({
+        allowedDomains: null,
+        allowedAddresses: null,
+      });
+
+      mockResolveAllMcpConfigs.mockResolvedValueOnce(serverConfigs);
+      getMCPAuthorizationIdentity.mockResolvedValue('grant-current');
+      getMCPServerTools.mockResolvedValue(null);
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctionsWithProvenance: jest.fn(async (userId, serverName) => ({
+          tools: {},
+          provenance: createMCPConnectionProvenance(
+            {
+              tenantId: null,
+              userId,
+              serverName,
+              serverConfig: serverConfigs[serverName],
+              securityPolicyIdentity: policyIdentity,
+              authorizationIdentity: 'grant-current',
+            },
+            'user',
+          ),
+        })),
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(getMCPAuthorizationIdentities).toHaveBeenCalledTimes(2);
+      expect(getMCPAuthorizationIdentities.mock.calls.map(([input]) => input.serverNames)).toEqual([
+        serverNames,
+        serverNames,
+      ]);
     });
 
     it('should continue returning MCP tools when one server cache lookup fails', async () => {

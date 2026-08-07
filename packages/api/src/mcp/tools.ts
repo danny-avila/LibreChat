@@ -74,8 +74,12 @@ export interface MCPToolCacheDeps {
     tenantId?: string | null;
   }) => Promise<LCAvailableTools | MCPToolCatalogEnvelope | null>;
   setCachedTools: (
-    tools: LCAvailableTools | MCPToolCatalogEnvelope,
-    options?: { userId?: string; serverName?: string; tenantId?: string | null },
+    tools: LCAvailableTools,
+    options?: { userId?: string; serverName?: string },
+  ) => Promise<boolean>;
+  setMCPServerCatalog?: (
+    envelope: MCPToolCatalogEnvelope,
+    options: { userId: string; serverName: string; tenantId: string | null },
   ) => Promise<boolean>;
   getServerConfig: (serverName: string, userId?: string) => Promise<ParsedServerConfig | undefined>;
   /** @deprecated Scoped catalogs must use getScopedSecurityPolicy. */
@@ -130,7 +134,13 @@ export interface MCPToolCacheService {
 }
 
 export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheService {
-  const { getCachedTools, setCachedTools, getServerConfig, getScopedSecurityPolicy } = deps;
+  const {
+    getCachedTools,
+    setCachedTools,
+    setMCPServerCatalog,
+    getServerConfig,
+    getScopedSecurityPolicy,
+  } = deps;
 
   async function getSecurityPolicyIdentity(
     principal: MCPToolCatalogPrincipal,
@@ -153,8 +163,11 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     envelope: MCPToolCatalogEnvelope,
     options: { userId: string; serverName: string; tenantId: string | null },
   ): Promise<boolean> {
+    if (!setMCPServerCatalog) {
+      return false;
+    }
     try {
-      return await setCachedTools(envelope, options);
+      return await setMCPServerCatalog(envelope, options);
     } catch (error) {
       logger.warn(
         `[MCP Cache] Catalog write unavailable for ${options.serverName}; live tools remain usable`,

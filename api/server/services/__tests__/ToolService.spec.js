@@ -1197,6 +1197,44 @@ describe('ToolService - Action Capability Gating', () => {
       });
     });
 
+    it('does not remember raw schemas rejected by reinitialization scope validation', async () => {
+      const serverName = 'OAuth-Docs';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/docs',
+        requiresOAuth: true,
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        const serverTools = await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: serverTools ? Object.keys(serverTools) : [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer.mockResolvedValue({
+        availableTools: null,
+        tools: [{ name: 'search', inputSchema: { type: 'object' } }],
+        success: false,
+      });
+
+      const result = await loadAgentTools({
+        req,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([]);
+      expect(result.mcpAvailableTools).toEqual({});
+      expect(reinitMCPServer).toHaveBeenCalledTimes(1);
+    });
+
     it('should preserve pending-flow expiry for OAuth URLs captured during discovery', async () => {
       const serverName = 'Google-Workspace';
       const authorizationUrl = 'https://auth.example.com/Google-Workspace';

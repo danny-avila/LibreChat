@@ -10,7 +10,6 @@ const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-sch
 const {
   checkAccess,
   getUserMCPAuthMap,
-  getMCPAuthorizationIdentity,
   getMCPAuthorizationIdentities,
   createMCPToolCatalogSecurityPolicyIdentity,
   matchesMCPConnectionProvenance,
@@ -214,6 +213,7 @@ const getMCPTools = async (req, res) => {
         }
       }),
     );
+    const liveDiscoveryResults = [];
     for (const { serverName, tools, credentialsUnavailable } of cacheResults) {
       if (tools) {
         serverToolsMap.set(serverName, tools);
@@ -260,13 +260,36 @@ const getMCPTools = async (req, res) => {
         logger.debug(`[getMCPTools] No tools found for server ${serverName}`);
         continue;
       }
+      liveDiscoveryResults.push({
+        serverName,
+        serverTools,
+        discoveryProvenance,
+        expectedScope,
+        authorizationIdentityBeforeDiscovery,
+      });
+    }
+
+    const postDiscoveryOAuthServers = liveDiscoveryResults
+      .filter(({ serverName }) => isOAuthServer(mcpConfig[serverName]))
+      .map(({ serverName }) => serverName);
+    const postDiscoveryOAuthIdentities = postDiscoveryOAuthServers.length
+      ? await getMCPAuthorizationIdentities({
+          userId,
+          serverNames: postDiscoveryOAuthServers,
+          findToken: db.findToken,
+          findTokens: db.findTokens,
+        })
+      : new Map();
+
+    for (const {
+      serverName,
+      serverTools,
+      discoveryProvenance,
+      expectedScope,
+      authorizationIdentityBeforeDiscovery,
+    } of liveDiscoveryResults) {
       const authorizationIdentityAfterDiscovery = isOAuthServer(mcpConfig[serverName])
-        ? await getMCPAuthorizationIdentity({
-            userId,
-            serverName,
-            findToken: db.findToken,
-            findTokens: db.findTokens,
-          })
+        ? (postDiscoveryOAuthIdentities.get(serverName) ?? null)
         : 'none';
       const authorizationIdentityStable =
         authorizationIdentityBeforeDiscovery != null &&
