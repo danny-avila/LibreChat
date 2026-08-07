@@ -106,6 +106,12 @@ export abstract class UserConnectionManager {
           logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing request-scoped connection`);
           return existing;
         } else {
+          await existing.disconnect().catch((error) => {
+            logger.warn(
+              `[MCP][User: ${userId}][${serverName}] Failed to disconnect unusable request-scoped connection`,
+              error,
+            );
+          });
           requestScopedConnections.connections.delete(requestConnectionKey);
         }
       }
@@ -427,6 +433,12 @@ export abstract class UserConnectionManager {
         logger.warn(
           `[MCP][User: ${userId}][${serverName}] Found existing but disconnected connection object. Cleaning up.`,
         );
+        await connection.disconnect().catch((error) => {
+          logger.warn(
+            `[MCP][User: ${userId}][${serverName}] Failed to disconnect unusable connection`,
+            error,
+          );
+        });
         this.removeUserConnection(userId, serverName); // Clean up maps
         connection = undefined;
       }

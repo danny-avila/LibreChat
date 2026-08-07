@@ -75,6 +75,27 @@ export class MCPManager extends UserConnectionManager {
     this.appConnections = new ConnectionsRepository(undefined);
   }
 
+  public override async getUserConnection(
+    opts: t.UserMCPConnectionOptions,
+  ): Promise<MCPConnection> {
+    const userId = opts.user?.id;
+    if (opts.forceNew || !userId) {
+      return super.getUserConnection(opts);
+    }
+
+    const connectionKey = `${userId}:${opts.serverName}`;
+    const requestConnection = opts.requestScopedConnections?.connections.get(connectionKey) as
+      | MCPConnection
+      | undefined;
+    const connection = requestConnection ?? this.userConnections.get(userId)?.get(opts.serverName);
+    const recovery = connection ? this.oauthRecoveries.get(connection) : undefined;
+    if (recovery) {
+      await recovery.catch(() => undefined);
+    }
+
+    return super.getUserConnection(opts);
+  }
+
   /** Retrieves an app-level or user-specific connection based on provided arguments */
   public async getConnection(
     args: {
