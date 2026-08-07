@@ -3,7 +3,7 @@ import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useDrag, useDrop } from 'react-dnd';
 import { X, Pencil, GripVertical } from 'lucide-react';
-import { useMediaQuery, useToastContext } from '@librechat/client';
+import { Button, IconButton, useMediaQuery, useToastContext } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/store/families';
@@ -12,9 +12,6 @@ import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
-
-const ICON_BTN =
-  'shrink-0 rounded-full p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
 
 const DRAG_TYPE = 'queued-message';
 /** Shared by every handle, so the keys are stated once per rail. */
@@ -168,19 +165,19 @@ function QueueRow({
         isDragging && 'opacity-40',
       )}
     >
-      <button
+      <IconButton
         ref={gripRef}
-        type="button"
+        label={localize('com_ui_queue_reorder', {
+          0: String(index + 1),
+          1: String(total),
+        })}
+        size="xs"
         data-testid="queued-message-grip"
         /* Kept even when there is nowhere to move to, rather than swapped for
            an icon: a queue that drains to one message would otherwise unmount
            the handle a keyboard user was holding, dropping focus to the top of
            the page. */
         aria-disabled={!reorderable}
-        aria-label={localize('com_ui_queue_reorder', {
-          0: String(index + 1),
-          1: String(total),
-        })}
         /* A handle announces what it is but not how to work it, and the keys
            are the only way through it without a pointer. */
         aria-describedby={reorderable ? REORDER_HINT_ID : undefined}
@@ -194,14 +191,13 @@ function QueueRow({
           move(event.key === 'ArrowUp' ? -1 : 1);
         }}
         className={cn(
-          ICON_BTN,
-          'p-0.5',
+          'p-0.5 text-text-secondary hover:text-text-primary',
           reorderable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default opacity-40',
           canDrag && reorderable && 'touch-none',
         )}
       >
         <GripVertical className="h-4 w-4" aria-hidden="true" />
-      </button>
+      </IconButton>
       <span className="min-w-0 flex-1 truncate text-text-primary" title={message.text}>
         {message.text}
       </span>
@@ -220,16 +216,17 @@ function QueueRow({
           </span>
         </span>
       )}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         disabled={sendDisabled}
         aria-disabled={sendDisabled}
         title={sendDisabled ? localize('com_ui_send_now_paused') : undefined}
         onClick={() => steering.sendQueuedNow(message)}
-        className="shrink-0 rounded-lg px-2 py-0.5 text-sm font-medium text-text-primary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy disabled:cursor-not-allowed disabled:opacity-40"
+        className="h-auto shrink-0 px-2 py-0.5 text-text-primary disabled:pointer-events-auto disabled:cursor-not-allowed"
       >
         {localize('com_ui_send_now')}
-      </button>
+      </Button>
       {showEscalate && (
         <EscalateNowButton
           surface="queued"
@@ -238,9 +235,9 @@ function QueueRow({
           onClick={() => steering.sendQueuedNow(message, { preempt: true })}
         />
       )}
-      <button
-        type="button"
-        aria-label={localize('com_ui_edit_message')}
+      <IconButton
+        label={localize('com_ui_edit_message')}
+        size="xs"
         onClick={async () => {
           /* A recovered row still has a parked copy on the server; discard it
              through its durable receipt first, or the edited words would come
@@ -264,13 +261,13 @@ function QueueRow({
             status: 'warning',
           });
         }}
-        className={ICON_BTN}
+        className="text-text-secondary hover:text-text-primary"
       >
         <Pencil className="h-4 w-4" aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        aria-label={localize('com_ui_remove_queued')}
+      </IconButton>
+      <IconButton
+        label={localize('com_ui_remove_queued')}
+        size="xs"
         onClick={async () => {
           /* Discard the parked server copy first, as on Edit above. */
           if (!(await steering.discardQueued(message))) {
@@ -297,10 +294,10 @@ function QueueRow({
             status: 'warning',
           });
         }}
-        className={ICON_BTN}
+        className="text-text-secondary hover:text-text-primary"
       >
         <X className="h-4 w-4" aria-hidden="true" />
-      </button>
+      </IconButton>
     </div>
   );
 }

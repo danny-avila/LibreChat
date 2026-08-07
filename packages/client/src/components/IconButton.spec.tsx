@@ -19,4 +19,18 @@ describe('IconButton', () => {
     const button = screen.getByRole('button', { name: 'Delete' });
     expect(button).toHaveClass('bg-surface-destructive', 'size-8', 'custom-class');
   });
+
+  it('provides a theme-aware primary action', () => {
+    render(
+      <IconButton label="Send" variant="primary">
+        send
+      </IconButton>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Send' })).toHaveClass(
+      'bg-surface-inverted',
+      'text-text-inverted',
+      'hover:bg-surface-inverted-hover',
+    );
+  });
 });
