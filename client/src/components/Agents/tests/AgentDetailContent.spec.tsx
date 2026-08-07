@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom';
 import AgentDetailContent from '../AgentDetailContent';
 
+const mockIsFavoriteAgent = jest.fn(() => false);
+
 jest.mock('librechat-data-provider', () => ({
   QueryKeys: {
     agents: 'agents',
@@ -23,23 +25,27 @@ jest.mock('librechat-data-provider', () => ({
   },
 }));
 
-jest.mock('@librechat/client', () => ({
-  OGDialogContent: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="dialog-content">{children}</div>
-  ),
-  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button {...props}>{children}</button>
-  ),
-  TooltipAnchor: ({ render }: { render: React.ReactNode }) => render,
-  useToastContext: () => ({
-    showToast: jest.fn(),
-  }),
-}));
+jest.mock('@librechat/client', () => {
+  const { createPinMorphIconMock } = jest.requireActual('~/../test/mockMorphIcon');
+  return {
+    OGDialogContent: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="dialog-content">{children}</div>
+    ),
+    Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button {...props}>{children}</button>
+    ),
+    TooltipAnchor: ({ render }: { render: React.ReactNode }) => render,
+    MorphIcon: createPinMorphIconMock(),
+    useToastContext: () => ({
+      showToast: jest.fn(),
+    }),
+  };
+});
 
 jest.mock('~/hooks', () => ({
   useDefaultConvo: () => jest.fn((value) => value.conversation),
   useFavorites: () => ({
-    isFavoriteAgent: jest.fn(() => false),
+    isFavoriteAgent: mockIsFavoriteAgent,
     toggleFavoriteAgent: jest.fn(),
   }),
   useLocalize: () => (key: string, values?: Record<string, string>) => {
@@ -91,6 +97,10 @@ const baseAgent = {
 };
 
 describe('AgentDetailContent', () => {
+  beforeEach(() => {
+    mockIsFavoriteAgent.mockReturnValue(false);
+  });
+
   it('renders support contact with mailto link', () => {
     renderWithClient(
       <AgentDetailContent
@@ -126,5 +136,17 @@ describe('AgentDetailContent', () => {
 
     expect(screen.getByText('Owner User')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Owner User' })).not.toBeInTheDocument();
+  });
+
+  it('shows pin icon when agent is not a favorite and pin-off when it is', () => {
+    const { unmount } = renderWithClient(<AgentDetailContent agent={baseAgent as any} />);
+    expect(screen.getByRole('button', { name: 'Pin' })).toBeInTheDocument();
+    expect(screen.getByTestId('morph-icon')).toHaveAttribute('data-icon', 'pin');
+    unmount();
+
+    mockIsFavoriteAgent.mockReturnValue(true);
+    renderWithClient(<AgentDetailContent agent={baseAgent as any} />);
+    expect(screen.getByRole('button', { name: 'Unpin' })).toBeInTheDocument();
+    expect(screen.getByTestId('morph-icon')).toHaveAttribute('data-icon', 'pin-off');
   });
 });
