@@ -148,6 +148,37 @@ function enqueueDeleteOperation({
   }
 }
 
+/**
+ * Resolves, for the embedded files in a delete batch, the entity their vector
+ * chunks are stored under.
+ *
+ * Knowledge-base files are embedded under the agent's id rather than the
+ * uploader's, so a delete that names only the user matches nothing and leaves
+ * the chunks behind. One lookup covers the whole batch.
+ *
+ * @param {MongoFile[]} files - The files being deleted.
+ * @returns {Promise<Record<string, string>>} File id to owning entity id.
+ */
+async function resolveVectorEntityIds(files) {
+  const embeddedFileIds = [];
+  for (const file of files) {
+    if (file.embedded === true && file.file_id) {
+      embeddedFileIds.push(file.file_id);
+    }
+  }
+
+  if (embeddedFileIds.length === 0) {
+    return {};
+  }
+
+  try {
+    return await db.getAgentIdsByFileIds({ file_ids: embeddedFileIds });
+  } catch (error) {
+    logger.error('Error resolving knowledge-base owners before vector deletion', error);
+    return {};
+  }
+}
+
 const getDeleteMethod = ({ source, deletionMethods }) => {
   if (deletionMethods[source]) {
     return deletionMethods[source];
@@ -242,6 +273,8 @@ const processDeleteRequest = async ({ req, files }) => {
 
   const agentFiles = [];
 
+  const entityIdByFileId = await resolveVectorEntityIds(files);
+
   for (const file of files) {
     const source = file.source ?? FileSources.local;
     if (req.body.agent_id && req.body.tool_resource) {
@@ -277,9 +310,10 @@ const processDeleteRequest = async ({ req, files }) => {
     }
 
     const deleteFile = getDeleteMethod({ source, deletionMethods });
+    const entity_id = entityIdByFileId[file.file_id];
     enqueueDeleteOperation({
       req,
-      file,
+      file: entity_id ? { ...file, entity_id } : file,
       deleteFile: createDeleteFileWithSecondaryStorage({ source, deleteFile, deletionMethods }),
       promises,
       resolvedFileIds,
