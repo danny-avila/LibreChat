@@ -3,6 +3,7 @@ import { logger, webSearchKeys } from '@librechat/data-schemas';
 import { Constants, extractVariableName } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import type { CredentialFingerprintRecord } from '~/credentials';
 import {
   credentialMetadataCollection,
   credentialMetadataId,
@@ -11,7 +12,6 @@ import {
   getCredentialRuntimeState,
   getLegacyCredentialNames,
 } from '~/credentials';
-import type { CredentialFingerprintRecord } from '~/credentials';
 import { isEnabled, checkEmailConfig } from '~/utils';
 import { handleRateLimits } from './limits';
 
@@ -19,7 +19,6 @@ interface CredentialMetadata {
   _id: string;
   fingerprints: Partial<CredentialFingerprintRecord>;
   createdAt: Date;
-  updatedAt?: Date;
 }
 
 const deprecatedVariables = [
@@ -140,13 +139,13 @@ export function checkVariables(): void {
   }
 
   const runtimeState = getCredentialRuntimeState();
-  if (runtimeState?.missingFromEnvironment.length) {
+  if (runtimeState?.missingFromEnvironment.length && !runtimeState.persistenceFailed) {
     const temporaryNames = runtimeState.missingFromEnvironment.filter(
       (name) => runtimeState.sources[name] === 'temporary',
     );
     if (temporaryNames.length > 0) {
       logger.warn(
-        `[credentials] .env does not set ${temporaryNames.join(', ')}. ` +
+        `[credentials] No configured value was found for ${temporaryNames.join(', ')}. ` +
           `Temporary credentials from ${runtimeState.filePath} are being used.`,
       );
     }
@@ -182,29 +181,36 @@ export async function checkCredentialDatabase(): Promise<void> {
   }
 
   try {
-    const userCount = await User.countDocuments().exec();
     const collection = mongoose.connection.db.collection<CredentialMetadata>(
       credentialMetadataCollection,
     );
-    let metadata = await collection.findOne({ _id: credentialMetadataId });
+    const [existingUser, existingMetadata] = await Promise.all([
+      User.exists({}).exec(),
+      collection.findOne({ _id: credentialMetadataId }),
+    ]);
+    const hasUsers = existingUser !== null;
+    let metadata = existingMetadata;
 
     if (!metadata) {
-      if (userCount === 0) {
-        await collection.updateOne(
+      if (!hasUsers) {
+        const activeFingerprints = getCredentialFingerprints();
+        const result = await collection.updateOne(
           { _id: credentialMetadataId },
           {
             $setOnInsert: {
               _id: credentialMetadataId,
-              fingerprints: getCredentialFingerprints(),
+              fingerprints: activeFingerprints,
               createdAt: new Date(),
             },
           },
           { upsert: true },
         );
         metadata = await collection.findOne({ _id: credentialMetadataId });
-        logger.info(
-          '[credentials] New database detected. Credential fingerprints were recorded for future key-drift checks.',
-        );
+        if (result.upsertedCount === 1) {
+          logger.info(
+            '[credentials] New database detected. Credential fingerprints were recorded for future key-drift checks.',
+          );
+        }
       } else {
         logger.warn(
           '[credentials] Existing database has no credential fingerprint record. The active credentials may not match existing JWTs or encrypted records; provide the original values or use a controlled credential migration before rotating them.',
@@ -215,33 +221,34 @@ export async function checkCredentialDatabase(): Promise<void> {
 
     const fingerprints = metadata?.fingerprints ?? {};
     const activeFingerprints = getCredentialFingerprints();
-    const mismatchedNames = credentialNames.filter(
-      (name) => fingerprints[name] && fingerprints[name] !== activeFingerprints[name],
-    );
+    const mismatchedNames: string[] = [];
+    const matchingNames: string[] = [];
+    for (const name of credentialNames) {
+      if (!fingerprints[name]) {
+        mismatchedNames.push(name);
+        continue;
+      }
+      if (fingerprints[name] === activeFingerprints[name]) {
+        matchingNames.push(name);
+      } else {
+        mismatchedNames.push(name);
+      }
+    }
 
     if (mismatchedNames.length === 0) {
       return;
     }
 
-    if (userCount === 0) {
-      await collection.updateOne(
-        { _id: credentialMetadataId },
-        { $set: { fingerprints: activeFingerprints, updatedAt: new Date() } },
-      );
-      logger.info(
-        '[credentials] Credential values changed before users were created; updated the database fingerprint record.',
-      );
-      return;
+    let mismatchDetail = ' Another startup instance may be using different temporary credentials.';
+    if (matchingNames.length > 0) {
+      mismatchDetail = ` ${matchingNames.join(', ')} still match, which indicates mixed credential versions.`;
+    } else if (hasUsers) {
+      mismatchDetail = ' Existing encrypted records or JWTs may require the previous values.';
     }
 
-    const matchingNames = credentialNames.filter(
-      (name) => fingerprints[name] && fingerprints[name] === activeFingerprints[name],
-    );
     logger.warn(
-      `[credentials] Active values for ${mismatchedNames.join(', ')} differ from the database credential record.` +
-        (matchingNames.length > 0
-          ? ` ${matchingNames.join(', ')} still match, which indicates mixed credential versions.`
-          : ' Existing encrypted records or JWTs may require the previous values.') +
+      `[credentials] Active fingerprints for ${mismatchedNames.join(', ')} do not match the database credential record.` +
+        mismatchDetail +
         ' Do not overwrite the database marker; migrate the affected records and rotate all credentials together.',
     );
   } catch (error) {
