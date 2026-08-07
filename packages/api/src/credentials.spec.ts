@@ -81,6 +81,34 @@ describe('credentials', () => {
     }
   });
 
+  it('adopts a winning repair when an existing credential file is incomplete', () => {
+    const winningValues = {
+      CREDS_KEY: 'a'.repeat(64),
+      CREDS_IV: 'b'.repeat(32),
+      JWT_SECRET: 'c'.repeat(64),
+      JWT_REFRESH_SECRET: 'd'.repeat(64),
+    };
+    fs.writeFileSync(
+      tempFile,
+      `CREDS_KEY=${winningValues.CREDS_KEY}\nCREDS_IV=${winningValues.CREDS_IV}\n`,
+    );
+    fs.writeFileSync(
+      `${tempFile}.lock`,
+      credentialNames.map((name) => `${name}=${winningValues[name]}`).join('\n'),
+      { mode: 0o600 },
+    );
+
+    const state = bootstrapCredentials();
+
+    expect(state.generated).toEqual([]);
+    expect(state.loadedFromFile).toEqual(credentialNames);
+    expect(state.persistenceFailed).toBe(false);
+    expect(fs.existsSync(`${tempFile}.lock`)).toBe(false);
+    for (const name of credentialNames) {
+      expect(process.env[name]).toBe(winningValues[name]);
+    }
+  });
+
   it('preserves explicitly configured JWT secrets for backward compatibility', () => {
     process.env.JWT_SECRET = 'short-but-explicit';
     process.env.JWT_REFRESH_SECRET = 'another-explicit-value';

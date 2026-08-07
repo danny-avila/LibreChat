@@ -18,6 +18,7 @@ metadata:
 type: Opaque
 stringData:
   CREDS_KEY: <generated value>
+  CREDS_IV: <generated value>
   JWT_SECRET: <generated value>
   JWT_REFRESH_SECRET: <generated value>
   MEILI_MASTER_KEY: <generated value>

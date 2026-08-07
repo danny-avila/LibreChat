@@ -146,21 +146,52 @@ function serializeCredentialFile(values: Partial<Record<CredentialName, string>>
   ].join('\n');
 }
 
+function hasUsableCredentialValues(filePath: string, names: CredentialName[]): boolean {
+  const file = readCredentialFile(filePath);
+  return (
+    file.readable && names.every((name) => isUsableTemporaryCredential(name, file.values[name]))
+  );
+}
+
 function writeCredentialFile(
   filePath: string,
   values: Partial<Record<CredentialName, string>>,
   overwrite: boolean,
+  generatedNames: CredentialName[],
 ): CredentialFileWriteResult {
   if (isProtectedEnvironmentPath(filePath)) {
     return 'failed';
   }
 
   const temporaryPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  const lockPath = `${filePath}.lock`;
+  let ownsLock = false;
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(temporaryPath, serializeCredentialFile(values), { mode: 0o600 });
 
     if (overwrite) {
+      try {
+        fs.linkSync(temporaryPath, lockPath);
+        ownsLock = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          throw error;
+        }
+
+        if (hasUsableCredentialValues(lockPath, generatedNames)) {
+          try {
+            fs.renameSync(lockPath, filePath);
+          } catch {
+            // The lock owner may have already promoted the same credential values.
+          }
+        }
+        return hasUsableCredentialValues(filePath, generatedNames) ? 'exists' : 'failed';
+      }
+
+      if (hasUsableCredentialValues(filePath, generatedNames)) {
+        return 'exists';
+      }
       fs.renameSync(temporaryPath, filePath);
     } else {
       try {
@@ -182,6 +213,13 @@ function writeCredentialFile(
       fs.unlinkSync(temporaryPath);
     } catch {
       // The temporary path is absent after a successful rename.
+    }
+    if (ownsLock) {
+      try {
+        fs.unlinkSync(lockPath);
+      } catch {
+        // A contender may have promoted the lock while adopting its values.
+      }
     }
   }
 }
@@ -261,14 +299,9 @@ export function bootstrapCredentials(): CredentialRuntimeState {
 
   let persistenceFailed = false;
   if (generated.length > 0 && file.readable) {
-    const writeResult = writeCredentialFile(filePath, temporaryValues, file.exists);
+    const writeResult = writeCredentialFile(filePath, temporaryValues, file.exists, generated);
     if (writeResult === 'exists') {
-      const adopted = adoptCredentialFile(
-        filePath,
-        missingFromEnvironment,
-        sources,
-        loadedFromFile,
-      );
+      const adopted = adoptCredentialFile(filePath, generated, sources, loadedFromFile);
       if (adopted) {
         generated.length = 0;
       } else {
