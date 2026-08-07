@@ -1060,6 +1060,7 @@ describe('MCPManager', () => {
         isOAuthAuthenticationError: jest.fn((error: unknown) => {
           return error instanceof Error && error.message.includes('401');
         }),
+        usesOAuth: jest.fn().mockReturnValue(true),
         setRequestHeaders: jest.fn(),
         timeout: 30000,
         url: serverConfig.url,
@@ -1130,6 +1131,62 @@ describe('MCPManager', () => {
 
       expect(connection.connect).toHaveBeenCalledTimes(1);
       expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    it('recovers when OAuth was detected from the resolved connection config', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValueOnce(authError).mockResolvedValueOnce(toolResult);
+      const connection = createConnection(request);
+      const runtimeConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/users/{{LIBRECHAT_USER_ID}}/mcp',
+        source: 'yaml',
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(runtimeConfig);
+      mockProcessMCPEnv.mockReturnValue({
+        ...runtimeConfig,
+        url: 'https://api.example.com/users/oauth-user/mcp',
+      });
+      attachOAuthHandler();
+      const manager = await createManager(connection);
+
+      await expect(callTool(manager)).resolves.toBeDefined();
+
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledTimes(1);
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the request OAuth handler attached through reconnect-time OAuth', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValueOnce(authError).mockResolvedValueOnce(toolResult);
+      const connection = createConnection(request);
+      (connection.connect as jest.Mock)
+        .mockImplementationOnce(async () => {
+          const emitted = connection.emit('oauthReauthenticationRequired', {
+            serverName,
+            error: authError,
+            serverUrl: serverConfig.url,
+            userId: mockUser.id,
+          });
+          if (!emitted) {
+            throw new Error('Reconnect OAuth handler missing');
+          }
+          throw new Error('Connection not established');
+        })
+        .mockResolvedValueOnce(undefined);
+      const oauthHandler = jest.fn((currentConnection: MCPConnection) => {
+        currentConnection.emit('oauthHandled');
+      });
+      attachOAuthHandler(oauthHandler);
+      const manager = await createManager(connection);
+
+      await expect(callTool(manager)).resolves.toBeDefined();
+
+      expect(oauthHandler).toHaveBeenCalledTimes(2);
+      expect(connection.connect).toHaveBeenCalledTimes(2);
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
 
     it('does not start a second recovery when the retried request is rejected', async () => {
@@ -1209,6 +1266,46 @@ describe('MCPManager', () => {
       expect(oauthHandler).toHaveBeenCalledTimes(1);
       expect(connection.connect).toHaveBeenCalledTimes(1);
       expect(request).toHaveBeenCalledTimes(4);
+      expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
+    });
+
+    it('lets a live waiter recover after the recovery owner fails', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest
+        .fn()
+        .mockRejectedValueOnce(authError)
+        .mockRejectedValueOnce(authError)
+        .mockResolvedValueOnce(toolResult);
+      const connection = createConnection(request);
+      let attachmentCount = 0;
+      (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mockImplementation(
+        (_basic, _oauth, currentConnection: MCPConnection) => {
+          const currentAttachment = ++attachmentCount;
+          const listener = () => {
+            if (currentAttachment === 2) {
+              currentConnection.emit('oauthHandled');
+            }
+          };
+          currentConnection.on('oauthReauthenticationRequired', listener);
+          return () => currentConnection.off('oauthReauthenticationRequired', listener);
+        },
+      );
+      const manager = await createManager(connection);
+
+      const ownerCall = callTool(manager);
+      await new Promise((resolve) => setImmediate(resolve));
+      const waiterCall = callTool(manager);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledTimes(1);
+
+      connection.emit('oauthFailed', new Error('Recovery owner aborted'));
+
+      await expect(ownerCall).rejects.toBe(authError);
+      await expect(waiterCall).resolves.toBeDefined();
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledTimes(2);
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(3);
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
   });

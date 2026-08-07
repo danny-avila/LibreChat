@@ -362,54 +362,38 @@ Please follow these instructions when using tools from the respective MCP server
   ): Promise<void> {
     const existingRecovery = this.oauthRecoveries.get(connection);
     if (existingRecovery) {
-      return existingRecovery;
+      try {
+        return await existingRecovery;
+      } catch {
+        if (this.oauthRecoveries.get(connection) === existingRecovery) {
+          this.oauthRecoveries.delete(connection);
+        }
+        return this.recoverOAuthConnection(
+          connection,
+          error,
+          serverName,
+          userId,
+          attachRequestOAuthHandler,
+        );
+      }
     }
 
-    const recovery = new Promise<void>((resolve, reject) => {
-      let cleanupRequestOAuthHandler: (() => void) | undefined;
-      const cleanup = () => {
-        clearTimeout(timeout);
-        connection.off('oauthHandled', handleSuccess);
-        connection.off('oauthFailed', handleFailure);
-        cleanupRequestOAuthHandler?.();
-        cleanupRequestOAuthHandler = undefined;
-      };
-      const handleSuccess = () => {
-        cleanup();
-        resolve();
-      };
-      const handleFailure = (oauthError: Error) => {
-        cleanup();
-        reject(oauthError);
-      };
-
-      const timeout = setTimeout(() => {
-        cleanup();
-        reject(new Error(`OAuth recovery timeout after ${mcpConfig.OAUTH_HANDLING_TIMEOUT}ms`));
-      }, mcpConfig.OAUTH_HANDLING_TIMEOUT);
-
-      connection.once('oauthHandled', handleSuccess);
-      connection.once('oauthFailed', handleFailure);
-
+    const recovery = (async () => {
+      const cleanupRequestOAuthHandler = attachRequestOAuthHandler();
       try {
-        cleanupRequestOAuthHandler = attachRequestOAuthHandler();
-      } catch (handlerError) {
-        cleanup();
-        reject(handlerError);
-        return;
+        await this.waitForOAuthRecovery(connection, () =>
+          connection.emit('oauthReauthenticationRequired', {
+            serverName,
+            error,
+            serverUrl: connection.url,
+            userId,
+          }),
+        );
+        await this.connectAfterOAuthRecovery(connection);
+      } finally {
+        cleanupRequestOAuthHandler();
       }
-
-      const emitted = connection.emit('oauthReauthenticationRequired', {
-        serverName,
-        error,
-        serverUrl: connection.url,
-        userId,
-      });
-      if (!emitted) {
-        cleanup();
-        reject(new Error('OAuth recovery requested without an active request handler'));
-      }
-    }).then(() => connection.connect());
+    })();
 
     this.oauthRecoveries.set(connection, recovery);
     try {
@@ -419,6 +403,70 @@ Please follow these instructions when using tools from the respective MCP server
         this.oauthRecoveries.delete(connection);
       }
     }
+  }
+
+  private async connectAfterOAuthRecovery(connection: MCPConnection): Promise<void> {
+    let canRetryAfterInteractiveOAuth = true;
+    while (true) {
+      let oauthHandledDuringConnect = false;
+      const handleOAuth = () => {
+        oauthHandledDuringConnect = true;
+      };
+      connection.on('oauthHandled', handleOAuth);
+      try {
+        await connection.connect();
+        return;
+      } catch (error) {
+        if (!canRetryAfterInteractiveOAuth || !oauthHandledDuringConnect) {
+          throw error;
+        }
+        canRetryAfterInteractiveOAuth = false;
+      } finally {
+        connection.off('oauthHandled', handleOAuth);
+      }
+    }
+  }
+
+  private waitForOAuthRecovery(
+    connection: MCPConnection,
+    requestRecovery: () => boolean,
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timeout);
+        connection.off('oauthHandled', handleSuccess);
+        connection.off('oauthFailed', handleFailure);
+      };
+      const handleSuccess = () => {
+        cleanup();
+        resolve();
+      };
+      const handleFailure = (oauthError: Error) => {
+        cleanup();
+        reject(oauthError);
+      };
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error(`OAuth recovery timeout after ${mcpConfig.OAUTH_HANDLING_TIMEOUT}ms`));
+      }, mcpConfig.OAUTH_HANDLING_TIMEOUT);
+
+      connection.once('oauthHandled', handleSuccess);
+      connection.once('oauthFailed', handleFailure);
+
+      let recoveryRequested: boolean;
+      try {
+        recoveryRequested = requestRecovery();
+      } catch (error) {
+        cleanup();
+        reject(error);
+        return;
+      }
+      if (recoveryRequested) {
+        return;
+      }
+      cleanup();
+      reject(new Error('OAuth recovery requested without an active request handler'));
+    });
   }
 
   /**
@@ -580,7 +628,13 @@ Please follow these instructions when using tools from the respective MCP server
         }
         resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
       }
-      if (userId && user && oauthStart && flowManager && isOAuthServer(currentOptions)) {
+      if (
+        userId &&
+        user &&
+        oauthStart &&
+        flowManager &&
+        (isOAuthServer(currentOptions) || connection.usesOAuth())
+      ) {
         const { allowedDomains, allowedAddresses, useSSRFProtection } =
           await registry.resolveAllowlists({ userId, role: user?.role });
         attachRequestOAuthHandler = () =>
