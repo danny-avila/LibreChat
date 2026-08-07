@@ -942,6 +942,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       expect(mockRegistryInstance.resolveAllowlists).toHaveBeenCalledWith({
         userId: mockUserId,
         role: 'user',
+        tenantId: null,
       });
       expect(mockIsMCPDomainAllowed).toHaveBeenCalledWith(
         expect.objectContaining({ url: 'https://blocked.example.com/' }),

@@ -18,8 +18,8 @@ import type {
   Dispatcher,
 } from 'undici';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { MCPOAuthTokens } from './oauth/types';
 import type { MCPConnectionProvenance } from './types';
+import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { isOAuthServer, sanitizeUrlForLogging } from './utils';

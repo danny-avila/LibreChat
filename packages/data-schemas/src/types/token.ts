@@ -12,6 +12,14 @@ export interface IToken extends Document {
   tenantId?: string;
 }
 
+export interface TokenIdentityRecord {
+  _id?: Types.ObjectId | string;
+  type?: string;
+  identifier?: string;
+  createdAt?: Date;
+  metadata?: Map<string, unknown> | Record<string, unknown>;
+}
+
 export interface TokenCreateData {
   userId: Types.ObjectId | string;
   email?: string;
@@ -22,12 +30,16 @@ export interface TokenCreateData {
   metadata?: Record<string, unknown> | Map<string, unknown>;
 }
 
+export interface TokenStringListQuery {
+  $in: string[];
+}
+
 export interface TokenQuery {
   userId?: Types.ObjectId | string;
   token?: string;
   email?: string | null;
-  type?: string | null;
-  identifier?: string | RegExp | null;
+  type?: string | RegExp | TokenStringListQuery | null;
+  identifier?: string | RegExp | TokenStringListQuery | null;
   /** Internal optimistic-concurrency selector for OAuth token record generations. */
   metadataCredentialSetId?: string | null;
 }

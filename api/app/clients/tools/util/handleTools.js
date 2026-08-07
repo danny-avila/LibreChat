@@ -61,6 +61,7 @@ const { getScopedMCPServerTools, checkCapability } = require('~/server/services/
 const { getMCPServersRegistry } = require('~/config');
 const {
   findToken,
+  findTokens,
   getRoleByName,
   setMemory,
   deleteMemory,
@@ -613,6 +614,7 @@ const loadTools = async ({
               serverConfig: config.config,
               customUserVars: userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`],
               findToken,
+              findTokens,
               findPluginAuthsByKeys,
             });
           } catch (error) {

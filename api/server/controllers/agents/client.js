@@ -133,6 +133,7 @@ const loadAgent = (params) =>
       getScopedMCPServerTools({
         ...scope,
         findToken: db.findToken,
+        findTokens: db.findTokens,
         findPluginAuthsByKeys: db.findPluginAuthsByKeys,
       }),
   });

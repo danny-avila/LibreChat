@@ -36,6 +36,7 @@ const {
   isNormalizationSensitiveName,
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isFatalAgentInitializationError,
+  isOAuthServer,
 } = require('@librechat/api');
 const {
   Time,
@@ -67,7 +68,7 @@ const {
 } = require('./ActionService');
 const {
   getEndpointsConfig,
-  getMCPServerTools,
+  getScopedCachedMCPServerTools,
   getCachedTools,
 } = require('~/server/services/Config');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
@@ -85,7 +86,7 @@ const {
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
-const { findToken, findPluginAuthsByKeys } = require('~/models');
+const { findToken, findTokens, findPluginAuthsByKeys } = require('~/models');
 const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 
@@ -728,6 +729,7 @@ async function loadToolDefinitionsWrapper({
   const emittedOAuthStarts = new Map();
   const oauthToolCallIds = new Map();
   const oauthStepIndexes = new Map();
+  const authorizationIdentityPromises = new Map();
   /** @type {Record<string, import('@librechat/api').LCAvailableTools>} */
   const mcpAvailableTools = {};
   const requestScopedConnections = getMCPRequestContext(req, res);
@@ -889,21 +891,33 @@ async function loadToolDefinitionsWrapper({
       return mcpAvailableTools[serverName];
     }
 
-    const configuredOAuth = serverConfig.requiresOAuth === true || serverConfig.oauth != null;
-    const authorizationIdentity = configuredOAuth
-      ? await getMCPAuthorizationIdentity({ userId, serverName, findToken })
-      : 'none';
+    const configuredOAuth = isOAuthServer(serverConfig);
+    let authorizationIdentity = 'none';
+    if (configuredOAuth) {
+      let authorizationIdentityPromise = authorizationIdentityPromises.get(serverName);
+      if (!authorizationIdentityPromise) {
+        authorizationIdentityPromise = getMCPAuthorizationIdentity({
+          userId,
+          serverName,
+          findToken,
+          findTokens,
+        });
+        authorizationIdentityPromises.set(serverName, authorizationIdentityPromise);
+      }
+      authorizationIdentity = await authorizationIdentityPromise;
+    }
     const cached =
       authorizationIdentity == null
         ? null
-        : await getMCPServerTools(
+        : await getScopedCachedMCPServerTools({
             userId,
             serverName,
             serverConfig,
             customUserVars,
-            req.user.tenantId ?? getTenantId() ?? null,
+            tenantId: req.user.tenantId ?? getTenantId() ?? null,
+            role: req.user.role,
             authorizationIdentity,
-          );
+          });
     if (cached) {
       rememberMCPAvailableTools(serverName, cached);
       await addPendingOAuthServer();

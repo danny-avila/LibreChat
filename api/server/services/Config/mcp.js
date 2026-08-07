@@ -4,6 +4,7 @@ const {
   createMCPToolCacheService,
   MCPServersRegistry,
   getMCPAuthorizationIdentity,
+  isOAuthServer,
 } = require('@librechat/api');
 const { Constants } = require('librechat-data-provider');
 const { getCachedTools, setCachedTools } = require('./getCachedTools');
@@ -11,16 +12,18 @@ const { getCachedTools, setCachedTools } = require('./getCachedTools');
 const {
   mergeAppTools,
   cacheMCPServerTools,
+  cacheScopedMCPServerTools,
   updateMCPServerTools,
   getMCPServerTools,
+  getScopedMCPServerTools: getScopedCachedMCPServerTools,
   getMCPServerCatalog,
 } = createMCPToolCacheService({
   getCachedTools,
   setCachedTools,
   getServerConfig: (serverName, userId) =>
     MCPServersRegistry.getInstance().getServerConfig(serverName, userId),
-  getSecurityPolicy: (userId) =>
-    MCPServersRegistry.getInstance().resolveCatalogSecurityPolicy({ userId }),
+  getScopedSecurityPolicy: (principal) =>
+    MCPServersRegistry.getInstance().resolveCatalogSecurityPolicy(principal),
 });
 
 async function getScopedMCPServerTools({
@@ -29,6 +32,7 @@ async function getScopedMCPServerTools({
   serverConfig,
   customUserVars,
   findToken,
+  findTokens,
   findPluginAuthsByKeys,
 }) {
   try {
@@ -51,22 +55,23 @@ async function getScopedMCPServerTools({
       resolvedCustomUserVars = userMCPAuthMap[`${Constants.mcp_prefix}${serverName}`];
     }
 
-    const configuredOAuth = resolvedConfig.requiresOAuth === true || resolvedConfig.oauth != null;
+    const configuredOAuth = isOAuthServer(resolvedConfig);
     const authorizationIdentity = configuredOAuth
-      ? await getMCPAuthorizationIdentity({ userId: user.id, serverName, findToken })
+      ? await getMCPAuthorizationIdentity({ userId: user.id, serverName, findToken, findTokens })
       : 'none';
     if (authorizationIdentity == null) {
       return null;
     }
 
-    return await getMCPServerTools(
-      user.id,
+    return await getScopedCachedMCPServerTools({
+      userId: user.id,
       serverName,
-      resolvedConfig,
-      resolvedCustomUserVars,
-      user.tenantId ?? getTenantId() ?? null,
+      serverConfig: resolvedConfig,
+      customUserVars: resolvedCustomUserVars,
+      tenantId: user.tenantId ?? getTenantId() ?? null,
+      role: user.role,
       authorizationIdentity,
-    );
+    });
   } catch (error) {
     logger.warn(`[MCP Cache] Scoped catalog lookup unavailable for ${serverName}`, error);
     return null;
@@ -76,8 +81,10 @@ async function getScopedMCPServerTools({
 module.exports = {
   mergeAppTools,
   getMCPServerTools,
+  getScopedCachedMCPServerTools,
   getScopedMCPServerTools,
   getMCPServerCatalog,
   cacheMCPServerTools,
+  cacheScopedMCPServerTools,
   updateMCPServerTools,
 };

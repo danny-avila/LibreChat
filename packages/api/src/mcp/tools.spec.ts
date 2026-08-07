@@ -54,7 +54,7 @@ function createMockDeps(overrides: Partial<MCPToolCacheDeps> = {}): MCPToolCache
     getCachedTools: jest.fn().mockResolvedValue(null),
     setCachedTools: jest.fn().mockResolvedValue(true),
     getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
-    getSecurityPolicy: jest.fn().mockResolvedValue({
+    getScopedSecurityPolicy: jest.fn().mockResolvedValue({
       allowedDomains: null,
       allowedAddresses: null,
     }),
@@ -89,10 +89,13 @@ describe('createMCPToolCacheService', () => {
     try {
       await expect(
         updateMCPServerTools({
+          tenantId: null,
           userId: 'u1',
           serverName: 'srv',
           tools: [{ name: 'search' }],
           serverConfig: cacheableConfig,
+          authorizationIdentity: 'none',
+          persistCatalog: true,
         }),
       ).resolves.toHaveProperty(`search${Constants.mcp_delimiter}srv`);
       await expect(
@@ -115,8 +118,12 @@ describe('createMCPToolCacheService', () => {
   });
 
   it('keeps legacy cache dependencies compatible while scoped catalogs fail closed', async () => {
-    const deps = createMockDeps();
-    delete deps.getSecurityPolicy;
+    const legacyGetSecurityPolicy = jest.fn(async (_userId: string) => ({
+      allowedDomains: null,
+      allowedAddresses: null,
+    }));
+    const deps = createMockDeps({ getSecurityPolicy: legacyGetSecurityPolicy });
+    delete deps.getScopedSecurityPolicy;
     const { getMCPServerCatalog, updateMCPServerTools } = createMCPToolCacheService(deps);
 
     await updateMCPServerTools({
@@ -142,24 +149,47 @@ describe('createMCPToolCacheService', () => {
       reason: 'authorization_unavailable',
     });
     expect(deps.setCachedTools).not.toHaveBeenCalled();
+    expect(legacyGetSecurityPolicy).not.toHaveBeenCalled();
   });
 
-  it('fails closed when legacy callers omit tenant and authorization scope', async () => {
-    const deps = createMockDeps();
-    const { getMCPServerTools, updateMCPServerTools } = createMCPToolCacheService(deps);
+  it('preserves legacy raw cache reads and writes for two-argument consumers', async () => {
+    const legacyTools: LCAvailableTools = {
+      [`search${Constants.mcp_delimiter}srv`]: {
+        type: 'function',
+        function: {
+          name: `search${Constants.mcp_delimiter}srv`,
+          description: 'Search',
+          parameters: { type: 'object', properties: {} },
+        },
+      },
+    };
+    const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(legacyTools) });
+    const { cacheMCPServerTools, getMCPServerTools } = createMCPToolCacheService(deps);
 
-    await updateMCPServerTools({
+    await cacheMCPServerTools({ userId: 'u1', serverName: 'srv', serverTools: legacyTools });
+    await expect(getMCPServerTools('u1', 'srv')).resolves.toBe(legacyTools);
+
+    expect(deps.setCachedTools).toHaveBeenCalledWith(legacyTools, {
       userId: 'u1',
       serverName: 'srv',
-      tools: [{ name: 'search' }],
-      serverConfig: cacheableConfig,
-      authorizationIdentity: 'none',
-      persistCatalog: true,
     });
-    await expect(getMCPServerTools('u1', 'srv', cacheableConfig)).resolves.toBeNull();
+    expect(deps.getCachedTools).toHaveBeenCalledWith({ userId: 'u1', serverName: 'srv' });
+  });
 
+  it('keeps the separately named scoped reader fail-closed without auth identity', async () => {
+    const deps = createMockDeps();
+    const { getScopedMCPServerTools } = createMCPToolCacheService(deps);
+
+    await expect(
+      getScopedMCPServerTools({
+        tenantId: null,
+        userId: 'u1',
+        serverName: 'srv',
+        serverConfig: cacheableConfig,
+        authorizationIdentity: null,
+      }),
+    ).resolves.toBeNull();
     expect(deps.getCachedTools).not.toHaveBeenCalled();
-    expect(deps.setCachedTools).not.toHaveBeenCalled();
   });
 
   it('fails closed when declared custom credentials were not resolved', async () => {
@@ -583,7 +613,7 @@ describe('createMCPToolCacheService', () => {
       const deps = createMockDeps({
         getCachedTools: jest.fn().mockResolvedValue(
           createMCPToolCatalogEnvelope(cachedTools, {
-            tenantId: null,
+            tenantId: 'tenant-a',
             userId: 'u1',
             serverName: 'brave',
             serverConfig: cacheableConfig,
@@ -593,22 +623,27 @@ describe('createMCPToolCacheService', () => {
         ),
         getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
       });
-      const { getMCPServerTools } = createMCPToolCacheService(deps);
+      const { getScopedMCPServerTools } = createMCPToolCacheService(deps);
 
-      const result = await getMCPServerTools(
-        'u1',
-        'brave',
-        cacheableConfig,
-        undefined,
-        null,
-        'none',
-      );
+      const result = await getScopedMCPServerTools({
+        tenantId: 'tenant-a',
+        userId: 'u1',
+        role: 'ADMIN',
+        serverName: 'brave',
+        serverConfig: cacheableConfig,
+        authorizationIdentity: 'none',
+      });
 
       expect(result).toEqual(cachedTools);
       expect(deps.getCachedTools).toHaveBeenCalledWith({
         userId: 'u1',
         serverName: 'brave',
-        tenantId: null,
+        tenantId: 'tenant-a',
+      });
+      expect(deps.getScopedSecurityPolicy).toHaveBeenCalledWith({
+        userId: 'u1',
+        tenantId: 'tenant-a',
+        role: 'ADMIN',
       });
     });
 

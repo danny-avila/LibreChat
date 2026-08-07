@@ -19,6 +19,7 @@ const mockEmitChunk = jest.fn();
 jest.mock('~/server/services/Config', () => ({
   getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
   getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
+  getScopedCachedMCPServerTools: (...args) => mockGetMCPServerTools(...args),
   getCachedTools: (...args) => mockGetCachedTools(...args),
 }));
 
@@ -194,14 +195,15 @@ describe('ToolService - Action Capability Gating', () => {
 
     expect(result.toolDefinitions).toEqual([mcpTool]);
     expect(mockGetMCPAuthorizationIdentity).not.toHaveBeenCalled();
-    expect(mockGetMCPServerTools).toHaveBeenCalledWith(
-      req.user.id,
+    expect(mockGetMCPServerTools).toHaveBeenCalledWith({
+      userId: req.user.id,
       serverName,
-      expect.any(Object),
-      undefined,
-      null,
-      'none',
-    );
+      serverConfig: expect.any(Object),
+      customUserVars: undefined,
+      tenantId: null,
+      role: undefined,
+      authorizationIdentity: 'none',
+    });
   });
 
   describe('resolveAgentCapabilities', () => {
@@ -824,14 +826,15 @@ describe('ToolService - Action Capability Gating', () => {
       });
 
       expect(result.toolDefinitions).toEqual([mcpTool]);
-      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
-        req.user.id,
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith({
+        userId: req.user.id,
         serverName,
-        expect.objectContaining({ requiresOAuth: true }),
-        undefined,
-        null,
-        'none',
-      );
+        serverConfig: expect.objectContaining({ requiresOAuth: true }),
+        customUserVars: undefined,
+        tenantId: null,
+        role: undefined,
+        authorizationIdentity: 'none',
+      });
       expect(reinitMCPServer).toHaveBeenCalledWith(
         expect.objectContaining({
           serverName,
@@ -901,14 +904,15 @@ describe('ToolService - Action Capability Gating', () => {
         definitionsOnly: true,
       });
 
-      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
-        req.user.id,
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith({
+        userId: req.user.id,
         serverName,
-        expect.objectContaining({ requiresOAuth: true }),
-        undefined,
-        null,
-        'none',
-      );
+        serverConfig: expect.objectContaining({ requiresOAuth: true }),
+        customUserVars: undefined,
+        tenantId: null,
+        role: undefined,
+        authorizationIdentity: 'none',
+      });
       expect(reinitMCPServer).toHaveBeenCalledTimes(1);
       expect(reinitMCPServer).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1125,16 +1129,17 @@ describe('ToolService - Action Capability Gating', () => {
           requestBody: req.body,
         }),
       );
-      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
-        req.user.id,
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith({
+        userId: req.user.id,
         serverName,
-        expect.objectContaining({
+        serverConfig: expect.objectContaining({
           url: expect.stringContaining('LIBRECHAT_BODY_MESSAGEID'),
         }),
-        undefined,
-        null,
-        'none',
-      );
+        customUserVars: undefined,
+        tenantId: null,
+        role: undefined,
+        authorizationIdentity: 'none',
+      });
     });
 
     it('returns run-scoped MCP tool definitions for request-scoped servers', async () => {
@@ -1179,16 +1184,17 @@ describe('ToolService - Action Capability Gating', () => {
 
       expect(result.toolDefinitions).toEqual([mcpTool]);
       expect(result.mcpAvailableTools).toEqual({ [serverName]: availableTools });
-      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
-        req.user.id,
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith({
+        userId: req.user.id,
         serverName,
-        expect.objectContaining({
+        serverConfig: expect.objectContaining({
           url: expect.stringContaining('LIBRECHAT_BODY_MESSAGEID'),
         }),
-        undefined,
-        null,
-        'none',
-      );
+        customUserVars: undefined,
+        tenantId: null,
+        role: undefined,
+        authorizationIdentity: 'none',
+      });
     });
 
     it('should preserve pending-flow expiry for OAuth URLs captured during discovery', async () => {
@@ -1284,14 +1290,15 @@ describe('ToolService - Action Capability Gating', () => {
 
       expect(result.toolDefinitions).toEqual([mcpTool]);
       expect(mockGetServerConfig).not.toHaveBeenCalled();
-      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
-        req.user.id,
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith({
+        userId: req.user.id,
         serverName,
-        expect.objectContaining({ url: 'https://config.example.com/mcp' }),
-        { TOKEN: 'secret' },
-        null,
-        'none',
-      );
+        serverConfig: expect.objectContaining({ url: 'https://config.example.com/mcp' }),
+        customUserVars: { TOKEN: 'secret' },
+        tenantId: null,
+        role: undefined,
+        authorizationIdentity: 'none',
+      });
     });
   });
 

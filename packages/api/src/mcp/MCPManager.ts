@@ -1,10 +1,11 @@
 import pick from 'lodash/pick';
-import { logger } from '@librechat/data-schemas';
+import { logger, getTenantId } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
+import type { MCPToolCatalogScopeInput } from './catalog';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
@@ -18,6 +19,11 @@ import {
   requiresOAuthMachinery,
   requiresUserScopedConnection,
 } from './utils';
+import {
+  createMCPToolCatalogSecurityPolicyIdentity,
+  isMCPToolCatalogFingerprintAvailable,
+  matchesMCPConnectionProvenance,
+} from './catalog';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerInspector } from './registry/MCPServerInspector';
@@ -101,7 +107,40 @@ export class MCPManager extends UserConnectionManager {
     //the get method checks if the config is still valid as app level
     const existingAppConnection = await this.appConnections!.get(args.serverName);
     if (existingAppConnection) {
-      return existingAppConnection;
+      if (!userId || !effectiveConfig || !isMCPToolCatalogFingerprintAvailable()) {
+        return existingAppConnection;
+      }
+      const registry = MCPServersRegistry.getInstance();
+      const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
+        userId,
+        role: args.user?.role,
+        tenantId: args.user?.tenantId ?? getTenantId() ?? null,
+      });
+      const appConnectionMatchesPrincipal = matchesMCPConnectionProvenance(
+        existingAppConnection.getDiscoveryProvenance(),
+        {
+          tenantId: args.user?.tenantId ?? getTenantId() ?? null,
+          userId,
+          serverName: args.serverName,
+          serverConfig: effectiveConfig,
+          effectiveServerConfig: processMCPEnv({
+            options: effectiveConfig,
+            dbSourced: isUserSourced(effectiveConfig),
+          }),
+          securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+            allowedDomains,
+            allowedAddresses,
+          }),
+          authorizationIdentity: 'none',
+        },
+      );
+      if (appConnectionMatchesPrincipal) {
+        return existingAppConnection;
+      }
+      return this.getUserConnection({
+        ...args,
+        serverConfig: effectiveConfig,
+      } as Parameters<typeof this.getUserConnection>[0]);
     } else if (userId) {
       return this.getUserConnection({
         ...args,
@@ -123,21 +162,6 @@ export class MCPManager extends UserConnectionManager {
   public async discoverServerTools(args: t.ToolDiscoveryOptions): Promise<t.ToolDiscoveryResult> {
     const { serverName, user } = args;
     const logPrefix = user?.id ? `[MCP][User: ${user.id}][${serverName}]` : `[MCP][${serverName}]`;
-
-    try {
-      const existingAppConnection = await this.appConnections?.get(serverName);
-      if (existingAppConnection && (await existingAppConnection.isConnected())) {
-        const tools = await existingAppConnection.fetchTools();
-        return {
-          tools,
-          oauthRequired: false,
-          oauthUrl: null,
-          provenance: existingAppConnection.getDiscoveryProvenance?.() ?? null,
-        };
-      }
-    } catch {
-      logger.debug(`${logPrefix} [Discovery] App connection not available, trying discovery mode`);
-    }
 
     const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
       serverName,
@@ -163,7 +187,11 @@ export class MCPManager extends UserConnectionManager {
 
     const registry = MCPServersRegistry.getInstance();
     const { allowedDomains, allowedAddresses, useSSRFProtection } =
-      await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
+      await registry.resolveAllowlists({
+        userId: user?.id,
+        role: user?.role,
+        tenantId: user?.tenantId ?? null,
+      });
     await this.assertResolvedRuntimeConfigAllowed({
       config: serverConfig,
       user,
@@ -174,6 +202,48 @@ export class MCPManager extends UserConnectionManager {
       allowedAddresses,
       logPrefix: `${logPrefix} [Discovery]`,
     });
+
+    try {
+      const existingAppConnection = await this.appConnections?.get(serverName);
+      if (existingAppConnection && (await existingAppConnection.isConnected())) {
+        const effectiveServerConfig = await this.resolveRuntimeConfig({
+          config: serverConfig,
+          user,
+          customUserVars: args.customUserVars,
+          requestBody: args.requestBody,
+          graphTokenResolver: args.graphTokenResolver,
+        });
+        const appConnectionMatchesScope =
+          !isMCPToolCatalogFingerprintAvailable() ||
+          matchesMCPConnectionProvenance(existingAppConnection.getDiscoveryProvenance(), {
+            tenantId: user?.tenantId ?? null,
+            userId: user?.id ?? '__app__',
+            serverName,
+            serverConfig,
+            effectiveServerConfig,
+            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+              allowedDomains,
+              allowedAddresses,
+            }),
+            customUserVars: args.customUserVars,
+            authorizationIdentity: 'none',
+          });
+        if (appConnectionMatchesScope) {
+          const tools = await existingAppConnection.fetchTools();
+          return {
+            tools,
+            oauthRequired: false,
+            oauthUrl: null,
+            provenance: existingAppConnection.getDiscoveryProvenance?.() ?? null,
+          };
+        }
+        logger.debug(
+          `${logPrefix} [Discovery] Shared connection scope differs; using isolated discovery`,
+        );
+      }
+    } catch {
+      logger.debug(`${logPrefix} [Discovery] App connection not available, trying discovery mode`);
+    }
 
     const useOAuth = requiresOAuthMachinery(serverConfig);
     const dbSourced = isUserSourced(serverConfig);
@@ -255,13 +325,25 @@ export class MCPManager extends UserConnectionManager {
     userId: string,
     serverName: string,
   ): Promise<t.LCAvailableTools | null> {
-    const result = await this.getServerToolFunctionsWithProvenance(userId, serverName);
+    const result = await this.getServerToolFunctionsResult(userId, serverName);
     return result?.tools ?? null;
   }
 
   public async getServerToolFunctionsWithProvenance(
     userId: string,
     serverName: string,
+    expectedScope: MCPToolCatalogScopeInput,
+  ): Promise<{
+    tools: t.LCAvailableTools;
+    provenance: ReturnType<MCPConnection['getDiscoveryProvenance']>;
+  } | null> {
+    return this.getServerToolFunctionsResult(userId, serverName, expectedScope);
+  }
+
+  private async getServerToolFunctionsResult(
+    userId: string,
+    serverName: string,
+    expectedScope?: MCPToolCatalogScopeInput,
   ): Promise<{
     tools: t.LCAvailableTools;
     provenance: ReturnType<MCPConnection['getDiscoveryProvenance']>;
@@ -270,9 +352,13 @@ export class MCPManager extends UserConnectionManager {
       //try get the appConnection (if the config is not in the app level anymore any existing connection will disconnect and get will return null)
       const existingAppConnection = await this.appConnections?.get(serverName);
       if (existingAppConnection) {
+        const provenance = existingAppConnection.getDiscoveryProvenance?.() ?? null;
+        if (expectedScope && !matchesMCPConnectionProvenance(provenance, expectedScope)) {
+          return null;
+        }
         return {
           tools: await MCPServerInspector.getToolFunctions(serverName, existingAppConnection),
-          provenance: existingAppConnection.getDiscoveryProvenance?.() ?? null,
+          provenance,
         };
       }
 
@@ -285,9 +371,14 @@ export class MCPManager extends UserConnectionManager {
       }
 
       const connection = userConnections.get(serverName)!;
+      const provenance = connection.getDiscoveryProvenance?.() ?? null;
+      if (expectedScope && !matchesMCPConnectionProvenance(provenance, expectedScope)) {
+        await this.disconnectUserConnection(userId, serverName);
+        return null;
+      }
       return {
         tools: await MCPServerInspector.getToolFunctions(serverName, connection),
-        provenance: connection.getDiscoveryProvenance?.() ?? null,
+        provenance,
       };
     } catch (error) {
       logger.warn(
@@ -507,7 +598,11 @@ Please follow these instructions when using tools from the respective MCP server
       }
       if (userId && user && oauthStart && flowManager && isOAuthServer(currentOptions)) {
         const { allowedDomains, allowedAddresses, useSSRFProtection } =
-          await registry.resolveAllowlists({ userId, role: user?.role });
+          await registry.resolveAllowlists({
+            userId,
+            role: user?.role,
+            tenantId: user?.tenantId ?? null,
+          });
         cleanupRequestOAuthHandler = MCPConnectionFactory.attachRequestOAuthHandler(
           {
             serverName,

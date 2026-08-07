@@ -8,14 +8,14 @@ import {
   APP_CACHE_NAMESPACE,
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
-import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
-import { MCPServerInspector } from './MCPServerInspector';
-import { ServerConfigsDB } from './db/ServerConfigsDB';
-import { cacheConfig } from '~/cache/cacheConfig';
 import {
   serializeMCPToolCatalogConfigContext,
   withMCPToolCatalogConfigContext,
 } from '~/mcp/catalog';
+import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
+import { MCPServerInspector } from './MCPServerInspector';
+import { ServerConfigsDB } from './db/ServerConfigsDB';
+import { cacheConfig } from '~/cache/cacheConfig';
 import { withTimeout } from '~/utils';
 
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
@@ -90,6 +90,7 @@ const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
 export interface MCPAllowlistContext {
   userId?: string;
   role?: string;
+  tenantId?: string | null;
 }
 
 /**

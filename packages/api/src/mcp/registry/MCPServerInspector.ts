@@ -12,8 +12,8 @@ import {
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { normalizeJsonSchema, resolveJsonSchemaRefs } from '~/mcp/zod';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { withMCPToolCatalogConfigContext } from '~/mcp/catalog';
+import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isEnabled } from '~/utils';
 
@@ -195,7 +195,7 @@ export class MCPServerInspector {
       const outputSchema = tool.outputSchema
         ? (normalizeJsonSchema(
             resolveJsonSchemaRefs(tool.outputSchema as Record<string, unknown>),
-          ) as JsonSchemaType)
+          ) as NonNullable<t.MCPTool['outputSchema']>)
         : undefined;
       toolFunctions[name] = {
         type: 'function',

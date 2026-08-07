@@ -56,8 +56,8 @@ const router = Router();
 
 const OAUTH_CSRF_COOKIE_PATH = '/api/mcp';
 
-const getOAuthFlowId = (userId, serverName) =>
-  MCPOAuthHandler.generateFlowId(userId, serverName, getTenantId());
+const getOAuthFlowId = (userId, serverName, tenantId = getTenantId()) =>
+  MCPOAuthHandler.generateFlowId(userId, serverName, tenantId);
 
 const canAccessOAuthFlow = (flowId, userId) => {
   const parsed = MCPOAuthHandler.parseFlowId(flowId);
@@ -108,13 +108,14 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
     const { serverName } = req.params;
     const { userId, flowId } = req.query;
     const user = req.user;
+    const tenantId = user?.tenantId ?? getTenantId();
 
     // Verify the userId matches the authenticated user
     if (typeof userId !== 'string' || userId !== user.id) {
       return res.status(403).json({ error: 'User mismatch' });
     }
 
-    const expectedFlowId = getOAuthFlowId(user.id, serverName);
+    const expectedFlowId = getOAuthFlowId(user.id, serverName, tenantId);
     if (typeof flowId !== 'string' || flowId !== expectedFlowId) {
       logger.error('[MCP OAuth] Invalid flow ID for initiate request', {
         serverName,
@@ -187,6 +188,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
     const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
       userId,
       role: req.user?.role,
+      tenantId: tenantId ?? null,
     });
     const {
       authorizationUrl,
@@ -201,7 +203,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
       allowedDomains,
       undefined,
       allowedAddresses,
-      getTenantId(),
+      tenantId,
     );
 
     logger.debug('[MCP OAuth] OAuth flow initiated', { oauthFlowId, authorizationUrl });
@@ -210,7 +212,12 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
     if (typeof oldState === 'string') {
       await MCPOAuthHandler.deleteStateMapping(oldState, flowManager);
     }
-    const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: getTenantId() };
+    const metadataWithUrl = {
+      ...flowMetadata,
+      authorizationUrl,
+      tenantId,
+      role: req.user?.role,
+    };
     await flowManager.initFlow(oauthFlowId, 'mcp_oauth', metadataWithUrl);
     await MCPOAuthHandler.storeStateMapping(flowMetadata.state, oauthFlowId, flowManager);
     setOAuthCsrfCookie(res, oauthFlowId, OAUTH_CSRF_COOKIE_PATH);
@@ -395,7 +402,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
      */
     const runWithTenant = async (fn) => {
       const flowTenantId = flowState.tenantId;
-      if (flowTenantId && !getTenantId()) {
+      if (flowTenantId) {
         return tenantStorage.run({ tenantId: flowTenantId }, fn);
       }
       return fn();
@@ -480,14 +487,41 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         logger.debug(`[MCP OAuth] Attempting to reconnect ${serverName} with new OAuth tokens`);
 
         if (flowState.userId !== 'system') {
-          const user = { id: flowState.userId };
+          let storedUser;
+          if (typeof db.findUser === 'function') {
+            try {
+              storedUser = await db.findUser({ _id: flowState.userId }, 'role tenantId');
+            } catch (error) {
+              throw new Error(`Current user scope is unavailable for ${serverName}`, {
+                cause: error,
+              });
+            }
+            if (!storedUser) {
+              throw new Error(`Current user scope was not found for ${serverName}`);
+            }
+            if (
+              flowState.tenantId &&
+              storedUser.tenantId &&
+              flowState.tenantId !== storedUser.tenantId
+            ) {
+              throw new Error(`Current tenant scope changed during OAuth for ${serverName}`);
+            }
+          }
+          const user = {
+            id: flowState.userId,
+            tenantId: flowState.tenantId ?? storedUser?.tenantId ?? getTenantId() ?? undefined,
+            role:
+              typeof db.findUser === 'function'
+                ? storedUser?.role
+                : (flowState.role ?? flowState.metadata?.role),
+          };
 
           /** Merged config (incl. Config-tier overlays) so the reconnection and
            *  the cache gate both see request-scoped servers the base registry
            *  lookup misses */
           let serverConfig;
           try {
-            const allConfigs = await resolveAllMcpConfigs(flowState.userId);
+            const allConfigs = await resolveAllMcpConfigs(flowState.userId, user);
             serverConfig = allConfigs?.[serverName];
           } catch (error) {
             logger.warn(
@@ -525,6 +559,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             userId: flowState.userId,
             serverName,
             findToken: db.findToken,
+            findTokens: db.findTokens,
           });
 
           const userConnection = await mcpManager.getUserConnection({
@@ -535,6 +570,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             customUserVars,
             tokenMethods: {
               findToken: db.findToken,
+              findTokens: db.findTokens,
               updateToken: db.updateToken,
               createToken: db.createToken,
               deleteTokens: db.deleteTokens,
@@ -553,18 +589,20 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             userId: flowState.userId,
             serverName,
             findToken: db.findToken,
+            findTokens: db.findTokens,
           });
           if (
             authorizationIdentityBeforeDiscovery != null &&
             authorizationIdentityAfterDiscovery === authorizationIdentityBeforeDiscovery
           ) {
             await updateMCPServerTools({
-              tenantId: flowState.tenantId ?? getTenantId() ?? null,
+              tenantId: user.tenantId ?? null,
               userId: flowState.userId,
               serverName,
               tools,
               serverConfig,
               customUserVars,
+              role: user.role,
               authorizationIdentity: authorizationIdentityAfterDiscovery,
               discoveryProvenance: userConnection.getDiscoveryProvenance?.() ?? null,
             });
@@ -765,6 +803,7 @@ function createMCPStatusRuntimeContext(user, mcpConfig, serverNames) {
     mcpAllowlistsPromise ??= getMCPServersRegistry().resolveAllowlists({
       userId: user.id,
       role: user.role,
+      tenantId: user.tenantId ?? getTenantId() ?? null,
     });
     return mcpAllowlistsPromise;
   };

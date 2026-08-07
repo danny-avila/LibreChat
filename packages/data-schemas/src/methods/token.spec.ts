@@ -37,6 +37,14 @@ beforeEach(async () => {
 });
 
 describe('Token Methods - Detailed Tests', () => {
+  test('declares the compound MCP authorization identity lookup index', () => {
+    expect(tokenSchema.indexes().map(([fields]) => fields)).toContainEqual({
+      userId: 1,
+      type: 1,
+      identifier: 1,
+    });
+  });
+
   describe('createToken', () => {
     test('should create a token with correct expiry time', async () => {
       const userId = new mongoose.Types.ObjectId();
@@ -400,6 +408,51 @@ describe('Token Methods - Detailed Tests', () => {
       expect(found).toBeDefined();
       expect(found?.token).toBe('combined-3'); // Most recent
       expect(found?.createdAt).toBeDefined();
+    });
+  });
+
+  describe('findTokens', () => {
+    test('batches MCP authorization records through compound indexed selectors', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      await Token.create([
+        {
+          token: 'docs-secret',
+          userId,
+          type: 'mcp_oauth_client',
+          identifier: 'mcp:docs:client',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'search-secret',
+          userId,
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:search:refresh',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'unrelated-secret',
+          userId,
+          type: 'password_reset',
+          identifier: 'unrelated',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const records = await methods.findTokens!({
+        userId: userId.toString(),
+        type: { $in: ['mcp_oauth_client', 'mcp_oauth_refresh', 'mcp_oauth'] },
+        identifier: { $in: ['mcp:docs:client', 'mcp:search:refresh'] },
+      });
+
+      expect(records).toHaveLength(2);
+      expect(records.map((record) => record.identifier).sort()).toEqual([
+        'mcp:docs:client',
+        'mcp:search:refresh',
+      ]);
+      expect(records.every((record) => !('token' in record))).toBe(true);
     });
   });
 

@@ -5,6 +5,7 @@ import {
   createMCPToolCatalogEnvelope,
   createMCPToolCatalogSecurityPolicyIdentity,
   createMCPToolCatalogScope,
+  getMCPAuthorizationIdentities,
   getMCPAuthorizationIdentity,
   matchesMCPConnectionProvenance,
   resolveMCPToolCatalog,
@@ -248,12 +249,13 @@ describe('MCP tool catalogs', () => {
   });
 
   it('rejects stale discovery provenance when an effective environment secret rotates', () => {
-    const environmentConfig: ParsedServerConfig = {
+    const environmentConfig = {
       type: 'stdio',
       command: 'server',
+      args: [],
       env: { API_KEY: '${MCP_CATALOG_TEST_SECRET}' },
       source: 'yaml',
-    };
+    } satisfies ParsedServerConfig;
     process.env.MCP_CATALOG_TEST_SECRET = 'old-secret';
     const provenance = createMCPConnectionProvenance(
       {
@@ -294,6 +296,76 @@ describe('MCP tool catalogs', () => {
     await expect(
       getMCPAuthorizationIdentity({ userId: 'user-a', serverName: 'docs', findToken }),
     ).resolves.toBe('grant-generation');
+  });
+
+  it('resolves an OAuth grant identity with one indexed batch query when available', async () => {
+    const findToken = jest.fn();
+    const findTokens = jest.fn().mockResolvedValue([
+      {
+        type: 'mcp_oauth',
+        identifier: 'mcp:docs',
+        _id: 'access-record',
+      },
+      {
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:docs:client',
+        _id: 'client-record',
+        metadata: new Map([['credential_set_id', 'batch-grant-generation']]),
+      },
+    ]);
+
+    await expect(
+      getMCPAuthorizationIdentity({
+        userId: 'user-a',
+        serverName: 'docs',
+        findToken,
+        findTokens,
+      }),
+    ).resolves.toBe('batch-grant-generation');
+    expect(findTokens).toHaveBeenCalledTimes(1);
+    expect(findTokens).toHaveBeenCalledWith({
+      userId: 'user-a',
+      type: {
+        $in: ['mcp_oauth_client', 'mcp_oauth_refresh', 'mcp_oauth'],
+      },
+      identifier: {
+        $in: ['mcp:docs', 'mcp:docs:refresh', 'mcp:docs:client'],
+      },
+    });
+    expect(findToken).not.toHaveBeenCalled();
+  });
+
+  it('resolves multiple OAuth server identities with one request-scoped query', async () => {
+    const findToken = jest.fn();
+    const findTokens = jest.fn().mockResolvedValue([
+      {
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:docs:client',
+        metadata: new Map([['credential_set_id', 'docs-grant']]),
+      },
+      {
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:search:refresh',
+        _id: 'search-refresh-record',
+      },
+    ]);
+
+    await expect(
+      getMCPAuthorizationIdentities({
+        userId: 'user-a',
+        serverNames: ['docs', 'search', 'public'],
+        findToken,
+        findTokens,
+      }),
+    ).resolves.toEqual(
+      new Map([
+        ['docs', 'docs-grant'],
+        ['search', 'search-refresh-record'],
+        ['public', 'none'],
+      ]),
+    );
+    expect(findTokens).toHaveBeenCalledTimes(1);
+    expect(findToken).not.toHaveBeenCalled();
   });
 
   it('falls back to a non-secret token record identity for legacy grants', async () => {

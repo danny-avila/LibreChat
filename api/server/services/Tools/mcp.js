@@ -4,10 +4,11 @@ const {
   getMissingCustomUserVars,
   requiresEphemeralUserConnection,
   getMissingRuntimeBodyPlaceholderFields,
+  isOAuthServer,
 } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
-const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
+const { findToken, findTokens, createToken, updateToken, deleteTokens } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { exchangeOboToken } = require('~/server/services/OboTokenService');
 const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
@@ -167,10 +168,10 @@ async function reinitMCPServer({
 
     const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
     const mcpManager = getMCPManager();
-    const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
-    const configuredOAuth = serverConfig?.requiresOAuth === true || serverConfig?.oauth != null;
+    const tokenMethods = { findToken, findTokens, updateToken, createToken, deleteTokens };
+    const configuredOAuth = serverConfig ? isOAuthServer(serverConfig) : false;
     const authorizationIdentityBeforeDiscovery = configuredOAuth
-      ? await getMCPAuthorizationIdentity({ userId: user.id, serverName, findToken })
+      ? await getMCPAuthorizationIdentity({ userId: user.id, serverName, findToken, findTokens })
       : 'none';
 
     const oauthStart =
@@ -273,7 +274,12 @@ async function reinitMCPServer({
     if (tools) {
       const authorizationIdentityAfterDiscovery =
         configuredOAuth || oauthRequired
-          ? await getMCPAuthorizationIdentity({ userId: user.id, serverName, findToken })
+          ? await getMCPAuthorizationIdentity({
+              userId: user.id,
+              serverName,
+              findToken,
+              findTokens,
+            })
           : 'none';
       const authorizationIdentity =
         authorizationIdentityBeforeDiscovery != null &&
@@ -287,6 +293,7 @@ async function reinitMCPServer({
         tools,
         serverConfig,
         customUserVars,
+        role: user.role,
         authorizationIdentity,
         persistCatalog: authorizationIdentity != null,
         discoveryProvenance,

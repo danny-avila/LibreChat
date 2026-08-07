@@ -263,14 +263,15 @@ export function matchesMCPConnectionProvenance(
   }
   const expected = createMCPToolCatalogScope(input);
   const actual = provenance.scope;
-  const principalMatches =
-    actual.principal === expected.principal ||
-    (provenance.principalKind === 'app' &&
-      input.authorizationIdentity === 'none' &&
-      Object.keys(input.customUserVars ?? {}).length === 0);
+  const appShareable =
+    provenance.principalKind === 'app' &&
+    input.authorizationIdentity === 'none' &&
+    Object.keys(input.customUserVars ?? {}).length === 0;
+  const principalMatches = actual.principal === expected.principal || appShareable;
+  const tenantMatches = actual.tenant === expected.tenant || appShareable;
   return (
     principalMatches &&
-    actual.tenant === expected.tenant &&
+    tenantMatches &&
     actual.server === expected.server &&
     actual.policy === expected.policy &&
     actual.config === expected.config &&
@@ -282,14 +283,22 @@ export function getMCPToolCatalogRevision(serverConfig: ParsedServerConfig): str
   return fingerprint(declarativeConfig(serverConfig));
 }
 
-function getCredentialSetId(token: IToken | null): string | undefined {
+interface MCPAuthorizationIdentityRecord {
+  _id?: IToken['_id'] | string;
+  type?: string;
+  identifier?: string;
+  createdAt?: Date;
+  metadata?: IToken['metadata'] | Record<string, unknown>;
+}
+
+function getCredentialSetId(token: MCPAuthorizationIdentityRecord | null): string | undefined {
   const metadata =
     token?.metadata instanceof Map ? Object.fromEntries(token.metadata) : token?.metadata;
   const value = metadata?.credential_set_id;
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-function getRecordIdentity(token: IToken | null): string | undefined {
+function getRecordIdentity(token: MCPAuthorizationIdentityRecord | null): string | undefined {
   if (!token) {
     return undefined;
   }
@@ -297,15 +306,117 @@ function getRecordIdentity(token: IToken | null): string | undefined {
   return getCredentialSetId(token) ?? (recordIdentity != null ? String(recordIdentity) : undefined);
 }
 
+export type MCPAuthorizationTokenBatchFinder = (query: {
+  userId: string;
+  type: { $in: string[] };
+  identifier: { $in: string[] };
+}) => Promise<MCPAuthorizationIdentityRecord[]>;
+
+const MCP_AUTHORIZATION_TOKEN_TYPES = [
+  'mcp_oauth_client',
+  'mcp_oauth_refresh',
+  'mcp_oauth',
+] as const;
+
+function authorizationRecordKey(type: string, identifier: string): string {
+  return `${type}\0${identifier}`;
+}
+
+function resolveAuthorizationIdentity(
+  records: ReadonlyMap<string, MCPAuthorizationIdentityRecord>,
+  serverName: string,
+): string {
+  const identifier = `mcp:${serverName}`;
+  return (
+    getRecordIdentity(
+      records.get(authorizationRecordKey('mcp_oauth_client', `${identifier}:client`)) ?? null,
+    ) ??
+    getRecordIdentity(
+      records.get(authorizationRecordKey('mcp_oauth_refresh', `${identifier}:refresh`)) ?? null,
+    ) ??
+    getRecordIdentity(records.get(authorizationRecordKey('mcp_oauth', identifier)) ?? null) ??
+    'none'
+  );
+}
+
+export async function getMCPAuthorizationIdentities({
+  userId,
+  serverNames,
+  findToken,
+  findTokens,
+}: {
+  userId: string;
+  serverNames: string[];
+  findToken: TokenMethods['findToken'];
+  findTokens?: MCPAuthorizationTokenBatchFinder;
+}): Promise<Map<string, string | null>> {
+  const uniqueServerNames = [...new Set(serverNames)];
+  if (!findTokens) {
+    return new Map(
+      await Promise.all(
+        uniqueServerNames.map(
+          async (serverName) =>
+            [
+              serverName,
+              await getMCPAuthorizationIdentity({ userId, serverName, findToken }),
+            ] as const,
+        ),
+      ),
+    );
+  }
+
+  try {
+    const identifiers = uniqueServerNames.flatMap((serverName) => {
+      const identifier = `mcp:${serverName}`;
+      return [identifier, `${identifier}:refresh`, `${identifier}:client`];
+    });
+    const records = await findTokens({
+      userId,
+      type: { $in: [...MCP_AUTHORIZATION_TOKEN_TYPES] },
+      identifier: { $in: identifiers },
+    });
+    const recordsByIdentity = new Map<string, MCPAuthorizationIdentityRecord>();
+    for (const record of records) {
+      if (record.type && record.identifier) {
+        recordsByIdentity.set(authorizationRecordKey(record.type, record.identifier), record);
+      }
+    }
+    return new Map(
+      uniqueServerNames.map(
+        (serverName) =>
+          [serverName, resolveAuthorizationIdentity(recordsByIdentity, serverName)] as const,
+      ),
+    );
+  } catch (error) {
+    logger.warn(
+      `[MCP Catalog] Authorization scope unavailable for ${uniqueServerNames.length} server(s)`,
+      error,
+    );
+    return new Map(uniqueServerNames.map((serverName) => [serverName, null] as const));
+  }
+}
+
 export async function getMCPAuthorizationIdentity({
   userId,
   serverName,
   findToken,
+  findTokens,
 }: {
   userId: string;
   serverName: string;
   findToken: TokenMethods['findToken'];
+  findTokens?: MCPAuthorizationTokenBatchFinder;
 }): Promise<string | null> {
+  if (findTokens) {
+    const identities = await getMCPAuthorizationIdentities({
+      userId,
+      serverNames: [serverName],
+      findToken,
+      findTokens,
+    });
+    return identities.get(serverName) ?? null;
+  }
+
   const identifier = `mcp:${serverName}`;
   try {
     const [access, refresh, client] = await Promise.all([

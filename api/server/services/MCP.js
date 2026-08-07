@@ -1315,6 +1315,7 @@ async function hasDurableMCPAuthorization(userId, serverName, config, runtimeCon
     getMCPServersRegistry().resolveAllowlists({
       userId,
       role: runtimeContext.user?.role,
+      tenantId: runtimeContext.user?.tenantId ?? getTenantId() ?? null,
     }));
   if (
     runtimeConfig.url &&

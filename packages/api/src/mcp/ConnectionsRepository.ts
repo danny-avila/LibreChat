@@ -1,14 +1,14 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
-import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
-import { isUserSourced, requiresUserScopedConnection } from './utils';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPConnection } from './connection';
 import {
   createMCPToolCatalogSecurityPolicyIdentity,
   isMCPToolCatalogFingerprintAvailable,
   matchesMCPConnectionProvenance,
 } from './catalog';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { isUserSourced, requiresUserScopedConnection } from './utils';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
 
 const CONNECT_CONCURRENCY = 3;
@@ -63,8 +63,19 @@ export class ConnectionsRepository {
       return null;
     }
     const registry = MCPServersRegistry.getInstance();
-    const { allowedDomains, allowedAddresses, useSSRFProtection } =
-      await registry.resolveAllowlists({ userId: this.ownerId });
+    const policy =
+      this.ownerId == null
+        ? {
+            allowedDomains: registry.getAllowedDomains(),
+            allowedAddresses: registry.getAllowedAddresses(),
+            useSSRFProtection: registry.shouldEnableSSRFProtection(),
+          }
+        : await registry.resolveAllowlists({
+            userId: this.ownerId,
+            role: this.oauthOpts?.user?.role,
+            tenantId: this.oauthOpts?.user?.tenantId ?? null,
+          });
+    const { allowedDomains, allowedAddresses, useSSRFProtection } = policy;
     if (existingConnection) {
       // Check if config was cached/updated since connection was created
       if (serverConfig.updatedAt && existingConnection.isStale(serverConfig.updatedAt)) {

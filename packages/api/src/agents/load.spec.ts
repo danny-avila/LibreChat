@@ -59,7 +59,6 @@ describe('loadEphemeralAgent ephemeral id stability (#14253 Bug 2)', () => {
           body: { ephemeralAgent: { mcp: ['docs'] } },
         },
         endpoint: 'my-custom-endpoint',
-        model_parameters: {},
       },
       { ...deps, getMCPServerTools },
     );

@@ -11,12 +11,16 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
   getMCPAuthorizationIdentity: (...args) => mockGetMCPAuthorizationIdentity(...args),
+  isOAuthServer: (config) =>
+    config.requiresOAuth !== false && (config.requiresOAuth === true || config.oauth != null),
   createMCPToolCacheService: jest.fn(() => ({
     mergeAppTools: jest.fn(),
     cacheMCPServerTools: jest.fn(),
+    cacheScopedMCPServerTools: jest.fn(),
     updateMCPServerTools: jest.fn(),
     getMCPServerCatalog: jest.fn(),
     getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
+    getScopedMCPServerTools: (...args) => mockGetMCPServerTools(...args),
   })),
   MCPServersRegistry: {
     getInstance: jest.fn(() => ({
@@ -46,6 +50,12 @@ describe('getScopedMCPServerTools', () => {
   });
 
   it('passes an explicit tenant and no-grant identity for a public server', async () => {
+    mockGetServerConfig.mockResolvedValue({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+      requiresOAuth: false,
+      oauth: { clientId: 'explicitly-disabled' },
+    });
     const findToken = jest.fn();
     const tools = await getScopedMCPServerTools({
       user: { id: 'user-1', tenantId: 'tenant-1' },
@@ -56,14 +66,15 @@ describe('getScopedMCPServerTools', () => {
 
     expect(tools).toEqual({ search_mcp_docs: {} });
     expect(mockGetMCPAuthorizationIdentity).not.toHaveBeenCalled();
-    expect(mockGetMCPServerTools).toHaveBeenCalledWith(
-      'user-1',
-      'docs',
-      expect.any(Object),
-      undefined,
-      'tenant-1',
-      'none',
-    );
+    expect(mockGetMCPServerTools).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'docs',
+      serverConfig: expect.any(Object),
+      customUserVars: undefined,
+      tenantId: 'tenant-1',
+      role: undefined,
+      authorizationIdentity: 'none',
+    });
   });
 
   it('fails closed when OAuth grant identity is unavailable', async () => {

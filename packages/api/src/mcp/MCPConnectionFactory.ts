@@ -16,6 +16,11 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { MCPConnectionProvenance } from './types';
 import type * as t from './types';
 import {
+  createMCPConnectionProvenance,
+  createMCPToolCatalogSecurityPolicyIdentity,
+  isMCPToolCatalogFingerprintAvailable,
+} from './catalog';
+import {
   MCPTokenStorage,
   MCPOAuthHandler,
   OboTokenResolutionError,
@@ -29,11 +34,6 @@ import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
 import { mcpConfig } from './mcpConfig';
-import {
-  createMCPConnectionProvenance,
-  createMCPToolCatalogSecurityPolicyIdentity,
-  isMCPToolCatalogFingerprintAvailable,
-} from './catalog';
 
 export interface ToolDiscoveryResult {
   tools: Tool[] | null;
@@ -234,7 +234,7 @@ export class MCPConnectionFactory {
     try {
       const tools = await this.attemptUnauthenticatedToolListing();
       connection.removeListener('oauthRequired', oauthHandler);
-      if (tools && tools.length > 0) {
+      if (Array.isArray(tools)) {
         logger.info(
           `${this.logPrefix} [Discovery] Successfully discovered ${tools.length} tools without auth`,
         );
@@ -333,16 +333,16 @@ export class MCPConnectionFactory {
     this.customUserVars = options?.customUserVars;
     this.connectionTimeout = options?.connectionTimeout;
     this.tenantContext = tenantStorage?.getStore?.();
-    this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
+    this.tenantId = options?.user?.tenantId ?? this.tenantContext?.tenantId ?? getTenantId();
     this.logPrefix = options?.user
       ? `[MCP][${basic.serverName}][${options.user.id}]`
       : `[MCP][${basic.serverName}]`;
 
     this.user = options?.user;
+    this.userId = options?.user?.id;
 
     if (options != null && 'useOAuth' in options) {
       this.useOAuth = true;
-      this.userId = options.user?.id;
       this.flowManager = options.flowManager;
       this.tokenMethods = options.tokenMethods;
       this.signal = options.signal;
@@ -368,9 +368,10 @@ export class MCPConnectionFactory {
     if (authorizationIdentity == null) {
       return null;
     }
+    const principalKind = this.userId ? 'user' : 'app';
     return createMCPConnectionProvenance(
       {
-        tenantId: this.tenantId ?? null,
+        tenantId: principalKind === 'app' ? null : (this.tenantId ?? null),
         userId: this.userId ?? '__app__',
         serverName: this.serverName,
         serverConfig: this.declarativeServerConfig as t.ParsedServerConfig,
@@ -382,7 +383,7 @@ export class MCPConnectionFactory {
         customUserVars: this.customUserVars,
         authorizationIdentity,
       },
-      this.userId ? 'user' : 'app',
+      principalKind,
     );
   }
 

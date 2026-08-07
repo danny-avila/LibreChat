@@ -1,8 +1,15 @@
 import { logger, getTenantId } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import type { MCPAuthorizationTokenBatchFinder } from './catalog';
 import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
 import type { FlowState } from '~/flow/types';
 import type * as t from './types';
+import {
+  createMCPToolCatalogSecurityPolicyIdentity,
+  getMCPAuthorizationIdentity,
+  isMCPToolCatalogFingerprintAvailable,
+  matchesMCPConnectionProvenance,
+} from './catalog';
 import {
   getMissingRuntimeBodyPlaceholderFields,
   hasRuntimeUrlPlaceholders,
@@ -20,12 +27,6 @@ import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
 import { mcpConfig } from './mcpConfig';
-import {
-  createMCPToolCatalogSecurityPolicyIdentity,
-  getMCPAuthorizationIdentity,
-  isMCPToolCatalogFingerprintAvailable,
-  matchesMCPConnectionProvenance,
-} from './catalog';
 
 type PendingOAuthStart = {
   authURL: string;
@@ -475,7 +476,11 @@ export abstract class UserConnectionManager {
       });
       const registry = MCPServersRegistry.getInstance();
       const { allowedDomains, allowedAddresses, useSSRFProtection } =
-        await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
+        await registry.resolveAllowlists({
+          userId: user?.id,
+          role: user?.role,
+          tenantId: user?.tenantId ?? getTenantId() ?? null,
+        });
       await this.assertResolvedRuntimeConfigAllowed({
         config: runtimeConfig,
         user,
@@ -594,11 +599,15 @@ export abstract class UserConnectionManager {
     if (configuredOAuth && !tokenMethods?.findToken) {
       return false;
     }
+    const batchTokenMethods = tokenMethods as
+      | { findTokens?: MCPAuthorizationTokenBatchFinder }
+      | undefined;
     const authorizationIdentity = configuredOAuth
       ? await getMCPAuthorizationIdentity({
           userId,
           serverName,
           findToken: tokenMethods!.findToken!,
+          findTokens: batchTokenMethods?.findTokens,
         })
       : 'none';
     if (authorizationIdentity == null) {
@@ -608,6 +617,7 @@ export abstract class UserConnectionManager {
     const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
       userId,
       role: user?.role,
+      tenantId: user?.tenantId ?? getTenantId() ?? null,
     });
     const effectiveServerConfig = await this.resolveRuntimeConfig({
       config,
@@ -756,6 +766,7 @@ export abstract class UserConnectionManager {
     const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
       userId: user?.id,
       role: user?.role,
+      tenantId: user?.tenantId ?? getTenantId() ?? null,
     });
     const allowed = await isMCPDomainAllowed(resolvedConfig, allowedDomains, allowedAddresses);
     if (!allowed) {

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
+const { logger, tenantStorage } = require('@librechat/data-schemas');
 const { mergeAppTools, getAppConfig } = require('./Config');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
 
@@ -8,10 +8,18 @@ const { createMCPServersRegistry, createMCPManager } = require('~/config');
  * config. The registry calls this per inspection/connection so admin-panel `mcpSettings`
  * overrides are honored without a restart. Tenant comes from the ALS context inside
  * `getAppConfig`; `userId`/`role` pick up user/role-scoped overrides when an actor exists.
- * @param {{ userId?: string, role?: string }} [ctx]
+ * @param {{ userId?: string, role?: string, tenantId?: string | null }} [ctx]
  */
 async function resolveMCPAllowlists(ctx) {
-  const appConfig = await getAppConfig({ role: ctx?.role, userId: ctx?.userId });
+  const resolve = () =>
+    getAppConfig({
+      role: ctx?.role,
+      userId: ctx?.userId,
+      tenantId: ctx?.tenantId ?? undefined,
+    });
+  const appConfig = Object.prototype.hasOwnProperty.call(ctx ?? {}, 'tenantId')
+    ? await tenantStorage.run({ tenantId: ctx.tenantId ?? undefined }, resolve)
+    : await resolve();
   return {
     allowedDomains: appConfig?.mcpSettings?.allowedDomains,
     allowedAddresses: appConfig?.mcpSettings?.allowedAddresses,

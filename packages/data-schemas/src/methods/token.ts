@@ -1,10 +1,18 @@
 import type { QueryOptions } from 'mongoose';
-import { IToken, TokenCreateData, TokenQuery, TokenUpdateData, TokenDeleteResult } from '~/types';
+import {
+  IToken,
+  TokenQuery,
+  TokenCreateData,
+  TokenUpdateData,
+  TokenDeleteResult,
+  TokenIdentityRecord,
+} from '~/types';
 import logger from '~/config/winston';
 
 // Factory function that takes mongoose instance and returns the methods
 export function createTokenMethods(mongoose: typeof import('mongoose')): {
   findToken: (query: TokenQuery, options?: QueryOptions) => Promise<IToken | null>;
+  findTokens?: (query: TokenQuery, options?: QueryOptions) => Promise<TokenIdentityRecord[]>;
   createToken: (tokenData: TokenCreateData) => Promise<IToken>;
   updateToken: (query: TokenQuery, updateData: TokenUpdateData) => Promise<IToken | null>;
   deleteTokens: (query: TokenQuery) => Promise<TokenDeleteResult>;
@@ -135,9 +143,48 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
     }
   }
 
+  /** Finds non-secret token identity metadata matching the provided query. */
+  async function findTokens(
+    query: TokenQuery,
+    options?: QueryOptions,
+  ): Promise<TokenIdentityRecord[]> {
+    try {
+      const Token = mongoose.models.Token;
+      const conditions = [];
+
+      if (query.userId) {
+        conditions.push({ userId: query.userId });
+      }
+      if (query.token) {
+        conditions.push({ token: query.token });
+      }
+      if (query.email !== undefined) {
+        const email = query.email === null ? null : query.email.trim().toLowerCase();
+        conditions.push({ email });
+      }
+      if (query.type !== undefined) {
+        conditions.push({ type: query.type });
+      }
+      if (query.identifier !== undefined) {
+        conditions.push({ identifier: query.identifier });
+      }
+      if (query.metadataCredentialSetId !== undefined) {
+        conditions.push({ 'metadata.credential_set_id': query.metadataCredentialSetId });
+      }
+
+      return await Token.find({ $and: conditions }, null, options)
+        .select('_id type identifier createdAt metadata')
+        .lean<TokenIdentityRecord[]>();
+    } catch (error) {
+      logger.debug('An error occurred while finding tokens:', error);
+      throw error;
+    }
+  }
+
   // Return all methods
   return {
     findToken,
+    findTokens,
     createToken,
     updateToken,
     deleteTokens,
