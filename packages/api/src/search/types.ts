@@ -1,0 +1,112 @@
+import type { Pool, PoolClient } from 'pg';
+
+export type SearchTarget = 'messages' | 'conversations' | 'shared-links';
+
+/** Row `kind` discriminator stored in `chat_search.documents`. */
+export type SearchKind = 'message' | 'conversation' | 'shared-link';
+
+export type SearchOp = 'upsert' | 'tombstone';
+
+export type SortField = 'title' | 'createdAt' | 'updatedAt';
+
+export type SortDirection = 'asc' | 'desc';
+
+export type SearchScope = Readonly<{
+  tenantId: string;
+  userId: string;
+}>;
+
+export type SearchFilters = {
+  archived?: boolean;
+  tags?: readonly string[];
+  projectId?: string | 'unassigned';
+  sort?: SortField;
+  direction?: SortDirection;
+};
+
+export type ChatSearchRequest = Readonly<{
+  target: SearchTarget;
+  scope: SearchScope;
+  query: string;
+  limit: number;
+  cursor?: string;
+  filters?: SearchFilters;
+}>;
+
+export type SearchDegradation = 'embedding-unavailable' | 'clickhouse-unavailable';
+
+export type SearchSource = 'postgres' | 'clickhouse';
+
+export type ChatSearchHit = Readonly<{
+  recordId: string;
+  conversationId: string;
+  score: number;
+  source: SearchSource;
+}>;
+
+export type ChatSearchResult = {
+  hits: readonly ChatSearchHit[];
+  nextCursor: string | null;
+  degradations: readonly SearchDegradation[];
+};
+
+export interface ChatSearch {
+  search(request: ChatSearchRequest): Promise<ChatSearchResult>;
+  isReady(): Promise<boolean>;
+}
+
+/**
+ * Pre-response hit representation. `projectionVersion` never leaves the module;
+ * it exists so fusion can arbitrate between a PostgreSQL row and a ClickHouse
+ * row for the same key (higher version wins, PostgreSQL breaks ties).
+ */
+export type InternalHit = ChatSearchHit & {
+  projectionVersion: number;
+};
+
+/** Opaque, versioned, HMAC-signed keyset cursor. */
+export type CursorPayload = {
+  v: number;
+  primary: string;
+  secondary: string;
+};
+
+export type SearchRecordKey = Readonly<{
+  tenantId: string;
+  userId: string;
+  kind: SearchKind;
+  recordId: string;
+}>;
+
+/** Source-store projection of one record, as the projector reads it. */
+export type ProjectionSource = SearchRecordKey & {
+  conversationId: string | null;
+  title: string;
+  body: string;
+  tags: readonly string[];
+  isArchived: boolean;
+  projectId: string | null;
+  isTemporary: boolean;
+  sourceCreatedAt: Date | null;
+  sourceUpdatedAt: Date | null;
+  expiresAt: Date | null;
+  unfinished: boolean;
+};
+
+export type ProjectionEvent = SearchRecordKey & {
+  op: SearchOp;
+  eventId: string;
+};
+
+export type EmbeddingWrite = SearchRecordKey & {
+  space: string;
+  embeddingInputHash: string;
+  model: string;
+  dimensions: number;
+  normalized: boolean;
+  formatterVersion: string;
+  embedding: readonly number[];
+};
+
+export type SearchPool = Pool;
+export type SearchClient = PoolClient;
