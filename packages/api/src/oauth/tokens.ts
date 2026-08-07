@@ -11,6 +11,21 @@ import { logAxiosError } from '~/utils';
 const actionOAuthAgents = createSSRFSafeAgents();
 const actionOAuthAgentsByAddress = new Map<string, ReturnType<typeof createSSRFSafeAgents>>();
 
+/**
+ * Decrypts an action OAuth credential, reversing the `encodeURIComponent` applied before encryption.
+ * Encoding-before-encryption was introduced in 299cabd6e (March 2025); credentials stored earlier
+ * are encrypted without it, so a legacy secret containing a raw `%` would make `decodeURIComponent`
+ * throw `URIError`. In that case the decrypted value is returned unchanged.
+ */
+async function decryptSensitiveValue(encryptedValue: string): Promise<string> {
+  const decryptedValue = await decryptV2(encryptedValue);
+  try {
+    return decodeURIComponent(decryptedValue);
+  } catch {
+    return decryptedValue;
+  }
+}
+
 function getActionOAuthAgents(allowedAddresses?: string[] | null) {
   if (!Array.isArray(allowedAddresses) || allowedAddresses.length === 0) {
     return actionOAuthAgents;
@@ -189,8 +204,8 @@ export async function refreshAccessToken(
   await validateActionOAuthEndpoint(client_url, 'client_url', allowedAddresses);
 
   try {
-    const oauth_client_id = await decryptV2(encrypted_oauth_client_id);
-    const oauth_client_secret = await decryptV2(encrypted_oauth_client_secret);
+    const oauth_client_id = await decryptSensitiveValue(encrypted_oauth_client_id);
+    const oauth_client_secret = await decryptSensitiveValue(encrypted_oauth_client_secret);
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -294,8 +309,8 @@ export async function getAccessToken(
 }> {
   await validateActionOAuthEndpoint(client_url, 'client_url', allowedAddresses);
 
-  const oauth_client_id = await decryptV2(encrypted_oauth_client_id);
-  const oauth_client_secret = await decryptV2(encrypted_oauth_client_secret);
+  const oauth_client_id = await decryptSensitiveValue(encrypted_oauth_client_id);
+  const oauth_client_secret = await decryptSensitiveValue(encrypted_oauth_client_secret);
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/x-www-form-urlencoded',
