@@ -160,6 +160,36 @@ describePg('chat_search migrations (live PostgreSQL)', () => {
     expect(rows).toHaveLength(0);
   });
 
+  it('carries the fencing token and gap barrier the outbox consumer needs', async () => {
+    const { rows } = await pool.query<{ column_name: string; data_type: string }>(
+      `SELECT column_name, data_type
+         FROM information_schema.columns
+        WHERE table_schema = 'chat_search' AND table_name = 'watermark'
+        ORDER BY column_name`,
+    );
+    const columns = new Map(rows.map((r) => [r.column_name, r.data_type]));
+    expect(columns.get('applied_seq')).toBe('bigint');
+    expect(columns.get('applied_version')).toBe('bigint');
+    /** Fences a consumer that wakes up after losing the lease. */
+    expect(columns.get('lease_epoch')).toBe('bigint');
+    /**
+     * An aborted transaction burns its `outbox_seq` permanently, so a pure
+     * contiguous-prefix rule would stall forever. The barrier records the
+     * snapshot bound at which the gap becomes provably permanent.
+     */
+    expect(columns.get('gap_barrier_seq')).toBe('bigint');
+    expect(columns.get('gap_barrier_xmax')).toBe('numeric');
+  });
+
+  it('names the outbox timestamp column the consumer reads', async () => {
+    const { rows } = await pool.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'chat_search' AND table_name = 'outbox'
+          AND column_name = 'enqueued_at'`,
+    );
+    expect(rows).toHaveLength(1);
+  });
+
   it('passes the role separation gate', async () => {
     await expect(findRoleViolations(pool)).resolves.toEqual([]);
   });

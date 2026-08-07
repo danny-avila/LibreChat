@@ -25,7 +25,7 @@ export type RoleViolation = {
 };
 
 /**
- * The weekend leak gate, expressed as a query rather than a checklist: no
+ * The role-separation gate, expressed as a query rather than a checklist: no
  * application role is superuser or BYPASSRLS, the request reader owns no table
  * and holds no privilege on the projector-only tables, and the two serving
  * tables have RLS both enabled and forced.

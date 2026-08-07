@@ -1,0 +1,427 @@
+import { normalizeTenantId } from '@librechat/data-schemas';
+import type {
+  EmbeddingWrite,
+  ProjectionSource,
+  SearchClient,
+  SearchRecordKey,
+  SearchKind,
+} from './types';
+import { contentHash, embeddingInputHash, normalizeSearchText } from './hash';
+import { POISON_FAILURE_LIMIT, RECORD_LOCK_CLASS } from './constants';
+import { assertLeaseEpoch } from './lease';
+
+/**
+ * Every write in this module runs under two locks and one fence:
+ *
+ *  - the projector lease epoch (`assertLeaseEpoch`), so a deposed holder cannot
+ *    commit;
+ *  - a per-record transaction-scoped advisory lock, so two concurrent
+ *    read-source-then-upsert cycles for the same record serialize rather than
+ *    interleave — the source store has no per-record version to arbitrate with
+ *    (`findOneAndUpdate` never bumps `__v`, no `optimisticConcurrency` is
+ *    configured anywhere), so without this the older source state can win;
+ *  - a version guard in the `ON CONFLICT` clause, so an out-of-order write loses
+ *    even if both other mechanisms were somehow bypassed.
+ */
+
+/**
+ * Unit separator: valid UTF-8 (unlike NUL, which PostgreSQL rejects outright in
+ * a text parameter) and not a character that appears in a tenant, user, kind or
+ * record identifier, so distinct keys cannot collide into one lock.
+ */
+const KEY_SEPARATOR = '\u001f';
+
+function recordKeyString(key: SearchRecordKey): string {
+  return [key.tenantId, key.userId, key.kind, key.recordId].join(KEY_SEPARATOR);
+}
+
+/**
+ * Serializes all work for one record. Transaction-scoped, so it releases on
+ * commit or rollback with no unlock to forget.
+ */
+export async function lockRecord(client: SearchClient, key: SearchRecordKey): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [
+    RECORD_LOCK_CLASS,
+    recordKeyString(key),
+  ]);
+}
+
+export type UpsertResult = Readonly<{
+  applied: boolean;
+  projectionVersion: number | null;
+  embeddingInputHash: string;
+  embeddingStale: boolean;
+}>;
+
+/**
+ * Projects one source record and appends its outbox row **in the same
+ * transaction**.
+ *
+ * The version is assigned here, by the lease holder, rather than read from the
+ * source: Mongo/FerretDB records have no monotonic per-record version, so there
+ * is nothing authoritative to copy. The outbox row carries that
+ * projector-assigned version downstream, which is what lets ClickHouse replay
+ * idempotently.
+ *
+ * The `WHERE excluded.projection_version > documents.projection_version` guard
+ * makes a late-arriving older write a no-op rather than a regression — the CTE
+ * returns no row, so no outbox entry is written either and downstream never sees
+ * a version that lost.
+ */
+export async function upsertDocument(
+  client: SearchClient,
+  epoch: number,
+  source: ProjectionSource,
+  space: string,
+): Promise<UpsertResult> {
+  await assertLeaseEpoch(client, epoch);
+  const key: SearchRecordKey = {
+    tenantId: normalizeTenantId(source.tenantId),
+    userId: source.userId,
+    kind: source.kind,
+    recordId: source.recordId,
+  };
+  await lockRecord(client, key);
+
+  const nextContentHash = contentHash(source);
+  const nextEmbeddingHash = embeddingInputHash(source, space);
+
+  const { rows } = await client.query<{
+    projection_version: string;
+    embedding_stale: boolean;
+  }>(
+    `WITH v AS (SELECT nextval('chat_search.projection_version_seq') AS version),
+     prior AS (
+       SELECT embedding_input_hash FROM chat_search.documents
+        WHERE tenant_id = $1 AND user_id = $2 AND kind = $3 AND record_id = $4
+     ),
+     ins AS (
+       INSERT INTO chat_search.documents (
+         tenant_id, user_id, kind, record_id, conversation_id, title, body, tags,
+         is_archived, project_id, is_temporary, source_created_at, source_updated_at,
+         expires_at, projection_version, content_hash, embedding_input_hash,
+         deleted_at, updated_at
+       )
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8::text[], $9, $10, $11, $12, $13, $14,
+              v.version, $15, $16, NULL, now()
+         FROM v
+       ON CONFLICT (tenant_id, user_id, kind, record_id) DO UPDATE SET
+         conversation_id = excluded.conversation_id,
+         title = excluded.title,
+         body = excluded.body,
+         tags = excluded.tags,
+         is_archived = excluded.is_archived,
+         project_id = excluded.project_id,
+         is_temporary = excluded.is_temporary,
+         source_created_at = excluded.source_created_at,
+         source_updated_at = excluded.source_updated_at,
+         expires_at = excluded.expires_at,
+         projection_version = excluded.projection_version,
+         content_hash = excluded.content_hash,
+         embedding_input_hash = excluded.embedding_input_hash,
+         deleted_at = NULL,
+         updated_at = now()
+       WHERE excluded.projection_version > chat_search.documents.projection_version
+       RETURNING projection_version
+     ),
+     out AS (
+       INSERT INTO chat_search.outbox
+         (tenant_id, user_id, kind, record_id, projection_version, op)
+       SELECT $1, $2, $3, $4, ins.projection_version, 'upsert' FROM ins
+       RETURNING projection_version
+     )
+     SELECT out.projection_version,
+            COALESCE((SELECT embedding_input_hash FROM prior), '') <> $16 AS embedding_stale
+       FROM out`,
+    [
+      key.tenantId,
+      key.userId,
+      key.kind,
+      key.recordId,
+      source.conversationId,
+      source.title,
+      source.body,
+      [...source.tags],
+      source.isArchived,
+      source.projectId,
+      source.isTemporary,
+      source.sourceCreatedAt,
+      source.sourceUpdatedAt,
+      source.expiresAt,
+      nextContentHash,
+      nextEmbeddingHash,
+    ],
+  );
+
+  if (rows.length === 0) {
+    return Object.freeze({
+      applied: false,
+      projectionVersion: null,
+      embeddingInputHash: nextEmbeddingHash,
+      embeddingStale: false,
+    });
+  }
+
+  return Object.freeze({
+    applied: true,
+    projectionVersion: Number(rows[0].projection_version),
+    embeddingInputHash: nextEmbeddingHash,
+    embeddingStale: rows[0].embedding_stale,
+  });
+}
+
+/**
+ * Tombstones one record.
+ *
+ * Title and body are zeroed so deleted text does not persist in PostgreSQL for
+ * the retention window, and the embeddings row is **deleted** rather than
+ * zeroed: cosine distance against a zero vector is NaN, which does not reliably
+ * sort last, so a zeroed vector could still surface.
+ *
+ * Note the deletion is explicit rather than riding the FK cascade. A tombstone
+ * is an UPDATE of the documents row — the row survives so the ClickHouse
+ * anti-join can still find it and reject a ghost candidate — and `ON DELETE
+ * CASCADE` does not fire on UPDATE. The cascade covers only the hard-delete path
+ * used by retention cleanup once the ClickHouse key has provably collapsed.
+ *
+ * `>=` rather than `>` is deliberate: tombstones win equal-version conflicts.
+ */
+export async function tombstoneDocument(
+  client: SearchClient,
+  epoch: number,
+  key: SearchRecordKey,
+  now: Date = new Date(),
+): Promise<{ applied: boolean; projectionVersion: number | null }> {
+  await assertLeaseEpoch(client, epoch);
+  const scoped: SearchRecordKey = { ...key, tenantId: normalizeTenantId(key.tenantId) };
+  await lockRecord(client, scoped);
+
+  const { rows } = await client.query<{ projection_version: string }>(
+    `WITH v AS (SELECT nextval('chat_search.projection_version_seq') AS version),
+     upd AS (
+       UPDATE chat_search.documents d
+          SET title = '',
+              body = '',
+              tags = '{}'::text[],
+              deleted_at = COALESCE(d.deleted_at, $5),
+              projection_version = v.version,
+              updated_at = now()
+         FROM v
+        WHERE d.tenant_id = $1 AND d.user_id = $2 AND d.kind = $3 AND d.record_id = $4
+          AND v.version >= d.projection_version
+       RETURNING d.projection_version
+     ),
+     del AS (
+       DELETE FROM chat_search.embeddings
+        WHERE tenant_id = $1 AND user_id = $2 AND kind = $3 AND record_id = $4
+          AND EXISTS (SELECT 1 FROM upd)
+     ),
+     out AS (
+       INSERT INTO chat_search.outbox
+         (tenant_id, user_id, kind, record_id, projection_version, op)
+       SELECT $1, $2, $3, $4, upd.projection_version, 'tombstone' FROM upd
+       RETURNING projection_version
+     )
+     SELECT projection_version FROM out`,
+    [scoped.tenantId, scoped.userId, scoped.kind, scoped.recordId, now],
+  );
+
+  if (rows.length === 0) {
+    return { applied: false, projectionVersion: null };
+  }
+  return { applied: true, projectionVersion: Number(rows[0].projection_version) };
+}
+
+/**
+ * Writes a vector only while the document's embedding-input hash still matches
+ * the text that was actually embedded — a compare-and-set in one statement.
+ *
+ * Without this, an edit that lands between "send text to the embedding service"
+ * and "store the returned vector" leaves a vector describing text that no longer
+ * exists, ranking the record by content it no longer has. The read side performs
+ * the mirror check by joining on the hash, so a stale vector that somehow lands
+ * is excluded from serving rather than merely deprioritized.
+ */
+export async function writeEmbedding(
+  client: SearchClient,
+  epoch: number,
+  write: EmbeddingWrite,
+): Promise<boolean> {
+  await assertLeaseEpoch(client, epoch);
+  const key: SearchRecordKey = { ...write, tenantId: normalizeTenantId(write.tenantId) };
+
+  const result = await client.query(
+    `INSERT INTO chat_search.embeddings (
+       tenant_id, user_id, kind, record_id, space, embedding_input_hash, model,
+       dimensions, normalized, formatter_version, embedding, updated_at
+     )
+     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::vector, now()
+       FROM chat_search.documents d
+      WHERE d.tenant_id = $1 AND d.user_id = $2 AND d.kind = $3 AND d.record_id = $4
+        AND d.deleted_at IS NULL
+        AND d.embedding_input_hash = $6
+     ON CONFLICT (tenant_id, user_id, kind, record_id, space) DO UPDATE SET
+       embedding_input_hash = excluded.embedding_input_hash,
+       model = excluded.model,
+       dimensions = excluded.dimensions,
+       normalized = excluded.normalized,
+       formatter_version = excluded.formatter_version,
+       embedding = excluded.embedding,
+       updated_at = now()`,
+    [
+      key.tenantId,
+      key.userId,
+      key.kind,
+      key.recordId,
+      write.space,
+      write.embeddingInputHash,
+      write.model,
+      write.dimensions,
+      write.normalized,
+      write.formatterVersion,
+      `[${write.embedding.join(',')}]`,
+    ],
+  );
+
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Version-fenced reconciliation sweep.
+ *
+ * Tombstones rows the source scan did not see, but only those whose version is
+ * below the counter snapshot taken at scan start. Without the fence, a record
+ * upserted by the drain *after* the scan passed its key range looks "unseen",
+ * takes a winning sweep tombstone, and stays buried until the next hourly run.
+ */
+export async function sweepUnseen(
+  client: SearchClient,
+  epoch: number,
+  kind: SearchKind,
+  versionSnapshot: number,
+  seenRecordIds: readonly string[],
+  scope: { tenantId: string; userId: string },
+  now: Date = new Date(),
+): Promise<number> {
+  await assertLeaseEpoch(client, epoch);
+  const result = await client.query(
+    `WITH v AS (SELECT nextval('chat_search.projection_version_seq') AS version),
+     victims AS (
+       SELECT d.record_id
+         FROM chat_search.documents d
+        WHERE d.tenant_id = $1 AND d.user_id = $2 AND d.kind = $3
+          AND d.deleted_at IS NULL
+          AND d.projection_version < $4
+          AND NOT (d.record_id = ANY($5::text[]))
+        FOR UPDATE
+     ),
+     upd AS (
+       UPDATE chat_search.documents d
+          SET title = '', body = '', tags = '{}'::text[],
+              deleted_at = $6, projection_version = v.version, updated_at = now()
+         FROM v, victims
+        WHERE d.tenant_id = $1 AND d.user_id = $2 AND d.kind = $3
+          AND d.record_id = victims.record_id
+       RETURNING d.record_id, d.projection_version
+     ),
+     del AS (
+       DELETE FROM chat_search.embeddings e
+        USING upd
+        WHERE e.tenant_id = $1 AND e.user_id = $2 AND e.kind = $3
+          AND e.record_id = upd.record_id
+     )
+     INSERT INTO chat_search.outbox
+       (tenant_id, user_id, kind, record_id, projection_version, op)
+     SELECT $1, $2, $3, upd.record_id, upd.projection_version, 'tombstone' FROM upd`,
+    [scope.tenantId, scope.userId, kind, versionSnapshot, [...seenRecordIds], now],
+  );
+  return result.rowCount ?? 0;
+}
+
+export async function currentVersionSnapshot(client: SearchClient): Promise<number> {
+  const { rows } = await client.query<{ version: string }>(
+    'SELECT last_value + 1 AS version FROM chat_search.projection_version_seq',
+  );
+  return Number(rows[0].version);
+}
+
+/**
+ * Poison-row policy: a record failing projection five consecutive times is
+ * quarantined and alerted on, never retried forever. One malformed document
+ * must not stall the queue behind it.
+ */
+export async function recordFailure(
+  client: SearchClient,
+  key: SearchRecordKey,
+  error: unknown,
+): Promise<boolean> {
+  const message = error instanceof Error ? error.message : String(error);
+  const { rows } = await client.query<{ quarantined: boolean }>(
+    `INSERT INTO chat_search.failures (tenant_id, user_id, kind, record_id, failures, last_error, quarantined)
+     VALUES ($1, $2, $3, $4, 1, $5, false)
+     ON CONFLICT (tenant_id, user_id, kind, record_id) DO UPDATE SET
+       failures = chat_search.failures.failures + 1,
+       last_error = excluded.last_error,
+       quarantined = chat_search.failures.failures + 1 >= $6,
+       updated_at = now()
+     RETURNING quarantined`,
+    [
+      normalizeTenantId(key.tenantId),
+      key.userId,
+      key.kind,
+      key.recordId,
+      /** Truncated: a driver error can embed a whole statement, and statements can embed text. */
+      normalizeSearchText(message).slice(0, 500),
+      POISON_FAILURE_LIMIT,
+    ],
+  );
+  return rows[0]?.quarantined === true;
+}
+
+export async function clearFailure(client: SearchClient, key: SearchRecordKey): Promise<void> {
+  await client.query(
+    `DELETE FROM chat_search.failures
+      WHERE tenant_id = $1 AND user_id = $2 AND kind = $3 AND record_id = $4`,
+    [normalizeTenantId(key.tenantId), key.userId, key.kind, key.recordId],
+  );
+}
+
+export async function quarantinedKeys(
+  client: SearchClient,
+  keys: readonly SearchRecordKey[],
+): Promise<ReadonlySet<string>> {
+  if (keys.length === 0) {
+    return new Set();
+  }
+  const { rows } = await client.query<{
+    tenant_id: string;
+    user_id: string;
+    kind: SearchKind;
+    record_id: string;
+  }>(
+    `SELECT tenant_id, user_id, kind, record_id
+       FROM chat_search.failures
+      WHERE quarantined
+        AND (tenant_id, user_id, kind, record_id) IN (
+          SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[])
+        )`,
+    [
+      keys.map((k) => normalizeTenantId(k.tenantId)),
+      keys.map((k) => k.userId),
+      keys.map((k) => k.kind),
+      keys.map((k) => k.recordId),
+    ],
+  );
+  return new Set(
+    rows.map((row) =>
+      recordKeyString({
+        tenantId: row.tenant_id,
+        userId: row.user_id,
+        kind: row.kind,
+        recordId: row.record_id,
+      }),
+    ),
+  );
+}
+
+export { recordKeyString };

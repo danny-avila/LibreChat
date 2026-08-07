@@ -115,20 +115,40 @@ CREATE TABLE IF NOT EXISTS chat_search.outbox (
   record_id           text        NOT NULL,
   projection_version  bigint      NOT NULL,
   op                  text        NOT NULL,
-  created_at          timestamptz NOT NULL DEFAULT now(),
+  enqueued_at         timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT outbox_op_check CHECK (op IN ('upsert', 'tombstone'))
 );
 
 CREATE INDEX IF NOT EXISTS outbox_key_idx
   ON chat_search.outbox (tenant_id, user_id, kind, record_id, outbox_seq DESC);
 
-CREATE INDEX IF NOT EXISTS outbox_created_idx
-  ON chat_search.outbox (created_at);
+-- Retention trim: rows are removed once applied, retained 24h for audit replay.
+CREATE INDEX IF NOT EXISTS outbox_enqueued_idx
+  ON chat_search.outbox (enqueued_at);
 
+-- One row per downstream target, written only by the lease holder.
+--
+-- `lease_epoch` is the fencing token: a consumer that lost the lease and wakes
+-- up late cannot roll the watermark back or race the new holder. A zero-row
+-- UPDATE means "fenced" and must stop the consumer rather than be retried.
+--
+-- `gap_barrier_seq` / `gap_barrier_xmax` make the contiguous-prefix rule
+-- terminate. `outbox_seq` values are drawn at INSERT time, so an aborted
+-- transaction burns its value permanently and a naive "advance only over a
+-- contiguous prefix" consumer would wait forever for a sequence number that can
+-- never commit. On first sight of a gap the consumer persists the snapshot xmax
+-- observed in the same statement; the gap may be skipped only once
+-- `pg_snapshot_xmin(pg_current_snapshot())` reaches that bound, i.e. once every
+-- transaction alive at observation time has ended and the missing value can no
+-- longer appear. `numeric` holds a 64-bit xid8 without wraparound and survives
+-- the driver round trip.
 CREATE TABLE IF NOT EXISTS chat_search.watermark (
   target            text        PRIMARY KEY,
   applied_seq       bigint      NOT NULL DEFAULT 0,
   applied_version   bigint      NOT NULL DEFAULT 0,
+  lease_epoch       bigint      NOT NULL DEFAULT 0,
+  gap_barrier_seq   bigint,
+  gap_barrier_xmax  numeric,
   updated_at        timestamptz NOT NULL DEFAULT now()
 );
 

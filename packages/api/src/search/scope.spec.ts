@@ -42,8 +42,8 @@ describe('scope resolution', () => {
   });
 
   /**
-   * The weekend gate: `runAsSystem()` sets `__SYSTEM__`, which `tenantIsolation`
-   * treats as a query-time wildcard. Search must reject it, never inherit it.
+   * `runAsSystem()` sets `__SYSTEM__`, which `tenantIsolation` treats as a
+   * query-time wildcard. Search must reject it, never inherit it.
    */
   it('rejects search invoked inside runAsSystem()', async () => {
     await tenantStorage.run({ tenantId: 'acme', userId: 'alice' }, async () => {
