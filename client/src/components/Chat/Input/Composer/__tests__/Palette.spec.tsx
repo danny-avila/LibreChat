@@ -102,21 +102,28 @@ const ATTACH: AttachEntry[] = [
   attachEntry('local:execute_code', 'Upload to Code Environment'),
 ];
 
-function renderPalette(over: { canAttach?: boolean; entries?: PaletteEntry[] } = {}) {
+function renderPalette(
+  over: { canAttach?: boolean; entries?: PaletteEntry[]; onContainerClick?: () => void } = {},
+) {
   const anchorRef = { current: document.createElement('div') };
   const view = render(
     <RecoilRoot>
-      <Palette
-        index={0}
-        conversationId="convo-1"
-        conversation={{ conversationId: 'convo-1' } as TConversation}
-        files={new Map()}
-        setFiles={jest.fn()}
-        setFilesLoading={jest.fn()}
-        canAttach={over.canAttach ?? true}
-        entries={over.entries ?? ENTRIES}
-        anchorRef={anchorRef as React.RefObject<HTMLElement>}
-      />
+      {/* Stands in for the composer box, whose own click handler focuses the
+          textarea. The popup is portaled but still a React descendant of it, so
+          this is the handler a row's click bubbles into. */}
+      <div onClick={over.onContainerClick}>
+        <Palette
+          index={0}
+          conversationId="convo-1"
+          conversation={{ conversationId: 'convo-1' } as TConversation}
+          files={new Map()}
+          setFiles={jest.fn()}
+          setFilesLoading={jest.fn()}
+          canAttach={over.canAttach ?? true}
+          entries={over.entries ?? ENTRIES}
+          anchorRef={anchorRef as React.RefObject<HTMLElement>}
+        />
+      </div>
     </RecoilRoot>,
   );
   fireEvent.click(screen.getByTestId('composer-palette-button'));
@@ -219,6 +226,48 @@ describe('Palette', () => {
       renderPalette();
       expect(rows()).toContain('Upload to Provider');
       expect(rows()).not.toContain('com_ui_composer_attach_more');
+    });
+  });
+
+  describe('clicks reaching the composer box', () => {
+    const clickRow = (key: string) => {
+      const row = document.querySelector<HTMLElement>(`[data-row-key="${key}"]`);
+      expect(row).not.toBeNull();
+      fireEvent.click(row as HTMLElement);
+    };
+
+    /* The click that opens the palette is itself on the disclosure, which sits
+       in the composer box and is meant to reach it. Only what a row does after
+       that is under test. */
+    const openPalette = () => {
+      const onContainerClick = jest.fn();
+      renderPalette({ onContainerClick });
+      onContainerClick.mockClear();
+      return onContainerClick;
+    };
+
+    it('keeps a catalog toggle from reaching the composer, so focus stays in the palette', () => {
+      const onContainerClick = openPalette();
+
+      clickRow('web_search');
+
+      expect(onContainerClick).not.toHaveBeenCalled();
+    });
+
+    it('keeps the disclosure from reaching the composer', () => {
+      const onContainerClick = openPalette();
+
+      clickRow('attach:more');
+
+      expect(onContainerClick).not.toHaveBeenCalled();
+    });
+
+    it('lets a destination that dismisses the palette hand focus back', () => {
+      const onContainerClick = openPalette();
+
+      clickRow(ATTACH[0].id);
+
+      expect(onContainerClick).toHaveBeenCalled();
     });
   });
 
