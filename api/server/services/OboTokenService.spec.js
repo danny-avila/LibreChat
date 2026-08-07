@@ -118,6 +118,44 @@ describe('OboTokenService', () => {
 
       expect(mockTokensCache.get).toHaveBeenCalledWith('oidc-sub-123:api://scope');
     });
+
+    it('should return cached token in cacheOnly mode without requiring an access token', async () => {
+      const cachedToken = {
+        access_token: 'cached-obo-token',
+        token_type: 'Bearer',
+        expires_in: 1800,
+        scope: 'api://scope',
+      };
+
+      mockTokensCache.get.mockResolvedValue(cachedToken);
+
+      const result = await exchangeOboToken(mockUser, undefined, 'api://scope', true, true);
+
+      expect(result).toBe(cachedToken);
+      expect(mockTokensCache.get).toHaveBeenCalledWith('oidc-sub-123:api://scope');
+      expect(client.genericGrantRequest).not.toHaveBeenCalled();
+      expect(getOpenIdConfig).not.toHaveBeenCalled();
+    });
+
+    it('should return null on a cache miss in cacheOnly mode without starting an exchange', async () => {
+      mockTokensCache.get.mockResolvedValue(null);
+
+      const result = await exchangeOboToken(mockUser, undefined, 'api://scope', true, true);
+
+      expect(result).toBeNull();
+      expect(mockTokensCache.get).toHaveBeenCalledWith('oidc-sub-123:api://scope');
+      expect(client.genericGrantRequest).not.toHaveBeenCalled();
+      expect(getOpenIdConfig).not.toHaveBeenCalled();
+    });
+
+    it('should reject cacheOnly mode when fromCache is false', async () => {
+      await expect(
+        exchangeOboToken(mockUser, undefined, 'api://scope', false, true),
+      ).rejects.toThrow('cacheOnly requires fromCache to be enabled');
+
+      expect(mockTokensCache.get).not.toHaveBeenCalled();
+      expect(client.genericGrantRequest).not.toHaveBeenCalled();
+    });
   });
 
   describe('OBO token exchange', () => {

@@ -14,10 +14,11 @@ export interface OboConfig {
  */
 export type OboTokenResolver = (
   user: IUser,
-  accessToken: string,
+  accessToken: string | undefined,
   scopes: string,
   fromCache?: boolean,
-) => Promise<{ access_token: string; expires_in?: number }>;
+  cacheOnly?: boolean,
+) => Promise<{ access_token: string; expires_in?: number } | null>;
 
 export type OboTokenResolutionReason =
   | 'missing_upstream_token'
@@ -113,36 +114,42 @@ function isRetryableOboExchangeError(error: unknown): boolean {
   );
 }
 
-/**
- * Performs an OBO token exchange for the given user and MCP server OBO config.
- * Returns MCPOAuthTokens suitable for injection into the MCP connection.
- */
+// /**
+//  * Performs an OBO token exchange for the given user and MCP server OBO config.
+//  * Returns MCPOAuthTokens suitable for injection into the MCP connection.
+//  */
 export async function resolveOboToken(
   user: IUser,
   oboConfig: OboConfig,
   oboTokenResolver: OboTokenResolver,
 ): Promise<MCPOAuthTokens> {
-  const tokenInfo = extractOpenIDTokenInfo(user);
-  if (!tokenInfo || !isOpenIDTokenValid(tokenInfo)) {
-    logger.warn(
-      `[OBO] No valid OpenID token available for OBO exchange (provider: ${user.provider}, hasOpenidId: ${!!user.openidId}, hasFederatedTokens: ${!!user.federatedTokens})`,
-    );
-    throw new OboTokenResolutionError(
-      'missing_upstream_token',
-      'No valid OpenID access token is available for OBO exchange.',
-    );
-  }
-
-  if (!tokenInfo.accessToken) {
-    logger.warn('[OBO] OpenID token info present but access_token is missing');
-    throw new OboTokenResolutionError(
-      'missing_upstream_access_token',
-      'The upstream OpenID access token is missing for OBO exchange.',
-    );
-  }
-
   try {
-    const response = await oboTokenResolver(user, tokenInfo.accessToken, oboConfig.scopes, true);
+    // Reuse a cached or in-flight OBO token without requiring a valid upstream token
+    let response = await oboTokenResolver(user, undefined, oboConfig.scopes, true, true);
+
+    if (!response?.access_token) {
+      // A cache miss requires a valid upstream OpenID token to perform a new OBO exchange.
+      const tokenInfo = extractOpenIDTokenInfo(user);
+      if (!tokenInfo || !isOpenIDTokenValid(tokenInfo)) {
+        logger.warn(
+          `[OBO] No valid OpenID token available for OBO exchange (provider: ${user.provider}, hasOpenidId: ${!!user.openidId}, hasFederatedTokens: ${!!user.federatedTokens})`,
+        );
+        throw new OboTokenResolutionError(
+          'missing_upstream_token',
+          'No valid OpenID access token is available for OBO exchange.',
+        );
+      }
+
+      if (!tokenInfo.accessToken) {
+        logger.warn('[OBO] OpenID token info present but access_token is missing');
+        throw new OboTokenResolutionError(
+          'missing_upstream_access_token',
+          'The upstream OpenID access token is missing for OBO exchange.',
+        );
+      }
+
+      response = await oboTokenResolver(user, tokenInfo.accessToken, oboConfig.scopes, true);
+    }
 
     if (!response?.access_token) {
       logger.warn('[OBO] Token exchange did not return an access token');

@@ -35,18 +35,38 @@ describe('resolveOboToken', () => {
     },
   };
 
-  const oboConfig = { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' };
+  const oboConfig = {
+    scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite',
+  };
 
-  const mockResolver: OboTokenResolver = jest.fn().mockResolvedValue({
-    access_token: 'exchanged-mcp-token',
-    expires_in: 3600,
-  });
+  let mockResolver: jest.MockedFunction<OboTokenResolver>;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockResolver = jest.fn();
+  });
+
+  it('should reuse a cached OBO token without requiring a valid upstream token', async () => {
+    mockResolver.mockResolvedValueOnce({
+      access_token: 'cached-mcp-token',
+      expires_in: 1800,
+    });
+
+    const result = await resolveOboToken(mockUser as IUser, oboConfig, mockResolver);
+
+    expect(mockResolver).toHaveBeenCalledTimes(1);
+    expect(mockResolver).toHaveBeenCalledWith(mockUser, undefined, oboConfig.scopes, true, true);
+
+    expect(mockExtractOpenIDTokenInfo).not.toHaveBeenCalled();
+    expect(mockIsOpenIDTokenValid).not.toHaveBeenCalled();
+
+    expect(result.access_token).toBe('cached-mcp-token');
+    expect(result.token_type).toBe('Bearer');
+    expect(result.expires_at).toBe(result.obtained_at + 1800 * 1000);
   });
 
   it('should throw when user has no valid OpenID token info', async () => {
+    mockResolver.mockResolvedValueOnce(null);
     mockExtractOpenIDTokenInfo.mockReturnValue(null);
 
     await expect(resolveOboToken(mockUser as IUser, oboConfig, mockResolver)).rejects.toMatchObject(
@@ -55,11 +75,16 @@ describe('resolveOboToken', () => {
         retryable: false,
       },
     );
-    expect(mockResolver).not.toHaveBeenCalled();
+
+    expect(mockResolver).toHaveBeenCalledTimes(1);
+    expect(mockResolver).toHaveBeenCalledWith(mockUser, undefined, oboConfig.scopes, true, true);
   });
 
   it('should throw when OpenID token is not valid (expired)', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'some-token' });
+    mockResolver.mockResolvedValueOnce(null);
+    mockExtractOpenIDTokenInfo.mockReturnValue({
+      accessToken: 'some-token',
+    });
     mockIsOpenIDTokenValid.mockReturnValue(false);
 
     await expect(resolveOboToken(mockUser as IUser, oboConfig, mockResolver)).rejects.toMatchObject(
@@ -68,11 +93,15 @@ describe('resolveOboToken', () => {
         retryable: false,
       },
     );
-    expect(mockResolver).not.toHaveBeenCalled();
+
+    expect(mockResolver).toHaveBeenCalledTimes(1);
   });
 
   it('should throw when access token is missing from token info', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ userId: 'user-123' });
+    mockResolver.mockResolvedValueOnce(null);
+    mockExtractOpenIDTokenInfo.mockReturnValue({
+      userId: 'user-123',
+    });
     mockIsOpenIDTokenValid.mockReturnValue(true);
 
     await expect(resolveOboToken(mockUser as IUser, oboConfig, mockResolver)).rejects.toMatchObject(
@@ -81,51 +110,82 @@ describe('resolveOboToken', () => {
         retryable: false,
       },
     );
-    expect(mockResolver).not.toHaveBeenCalled();
+
+    expect(mockResolver).toHaveBeenCalledTimes(1);
   });
 
   it('should call the resolver with correct arguments and return MCPOAuthTokens', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
+    mockResolver.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      access_token: 'exchanged-mcp-token',
+      expires_in: 3600,
+    });
+
+    mockExtractOpenIDTokenInfo.mockReturnValue({
+      accessToken: 'federated-access-token',
+    });
     mockIsOpenIDTokenValid.mockReturnValue(true);
 
     const beforeCall = Date.now();
+
     const result = await resolveOboToken(mockUser as IUser, oboConfig, mockResolver);
+
     const afterCall = Date.now();
 
-    expect(mockResolver).toHaveBeenCalledWith(
+    expect(mockResolver).toHaveBeenCalledTimes(2);
+
+    expect(mockResolver).toHaveBeenNthCalledWith(
+      1,
       mockUser,
-      'federated-access-token',
-      'api://mcp-server-id/Mcp.Tools.ReadWrite',
+      undefined,
+      oboConfig.scopes,
+      true,
       true,
     );
 
-    expect(result).not.toBeNull();
-    expect(result!.access_token).toBe('exchanged-mcp-token');
-    expect(result!.token_type).toBe('Bearer');
-    expect(result!.obtained_at).toBeGreaterThanOrEqual(beforeCall);
-    expect(result!.obtained_at).toBeLessThanOrEqual(afterCall);
-    expect(result!.expires_at).toBe(result!.obtained_at + 3600 * 1000);
+    expect(mockResolver).toHaveBeenNthCalledWith(
+      2,
+      mockUser,
+      'federated-access-token',
+      oboConfig.scopes,
+      true,
+    );
+
+    expect(result.access_token).toBe('exchanged-mcp-token');
+    expect(result.token_type).toBe('Bearer');
+    expect(result.obtained_at).toBeGreaterThanOrEqual(beforeCall);
+    expect(result.obtained_at).toBeLessThanOrEqual(afterCall);
+    expect(result.expires_at).toBe(result.obtained_at + 3600 * 1000);
   });
 
   it('should default expires_in to 3600 when not provided by resolver', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
-    mockIsOpenIDTokenValid.mockReturnValue(true);
+    const resolverNoExpiry: OboTokenResolver = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        access_token: 'exchanged-token',
+      });
 
-    const resolverNoExpiry: OboTokenResolver = jest.fn().mockResolvedValue({
-      access_token: 'exchanged-token',
+    mockExtractOpenIDTokenInfo.mockReturnValue({
+      accessToken: 'federated-access-token',
     });
+    mockIsOpenIDTokenValid.mockReturnValue(true);
 
     const result = await resolveOboToken(mockUser as IUser, oboConfig, resolverNoExpiry);
 
-    expect(result).not.toBeNull();
-    expect(result!.expires_at).toBe(result!.obtained_at + 3600 * 1000);
+    expect(result.expires_at).toBe(result.obtained_at + 3600 * 1000);
   });
 
   it('should throw when resolver returns no access_token', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
+    const emptyResolver: OboTokenResolver = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({} as { access_token: string });
+
+    mockExtractOpenIDTokenInfo.mockReturnValue({
+      accessToken: 'federated-access-token',
+    });
     mockIsOpenIDTokenValid.mockReturnValue(true);
 
-    const emptyResolver: OboTokenResolver = jest.fn().mockResolvedValue({});
     await expect(
       resolveOboToken(mockUser as IUser, oboConfig, emptyResolver),
     ).rejects.toMatchObject({
@@ -135,12 +195,19 @@ describe('resolveOboToken', () => {
   });
 
   it('should throw a retryable error when resolver reports a transient failure', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
-    mockIsOpenIDTokenValid.mockReturnValue(true);
-
     const failingResolver: OboTokenResolver = jest
       .fn()
-      .mockRejectedValue(Object.assign(new Error('temporary timeout'), { retryable: true }));
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(
+        Object.assign(new Error('temporary timeout'), {
+          retryable: true,
+        }),
+      );
+
+    mockExtractOpenIDTokenInfo.mockReturnValue({
+      accessToken: 'federated-access-token',
+    });
+    mockIsOpenIDTokenValid.mockReturnValue(true);
 
     await expect(
       resolveOboToken(mockUser as IUser, oboConfig, failingResolver),
@@ -152,12 +219,15 @@ describe('resolveOboToken', () => {
   });
 
   it('should throw a non-retryable error when resolver reports a permanent failure', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
-    mockIsOpenIDTokenValid.mockReturnValue(true);
-
     const failingResolver: OboTokenResolver = jest
       .fn()
-      .mockRejectedValue(new Error('invalid_grant: assertion invalid'));
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error('invalid_grant: assertion invalid'));
+
+    mockExtractOpenIDTokenInfo.mockReturnValue({
+      accessToken: 'federated-access-token',
+    });
+    mockIsOpenIDTokenValid.mockReturnValue(true);
 
     await expect(
       resolveOboToken(mockUser as IUser, oboConfig, failingResolver),
@@ -169,13 +239,33 @@ describe('resolveOboToken', () => {
   });
 
   it('should use the correct scopes from oboConfig', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
+    mockResolver.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      access_token: 'exchanged-mcp-token',
+      expires_in: 3600,
+    });
+
+    mockExtractOpenIDTokenInfo.mockReturnValue({
+      accessToken: 'federated-access-token',
+    });
     mockIsOpenIDTokenValid.mockReturnValue(true);
 
-    const customConfig = { scopes: 'api://other-app/Custom.Scope' };
+    const customConfig = {
+      scopes: 'api://other-app/Custom.Scope',
+    };
+
     await resolveOboToken(mockUser as IUser, customConfig, mockResolver);
 
-    expect(mockResolver).toHaveBeenCalledWith(
+    expect(mockResolver).toHaveBeenNthCalledWith(
+      1,
+      mockUser,
+      undefined,
+      'api://other-app/Custom.Scope',
+      true,
+      true,
+    );
+
+    expect(mockResolver).toHaveBeenNthCalledWith(
+      2,
       mockUser,
       'federated-access-token',
       'api://other-app/Custom.Scope',
@@ -184,18 +274,22 @@ describe('resolveOboToken', () => {
   });
 
   it('should respect custom expires_in from resolver', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
-    mockIsOpenIDTokenValid.mockReturnValue(true);
+    const shortLivedResolver: OboTokenResolver = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        access_token: 'short-lived-token',
+        expires_in: 300,
+      });
 
-    const shortLivedResolver: OboTokenResolver = jest.fn().mockResolvedValue({
-      access_token: 'short-lived-token',
-      expires_in: 300,
+    mockExtractOpenIDTokenInfo.mockReturnValue({
+      accessToken: 'federated-access-token',
     });
+    mockIsOpenIDTokenValid.mockReturnValue(true);
 
     const result = await resolveOboToken(mockUser as IUser, oboConfig, shortLivedResolver);
 
-    expect(result).not.toBeNull();
-    expect(result!.expires_at).toBe(result!.obtained_at + 300 * 1000);
+    expect(result.expires_at).toBe(result.obtained_at + 300 * 1000);
   });
 });
 
@@ -205,11 +299,13 @@ describe('isOboConfigStillTrusted', () => {
       [Permissions.CONFIGURE_OBO]: true,
     },
   };
+
   const userPerms = {
     [PermissionTypes.MCP_SERVERS]: {
       [Permissions.CONFIGURE_OBO]: false,
     },
   };
+
   const noOboPerms = {
     [PermissionTypes.MCP_SERVERS]: {},
   };
@@ -220,6 +316,7 @@ describe('isOboConfigStillTrusted', () => {
       getUserRoleByAuthorId: jest.fn(),
       getRolePermissions: jest.fn(),
     });
+
     expect(result).toBe(false);
   });
 
@@ -229,6 +326,7 @@ describe('isOboConfigStillTrusted', () => {
       getUserRoleByAuthorId: jest.fn().mockResolvedValue(null),
       getRolePermissions: jest.fn(),
     });
+
     expect(result).toBe(false);
   });
 
@@ -238,6 +336,7 @@ describe('isOboConfigStillTrusted', () => {
       getUserRoleByAuthorId: jest.fn().mockResolvedValue('ADMIN'),
       getRolePermissions: jest.fn().mockRejectedValue(new Error('db down')),
     });
+
     expect(result).toBe(false);
   });
 
@@ -247,6 +346,7 @@ describe('isOboConfigStillTrusted', () => {
       getUserRoleByAuthorId: jest.fn().mockResolvedValue('ADMIN'),
       getRolePermissions: jest.fn().mockResolvedValue(noOboPerms),
     });
+
     expect(result).toBe(false);
   });
 
@@ -256,6 +356,7 @@ describe('isOboConfigStillTrusted', () => {
       getUserRoleByAuthorId: jest.fn().mockResolvedValue('USER'),
       getRolePermissions: jest.fn().mockResolvedValue(userPerms),
     });
+
     expect(result).toBe(false);
   });
 
@@ -265,6 +366,7 @@ describe('isOboConfigStillTrusted', () => {
       getUserRoleByAuthorId: jest.fn().mockResolvedValue('ADMIN'),
       getRolePermissions: jest.fn().mockResolvedValue(adminPerms),
     });
+
     expect(result).toBe(true);
   });
 });
