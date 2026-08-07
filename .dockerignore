@@ -15,3 +15,10 @@ docs
 
 # Ignore all hidden files
 .*
+
+# Runtime/test data must never be baked into the LibreChat image
+logs
+uploads
+presidio-captures
+presidio_mock_provider.py
+compose-resolved*

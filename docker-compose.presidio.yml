@@ -8,6 +8,15 @@ services:
     depends_on:
       presidio-gateway:
         condition: service_healthy
+      send-as-is-gateway:
+        condition: service_healthy
+    environment:
+      PRESIDIO_ANALYZER_API_BASE: http://presidio-analyzer:3000
+      PRESIDIO_ANONYMIZER_API_BASE: http://presidio-anonymizer:3000
+      PII_CONFIRMATION_SECRET: ${PII_CONFIRMATION_SECRET}
+      PII_SEND_AS_IS_BASE_URL: http://send-as-is-gateway:4001/v1
+      PII_SEND_AS_IS_API_KEY: ${LITELLM_MASTER_KEY}
+      PII_SEND_AS_IS_ENDPOINT: Presidio-Crusoe
 
   presidio-analyzer:
     image: ghcr.io/data-privacy-stack/presidio-analyzer:latest
@@ -46,6 +55,33 @@ services:
         - python
         - -c
         - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')"
+      interval: 10s
+      timeout: 15s
+      retries: 12
+      start_period: 120s
+
+  send-as-is-gateway:
+    image: docker.litellm.ai/berriai/litellm:main-latest
+    command:
+      - --config
+      - /app/config.yaml
+      - --port
+      - '4001'
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ./litellm.send-as-is.yaml
+        target: /app/config.yaml
+        read_only: true
+    environment:
+      LLM_API_KEY: ${LLM_API_KEY}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4001/health/liveliness')"
       interval: 10s
       timeout: 15s
       retries: 12

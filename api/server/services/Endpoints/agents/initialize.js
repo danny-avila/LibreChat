@@ -15,6 +15,7 @@ const {
   resolveAgentScopedSkillIds,
   resolveModelSpecSkillIds,
   getAgentStartupTelemetry,
+  applyPiiSendAsIsRoute,
   buildAgentContextAttachmentsByAgentId,
 } = require('@librechat/api');
 const {
@@ -969,6 +970,13 @@ const initializeClient = async ({
       config.subagentAgentConfigs = undefined;
     }
   }
+
+  applyPiiSendAsIsRoute({
+    req,
+    res,
+    primaryConfig,
+    connectedAgentCount: Math.max(0, agentToolContexts.size - 1),
+  });
 
   const agentContextAttachmentsByAgentId = buildAgentContextAttachmentsByAgentId([
     primaryConfig,

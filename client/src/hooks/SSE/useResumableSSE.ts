@@ -34,6 +34,7 @@ import type {
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
 import type { DrainAfterAbort, QueuedMessageOrigin } from '~/store/families';
 import type { GenerationProtocolVersion } from '~/data-provider';
+import type { PiiAction } from '~/Providers';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import {
@@ -71,6 +72,7 @@ import {
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { usePiiConfirmation } from '~/Providers';
 import useUsageHandler from './useUsageHandler';
 import store from '~/store';
 
@@ -623,6 +625,7 @@ export default function useResumableSSE(
   isAddedRequest = false,
   runIndex = 0,
 ) {
+  const { requestPiiAction } = usePiiConfirmation();
   const queryClient = useQueryClient();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
@@ -3171,12 +3174,18 @@ export default function useResumableSSE(
       let requestAttempts = 0;
       let networkAttempts = 0;
       let readinessAttempts = 0;
+      let piiAction: PiiAction | undefined;
+      let piiConfirmationToken: string | undefined;
       const readinessDeadline = Date.now() + START_GENERATION_READINESS_TIMEOUT_MS;
 
       while (!signal?.aborted) {
         requestAttempts += 1;
         try {
-          const data = await postGenerationRequest<unknown>(url, payload, { signal });
+          const requestPayload =
+            piiAction && piiConfirmationToken
+              ? { ...payload, piiAction, piiConfirmationToken }
+              : payload;
+          const data = await postGenerationRequest<unknown>(url, requestPayload, { signal });
           if (signal?.aborted) {
             return null;
           }
@@ -3240,6 +3249,34 @@ export default function useResumableSSE(
         } catch (error) {
           if (signal?.aborted) {
             return null;
+          }
+
+          const confirmationData = (error as {
+            response?: {
+              status?: number;
+              data?: {
+                requires_confirmation?: boolean;
+                entity_types?: string[];
+                confirmation_token?: string;
+              };
+            };
+          }).response;
+          if (
+            confirmationData?.status === 409 &&
+            confirmationData.data?.requires_confirmation === true &&
+            typeof confirmationData.data.confirmation_token === 'string' &&
+            piiAction == null
+          ) {
+            const selectedAction = await requestPiiAction(
+              confirmationData.data.entity_types ?? [],
+              signal,
+            );
+            if (selectedAction == null || signal?.aborted) {
+              return null;
+            }
+            piiAction = selectedAction;
+            piiConfirmationToken = confirmationData.data.confirmation_token;
+            continue;
           }
 
           const predecessorMismatch = getPredecessorMismatchStartResponse(error);
@@ -3359,6 +3396,7 @@ export default function useResumableSSE(
       convertSteersToQueued,
       errorHandler,
       restoreQueuedSubmission,
+      requestPiiAction,
       setIsSubmitting,
       setShowStopButton,
       setSubmission,

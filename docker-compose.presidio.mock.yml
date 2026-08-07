@@ -1,0 +1,35 @@
+services:
+  presidio-gateway:
+    volumes:
+      - type: bind
+        source: ./litellm.presidio.mock.yaml
+        target: /app/config.yaml
+        read_only: true
+    depends_on:
+      presidio-mock-provider:
+        condition: service_started
+
+  send-as-is-gateway:
+    volumes:
+      - type: bind
+        source: ./litellm.send-as-is.mock.yaml
+        target: /app/config.yaml
+        read_only: true
+    depends_on:
+      presidio-mock-provider:
+        condition: service_started
+
+  presidio-mock-provider:
+    image: python:3.13-alpine
+    command:
+      - python
+      - /app/presidio_mock_provider.py
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ./presidio_mock_provider.py
+        target: /app/presidio_mock_provider.py
+        read_only: true
+      - type: bind
+        source: ./presidio-captures
+        target: /captures

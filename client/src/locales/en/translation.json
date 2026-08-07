@@ -1,4 +1,9 @@
 {
+  "com_ui_pii_confirmation_title": "Sensitive information detected",
+  "com_ui_pii_confirmation_message": "Choose whether to anonymize the detected information or send it as-is.",
+  "com_ui_pii_detected_types": "Detected types",
+  "com_ui_pii_anonymize": "Anonymize",
+  "com_ui_pii_send_as_is": "Send as-is",
   "chat_direction_left_to_right": "Left to Right",
   "chat_direction_right_to_left": "Right to Left",
   "com_a11y_ai_composing": "The AI is still composing.",

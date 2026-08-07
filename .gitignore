@@ -184,3 +184,7 @@ CLAUDE.md
 .gsd
 codedb.snapshot
 scripts/activity-labels/results/
+
+# Local Presidio provider-boundary test artifacts/tooling
+/presidio-captures/
+/docker-compose.local-build.yml

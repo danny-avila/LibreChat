@@ -174,6 +174,11 @@ const mockFetchStreamStatus = jest.fn();
 const mockGetConversationById = jest.fn();
 const mockConvertSteersToQueued = jest.fn();
 const mockPostGenerationRequest = jest.fn();
+const mockRequestPiiAction = jest.fn();
+
+jest.mock('~/Providers', () => ({
+  usePiiConfirmation: () => ({ requestPiiAction: mockRequestPiiAction }),
+}));
 
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => ({ data: { balance: { enabled: false } } }),
@@ -388,6 +393,8 @@ describe('useResumableSSE', () => {
     (request.refreshToken as jest.Mock).mockReset();
     (request.dispatchTokenUpdatedEvent as jest.Mock).mockReset();
     mockPostGenerationRequest.mockReset();
+    mockRequestPiiAction.mockReset();
+    mockRequestPiiAction.mockResolvedValue('send_as_is');
     mockPostGenerationRequest.mockImplementation((url: string, body: Record<string, unknown>) =>
       request.post(url, { ...body, generationProtocolVersion: 2 }),
     );
@@ -2582,6 +2589,38 @@ describe('useResumableSSE', () => {
 
     expect(mockRestoreQueuedSubmission).toHaveBeenCalledWith(submission);
     expect(mockSSEInstances).toHaveLength(0);
+    unmount();
+  });
+
+  it('retries a confirmed PII request with the signed receipt and selected action', async () => {
+    mockPostGenerationRequest
+      .mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: {
+            requires_confirmation: true,
+            entity_types: ['EMAIL_ADDRESS'],
+            confirmation_token: 'signed-receipt',
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        streamId: 'stream-123',
+        generationCreatedAt: 1000,
+        generationProtocolVersion: 2,
+      });
+
+    const { unmount } = renderHook(() =>
+      useResumableSSE(buildSubmission(), buildChatHelpers()),
+    );
+
+    await waitFor(() => expect(mockPostGenerationRequest).toHaveBeenCalledTimes(2));
+
+    expect(mockRequestPiiAction).toHaveBeenCalledWith(['EMAIL_ADDRESS'], expect.any(AbortSignal));
+    expect(mockPostGenerationRequest.mock.calls[1]?.[1]).toMatchObject({
+      piiAction: 'send_as_is',
+      piiConfirmationToken: 'signed-receipt',
+    });
     unmount();
   });
 

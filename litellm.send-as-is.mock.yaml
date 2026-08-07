@@ -1,0 +1,12 @@
+model_list:
+  - model_name: meta-llama/Llama-3.3-70B-Instruct
+    litellm_params:
+      model: openai/meta-llama/Llama-3.3-70B-Instruct
+      api_base: http://presidio-mock-provider:8080/v1
+      api_key: local-poc-only
+
+litellm_settings:
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

@@ -26,4 +26,5 @@ export * from './UploadModalContext';
 export * from './ArtifactsContext';
 export * from './PromptGroupsContext';
 export * from './MessagesViewContext';
+export * from './PiiConfirmationContext';
 export { default as BadgeRowProvider } from './BadgeRowContext';

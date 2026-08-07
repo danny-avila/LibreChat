@@ -50,6 +50,8 @@ export * from './actions';
 export * from './prompts';
 /* Projects */
 export * from './projects';
+/* PII */
+export * from './pii';
 /* Skills */
 export * from './skills';
 export * from './favorites';
