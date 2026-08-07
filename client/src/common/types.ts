@@ -213,7 +213,7 @@ export interface MCPServerInfo {
   isConnected: boolean;
   consumeOnly?: boolean;
   support_contact?: t.SupportContact;
-  owner_contact?: t.AgentOwnerContact;
+  owner_contact?: t.MCPServerOwnerContact;
   metadata: t.TPlugin;
 }
 

@@ -244,7 +244,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           ))}
         {selectedAgent && (
           <AgentContact
-            resource={selectedAgent}
+            agent={selectedAgent}
             className="animate-fadeIn mt-2 max-w-md justify-center text-center text-sm"
           />
         )}

@@ -1,5 +1,5 @@
-import type { AgentOwnerContact, SupportContact } from './assistants';
 import type { MCPOptions, MCPServerUserInput } from '../mcp';
+import type { SupportContact } from './assistants';
 
 /**
  * Base MCP Server interface
@@ -37,6 +37,10 @@ export type MCPServerUpdateParams = {
   config?: MCPServerUserInput; // UI fields only (title, description, url, oauth, iconPath)
 };
 
+export type MCPServerOwnerContact = {
+  name?: string;
+};
+
 /**
  * Response for MCP server list endpoint
  */
@@ -47,7 +51,7 @@ export type MCPServerDBObjectResponse = {
   consumeOnly?: boolean;
   support_contact?: SupportContact;
   /** Response-only fallback resolved from the server's first owner. */
-  owner_contact?: AgentOwnerContact;
+  owner_contact?: MCPServerOwnerContact;
 } & MCPOptions;
 
 export type MCPServersListResponse = Record<string, MCPServerDBObjectResponse>;

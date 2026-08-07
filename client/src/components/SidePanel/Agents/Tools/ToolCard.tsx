@@ -2,8 +2,8 @@ import { memo, useState } from 'react';
 import { BadgeCheck, Check, Globe, Info, Settings, Star, User } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentItem } from './items/types';
+import MCPServerContact from '~/components/MCP/MCPServerContact';
 import { hasConfigurableSettings } from './items/configurable';
-import AgentContact from '~/components/Agents/AgentContact';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconForItem } from './items/icons';
 import { cn } from '~/utils';
@@ -193,8 +193,8 @@ function ToolCardImpl({
         ) : null}
       </button>
       {item.kind === 'mcp' && (
-        <AgentContact
-          resource={item.server}
+        <MCPServerContact
+          server={item.server}
           className="pointer-events-none absolute bottom-3 left-4 right-20 z-10 text-xs [&_a]:pointer-events-auto [&_a]:font-normal [&_a]:!text-text-secondary"
         />
       )}

@@ -20,9 +20,9 @@ import {
 } from '~/hooks';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import { mcpAllToken, mcpServerToken } from '../../items/selectors';
+import MCPServerContact from '~/components/MCP/MCPServerContact';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
-import AgentContact from '~/components/Agents/AgentContact';
 import { useAgentPanelContext } from '~/Providers';
 import { getIconForItem } from '../../items/icons';
 import OptionToggle from '../../../OptionToggle';
@@ -363,7 +363,7 @@ export default function McpSection({ item }: Props) {
         </p>
       )}
 
-      <AgentContact resource={liveServer} className="text-sm" />
+      <MCPServerContact server={liveServer} className="text-sm" />
 
       <div className="flex flex-col">
         <div className="flex items-center justify-between rounded-xl border border-border-light bg-surface-secondary px-3 py-2.5">

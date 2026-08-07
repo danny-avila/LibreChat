@@ -1,8 +1,7 @@
 import { PermissionBits, ResourceType } from 'librechat-data-provider';
-import type { AgentOwnerContact } from 'librechat-data-provider';
+import type { MCPServerOwnerContact } from 'librechat-data-provider';
 
 import type { ParsedServerConfig } from '~/mcp/types';
-import { hasSupportContact, resolveAgentOwnerContact } from '~/agents/contact';
 
 const OWNER_PERMISSION_BITS =
   PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
@@ -13,6 +12,25 @@ type OwnerUser = {
   _id?: string | { toString(): string };
   name?: string | null;
   username?: string | null;
+};
+
+const normalizeContactValue = (value?: string | null): string | undefined => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+};
+
+const normalizeDisplayName = (value?: string | null): string | undefined => {
+  const normalized = normalizeContactValue(value);
+  return normalized && !normalized.includes('@') ? normalized : undefined;
+};
+
+const hasSupportContact = (config: MCPContactConfig): boolean =>
+  normalizeContactValue(config.support_contact?.name) != null ||
+  normalizeContactValue(config.support_contact?.email) != null;
+
+const resolveOwnerContact = (owner?: OwnerUser): MCPServerOwnerContact | undefined => {
+  const name = normalizeDisplayName(owner?.name) ?? normalizeDisplayName(owner?.username);
+  return name ? { name } : undefined;
 };
 
 export type MCPContactDependencies = {
@@ -29,7 +47,7 @@ export type MCPContactDependencies = {
 export async function resolveMCPServerOwnerContacts(
   servers: Record<string, MCPContactConfig>,
   dependencies: MCPContactDependencies,
-): Promise<Map<string, AgentOwnerContact>> {
+): Promise<Map<string, MCPServerOwnerContact>> {
   const candidates = Object.entries(servers).filter(
     ([, config]) => config.dbId != null && !hasSupportContact(config),
   );
@@ -76,13 +94,10 @@ export async function resolveMCPServerOwnerContacts(
     }
   }
 
-  const contacts = new Map<string, AgentOwnerContact>();
-  for (const [serverName, config] of candidates) {
+  const contacts = new Map<string, MCPServerOwnerContact>();
+  for (const [serverName] of candidates) {
     const ownerId = ownerIdsByServer.get(serverName);
-    const contact = resolveAgentOwnerContact(
-      config,
-      ownerId ? (ownersById.get(ownerId) ?? null) : null,
-    );
+    const contact = resolveOwnerContact(ownerId ? ownersById.get(ownerId) : undefined);
     if (contact) {
       contacts.set(serverName, contact);
     }

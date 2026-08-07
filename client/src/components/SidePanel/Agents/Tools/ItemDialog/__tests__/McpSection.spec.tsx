@@ -191,7 +191,7 @@ describe('McpSection', () => {
       'href',
       'mailto:support@example.com',
     );
-    expect(screen.getAllByText('com_agents_contact:')).toHaveLength(1);
+    expect(screen.getAllByText('com_ui_contact:')).toHaveLength(1);
   });
 
   test('toggling a tool writes its id plus the server token into agent.tools', () => {

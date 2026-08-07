@@ -24,7 +24,7 @@ import type {
   MCPConnectionStatusResponse,
   MCPOAuthStatusResponse,
   SupportContact,
-  AgentOwnerContact,
+  MCPServerOwnerContact,
 } from 'librechat-data-provider';
 import type { MCPServerInitState } from '~/store/mcp';
 import type { ConfigFieldDetail } from '~/common';
@@ -48,7 +48,7 @@ export interface MCPServerDefinition {
   effectivePermissions: number; // Permission bits (VIEW=1, EDIT=2, DELETE=4, SHARE=8)
   consumeOnly?: boolean;
   support_contact?: SupportContact;
-  owner_contact?: AgentOwnerContact;
+  owner_contact?: MCPServerOwnerContact;
 }
 
 // Poll intervals are kept local since they're timer references that can't be serialized
