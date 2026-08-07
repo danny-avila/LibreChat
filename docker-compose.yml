@@ -18,6 +18,7 @@ services:
       - HOST=0.0.0.0
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       - MEILI_HOST=http://meilisearch:7700
+      - LIBRECHAT_TEMP_CREDENTIALS_PATH=/app/data/.env.temp
       - RAG_PORT=${RAG_PORT:-8000}
       - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
       - PROXY=${PROXY:-}
@@ -35,6 +36,7 @@ services:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
       - ./skill:/app/skill
+      - librechat-data:/app/data
   admin-panel:
     container_name: admin-panel
     image: registry.librechat.ai/clickhouse/librechat-admin-panel:latest
@@ -94,3 +96,4 @@ services:
 
 volumes:
   pgdata2:
+  librechat-data:
