@@ -11,8 +11,8 @@ import type { ValidateAgentModelParams } from './validation';
 import type { ServerRequest } from '~/types';
 import { validateAgentModel as defaultValidateAgentModel } from './validation';
 import { initializeAgent as defaultInitializeAgent } from './initialize';
-import { isFatalAgentInitializationError } from './errors';
 import { createEdgeCollector, filterOrphanedEdges } from './edges';
+import { isFatalAgentInitializationError } from './errors';
 import { createSequentialChainEdges } from './chain';
 
 /**
