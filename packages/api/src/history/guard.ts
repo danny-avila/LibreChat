@@ -2,11 +2,13 @@ import type {
   AntiJoinRejection,
   AntiJoinResult,
   HistoryCandidate,
+  HistoryKind,
   HistoryScope,
   LiveDocumentRow,
   PgQueryClient,
   SqlParam,
 } from './types';
+import { resolveScope } from './scope';
 
 /**
  * Fail-closed anti-join (PLAN Watermark, finding [R7]).
@@ -97,14 +99,21 @@ WHERE d.tenant_id = $1
 export async function loadLiveDocumentRows(
   pg: PgQueryClient,
   scope: HistoryScope,
-  kind: string,
+  kind: HistoryKind,
   recordIds: readonly string[],
 ): Promise<readonly LiveDocumentRow[]> {
+  /**
+   * Resolved through the same shared core the ClickHouse arms use, so the
+   * anti-join cannot be run under a wider scope than the query that produced the
+   * candidates. Forced RLS backs this DSN, but RLS is the net, not the fence.
+   */
+  const resolved = resolveScope(scope);
+
   if (recordIds.length === 0) {
     return [];
   }
 
-  const params: SqlParam[] = [scope.tenantId, scope.userId, kind, recordIds];
+  const params: SqlParam[] = [resolved.tenantId, resolved.userId, kind, recordIds];
   const result = await pg.query<{
     record_id: string;
     projection_version: string;

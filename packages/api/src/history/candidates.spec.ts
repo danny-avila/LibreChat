@@ -1,5 +1,6 @@
 import type { ClickHouseParam, ClickHouseQueryClient } from './types';
-import { createCandidateAdapter, textArmSql, vectorArmSql } from './candidates';
+import { buildTextArmQuery, buildVectorArmQuery, createCandidateAdapter } from './candidates';
+import { resolveScope, UnscopedQueryError } from './scope';
 
 type Captured = { query: string; params: Record<string, ClickHouseParam> };
 
@@ -18,7 +19,7 @@ class StubClickHouse implements ClickHouseQueryClient {
     query_params?: Record<string, ClickHouseParam>;
     format: 'JSONEachRow';
   }): Promise<{ json<TRow>(): Promise<TRow[]> }> {
-    const arm = params.query === textArmSql ? 'text' : 'vector';
+    const arm = params.query.includes('{query:String}') ? 'text' : 'vector';
     this.captured.push({ query: params.query, params: params.query_params ?? {} });
 
     if (this.failing.has(arm)) {
@@ -64,25 +65,24 @@ describe('candidate adapter — scoping', () => {
   });
 
   it('scopes both stages of the two-stage text query', () => {
-    const stages = textArmSql.split('latest AS');
+    const built = buildTextArmQuery(resolveScope(scope), 'message', 'hello', 50);
+    const stages = built.query.split('latest AS');
     expect(stages).toHaveLength(2);
     for (const stage of stages) {
       expect(stage).toContain('tenant_id = {tenant_id:String}');
       expect(stage).toContain('user_id = {user_id:String}');
+      expect(stage).toContain('kind = {kind:String}');
     }
   });
 
-  it('rejects an unresolved scope rather than widening it', async () => {
-    const adapter = createCandidateAdapter(new StubClickHouse());
+  it('scopes the vector arm', () => {
+    const built = buildVectorArmQuery(resolveScope(scope), 'message', vector, 50);
+    expect(built.query).toContain('tenant_id = {tenant_id:String}');
+    expect(built.query).toContain('user_id = {user_id:String}');
+  });
 
-    await expect(
-      adapter.fetchCandidates({
-        scope: { tenantId: '', userId: 'u1' },
-        kind: 'message',
-        query: 'x',
-        limit: 10,
-      }),
-    ).rejects.toThrow(/resolved tenantId and userId/);
+  it('rejects a scope with no user rather than widening it', async () => {
+    const adapter = createCandidateAdapter(new StubClickHouse());
 
     await expect(
       adapter.fetchCandidates({
@@ -91,7 +91,23 @@ describe('candidate adapter — scoping', () => {
         query: 'x',
         limit: 10,
       }),
-    ).rejects.toThrow(/resolved tenantId and userId/);
+    ).rejects.toThrow(UnscopedQueryError);
+  });
+
+  it('normalizes an absent tenant to the base tenant instead of failing', async () => {
+    // PLAN [R9]: normalize first, then fail closed. Failing on "empty tenant"
+    // before normalization would break search for every non-tenant deployment.
+    const clickhouse = new StubClickHouse();
+    await createCandidateAdapter(clickhouse).fetchCandidates({
+      scope: { tenantId: '', userId: 'u1' },
+      kind: 'message',
+      query: 'x',
+      limit: 10,
+      arms: ['text'],
+    });
+
+    expect(clickhouse.captured[0].params.tenant_id).toBe('__BASE__');
+    expect(clickhouse.captured[0].params.user_id).toBe('u1');
   });
 
   it('rejects the system tenant instead of treating it as a wildcard', async () => {
@@ -104,7 +120,7 @@ describe('candidate adapter — scoping', () => {
         query: 'x',
         limit: 10,
       }),
-    ).rejects.toThrow(/system tenant/);
+    ).rejects.toThrow(/query-time wildcard/);
   });
 
   it('never issues a query when the scope check fails', async () => {
@@ -168,7 +184,8 @@ describe('candidate adapter — arms', () => {
       limit: 50,
     });
 
-    expect(clickhouse.captured.map((c) => c.query)).toEqual([textArmSql]);
+    expect(clickhouse.captured).toHaveLength(1);
+    expect(clickhouse.captured[0].query).toContain('{query:String}');
     expect(result.degradations).toEqual(['embedding-unavailable']);
     expect(result.candidates).toHaveLength(1);
   });
@@ -184,7 +201,8 @@ describe('candidate adapter — arms', () => {
       limit: 50,
     });
 
-    expect(clickhouse.captured.map((c) => c.query)).toEqual([textArmSql]);
+    expect(clickhouse.captured).toHaveLength(1);
+    expect(clickhouse.captured[0].query).toContain('{query:String}');
     expect(result.degradations).toEqual(['embedding-unavailable']);
   });
 
@@ -200,7 +218,8 @@ describe('candidate adapter — arms', () => {
       limit: 50,
     });
 
-    expect(clickhouse.captured.map((c) => c.query)).toEqual([vectorArmSql]);
+    expect(clickhouse.captured).toHaveLength(1);
+    expect(clickhouse.captured[0].query).toContain('{query_vector:Array(Float32)}');
   });
 
   it('caps the per-arm limit at the configured arm limit', async () => {

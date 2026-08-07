@@ -1,5 +1,6 @@
 import type {
   ClickHouseParam,
+  HistoryKind,
   ClickHouseQueryClient,
   HistoryArm,
   HistoryCandidate,
@@ -7,14 +8,22 @@ import type {
   HistoryCandidateResult,
   HistoryDegradation,
 } from './types';
+import type { Scope } from './scope';
+import { renderScopePredicate } from './predicate';
+import { resolveScope } from './scope';
 
 export const EMBEDDING_DIMENSIONS = 1024;
 
-/** PLAN Search-purpose policy: 50 candidates per arm, hard cap 200 across fusion. */
+/** PLAN Search-purpose policy: 50 candidates per arm, hard cap 200. */
 export const DEFAULT_ARM_LIMIT = 50;
 export const MAX_ARM_LIMIT = 200;
 
 const BOTH_ARMS: readonly HistoryArm[] = ['text', 'vector'];
+
+export type ArmQuery = Readonly<{
+  query: string;
+  params: Readonly<Record<string, ClickHouseParam>>;
+}>;
 
 /**
  * Latest-version projection.
@@ -51,17 +60,25 @@ const LIVE_PREDICATE = `
  * stage 2 aggregates ALL versions of those keys and re-applies the predicate to
  * the latest one.
  *
- * `tenant_id` and `user_id` equality predicates appear in BOTH stages. ClickHouse
- * has no row-level security; these predicates are the only scoping this tier has,
- * and they double as the primary-key prefix.
+ * The scope predicate is rendered from the branded `Scope` and interpolated into
+ * BOTH stages. There is deliberately no module-level template with an unfilled
+ * scope hole, and no intermediate predicate object a caller could forge — the
+ * only way to obtain runnable SQL is to hold a `Scope` that came from
+ * `resolveScope` (PLAN "Fail-closed query construction").
  */
-export const textArmSql = `
+export function buildTextArmQuery(
+  scope: Scope,
+  kind: HistoryKind,
+  query: string,
+  limit: number,
+): ArmQuery {
+  const filter = renderScopePredicate(scope, kind);
+  return {
+    query: `
 WITH matched AS (
   SELECT DISTINCT record_id
   FROM chat_search.documents
-  WHERE tenant_id = {tenant_id:String}
-    AND user_id = {user_id:String}
-    AND kind = {kind:String}
+  WHERE ${filter.predicateSql}
     AND (positionCaseInsensitiveUTF8(title, {query:String}) > 0
       OR positionCaseInsensitiveUTF8(body, {query:String}) > 0)
 ),
@@ -69,9 +86,7 @@ latest AS (
   SELECT
     record_id,${LATEST_COLUMNS}
   FROM chat_search.documents
-  WHERE tenant_id = {tenant_id:String}
-    AND user_id = {user_id:String}
-    AND kind = {kind:String}
+  WHERE ${filter.predicateSql}
     AND record_id IN (SELECT record_id FROM matched)
   GROUP BY record_id
 )
@@ -90,25 +105,37 @@ WHERE${LIVE_PREDICATE}
     OR positionCaseInsensitiveUTF8(latest.3, {query:String}) > 0)
 ORDER BY score DESC, record_id ASC
 LIMIT {limit:UInt32}
-`;
+`,
+    params: { ...filter.params, query, limit },
+  };
+}
 
 /**
  * Vector arm: exact scoped scan, mirroring the PostgreSQL side until
  * filtered-recall gates pass. The tenant+user ORDER BY prefix bounds the scan to
- * one user's corpus.
+ * one user's corpus, which is both the security boundary and the primary index.
  *
  * `has_embedding` is written by the consumer only when the vector's
  * embedding-input hash matched the document's, so a stale vector never reaches
  * ClickHouse and cannot be ranked against newer text.
  */
-export const vectorArmSql = `
+export function buildVectorArmQuery(
+  scope: Scope,
+  kind: HistoryKind,
+  queryVector: readonly number[],
+  limit: number,
+): ArmQuery {
+  const filter = renderScopePredicate(scope, kind);
+  if (queryVector.length !== EMBEDDING_DIMENSIONS) {
+    throw new Error(`chat-v1 query vector must have ${EMBEDDING_DIMENSIONS} dimensions`);
+  }
+  return {
+    query: `
 WITH latest AS (
   SELECT
     record_id,${LATEST_COLUMNS}
   FROM chat_search.documents
-  WHERE tenant_id = {tenant_id:String}
-    AND user_id = {user_id:String}
-    AND kind = {kind:String}
+  WHERE ${filter.predicateSql}
   GROUP BY record_id
 )
 SELECT
@@ -121,7 +148,10 @@ WHERE${LIVE_PREDICATE}
   AND latest.7 = 1
 ORDER BY score DESC, record_id ASC
 LIMIT {limit:UInt32}
-`;
+`,
+    params: { ...filter.params, query_vector: queryVector, limit },
+  };
+}
 
 export interface HistoryCandidateAdapter {
   /**
@@ -150,7 +180,13 @@ export function createCandidateAdapter(
   async function fetchCandidates(
     request: HistoryCandidateRequest,
   ): Promise<HistoryCandidateResult> {
-    assertScoped(request);
+    /**
+     * Scope is resolved once, up front, through the shared core, and throws
+     * before any I/O. Every arm below renders from this one `Scope`; none
+     * rebuilds scope SQL of its own.
+     */
+    const scope = resolveScope(request.scope);
+    const kind = request.kind;
 
     const arms = request.arms ?? BOTH_ARMS;
     const limit = Math.min(request.limit > 0 ? request.limit : armLimit, armLimit);
@@ -163,31 +199,26 @@ export function createCandidateAdapter(
     }
 
     const pending: Promise<readonly HistoryCandidate[]>[] = [];
+
     if (arms.includes('text') && request.query.length > 0) {
       pending.push(
-        runArm('text', clickhouse, textArmSql, {
-          tenant_id: request.scope.tenantId,
-          user_id: request.scope.userId,
-          kind: request.kind,
-          query: request.query,
-          limit,
-        }).catch((error) => {
-          options.onError?.('text', error);
-          degradations.push('clickhouse-unavailable');
-          return [];
-        }),
+        runArm('text', clickhouse, buildTextArmQuery(scope, kind, request.query, limit)).catch(
+          (error) => {
+            options.onError?.('text', error);
+            degradations.push('clickhouse-unavailable');
+            return [];
+          },
+        ),
       );
     }
 
     if (wantsVector && hasVector) {
       pending.push(
-        runArm('vector', clickhouse, vectorArmSql, {
-          tenant_id: request.scope.tenantId,
-          user_id: request.scope.userId,
-          kind: request.kind,
-          query_vector: request.queryVector as readonly number[],
-          limit,
-        }).catch((error) => {
+        runArm(
+          'vector',
+          clickhouse,
+          buildVectorArmQuery(scope, kind, request.queryVector as readonly number[], limit),
+        ).catch((error) => {
           options.onError?.('vector', error);
           degradations.push('clickhouse-unavailable');
           return [];
@@ -231,10 +262,13 @@ type ArmQueryRow = {
 async function runArm(
   arm: HistoryArm,
   clickhouse: ClickHouseQueryClient,
-  query: string,
-  params: Record<string, ClickHouseParam>,
+  armQuery: ArmQuery,
 ): Promise<readonly HistoryCandidate[]> {
-  const result = await clickhouse.query({ query, query_params: params, format: 'JSONEachRow' });
+  const result = await clickhouse.query({
+    query: armQuery.query,
+    query_params: armQuery.params,
+    format: 'JSONEachRow',
+  });
   const rows = await result.json<ArmQueryRow>();
 
   const candidates: HistoryCandidate[] = new Array(rows.length);
@@ -248,23 +282,6 @@ async function runArm(
     };
   }
   return candidates;
-}
-
-/**
- * ClickHouse has no row-level security. A query without both scope predicates is
- * a cross-tenant read, so an empty tenant or user is a programming error and must
- * fail loudly rather than widen scope. `__SYSTEM__` is a query-time wildcard in
- * this codebase (PLAN [R9]) and is rejected outright — this tier never
- * special-cases it into a skipped predicate.
- */
-function assertScoped(request: HistoryCandidateRequest): void {
-  const { tenantId, userId } = request.scope;
-  if (!tenantId || !userId) {
-    throw new Error('history candidates require a resolved tenantId and userId');
-  }
-  if (tenantId === '__SYSTEM__') {
-    throw new Error('history candidates cannot be fetched under the system tenant');
-  }
 }
 
 function isUsableVector(vector: readonly number[] | undefined): boolean {

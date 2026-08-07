@@ -51,10 +51,36 @@
  *    admitting it would resurrect deleted content (PLAN [R7], [R24]).
  *
  * 2. SCOPE COMES FROM ALS, NEVER FROM INPUT. ClickHouse has no row-level
- *    security; the `tenant_id`/`user_id` predicates in `candidates.ts` are the
- *    only scoping this tier has. `fetchCandidates` throws on an empty tenant or
- *    user and on `__SYSTEM__`, but it cannot tell a trusted scope from a
- *    forged one — resolve scope per PLAN's ordering rule [R9] before calling.
+ *    security, so application code here is the fence, not a net. Scope is
+ *    enforced structurally (PLAN "Multi-tenancy and scope safety"):
+ *
+ *      - The safety-critical half — resolve, normalize, reject, brand — exists
+ *        EXACTLY ONCE for both stores. It belongs in
+ *        `packages/data-schemas/src/config/tenantContext.ts` (track 4); `scope.ts`
+ *        here is a provisional stand-in with the same shape, to be deleted on
+ *        merge. SQL dialect rendering genuinely cannot be shared, so that half
+ *        stays per-store in `predicate.ts`.
+ *      - `resolveScope` NORMALIZES an absent tenant to `BASE_TENANT_ID` and only
+ *        then fails closed (PLAN [R9]), throwing `UnscopedQueryError` on a
+ *        missing user or on `__SYSTEM__` — a query-time wildcard in this
+ *        codebase that is never ported into a predicate.
+ *      - `buildTextArmQuery` / `buildVectorArmQuery` accept nothing but a
+ *        branded `Scope` and render the predicate internally into every stage.
+ *        There is no module-level SQL constant with an unfilled scope hole and
+ *        no intermediate predicate object a caller could forge, so an unscoped
+ *        query cannot be emitted at all. The brand is a module-private symbol:
+ *        a structurally identical plain object is rejected.
+ *      - Every kind this tier serves is USER-scoped, not merely tenant-scoped.
+ *        Messages and conversations are content-bearing; shared links are the
+ *        owner's management view — public share consumption is a separate route
+ *        that never reaches this module.
+ *
+ *    The fence still cannot tell a trusted scope from a forged one: resolve
+ *    scope from the ALS store per PLAN's ordering rule [R9] before calling.
+ *    Coverage: `leakmatrix.spec.ts` runs {text, vector} x {messages,
+ *    conversations, shared-links} against clickhouse-local with two users in two
+ *    tenants and deliberately colliding content, and asserts the builders throw
+ *    when scope is absent, forged, or stripped.
  *
  * 3. ADDITIVE ONLY. PostgreSQL searches the full corpus; these candidates merge
  *    in as extras and PostgreSQL wins dedup ties. The PG arm is never filtered
@@ -67,6 +93,11 @@
  * 5. DEGRADATIONS PROPAGATE. `HistoryDegradation` values map 1:1 onto the
  *    track-4 `SearchDegradation` union and must be merged into the response's
  *    `degradations` array rather than swallowed.
+ *
+ * 6. CREDENTIALS ARE OPERATOR-SUPPLIED AND REQUIRED. `config.ts` reads every DSN
+ *    and password from the environment with NO fallback default; a missing
+ *    variable throws at startup. Errors name the variable only — never a value —
+ *    and `describeTarget()` is the only connection detail that may be logged.
  *
  * ---------------------------------------------------------------------------
  * SCHEMA OWNERSHIP
@@ -117,14 +148,43 @@ export {
 export type { VisibleOutboxWindow } from './source';
 
 export {
+  buildTextArmQuery,
+  buildVectorArmQuery,
   createCandidateAdapter,
-  textArmSql,
-  vectorArmSql,
   DEFAULT_ARM_LIMIT,
   EMBEDDING_DIMENSIONS,
   MAX_ARM_LIMIT,
 } from './candidates';
-export type { CandidateAdapterOptions, HistoryCandidateAdapter } from './candidates';
+export type { ArmQuery, CandidateAdapterOptions, HistoryCandidateAdapter } from './candidates';
+
+/**
+ * PROVISIONAL: `scope.ts` is a local stand-in for the shared scope core that
+ * PLAN places in `packages/data-schemas/src/config/tenantContext.ts` (track 4).
+ * Re-exported here so callers have one import today; when the shared core lands,
+ * delete `scope.ts`, re-point `predicate.ts` at `@librechat/data-schemas`, and
+ * drop these four lines. `predicate.ts` — the ClickHouse rendering half — stays.
+ */
+export {
+  assertScope,
+  resolveScope,
+  BASE_TENANT_ID,
+  SYSTEM_TENANT_ID,
+  UnscopedQueryError,
+} from './scope';
+export type { Scope, ScopeInput } from './scope';
+
+export { renderScopePredicate, SCOPE_PREDICATE_SQL } from './predicate';
+export type { ScopePredicate } from './predicate';
+
+export {
+  describeTarget,
+  optionalEnv,
+  readClickHouseConfig,
+  readHistoryTierConfig,
+  requireEnv,
+  MissingCredentialError,
+} from './config';
+export type { ClickHouseConnectionConfig, HistoryEnv, HistoryTierConfig } from './config';
 
 export { applyFailClosedAntiJoin, antiJoinLookupSql, loadLiveDocumentRows } from './guard';
 

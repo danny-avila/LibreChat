@@ -3,8 +3,9 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import type { ClickHouseDocumentRow, ClickHouseParam } from './types';
-import { textArmSql, vectorArmSql } from './candidates';
+import { buildTextArmQuery, buildVectorArmQuery } from './candidates';
 import { NEVER_RETIRE } from './consumer';
+import { resolveScope } from './scope';
 
 /**
  * Executes the real DDL and the real serving queries against a real ClickHouse
@@ -87,7 +88,18 @@ describeIfClickHouse('ClickHouse historical-serving schema', () => {
     };
   }
 
-  const scope = { tenant_id: '__BASE__', user_id: 'u1', kind: 'message', limit: 50 };
+  const scopeFilter = () => resolveScope({ tenantId: '__BASE__', userId: 'u1' });
+
+  /** Drives the REAL builders, so these assertions cover the shipped SQL. */
+  function textArm<TRow>(text: string, limit = 50): TRow[] {
+    const built = buildTextArmQuery(scopeFilter(), 'message', text, limit);
+    return query<TRow>(built.query, built.params as Record<string, ClickHouseParam>);
+  }
+
+  function vectorArm<TRow>(queryVector: readonly number[], limit = 50): TRow[] {
+    const built = buildVectorArmQuery(scopeFilter(), 'message', queryVector, limit);
+    return query<TRow>(built.query, built.params as Record<string, ClickHouseParam>);
+  }
 
   beforeAll(() => {
     dataPath = mkdtempSync(join(tmpdir(), 'lc-history-ch-'));
@@ -145,11 +157,8 @@ describeIfClickHouse('ClickHouse historical-serving schema', () => {
         { projection_version: '2', body: 'gamma delta' },
       ]);
 
-      expect(query(textArmSql, { ...scope, query: 'alpha' })).toEqual([]);
-      const hits = query<{ record_id: string; projection_version: string }>(textArmSql, {
-        ...scope,
-        query: 'gamma',
-      });
+      expect(textArm('alpha')).toEqual([]);
+      const hits = textArm<{ record_id: string; projection_version: string }>('gamma');
       expect(hits).toHaveLength(1);
       expect(hits[0].projection_version).toBe('2');
     });
@@ -162,14 +171,14 @@ describeIfClickHouse('ClickHouse historical-serving schema', () => {
         `SELECT toString(count()) AS n FROM chat_search.documents`,
       );
       expect(parts[0].n).toBe('2');
-      expect(query(textArmSql, { ...scope, query: 'secret' })).toEqual([]);
+      expect(textArm('secret')).toEqual([]);
     });
 
     it('keeps a resurrected-looking older version out even when it arrives after the tombstone', () => {
       insert([{ projection_version: '3', is_deleted: 1, deleted_at: '2026-02-01 00:00:00.000' }]);
       insert([{ projection_version: '2', body: 'late replay of old content' }]);
 
-      expect(query(textArmSql, { ...scope, query: 'late replay' })).toEqual([]);
+      expect(textArm('late replay')).toEqual([]);
     });
 
     it('does not let a stale non-null expiry survive a later NULL one', () => {
@@ -195,24 +204,24 @@ describeIfClickHouse('ClickHouse historical-serving schema', () => {
       expect(tupled.nullable).toBe(1);
 
       // The serving query must behave like the tuple form: the record is live.
-      expect(query(textArmSql, { ...scope, query: 'searchable' })).toHaveLength(1);
+      expect(textArm('searchable')).toHaveLength(1);
     });
   });
 
   describe('query-time expiry, temporary and deletion filters', () => {
     it('drops an expired record', () => {
       insert([{ body: 'expired content', expires_at: '2020-01-01 00:00:00.000' }]);
-      expect(query(textArmSql, { ...scope, query: 'expired' })).toEqual([]);
+      expect(textArm('expired')).toEqual([]);
     });
 
     it('keeps a record whose expiry is in the future', () => {
       insert([{ body: 'future content', expires_at: '2099-01-01 00:00:00.000' }]);
-      expect(query(textArmSql, { ...scope, query: 'future' })).toHaveLength(1);
+      expect(textArm('future')).toHaveLength(1);
     });
 
     it('drops a temporary record', () => {
       insert([{ body: 'temporary content', is_temporary: 1 }]);
-      expect(query(textArmSql, { ...scope, query: 'temporary' })).toEqual([]);
+      expect(textArm('temporary')).toEqual([]);
     });
   });
 
@@ -223,7 +232,7 @@ describeIfClickHouse('ClickHouse historical-serving schema', () => {
         { user_id: 'u2', record_id: 'theirs', body: 'shared phrase' },
       ]);
 
-      const hits = query<{ record_id: string }>(textArmSql, { ...scope, query: 'shared phrase' });
+      const hits = textArm<{ record_id: string }>('shared phrase');
       expect(hits.map((hit) => hit.record_id)).toEqual(['mine']);
     });
 
@@ -233,7 +242,7 @@ describeIfClickHouse('ClickHouse historical-serving schema', () => {
         { tenant_id: 'acme', record_id: 'acme', body: 'shared phrase' },
       ]);
 
-      const hits = query<{ record_id: string }>(textArmSql, { ...scope, query: 'shared phrase' });
+      const hits = textArm<{ record_id: string }>('shared phrase');
       expect(hits.map((hit) => hit.record_id)).toEqual(['base']);
     });
   });
@@ -252,13 +261,7 @@ describeIfClickHouse('ClickHouse historical-serving schema', () => {
         { record_id: 'novector', has_embedding: 0, embedding: [] },
       ]);
 
-      const hits = query<{ record_id: string; score: number }>(vectorArmSql, {
-        tenant_id: '__BASE__',
-        user_id: 'u1',
-        kind: 'message',
-        limit: 50,
-        query_vector: unit(0),
-      });
+      const hits = vectorArm<{ record_id: string; score: number }>(unit(0));
 
       expect(hits.map((hit) => hit.record_id)).toEqual(['near', 'far']);
       expect(hits[0].score).toBeCloseTo(1, 5);
@@ -278,13 +281,7 @@ describeIfClickHouse('ClickHouse historical-serving schema', () => {
         },
       ]);
 
-      const hits = query(vectorArmSql, {
-        tenant_id: '__BASE__',
-        user_id: 'u1',
-        kind: 'message',
-        limit: 50,
-        query_vector: unit(0),
-      });
+      const hits = vectorArm(unit(0));
       expect(hits).toEqual([]);
     });
   });
@@ -339,7 +336,7 @@ describeIfClickHouse('ClickHouse historical-serving schema', () => {
       );
       expect(rows).toHaveLength(1);
       expect(rows[0].is_deleted).toBe(1);
-      expect(query(textArmSql, { ...scope, query: 'old content' })).toEqual([]);
+      expect(textArm('old content')).toEqual([]);
     });
 
     it('drops all versions of a key together when the key-scoped TTL fires', () => {
@@ -377,7 +374,7 @@ describeIfClickHouse('ClickHouse historical-serving schema', () => {
         `SELECT toString(count()) AS n FROM chat_search.documents`,
       );
       expect(count.n).toBe('0');
-      expect(query(textArmSql, { ...scope, query: 'content' })).toEqual([]);
+      expect(textArm('content')).toEqual([]);
     });
   });
 });
