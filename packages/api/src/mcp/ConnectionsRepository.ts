@@ -1,8 +1,8 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
-import { canUseAppConnection, isUserSourced } from './utils';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { canUseAppConnection, isUserSourced } from './utils';
 import { notifyMCPToolsChanged } from './toolsChanged';
 import { MCPConnection } from './connection';
 
