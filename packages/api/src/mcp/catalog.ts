@@ -71,6 +71,8 @@ export interface MCPToolCatalogScopeInput {
   securityPolicyIdentity: string;
   customUserVars?: Record<string, string>;
   authorizationIdentity: string;
+  /** Fresh principal/Config document proof for the merged MCP authority. */
+  authorityIdentity?: string;
   /** Authorization mode proven by the connection that discovered these schemas. */
   authorizationKind?: MCPConnectionProvenance['authorizationKind'];
   /** Exact post-placeholder config used to construct the discovering connection. */
@@ -217,6 +219,7 @@ export function createMCPToolCatalogScope({
   securityPolicyIdentity,
   customUserVars,
   authorizationIdentity,
+  authorityIdentity,
   authorizationKind,
   effectiveServerConfig,
 }: MCPToolCatalogScopeInput): MCPToolCatalogScope {
@@ -225,7 +228,10 @@ export function createMCPToolCatalogScope({
     principal: digest(userId),
     server: digest(serverName),
     policy: securityPolicyIdentity,
-    config: fingerprint(declarativeConfig(serverConfig)),
+    config: fingerprint({
+      authorityIdentity: authorityIdentity ?? null,
+      serverConfig: declarativeConfig(serverConfig),
+    }),
     credentials: fingerprint({
       customUserVars: customUserVars ?? {},
       authorizationIdentity: authorizationIdentity ?? 'none',

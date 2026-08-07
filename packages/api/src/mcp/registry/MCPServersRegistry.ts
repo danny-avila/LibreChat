@@ -318,6 +318,28 @@ export class MCPServersRegistry {
     return base ? { ...candidate, source: base.source } : candidate;
   }
 
+  /** Reads one DB-backed server and its ACL directly without registry read-through caches. */
+  public async getUserServerConfigFresh(
+    serverName: string,
+    userId?: string,
+    role?: string,
+  ): Promise<t.ParsedServerConfig | undefined> {
+    if (!this.dbConfigsRepo.getFresh) {
+      throw new Error('The MCP DB repository does not support authoritative targeted reads');
+    }
+    return await this.dbConfigsRepo.getFresh(serverName, userId, role);
+  }
+
+  public async getAccessibleUserServerNamesFresh(
+    userId?: string,
+    role?: string,
+  ): Promise<string[]> {
+    if (!this.dbConfigsRepo.getAccessibleServerNamesFresh) {
+      throw new Error('The MCP DB repository does not support authoritative name reads');
+    }
+    return await this.dbConfigsRepo.getAccessibleServerNamesFresh(userId, role);
+  }
+
   /**
    * Returns the full server config map after merging YAML cache, Config-tier overrides,
    * and User-DB entries.

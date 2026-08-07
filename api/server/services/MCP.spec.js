@@ -37,6 +37,7 @@ jest.mock('@librechat/api', () => {
   const actual = jest.requireActual('@librechat/api');
   return {
     ...actual,
+    getMCPToolCatalogRevision: (config) => JSON.stringify(config),
     sendEvent: jest.fn(),
     get isMCPDomainAllowed() {
       return mockIsMCPDomainAllowed;
@@ -1632,6 +1633,79 @@ describe('User parameter passing tests', () => {
           process.env.CREDS_KEY = originalCredsKey;
         }
       }
+    });
+
+    it('rechecks authority after connection work and before the remote tool call', async () => {
+      const user = { id: 'during-connect-user', role: 'USER' };
+      const serverName = 'during-connect-server';
+      const serverConfig = { type: 'streamable-http', url: 'https://mcp.example.com/mcp' };
+      const catalogScope = {
+        tenant: 'tenant',
+        principal: 'principal',
+        server: 'server',
+        policy: 'policy',
+        config: 'config',
+        credentials: 'credentials',
+      };
+      const authority = {
+        user,
+        tenantId: null,
+        serverName,
+        serverConfig,
+        provenanceServerConfig: serverConfig,
+        customUserVars: undefined,
+        authorizationIdentity: 'none',
+        authorizationKind: 'none',
+        catalogScope,
+        securityPolicyIdentity: 'policy',
+        securityPolicy: { allowedDomains: null, allowedAddresses: null },
+      };
+      mockResolveCurrentMCPToolAuthority
+        .mockResolvedValueOnce(authority)
+        .mockResolvedValueOnce(authority)
+        .mockResolvedValueOnce(null);
+      mockGetRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true },
+        },
+      });
+      const remoteCall = jest.fn();
+      mockGetMCPManager.mockReturnValue({
+        callTool: jest.fn(async ({ beforeExecute }) => {
+          await beforeExecute({ connectionProvenance: null });
+          return remoteCall();
+        }),
+      });
+      const availableTools = {
+        [`search${D}${serverName}`]: {
+          function: {
+            name: `search${D}${serverName}`,
+            description: 'Search',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+      stampMCPAvailableToolsAuthority(availableTools, catalogScope);
+      const tool = await createMCPTool({
+        user,
+        authority,
+        config: serverConfig,
+        toolKey: `search${D}${serverName}`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools,
+      });
+      await expect(
+        tool.invoke(
+          {},
+          {
+            configurable: { user },
+            metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+            toolCall: {},
+          },
+        ),
+      ).rejects.toThrow('Forbidden: MCP server authority changed before execution');
+      expect(remoteCall).not.toHaveBeenCalled();
     });
 
     it('does not bind definitions stamped under an older authority scope', async () => {

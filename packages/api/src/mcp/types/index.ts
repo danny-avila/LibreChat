@@ -20,6 +20,7 @@ import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provi
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
+import type { MCPToolCatalogScope } from '~/mcp/catalog';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
@@ -224,6 +225,8 @@ export interface UserConnectionContext {
   requestScopedConnections?: RequestScopedMCPConnectionStore;
   graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
+  /** Authority captured by the host before an interactive OAuth flow starts. */
+  oauthAuthorityScope?: MCPToolCatalogScope;
 }
 
 export interface RequestScopedMCPConnectionStore {

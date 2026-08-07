@@ -2,6 +2,8 @@ const mockGetAppConfig = jest.fn();
 const mockEnsureConfigServers = jest.fn();
 const mockGetAllServerConfigsFresh = jest.fn();
 const mockResolveAllowlists = jest.fn();
+const mockGetUserServerConfigFresh = jest.fn();
+const mockGetAccessibleUserServerNamesFresh = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   getTenantId: jest.fn().mockReturnValue(undefined),
@@ -9,6 +11,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  MCP_AUTHORITY_IDENTITY_KEY: '__mcpAuthorityIdentity',
   getAppConfigOptionsFromUser: (user, tenantId) => ({
     userId: user?.id,
     role: user?.role,
@@ -24,6 +27,8 @@ jest.mock('~/config', () => ({
   getMCPServersRegistry: () => ({
     ensureConfigServers: mockEnsureConfigServers,
     getAllServerConfigsFresh: mockGetAllServerConfigsFresh,
+    getUserServerConfigFresh: mockGetUserServerConfigFresh,
+    getAccessibleUserServerNamesFresh: mockGetAccessibleUserServerNamesFresh,
     resolveAllowlists: mockResolveAllowlists,
   }),
 }));
@@ -51,6 +56,7 @@ describe('MCPConfigResolver', () => {
       allowedAddresses: ['10.0.0.0/8'],
     };
     mockGetAppConfig.mockResolvedValue({
+      __mcpAuthorityIdentity: 'proof-a',
       mcpConfig: { search: rawConfig },
       mcpSettings: securityPolicy,
     });
@@ -58,7 +64,10 @@ describe('MCPConfigResolver', () => {
     mockGetAllServerConfigsFresh.mockResolvedValue({ search: parsedConfig });
 
     await expect(resolveMCPDiscoveryConfigSnapshot(user.id, user)).resolves.toEqual({
+      authorityIdentity: 'proof-a',
+      collisionServerNames: ['search'],
       configs: { search: parsedConfig },
+      missingConfigServerNames: [],
       securityPolicy,
     });
 
@@ -68,8 +77,9 @@ describe('MCPConfigResolver', () => {
       role: user.role,
       idOnTheSource: user.idOnTheSource,
       tenantId: user.tenantId,
-      refresh: true,
+      refreshOverrides: true,
       failClosed: true,
+      mcpOnly: true,
     });
     expect(mockEnsureConfigServers).toHaveBeenCalledWith(
       { search: rawConfig },
@@ -125,6 +135,7 @@ describe('MCPConfigResolver', () => {
     ).resolves.toEqual({
       collisionServerNames: ['Requested: Server', 'yaml', 'cold'],
       configs: { 'Requested: Server': { ...requested, source: 'config' } },
+      missingConfigServerNames: [],
       securityPolicy: { allowedDomains: undefined, allowedAddresses: undefined },
     });
     expect(mockEnsureConfigServers).toHaveBeenCalledWith(
@@ -149,11 +160,62 @@ describe('MCPConfigResolver', () => {
     await expect(
       resolveMCPDiscoveryConfigSnapshot(user.id, user, { initializeMissing: false }),
     ).resolves.toEqual({
+      collisionServerNames: ['warm', 'stable', 'cold'],
       configs: {
         warm: warmParsed,
         stable: { type: 'stdio', command: 'node', source: 'yaml' },
       },
+      missingConfigServerNames: ['cold'],
       securityPolicy: { allowedDomains: undefined, allowedAddresses: undefined },
     });
+  });
+
+  it('uses only projected Config and targeted DB authority reads on a bounded invoke fence', async () => {
+    const user = { id: 'user-1', role: 'USER', tenantId: 'tenant-a' };
+    const rawConfig = { type: 'streamable-http', url: 'https://mcp.example.com' };
+    const parsedConfig = { ...rawConfig, source: 'config' };
+    mockGetAppConfig.mockResolvedValue({
+      __mcpAuthorityIdentity: 'proof-b',
+      mcpConfig: { search: rawConfig },
+    });
+    mockGetUserServerConfigFresh.mockResolvedValue(undefined);
+
+    await expect(
+      resolveMCPDiscoveryConfigSnapshot(user.id, user, {
+        bounded: true,
+        serverNames: ['search'],
+        expectedServerConfigs: { search: parsedConfig },
+      }),
+    ).resolves.toMatchObject({
+      authorityIdentity: 'proof-b',
+      collisionServerNames: ['search'],
+      configs: { search: parsedConfig },
+    });
+
+    expect(mockGetAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ refreshOverrides: true, mcpOnly: true }),
+    );
+    expect(mockGetUserServerConfigFresh).toHaveBeenCalledWith('search', user.id, user.role);
+    expect(mockGetAccessibleUserServerNamesFresh).not.toHaveBeenCalled();
+    expect(mockEnsureConfigServers).not.toHaveBeenCalled();
+    expect(mockGetAllServerConfigsFresh).not.toHaveBeenCalled();
+  });
+
+  it('loads a fresh complete DB name index for normalization-sensitive bounded authority', async () => {
+    const user = { id: 'user-1', role: 'USER', tenantId: 'tenant-a' };
+    const rawConfig = { type: 'streamable-http', url: 'https://mcp.example.com' };
+    const parsedConfig = { ...rawConfig, source: 'config' };
+    mockGetAppConfig.mockResolvedValue({ mcpConfig: { 'Sales Force': rawConfig } });
+    mockGetAccessibleUserServerNamesFresh.mockResolvedValue(['Sales_Force']);
+    mockGetUserServerConfigFresh.mockResolvedValue(undefined);
+
+    const result = await resolveMCPDiscoveryConfigSnapshot(user.id, user, {
+      bounded: true,
+      serverNames: ['Sales Force'],
+      expectedServerConfigs: { 'Sales Force': parsedConfig },
+    });
+
+    expect(result.collisionServerNames).toEqual(['Sales Force', 'Sales_Force']);
+    expect(mockGetAccessibleUserServerNamesFresh).toHaveBeenCalledWith(user.id, user.role);
   });
 });

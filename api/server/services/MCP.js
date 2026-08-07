@@ -28,6 +28,7 @@ const {
   isUserSourced,
   checkAccess,
   checkAccessWithRequestCache,
+  matchesMCPConnectionProvenance,
   getMCPToolCatalogRevision,
   getMissingCustomUserVars,
   getServerCustomUserVars,
@@ -721,6 +722,7 @@ async function reconnectServer({
   userMCPAuthMap,
   requestBody,
   requestScopedConnections,
+  authorityScope,
   streamId = null,
   jobCreatedAt,
 }) {
@@ -802,6 +804,7 @@ async function reconnectServer({
       userMCPAuthMap,
       requestBody,
       requestScopedConnections,
+      oauthAuthorityScope: authorityScope,
       forceNew: true,
       returnOnOAuth: false,
       connectionTimeout: Time.THIRTY_SECONDS,
@@ -920,6 +923,7 @@ async function createMCPTools({
     userMCPAuthMap,
     requestBody,
     requestScopedConnections,
+    authorityScope: authority.catalogScope,
     streamId,
     jobCreatedAt,
   });
@@ -1154,6 +1158,7 @@ async function createMCPTool({
       userMCPAuthMap,
       requestBody,
       requestScopedConnections,
+      authorityScope: authority.catalogScope,
       streamId,
       jobCreatedAt,
     });
@@ -1191,6 +1196,26 @@ async function createMCPTool({
     );
     return createUnavailableToolStub(toolName, serverName);
   }
+
+  const bindingAuthority = await resolveCurrentMCPToolAuthority({
+    user: authority.user,
+    serverName,
+    requestBody,
+    oauthRequiredHint: authority.authorizationKind === 'oauth',
+    bounded: true,
+    expectedServerConfig: authority.serverConfig,
+  });
+  if (
+    !bindingAuthority?.catalogScope ||
+    !(await userCanUseMCPServersFresh(bindingAuthority.user)) ||
+    !matchesMCPToolAuthorityScope(authority.catalogScope, bindingAuthority.catalogScope)
+  ) {
+    logger.warn(`[MCP][${serverName}][${toolName}] Authority changed before tool binding`);
+    return undefined;
+  }
+  authority = bindingAuthority;
+  user = authority.user;
+  serverConfig = authority.serverConfig;
 
   return createToolInstance({
     res,
@@ -1342,6 +1367,28 @@ function createToolInstance({
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
+        oauthAuthorityScope: currentAuthority.catalogScope,
+        beforeExecute: async ({ connectionProvenance }) => {
+          const executionAuthority = await resolveCurrentMCPToolAuthority({
+            user: currentAuthority.user,
+            serverName,
+            requestBody,
+            oauthRequiredHint: currentAuthority.authorizationKind === 'oauth',
+            bounded: true,
+            expectedServerConfig: currentAuthority.serverConfig,
+          });
+          if (
+            !executionAuthority?.catalogScope ||
+            !(await userCanUseMCPServersFresh(executionAuthority.user)) ||
+            !matchesMCPToolAuthorityScope(
+              currentAuthority.catalogScope,
+              executionAuthority.catalogScope,
+            ) ||
+            !matchesMCPConnectionProvenance(connectionProvenance, executionAuthority.scopeInput)
+          ) {
+            throw new Error('Forbidden: MCP server authority changed before execution');
+          }
+        },
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

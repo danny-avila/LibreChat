@@ -79,6 +79,7 @@ export class MCPConnectionFactory {
   protected oauthEnd?: () => Promise<void>;
   protected returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
+  protected readonly oauthAuthorityScope?: t.OAuthConnectionOptions['oauthAuthorityScope'];
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
   private connectionReady = false;
@@ -339,6 +340,7 @@ export class MCPConnectionFactory {
     this.ephemeralConnection = basic.ephemeralConnection === true;
     this.customUserVars = options?.customUserVars;
     this.connectionTimeout = options?.connectionTimeout;
+    this.oauthAuthorityScope = options?.oauthAuthorityScope;
     this.tenantContext = tenantStorage?.getStore?.();
     this.tenantId = options?.user?.tenantId ?? this.tenantContext?.tenantId ?? getTenantId();
     this.logPrefix = options?.user
@@ -1157,7 +1159,12 @@ export class MCPConnectionFactory {
           }
 
           // Store flow state BEFORE redirecting so the callback can find it
-          const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: this.tenantId };
+          const metadataWithUrl = {
+            ...flowMetadata,
+            authorizationUrl,
+            tenantId: this.tenantId,
+            authorityScope: this.oauthAuthorityScope,
+          };
           await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
           await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager!);
 
@@ -1592,7 +1599,12 @@ export class MCPConnectionFactory {
       reusedClientCredentialSetId = flowMetadata.reusedClientCredentialSetId;
 
       // Store flow state BEFORE redirecting so the callback can find it
-      const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: this.tenantId };
+      const metadataWithUrl = {
+        ...flowMetadata,
+        authorizationUrl,
+        tenantId: this.tenantId,
+        authorityScope: this.oauthAuthorityScope,
+      };
       await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
       await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager);
 

@@ -29,6 +29,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   getApplicableConfigs: (
     principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     session?: ClientSession,
+    options?: { paths?: string[] },
   ) => Promise<IConfig[]>;
   upsertConfig: (
     principalType: PrincipalType,
@@ -112,6 +113,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   async function getApplicableConfigs(
     principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     session?: ClientSession,
+    options?: { paths?: string[] },
   ): Promise<IConfig[]> {
     const Config = mongoose.models.Config as Model<IConfig>;
 
@@ -133,13 +135,27 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       }
     }
 
-    return await Config.find({
+    const query = Config.find({
       $or: principalsQuery,
       isActive: true,
     })
       .sort({ priority: 1 })
-      .session(session ?? null)
-      .lean<IConfig[]>();
+      .session(session ?? null);
+    if (options?.paths?.length) {
+      query.select([
+        '_id',
+        'principalType',
+        'principalId',
+        'principalModel',
+        'priority',
+        'isActive',
+        'configVersion',
+        'tombstones',
+        'tenantId',
+        ...options.paths.map((path) => `overrides.${path}`),
+      ]);
+    }
+    return await query.lean<IConfig[]>();
   }
 
   async function upsertConfig(

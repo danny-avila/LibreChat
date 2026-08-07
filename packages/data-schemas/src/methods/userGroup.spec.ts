@@ -537,6 +537,31 @@ describe('userGroup methods', () => {
       expect(cache.set).toHaveBeenCalledWith('cache-ext-1', [group._id.toString()]);
     });
 
+    it('bypasses cached group memberships for authoritative principal reads', async () => {
+      const user = await createTestUser({ idOnTheSource: 'fresh-ext-1' });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'fresh-ext-1',
+      };
+
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+      const group = await Group.create({
+        name: 'Fresh Team',
+        source: 'entra',
+        idOnTheSource: 'fresh-grp-1',
+        memberIds: ['fresh-ext-1'],
+      });
+
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+      expect(
+        groupPrincipalIds(await cachedMethods.getUserPrincipals({ ...params, fresh: true })),
+      ).toEqual([group._id.toString()]);
+      expect(cache.set).toHaveBeenCalledTimes(1);
+    });
+
     it('caches empty memberships and hydrates group ids as ObjectIds', async () => {
       const user = await createTestUser({ idOnTheSource: 'cache-ext-empty' });
       const cache = createFakeCache();

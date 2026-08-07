@@ -761,6 +761,7 @@ async function loadToolDefinitionsWrapper({
   const oauthStepIndexes = new Map();
   /** @type {Record<string, import('@librechat/api').LCAvailableTools>} */
   const mcpAvailableTools = {};
+  const mcpAuthorityConfigs = new Map();
   const requestScopedConnections = getMCPRequestContext(req, res);
   const rememberMCPAvailableTools = (serverName, availableTools) => {
     if (!availableTools || Object.keys(availableTools).length === 0) {
@@ -967,6 +968,9 @@ async function loadToolDefinitionsWrapper({
    *  spellings itself (direct identity first, alias fallback), so this
    *  closure must look up EXACTLY the name it is given. */
   const getOrFetchMCPServerTools = async (_userId, serverName) => {
+    if (authorityRejectedServers.has(serverName)) {
+      return null;
+    }
     const authorityUserId = mcpAuthoritySnapshot?.user.id;
     const addPendingOAuthServer = async () => {
       const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
@@ -1015,6 +1019,7 @@ async function loadToolDefinitionsWrapper({
         authorizationKind: catalogRead.result.metadata.authorizationKind,
       });
       rememberMCPAvailableTools(serverName, cached);
+      mcpAuthorityConfigs.set(serverName, authority.serverConfig);
       return cached;
     }
 
@@ -1038,6 +1043,7 @@ async function loadToolDefinitionsWrapper({
       userMCPAuthMap,
       requestBody: req.body,
       requestScopedConnections,
+      oauthAuthorityScope: authority.catalogScope,
     });
 
     const acceptedAuthority = await resolvePostDiscoveryAuthority(authority, result);
@@ -1057,6 +1063,7 @@ async function loadToolDefinitionsWrapper({
       result?.discoveryProvenance,
     );
     rememberMCPAvailableTools(serverName, result?.availableTools);
+    mcpAuthorityConfigs.set(serverName, acceptedAuthority.serverConfig);
     return result?.availableTools || null;
   };
 
@@ -1093,6 +1100,7 @@ async function loadToolDefinitionsWrapper({
       userMCPAuthMap,
       requestBody: req.body,
       requestScopedConnections,
+      oauthAuthorityScope: authority.catalogScope,
     });
 
     const acceptedAuthority = await resolvePostDiscoveryAuthority(authority, result);
@@ -1112,6 +1120,7 @@ async function loadToolDefinitionsWrapper({
       result?.discoveryProvenance,
     );
     rememberMCPAvailableTools(serverName, result?.availableTools);
+    mcpAuthorityConfigs.set(serverName, acceptedAuthority.serverConfig);
     return result?.availableTools || null;
   };
 
@@ -1255,6 +1264,7 @@ async function loadToolDefinitionsWrapper({
           oauthStart,
           oauthEnd: createOAuthEndEmitter(serverName),
           connectionTimeout: Time.TWO_MINUTES,
+          oauthAuthorityScope: authority.catalogScope,
         });
 
         if (result?.availableTools) {
@@ -1274,6 +1284,7 @@ async function loadToolDefinitionsWrapper({
             result.discoveryProvenance,
           );
           rememberMCPAvailableTools(serverName, result.availableTools);
+          mcpAuthorityConfigs.set(serverName, acceptedAuthority.serverConfig);
           logger.info(`[Tool Definitions] OAuth completed for ${serverName}, tools available`);
           return { serverName, success: true };
         }
@@ -1319,6 +1330,62 @@ async function loadToolDefinitionsWrapper({
       hasDeferredTools = reloadResult.hasDeferredTools;
       mcpResolution = reloadResult.mcpResolution;
     }
+  }
+
+  const findChangedDefinitionAuthorities = async () => {
+    const changed = new Set();
+    for (const [serverName, availableTools] of Object.entries(mcpAvailableTools)) {
+      const currentAuthority = await resolveCurrentMCPToolAuthority({
+        user: mcpAuthoritySnapshot.user,
+        serverName,
+        requestBody: req.body,
+        bounded: true,
+        expectedServerConfig: mcpAuthorityConfigs.get(serverName),
+      });
+      if (
+        !currentAuthority?.catalogScope ||
+        !(await userCanUseMCPServersFresh(currentAuthority.user)) ||
+        !matchesMCPAvailableToolsAuthority(availableTools, currentAuthority.catalogScope)
+      ) {
+        changed.add(serverName);
+      }
+    }
+    return changed;
+  };
+  const changedDefinitionAuthorities = await findChangedDefinitionAuthorities();
+  if (changedDefinitionAuthorities.size > 0) {
+    for (const serverName of changedDefinitionAuthorities) {
+      authorityRejectedServers.add(serverName);
+      delete mcpAvailableTools[serverName];
+    }
+    const reloadResult = await loadToolDefinitions(
+      {
+        userId: req.user.id,
+        agentId: agent.id,
+        tools: defsFilteredTools,
+        toolOptions: agent.tool_options,
+        deferredToolsEnabled,
+        programmaticToolsEnabled,
+        codeExecutionEnabled,
+        provider: agent.provider,
+        mcpServerNames,
+        rawServerNames: mcpRawServerNames,
+        accessibleServerNames: defsAccessibleServerNames,
+      },
+      {
+        isBuiltInTool,
+        getOrFetchMCPServerTools,
+        refreshMCPServerTools,
+        getActionToolDefinitions,
+      },
+    );
+    toolDefinitions = reloadResult.toolDefinitions;
+    toolRegistry = reloadResult.toolRegistry;
+    hasDeferredTools = reloadResult.hasDeferredTools;
+    mcpResolution = reloadResult.mcpResolution;
+  }
+  if ((await findChangedDefinitionAuthorities()).size > 0) {
+    throw createExpectedMCPToolsUnavailableError(agent.name);
   }
 
   if (hasExpectedMCPTools && mcpResolution?.resolvedToolCount === 0) {

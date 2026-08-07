@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { PrincipalType } from 'librechat-data-provider';
 import {
   logger,
@@ -9,6 +10,7 @@ import type { AppConfig, IConfig } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 
 const BASE_CONFIG_KEY = '_BASE_';
+export const MCP_AUTHORITY_IDENTITY_KEY = '__mcpAuthorityIdentity';
 
 export const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
 
@@ -38,12 +40,14 @@ export interface AppConfigServiceDeps {
   /** Fetch applicable DB config overrides for a set of principals. */
   getApplicableConfigs: (
     principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    options?: { paths?: string[] },
   ) => Promise<IConfig[]>;
   /** Resolve full principal list (user + role + groups) from userId/role. */
   getUserPrincipals: (params: {
     userId: string | Types.ObjectId;
     role?: string | null;
     idOnTheSource?: string | null;
+    fresh?: boolean;
   }) => Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>>;
   /** TTL in ms for per-user/role merged config caches. Defaults to 60 000. */
   overrideCacheTtl?: number;
@@ -55,6 +59,10 @@ export interface GetAppConfigOptions {
   idOnTheSource?: string | null;
   tenantId?: string;
   refresh?: boolean;
+  /** Bypass only the merged principal override cache without reloading YAML/base config. */
+  refreshOverrides?: boolean;
+  /** Restrict fresh override reads to MCP configuration and policy fields. */
+  mcpOnly?: boolean;
   /** Propagate principal/override lookup failures instead of falling back to base config. */
   failClosed?: boolean;
   /** When true, return only the YAML-derived base config — no DB override queries. */
@@ -67,6 +75,58 @@ export interface AppConfigUserLike {
   role?: string;
   tenantId?: string;
   idOnTheSource?: string | null;
+}
+
+function canonicalizeAuthorityValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalizeAuthorityValue);
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (value != null && typeof value === 'object') {
+    if ('toHexString' in value && typeof value.toHexString === 'function') {
+      return value.toHexString();
+    }
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, canonicalizeAuthorityValue(entry)]),
+    );
+  }
+  return value;
+}
+
+function withMCPAuthorityIdentity(
+  config: AppConfig,
+  baseConfig: AppConfig,
+  principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+  configs: IConfig[],
+): AppConfig {
+  const authorityProof = canonicalizeAuthorityValue({
+    base: {
+      mcpConfig: baseConfig.mcpConfig ?? null,
+      mcpSettings: baseConfig.mcpSettings ?? null,
+    },
+    configs: configs.map((entry) => ({
+      _id: entry._id,
+      configVersion: entry.configVersion,
+      isActive: entry.isActive,
+      principalId: entry.principalId,
+      principalType: entry.principalType,
+      priority: entry.priority,
+      tombstones: entry.tombstones ?? [],
+      overrides: entry.overrides,
+    })),
+    principals,
+  });
+  const identity = createHash('sha256').update(JSON.stringify(authorityProof)).digest('base64url');
+  Object.defineProperty(config, MCP_AUTHORITY_IDENTITY_KEY, {
+    configurable: false,
+    enumerable: false,
+    value: identity,
+  });
+  return config;
 }
 
 export function getAppConfigOptionsFromUser(
@@ -139,11 +199,18 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     role?: string,
     userId?: string,
     idOnTheSource?: string | null,
+    fresh = false,
   ): Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>> {
     if (userId) {
-      const params: { userId: string; role?: string | null; idOnTheSource?: string | null } = {
+      const params: {
+        userId: string;
+        role?: string | null;
+        idOnTheSource?: string | null;
+        fresh?: boolean;
+      } = {
         userId,
         role,
+        ...(fresh && { fresh: true }),
       };
       if (idOnTheSource !== undefined) {
         params.idOnTheSource = idOnTheSource;
@@ -192,7 +259,17 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * Use this for startup, auth strategies, and other pre-tenant code paths.
    */
   async function getAppConfig(options: GetAppConfigOptions = {}): Promise<AppConfig> {
-    const { role, userId, idOnTheSource, tenantId, refresh, failClosed, baseOnly } = options;
+    const {
+      role,
+      userId,
+      idOnTheSource,
+      tenantId,
+      refresh,
+      refreshOverrides,
+      mcpOnly,
+      failClosed,
+      baseOnly,
+    } = options;
 
     const baseConfig = await ensureBaseConfig(refresh);
 
@@ -201,7 +278,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     }
 
     const cacheKey = overrideCacheKey(role, userId, tenantId);
-    if (!refresh) {
+    if (!refresh && !refreshOverrides) {
       const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
       if (cachedMerged) {
         return cachedMerged;
@@ -210,7 +287,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
 
     let principals: Awaited<ReturnType<typeof buildPrincipals>> | null;
     try {
-      principals = await buildPrincipals(role, userId, idOnTheSource);
+      principals = await buildPrincipals(role, userId, idOnTheSource, refreshOverrides === true);
     } catch (error) {
       logger.error('[getAppConfig] Error building principals, falling back to base:', error);
       if (failClosed) {
@@ -240,7 +317,15 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     }
 
     try {
-      const configs = await getApplicableConfigs(principals);
+      const configs = mcpOnly
+        ? await getApplicableConfigs(principals, { paths: ['mcpConfig', 'mcpSettings'] })
+        : await getApplicableConfigs(principals);
+
+      if (mcpOnly) {
+        const merged =
+          configs.length === 0 ? { ...baseConfig } : mergeConfigOverrides(baseConfig, configs);
+        return withMCPAuthorityIdentity(merged, baseConfig, principals, configs);
+      }
 
       if (configs.length === 0) {
         await cache.set(cacheKey, baseConfig, overrideCacheTtl);

@@ -53,6 +53,7 @@ async function reinitMCPServer({
   serverConfig: providedConfig,
   requestBody,
   requestScopedConnections,
+  oauthAuthorityScope,
   oauthEnd,
 }) {
   /** @type {MCPConnection | null} */
@@ -201,6 +202,7 @@ async function reinitMCPServer({
         requestScopedConnections,
         connectionTimeout,
         serverConfig,
+        oauthAuthorityScope,
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
@@ -241,6 +243,7 @@ async function reinitMCPServer({
             graphTokenResolver: getGraphApiToken,
             oboTokenResolver: exchangeOboToken,
             oboTrustChecker: createOboTrustChecker(),
+            oauthAuthorityScope,
           });
 
           if (Array.isArray(discoveryResult.tools)) {

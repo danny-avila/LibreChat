@@ -2,16 +2,18 @@ const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   getAppConfigOptionsFromUser,
   getMCPToolCatalogRevision,
+  MCP_AUTHORITY_IDENTITY_KEY,
   normalizeServerName,
 } = require('@librechat/api');
 const { getMCPServersRegistry } = require('~/config');
 const { getAppConfig } = require('./Config');
 
-async function getAppConfigForUser(userId, user, refresh = false) {
+async function getAppConfigForUser(userId, user, refreshOverrides = false) {
   return await getAppConfig({
     ...getAppConfigOptionsFromUser({ ...user, id: userId }, user?.tenantId ?? getTenantId()),
-    refresh,
-    failClosed: refresh,
+    refreshOverrides,
+    failClosed: refreshOverrides,
+    mcpOnly: refreshOverrides,
   });
 }
 
@@ -44,6 +46,7 @@ async function resolveMCPDiscoveryConfigSnapshot(userId, user, options = {}) {
     allowedDomains: appConfig?.mcpSettings?.allowedDomains,
     allowedAddresses: appConfig?.mcpSettings?.allowedAddresses,
   };
+  const authorityIdentity = appConfig?.[MCP_AUTHORITY_IDENTITY_KEY];
   const selectedServerNames = options.serverNames ? new Set(options.serverNames) : null;
   const includesServer = (serverName) =>
     selectedServerNames == null ||
@@ -52,6 +55,56 @@ async function resolveMCPDiscoveryConfigSnapshot(userId, user, options = {}) {
   const currentMcpConfig = Object.fromEntries(
     Object.entries(appConfig?.mcpConfig || {}).filter(([serverName]) => includesServer(serverName)),
   );
+  if (options.bounded === true && selectedServerNames) {
+    const selectedNames = [...selectedServerNames];
+    const configs = {};
+    const collisionServerNames = new Set(Object.keys(appConfig?.mcpConfig || {}));
+    for (const selectedName of selectedNames) {
+      const rawNames = Object.keys(currentMcpConfig).filter(
+        (name) => name === selectedName || normalizeServerName(name) === selectedName,
+      );
+      if (rawNames.length > 1) {
+        rawNames.forEach((name) => collisionServerNames.add(name));
+        continue;
+      }
+      const lookupName = rawNames[0] ?? selectedName;
+      if (normalizeServerName(lookupName) !== lookupName) {
+        const accessibleNames = await registry.getAccessibleUserServerNamesFresh(
+          userId,
+          user?.role,
+        );
+        accessibleNames.forEach((name) => collisionServerNames.add(name));
+      }
+      const dbConfig = await registry.getUserServerConfigFresh(lookupName, userId, user?.role);
+      const expectedConfig =
+        options.expectedServerConfigs?.[lookupName] ??
+        options.expectedServerConfigs?.[selectedName];
+      const rawConfig = currentMcpConfig[lookupName];
+      if (dbConfig?.source === 'user') {
+        configs[lookupName] = dbConfig;
+        continue;
+      }
+      if (!expectedConfig || !rawConfig) {
+        continue;
+      }
+      try {
+        if (getMCPToolCatalogRevision(expectedConfig) === getMCPToolCatalogRevision(rawConfig)) {
+          configs[lookupName] = expectedConfig;
+        }
+      } catch {
+        /** A changed or unverifiable raw authority proof fails closed. */
+      }
+    }
+    return {
+      configs,
+      authorityIdentity,
+      securityPolicy,
+      collisionServerNames: [...collisionServerNames],
+      missingConfigServerNames: Object.keys(currentMcpConfig).filter(
+        (serverName) => !configs[serverName],
+      ),
+    };
+  }
   const configServers = await registry.ensureConfigServers(currentMcpConfig, {
     failClosed: true,
     ...(options.initializeMissing === false && { initializeMissing: false }),
@@ -86,10 +139,17 @@ async function resolveMCPDiscoveryConfigSnapshot(userId, user, options = {}) {
   const collisionServerNames = selectedServerNames
     ? [...new Set([...Object.keys(allConfigs), ...Object.keys(appConfig?.mcpConfig || {})])]
     : undefined;
+  const missingConfigServerNames = Object.keys(currentMcpConfig).filter(
+    (serverName) => !configServers[serverName] && !allConfigs[serverName],
+  );
   return {
     configs,
+    authorityIdentity,
     securityPolicy,
-    ...(collisionServerNames && { collisionServerNames }),
+    collisionServerNames: collisionServerNames ?? [
+      ...new Set([...Object.keys(allConfigs), ...Object.keys(appConfig?.mcpConfig || {})]),
+    ],
+    missingConfigServerNames,
   };
 }
 

@@ -18,6 +18,16 @@ export interface IServerConfigsRepositoryInterface {
   //ACL Entry check if read is possible
   get(serverName: string, userId?: string): Promise<ParsedServerConfig | undefined>;
 
+  /** Targeted authoritative read that bypasses principal caches. */
+  getFresh?(
+    serverName: string,
+    userId?: string,
+    role?: string,
+  ): Promise<ParsedServerConfig | undefined>;
+
+  /** Authoritative accessible-name index without parsing every server config. */
+  getAccessibleServerNamesFresh?(userId?: string, role?: string): Promise<string[]>;
+
   //ACL Entry get all accessible mcp config definitions + any mcp configured with agents
   getAll(userId?: string, role?: string): Promise<Record<string, ParsedServerConfig>>;
 

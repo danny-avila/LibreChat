@@ -541,6 +541,52 @@ describe('MCPManager', () => {
       expect(updateActivity).not.toHaveBeenCalled();
       expect(manager.getConnectionStats().activityEntries).toBe(0);
     });
+
+    it('runs the host authority fence immediately before the remote tool request', async () => {
+      const manager = new MCPManager();
+      const connection = createConnection();
+      const beforeExecute = jest.fn().mockResolvedValue(undefined);
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
+
+      await manager.callTool({
+        user: mockUser,
+        serverName,
+        serverConfig,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager,
+        beforeExecute,
+      });
+
+      expect(beforeExecute).toHaveBeenCalledTimes(1);
+      expect(connection.setRequestHeaders).toHaveBeenCalledTimes(1);
+      expect(beforeExecute.mock.invocationCallOrder[0]).toBeGreaterThan(
+        (connection.setRequestHeaders as jest.Mock).mock.invocationCallOrder[0],
+      );
+      expect(beforeExecute.mock.invocationCallOrder[0]).toBeLessThan(
+        (connection.client.request as jest.Mock).mock.invocationCallOrder[0],
+      );
+    });
+
+    it('does not send a remote tool request when the host authority fence rejects', async () => {
+      const manager = new MCPManager();
+      const connection = createConnection();
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
+
+      await expect(
+        manager.callTool({
+          user: mockUser,
+          serverName,
+          serverConfig,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager,
+          beforeExecute: jest.fn().mockRejectedValue(new Error('revoked')),
+        }),
+      ).rejects.toThrow('revoked');
+
+      expect(connection.client.request).not.toHaveBeenCalled();
+    });
   });
 
   describe('callTool - Graph Token Integration', () => {

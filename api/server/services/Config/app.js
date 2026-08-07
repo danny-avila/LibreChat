@@ -25,7 +25,8 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
   setCachedTools,
   getCache: getLogStores,
   cacheKeys: CacheKeys,
-  getApplicableConfigs: db.getApplicableConfigs,
+  getApplicableConfigs: (principals, options) =>
+    db.getApplicableConfigs(principals, undefined, options),
   getUserPrincipals: db.getUserPrincipals,
 });
 

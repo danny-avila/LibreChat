@@ -5,7 +5,7 @@ import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
-import type { MCPToolCatalogScopeInput } from './catalog';
+import type { MCPToolCatalogScope, MCPToolCatalogScopeInput } from './catalog';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
@@ -490,6 +490,8 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver,
     oboTokenResolver,
     oboTrustChecker,
+    oauthAuthorityScope,
+    beforeExecute,
   }: {
     user?: IUser;
     serverName: string;
@@ -509,6 +511,11 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver?: GraphTokenResolver;
     oboTokenResolver?: OboTokenResolver;
     oboTrustChecker?: OboTrustChecker;
+    oauthAuthorityScope?: MCPToolCatalogScope;
+    beforeExecute?: (context: {
+      connectionProvenance: t.MCPConnectionProvenance | null;
+      serverConfig: t.ParsedServerConfig;
+    }) => Promise<void>;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
@@ -533,6 +540,7 @@ Please follow these instructions when using tools from the respective MCP server
         requestBody,
         requestScopedConnections,
         serverConfig: providedConfig,
+        oauthAuthorityScope,
       });
 
       if (!(await connection.isConnected())) {
@@ -647,6 +655,11 @@ Please follow these instructions when using tools from the respective MCP server
       }
 
       connection.setRequestHeaders(resolvedHeaders);
+
+      await beforeExecute?.({
+        connectionProvenance: connection.getDiscoveryProvenance?.() ?? null,
+        serverConfig: rawConfig,
+      });
 
       const result = await connection.client.request(
         {

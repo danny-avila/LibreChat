@@ -193,6 +193,7 @@ export function createUserGroupMethods(
       userId: string | Types.ObjectId;
       role?: string | null;
       idOnTheSource?: string | null;
+      fresh?: boolean;
     },
     session?: ClientSession,
   ) => Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>>;
@@ -289,7 +290,11 @@ export function createUserGroupMethods(
   async function getMemberGroupIds(
     memberId: string,
     session?: ClientSession,
+    fresh = false,
   ): Promise<Types.ObjectId[]> {
+    if (fresh) {
+      return queryGroupIds(memberId, session, true);
+    }
     const cache = session ? undefined : getPrincipalsCache();
     if (!cache) {
       return queryGroupIds(memberId, session);
@@ -796,10 +801,11 @@ export function createUserGroupMethods(
       userId: string | Types.ObjectId;
       role?: string | null;
       idOnTheSource?: string | null;
+      fresh?: boolean;
     },
     session?: ClientSession,
   ): Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>> {
-    const { userId, role, idOnTheSource } = params;
+    const { userId, role, idOnTheSource, fresh } = params;
     /** `userId` must be an `ObjectId` for USER principal since ACL entries store `ObjectId`s */
     const userObjectId = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
     const principals: Array<{
@@ -832,7 +838,7 @@ export function createUserGroupMethods(
 
     /** `memberIds` stores `idOnTheSource` for external users, else the raw user id. */
     const memberId = memberIdOnTheSource || userId.toString();
-    const groupIds = await getMemberGroupIds(memberId, session);
+    const groupIds = await getMemberGroupIds(memberId, session, fresh === true);
     for (const groupId of groupIds) {
       principals.push({ principalType: PrincipalType.GROUP, principalId: groupId });
     }

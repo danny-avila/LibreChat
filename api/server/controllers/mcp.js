@@ -13,6 +13,7 @@ const {
   getMCPAuthorizationIdentities,
   MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
   createMCPToolCatalogSecurityPolicyIdentity,
+  createMCPToolCatalogScope,
   matchesMCPConnectionProvenance,
   isOAuthServer,
   shouldDetectRuntimeOAuth,
@@ -52,8 +53,10 @@ const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const {
+  matchesMCPToolAuthorityScope,
   resolveCurrentMCPAuthoritySnapshot,
   resolveCurrentMCPPrincipal,
+  resolveCurrentMCPToolAuthority,
 } = require('~/server/services/MCPDiscoveryScope');
 const db = require('~/models');
 
@@ -152,7 +155,7 @@ const getMCPTools = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const authoritySnapshot = await resolveCurrentMCPAuthoritySnapshot(req.user, 'tool catalog');
+    let authoritySnapshot = await resolveCurrentMCPAuthoritySnapshot(req.user, 'tool catalog');
     if (!authoritySnapshot) {
       logger.warn('[getMCPTools] Current MCP authority is unavailable');
       return res.status(200).json({ servers: {} });
@@ -160,6 +163,17 @@ const getMCPTools = async (req, res) => {
     if (!(await userCanUseMCPServersFresh(authoritySnapshot.user))) {
       logger.warn('[getMCPTools] Current MCP permission is unavailable');
       return res.status(200).json({ servers: {} });
+    }
+    if (authoritySnapshot.missingConfigServerNames?.length > 0) {
+      authoritySnapshot = await resolveCurrentMCPAuthoritySnapshot(
+        authoritySnapshot.user,
+        'tool catalog activation',
+        { initializeMissing: true },
+      );
+      if (!authoritySnapshot || !(await userCanUseMCPServersFresh(authoritySnapshot.user))) {
+        logger.warn('[getMCPTools] Cold Config MCP activation authority is unavailable');
+        return res.status(200).json({ servers: {} });
+      }
     }
     const {
       configs: mcpConfig,
@@ -225,6 +239,8 @@ const getMCPTools = async (req, res) => {
     const mcpManager = getMCPManager();
     const mcpServers = {};
     const serverToolsMap = new Map();
+    const serverAuthorityScopes = new Map();
+    const serverAuthorizationKinds = new Map();
     const cacheResults = await Promise.all(
       configuredServers.map(async (serverName) => {
         try {
@@ -270,6 +286,21 @@ const getMCPTools = async (req, res) => {
           return {
             serverName,
             credentialsUnavailable: false,
+            authorizationKind,
+            authorityScope:
+              catalog.status === 'ready'
+                ? (catalog.metadata.scope ??
+                  createMCPToolCatalogScope({
+                    tenantId,
+                    userId,
+                    serverName,
+                    serverConfig: mcpConfig[serverName],
+                    securityPolicyIdentity: catalogSecurityPolicyIdentity,
+                    customUserVars: userMCPAuthMap[`${Constants.mcp_prefix}${serverName}`],
+                    authorizationIdentity,
+                    authorizationKind,
+                  }))
+                : null,
             tools:
               catalog.status === 'ready' && catalog.metadata.authorizationKind === authorizationKind
                 ? catalog.tools
@@ -277,14 +308,27 @@ const getMCPTools = async (req, res) => {
           };
         } catch (error) {
           logger.error(`[getMCPTools] Error fetching cached tools for ${serverName}:`, error);
-          return { serverName, tools: null, credentialsUnavailable: false };
+          return {
+            serverName,
+            tools: null,
+            credentialsUnavailable: false,
+            authorityScope: null,
+          };
         }
       }),
     );
     const liveDiscoveryResults = [];
-    for (const { serverName, tools, credentialsUnavailable } of cacheResults) {
+    for (const {
+      serverName,
+      tools,
+      credentialsUnavailable,
+      authorityScope,
+      authorizationKind,
+    } of cacheResults) {
       if (tools) {
         serverToolsMap.set(serverName, tools);
+        serverAuthorityScopes.set(serverName, authorityScope);
+        serverAuthorizationKinds.set(serverName, authorizationKind);
         continue;
       }
       if (credentialsUnavailable) {
@@ -481,6 +525,8 @@ const getMCPTools = async (req, res) => {
         continue;
       }
       serverToolsMap.set(serverName, serverTools);
+      serverAuthorityScopes.set(serverName, createMCPToolCatalogScope(currentScope));
+      serverAuthorizationKinds.set(serverName, discoveryProvenance?.authorizationKind ?? 'none');
 
       // Cache asynchronously without blocking
       cacheScopedMCPServerTools({
@@ -497,6 +543,28 @@ const getMCPTools = async (req, res) => {
       }).catch((err) =>
         logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
       );
+    }
+
+    for (const serverName of [...serverToolsMap.keys()]) {
+      const currentAuthority = await resolveCurrentMCPToolAuthority({
+        user: authorityUser,
+        serverName,
+        requestBody: req.body,
+        oauthRequiredHint: serverAuthorizationKinds.get(serverName) === 'oauth',
+      });
+      if (
+        !currentAuthority?.catalogScope ||
+        !(await userCanUseMCPServersFresh(currentAuthority.user)) ||
+        !matchesMCPToolAuthorityScope(
+          serverAuthorityScopes.get(serverName),
+          currentAuthority.catalogScope,
+        )
+      ) {
+        serverToolsMap.delete(serverName);
+        logger.warn(
+          `[getMCPTools] Rejected MCP tool schemas changed before response: ${serverName}`,
+        );
+      }
     }
 
     // Process each configured server

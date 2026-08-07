@@ -51,6 +51,7 @@ async function resolveDiscoveryAuthorizationScope({
   serverConfig,
   discoveryProvenance,
   oauthRequiredHint,
+  allowMissingAuthorization,
 }) {
   if (serverConfig.obo != null) {
     return {
@@ -83,7 +84,8 @@ async function resolveDiscoveryAuthorizationScope({
     findTokens,
   });
   return {
-    authorizationIdentity,
+    authorizationIdentity:
+      authorizationIdentity ?? (allowMissingAuthorization === true ? 'oauth-pending' : null),
     authorizationKind: 'oauth',
     provenanceServerConfig: runtimeOAuthDetected
       ? { ...serverConfig, requiresOAuth: true }
@@ -133,11 +135,20 @@ async function resolveCurrentMCPAuthoritySnapshot(user, label, options = {}) {
   }
 
   try {
-    const { configs, securityPolicy, collisionServerNames } =
-      await resolveMCPDiscoveryConfigSnapshot(currentUser.id, currentUser, {
-        initializeMissing: options.initializeMissing === true,
-        ...(options.serverNames && { serverNames: options.serverNames }),
-      });
+    const {
+      configs,
+      authorityIdentity,
+      securityPolicy,
+      collisionServerNames,
+      missingConfigServerNames,
+    } = await resolveMCPDiscoveryConfigSnapshot(currentUser.id, currentUser, {
+      initializeMissing: options.initializeMissing === true,
+      bounded: options.bounded === true,
+      ...(options.expectedServerConfigs && {
+        expectedServerConfigs: options.expectedServerConfigs,
+      }),
+      ...(options.serverNames && { serverNames: options.serverNames }),
+    });
     const securityPolicyIdentity = isMCPToolCatalogFingerprintAvailable()
       ? createMCPToolCatalogSecurityPolicyIdentity(securityPolicy)
       : null;
@@ -147,7 +158,9 @@ async function resolveCurrentMCPAuthoritySnapshot(user, label, options = {}) {
     }
     return {
       configs,
+      authorityIdentity,
       collisionServerNames,
+      missingConfigServerNames,
       securityPolicy,
       securityPolicyIdentity,
       tenantId: currentUser.tenantId ?? null,
@@ -165,10 +178,19 @@ async function resolveCurrentMCPToolAuthority({
   requestBody,
   oauthRequiredHint,
   snapshot,
+  bounded,
+  allowMissingAuthorization,
+  expectedServerConfig,
 }) {
   const currentSnapshot =
     snapshot ??
-    (await resolveCurrentMCPAuthoritySnapshot(user, serverName, { serverNames: [serverName] }));
+    (await resolveCurrentMCPAuthoritySnapshot(user, serverName, {
+      serverNames: [serverName],
+      bounded: bounded === true,
+      ...(expectedServerConfig && {
+        expectedServerConfigs: { [serverName]: expectedServerConfig },
+      }),
+    }));
   if (!currentSnapshot) {
     return null;
   }
@@ -204,6 +226,7 @@ async function resolveCurrentMCPToolAuthority({
       serverName,
       serverConfig,
       oauthRequiredHint,
+      allowMissingAuthorization,
     });
     if (authorizationScope.authorizationIdentity == null) {
       return null;
@@ -226,6 +249,7 @@ async function resolveCurrentMCPToolAuthority({
       customUserVars,
       authorizationIdentity: authorizationScope.authorizationIdentity,
       authorizationKind: authorizationScope.authorizationKind,
+      authorityIdentity: currentSnapshot.authorityIdentity,
     };
 
     return {
