@@ -13,6 +13,7 @@ describe('migration files', () => {
       '001_schema.sql',
       '002_roles.sql',
       '003_policies.sql',
+      '004_poll.sql',
     ]);
     for (const migration of migrations) {
       expect(migration.checksum).toMatch(/^[0-9a-f]{64}$/);

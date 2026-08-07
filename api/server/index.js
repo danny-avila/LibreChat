@@ -38,7 +38,7 @@ const {
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
 } = require('@librechat/api');
-const { connectDb, indexSync } = require('~/db');
+const { connectDb, indexSync, startSearchSync } = require('~/db');
 const {
   updateAccessPermissions,
   sweepOrphanedPreviews,
@@ -128,6 +128,9 @@ const startServer = async () => {
   logger.info('Connected to MongoDB');
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
+  });
+  startSearchSync().catch((err) => {
+    logger.error('[searchSync] Failed to start the chat-search projector:', err);
   });
 
   app.disable('x-powered-by');
