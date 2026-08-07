@@ -320,7 +320,13 @@ export class MCPManager extends UserConnectionManager {
         return null;
       }
 
-      return MCPServerInspector.getToolFunctions(serverName, userConnections.get(serverName)!);
+      const connection = userConnections.get(serverName)!;
+      this.retainConnection(connection);
+      try {
+        return await MCPServerInspector.getToolFunctions(serverName, connection);
+      } finally {
+        await this.releaseConnection(connection);
+      }
     } catch (error) {
       logger.warn(
         `[getServerToolFunctions] Error getting tool functions for server ${serverName}`,
@@ -599,6 +605,7 @@ Please follow these instructions when using tools from the respective MCP server
     /** User-specific connection */
     let connection: MCPConnection | undefined;
     let connectionRetained = false;
+    let deferredDisposalHeld = false;
     let attachRequestOAuthHandler: (() => () => void) | undefined;
     let disconnectAfterCall = false;
     const userId = user?.id;
@@ -610,17 +617,26 @@ Please follow these instructions when using tools from the respective MCP server
       this.retainConnection(connection);
       connectionRetained = true;
     };
-    const releaseConnectionLease = async (preserveDeferredDisposal = false) => {
+    const releaseConnectionLease = async (preserveDisposalHold = false) => {
       if (!connection || !connectionRetained) {
         return;
       }
+      if (deferredDisposalHeld && !preserveDisposalHold) {
+        this.releaseDeferredConnectionDisposal(connection);
+        deferredDisposalHeld = false;
+      }
       connectionRetained = false;
-      await this.releaseConnection(connection, preserveDeferredDisposal);
+      await this.releaseConnection(connection);
     };
     const waitForRecoveryWithoutLease = async (startRecovery: () => Promise<void>) => {
       const recovery = startRecovery();
-      // If another caller evicted this connection, keep its disposal marker across
-      // the temporary lease gap so a successful reconnect is closed after the retry.
+      // Keep an eviction marker across the temporary lease gap and transfer that
+      // responsibility back to this caller after recovery. An unrelated final
+      // borrower may disconnect the old client, but cannot consume the marker.
+      if (!deferredDisposalHeld) {
+        this.holdDeferredConnectionDisposal(connection!);
+        deferredDisposalHeld = true;
+      }
       await releaseConnectionLease(true);
       try {
         await recovery;

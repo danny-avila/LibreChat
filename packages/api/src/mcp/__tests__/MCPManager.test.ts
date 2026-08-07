@@ -423,6 +423,40 @@ describe('MCPManager', () => {
       expect(mockLogger.warn).not.toHaveBeenCalled();
     });
 
+    it('leases a cached user connection while reading its tool metadata', async () => {
+      let finishInspection: ((tools: t.LCAvailableTools) => void) | undefined;
+      const inspection = new Promise<t.LCAvailableTools>((resolve) => {
+        finishInspection = resolve;
+      });
+      const connection = {} as MCPConnection;
+      (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn().mockReturnValue(inspection);
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const lifecycle = manager as unknown as {
+        userConnections: Map<string, Map<string, MCPConnection>>;
+        waitForConnectionBorrowersToDrain: (connection: MCPConnection) => Promise<void>;
+      };
+      lifecycle.userConnections.set(userId, new Map([[serverName, connection]]));
+
+      const toolsPromise = manager.getServerToolFunctions(userId, serverName);
+      await new Promise((resolve) => setImmediate(resolve));
+      let drained = false;
+      const drainPromise = lifecycle.waitForConnectionBorrowersToDrain(connection).then(() => {
+        drained = true;
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(drained).toBe(false);
+
+      finishInspection?.({});
+      await expect(toolsPromise).resolves.toEqual({});
+      await drainPromise;
+      expect(drained).toBe(true);
+    });
+
     it('should include specific server name in error messages', async () => {
       const specificServerName = 'github_mcp_server';
 
@@ -1136,6 +1170,39 @@ describe('MCPManager', () => {
         .mockResolvedValueOnce(toolResult);
 
       await expect(callTool(manager)).resolves.toBeDefined();
+
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(connection.disconnect).toHaveBeenCalledTimes(2);
+      expect(request).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves recovery eviction when another borrower releases last', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn();
+      const connection = createConnection(request);
+      attachOAuthHandler();
+      const manager = await createManager(connection);
+      const lifecycle = manager as unknown as {
+        disposeEvictedConnection: (connection: MCPConnection, logPrefix: string) => Promise<void>;
+        retainConnection: (connection: MCPConnection) => void;
+        releaseConnection: (connection: MCPConnection) => Promise<void>;
+      };
+      request
+        .mockImplementationOnce(async () => {
+          lifecycle.retainConnection(connection);
+          await lifecycle.disposeEvictedConnection(connection, '[MCP][evicted]');
+          throw authError;
+        })
+        .mockResolvedValueOnce(toolResult);
+
+      const toolPromise = callTool(manager);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(connection.connect).not.toHaveBeenCalled();
+      expect(connection.disconnect).not.toHaveBeenCalled();
+
+      await lifecycle.releaseConnection(connection);
+      await expect(toolPromise).resolves.toBeDefined();
 
       expect(connection.connect).toHaveBeenCalledTimes(1);
       expect(connection.disconnect).toHaveBeenCalledTimes(2);

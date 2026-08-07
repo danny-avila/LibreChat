@@ -56,6 +56,7 @@ export abstract class UserConnectionManager {
   protected pendingConnections: Map<string, PendingConnection> = new Map();
   private readonly connectionBorrowers = new WeakMap<MCPConnection, number>();
   private readonly connectionBorrowerDrainWaiters = new WeakMap<MCPConnection, Set<() => void>>();
+  private readonly deferredConnectionDisposalHolds = new WeakMap<MCPConnection, number>();
 
   private readonly deferredConnectionDisposals = new WeakMap<MCPConnection, string>();
 
@@ -721,10 +722,21 @@ export abstract class UserConnectionManager {
     this.connectionBorrowers.set(connection, borrowers + 1);
   }
 
-  protected async releaseConnection(
-    connection: MCPConnection,
-    preserveDeferredDisposal = false,
-  ): Promise<void> {
+  protected holdDeferredConnectionDisposal(connection: MCPConnection): void {
+    const holds = this.deferredConnectionDisposalHolds.get(connection) ?? 0;
+    this.deferredConnectionDisposalHolds.set(connection, holds + 1);
+  }
+
+  protected releaseDeferredConnectionDisposal(connection: MCPConnection): void {
+    const holds = this.deferredConnectionDisposalHolds.get(connection) ?? 0;
+    if (holds > 1) {
+      this.deferredConnectionDisposalHolds.set(connection, holds - 1);
+      return;
+    }
+    this.deferredConnectionDisposalHolds.delete(connection);
+  }
+
+  protected async releaseConnection(connection: MCPConnection): Promise<void> {
     const borrowers = this.connectionBorrowers.get(connection) ?? 0;
     if (borrowers > 1) {
       this.connectionBorrowers.set(connection, borrowers - 1);
@@ -734,7 +746,7 @@ export abstract class UserConnectionManager {
     this.connectionBorrowers.delete(connection);
     const logPrefix = this.deferredConnectionDisposals.get(connection);
     if (logPrefix) {
-      if (!preserveDeferredDisposal) {
+      if ((this.deferredConnectionDisposalHolds.get(connection) ?? 0) === 0) {
         this.deferredConnectionDisposals.delete(connection);
       }
       await this.disconnectEvictedConnection(connection, logPrefix);
