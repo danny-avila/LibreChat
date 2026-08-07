@@ -1,7 +1,11 @@
 import React from 'react';
 import { RecoilRoot, useRecoilCallback, useRecoilValue } from 'recoil';
 import { render, screen, act, fireEvent, waitFor, within } from '@testing-library/react';
-import type { SubagentUpdateEvent, TMessageContentParts } from 'librechat-data-provider';
+import type {
+  SubagentUpdateEvent,
+  TAttachment,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import type {
   SubagentContentPart,
   SubagentTickerState,
@@ -134,6 +138,7 @@ function renderWithState(args: {
   progress?: SubagentProgress | null;
   initializeStreaming?: boolean;
   persistedContent?: TMessageContentParts[];
+  attachments?: TAttachment[];
 }) {
   const setter = { current: null as null | ((next: SubagentProgress | null) => void) };
   const SeedHelper = () => {
@@ -146,7 +151,7 @@ function renderWithState(args: {
     );
     return null;
   };
-  const renderTree = (persistedContent = args.persistedContent) => (
+  const renderTree = (persistedContent = args.persistedContent, attachments = args.attachments) => (
     <RecoilRoot
       initializeState={({ set }) => {
         if (args.initializeStreaming) {
@@ -163,6 +168,7 @@ function renderWithState(args: {
         output={args.output}
         args={{ subagent_type: 'self', description: 'compute' }}
         persistedContent={persistedContent}
+        attachments={attachments}
       />
     </RecoilRoot>
   );
@@ -176,7 +182,10 @@ function renderWithState(args: {
   const rerenderPersistedContent = (persistedContent: TMessageContentParts[]) => {
     rendered.rerender(renderTree(persistedContent));
   };
-  return { ...rendered, setProgress, rerenderPersistedContent };
+  const rerenderAttachments = (attachments: TAttachment[]) => {
+    rendered.rerender(renderTree(args.persistedContent, attachments));
+  };
+  return { ...rendered, setProgress, rerenderPersistedContent, rerenderAttachments };
 }
 
 describe('SubagentCall — status resolution', () => {
@@ -438,6 +447,48 @@ describe('SubagentCall — panel open contract', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('registered-runs')).toHaveTextContent('"state":"pending"');
+    });
+  });
+
+  it('updates the registry when deferred preview fields resolve without path changes', async () => {
+    const pending = [
+      {
+        file_id: 'fid-preview',
+        filepath: '/uploads/report.xlsx',
+        filename: 'report.xlsx',
+        status: 'pending',
+        text: null,
+        textFormat: null,
+      },
+    ] as unknown as TAttachment[];
+    const ready = [
+      {
+        file_id: 'fid-preview',
+        filepath: '/uploads/report.xlsx',
+        filename: 'report.xlsx',
+        status: 'ready',
+        text: '<table>rows</table>',
+        textFormat: 'html',
+      },
+    ] as unknown as TAttachment[];
+    const { rerenderAttachments } = renderWithState({
+      toolCallId: 'call_preview_resolve',
+      initialProgress: 1,
+      isSubmitting: false,
+      attachments: pending,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('registered-runs')).toHaveTextContent('"status":"pending"');
+    });
+
+    rerenderAttachments(ready);
+
+    await waitFor(() => {
+      const registry = screen.getByTestId('registered-runs').textContent ?? '';
+      expect(registry).toContain('"status":"ready"');
+      expect(registry).toContain('"textFormat":"html"');
+      expect(registry).toContain('<table>rows</table>');
     });
   });
 

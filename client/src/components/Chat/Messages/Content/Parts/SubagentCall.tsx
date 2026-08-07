@@ -34,6 +34,41 @@ interface SubagentCallProps {
   hideAttachments?: boolean;
 }
 
+type AttachmentFingerprintFields = Partial<TAttachment> & {
+  file_id?: string;
+  status?: string;
+  text?: string | null;
+  textFormat?: string | null;
+  previewError?: string;
+};
+
+/**
+ * Content signature for subagent attachments written into the detached-panel
+ * registry. Deferred previews resolve in place: same array length, often the
+ * same filepath/filename, while `status` / `text` / `textFormat` / `previewError`
+ * change. A path-only key would leave the panel on the pre-resolution chip.
+ * Text length (not body) keeps the signature bounded.
+ */
+function attachmentsFingerprint(attachments?: TAttachment[]): string {
+  if (attachments == null || attachments.length === 0) {
+    return '';
+  }
+  return attachments
+    .map((attachment) => {
+      const a = attachment as AttachmentFingerprintFields;
+      return [
+        a.filepath ?? '',
+        a.filename ?? '',
+        a.file_id ?? '',
+        a.status ?? '',
+        a.textFormat ?? '',
+        a.previewError ?? '',
+        String(a.text?.length ?? 0),
+      ].join(':');
+    })
+    .join(',');
+}
+
 /**
  * Inline card for a parent `subagent` tool call. Reads like a first-class
  * sibling of the other tool cards (icon + status label + agent name), previews
@@ -86,11 +121,9 @@ export default function SubagentCall({
        *  length. Fingerprint the content so the detached panel receives those
        *  same-length state transitions. */
       JSON.stringify(persistedContent ?? null),
-      /** Fingerprint attachments by content, not just count — deferred
-       *  previews resolve in place (same array length, new filepath), and the
-       *  detached panel reads attachments only from this registry entry, so a
-       *  length-only key would leave it showing the pre-resolution chip. */
-      attachments?.map((a) => `${a.filepath ?? ''}:${a.filename ?? ''}`).join(',') ?? '',
+      /** Deferred previews keep path/name while status/text resolve; see
+       *  {@link attachmentsFingerprint}. */
+      attachmentsFingerprint(attachments),
     ].join('|');
     if (signature === lastWrittenRef.current) return;
     lastWrittenRef.current = signature;
