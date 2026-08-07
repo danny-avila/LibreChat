@@ -797,23 +797,31 @@ Please follow these instructions when using tools from the respective MCP server
       try {
         result = await requestTool();
       } catch (error) {
-        if (
-          !attachRequestOAuthHandler ||
-          !connection.isOAuthAuthenticationError(error) ||
-          !userId
-        ) {
+        if (!attachRequestOAuthHandler || !userId) {
+          throw error;
+        }
+
+        const activeRecovery =
+          error instanceof McpError && error.code === ErrorCode.ConnectionClosed
+            ? this.oauthRecoveries.get(connection)
+            : undefined;
+        if (!activeRecovery && !connection.isOAuthAuthenticationError(error)) {
           throw error;
         }
 
         try {
-          await this.recoverOAuthConnection(
-            connection,
-            error,
-            serverName,
-            userId,
-            attachRequestOAuthHandler,
-            options?.signal,
-          );
+          if (activeRecovery) {
+            await this.waitForActiveRecovery(activeRecovery.promise, options?.signal);
+          } else {
+            await this.recoverOAuthConnection(
+              connection,
+              error,
+              serverName,
+              userId,
+              attachRequestOAuthHandler,
+              options?.signal,
+            );
+          }
         } catch (recoveryError) {
           if (options?.signal?.aborted) {
             throw recoveryError;

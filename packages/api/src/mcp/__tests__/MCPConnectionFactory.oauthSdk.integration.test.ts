@@ -304,6 +304,99 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
     }
   });
 
+  it('retries an in-flight request closed by a concurrent OAuth recovery', async () => {
+    let markSlowRequestStarted: (() => void) | undefined;
+    let releaseFirstSlowRequest: (() => void) | undefined;
+    const slowRequestStarted = new Promise<void>((resolve) => {
+      markSlowRequestStarted = resolve;
+    });
+    const firstSlowRequestBlocked = new Promise<void>((resolve) => {
+      releaseFirstSlowRequest = resolve;
+    });
+    let slowRequestCount = 0;
+    server = await createOAuthMCPServer({
+      issueRefreshTokens: true,
+      requireResourceParameter: true,
+      tokenScopes: ['read'],
+      scopesSupported: ['read'],
+      echoHandler: async (message) => {
+        if (message === 'slow borrower' && slowRequestCount++ === 0) {
+          markSlowRequestStarted?.();
+          await firstSlowRequestBlocked;
+        }
+        return `echo: ${message}`;
+      },
+    });
+    const initialTokens = await issueTokens(server);
+    await storeTokens(tokenStore, server, initialTokens);
+    const flowManager = createFlowManager();
+    const tokenMethods = {
+      findToken: tokenStore.findToken,
+      createToken: tokenStore.createToken,
+      updateToken: tokenStore.updateToken,
+      deleteTokens: tokenStore.deleteTokens,
+    };
+    const serverConfig = {
+      type: 'streamable-http' as const,
+      url: server.url,
+      initTimeout: 15000,
+      requiresOAuth: true,
+    };
+
+    connection = await MCPConnectionFactory.create(
+      { serverName: SERVER_NAME, serverConfig },
+      {
+        useOAuth: true,
+        user: { id: USER_ID } as IUser,
+        flowManager,
+        tokenMethods,
+      },
+    );
+    const isConnectedSpy = jest.spyOn(connection, 'isConnected').mockResolvedValue(true);
+
+    const manager = new MCPManager();
+    jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
+    const registrySpy = jest.spyOn(MCPServersRegistry, 'getInstance').mockReturnValue({
+      resolveAllowlists: jest.fn().mockResolvedValue({
+        allowedDomains: null,
+        allowedAddresses: null,
+        useSSRFProtection: false,
+      }),
+    } as unknown as MCPServersRegistry);
+    const oauthStart = jest.fn(async (_authorizationUrl: string): Promise<void> => undefined);
+    const callTool = (message: string) =>
+      manager.callTool({
+        user: { id: USER_ID } as IUser,
+        serverName: SERVER_NAME,
+        serverConfig,
+        toolName: 'echo',
+        toolArguments: { message },
+        provider: 'openai',
+        flowManager,
+        tokenMethods,
+        oauthStart,
+      });
+
+    try {
+      const slowCall = callTool('slow borrower');
+      await slowRequestStarted;
+      server.issuedTokens.delete(initialTokens.access_token);
+
+      const recoveringCall = callTool('recovery owner');
+
+      await expect(Promise.all([slowCall, recoveringCall])).resolves.toHaveLength(2);
+      expect(
+        server.tokenRequests.filter((request) => request.grantType === 'refresh_token'),
+      ).toHaveLength(1);
+      expect(slowRequestCount).toBe(2);
+      expect(oauthStart).not.toHaveBeenCalled();
+    } finally {
+      releaseFirstSlowRequest?.();
+      isConnectedSpy.mockRestore();
+      registrySpy.mockRestore();
+    }
+  });
+
   it('escalates to interactive OAuth when the resource rejects refreshed tokens during reconnect', async () => {
     server = await createOAuthMCPServer({
       issueRefreshTokens: true,

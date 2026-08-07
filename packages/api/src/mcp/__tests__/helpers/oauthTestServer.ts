@@ -72,6 +72,8 @@ export interface OAuthTestServerOptions {
   requireResourceParameter?: boolean;
   /** Number of refresh-grant access tokens the MCP resource should reject after issuance. */
   rejectRefreshTokens?: number;
+  /** Optional test hook for controlling echo-tool completion. */
+  echoHandler?: (message: string) => string | Promise<string>;
 }
 
 export interface OAuthTokenRequestRecord {
@@ -139,6 +141,7 @@ export async function createOAuthMCPServer(
     scopesSupported = [...new Set([...tokenScopes, ...requiredScopes])],
     requireResourceParameter = false,
     rejectRefreshTokens = 0,
+    echoHandler,
   } = options;
 
   const sessions = new Map<string, StreamableHTTPServerTransport>();
@@ -483,9 +486,10 @@ export async function createOAuthMCPServer(
         sessionIdGenerator: () => randomUUID(),
       });
       const mcp = new McpServer({ name: 'oauth-test-server', version: '0.0.1' });
-      mcp.tool('echo', { message: z.string() }, async (args) => ({
-        content: [{ type: 'text' as const, text: `echo: ${args.message}` }],
-      }));
+      mcp.tool('echo', { message: z.string() }, async (args) => {
+        const text = echoHandler ? await echoHandler(args.message) : `echo: ${args.message}`;
+        return { content: [{ type: 'text' as const, text }] };
+      });
       await mcp.connect(transport);
     }
 
