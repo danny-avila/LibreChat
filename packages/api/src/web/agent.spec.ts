@@ -32,6 +32,8 @@ describe('resolveWebSearchSSRFAgents', () => {
       'http_proxy',
       'HTTPS_PROXY',
       'https_proxy',
+      'ALL_PROXY',
+      'all_proxy',
       'NO_PROXY',
       'no_proxy',
     ]) {
@@ -150,6 +152,25 @@ describe('resolveWebSearchSSRFAgents', () => {
     const { httpAgent } = resolveWebSearchSSRFAgents();
 
     expect(() => connect(httpAgent, '10.1.2.3', 3128)).not.toThrow();
+  });
+
+  it('exempts a proxy configured only through ALL_PROXY, which Axios still honors', () => {
+    process.env.ALL_PROXY = 'http://10.1.2.3:3128';
+
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connect(httpAgent, '10.1.2.3', 3128)).not.toThrow();
+    expect(() => connect(httpAgent, '10.1.2.3', 9)).toThrow(
+      expect.objectContaining({ code: 'ESSRF' }),
+    );
+  });
+
+  it('exempts a lowercase all_proxy as well, since the resolver is case-insensitive', () => {
+    process.env.all_proxy = 'http://10.9.9.9:8080';
+
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connect(httpAgent, '10.9.9.9', 8080)).not.toThrow();
   });
 
   it('keeps an IPv6-literal proxy reachable, which needs the bracketed exemption form', () => {

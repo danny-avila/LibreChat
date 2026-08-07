@@ -1,6 +1,5 @@
 import type https from 'node:https';
 import type http from 'node:http';
-import { getProxyEnvConfig } from '../utils/proxy';
 import { createSSRFSafeAgents } from '../auth';
 
 export interface WebSearchSSRFAgents {
@@ -9,19 +8,32 @@ export interface WebSearchSSRFAgents {
 }
 
 /**
+ * Every variable that can put a proxy in front of these requests. Axios resolves a proxy through
+ * `proxy-from-env`, which reads `<protocol>_proxy` and then `all_proxy` in either case, so
+ * `ALL_PROXY` alone is enough to proxy a request. `PROXY` is LibreChat's own setting, honored by
+ * `applyAxiosProxyConfig` on the other egress paths.
+ */
+const PROXY_ENV_VARS = [
+  'PROXY',
+  'proxy',
+  'HTTP_PROXY',
+  'http_proxy',
+  'HTTPS_PROXY',
+  'https_proxy',
+  'ALL_PROXY',
+  'all_proxy',
+] as const;
+
+/**
  * For a plaintext http target Axios repoints the caller's agent at the proxy host, so the
  * connect-time check would resolve the proxy itself and reject a private one. Exempting the
  * proxy endpoint keeps that hop reachable while every direct and `NO_PROXY` destination stays
  * guarded. Https targets are unaffected either way: Axios swaps in its own CONNECT tunnel.
  */
 function getProxyExemptions(): string[] {
-  const config = getProxyEnvConfig();
-  if (!config) {
-    return [];
-  }
-
   const entries = new Set<string>();
-  for (const proxyUrl of [config.httpProxy, config.httpsProxy]) {
+  for (const name of PROXY_ENV_VARS) {
+    const proxyUrl = process.env[name]?.trim();
     if (!proxyUrl) {
       continue;
     }
