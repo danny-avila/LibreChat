@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { setMCPToolsChangedHandler } = require('@librechat/api');
+const { registerShutdownTask, setMCPToolsChangedHandler } = require('@librechat/api');
 const { mergeAppTools, getAppConfig } = require('./Config');
 const { updateMCPServerTools } = require('./Config/mcp');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
@@ -58,6 +58,7 @@ async function initializeMCPs() {
   try {
     const mcpManager = await createMCPManager(mcpServers || {});
     setMCPToolsChangedHandler(refreshChangedServerTools);
+    registerShutdownTask('MCP app connections', () => mcpManager.disconnectAppServers());
 
     if (mcpServers && Object.keys(mcpServers).length > 0) {
       const mcpTools = (await mcpManager.getAppToolFunctions()) || {};

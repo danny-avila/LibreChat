@@ -8,6 +8,7 @@ const { mergeAppTools, cacheMCPServerTools, updateMCPServerTools, getMCPServerTo
     runWithGlobalCacheLock,
     getServerConfig: (serverName, userId) =>
       MCPServersRegistry.getInstance().getServerConfig(serverName, userId),
+    getAllServerConfigs: () => MCPServersRegistry.getInstance().getAllServerConfigs(),
   });
 
 module.exports = {

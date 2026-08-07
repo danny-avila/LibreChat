@@ -43,6 +43,7 @@ const mockCreateMCPServersRegistry = jest.fn();
 const mockCreateMCPManager = jest.fn();
 const mockMCPManagerInstance = {
   connectAppServers: jest.fn(),
+  disconnectAppServers: jest.fn(),
   getAppToolFunctions: jest.fn(),
 };
 
@@ -56,9 +57,13 @@ jest.mock('~/config', () => ({
 }));
 
 const mockSetMCPToolsChangedHandler = jest.fn();
+const mockRegisterShutdownTask = jest.fn();
 const mockUpdateMCPServerTools = jest.fn();
 
 jest.mock('@librechat/api', () => ({
+  get registerShutdownTask() {
+    return mockRegisterShutdownTask;
+  },
   get setMCPToolsChangedHandler() {
     return mockSetMCPToolsChangedHandler;
   },
@@ -82,6 +87,7 @@ describe('initializeMCPs', () => {
     mockCreateMCPManager.mockResolvedValue(mockMCPManagerInstance);
     mockMCPManagerInstance.getAppToolFunctions.mockResolvedValue({});
     mockMCPManagerInstance.connectAppServers.mockResolvedValue(undefined);
+    mockMCPManagerInstance.disconnectAppServers.mockResolvedValue(undefined);
     mockMergeAppTools.mockResolvedValue(undefined);
   });
 
@@ -198,6 +204,20 @@ describe('initializeMCPs', () => {
       await initializeMCPs();
 
       expect(mockCreateMCPManager).toHaveBeenCalledWith(mcpServers);
+    });
+
+    it('should register app connections for graceful shutdown', async () => {
+      mockGetAppConfig.mockResolvedValue({ mcpConfig: null });
+
+      await initializeMCPs();
+
+      expect(mockRegisterShutdownTask).toHaveBeenCalledWith(
+        'MCP app connections',
+        expect.any(Function),
+      );
+      const shutdown = mockRegisterShutdownTask.mock.calls[0][1];
+      await shutdown();
+      expect(mockMCPManagerInstance.disconnectAppServers).toHaveBeenCalledTimes(1);
     });
 
     it('should throw and log error if MCPManager initialization fails', async () => {

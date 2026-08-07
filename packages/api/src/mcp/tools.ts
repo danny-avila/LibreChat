@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants, normalizeServerName } from 'librechat-data-provider';
+import { Constants, buildServerNameAliases, normalizeServerName } from 'librechat-data-provider';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonSchemaType } from '@librechat/agents';
 import type { LCAvailableTools, LCFunctionTool, MCPOptions, ParsedServerConfig } from './types';
@@ -22,6 +22,7 @@ export interface MCPToolCacheDeps {
     options?: { userId?: string; serverName?: string },
   ) => Promise<boolean>;
   getServerConfig: (serverName: string, userId?: string) => Promise<ParsedServerConfig | undefined>;
+  getAllServerConfigs?: () => Promise<Record<string, ParsedServerConfig>>;
   runWithGlobalCacheLock?: <T>(operation: () => Promise<T>) => Promise<T>;
 }
 
@@ -50,8 +51,19 @@ export interface MCPToolCacheService {
   ) => Promise<LCAvailableTools | null>;
 }
 
+interface AppServerBoundary {
+  serverName: string;
+  suffix: string;
+}
+
 export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheService {
-  const { getCachedTools, setCachedTools, getServerConfig, runWithGlobalCacheLock } = deps;
+  const {
+    getCachedTools,
+    setCachedTools,
+    getServerConfig,
+    getAllServerConfigs,
+    runWithGlobalCacheLock,
+  } = deps;
   let globalCacheQueue: Promise<void> = Promise.resolve();
 
   async function writeCachedTools(
@@ -103,16 +115,49 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     }
   }
 
-  function getServerToolSuffixes(serverName: string): string[] {
-    const rawSuffix = `${Constants.mcp_delimiter}${serverName}`;
-    const normalizedSuffix = `${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
-    return rawSuffix === normalizedSuffix ? [rawSuffix] : [rawSuffix, normalizedSuffix];
+  async function getAppServerBoundaries(serverName: string): Promise<AppServerBoundary[]> {
+    const names = getAllServerConfigs ? Object.keys(await getAllServerConfigs()) : [];
+    if (!names.includes(serverName)) {
+      names.push(serverName);
+    }
+
+    const boundaryOwners = new Map<string, string>();
+    for (const rawName of names) {
+      if (normalizeServerName(rawName) !== rawName) {
+        boundaryOwners.set(`${Constants.mcp_delimiter}${rawName}`, rawName);
+      }
+    }
+    for (const [normalizedName, rawName] of buildServerNameAliases(names)) {
+      boundaryOwners.set(`${Constants.mcp_delimiter}${normalizedName}`, rawName);
+    }
+
+    return Array.from(boundaryOwners, ([suffix, rawName]) => ({
+      serverName: rawName,
+      suffix,
+    })).sort((left, right) => right.suffix.length - left.suffix.length);
   }
 
-  function getAppServerSlice(tools: LCAvailableTools, serverName: string): LCAvailableTools {
-    const suffixes = getServerToolSuffixes(serverName);
+  function resolveToolServerName(
+    toolName: string,
+    boundaries: readonly AppServerBoundary[],
+  ): string | null {
+    for (const boundary of boundaries) {
+      if (toolName.endsWith(boundary.suffix)) {
+        return boundary.serverName;
+      }
+    }
+    return null;
+  }
+
+  function getAppServerSlice(
+    tools: LCAvailableTools,
+    serverName: string,
+    boundaries: readonly AppServerBoundary[],
+  ): LCAvailableTools {
     return Object.fromEntries(
-      Object.entries(tools).filter(([name]) => suffixes.some((suffix) => name.endsWith(suffix))),
+      Object.entries(tools).filter(
+        ([name]) => resolveToolServerName(name, boundaries) === serverName,
+      ),
     );
   }
 
@@ -238,12 +283,12 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   }): Promise<void> {
     const { serverName, serverTools } = params;
     try {
+      const boundaries = await getAppServerBoundaries(serverName);
       await withGlobalCacheLock(async () => {
         const cachedTools = (await getCachedTools()) ?? {};
-        const suffixes = getServerToolSuffixes(serverName);
         const kept: LCAvailableTools = {};
         for (const [name, tool] of Object.entries(cachedTools)) {
-          if (!suffixes.some((suffix) => name.endsWith(suffix))) {
+          if (resolveToolServerName(name, boundaries) !== serverName) {
             kept[name] = tool;
           }
         }
@@ -343,7 +388,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         if (globalTools == null) {
           return null;
         }
-        const serverTools = getAppServerSlice(globalTools, serverName);
+        const boundaries = await getAppServerBoundaries(serverName);
+        const serverTools = getAppServerSlice(globalTools, serverName, boundaries);
         if (Object.keys(serverTools).length === 0) {
           return null;
         }

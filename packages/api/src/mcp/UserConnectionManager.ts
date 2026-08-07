@@ -518,7 +518,7 @@ export abstract class UserConnectionManager {
           tools,
           userId,
           serverName,
-          serverConfig: runtimeConfig,
+          serverConfig: config,
         });
       });
 

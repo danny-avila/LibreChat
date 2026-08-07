@@ -8,6 +8,10 @@ import { MCPConnection } from './connection';
 
 const CONNECT_CONCURRENCY = 3;
 
+interface ConnectionLoadOptions {
+  continueOnError?: boolean;
+}
+
 /**
  * Manages MCP connections with lazy loading and reconnection.
  * Maintains a pool of connections and handles connection lifecycle management.
@@ -109,14 +113,25 @@ export class ConnectionsRepository {
   }
 
   /** Gets or creates connections for multiple servers concurrently */
-  async getMany(serverNames: string[]): Promise<Map<string, MCPConnection>> {
+  async getMany(
+    serverNames: string[],
+    options: ConnectionLoadOptions = {},
+  ): Promise<Map<string, MCPConnection>> {
     const results: [string, MCPConnection | null][] = [];
     for (let i = 0; i < serverNames.length; i += CONNECT_CONCURRENCY) {
       const batch = serverNames.slice(i, i + CONNECT_CONCURRENCY);
       const batchResults = await Promise.all(
-        batch.map(
-          async (name): Promise<[string, MCPConnection | null]> => [name, await this.get(name)],
-        ),
+        batch.map(async (name): Promise<[string, MCPConnection | null]> => {
+          try {
+            return [name, await this.get(name)];
+          } catch (error) {
+            if (!options.continueOnError) {
+              throw error;
+            }
+            logger.warn(`${this.prefix(name)} Failed to establish connection`, error);
+            return [name, null];
+          }
+        }),
       );
       results.push(...batchResults);
     }
@@ -129,11 +144,11 @@ export class ConnectionsRepository {
   }
 
   /** Gets or creates connections for all configured servers in this repository's scope */
-  async getAll(): Promise<Map<string, MCPConnection>> {
+  async getAll(options: ConnectionLoadOptions = {}): Promise<Map<string, MCPConnection>> {
     //TODO in the future we should use a scoped config getter (APPLevel, UserLevel, Private)
     //for now the absent config will not throw error
     const allConfigs = await MCPServersRegistry.getInstance().getAllServerConfigs(this.ownerId);
-    return this.getMany(Object.keys(allConfigs));
+    return this.getMany(Object.keys(allConfigs), options);
   }
 
   /** Disconnects and removes a specific server connection from the pool */

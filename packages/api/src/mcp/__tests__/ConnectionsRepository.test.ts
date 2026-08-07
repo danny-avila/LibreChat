@@ -9,6 +9,7 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: {
     error: jest.fn(),
     info: jest.fn(),
+    warn: jest.fn(),
   },
 }));
 
@@ -296,6 +297,27 @@ describe('ConnectionsRepository', () => {
       expect(result.get('server1')).toBe(mockConnection);
       expect(result.get('server2')).toBe(mockConnection);
       expect(result.get('server3')).toBe(mockConnection);
+    });
+
+    it('continues loading later servers when one connection fails', async () => {
+      (MCPConnectionFactory.create as jest.Mock).mockImplementation(
+        ({ serverName }: { serverName: string }) => {
+          if (serverName === 'server1') {
+            return Promise.reject(new Error('server unavailable'));
+          }
+          return Promise.resolve(mockConnection);
+        },
+      );
+
+      const result = await repository.getAll({ continueOnError: true });
+
+      expect(result.has('server1')).toBe(false);
+      expect(result.get('server2')).toBe(mockConnection);
+      expect(result.get('server3')).toBe(mockConnection);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[MCP][server1] Failed to establish connection',
+        expect.any(Error),
+      );
     });
   });
 

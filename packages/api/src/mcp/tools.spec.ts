@@ -132,6 +132,62 @@ describe('createMCPToolCacheService', () => {
       expect(deps.setCachedTools).toHaveBeenCalledWith({});
     });
 
+    it('preserves a longer delimiter-overlapping server boundary', async () => {
+      const shortServerKey = toolName('short', 'bar');
+      const longServerKey = toolName('long', 'foo_mcp_bar');
+      const cached: LCAvailableTools = {
+        [shortServerKey]: { type: 'function', function: { name: shortServerKey } },
+        [longServerKey]: { type: 'function', function: { name: longServerKey } },
+      };
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(cached),
+        getAllServerConfigs: jest.fn().mockResolvedValue({
+          bar: cacheableConfig,
+          foo_mcp_bar: cacheableConfig,
+        }),
+      });
+      const service = createMCPToolCacheService(deps);
+
+      await service.replaceAppServerTools({ serverName: 'bar', serverTools: {} });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith({
+        [longServerKey]: cached[longServerKey],
+      });
+    });
+
+    it('does not replace tools when app server boundaries cannot be resolved', async () => {
+      const deps = createMockDeps({
+        getAllServerConfigs: jest.fn().mockRejectedValue(new Error('registry unavailable')),
+      });
+      const service = createMCPToolCacheService(deps);
+
+      await expect(
+        service.replaceAppServerTools({ serverName: 'bar', serverTools: {} }),
+      ).rejects.toThrow('registry unavailable');
+
+      expect(deps.getCachedTools).not.toHaveBeenCalled();
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
+    });
+
+    it('keeps an exact safe name authoritative over a normalized-name collision', async () => {
+      const exactServerKey = toolName('exact', 'foo_');
+      const cached: LCAvailableTools = {
+        [exactServerKey]: { type: 'function', function: { name: exactServerKey } },
+      };
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(cached),
+        getAllServerConfigs: jest.fn().mockResolvedValue({
+          'foo!': cacheableConfig,
+          foo_: cacheableConfig,
+        }),
+      });
+      const service = createMCPToolCacheService(deps);
+
+      await service.replaceAppServerTools({ serverName: 'foo!', serverTools: {} });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith(cached);
+    });
+
     it('serializes concurrent app-level replacements so one server cannot overwrite another', async () => {
       let cache: LCAvailableTools = {};
       const deps = createMockDeps({
@@ -560,6 +616,28 @@ describe('createMCPToolCacheService', () => {
       expect(result).toEqual({ [currentKey]: current[currentKey] });
       expect(getCachedTools).toHaveBeenCalledWith();
       expect(getCachedTools).not.toHaveBeenCalledWith({ userId: 'u1', serverName: 'brave' });
+    });
+
+    it('does not include a longer delimiter-overlapping server in the global slice', async () => {
+      const shortServerKey = `short${Constants.mcp_delimiter}bar`;
+      const longServerKey = `long${Constants.mcp_delimiter}foo_mcp_bar`;
+      const globalTools: LCAvailableTools = {
+        [shortServerKey]: { type: 'function', function: { name: shortServerKey } },
+        [longServerKey]: { type: 'function', function: { name: longServerKey } },
+      };
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(globalTools),
+        getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
+        getAllServerConfigs: jest.fn().mockResolvedValue({
+          bar: cacheableConfig,
+          foo_mcp_bar: cacheableConfig,
+        }),
+      });
+      const { getMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await getMCPServerTools('u1', 'bar');
+
+      expect(result).toEqual({ [shortServerKey]: globalTools[shortServerKey] });
     });
 
     it('treats a missing app-shared server slice as a miss so a failed startup can recover', async () => {

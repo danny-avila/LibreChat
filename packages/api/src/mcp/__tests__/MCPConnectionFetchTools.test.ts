@@ -54,7 +54,7 @@ function createConnectionWithListTools(listTools: jest.Mock): MCPConnection {
     serverConfig: { type: 'streamable-http', url: 'http://localhost/mcp' },
     useSSRFProtection: false,
   });
-  conn.client = { listTools } as unknown as MCPConnection['client'];
+  conn.client.listTools = listTools;
   return conn;
 }
 
@@ -79,6 +79,16 @@ describe('MCPConnection.fetchTools pagination', () => {
     mcpConfig.TOOLS_LIST_MAX_TOOLS = 1000;
     mcpConfig.TOOLS_LIST_MAX_BYTES = 5 * 1024 * 1024;
     mcpConfig.TOOLS_LIST_TIMEOUT_MS = 30000;
+  });
+
+  it('does not queue tool-list retries when the server has no tools capability', async () => {
+    const listTools = jest.fn();
+    const conn = createConnectionWithListTools(listTools);
+    jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({ resources: {} });
+
+    await conn.refreshToolList();
+
+    expect(listTools).not.toHaveBeenCalled();
   });
 
   it('returns the tools from a single page and makes one request when there is no nextCursor', async () => {

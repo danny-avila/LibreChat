@@ -1901,6 +1901,9 @@ export class MCPConnection extends EventEmitter {
 
   /** Queues a live tool-list refresh through the same coalescing path used by notifications. */
   public async refreshToolList(): Promise<void> {
+    if (this.client.getServerCapabilities()?.tools == null) {
+      return;
+    }
     this.toolListChangeGeneration++;
     this.clearToolListRefreshRetry();
     this.startToolListRefresh();

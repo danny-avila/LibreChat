@@ -247,7 +247,7 @@ export class MCPManager extends UserConnectionManager {
   /** Opens eligible app-shared sessions after the inspected startup catalog has been cached. */
   public async connectAppServers(): Promise<void> {
     try {
-      const connections = await this.appConnections?.getAll();
+      const connections = await this.appConnections?.getAll({ continueOnError: true });
       if (!connections) {
         return;
       }
@@ -257,6 +257,11 @@ export class MCPManager extends UserConnectionManager {
     } catch (error) {
       logger.warn('[MCP] Failed to establish one or more app connections after inspection', error);
     }
+  }
+
+  /** Closes app-shared MCP sessions during graceful process shutdown. */
+  public async disconnectAppServers(): Promise<void> {
+    await Promise.all(this.appConnections?.disconnectAll() ?? []);
   }
 
   /** Returns all available tool functions from all connections available to user */

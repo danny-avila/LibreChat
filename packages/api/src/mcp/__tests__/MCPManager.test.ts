@@ -254,8 +254,20 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       await manager.connectAppServers();
 
-      expect(getAll).toHaveBeenCalledTimes(1);
+      expect(getAll).toHaveBeenCalledWith({ continueOnError: true });
       expect(refreshToolList).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('disconnectAppServers', () => {
+    it('waits for every loaded app connection to disconnect', async () => {
+      const disconnectAll = jest.fn().mockReturnValue([Promise.resolve(), Promise.resolve()]);
+      mockAppConnections({ disconnectAll });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.disconnectAppServers();
+
+      expect(disconnectAll).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1685,7 +1697,7 @@ describe('MCPManager', () => {
     it('routes tool-list snapshots from user connections to the user-scoped publisher', async () => {
       const serverConfig: t.ParsedServerConfig = {
         type: 'streamable-http',
-        url: 'https://mcp.example.com',
+        url: 'https://mcp.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}',
         source: 'yaml',
         requiresOAuth: false,
       };
@@ -1695,11 +1707,19 @@ describe('MCPManager', () => {
         .mockResolvedValue(undefined);
       mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      mockProcessMCPEnv.mockImplementation(({ options }) => ({
+        ...options,
+        url: 'https://mcp.example.com/conversation-1',
+      }));
       (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
 
       try {
         const manager = await MCPManager.createInstance(newMCPServersConfig());
-        await manager.getUserConnection({ serverName, user: mockUser });
+        await manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          requestBody: { conversationId: 'conversation-1' },
+        });
 
         const listener = (mockConnection.on as jest.Mock).mock.calls.find(
           ([eventName]) => eventName === 'toolsChanged',
