@@ -87,12 +87,21 @@ function buildSSRFSafeLookup(
 /** Default lookup with no exemptions. Kept for callers that don't need allowedAddresses. */
 const ssrfSafeLookup: LookupFunction = buildSSRFSafeLookup();
 
+/** Connect options Node hands to `createConnection`; typed here because the seam is untyped. */
+interface ConnectOptions {
+  host?: unknown;
+  port?: unknown;
+  defaultPort?: unknown;
+  socketPath?: unknown;
+  lookup?: LookupFunction;
+}
+
 /** Internal agent shape exposing createConnection (exists at runtime but not in TS types) */
 type AgentInternal = {
-  createConnection: (options: Record<string, unknown>, oncreate?: unknown) => unknown;
+  createConnection: (options: ConnectOptions, oncreate?: unknown) => unknown;
 };
 
-function getConnectionPort(options: Record<string, unknown>): string {
+function getConnectionPort(options: ConnectOptions): string {
   return normalizePort(options.port ?? options.defaultPort);
 }
 
@@ -106,9 +115,14 @@ function getConnectionPort(options: Record<string, unknown>): string {
  * enabling this by default would break existing configurations.
  */
 function assertLiteralHostAllowed(
-  options: Record<string, unknown>,
+  options: ConnectOptions,
   allowedAddresses?: string[] | null,
 ): void {
+  /** A unix socket carries no host to validate, and these agents exist for http(s) URLs only. */
+  if (options.socketPath != null) {
+    throw createSSRFLookupError('socketPath', String(options.socketPath));
+  }
+
   const host = typeof options.host === 'string' ? options.host.replace(/^\[|\]$/g, '') : '';
   if (host.length === 0 || !isIP(host)) {
     return;
@@ -136,7 +150,7 @@ function withSSRFProtection<T extends http.Agent>(
 ): T {
   const internal = agent as unknown as AgentInternal;
   const origCreate = internal.createConnection.bind(agent);
-  internal.createConnection = (connectOptions: Record<string, unknown>, oncreate?: unknown) => {
+  internal.createConnection = (connectOptions: ConnectOptions, oncreate?: unknown) => {
     if (options?.blockLiteralHosts) {
       assertLiteralHostAllowed(connectOptions, allowedAddresses);
     }

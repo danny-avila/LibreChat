@@ -12,13 +12,7 @@ const mockCreateMCPTools = jest.fn();
 const mockGetServerConfig = jest.fn();
 const mockGetAccessibleMcpServerNames = jest.fn(async () => []);
 
-const mockHttpAgent = { __agent: 'http' };
-const mockHttpsAgent = { __agent: 'https' };
 const mockCreateSearchTool = jest.fn(() => ({ name: 'web_search' }));
-const mockResolveWebSearchSSRFAgents = jest.fn(() => ({
-  httpAgent: mockHttpAgent,
-  httpsAgent: mockHttpsAgent,
-}));
 const mockLoadWebSearchAuth = jest.fn(async () => ({ authResult: { searchProvider: 'serper' } }));
 
 jest.mock('@librechat/agents', () => ({
@@ -29,7 +23,6 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   loadWebSearchAuth: (...args) => mockLoadWebSearchAuth(...args),
-  resolveWebSearchSSRFAgents: (...args) => mockResolveWebSearchSSRFAgents(...args),
 }));
 
 jest.mock('~/server/services/PluginService', () => mockPluginService);
@@ -841,44 +834,49 @@ describe('Tool Handlers', () => {
       body: {},
     });
 
-    it('threads the SSRF-safe agents into the search tool config and passes allowedAddresses through', async () => {
-      const allowedAddresses = ['localhost:8888'];
+    /** Uses the real resolver, so this fails if the wiring delivers agents that do not guard. */
+    async function loadWebSearchConfig(webSearch) {
       const toolMap = await loadTools({
         user: fakeUser._id.toString(),
         tools: [Tools.web_search],
         returnMap: true,
-        webSearch: { allowedAddresses },
+        webSearch,
         options: { req: buildReq() },
       });
       await toolMap[Tools.web_search]();
+      return mockCreateSearchTool.mock.calls.at(-1)[0];
+    }
 
-      expect(mockResolveWebSearchSSRFAgents).toHaveBeenCalledTimes(1);
-      expect(mockResolveWebSearchSSRFAgents).toHaveBeenCalledWith(allowedAddresses);
-      expect(mockCreateSearchTool).toHaveBeenCalledWith(
-        expect.objectContaining({
-          httpAgent: mockHttpAgent,
-          httpsAgent: mockHttpsAgent,
-        }),
+    it('threads pooled SSRF-safe agents into the search tool config', async () => {
+      const config = await loadWebSearchConfig({ allowedAddresses: ['localhost:8888'] });
+
+      expect(typeof config.httpAgent.createConnection).toBe('function');
+      expect(typeof config.httpsAgent.createConnection).toBe('function');
+      expect(config.httpAgent.options.keepAlive).toBe(true);
+    });
+
+    it('threads agents that actually reject a private target', async () => {
+      const config = await loadWebSearchConfig({});
+
+      expect(() =>
+        config.httpAgent.createConnection({ host: '169.254.169.254', port: 80 }),
+      ).toThrow(expect.objectContaining({ code: 'ESSRF' }));
+    });
+
+    it('honors allowedAddresses end to end, exempting the configured host:port only', async () => {
+      const config = await loadWebSearchConfig({ allowedAddresses: ['127.0.0.1:8080'] });
+
+      const socket = config.httpAgent.createConnection({ host: '127.0.0.1', port: 8080 });
+      socket?.destroy?.();
+      expect(() => config.httpAgent.createConnection({ host: '127.0.0.1', port: 9 })).toThrow(
+        expect.objectContaining({ code: 'ESSRF' }),
       );
     });
 
-    it('still threads the agents when allowedAddresses is omitted', async () => {
-      const toolMap = await loadTools({
-        user: fakeUser._id.toString(),
-        tools: [Tools.web_search],
-        returnMap: true,
-        webSearch: {},
-        options: { req: buildReq() },
-      });
-      await toolMap[Tools.web_search]();
-
-      expect(mockResolveWebSearchSSRFAgents).toHaveBeenCalledWith(undefined);
-      expect(mockCreateSearchTool).toHaveBeenCalledWith(
-        expect.objectContaining({
-          httpAgent: mockHttpAgent,
-          httpsAgent: mockHttpsAgent,
-        }),
-      );
+    it('does not throw out of loadTools when allowedAddresses is not an array', async () => {
+      await expect(
+        loadWebSearchConfig({ allowedAddresses: { '10.0.0.5:11434': true } }),
+      ).resolves.toBeDefined();
     });
   });
 });

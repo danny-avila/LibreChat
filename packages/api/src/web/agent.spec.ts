@@ -3,7 +3,7 @@ import { isAddressAllowed } from '../auth';
 
 /** `options` exists on a Node agent at runtime but is absent from the bundled type. */
 interface AgentOptionsProbe {
-  options: { keepAlive?: boolean };
+  options: { keepAlive?: boolean; timeout?: number };
 }
 
 function agentOptions(agent: object): AgentOptionsProbe['options'] {
@@ -15,9 +15,13 @@ interface ConnectProbe {
   createConnection: (options: Record<string, unknown>) => unknown;
 }
 
-function connect(agent: object, host: string, port: number): void {
-  const socket = (agent as ConnectProbe).createConnection({ host, port });
+function connectRaw(agent: object, options: Record<string, unknown>): void {
+  const socket = (agent as ConnectProbe).createConnection(options);
   (socket as { destroy?: () => void })?.destroy?.();
+}
+
+function connect(agent: object, host: string, port: number): void {
+  connectRaw(agent, { host, port });
 }
 
 describe('resolveWebSearchSSRFAgents', () => {
@@ -51,6 +55,7 @@ describe('resolveWebSearchSSRFAgents', () => {
     expect(httpAgent).toBeDefined();
     expect(httpsAgent).toBeDefined();
     expect(agentOptions(httpAgent).keepAlive).toBe(true);
+    expect(agentOptions(httpAgent).timeout).toBe(5000);
     expect(agentOptions(httpsAgent).keepAlive).toBe(true);
   });
 
@@ -87,15 +92,45 @@ describe('resolveWebSearchSSRFAgents', () => {
     expect(resolveWebSearchSSRFAgents()).toBe(first);
   });
 
-  it('reads the PROXY variable that other LibreChat egress paths honor', () => {
-    process.env.PROXY = 'http://proxy.internal:3128';
-    const viaProxyVar = resolveWebSearchSSRFAgents();
+  it('grants no exemption for PROXY, which Axios never reads on this path', () => {
+    process.env.PROXY = 'http://10.4.4.4:3128';
 
-    delete process.env.PROXY;
-    process.env.HTTP_PROXY = 'http://proxy.internal:3128';
-    process.env.HTTPS_PROXY = 'http://proxy.internal:3128';
+    const { httpAgent } = resolveWebSearchSSRFAgents();
 
-    expect(resolveWebSearchSSRFAgents()).toBe(viaProxyVar);
+    expect(() => connect(httpAgent, '10.4.4.4', 3128)).toThrow(
+      expect.objectContaining({ code: 'ESSRF' }),
+    );
+  });
+
+  it('grants no exemption for a socks proxy, which Axios cannot use', () => {
+    process.env.ALL_PROXY = 'socks5://10.5.5.5:1080';
+
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connect(httpAgent, '10.5.5.5', 1080)).toThrow(
+      expect.objectContaining({ code: 'ESSRF' }),
+    );
+  });
+
+  it('tolerates a non-array allowedAddresses instead of throwing during tool load', () => {
+    const asUnknown = { '10.0.0.5:11434': true } as unknown;
+
+    expect(() => resolveWebSearchSSRFAgents(asUnknown as string[])).not.toThrow();
+  });
+
+  it('does not collide cache keys when an entry contains a newline', () => {
+    const joined = resolveWebSearchSSRFAgents(['searxng:8080\nfirecrawl:3002']);
+    const separate = resolveWebSearchSSRFAgents(['searxng:8080', 'firecrawl:3002']);
+
+    expect(joined).not.toBe(separate);
+  });
+
+  it('rejects a unix socket, which carries no host to validate', () => {
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connectRaw(httpAgent, { socketPath: '/tmp/x.sock' })).toThrow(
+      expect.objectContaining({ code: 'ESSRF' }),
+    );
   });
 
   it('treats an empty proxy variable as unset, matching the value compose forwards', () => {

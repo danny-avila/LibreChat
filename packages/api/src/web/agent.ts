@@ -8,14 +8,12 @@ export interface WebSearchSSRFAgents {
 }
 
 /**
- * Every variable that can put a proxy in front of these requests. Axios resolves a proxy through
- * `proxy-from-env`, which reads `<protocol>_proxy` and then `all_proxy` in either case, so
- * `ALL_PROXY` alone is enough to proxy a request. `PROXY` is LibreChat's own setting, honored by
- * `applyAxiosProxyConfig` on the other egress paths.
+ * Exactly the variables that can put a proxy in front of these requests: Axios resolves through
+ * `proxy-from-env`, which reads `<protocol>_proxy` and then `all_proxy` in either case. LibreChat's
+ * own `PROXY` is deliberately absent, since nothing on this path consumes it, and exempting an
+ * address that never carries the request would grant a bypass rather than preserve one.
  */
 const PROXY_ENV_VARS = [
-  'PROXY',
-  'proxy',
   'HTTP_PROXY',
   'http_proxy',
   'HTTPS_PROXY',
@@ -40,7 +38,8 @@ function getProxyExemptions(): string[] {
     try {
       /** `hostname` keeps IPv6 brackets, which the exemption parser requires as `[ipv6]:port`. */
       const { hostname, port, protocol } = new URL(proxyUrl);
-      if (hostname.length === 0) {
+      /** Axios proxies over http(s) only, so a socks endpoint never carries these requests. */
+      if (hostname.length === 0 || (protocol !== 'http:' && protocol !== 'https:')) {
         continue;
       }
       entries.add(`${hostname}:${port || (protocol === 'https:' ? '443' : '80')}`);
@@ -51,8 +50,11 @@ function getProxyExemptions(): string[] {
   return [...entries];
 }
 
-/** Keyed by exemption list so repeated tool loads reuse one pooled pair, as `oauth/tokens` does. */
+/** Keyed by exemption list so repeated tool loads reuse one pooled pair. */
 const agentsByExemptions = new Map<string, WebSearchSSRFAgents>();
+
+/** Distinct exemption lists are bounded by admin configuration; the cap only guards a leak. */
+const MAX_CACHED_AGENT_PAIRS = 32;
 
 /**
  * Connect-time SSRF agents for the web-search tool, which issues its own requests and accepts
@@ -60,21 +62,34 @@ const agentsByExemptions = new Map<string, WebSearchSSRFAgents>();
  *
  * Redirect hops traverse these agents, so `blockLiteralHosts` covers a redirect to a private
  * address whether it is named or a literal, which is what `maxRedirects` would otherwise be
- * needed for. When a proxy carries the request the proxy resolves the destination, so
- * enforcement there belongs to the proxy's own egress policy.
+ * needed for. A blocked redirect surfaces as `ERR_FR_REDIRECTION_FAILURE` with the `ESSRF`
+ * message attached, because `follow-redirects` wraps the agent's error.
+ *
+ * When a proxy carries the request the proxy resolves the destination, so enforcement there
+ * belongs to the proxy's egress policy. The proxy endpoint is exempted for the whole pair rather
+ * than per destination, since one shared pair cannot discriminate: a destination that `NO_PROXY`
+ * sends direct therefore also carries that exemption.
  */
 export function resolveWebSearchSSRFAgents(
   allowedAddresses?: string[] | null,
 ): WebSearchSSRFAgents {
-  const exemptions = [...(allowedAddresses ?? []), ...getProxyExemptions()];
-  const cacheKey = exemptions.join('\n');
+  const configured = Array.isArray(allowedAddresses) ? allowedAddresses : [];
+  const exemptions = [...configured, ...getProxyExemptions()];
+  const cacheKey = exemptions.join('\0');
 
   const cached = agentsByExemptions.get(cacheKey);
   if (cached) {
     return cached;
   }
 
-  const agents = createSSRFSafeAgents(exemptions, { keepAlive: true }, { blockLiteralHosts: true });
+  const agents = createSSRFSafeAgents(
+    exemptions,
+    { keepAlive: true, timeout: 5000 },
+    { blockLiteralHosts: true },
+  );
+  if (agentsByExemptions.size >= MAX_CACHED_AGENT_PAIRS) {
+    agentsByExemptions.clear();
+  }
   agentsByExemptions.set(cacheKey, agents);
   return agents;
 }
