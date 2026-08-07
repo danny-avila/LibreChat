@@ -45,6 +45,8 @@ type OAuthRequiredEvent = {
   skipSilentRefresh?: boolean;
 };
 
+type OAuthRecoveryPhase = 'silent-refresh' | 'interactive' | 'terminal';
+
 /**
  * Factory for creating MCP connections with optional OAuth authentication.
  * Handles OAuth flows, token management, and connection retry logic.
@@ -984,16 +986,46 @@ export class MCPConnectionFactory {
     connection: MCPConnection,
     eventName: 'oauthRequired' | 'oauthReauthenticationRequired' = 'oauthRequired',
   ): () => void {
-    const oauthHandler = async (data: OAuthRequiredEvent) => {
+    const isRequestRecovery = eventName === 'oauthReauthenticationRequired';
+    let recoveryPhase: OAuthRecoveryPhase = 'silent-refresh';
+    let eventHandling: Promise<void> | null = null;
+
+    const handleOAuthEvent = async (data: OAuthRequiredEvent) => {
       logger.info(`${this.logPrefix} oauthRequired event received`);
 
-      if (!data.skipSilentRefresh && this.shouldAttemptSilentTokenRefresh(data)) {
-        const refreshedTokens = await this.attemptSilentTokenRefresh();
-        if (refreshedTokens) {
-          connection.setOAuthTokens(refreshedTokens);
-          connection.emit('oauthHandled', 'silent-refresh' satisfies t.OAuthHandledSource);
+      if (this.connectionReady) {
+        const emitted = connection.emit('oauthReauthenticationRequired', {
+          ...data,
+          skipSilentRefresh: data.skipSilentRefresh,
+        });
+        if (emitted) {
           return;
         }
+        logger.info(`${this.logPrefix} Cached connection requires a live OAuth request handler`);
+        connection.emit('oauthFailed', new Error('OAuth reauthentication required'));
+        return;
+      }
+
+      if (isRequestRecovery && recoveryPhase === 'terminal') {
+        logger.warn(`${this.logPrefix} OAuth recovery phase budget exhausted`);
+        connection.emit('oauthFailed', new Error('OAuth recovery phase budget exhausted'));
+        return;
+      }
+
+      if (!isRequestRecovery || recoveryPhase === 'silent-refresh') {
+        recoveryPhase = 'interactive';
+        if (!data.skipSilentRefresh && this.shouldAttemptSilentTokenRefresh(data)) {
+          const refreshedTokens = await this.attemptSilentTokenRefresh();
+          if (refreshedTokens) {
+            connection.setOAuthTokens(refreshedTokens);
+            connection.emit('oauthHandled', 'silent-refresh' satisfies t.OAuthHandledSource);
+            return;
+          }
+        }
+      }
+
+      if (isRequestRecovery) {
+        recoveryPhase = 'terminal';
       }
 
       // Silent refresh failed and we're about to fall through to interactive
@@ -1002,21 +1034,6 @@ export class MCPConnectionFactory {
       // tokens the resource server just rejected (see the `PENDING_STALE_MS`
       // window in `handleOAuthRequired`).
       await this.invalidateCompletedOAuthFlow();
-
-      if (this.connectionReady) {
-        const emitted = connection.emit('oauthReauthenticationRequired', {
-          ...data,
-          skipSilentRefresh: true,
-        });
-        if (emitted) {
-          return;
-        }
-        logger.info(
-          `${this.logPrefix} Silent refresh did not recover cached connection; requiring fresh OAuth prompt`,
-        );
-        connection.emit('oauthFailed', new Error('OAuth reauthentication required'));
-        return;
-      }
 
       if (this.returnOnOAuth) {
         try {
@@ -1189,6 +1206,23 @@ export class MCPConnectionFactory {
         logger.warn(`${this.logPrefix} OAuth failed, emitting oauthFailed event`);
         connection.emit('oauthFailed', new Error('OAuth authentication failed'));
       }
+    };
+
+    const oauthHandler = (data: OAuthRequiredEvent): Promise<void> => {
+      if (!isRequestRecovery) {
+        return handleOAuthEvent(data);
+      }
+      if (eventHandling) {
+        return eventHandling;
+      }
+
+      const handling = handleOAuthEvent(data).finally(() => {
+        if (eventHandling === handling) {
+          eventHandling = null;
+        }
+      });
+      eventHandling = handling;
+      return handling;
     };
 
     connection.on(eventName, oauthHandler);

@@ -95,6 +95,9 @@ describe('MCPConnectionFactory', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Cached runtime handlers now delegate before attempting their own refresh,
+    // so queued one-shot refresh results must not leak into the next test.
+    mockMCPTokenStorage.forceRefreshTokens.mockReset();
     // Clear process-local silent-refresh in-flight map so a leftover entry
     // from a prior test (e.g. one that errored before its `finally` ran)
     // cannot cause a later test to join a stale promise.
@@ -2340,6 +2343,88 @@ describe('MCPConnectionFactory', () => {
       expect(mockConnectionInstance.on).toHaveBeenCalledWith(
         'oauthReauthenticationRequired',
         expect.any(Function),
+      );
+
+      cleanup();
+    });
+
+    it('bounds request recovery to one silent refresh and one interactive flow', async () => {
+      const sseConfig = {
+        ...mockServerConfig,
+        url: 'https://api.example.com',
+        type: 'sse' as const,
+      } as t.SSEOptions;
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: sseConfig,
+      };
+      const refreshedTokens: MCPOAuthTokens = {
+        access_token: 'refreshed-access',
+        refresh_token: 'refresh-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      const interactiveTokens: MCPOAuthTokens = {
+        access_token: 'interactive-access',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        credential_set_id: 'interactive-generation',
+      };
+      mockProcessMCPEnv.mockReturnValue(sseConfig);
+      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockMCPTokenStorage.forceRefreshTokens.mockResolvedValueOnce(refreshedTokens);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValueOnce({
+        authorizationUrl: 'https://auth.example.com',
+        flowId: 'flow123',
+        flowMetadata: {
+          serverName: 'test-server',
+          userId: 'user123',
+          serverUrl: 'https://api.example.com',
+          state: 'fresh-state',
+        },
+      });
+      mockFlowManager.createFlow.mockResolvedValueOnce(interactiveTokens);
+
+      let requestOAuthHandler: ((data: Record<string, unknown>) => Promise<void>) | undefined;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthReauthenticationRequired') {
+          requestOAuthHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+      const cleanup = MCPConnectionFactory.attachRequestOAuthHandler(
+        basicOptions,
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          oauthStart: jest.fn(),
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+        },
+        mockConnectionInstance,
+      );
+      const challenge = {
+        serverUrl: 'https://api.example.com',
+        error: new Error('Non-200 status code (401)'),
+      };
+
+      await Promise.all([requestOAuthHandler!(challenge), requestOAuthHandler!(challenge)]);
+      await requestOAuthHandler!(challenge);
+      await requestOAuthHandler!(challenge);
+
+      expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(1);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalledTimes(1);
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenNthCalledWith(1, refreshedTokens);
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenNthCalledWith(2, interactiveTokens);
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({ message: 'OAuth recovery phase budget exhausted' }),
       );
 
       cleanup();

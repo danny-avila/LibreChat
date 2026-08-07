@@ -46,7 +46,6 @@ export function isOAuthAuthenticationError(error: unknown): boolean {
     message.includes('invalid_grant') ||
     message.includes('insufficient_scope') ||
     message.includes('authentication required') ||
-    message.includes('unauthorized') ||
     message.includes('no authorization')
   );
 }

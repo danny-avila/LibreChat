@@ -1482,7 +1482,7 @@ describe('MCPManager', () => {
       expect(connection.isConnected).not.toHaveBeenCalled();
     });
 
-    it('disconnects an inactive cached connection before replacing it', async () => {
+    it('evicts an inactive cached connection without disconnecting current borrowers', async () => {
       const unusableConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),
         isConnected: jest.fn().mockResolvedValue(false),
@@ -1508,11 +1508,11 @@ describe('MCPManager', () => {
         }),
       ).resolves.toBe(replacementConnection);
 
-      expect(unusableConnection.disconnect).toHaveBeenCalledTimes(1);
+      expect(unusableConnection.disconnect).not.toHaveBeenCalled();
     });
 
-    it('disconnects an inactive request-scoped connection before replacing it', async () => {
-      const requestScopedConnection = {
+    it('evicts an inactive request connection without disconnecting current borrowers', async () => {
+      const requestConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),
         isConnected: jest.fn().mockResolvedValue(false),
       } as unknown as MCPConnection;
@@ -1520,7 +1520,7 @@ describe('MCPManager', () => {
         isConnected: jest.fn().mockResolvedValue(true),
       } as unknown as MCPConnection;
       const requestScopedConnections: t.RequestScopedMCPConnectionStore = {
-        connections: new Map([[`${mockUser.id}:${serverName}`, requestScopedConnection]]),
+        connections: new Map([[`${mockUser.id}:${serverName}`, requestConnection]]),
         pending: new Map(),
       };
       const bodyScopedConfig: t.ParsedServerConfig = {
@@ -1552,7 +1552,39 @@ describe('MCPManager', () => {
         }),
       ).resolves.toBe(replacementConnection);
 
-      expect(requestScopedConnection.disconnect).toHaveBeenCalledTimes(1);
+      expect(requestConnection.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('propagates a failed recovery before checking the cached connection', async () => {
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+      const recoveryError = new Error('OAuth denied');
+      const recovery = Promise.reject(recoveryError);
+      const internals = manager as unknown as {
+        oauthRecoveries: WeakMap<
+          MCPConnection,
+          { promise: Promise<void>; allowsTakeover: boolean }
+        >;
+        userConnections: Map<string, Map<string, MCPConnection>>;
+      };
+      internals.userConnections.set(mockUser.id, new Map([[serverName, connection]]));
+      internals.oauthRecoveries.set(connection, { promise: recovery, allowsTakeover: true });
+
+      await expect(
+        manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          serverConfig,
+        }),
+      ).rejects.toBe(recoveryError);
+
+      expect(connection.isConnected).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
     });
   });
 

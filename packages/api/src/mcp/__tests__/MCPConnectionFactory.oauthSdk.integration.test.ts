@@ -373,7 +373,7 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
 
       expect(
         server.tokenRequests.filter((request) => request.grantType === 'refresh_token'),
-      ).toHaveLength(2);
+      ).toHaveLength(1);
       expect(oauthStart).toHaveBeenCalledTimes(1);
     } finally {
       isConnectedSpy.mockRestore();

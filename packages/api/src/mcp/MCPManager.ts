@@ -93,10 +93,7 @@ export class MCPManager extends UserConnectionManager {
     const connection = requestConnection ?? this.userConnections.get(userId)?.get(opts.serverName);
     const recovery = connection ? this.oauthRecoveries.get(connection) : undefined;
     if (recovery) {
-      await this.waitForActiveRecovery(
-        recovery.promise.catch(() => undefined),
-        opts.signal,
-      );
+      await this.waitForActiveRecovery(recovery.promise, opts.signal);
     }
 
     return super.getUserConnection(opts);
