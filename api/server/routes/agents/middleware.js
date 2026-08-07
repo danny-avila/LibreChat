@@ -18,8 +18,12 @@ const apiKeyMiddleware = createRequireApiKeyAuth({
 const requireRemoteAgentAuth = createRemoteAgentAuth({
   apiKeyMiddleware,
   findUser: db.findUser,
+  createUser: db.createUser,
   getRolesByNames: db.findRolesByNames,
   updateUser: db.updateUser,
+  bulkUpdateGroups: db.bulkUpdateGroups,
+  findGroupsByExternalIds: db.findGroupsByExternalIds,
+  upsertGroupByExternalId: db.upsertGroupByExternalId,
   getAppConfig,
 });
 

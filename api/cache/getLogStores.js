@@ -68,6 +68,7 @@ const namespaces = {
     CacheKeys.ADMIN_OAUTH_EXCHANGE,
     Time.THIRTY_SECONDS,
   ),
+  [CacheKeys.FEDERATED_AUTH]: standardCache(CacheKeys.FEDERATED_AUTH, Time.FIVE_MINUTES),
 };
 
 /**
