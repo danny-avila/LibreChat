@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Button, Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
+import { Copy, Check } from 'lucide';
+import { Button, MorphIcon, TooltipAnchor } from '@librechat/client';
 import type { TMessage, SearchResultData } from 'librechat-data-provider';
 import { useLocalize, useCopyToClipboard } from '~/hooks';
 
@@ -35,11 +36,7 @@ export default function MinimalHoverButtons({ message, searchResults }: THoverBu
             className="ml-0 flex size-auto items-center gap-1.5 rounded-lg p-1.5 text-xs text-text-secondary-alt transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
             onClick={() => copyToClipboard(setIsCopied)}
           >
-            {isCopied ? (
-              <CheckMark className="h-[19px] w-[19px]" />
-            ) : (
-              <Clipboard className="h-[19px] w-[19px]" />
-            )}
+            <MorphIcon icon={isCopied ? Check : Copy} size={19} />
           </Button>
         }
       />

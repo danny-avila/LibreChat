@@ -17,9 +17,15 @@ const mockRestoreToComposer = jest.fn(() => true);
 const mockEditToComposer = jest.fn();
 const mockShowToast = jest.fn();
 
-jest.mock('@librechat/client', () => ({
-  useToastContext: () => ({ showToast: mockShowToast }),
-}));
+// SteerMenu (rendered under PendingSteerChips) uses MorphIcon; map icon
+// identity so inverted Zap/Clock ternaries fail tests instead of going silent.
+jest.mock('@librechat/client', () => {
+  const { createSteerMorphIconMock } = jest.requireActual('~/../test/mockMorphIcon');
+  return {
+    useToastContext: () => ({ showToast: mockShowToast }),
+    MorphIcon: createSteerMorphIconMock(),
+  };
+});
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,

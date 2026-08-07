@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
 import { useRecoilValue } from 'recoil';
+import { Maximize2, Minimize2 } from 'lucide';
+import { ArrowDown, ChevronRight, Users } from 'lucide-react';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
-import { ArrowDown, ChevronRight, Maximize2, Minimize2, Users } from 'lucide-react';
 import {
   Button,
   OGDialog,
+  MorphIcon,
   OGDialogTitle,
   OGDialogContent,
   OGDialogDescription,
@@ -658,11 +660,7 @@ function SubagentPrompt({
           title={toggleLabel}
           className="h-8 gap-1.5 rounded-md px-2 text-xs font-medium text-text-secondary transition hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-text-primary"
         >
-          {expanded ? (
-            <Minimize2 size={14} aria-hidden="true" />
-          ) : (
-            <Maximize2 size={14} aria-hidden="true" />
-          )}
+          <MorphIcon icon={expanded ? Minimize2 : Maximize2} size={14} />
           <span className="hidden sm:inline">{toggleLabel}</span>
         </Button>
       </div>
