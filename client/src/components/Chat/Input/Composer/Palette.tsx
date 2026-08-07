@@ -10,8 +10,8 @@ import React, {
 import * as Ariakit from '@ariakit/react';
 import { useSetRecoilState } from 'recoil';
 import { AutoSizer, List } from 'react-virtualized';
-import { FileUpload, IconButton, TooltipAnchor } from '@librechat/client';
 import { Star, Plus, Search, ChevronDown } from 'lucide-react';
+import { FileUpload, IconButton, TooltipAnchor } from '@librechat/client';
 import type {
   TFile,
   TConversation,
@@ -32,7 +32,6 @@ import useAttachItems from '~/hooks/Input/useAttachItems';
 import { isMacPlatform } from '~/utils/shortcuts';
 import { getFileType, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
-
 import store from '~/store';
 
 const HEADER_HEIGHT = 26;
