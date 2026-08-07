@@ -41,8 +41,8 @@ services:
       - -c
       - wal_level=logical
     environment:
-      POSTGRES_USER: ${FERRETDB_PG_USER:-ferretdb}
-      POSTGRES_PASSWORD: ${FERRETDB_PG_PASSWORD:-ferretdb}
+      POSTGRES_USER: ${FERRETDB_PG_USER:?set in search/.env, see .env.example}
+      POSTGRES_PASSWORD: ${FERRETDB_PG_PASSWORD:?set in search/.env, see .env.example}
       POSTGRES_DB: ${FERRETDB_PG_DB:-postgres}
     ports:
       - "${FERRETDB_PG_HOST_PORT:-5434}:5432"
@@ -61,10 +61,12 @@ services:
 
   # FerretDB 2.x delegates all authentication to PostgreSQL: the credentials
   # embedded in FERRETDB_POSTGRESQL_URL are also the Mongo-wire credentials
-  # clients authenticate with (the "ferretdb:ferretdb pattern" - matches the
-  # existing packages/data-schemas/misc/ferretdb/docker-compose.ferretdb.yml
-  # differential-test harness). FERRETDB_AUTH defaults to true in 2.x; set
-  # explicitly here for clarity.
+  # clients authenticate with. No default is supplied for either - unlike the
+  # differential-test harness at
+  # packages/data-schemas/misc/ferretdb/docker-compose.ferretdb.yml, this
+  # stack holds real projected chat content, so the compose file must not be
+  # runnable without operator-supplied credentials. FERRETDB_AUTH defaults to
+  # true in 2.x; set explicitly here for clarity.
   ferretdb:
     image: ghcr.io/ferretdb/ferretdb:2.7.0
     container_name: search-ferretdb
@@ -76,7 +78,7 @@ services:
       - "${FERRETDB_HOST_PORT:-27021}:27017"
       - "${FERRETDB_DEBUG_HOST_PORT:-8089}:8088"
     environment:
-      FERRETDB_POSTGRESQL_URL: postgres://${FERRETDB_PG_USER:-ferretdb}:${FERRETDB_PG_PASSWORD:-ferretdb}@ferretdb-postgres:5432/${FERRETDB_PG_DB:-postgres}
+      FERRETDB_POSTGRESQL_URL: postgres://${FERRETDB_PG_USER:?set in search/.env, see .env.example}:${FERRETDB_PG_PASSWORD:?set in search/.env, see .env.example}@ferretdb-postgres:5432/${FERRETDB_PG_DB:-postgres}
       FERRETDB_AUTH: "true"
     # The FerretDB image ships its own HEALTHCHECK (`ferretdb ping`); no
     # override needed here.

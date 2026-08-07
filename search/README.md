@@ -52,7 +52,7 @@ left running):
   tables exist yet).
 - `pg_isready` + `SHOW wal_level` on `ferretdb-postgres` returned `logical`.
 - ClickHouse `GET /ping` returned `Ok.`.
-- FerretDB: full Mongo-wire round trip over `mongodb://ferretdb:ferretdb@
+- FerretDB: full Mongo-wire round trip over `mongodb://$FERRETDB_PG_USER:$FERRETDB_PG_PASSWORD@
   localhost:27021/?authMechanism=SCRAM-SHA-256` using the repo's own
   `mongodb` driver (`node_modules/mongodb` at the repo root) -
   `admin.ping()` returned `{ok:1}`, then `insertOne` / `findOne` /
@@ -115,7 +115,7 @@ starting.
 
 | Variable | Used by | Notes |
 |---|---|---|
-| `FERRETDB_PG_USER` / `FERRETDB_PG_PASSWORD` | `ferretdb-postgres` bootstrap, `ferretdb`'s `FERRETDB_POSTGRESQL_URL` | Defaults to `ferretdb`/`ferretdb`, matching the existing `packages/data-schemas/misc/ferretdb/docker-compose.ferretdb.yml` convention. FerretDB 2.x forwards these same credentials to Mongo-wire clients (`mongodb://ferretdb:ferretdb@localhost:27021/`) - see "How FerretDB auth works" below. |
+| `FERRETDB_PG_USER` / `FERRETDB_PG_PASSWORD` | `ferretdb-postgres` bootstrap, `ferretdb`'s `FERRETDB_POSTGRESQL_URL` | **Required, no default** - compose refuses to start without them. FerretDB 2.x forwards these same credentials to Mongo-wire clients, so this pair is the password for all projected chat content - see "How FerretDB auth works" below. |
 | `CHAT_SEARCH_BOOTSTRAP_USER` / `CHAT_SEARCH_BOOTSTRAP_PASSWORD` | `chat_search_db` container bootstrap only | Non-default (PLAN.md decision 3). Superuser, but never used by the app - interactive/`docker exec` debugging only. |
 | `CHAT_SEARCH_OWNER_PASSWORD` | `chat_search_owner` role | Migration owner. Track 4's DDL runs as this role. Not superuser, owns the `chat_search` schema. |
 | `CHAT_SEARCH_WRITER_PASSWORD` | `chat_search_writer` role | Projection writer. This is `CHAT_SEARCH_WRITER_URL` in the app's feature-flag list - the projector/outbox consumer/sweep, never a request pod. |
@@ -130,9 +130,9 @@ None of the four `chat_search_db` roles are superuser, table owner (except
 
 FerretDB 2.x does not store credentials itself - it forwards whatever
 credentials the Mongo client presents straight to PostgreSQL for validation.
-`FERRETDB_POSTGRESQL_URL`'s embedded credentials (`ferretdb:ferretdb` here)
+`FERRETDB_POSTGRESQL_URL`'s embedded credentials
 are also the credentials Mongo clients authenticate with:
-`mongodb://ferretdb:ferretdb@localhost:27021/?authMechanism=SCRAM-SHA-256`.
+`mongodb://$FERRETDB_PG_USER:$FERRETDB_PG_PASSWORD@localhost:27021/?authMechanism=SCRAM-SHA-256`.
 Additional least-privilege Mongo-facing users/roles for the app itself
 (rather than this shared `ferretdb` bootstrap credential) are a track 2/4
 concern, not this track's.

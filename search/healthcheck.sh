@@ -91,7 +91,7 @@ log "== all containers healthy; running application-level checks =="
 # --- ferretdb-postgres: wal_level=logical (needed by the later CDC spike) ---
 log "-- ferretdb-postgres: wal_level"
 WAL_LEVEL="$("${COMPOSE[@]}" exec -T ferretdb-postgres \
-  psql -v ON_ERROR_STOP=1 -U "${FERRETDB_PG_USER:-ferretdb}" -d "${FERRETDB_PG_DB:-postgres}" \
+  psql -v ON_ERROR_STOP=1 -U "${FERRETDB_PG_USER:?set in search/.env}" -d "${FERRETDB_PG_DB:-postgres}" \
   -tAc "SHOW wal_level;" 2>/dev/null | tr -d '[:space:]')"
 if [ "$WAL_LEVEL" = "logical" ]; then
   log "   OK: wal_level=logical"
@@ -158,7 +158,7 @@ fi
 # working during Track 1 development), then a bare TCP check as last resort.
 log "-- ferretdb: mongo wire protocol reachability"
 FERRETDB_HOST_PORT="${FERRETDB_HOST_PORT:-27021}"
-MONGO_URI="mongodb://${FERRETDB_PG_USER:-ferretdb}:${FERRETDB_PG_PASSWORD:-ferretdb}@localhost:${FERRETDB_HOST_PORT}/?authMechanism=SCRAM-SHA-256"
+MONGO_URI="mongodb://${FERRETDB_PG_USER:?set in search/.env}:${FERRETDB_PG_PASSWORD:?set in search/.env}@localhost:${FERRETDB_HOST_PORT}/?authMechanism=SCRAM-SHA-256"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 if command -v mongosh >/dev/null 2>&1; then
