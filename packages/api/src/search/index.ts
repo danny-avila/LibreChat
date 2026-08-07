@@ -1,5 +1,6 @@
 export * from './arms';
 export * from './constants';
+export * from './cursor';
 export * from './fusion';
 export * from './hash';
 export * from './lease';
@@ -8,6 +9,7 @@ export * from './pool';
 export * from './projector';
 export * from './roles';
 export * from './scope';
+export * from './search';
 export * from './source';
 export * from './writer';
 export type * from './types';

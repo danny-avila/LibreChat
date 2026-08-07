@@ -67,13 +67,6 @@ export type InternalHit = ChatSearchHit & {
   projectionVersion: number;
 };
 
-/** Opaque, versioned, HMAC-signed keyset cursor. */
-export type CursorPayload = {
-  v: number;
-  primary: string;
-  secondary: string;
-};
-
 export type SearchRecordKey = Readonly<{
   tenantId: string;
   userId: string;
