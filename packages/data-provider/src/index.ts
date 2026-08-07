@@ -32,6 +32,8 @@ export * from './types/web';
 export * from './types/graph';
 /* access permissions */
 export * from './accessPermissions';
+/* artifact apps */
+export * from './artifactApps';
 /* query/mutation keys */
 export * from './keys';
 /* api call helpers */
