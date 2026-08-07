@@ -93,10 +93,36 @@ export class MCPManager extends UserConnectionManager {
     const connection = requestConnection ?? this.userConnections.get(userId)?.get(opts.serverName);
     const recovery = connection ? this.oauthRecoveries.get(connection) : undefined;
     if (recovery) {
-      await recovery.promise.catch(() => undefined);
+      await this.waitForActiveRecovery(recovery.promise, opts.signal);
     }
 
     return super.getUserConnection(opts);
+  }
+
+  private waitForActiveRecovery(recovery: Promise<void>, signal?: AbortSignal): Promise<void> {
+    if (!signal) {
+      return recovery.catch(() => undefined);
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      const onRecoverySettled = () => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      };
+      const onAbort = () => {
+        signal.removeEventListener('abort', onAbort);
+        const reason = signal.reason;
+        reject(reason instanceof Error ? reason : new Error('OAuth recovery wait aborted'));
+      };
+
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+
+      signal.addEventListener('abort', onAbort, { once: true });
+      recovery.then(onRecoverySettled, onRecoverySettled);
+    });
   }
 
   /** Retrieves an app-level or user-specific connection based on provided arguments */

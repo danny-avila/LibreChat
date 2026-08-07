@@ -1419,6 +1419,40 @@ describe('MCPManager', () => {
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
     });
 
+    it('lets an aborted waiter leave without cancelling the shared recovery', async () => {
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+      const recovery = new Promise<void>(() => undefined);
+      const internals = manager as unknown as {
+        oauthRecoveries: WeakMap<
+          MCPConnection,
+          { promise: Promise<void>; allowsTakeover: boolean }
+        >;
+        userConnections: Map<string, Map<string, MCPConnection>>;
+      };
+      internals.userConnections.set(mockUser.id, new Map([[serverName, connection]]));
+      internals.oauthRecoveries.set(connection, { promise: recovery, allowsTakeover: true });
+      const controller = new AbortController();
+      const abortReason = new Error('request aborted');
+
+      const connectionPromise = manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        serverConfig,
+        signal: controller.signal,
+      });
+      controller.abort(abortReason);
+
+      await expect(connectionPromise).rejects.toBe(abortReason);
+      expect(internals.oauthRecoveries.get(connection)?.promise).toBe(recovery);
+      expect(connection.isConnected).not.toHaveBeenCalled();
+    });
+
     it('disconnects an inactive cached connection before replacing it', async () => {
       const unusableConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),
