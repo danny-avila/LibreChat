@@ -20,8 +20,8 @@ jest.mock('~/hooks', () => ({
 
 const mockShowToast = jest.fn();
 jest.mock('@librechat/client', () => {
-  const React = require('react');
-  const IconButton = React.forwardRef(
+  const ReactActual = jest.requireActual('react') as typeof React;
+  const IconButton = ReactActual.forwardRef(
     (
       {
         label,
@@ -30,7 +30,7 @@ jest.mock('@librechat/client', () => {
       }: { label?: string; children?: React.ReactNode } & Record<string, unknown>,
       ref: React.Ref<HTMLButtonElement>,
     ) =>
-      React.createElement(
+      ReactActual.createElement(
         'button',
         { ...props, ref, type: 'button', 'aria-label': label },
         children,
@@ -38,11 +38,8 @@ jest.mock('@librechat/client', () => {
   );
   IconButton.displayName = 'IconButton';
   return {
-    Button: ({
-      children,
-      ...props
-    }: { children?: React.ReactNode } & Record<string, unknown>) =>
-      React.createElement('button', { type: 'button', ...props }, children),
+    Button: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) =>
+      ReactActual.createElement('button', { type: 'button', ...props }, children),
     IconButton,
     useMediaQuery: () => true,
     useToastContext: () => ({ showToast: mockShowToast }),

@@ -72,7 +72,12 @@ router.get('/', async (req, res) => {
         const alreadyChecked = await cache.get(req.user.id);
         if (!alreadyChecked) {
           await refreshS3FileUrls(files, db.batchUpdateFiles);
-          await cache.set(req.user.id, true, Time.THIRTY_MINUTES);
+          /** Only mark the user-wide interval after a full list: a limited
+           *  palette request refreshes only the newest rows, and caching that
+           *  would leave older signed URLs stale for the files panel. */
+          if (limit == null) {
+            await cache.set(req.user.id, true, Time.THIRTY_MINUTES);
+          }
         }
       } catch (error) {
         logger.warn('[/files] Error refreshing S3 file URLs:', error);
