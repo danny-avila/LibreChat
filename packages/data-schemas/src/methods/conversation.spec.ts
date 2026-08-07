@@ -6585,6 +6585,28 @@ describe('Conversation Operations', () => {
       expect(result?.conversations).toHaveLength(0);
       expect(result?.nextCursor).toBeNull();
     });
+
+    it('should fall back to title matches when the message index search fails', async () => {
+      const titleMatch = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Contains keyword',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      Object.assign(Conversation, {
+        meiliSearch: jest
+          .fn()
+          .mockResolvedValue({ hits: [{ conversationId: titleMatch.conversationId }] }),
+      });
+      searchMessages.mockRejectedValue(new Error('MeiliSearch plugin not registered'));
+
+      const result = await getConvosByCursor('user123', { search: 'keyword' });
+
+      expect(result?.conversations.map((c) => c.conversationId)).toEqual([
+        titleMatch.conversationId,
+      ]);
+    });
   });
 
   describe('tenantId stripping', () => {

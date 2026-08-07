@@ -147,7 +147,7 @@ router.get('/', async (req, res) => {
 
       const messages = searchResults.hits || [];
 
-      const result = await db.getConvosQueried(req.user.id, messages, cursor);
+      const result = await db.getConvosQueried(req.user.id, messages, cursor, pageSize);
 
       const messageIds = [];
       const cleanedMessages = [];
