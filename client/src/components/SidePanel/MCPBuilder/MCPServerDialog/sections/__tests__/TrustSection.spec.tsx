@@ -73,6 +73,7 @@ function createDefaultValues(): MCPServerFormData {
   return {
     title: '',
     description: '',
+    support_contact: { name: '', email: '' },
     icon: '',
     url: '',
     type: 'streamable-http',
