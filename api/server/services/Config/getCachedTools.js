@@ -21,6 +21,8 @@ return 0
 const ToolCacheKeys = {
   /** Global tools available to all users */
   GLOBAL: 'tools:global',
+  /** App servers with an authoritative cached catalog, including an empty one */
+  MCP_APP_SERVER_SNAPSHOTS: 'tools:mcp:app:snapshots',
   /** MCP tools cached by user ID and server name */
   MCP_SERVER: (userId, serverName) => `tools:mcp:${userId}:${serverName}`,
 };
@@ -66,7 +68,21 @@ async function setCachedTools(tools, options = {}) {
   }
 
   // Default to global cache
+  await cache.delete(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
   return await cache.set(ToolCacheKeys.GLOBAL, tools, ttl);
+}
+
+/** Returns app servers whose global tool slice is an authoritative snapshot. */
+async function getCachedAppServerSnapshots() {
+  const cache = getLogStores(CacheKeys.TOOL_CACHE);
+  const serverNames = await cache.get(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
+  return Array.isArray(serverNames) ? serverNames : null;
+}
+
+/** Replaces the authoritative app-server snapshot index. */
+async function setCachedAppServerSnapshots(serverNames, ttl = Time.TWELVE_HOURS) {
+  const cache = getLogStores(CacheKeys.TOOL_CACHE);
+  return await cache.set(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS, serverNames, ttl);
 }
 
 /** Serializes aggregate global-tool read/modify/write operations across Redis-backed workers. */
@@ -125,7 +141,7 @@ async function invalidateCachedTools(options = {}) {
   const keysToDelete = [];
 
   if (invalidateGlobal) {
-    keysToDelete.push(ToolCacheKeys.GLOBAL);
+    keysToDelete.push(ToolCacheKeys.GLOBAL, ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
   }
 
   if (serverName && userId) {
@@ -139,6 +155,8 @@ module.exports = {
   ToolCacheKeys,
   getCachedTools,
   setCachedTools,
+  getCachedAppServerSnapshots,
+  setCachedAppServerSnapshots,
   runWithGlobalCacheLock,
   invalidateCachedTools,
 };

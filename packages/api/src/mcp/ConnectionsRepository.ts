@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
-import { isUserSourced, requiresUserScopedConnection } from './utils';
+import { canUseAppConnection, isUserSourced } from './utils';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { notifyMCPToolsChanged } from './toolsChanged';
 import { MCPConnection } from './connection';
@@ -183,10 +183,7 @@ export class ConnectionsRepository {
     if (config.inspectionFailed) {
       return false;
     }
-    if (
-      this.ownerId === undefined &&
-      (config.startup === false || requiresUserScopedConnection(config))
-    ) {
+    if (this.ownerId === undefined && !canUseAppConnection(config)) {
       return false;
     }
     return true;

@@ -399,6 +399,17 @@ describe('ConnectionsRepository', () => {
         expect(await repository.has('defaultServer')).toBe(true);
       });
 
+      it('should NOT allow app connections to public user-managed servers', async () => {
+        mockServerConfigs.publicServer = {
+          type: 'streamable-http',
+          url: 'https://public.example.com/mcp',
+          source: 'user',
+          requiresOAuth: false,
+        };
+
+        expect(await repository.has('publicServer')).toBe(false);
+      });
+
       it('should NOT allow connection to OAuth servers', async () => {
         mockServerConfigs.oauthServer = {
           type: 'streamable-http',
@@ -518,6 +529,17 @@ describe('ConnectionsRepository', () => {
         };
 
         expect(await repository.has('regularServer')).toBe(true);
+      });
+
+      it('should lazily allow user connections to public user-managed servers', async () => {
+        mockServerConfigs.publicServer = {
+          type: 'streamable-http',
+          url: 'https://public.example.com/mcp',
+          source: 'user',
+          requiresOAuth: false,
+        };
+
+        expect(await repository.has('publicServer')).toBe(true);
       });
 
       it('should allow connection to OAuth servers', async () => {

@@ -3,11 +3,7 @@ import { Constants, buildServerNameAliases, normalizeServerName } from 'librecha
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonSchemaType } from '@librechat/agents';
 import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from './types';
-import {
-  isUserSourced,
-  requiresUserScopedConnection,
-  requiresEphemeralUserConnection,
-} from './utils';
+import { canUseAppConnection, requiresEphemeralUserConnection } from './utils';
 import { normalizeJsonSchema, resolveJsonSchemaRefs } from './zod';
 
 export type MCPToolInput = Pick<Tool, 'name' | 'description'> & Partial<Pick<Tool, 'inputSchema'>>;
@@ -23,6 +19,8 @@ export interface MCPToolCacheDeps {
   ) => Promise<boolean>;
   getServerConfig: (serverName: string, userId?: string) => Promise<ParsedServerConfig | undefined>;
   getAllServerConfigs?: () => Promise<Record<string, ParsedServerConfig>>;
+  getCachedAppServerSnapshots?: () => Promise<string[] | null>;
+  setCachedAppServerSnapshots?: (serverNames: string[]) => Promise<boolean>;
   runWithGlobalCacheLock?: <T>(operation: () => Promise<T>) => Promise<T>;
 }
 
@@ -62,6 +60,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     setCachedTools,
     getServerConfig,
     getAllServerConfigs,
+    getCachedAppServerSnapshots,
+    setCachedAppServerSnapshots,
     runWithGlobalCacheLock,
   } = deps;
   let globalCacheQueue: Promise<void> = Promise.resolve();
@@ -91,12 +91,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     serverName: string,
     config: ParsedServerConfig | undefined,
   ): Promise<boolean> {
-    if (
-      !config ||
-      config.startup === false ||
-      isUserSourced(config) ||
-      requiresUserScopedConnection(config)
-    ) {
+    if (!config || !canUseAppConnection(config)) {
       return false;
     }
     if (!getAllServerConfigs) {
@@ -112,6 +107,25 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       );
       return false;
     }
+  }
+
+  async function writeCachedAppServerSnapshots(serverNames: string[]): Promise<void> {
+    if (!setCachedAppServerSnapshots) {
+      return;
+    }
+    if ((await setCachedAppServerSnapshots(serverNames)) === false) {
+      throw new Error('App tool snapshot cache rejected the write');
+    }
+  }
+
+  async function getStartupAppServerSnapshots(): Promise<string[] | null> {
+    if (!getAllServerConfigs || !setCachedAppServerSnapshots) {
+      return null;
+    }
+    const configs = await getAllServerConfigs();
+    return Object.entries(configs)
+      .filter(([, config]) => canUseAppConnection(config) && config.toolFunctions != null)
+      .map(([serverName]) => serverName);
   }
 
   async function resolveCacheConfig(
@@ -245,6 +259,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   async function mergeAppTools(appTools: LCAvailableTools): Promise<void> {
     try {
       const count = Object.keys(appTools).length;
+      const appServerSnapshots = await getStartupAppServerSnapshots();
       await withGlobalCacheLock(async () => {
         const cachedTools = (await getCachedTools()) ?? {};
         const mergedTools: LCAvailableTools = {};
@@ -255,6 +270,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         }
         Object.assign(mergedTools, appTools);
         await writeCachedTools(mergedTools);
+        if (appServerSnapshots) {
+          await writeCachedAppServerSnapshots(appServerSnapshots);
+        }
       });
       logger.debug(`Synchronized ${count} app-level MCP tools`);
     } catch (error) {
@@ -284,6 +302,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         }
       }
       await withGlobalCacheLock(async () => {
+        const appServerSnapshots =
+          getCachedAppServerSnapshots && setCachedAppServerSnapshots
+            ? new Set((await getCachedAppServerSnapshots()) ?? [])
+            : null;
         const cachedTools = (await getCachedTools()) ?? {};
         const kept: LCAvailableTools = {};
         for (const [name, tool] of Object.entries(cachedTools)) {
@@ -292,6 +314,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           }
         }
         await writeCachedTools({ ...kept, ...serverTools });
+        if (appServerSnapshots) {
+          appServerSnapshots.add(serverName);
+          await writeCachedAppServerSnapshots(Array.from(appServerSnapshots));
+        }
       });
       logger.debug(
         `[MCP Cache] Replaced app-level tools for ${serverName} with ${Object.keys(serverTools).length} tool(s)`,
@@ -387,6 +413,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         const boundaries = await getAppServerBoundaries(serverName);
         const serverTools = getAppServerSlice(globalTools, serverName, boundaries);
         if (Object.keys(serverTools).length === 0) {
+          const appServerSnapshots = await getCachedAppServerSnapshots?.();
+          if (appServerSnapshots?.includes(serverName)) {
+            return {};
+          }
           return null;
         }
         return normalizeCachedToolKeys(serverTools, serverName);

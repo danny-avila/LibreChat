@@ -116,6 +116,7 @@ describe('MCPManager', () => {
       has: jest.fn().mockResolvedValue(false),
       get: jest.fn().mockResolvedValue({} as unknown as MCPConnection),
       getAll: jest.fn().mockResolvedValue(new Map()),
+      getMany: jest.fn().mockResolvedValue(new Map()),
       ...appConnectionsConfig,
     };
     return (
@@ -241,23 +242,64 @@ describe('MCPManager', () => {
 
       expect(result).toEqual(toolFunctions1);
     });
+
+    it('excludes public user-managed servers from the app catalog', async () => {
+      const operatorKey = 'operator_tool_mcp_operator';
+      const publicKey = 'public_tool_mcp_public';
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        operator: {
+          type: 'stdio',
+          command: 'operator',
+          source: 'yaml',
+          toolFunctions: {
+            [operatorKey]: { type: 'function', function: { name: operatorKey } },
+          },
+        },
+        public: {
+          type: 'streamable-http',
+          url: 'https://public.example.com/mcp',
+          source: 'user',
+          toolFunctions: {
+            [publicKey]: { type: 'function', function: { name: publicKey } },
+          },
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await expect(manager.getAppToolFunctions()).resolves.toEqual({
+        [operatorKey]: { type: 'function', function: { name: operatorKey } },
+      });
+    });
   });
 
   describe('connectAppServers', () => {
-    it('opens app connections and refreshes their current catalogs', async () => {
+    it('opens only operator app connections and refreshes their current catalogs', async () => {
       const connection = new MCPConnection({
         serverName: 'dynamic',
         serverConfig: { type: 'streamable-http', url: 'http://localhost/mcp' },
         useSSRFProtection: false,
       });
       const refreshToolList = jest.spyOn(connection, 'refreshToolList').mockResolvedValue();
-      const getAll = jest.fn().mockResolvedValue(new Map([['dynamic', connection]]));
-      mockAppConnections({ getAll });
+      const getMany = jest.fn().mockResolvedValue(new Map([['dynamic', connection]]));
+      mockAppConnections({ getMany });
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        dynamic: {
+          type: 'streamable-http',
+          url: 'http://localhost/mcp',
+          source: 'yaml',
+        },
+        public: {
+          type: 'streamable-http',
+          url: 'https://public.example.com/mcp',
+          source: 'user',
+        },
+      });
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       await manager.connectAppServers();
 
-      expect(getAll).toHaveBeenCalledWith({ continueOnError: true });
+      expect(getMany).toHaveBeenCalledWith(['dynamic'], { continueOnError: true });
       expect(refreshToolList).toHaveBeenCalledTimes(1);
     });
   });

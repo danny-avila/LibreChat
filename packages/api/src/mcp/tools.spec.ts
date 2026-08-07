@@ -77,6 +77,20 @@ describe('createMCPToolCacheService', () => {
       expect(deps.setCachedTools).toHaveBeenCalledWith({});
     });
 
+    it('records an authoritative empty app snapshot', async () => {
+      const getCachedAppServerSnapshots = jest.fn().mockResolvedValue(['other']);
+      const setCachedAppServerSnapshots = jest.fn().mockResolvedValue(true);
+      const deps = createMockDeps({
+        getCachedAppServerSnapshots,
+        setCachedAppServerSnapshots,
+      });
+      const service = createMCPToolCacheService(deps);
+
+      await service.replaceAppServerTools({ serverName: 'dynamic', serverTools: {} });
+
+      expect(setCachedAppServerSnapshots).toHaveBeenCalledWith(['other', 'dynamic']);
+    });
+
     it('starts from an empty cache without failing', async () => {
       const deps = createMockDeps();
       const service = createMCPToolCacheService(deps);
@@ -501,6 +515,23 @@ describe('createMCPToolCacheService', () => {
       );
     });
 
+    it('replaces stale snapshot markers with successfully inspected operator servers', async () => {
+      const setCachedAppServerSnapshots = jest.fn().mockResolvedValue(true);
+      const deps = createMockDeps({
+        setCachedAppServerSnapshots,
+        getAllServerConfigs: jest.fn().mockResolvedValue({
+          empty: { ...cacheableConfig, toolFunctions: {} },
+          failed: { ...cacheableConfig, toolFunctions: null },
+          public: { ...cacheableConfig, source: 'user', toolFunctions: {} },
+        }),
+      });
+      const { mergeAppTools } = createMCPToolCacheService(deps);
+
+      await mergeAppTools({});
+
+      expect(setCachedAppServerSnapshots).toHaveBeenCalledWith(['empty']);
+    });
+
     it('handles null cache (cold start) by defaulting to empty', async () => {
       const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(null) });
       const { mergeAppTools } = createMCPToolCacheService(deps);
@@ -760,6 +791,23 @@ describe('createMCPToolCacheService', () => {
       const result = await getMCPServerTools('u1', 'brave');
 
       expect(result).toBeNull();
+    });
+
+    it('preserves an authoritative empty app snapshot without reconnecting', async () => {
+      const unrelatedKey = `other${Constants.mcp_delimiter}unrelated`;
+      const globalTools: LCAvailableTools = {
+        [unrelatedKey]: { type: 'function', function: { name: unrelatedKey } },
+      };
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(globalTools),
+        getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
+        getCachedAppServerSnapshots: jest.fn().mockResolvedValue(['brave']),
+      });
+      const { getMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await getMCPServerTools('u1', 'brave');
+
+      expect(result).toEqual({});
     });
 
     it('reads startup-disabled server tools from the user cache', async () => {

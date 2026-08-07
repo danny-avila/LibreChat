@@ -184,7 +184,10 @@ type PlaceholderValue =
   | readonly PlaceholderValue[]
   | { readonly [key: string]: PlaceholderValue };
 
-type UserScopedConnectionConfig = Pick<ParsedServerConfig, 'requiresOAuth' | 'source' | 'dbId'> & {
+type UserScopedConnectionConfig = Pick<
+  ParsedServerConfig,
+  'requiresOAuth' | 'source' | 'dbId' | 'startup'
+> & {
   args?: string[];
   /** Loosened from the parsed shapes so raw (pre-inspection) configs qualify;
    *  scoping predicates only check key presence */
@@ -369,6 +372,13 @@ export function requiresUserScopedConnection(config: UserScopedConnectionConfig)
     config.obo != null ||
     hasCustomUserVars(config) ||
     hasRuntimeContextPlaceholders(config)
+  );
+}
+
+/** Whether a server can share one operator-owned connection across all users. */
+export function canUseAppConnection(config: UserScopedConnectionConfig): boolean {
+  return (
+    config.startup !== false && !isUserSourced(config) && !requiresUserScopedConnection(config)
   );
 }
 

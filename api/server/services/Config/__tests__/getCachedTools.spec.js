@@ -10,6 +10,8 @@ const {
   ToolCacheKeys,
   getCachedTools,
   setCachedTools,
+  getCachedAppServerSnapshots,
+  setCachedAppServerSnapshots,
   runWithGlobalCacheLock,
   invalidateCachedTools,
 } = require('../getCachedTools');
@@ -24,6 +26,12 @@ describe('getCachedTools', () => {
     it('should generate cache keys that include userId', () => {
       const key = ToolCacheKeys.MCP_SERVER('user123', 'github');
       expect(key).toBe('tools:mcp:user123:github');
+    });
+  });
+
+  describe('ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS', () => {
+    it('uses a dedicated key for authoritative app snapshots', () => {
+      expect(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS).toBe('tools:mcp:app:snapshots');
     });
   });
 
@@ -46,7 +54,23 @@ describe('getCachedTools', () => {
       const tools = { tool1: { type: 'function' } };
       await setCachedTools(tools);
       expect(getLogStores).toHaveBeenCalledWith(CacheKeys.TOOL_CACHE);
+      expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
       expect(mockCache.set).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL, tools, expect.any(Number));
+    });
+
+    it('gets and sets authoritative app snapshot names', async () => {
+      mockCache.get.mockResolvedValue(['empty']);
+      mockCache.set.mockResolvedValue(true);
+
+      await expect(getCachedAppServerSnapshots()).resolves.toEqual(['empty']);
+      await expect(setCachedAppServerSnapshots(['empty', 'dynamic'])).resolves.toBe(true);
+
+      expect(mockCache.get).toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
+      expect(mockCache.set).toHaveBeenCalledWith(
+        ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS,
+        ['empty', 'dynamic'],
+        expect.any(Number),
+      );
     });
 
     it('setCachedTools with MCP server options should use TOOL_CACHE namespace', async () => {
@@ -73,6 +97,7 @@ describe('getCachedTools', () => {
       await invalidateCachedTools({ invalidateGlobal: true });
       expect(getLogStores).toHaveBeenCalledWith(CacheKeys.TOOL_CACHE);
       expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL);
+      expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
     });
 
     it('should NOT use CONFIG_STORE namespace', async () => {

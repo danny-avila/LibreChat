@@ -12,6 +12,7 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
+  canUseAppConnection,
   isOAuthServer,
   isUserSourced,
   requiresEphemeralUserConnection,
@@ -237,7 +238,7 @@ export class MCPManager extends UserConnectionManager {
     const toolFunctions: t.LCAvailableTools = {};
     const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
     for (const config of Object.values(configs)) {
-      if (config.toolFunctions != null) {
+      if (canUseAppConnection(config) && config.toolFunctions != null) {
         Object.assign(toolFunctions, config.toolFunctions);
       }
     }
@@ -247,7 +248,13 @@ export class MCPManager extends UserConnectionManager {
   /** Opens eligible app-shared sessions after the inspected startup catalog has been cached. */
   public async connectAppServers(): Promise<void> {
     try {
-      const connections = await this.appConnections?.getAll({ continueOnError: true });
+      const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
+      const serverNames = Object.entries(configs)
+        .filter(([, config]) => canUseAppConnection(config))
+        .map(([serverName]) => serverName);
+      const connections = await this.appConnections?.getMany(serverNames, {
+        continueOnError: true,
+      });
       if (!connections) {
         return;
       }
