@@ -1,3 +1,4 @@
+import { getProxyForUrl } from 'proxy-from-env';
 import type https from 'node:https';
 import type http from 'node:http';
 import { createSSRFSafeAgents } from '../auth';
@@ -8,30 +9,27 @@ export interface WebSearchSSRFAgents {
 }
 
 /**
- * Exactly the variables that can put a proxy in front of these requests: Axios resolves through
- * `proxy-from-env`, which reads `<protocol>_proxy` and then `all_proxy` in either case. LibreChat's
- * own `PROXY` is deliberately absent, since nothing on this path consumes it, and exempting an
- * address that never carries the request would grant a bypass rather than preserve one.
+ * Probe hosts used only to ask which proxy would carry an http and an https request. A public
+ * placeholder keeps the answer independent of any real destination.
  */
-const PROXY_ENV_VARS = [
-  'HTTP_PROXY',
-  'http_proxy',
-  'HTTPS_PROXY',
-  'https_proxy',
-  'ALL_PROXY',
-  'all_proxy',
-] as const;
+const HTTP_PROBE_URL = 'http://proxy-probe.example.com/';
+const HTTPS_PROBE_URL = 'https://proxy-probe.example.com/';
 
 /**
  * For a plaintext http target Axios repoints the caller's agent at the proxy host, so the
  * connect-time check would resolve the proxy itself and reject a private one. Exempting the
- * proxy endpoint keeps that hop reachable while every direct and `NO_PROXY` destination stays
- * guarded. Https targets are unaffected either way: Axios swaps in its own CONNECT tunnel.
+ * proxy endpoint keeps that hop reachable while every direct destination stays guarded.
+ * Https targets are unaffected either way: Axios swaps in its own CONNECT tunnel.
+ *
+ * Resolution goes through `getProxyForUrl`, the same `proxy-from-env` entry point Axios uses, so
+ * variable precedence (`<protocol>_proxy` before `all_proxy`, lowercase before uppercase),
+ * scheme-less normalization, and `NO_PROXY` all match exactly. Deriving the endpoints any other
+ * way risks exempting an address that never carries a request, which grants a bypass.
  */
 function getProxyExemptions(): string[] {
   const entries = new Set<string>();
-  for (const name of PROXY_ENV_VARS) {
-    const proxyUrl = process.env[name]?.trim();
+  for (const probeUrl of [HTTP_PROBE_URL, HTTPS_PROBE_URL]) {
+    const proxyUrl = getProxyForUrl(probeUrl);
     if (!proxyUrl) {
       continue;
     }

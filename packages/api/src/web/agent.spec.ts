@@ -102,6 +102,61 @@ describe('resolveWebSearchSSRFAgents', () => {
     );
   });
 
+  it('exempts a scheme-less proxy value, which the resolver normalizes to http', () => {
+    process.env.HTTP_PROXY = 'proxy.internal:3128';
+
+    resolveWebSearchSSRFAgents();
+
+    expect(isAddressAllowed('proxy.internal', ['proxy.internal:3128'], '3128')).toBe(true);
+  });
+
+  it('exempts a scheme-less literal proxy so the hop stays reachable', () => {
+    process.env.HTTP_PROXY = '10.1.2.3:3128';
+
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connect(httpAgent, '10.1.2.3', 3128)).not.toThrow();
+  });
+
+  it('exempts only the variable that wins precedence, not every populated one', () => {
+    process.env.HTTP_PROXY = 'http://10.1.1.1:3128';
+    process.env.HTTPS_PROXY = 'http://10.1.1.1:3128';
+    process.env.ALL_PROXY = 'http://10.2.2.2:3128';
+
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connect(httpAgent, '10.1.1.1', 3128)).not.toThrow();
+    expect(() => connect(httpAgent, '10.2.2.2', 3128)).toThrow(
+      expect.objectContaining({ code: 'ESSRF' }),
+    );
+  });
+
+  it('prefers the lowercase variable, matching the resolver', () => {
+    process.env.http_proxy = 'http://10.3.3.3:3128';
+    process.env.HTTP_PROXY = 'http://10.4.4.4:3128';
+    process.env.https_proxy = 'http://10.3.3.3:3128';
+    process.env.HTTPS_PROXY = 'http://10.3.3.3:3128';
+
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connect(httpAgent, '10.3.3.3', 3128)).not.toThrow();
+    expect(() => connect(httpAgent, '10.4.4.4', 3128)).toThrow(
+      expect.objectContaining({ code: 'ESSRF' }),
+    );
+  });
+
+  it('grants no exemption when NO_PROXY bypasses everything, since nothing is proxied', () => {
+    process.env.HTTP_PROXY = 'http://10.6.6.6:3128';
+    process.env.HTTPS_PROXY = 'http://10.6.6.6:3128';
+    process.env.NO_PROXY = '*';
+
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connect(httpAgent, '10.6.6.6', 3128)).toThrow(
+      expect.objectContaining({ code: 'ESSRF' }),
+    );
+  });
+
   it('grants no exemption for a socks proxy, which Axios cannot use', () => {
     process.env.ALL_PROXY = 'socks5://10.5.5.5:1080';
 

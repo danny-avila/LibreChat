@@ -10,7 +10,7 @@
  *  - IPv4: 0.0.0.0/8, 10/8, 100.64/10 (CGNAT), 127/8, 169.254/16,
  *    172.16/12, 192.0.0/24 (RFC 5736), 192.168/16, 198.18/15 (benchmarking),
  *    224/3 (multicast/reserved).
- *  - IPv6: ::1, ::, fc00::/7 (unique-local), fe80::/10 (link-local), fec0::/10 (site-local).
+ *  - IPv6: ::1, ::, fc00::/7 (unique-local), fe80::/10 (link-local).
  *  - 4-in-6 mappings: ::ffff:A.B.C.D and the hex form ::ffff:HHHH:HHHH.
  *  - Embedded private IPv4 in 6to4 (2002::/16), NAT64 (64:ff9b::/96), and
  *    Teredo (2001::/32) addresses.
@@ -51,12 +51,8 @@ export function isPrivateIPv4(a: number, b: number, c: number): boolean {
   return false;
 }
 
-/**
- * Checks a pre-normalized (lowercase, bracket-stripped) IPv6 address against fe80::/10
- * (link-local) and fec0::/10 (site-local, deprecated by RFC 3879 but still routable on
- * networks that assigned it).
- */
-function isIPv6LinkOrSiteLocal(ipv6: string): boolean {
+/** Checks if a pre-normalized (lowercase, bracket-stripped) IPv6 address falls within fe80::/10 */
+function isIPv6LinkLocal(ipv6: string): boolean {
   if (!ipv6.includes(':')) {
     return false;
   }
@@ -65,9 +61,8 @@ function isIPv6LinkOrSiteLocal(ipv6: string): boolean {
     return false;
   }
   const hextet = parseInt(firstHextet, 16);
-  // /10 mask (0xffc0) preserves top 10 bits: fe80 = 1111_1110_10xx_xxxx, fec0 = ..._11xx_xxxx
-  const masked = hextet & 0xffc0;
-  return masked === 0xfe80 || masked === 0xfec0;
+  // /10 mask (0xffc0) preserves top 10 bits: fe80 = 1111_1110_10xx_xxxx
+  return (hextet & 0xffc0) === 0xfe80;
 }
 
 /** Checks if an IPv6 address embeds a private IPv4 via 6to4, NAT64, or Teredo */
@@ -145,7 +140,7 @@ export function isPrivateIP(ip: string): boolean {
     normalized === '::' ||
     normalized.startsWith('fc') || // fc00::/7 — exactly prefixes 'fc' and 'fd'
     normalized.startsWith('fd') ||
-    isIPv6LinkOrSiteLocal(normalized) // fe80::/10 and fec0::/10; bitwise check required
+    isIPv6LinkLocal(normalized) // fe80::/10 — spans 0xfe80–0xfebf; bitwise check required
   ) {
     return true;
   }
