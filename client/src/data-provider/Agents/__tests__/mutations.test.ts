@@ -4,7 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, PermissionBits, QueryKeys } from 'librechat-data-provider';
 import type { Agent, AgentListResponse, GraphEdge } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { useDeleteAgentMutation, useUpdateAgentMutation } from '../mutations';
+import {
+  useDeleteAgentMutation,
+  useDuplicateAgentMutation,
+  useUpdateAgentMutation,
+} from '../mutations';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -14,6 +18,7 @@ jest.mock('librechat-data-provider', () => {
       ...actual.dataService,
       deleteAgent: jest.fn(),
       updateAgent: jest.fn(),
+      duplicateAgent: jest.fn(),
     },
   };
 });
@@ -155,5 +160,46 @@ describe('useUpdateAgentMutation', () => {
       name: 'Renamed',
       isEditable: false,
     });
+  });
+});
+
+describe('useDuplicateAgentMutation', () => {
+  it('marks the duplicated agent editable in the list cache', async () => {
+    /** Duplicating grants ownership, so the new row is editable. Without this the row
+     *  carries no `isEditable` and only survives the selector filter by failing open. */
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const sourceId = 'agent_source';
+    const duplicateId = 'agent_duplicate';
+    const listKey = [QueryKeys.agents, { requiredPermission: PermissionBits.VIEW }];
+    queryClient.setQueryData(listKey, {
+      object: 'list',
+      data: [createAgent(sourceId, [], false)],
+      first_id: sourceId,
+      last_id: sourceId,
+      has_more: false,
+    } satisfies AgentListResponse);
+
+    jest
+      .mocked(dataService.duplicateAgent)
+      .mockResolvedValue({ agent: createAgent(duplicateId), actions: [] });
+
+    const { result } = renderHook(() => useDuplicateAgentMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ agent_id: sourceId });
+    });
+
+    const listRes = queryClient.getQueryData<AgentListResponse>(listKey);
+    expect(listRes?.data[0]).toMatchObject({ id: duplicateId, isEditable: true });
+    /** The untouched source row keeps its own ACL flag. */
+    expect(listRes?.data[1]).toMatchObject({ id: sourceId, isEditable: false });
   });
 });

@@ -203,7 +203,9 @@ export const useDuplicateAgentMutation = (
           keys.forEach((key) => {
             const listRes = queryClient.getQueryData<t.AgentListResponse>([QueryKeys.agents, key]);
             if (listRes) {
-              const currentAgents = [agent, ...listRes.data];
+              /** Duplicating grants the caller ownership, so the new row is editable.
+               *  The response omits list-only `isEditable`; see `mergeAgentListRow`. */
+              const currentAgents = [{ ...agent, isEditable: true }, ...listRes.data];
               queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, key], {
                 ...listRes,
                 data: currentAgents,
