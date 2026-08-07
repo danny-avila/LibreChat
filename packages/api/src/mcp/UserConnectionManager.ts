@@ -10,11 +10,11 @@ import {
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
 } from './utils';
+import { cancelMCPToolsChanged, notifyMCPToolsChanged } from '~/mcp/toolsChanged';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { detectOAuthRequirement, MCPOAuthHandler } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { notifyMCPToolsChanged } from '~/mcp/toolsChanged';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { isMCPDomainAllowed } from '~/auth/domain';
 import { PENDING_STALE_MS } from '~/flow/manager';
@@ -726,10 +726,15 @@ export abstract class UserConnectionManager {
     this.pendingConnections.delete(`${userId}:${serverName}`);
     const userMap = this.userConnections.get(userId);
     const connection = userMap?.get(serverName);
-    if (connection) {
-      logger.info(`[MCP][User: ${userId}][${serverName}] Disconnecting...`);
-      await connection.disconnect();
-      this.removeUserConnection(userId, serverName);
+    try {
+      if (connection) {
+        logger.info(`[MCP][User: ${userId}][${serverName}] Disconnecting...`);
+        connection.removeAllListeners?.('toolsChanged');
+        await connection.disconnect();
+        this.removeUserConnection(userId, serverName);
+      }
+    } finally {
+      await cancelMCPToolsChanged({ userId, serverName });
     }
   }
 

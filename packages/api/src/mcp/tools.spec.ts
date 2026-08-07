@@ -345,6 +345,28 @@ describe('createMCPToolCacheService', () => {
       expect(deps.setCachedTools).not.toHaveBeenCalledWith(result);
     });
 
+    it('keeps same-name tenant overrides of app servers in the user cache', async () => {
+      const tenantOverride = { ...cacheableConfig, url: 'https://tenant.example.com/mcp' };
+      const deps = createMockDeps({
+        isAppServerConfig: jest.fn().mockResolvedValue(false),
+        getAllServerConfigs: jest.fn().mockResolvedValue({ brave: cacheableConfig }),
+      });
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await updateMCPServerTools({
+        userId: 'tenant-user',
+        serverName: 'brave',
+        serverConfig: tenantOverride,
+        tools: [{ name: 'tenant-search' }],
+      });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith(result, {
+        userId: 'tenant-user',
+        serverName: 'brave',
+      });
+      expect(deps.setCachedTools).not.toHaveBeenCalledWith(result);
+    });
+
     it('builds MODEL-FACING keys with the normalized server name, store keyed raw', async () => {
       /** Tool keys become builder tool ids, agent.tools entries, tool_options
        *  keys, and definition names, and must equal the runtime instance name,
@@ -751,6 +773,26 @@ describe('createMCPToolCacheService', () => {
       expect(deps.getCachedTools).toHaveBeenCalledWith({
         userId: 'tenant-user',
         serverName: 'tenant-only',
+      });
+      expect(deps.getCachedTools).not.toHaveBeenCalledWith();
+    });
+
+    it('reads a same-name tenant override from its user cache', async () => {
+      const tenantOverride = { ...cacheableConfig, url: 'https://tenant.example.com/mcp' };
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(cachedTools),
+        getServerConfig: jest.fn().mockResolvedValue(tenantOverride),
+        getAllServerConfigs: jest.fn().mockResolvedValue({ brave: cacheableConfig }),
+        isAppServerConfig: jest.fn().mockResolvedValue(false),
+      });
+      const { getMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await getMCPServerTools('tenant-user', 'brave', tenantOverride);
+
+      expect(result).toEqual(cachedTools);
+      expect(deps.getCachedTools).toHaveBeenCalledWith({
+        userId: 'tenant-user',
+        serverName: 'brave',
       });
       expect(deps.getCachedTools).not.toHaveBeenCalledWith();
     });

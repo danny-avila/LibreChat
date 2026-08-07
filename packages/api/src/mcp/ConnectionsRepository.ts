@@ -1,9 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
+import { cancelMCPToolsChanged, notifyMCPToolsChanged } from './toolsChanged';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { canUseAppConnection, isUserSourced } from './utils';
-import { notifyMCPToolsChanged } from './toolsChanged';
 import { MCPConnection } from './connection';
 
 const CONNECT_CONCURRENCY = 3;
@@ -73,8 +73,7 @@ export class ConnectionsRepository {
         );
 
         // Disconnect stale connection
-        await existingConnection.disconnect();
-        this.connections.delete(serverName);
+        await this.disconnect(serverName);
         // Fall through to create new connection
       } else if (await existingConnection.isConnected()) {
         return existingConnection;
@@ -154,11 +153,19 @@ export class ConnectionsRepository {
   /** Disconnects and removes a specific server connection from the pool */
   async disconnect(serverName: string): Promise<void> {
     const connection = this.connections.get(serverName);
-    if (!connection) return Promise.resolve();
+    if (!connection) {
+      await cancelMCPToolsChanged({ userId: this.ownerId, serverName });
+      return;
+    }
     this.connections.delete(serverName);
-    return connection.disconnect().catch((err) => {
+    try {
+      connection.removeAllListeners?.('toolsChanged');
+      await connection.disconnect();
+    } catch (err) {
       logger.error(`${this.prefix(serverName)} Error disconnecting`, err);
-    });
+    } finally {
+      await cancelMCPToolsChanged({ userId: this.ownerId, serverName });
+    }
   }
 
   /** Disconnects all active connections and returns array of disconnect promises */

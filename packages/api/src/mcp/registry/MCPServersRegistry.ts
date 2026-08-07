@@ -298,6 +298,15 @@ export class MCPServersRegistry {
     return base ? { ...candidate, source: base.source } : candidate;
   }
 
+  /** Returns whether an effective config exactly matches the operator-owned base config. */
+  public async isAppServerConfig(
+    serverName: string,
+    effectiveConfig: t.ParsedServerConfig,
+  ): Promise<boolean> {
+    const baseConfig = await this.getServerConfig(serverName);
+    return baseConfig != null && deepEqual(baseConfig, effectiveConfig);
+  }
+
   /**
    * Returns the full server config map after merging YAML cache, Config-tier overrides,
    * and User-DB entries.

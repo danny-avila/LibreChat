@@ -19,6 +19,7 @@ export interface MCPToolCacheDeps {
   ) => Promise<boolean>;
   getServerConfig: (serverName: string, userId?: string) => Promise<ParsedServerConfig | undefined>;
   getAllServerConfigs?: () => Promise<Record<string, ParsedServerConfig>>;
+  isAppServerConfig?: (serverName: string, effectiveConfig: ParsedServerConfig) => Promise<boolean>;
   getCachedAppServerSnapshots?: () => Promise<string[] | null>;
   setCachedAppServerSnapshots?: (serverNames: string[]) => Promise<boolean>;
   runWithGlobalCacheLock?: <T>(operation: () => Promise<T>) => Promise<T>;
@@ -60,6 +61,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     setCachedTools,
     getServerConfig,
     getAllServerConfigs,
+    isAppServerConfig,
     getCachedAppServerSnapshots,
     setCachedAppServerSnapshots,
     runWithGlobalCacheLock,
@@ -93,6 +95,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   ): Promise<boolean> {
     if (!config || !canUseAppConnection(config)) {
       return false;
+    }
+    if (isAppServerConfig) {
+      return isAppServerConfig(serverName, config);
     }
     if (!getAllServerConfigs) {
       return true;

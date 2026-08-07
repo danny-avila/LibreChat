@@ -17,13 +17,24 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/cache/getLogStores', () => jest.fn());
 
-const { runWithGlobalCacheLock } = require('../getCachedTools');
+const getLogStores = require('~/cache/getLogStores');
+const mockCache = { get: jest.fn(), set: jest.fn(), delete: jest.fn() };
+getLogStores.mockReturnValue(mockCache);
+
+const {
+  setCachedTools,
+  runWithGlobalCacheLock,
+  invalidateCachedTools,
+  setCachedToolsWithinGlobalLock,
+} = require('../getCachedTools');
 
 describe('global tool cache write lock', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRedisClient.set.mockResolvedValue('OK');
     mockRedisClient.eval.mockResolvedValue(1);
+    mockCache.set.mockResolvedValue(true);
+    mockCache.delete.mockResolvedValue(true);
   });
 
   it('acquires and safely releases the Redis lock around an aggregate update', async () => {
@@ -53,5 +64,21 @@ describe('global tool cache write lock', () => {
     await expect(runWithGlobalCacheLock(operation)).rejects.toThrow('cache read failed');
 
     expect(mockRedisClient.eval).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes direct global writes and invalidation', async () => {
+    await setCachedTools({ builtin: {} });
+    await invalidateCachedTools({ invalidateGlobal: true });
+
+    expect(mockRedisClient.set).toHaveBeenCalledTimes(2);
+    expect(mockRedisClient.eval).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not reacquire the lock for a write already inside an aggregate update', async () => {
+    await runWithGlobalCacheLock(() => setCachedToolsWithinGlobalLock({ mcp: {} }));
+
+    expect(mockRedisClient.set).toHaveBeenCalledTimes(1);
+    expect(mockRedisClient.eval).toHaveBeenCalledTimes(1);
+    expect(mockCache.set).toHaveBeenCalledTimes(1);
   });
 });

@@ -27,7 +27,9 @@ interface PendingToolsChange {
 let handler: MCPToolsChangedHandler | null = null;
 const pendingChanges = new Map<string, PendingToolsChange>();
 
-function getChangeKey(event: MCPToolsChangedEvent): string {
+type MCPToolsChangedScope = Pick<MCPToolsChangedEvent, 'serverName' | 'userId'>;
+
+function getChangeKey(event: MCPToolsChangedScope): string {
   return JSON.stringify([event.userId ?? null, event.serverName]);
 }
 
@@ -39,7 +41,7 @@ function clearRetryTimer(change: PendingToolsChange): void {
 }
 
 function scheduleRetry(key: string, change: PendingToolsChange): void {
-  if (change.retryTimer || !handler) {
+  if (change.retryTimer || !handler || pendingChanges.get(key) !== change) {
     return;
   }
 
@@ -138,4 +140,17 @@ export async function notifyMCPToolsChanged(event: MCPToolsChangedEvent): Promis
   change.generation++;
   clearRetryTimer(change);
   await startDispatch(key, change);
+}
+
+/** Cancels queued retries and drains an in-flight publication before cache invalidation. */
+export async function cancelMCPToolsChanged(scope: MCPToolsChangedScope): Promise<void> {
+  const key = getChangeKey(scope);
+  const change = pendingChanges.get(key);
+  if (!change) {
+    return;
+  }
+  pendingChanges.delete(key);
+  clearRetryTimer(change);
+  change.generation = change.handledGeneration;
+  await change.refreshPromise;
 }

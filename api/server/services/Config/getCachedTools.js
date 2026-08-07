@@ -8,6 +8,7 @@ const GLOBAL_TOOLS_LOCK_KEY = `${CacheKeys.TOOL_CACHE}:tools:global:write-lock`;
 const GLOBAL_TOOLS_LOCK_TTL_MS = 30_000;
 const GLOBAL_TOOLS_LOCK_WAIT_MS = 5_000;
 const GLOBAL_TOOLS_LOCK_RETRY_MS = 25;
+let globalToolsQueue = Promise.resolve();
 const RELEASE_GLOBAL_TOOLS_LOCK_SCRIPT = `
 if redis.call('GET', KEYS[1]) == ARGV[1] then
   return redis.call('DEL', KEYS[1])
@@ -58,7 +59,7 @@ async function getCachedTools(options = {}) {
  * @param {number} [options.ttl] - Time to live in milliseconds (default: 12 hours)
  * @returns {Promise<boolean>} Whether the operation was successful
  */
-async function setCachedTools(tools, options = {}) {
+async function setCachedToolsWithinGlobalLock(tools, options = {}) {
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
   const { userId, serverName, ttl = Time.TWELVE_HOURS } = options;
 
@@ -70,6 +71,14 @@ async function setCachedTools(tools, options = {}) {
   // Default to global cache
   await cache.delete(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
   return await cache.set(ToolCacheKeys.GLOBAL, tools, ttl);
+}
+
+/** Sets tools while serializing aggregate global writes across Redis-backed workers. */
+async function setCachedTools(tools, options = {}) {
+  if (options.serverName && options.userId) {
+    return setCachedToolsWithinGlobalLock(tools, options);
+  }
+  return runWithGlobalCacheLock(() => setCachedToolsWithinGlobalLock(tools, options));
 }
 
 /** Returns app servers whose global tool slice is an authoritative snapshot. */
@@ -86,7 +95,7 @@ async function setCachedAppServerSnapshots(serverNames, ttl = Time.TWELVE_HOURS)
 }
 
 /** Serializes aggregate global-tool read/modify/write operations across Redis-backed workers. */
-async function runWithGlobalCacheLock(operation) {
+async function runWithRedisGlobalCacheLock(operation) {
   const usesSharedRedis =
     ioredisClient != null &&
     keyvRedisClient != null &&
@@ -125,6 +134,17 @@ async function runWithGlobalCacheLock(operation) {
   }
 }
 
+/** Serializes global cache operations within this process and, when configured, across Redis. */
+function runWithGlobalCacheLock(operation) {
+  const lockedOperation = () => runWithRedisGlobalCacheLock(operation);
+  const result = globalToolsQueue.then(lockedOperation, lockedOperation);
+  globalToolsQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
 /**
  * Invalidates cached tools
  * @function invalidateCachedTools
@@ -148,13 +168,19 @@ async function invalidateCachedTools(options = {}) {
     keysToDelete.push(ToolCacheKeys.MCP_SERVER(userId, serverName));
   }
 
-  await Promise.all(keysToDelete.map((key) => cache.delete(key)));
+  const invalidate = () => Promise.all(keysToDelete.map((key) => cache.delete(key)));
+  if (invalidateGlobal) {
+    await runWithGlobalCacheLock(invalidate);
+    return;
+  }
+  await invalidate();
 }
 
 module.exports = {
   ToolCacheKeys,
   getCachedTools,
   setCachedTools,
+  setCachedToolsWithinGlobalLock,
   getCachedAppServerSnapshots,
   setCachedAppServerSnapshots,
   runWithGlobalCacheLock,

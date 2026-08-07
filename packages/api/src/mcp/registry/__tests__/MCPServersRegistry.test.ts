@@ -163,6 +163,26 @@ describe('MCPServersRegistry', () => {
     });
   });
 
+  describe('isAppServerConfig', () => {
+    it('rejects a same-name tenant override that inherited the YAML source tag', async () => {
+      const baseConfig = {
+        ...testParsedConfig,
+        source: 'yaml' as const,
+        url: 'https://base.example.com/mcp',
+        type: 'streamable-http' as const,
+      };
+      await registry['cacheConfigsRepo'].add('shared', baseConfig);
+
+      await expect(registry.isAppServerConfig('shared', baseConfig)).resolves.toBe(true);
+      await expect(
+        registry.isAppServerConfig('shared', {
+          ...baseConfig,
+          url: 'https://tenant.example.com/mcp',
+        }),
+      ).resolves.toBe(false);
+    });
+  });
+
   describe('addServer', () => {
     it('should pass user source to inspector before storing DB servers', async () => {
       const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');

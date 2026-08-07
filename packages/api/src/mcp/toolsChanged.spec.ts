@@ -2,6 +2,7 @@ import type { MCPToolsChangedEvent } from './toolsChanged';
 import {
   setMCPToolsChangedHandler,
   hasMCPToolsChangedHandler,
+  cancelMCPToolsChanged,
   notifyMCPToolsChanged,
 } from './toolsChanged';
 
@@ -103,6 +104,42 @@ describe('MCP tools-changed dispatch', () => {
     await expect(notification).resolves.toBeUndefined();
     await Promise.resolve();
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels a queued retry before cache invalidation', async () => {
+    jest.useFakeTimers();
+    const handler = jest.fn().mockRejectedValue(new Error('Redis down'));
+    const event = { ...createEvent(), userId: 'user-1' };
+    setMCPToolsChangedHandler(handler);
+
+    await notifyMCPToolsChanged(event);
+    await cancelMCPToolsChanged(event);
+    await jest.advanceTimersByTimeAsync(30_000);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('drains an in-flight publication before disconnect returns', async () => {
+    let releasePublication: (() => void) | undefined;
+    const publication = new Promise<void>((resolve) => {
+      releasePublication = resolve;
+    });
+    const event = { ...createEvent(), userId: 'user-1' };
+    setMCPToolsChangedHandler(() => publication);
+
+    const notification = notifyMCPToolsChanged(event);
+    await Promise.resolve();
+    let drained = false;
+    const cancellation = cancelMCPToolsChanged(event).then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+
+    releasePublication?.();
+    await Promise.all([notification, cancellation]);
+
+    expect(drained).toBe(true);
   });
 
   it('does nothing when no handler is registered', async () => {
