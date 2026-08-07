@@ -1,6 +1,6 @@
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { MCPToolCatalogScope } from '~/mcp/provenance';
 import type { FlowMetadata } from '~/flow/types';
-import type { MCPToolCatalogScope } from '~/mcp/catalog';
 
 export interface OAuthMetadata {
   /** OAuth authorization endpoint */

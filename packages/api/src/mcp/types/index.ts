@@ -20,7 +20,7 @@ import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provi
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
-import type { MCPToolCatalogScope } from '~/mcp/catalog';
+import type { MCPToolCatalogScope } from '~/mcp/provenance';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
