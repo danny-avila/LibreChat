@@ -54,6 +54,21 @@ jest.mock('~/config', () => ({
   },
 }));
 
+const mockSetMCPToolsChangedHandler = jest.fn();
+const mockUpdateMCPServerTools = jest.fn();
+
+jest.mock('@librechat/api', () => ({
+  get setMCPToolsChangedHandler() {
+    return mockSetMCPToolsChangedHandler;
+  },
+}));
+
+jest.mock('./Config/mcp', () => ({
+  get updateMCPServerTools() {
+    return mockUpdateMCPServerTools;
+  },
+}));
+
 const { logger } = require('@librechat/data-schemas');
 const initializeMCPs = require('./initializeMCPs');
 
@@ -313,5 +328,41 @@ describe('initializeMCPs', () => {
       // Verify manager was created with empty config (not null/undefined)
       expect(mockCreateMCPManager).toHaveBeenCalledWith({});
     });
+  });
+});
+
+describe('refreshChangedServerTools', () => {
+  const { refreshChangedServerTools } = require('./initializeMCPs');
+  const event = {
+    serverName: 'dynamic',
+    serverConfig: { type: 'streamable-http', url: 'https://mcp.example.com' },
+    tools: [{ name: 'tool', inputSchema: { type: 'object' } }],
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('publishes the complete refreshed snapshot in its original cache scope', async () => {
+    await refreshChangedServerTools({ ...event, userId: 'user-1' });
+
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith({ ...event, userId: 'user-1' });
+    expect(logger.info).toHaveBeenCalledWith(
+      '[MCP][dynamic] Tool list changed; refreshed 1 tool for user user-1',
+    );
+  });
+
+  it('publishes an empty app-level snapshot so removals take effect', async () => {
+    await refreshChangedServerTools({ ...event, tools: [] });
+
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith({ ...event, tools: [] });
+  });
+
+  it('is registered as the tools-changed handler during initialization', async () => {
+    mockGetAppConfig.mockResolvedValue({ mcpConfig: null, mcpSettings: {} });
+
+    await initializeMCPs();
+
+    expect(mockSetMCPToolsChangedHandler).toHaveBeenCalledWith(refreshChangedServerTools);
   });
 });

@@ -1,5 +1,19 @@
+const { randomUUID } = require('crypto');
 const { CacheKeys, Time } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
+const { cacheConfig, ioredisClient, keyvRedisClient } = require('@librechat/api');
 const getLogStores = require('~/cache/getLogStores');
+
+const GLOBAL_TOOLS_LOCK_KEY = `${CacheKeys.TOOL_CACHE}:tools:global:write-lock`;
+const GLOBAL_TOOLS_LOCK_TTL_MS = 30_000;
+const GLOBAL_TOOLS_LOCK_WAIT_MS = 5_000;
+const GLOBAL_TOOLS_LOCK_RETRY_MS = 25;
+const RELEASE_GLOBAL_TOOLS_LOCK_SCRIPT = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`;
 
 /**
  * Cache key generators for different tool access patterns
@@ -55,6 +69,46 @@ async function setCachedTools(tools, options = {}) {
   return await cache.set(ToolCacheKeys.GLOBAL, tools, ttl);
 }
 
+/** Serializes aggregate global-tool read/modify/write operations across Redis-backed workers. */
+async function runWithGlobalCacheLock(operation) {
+  const usesSharedRedis =
+    ioredisClient != null &&
+    keyvRedisClient != null &&
+    !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(CacheKeys.TOOL_CACHE);
+  if (!usesSharedRedis) {
+    return operation();
+  }
+
+  const token = randomUUID();
+  const deadline = Date.now() + GLOBAL_TOOLS_LOCK_WAIT_MS;
+  while (true) {
+    const acquired = await ioredisClient.set(
+      GLOBAL_TOOLS_LOCK_KEY,
+      token,
+      'PX',
+      GLOBAL_TOOLS_LOCK_TTL_MS,
+      'NX',
+    );
+    if (acquired === 'OK') {
+      break;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error('Timed out waiting for the global tool cache write lock');
+    }
+    await new Promise((resolve) => setTimeout(resolve, GLOBAL_TOOLS_LOCK_RETRY_MS));
+  }
+
+  try {
+    return await operation();
+  } finally {
+    try {
+      await ioredisClient.eval(RELEASE_GLOBAL_TOOLS_LOCK_SCRIPT, 1, GLOBAL_TOOLS_LOCK_KEY, token);
+    } catch (error) {
+      logger.warn('[MCP Cache] Failed to release the global tool cache write lock:', error);
+    }
+  }
+}
+
 /**
  * Invalidates cached tools
  * @function invalidateCachedTools
@@ -85,5 +139,6 @@ module.exports = {
   ToolCacheKeys,
   getCachedTools,
   setCachedTools,
+  runWithGlobalCacheLock,
   invalidateCachedTools,
 };

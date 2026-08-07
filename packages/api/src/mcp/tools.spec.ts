@@ -1,4 +1,4 @@
-import { Constants } from 'librechat-data-provider';
+import { Constants, normalizeServerName } from 'librechat-data-provider';
 import type { LCAvailableTools, ParsedServerConfig } from './types';
 import type { MCPToolInput, MCPToolCacheDeps } from './tools';
 import { createMCPToolCacheService } from './tools';
@@ -25,6 +25,129 @@ function createMockDeps(overrides: Partial<MCPToolCacheDeps> = {}): MCPToolCache
 }
 
 describe('createMCPToolCacheService', () => {
+  describe('replaceAppServerTools', () => {
+    const toolName = (name: string, server: string) => `${name}${Constants.mcp_delimiter}${server}`;
+
+    it('drops tools the server no longer reports and keeps other servers untouched', async () => {
+      const cached: LCAvailableTools = {
+        [toolName('gone', 'dynamic')]: { type: 'function', function: { name: 'gone' } },
+        [toolName('stays', 'dynamic')]: { type: 'function', function: { name: 'stays' } },
+        [toolName('other', 'unrelated')]: { type: 'function', function: { name: 'other' } },
+      } as unknown as LCAvailableTools;
+      const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(cached) });
+      const service = createMCPToolCacheService(deps);
+
+      const serverTools = {
+        [toolName('stays', 'dynamic')]: { type: 'function', function: { name: 'stays' } },
+        [toolName('added', 'dynamic')]: { type: 'function', function: { name: 'added' } },
+      } as unknown as LCAvailableTools;
+
+      await service.replaceAppServerTools({ serverName: 'dynamic', serverTools });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith({
+        [toolName('other', 'unrelated')]: cached[toolName('other', 'unrelated')],
+        ...serverTools,
+      });
+    });
+
+    it('clears a server that now reports no tools at all', async () => {
+      const cached = {
+        [toolName('gone', 'dynamic')]: { type: 'function', function: { name: 'gone' } },
+      } as unknown as LCAvailableTools;
+      const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(cached) });
+      const service = createMCPToolCacheService(deps);
+
+      await service.replaceAppServerTools({ serverName: 'dynamic', serverTools: {} });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith({});
+    });
+
+    it('starts from an empty cache without failing', async () => {
+      const deps = createMockDeps();
+      const service = createMCPToolCacheService(deps);
+      const serverTools = {
+        [toolName('first', 'dynamic')]: { type: 'function', function: { name: 'first' } },
+      } as unknown as LCAvailableTools;
+
+      await service.replaceAppServerTools({ serverName: 'dynamic', serverTools });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith(serverTools);
+    });
+
+    it('propagates a cache write failure', async () => {
+      const deps = createMockDeps({
+        setCachedTools: jest.fn().mockRejectedValue(new Error('Redis down')),
+      });
+      const service = createMCPToolCacheService(deps);
+
+      await expect(
+        service.replaceAppServerTools({ serverName: 'dynamic', serverTools: {} }),
+      ).rejects.toThrow('Redis down');
+    });
+
+    it('treats a rejected cache write result as a failure', async () => {
+      const deps = createMockDeps({ setCachedTools: jest.fn().mockResolvedValue(false) });
+      const service = createMCPToolCacheService(deps);
+
+      await expect(
+        service.replaceAppServerTools({ serverName: 'dynamic', serverTools: {} }),
+      ).rejects.toThrow('Tool cache rejected the write');
+    });
+
+    it('matches cached keys by the normalized server name', async () => {
+      const serverName = 'Dynamic Server';
+      const normalized = normalizeServerName(serverName);
+      const cached = {
+        [toolName('gone', normalized)]: { type: 'function', function: { name: 'gone' } },
+      } as unknown as LCAvailableTools;
+      const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(cached) });
+      const service = createMCPToolCacheService(deps);
+
+      await service.replaceAppServerTools({ serverName, serverTools: {} });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith({});
+    });
+
+    it('serializes concurrent app-level replacements so one server cannot overwrite another', async () => {
+      let cache: LCAvailableTools = {};
+      const deps = createMockDeps({
+        getCachedTools: jest.fn(async () => cache),
+        setCachedTools: jest.fn(async (tools: LCAvailableTools) => {
+          cache = tools;
+          return true;
+        }),
+      });
+      const service = createMCPToolCacheService(deps);
+      const first = {
+        [toolName('one', 'first')]: { type: 'function', function: { name: 'one' } },
+      } as unknown as LCAvailableTools;
+      const second = {
+        [toolName('two', 'second')]: { type: 'function', function: { name: 'two' } },
+      } as unknown as LCAvailableTools;
+
+      await Promise.all([
+        service.replaceAppServerTools({ serverName: 'first', serverTools: first }),
+        service.replaceAppServerTools({ serverName: 'second', serverTools: second }),
+      ]);
+
+      expect(cache).toEqual({ ...first, ...second });
+    });
+
+    it('runs app-level replacements inside the shared cache lock when provided', async () => {
+      const lockEntered = jest.fn();
+      const runWithGlobalCacheLock = async <T>(operation: () => Promise<T>): Promise<T> => {
+        lockEntered();
+        return operation();
+      };
+      const deps = createMockDeps({ runWithGlobalCacheLock });
+      const service = createMCPToolCacheService(deps);
+
+      await service.replaceAppServerTools({ serverName: 'dynamic', serverTools: {} });
+
+      expect(lockEntered).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('updateMCPServerTools', () => {
     it('returns empty object for null tools', async () => {
       const deps = createMockDeps();
@@ -44,6 +167,20 @@ describe('createMCPToolCacheService', () => {
 
       expect(result).toEqual({});
       expect(deps.setCachedTools).toHaveBeenCalledWith({}, { userId: 'u1', serverName: 'srv' });
+    });
+
+    it('replaces the app-level server slice when no user scope is provided', async () => {
+      const staleName = `stale${Constants.mcp_delimiter}srv`;
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue({
+          [staleName]: { type: 'function', function: { name: staleName } },
+        }),
+      });
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      await updateMCPServerTools({ serverName: 'srv', tools: [] });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith({});
     });
 
     it('builds MODEL-FACING keys with the normalized server name, store keyed raw', async () => {
@@ -158,6 +295,15 @@ describe('createMCPToolCacheService', () => {
       await expect(
         updateMCPServerTools({ userId: 'u1', serverName: 'srv', tools }),
       ).rejects.toThrow('Redis down');
+    });
+
+    it('propagates a rejected cache write result so publication can retry', async () => {
+      const deps = createMockDeps({ setCachedTools: jest.fn().mockResolvedValue(false) });
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      await expect(
+        updateMCPServerTools({ userId: 'u1', serverName: 'srv', tools: [] }),
+      ).rejects.toThrow('Tool cache rejected the write');
     });
   });
 

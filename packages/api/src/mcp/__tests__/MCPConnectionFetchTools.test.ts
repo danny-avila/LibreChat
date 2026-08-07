@@ -183,7 +183,7 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('size budget'));
   });
 
-  it('stops at the elapsed-time budget before requesting another page', async () => {
+  it('marks a time-truncated snapshot incomplete before requesting another page', async () => {
     mcpConfig.TOOLS_LIST_TIMEOUT_MS = 1;
     const listTools = jest.fn(async () => ({ tools: [makeTool('a')], nextCursor: 'c1' }));
     const conn = createConnectionWithListTools(listTools);
@@ -193,9 +193,10 @@ describe('MCPConnection.fetchTools pagination', () => {
       .mockReturnValueOnce(1000)
       .mockReturnValueOnce(1001);
 
-    const tools = await conn.fetchTools();
+    const snapshot = await conn['fetchToolsSnapshot']();
 
-    expect(tools.map((t) => t.name)).toEqual(['a']);
+    expect(snapshot.tools.map((t) => t.name)).toEqual(['a']);
+    expect(snapshot.complete).toBe(false);
     expect(listTools).toHaveBeenCalledTimes(1);
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('time budget'));
     dateNow.mockRestore();

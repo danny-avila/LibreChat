@@ -10,6 +10,7 @@ const {
   ToolCacheKeys,
   getCachedTools,
   setCachedTools,
+  runWithGlobalCacheLock,
   invalidateCachedTools,
 } = require('../getCachedTools');
 
@@ -58,6 +59,13 @@ describe('getCachedTools', () => {
         tools,
         expect.any(Number),
       );
+    });
+
+    it('runs global cache operations directly when the tool cache is not Redis-backed', async () => {
+      const operation = jest.fn().mockResolvedValue('done');
+
+      await expect(runWithGlobalCacheLock(operation)).resolves.toBe('done');
+      expect(operation).toHaveBeenCalledTimes(1);
     });
 
     it('invalidateCachedTools should use TOOL_CACHE namespace', async () => {

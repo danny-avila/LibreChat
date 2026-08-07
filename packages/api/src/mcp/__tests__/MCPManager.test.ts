@@ -10,6 +10,7 @@ import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { isMCPDomainAllowed } from '~/auth/domain';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
+import * as toolsChanged from '~/mcp/toolsChanged';
 import * as graphUtils from '~/utils/graph';
 import { processMCPEnv } from '~/utils/env';
 
@@ -540,6 +541,7 @@ describe('MCPManager', () => {
 
     const mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
+      on: jest.fn(),
       setRequestHeaders: jest.fn(),
       timeout: 30000,
       client: {
@@ -1590,7 +1592,8 @@ describe('MCPManager', () => {
     const mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
       isStale: jest.fn().mockReturnValue(false),
-      disconnect: jest.fn(),
+      disconnect: jest.fn().mockResolvedValue(undefined),
+      on: jest.fn(),
     } as unknown as MCPConnection;
 
     it('should pass useOAuth for servers with configured oauth and no requiresOAuth value', async () => {
@@ -1649,6 +1652,42 @@ describe('MCPManager', () => {
         expect.objectContaining({ serverName }),
         expect.not.objectContaining({ useOAuth: true }),
       );
+    });
+
+    it('routes tool-list snapshots from user connections to the user-scoped publisher', async () => {
+      const serverConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com',
+        source: 'yaml',
+        requiresOAuth: false,
+      };
+      const tools: t.MCPTool[] = [{ name: 'dynamic', inputSchema: { type: 'object' } }];
+      const notifySpy = jest
+        .spyOn(toolsChanged, 'notifyMCPToolsChanged')
+        .mockResolvedValue(undefined);
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({ serverName, user: mockUser });
+
+        const listener = (mockConnection.on as jest.Mock).mock.calls.find(
+          ([eventName]) => eventName === 'toolsChanged',
+        )?.[1];
+        expect(listener).toEqual(expect.any(Function));
+        listener(tools);
+
+        expect(notifySpy).toHaveBeenCalledWith({
+          tools,
+          userId,
+          serverName,
+          serverConfig,
+        });
+      } finally {
+        notifySpy.mockRestore();
+      }
     });
 
     it('should detect OAuth after resolving trusted runtime URL placeholders', async () => {
@@ -1869,9 +1908,11 @@ describe('MCPManager', () => {
       };
       const firstConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
+        on: jest.fn(),
       } as unknown as MCPConnection;
       const secondConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
+        on: jest.fn(),
       } as unknown as MCPConnection;
 
       mockAppConnections({
@@ -1914,6 +1955,7 @@ describe('MCPManager', () => {
       };
       const requestScopedConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
+        on: jest.fn(),
       } as unknown as MCPConnection;
       const requestScopedConnections: t.RequestScopedMCPConnectionStore = {
         connections: new Map(),

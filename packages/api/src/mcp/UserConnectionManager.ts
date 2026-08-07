@@ -14,6 +14,7 @@ import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { detectOAuthRequirement, MCPOAuthHandler } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { notifyMCPToolsChanged } from '~/mcp/toolsChanged';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { isMCPDomainAllowed } from '~/auth/domain';
 import { PENDING_STALE_MS } from '~/flow/manager';
@@ -511,6 +512,15 @@ export abstract class UserConnectionManager {
       }
 
       connection = await MCPConnectionFactory.create(basic, connectionOptions);
+
+      connection.on('toolsChanged', (tools: t.MCPTool[]) => {
+        void notifyMCPToolsChanged({
+          tools,
+          userId,
+          serverName,
+          serverConfig: runtimeConfig,
+        });
+      });
 
       if (!(await connection?.isConnected())) {
         throw new Error('Failed to establish connection after initialization attempt.');

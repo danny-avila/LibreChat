@@ -1,14 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { Constants, normalizeServerName } from 'librechat-data-provider';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonSchemaType } from '@librechat/agents';
-import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from './types';
+import type { LCAvailableTools, LCFunctionTool, MCPOptions, ParsedServerConfig } from './types';
 import { requiresEphemeralUserConnection } from './utils';
+import { normalizeJsonSchema, resolveJsonSchemaRefs } from './zod';
 
-export interface MCPToolInput {
-  name: string;
-  description?: string;
-  inputSchema?: JsonSchemaType;
-}
+export type MCPToolInput = Pick<Tool, 'name' | 'description'> & Partial<Pick<Tool, 'inputSchema'>>;
 
 export interface MCPToolCacheDeps {
   getCachedTools: (options?: {
@@ -20,16 +18,21 @@ export interface MCPToolCacheDeps {
     options?: { userId?: string; serverName?: string },
   ) => Promise<boolean>;
   getServerConfig: (serverName: string, userId?: string) => Promise<ParsedServerConfig | undefined>;
+  runWithGlobalCacheLock?: <T>(operation: () => Promise<T>) => Promise<T>;
 }
 
 export interface MCPToolCacheService {
   updateMCPServerTools: (params: {
-    userId: string;
+    userId?: string;
     serverName: string;
     tools: MCPToolInput[] | null;
-    serverConfig?: ParsedServerConfig;
+    serverConfig?: MCPOptions;
   }) => Promise<LCAvailableTools>;
   mergeAppTools: (appTools: LCAvailableTools) => Promise<void>;
+  replaceAppServerTools: (params: {
+    serverName: string;
+    serverTools: LCAvailableTools;
+  }) => Promise<void>;
   cacheMCPServerTools: (params: {
     userId: string;
     serverName: string;
@@ -44,7 +47,29 @@ export interface MCPToolCacheService {
 }
 
 export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheService {
-  const { getCachedTools, setCachedTools, getServerConfig } = deps;
+  const { getCachedTools, setCachedTools, getServerConfig, runWithGlobalCacheLock } = deps;
+  let globalCacheQueue: Promise<void> = Promise.resolve();
+
+  async function writeCachedTools(
+    tools: LCAvailableTools,
+    options?: { userId?: string; serverName?: string },
+  ): Promise<void> {
+    const success = options ? await setCachedTools(tools, options) : await setCachedTools(tools);
+    if (success === false) {
+      throw new Error('Tool cache rejected the write');
+    }
+  }
+
+  function withGlobalCacheLock<T>(operation: () => Promise<T>): Promise<T> {
+    const lockedOperation = () =>
+      runWithGlobalCacheLock ? runWithGlobalCacheLock(operation) : operation();
+    const result = globalCacheQueue.then(lockedOperation, lockedOperation);
+    globalCacheQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
 
   /**
    * Request-scoped servers resolve runtime user/request placeholders per
@@ -56,9 +81,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
    * predates gating or an overlay change survives at most one cache TTL.
    */
   async function isRequestScoped(
-    userId: string,
+    userId: string | undefined,
     serverName: string,
-    serverConfig?: ParsedServerConfig,
+    serverConfig?: MCPOptions,
   ): Promise<boolean> {
     try {
       const config = serverConfig ?? (await getServerConfig(serverName, userId));
@@ -73,10 +98,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   }
 
   async function updateMCPServerTools(params: {
-    userId: string;
+    userId?: string;
     serverName: string;
     tools: MCPToolInput[] | null;
-    serverConfig?: ParsedServerConfig;
+    serverConfig?: MCPOptions;
   }): Promise<LCAvailableTools> {
     const { userId, serverName, tools, serverConfig } = params;
     try {
@@ -85,16 +110,6 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
 
       if (tools == null) {
         logger.debug(`[MCP Cache] No tools to update for server ${serverName} (user: ${userId})`);
-        return serverTools;
-      }
-
-      if (tools.length === 0) {
-        if (!(await isRequestScoped(userId, serverName, serverConfig))) {
-          await setCachedTools(serverTools, { userId, serverName });
-          logger.debug(
-            `[MCP Cache] Cleared stale tools for server ${serverName} (user: ${userId})`,
-          );
-        }
         return serverTools;
       }
 
@@ -111,7 +126,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           ['function']: {
             name,
             description: tool.description ?? '',
-            parameters: tool.inputSchema ?? ({ type: 'object', properties: {} } as JsonSchemaType),
+            parameters: tool.inputSchema
+              ? (normalizeJsonSchema(resolveJsonSchemaRefs(tool.inputSchema)) as JsonSchemaType)
+              : ({ type: 'object', properties: {} } as JsonSchemaType),
           },
         };
         serverTools[name] = entry;
@@ -124,9 +141,13 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         return serverTools;
       }
 
-      await setCachedTools(serverTools, { userId, serverName });
+      if (userId) {
+        await writeCachedTools(serverTools, { userId, serverName });
+      } else {
+        await replaceAppServerTools({ serverName, serverTools });
+      }
       logger.debug(
-        `[MCP Cache] Updated ${tools.length} tools for server ${serverName} (user: ${userId})`,
+        `[MCP Cache] Updated ${tools.length} tools for server ${serverName}${userId ? ` (user: ${userId})` : ' (app-level)'}`,
       );
       return serverTools;
     } catch (error) {
@@ -144,12 +165,47 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       if (!count) {
         return;
       }
-      const cachedTools = (await getCachedTools()) ?? {};
-      const mergedTools: LCAvailableTools = { ...cachedTools, ...appTools };
-      await setCachedTools(mergedTools);
+      await withGlobalCacheLock(async () => {
+        const cachedTools = (await getCachedTools()) ?? {};
+        const mergedTools: LCAvailableTools = { ...cachedTools, ...appTools };
+        await writeCachedTools(mergedTools);
+      });
       logger.debug(`Merged ${count} app-level tools`);
     } catch (error) {
       logger.error('Failed to merge app-level tools:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Swaps one server's app-level tools for the set it reports now.
+   *
+   * Unlike mergeAppTools this also drops what disappeared: a server that removes a tool at runtime
+   * would otherwise keep it advertised forever, since merging can only ever add. Only entries
+   * belonging to `serverName` are touched, so other servers' tools survive untouched.
+   */
+  async function replaceAppServerTools(params: {
+    serverName: string;
+    serverTools: LCAvailableTools;
+  }): Promise<void> {
+    const { serverName, serverTools } = params;
+    try {
+      await withGlobalCacheLock(async () => {
+        const cachedTools = (await getCachedTools()) ?? {};
+        const suffix = `${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
+        const kept: LCAvailableTools = {};
+        for (const [name, tool] of Object.entries(cachedTools)) {
+          if (!name.endsWith(suffix)) {
+            kept[name] = tool;
+          }
+        }
+        await writeCachedTools({ ...kept, ...serverTools });
+      });
+      logger.debug(
+        `[MCP Cache] Replaced app-level tools for ${serverName} with ${Object.keys(serverTools).length} tool(s)`,
+      );
+    } catch (error) {
+      logger.error(`[MCP Cache] Failed to replace app-level tools for ${serverName}:`, error);
       throw error;
     }
   }
@@ -172,7 +228,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         );
         return;
       }
-      await setCachedTools(serverTools, { userId, serverName });
+      await writeCachedTools(serverTools, { userId, serverName });
       logger.debug(`Cached ${count} MCP server tools for ${serverName} (user: ${userId})`);
     } catch (error) {
       logger.error(`Failed to cache MCP server tools for ${serverName} (user: ${userId}):`, error);
@@ -238,5 +294,11 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     }
   }
 
-  return { updateMCPServerTools, mergeAppTools, cacheMCPServerTools, getMCPServerTools };
+  return {
+    updateMCPServerTools,
+    mergeAppTools,
+    replaceAppServerTools,
+    cacheMCPServerTools,
+    getMCPServerTools,
+  };
 }

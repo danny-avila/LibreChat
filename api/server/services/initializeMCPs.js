@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
+const { setMCPToolsChangedHandler } = require('@librechat/api');
 const { mergeAppTools, getAppConfig } = require('./Config');
+const { updateMCPServerTools } = require('./Config/mcp');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
 
 /**
@@ -16,6 +18,22 @@ async function resolveMCPAllowlists(ctx) {
     allowedDomains: appConfig?.mcpSettings?.allowedDomains,
     allowedAddresses: appConfig?.mcpSettings?.allowedAddresses,
   };
+}
+
+/**
+ * Refreshes one server's tools after it reported `notifications/tools/list_changed`.
+ *
+ * A server that builds tools at runtime is the case this exists for: without it the tool list
+ * stayed frozen at connection time and only a restart picked up the change (#7117). The list is
+ * re-fetched from the live connection and written over that server's cache entry, so tools that
+ * disappeared stop being advertised too.
+ */
+async function refreshChangedServerTools({ serverName, userId, tools, serverConfig }) {
+  await updateMCPServerTools({ userId, serverName, tools, serverConfig });
+  const toolCount = tools.length;
+  logger.info(
+    `[MCP][${serverName}] Tool list changed; refreshed ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}${userId ? ` for user ${userId}` : ''}`,
+  );
 }
 
 /**
@@ -39,6 +57,7 @@ async function initializeMCPs() {
 
   try {
     const mcpManager = await createMCPManager(mcpServers || {});
+    setMCPToolsChangedHandler(refreshChangedServerTools);
 
     if (mcpServers && Object.keys(mcpServers).length > 0) {
       const mcpTools = (await mcpManager.getAppToolFunctions()) || {};
@@ -58,3 +77,4 @@ async function initializeMCPs() {
 }
 
 module.exports = initializeMCPs;
+module.exports.refreshChangedServerTools = refreshChangedServerTools;
