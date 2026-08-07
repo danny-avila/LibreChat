@@ -10,7 +10,11 @@ import {
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
 } from './utils';
-import { cancelMCPToolsChanged, notifyMCPToolsChanged } from '~/mcp/toolsChanged';
+import {
+  cancelMCPToolsChanged,
+  getMCPToolsChangedGeneration,
+  notifyMCPToolsChanged,
+} from '~/mcp/toolsChanged';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { detectOAuthRequirement, MCPOAuthHandler } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
@@ -55,6 +59,13 @@ export abstract class UserConnectionManager {
   protected userLastActivity: Map<string, number> = new Map();
   /** In-flight connection promises keyed by `userId:serverName` — coalesces concurrent attempts */
   protected pendingConnections: Map<string, PendingConnection> = new Map();
+  /** Fences durable connections whose credentials were invalidated on another replica. */
+  protected readonly toolPublicationGenerations: WeakMap<MCPConnection, string> = new WeakMap();
+
+  /** Returns the cache-publication generation captured for a durable connection. */
+  public getToolPublicationGeneration(connection: MCPConnection): string | undefined {
+    return this.toolPublicationGenerations.get(connection);
+  }
 
   /** Updates the last activity timestamp for a user */
   protected updateUserLastActivity(userId: string): void {
@@ -392,12 +403,34 @@ export abstract class UserConnectionManager {
       providedConfig ??
       (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
 
+    /** Capture before resolving credentials/creating the connection. If another replica rotates
+     *  the generation while creation is in flight, this connection's publications are fenced. */
+    const publicationGeneration = ephemeralConnection
+      ? undefined
+      : await getMCPToolsChangedGeneration({ userId, serverName });
+
     const userServerMap = this.userConnections.get(userId);
     let connection = forceNew ? undefined : userServerMap?.get(serverName);
     if (clearCooldown) {
       MCPConnection.clearCooldown(serverName);
     }
     const now = Date.now();
+
+    const existingPublicationGeneration = connection
+      ? this.toolPublicationGenerations.get(connection)
+      : undefined;
+    if (
+      connection &&
+      publicationGeneration &&
+      existingPublicationGeneration &&
+      publicationGeneration !== existingPublicationGeneration
+    ) {
+      logger.info(
+        `[MCP][User: ${userId}][${serverName}] Cache generation changed, disconnecting stale connection`,
+      );
+      await this.disconnectUserConnection(userId, serverName);
+      connection = undefined;
+    }
 
     // Check if user is idle
     const lastActivity = this.userLastActivity.get(userId);
@@ -513,12 +546,17 @@ export abstract class UserConnectionManager {
 
       connection = await MCPConnectionFactory.create(basic, connectionOptions);
 
+      if (publicationGeneration) {
+        this.toolPublicationGenerations.set(connection, publicationGeneration);
+      }
+
       connection.on('toolsChanged', (tools: t.MCPTool[]) => {
         void notifyMCPToolsChanged({
           tools,
           userId,
           serverName,
           serverConfig: config,
+          ...(publicationGeneration && { publicationGeneration }),
         });
       });
 

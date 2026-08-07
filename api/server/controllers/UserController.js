@@ -177,14 +177,15 @@ const deleteUserMcpServers = async (userId) => {
     const allServersToDelete = [...aclOwnedServers, ...legacyServers];
 
     const mcpManager = getMCPManager();
-    if (mcpManager) {
-      await Promise.all(
-        allServersToDelete.map(async (s) => {
-          await mcpManager.disconnectUserConnection(userId, s.serverName);
+    await Promise.all(
+      allServersToDelete.map(async (s) => {
+        try {
           await invalidateCachedTools({ userId, serverName: s.serverName });
-        }),
-      );
-    }
+        } finally {
+          await mcpManager?.disconnectUserConnection(userId, s.serverName);
+        }
+      }),
+    );
 
     await AclEntry.deleteMany({
       resourceType: ResourceType.MCPSERVER,
@@ -295,14 +296,17 @@ const updateUserPluginsController = async (req, res) => {
       if (pluginKey.startsWith(Constants.mcp_prefix)) {
         try {
           const mcpManager = getMCPManager();
+          // Extract server name from pluginKey (format: "mcp_<serverName>")
+          const serverName = pluginKey.replace(Constants.mcp_prefix, '');
           if (mcpManager) {
-            // Extract server name from pluginKey (format: "mcp_<serverName>")
-            const serverName = pluginKey.replace(Constants.mcp_prefix, '');
             logger.info(
               `[updateUserPluginsController] Attempting disconnect of MCP server "${serverName}" for user ${user.id} after plugin auth update.`,
             );
-            await mcpManager.disconnectUserConnection(user.id, serverName);
+          }
+          try {
             await invalidateCachedTools({ userId: user.id, serverName });
+          } finally {
+            await mcpManager?.disconnectUserConnection(user.id, serverName);
           }
         } catch (disconnectError) {
           logger.error(

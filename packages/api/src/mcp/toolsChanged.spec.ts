@@ -1,6 +1,8 @@
 import type { MCPToolsChangedEvent } from './toolsChanged';
 import {
   setMCPToolsChangedHandler,
+  setMCPToolsChangedGenerationHandler,
+  getMCPToolsChangedGeneration,
   hasMCPToolsChangedHandler,
   cancelMCPToolsChanged,
   notifyMCPToolsChanged,
@@ -15,6 +17,7 @@ const createEvent = (name = 'one'): MCPToolsChangedEvent => ({
 describe('MCP tools-changed dispatch', () => {
   afterEach(() => {
     setMCPToolsChangedHandler(null);
+    setMCPToolsChangedGenerationHandler(null);
     jest.useRealTimers();
   });
 
@@ -24,6 +27,19 @@ describe('MCP tools-changed dispatch', () => {
     expect(hasMCPToolsChangedHandler()).toBe(true);
     setMCPToolsChangedHandler(null);
     expect(hasMCPToolsChangedHandler()).toBe(false);
+  });
+
+  it('captures a connection-bound publication generation from the app layer', async () => {
+    const generationHandler = jest.fn().mockResolvedValue('generation-a');
+    setMCPToolsChangedGenerationHandler(generationHandler);
+
+    await expect(
+      getMCPToolsChangedGeneration({ userId: 'user-1', serverName: 'dynamic' }),
+    ).resolves.toBe('generation-a');
+    expect(generationHandler).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'dynamic',
+    });
   });
 
   it('passes a complete server snapshot and user scope to the handler', async () => {

@@ -23,12 +23,17 @@ getLogStores.mockReturnValue(mockCache);
 
 const {
   setCachedTools,
+  setCachedToolsIfCurrent,
   runWithGlobalCacheLock,
   invalidateCachedTools,
   setCachedToolsWithinGlobalLock,
 } = require('../getCachedTools');
 
 describe('global tool cache write lock', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockRedisClient.set.mockResolvedValue('OK');
@@ -80,5 +85,46 @@ describe('global tool cache write lock', () => {
     expect(mockRedisClient.set).toHaveBeenCalledTimes(1);
     expect(mockRedisClient.eval).toHaveBeenCalledTimes(1);
     expect(mockCache.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses a distributed scope lock for generation-guarded user publications', async () => {
+    mockCache.get.mockResolvedValue('generation-current');
+
+    await expect(
+      setCachedToolsIfCurrent(
+        { current: {} },
+        {
+          userId: 'user-1',
+          serverName: 'server-1',
+          publicationGeneration: 'generation-current',
+        },
+      ),
+    ).resolves.toBe(true);
+
+    expect(mockRedisClient.set).toHaveBeenCalledWith(
+      `${CacheKeys.TOOL_CACHE}:tools:mcp:user-1:server-1:write-lock`,
+      expect.any(String),
+      'PX',
+      30_000,
+      'NX',
+    );
+    expect(mockRedisClient.eval).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits through the full abandoned Redis lease before giving up', async () => {
+    jest.useFakeTimers();
+    const startedAt = Date.now();
+    mockRedisClient.set.mockImplementation(async () =>
+      Date.now() - startedAt >= 30_000 ? 'OK' : null,
+    );
+    const operation = jest.fn().mockResolvedValue('recovered');
+
+    const result = runWithGlobalCacheLock(operation);
+    await jest.advanceTimersByTimeAsync(5_000);
+    expect(operation).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(25_100);
+    await expect(result).resolves.toBe('recovered');
+    expect(operation).toHaveBeenCalledTimes(1);
   });
 });

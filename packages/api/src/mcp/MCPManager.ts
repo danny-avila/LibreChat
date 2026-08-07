@@ -276,34 +276,51 @@ export class MCPManager extends UserConnectionManager {
     await Promise.all(this.appConnections?.disconnectAll() ?? []);
   }
 
-  /** Returns all available tool functions from all connections available to user */
-  public async getServerToolFunctions(
+  /** Returns tool functions with the generation bound to their originating user connection. */
+  public async getServerToolFunctionsSnapshot(
     userId: string,
     serverName: string,
-  ): Promise<t.LCAvailableTools | null> {
+  ): Promise<{
+    tools: t.LCAvailableTools | null;
+    publicationGeneration?: string;
+  }> {
     try {
       //try get the appConnection (if the config is not in the app level anymore any existing connection will disconnect and get will return null)
       const existingAppConnection = await this.appConnections?.get(serverName);
       if (existingAppConnection) {
-        return MCPServerInspector.getToolFunctions(serverName, existingAppConnection);
+        return {
+          tools: await MCPServerInspector.getToolFunctions(serverName, existingAppConnection),
+        };
       }
 
       const userConnections = this.getUserConnections(userId);
       if (!userConnections || userConnections.size === 0) {
-        return null;
+        return { tools: null };
       }
       if (!userConnections.has(serverName)) {
-        return null;
+        return { tools: null };
       }
 
-      return MCPServerInspector.getToolFunctions(serverName, userConnections.get(serverName)!);
+      const connection = userConnections.get(serverName)!;
+      return {
+        tools: await MCPServerInspector.getToolFunctions(serverName, connection),
+        publicationGeneration: this.getToolPublicationGeneration(connection),
+      };
     } catch (error) {
       logger.warn(
         `[getServerToolFunctions] Error getting tool functions for server ${serverName}`,
         error,
       );
-      return null;
+      return { tools: null };
     }
+  }
+
+  /** Returns all available tool functions from all connections available to user. */
+  public async getServerToolFunctions(
+    userId: string,
+    serverName: string,
+  ): Promise<t.LCAvailableTools | null> {
+    return (await this.getServerToolFunctionsSnapshot(userId, serverName)).tools;
   }
 
   /**

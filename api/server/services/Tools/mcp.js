@@ -10,7 +10,7 @@ const { findToken, createToken, updateToken, deleteTokens } = require('~/models'
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { exchangeOboToken } = require('~/server/services/OboTokenService');
 const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
-const { updateMCPServerTools } = require('~/server/services/Config');
+const { getMCPToolsCacheGeneration, updateMCPServerTools } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
 const MCP_REINITIALIZE_FAILURE_REASONS = {
@@ -65,6 +65,7 @@ async function reinitMCPServer({
   let oauthUrl = null;
   let oauthExpiresAt;
   let ephemeralServer = false;
+  let publicationGeneration;
 
   try {
     const registry = getMCPServersRegistry();
@@ -167,6 +168,13 @@ async function reinitMCPServer({
     const mcpManager = getMCPManager();
     const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
 
+    if (!ephemeralServer) {
+      publicationGeneration = await getMCPToolsCacheGeneration({
+        userId: user.id,
+        serverName,
+      });
+    }
+
     const oauthStart =
       _oauthStart ??
       (async (authURL, options) => {
@@ -259,6 +267,8 @@ async function reinitMCPServer({
     }
 
     if (connection && !oauthRequired) {
+      publicationGeneration =
+        mcpManager.getToolPublicationGeneration(connection) ?? publicationGeneration;
       const snapshot =
         typeof connection.fetchToolsSnapshot === 'function'
           ? await connection.fetchToolsSnapshot()
@@ -278,6 +288,7 @@ async function reinitMCPServer({
         serverName,
         tools,
         serverConfig,
+        ...(publicationGeneration && { publicationGeneration }),
       });
     }
 

@@ -4,11 +4,14 @@ const mockGetConnection = jest.fn();
 const mockDiscoverServerTools = jest.fn();
 const mockGetGraphApiToken = jest.fn();
 const mockUpdateMCPServerTools = jest.fn();
+const mockGetMCPToolsCacheGeneration = jest.fn().mockResolvedValue('generation-current');
+const mockGetToolPublicationGeneration = jest.fn().mockReturnValue('generation-current');
 
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
     getConnection: mockGetConnection,
     discoverServerTools: mockDiscoverServerTools,
+    getToolPublicationGeneration: mockGetToolPublicationGeneration,
   })),
   getMCPServersRegistry: jest.fn(() => ({ getServerConfig: jest.fn() })),
   getFlowStateManager: jest.fn(() => ({})),
@@ -21,6 +24,7 @@ jest.mock('~/models', () => ({
 }));
 jest.mock('~/server/services/Config', () => ({
   updateMCPServerTools: mockUpdateMCPServerTools,
+  getMCPToolsCacheGeneration: mockGetMCPToolsCacheGeneration,
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: mockGetGraphApiToken,
@@ -117,6 +121,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       serverName,
       tools: [],
       serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      publicationGeneration: 'generation-current',
     });
   });
 

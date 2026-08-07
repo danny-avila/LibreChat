@@ -10,6 +10,8 @@ const {
   ToolCacheKeys,
   getCachedTools,
   setCachedTools,
+  setCachedToolsIfCurrent,
+  getMCPToolsCacheGeneration,
   getCachedAppServerSnapshots,
   setCachedAppServerSnapshots,
   runWithGlobalCacheLock,
@@ -26,6 +28,12 @@ describe('getCachedTools', () => {
     it('should generate cache keys that include userId', () => {
       const key = ToolCacheKeys.MCP_SERVER('user123', 'github');
       expect(key).toBe('tools:mcp:user123:github');
+    });
+
+    it('uses a separate durable key for the publication generation', () => {
+      expect(ToolCacheKeys.MCP_SERVER_GENERATION('user123', 'github')).toBe(
+        'tools:mcp:user123:github:publication-generation',
+      );
     });
   });
 
@@ -82,6 +90,103 @@ describe('getCachedTools', () => {
         ToolCacheKeys.MCP_SERVER('user1', 'github'),
         tools,
         expect.any(Number),
+      );
+    });
+
+    it('creates and reuses a durable user publication generation', async () => {
+      mockCache.get
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce('existing-generation');
+      mockCache.set.mockResolvedValue(true);
+
+      const created = await getMCPToolsCacheGeneration({ userId: 'user1', serverName: 'github' });
+      const existing = await getMCPToolsCacheGeneration({ userId: 'user1', serverName: 'github' });
+
+      expect(created).toEqual(expect.any(String));
+      expect(mockCache.set).toHaveBeenCalledWith(
+        ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
+        created,
+      );
+      expect(existing).toBe('existing-generation');
+    });
+
+    it('writes user tools only for the current publication generation', async () => {
+      const tools = { current: { type: 'function' } };
+      mockCache.get.mockResolvedValue('generation-a');
+      mockCache.set.mockResolvedValue(true);
+
+      await expect(
+        setCachedToolsIfCurrent(tools, {
+          userId: 'user1',
+          serverName: 'github',
+          publicationGeneration: 'generation-a',
+        }),
+      ).resolves.toBe(true);
+
+      expect(mockCache.set).toHaveBeenCalledWith(
+        ToolCacheKeys.MCP_SERVER('user1', 'github'),
+        tools,
+        expect.any(Number),
+      );
+    });
+
+    it('rejects stale user tools without writing them', async () => {
+      mockCache.get.mockResolvedValue('generation-b');
+
+      await expect(
+        setCachedToolsIfCurrent(
+          { stale: { type: 'function' } },
+          {
+            userId: 'user1',
+            serverName: 'github',
+            publicationGeneration: 'generation-a',
+          },
+        ),
+      ).resolves.toBe(false);
+
+      expect(mockCache.set).not.toHaveBeenCalled();
+    });
+
+    it('rotates the publication generation before deleting user tools', async () => {
+      mockCache.set.mockResolvedValue(true);
+      mockCache.delete.mockResolvedValue(true);
+
+      await invalidateCachedTools({ userId: 'user1', serverName: 'github' });
+
+      const generationWrite = mockCache.set.mock.invocationCallOrder[0];
+      const toolDelete = mockCache.delete.mock.invocationCallOrder[0];
+      expect(mockCache.set).toHaveBeenCalledWith(
+        ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
+        expect.any(String),
+      );
+      expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.MCP_SERVER('user1', 'github'));
+      expect(generationWrite).toBeLessThan(toolDelete);
+    });
+
+    it('fences a stale publication queued behind credential invalidation', async () => {
+      mockCache.get.mockResolvedValue('new-generation');
+      mockCache.set.mockResolvedValue(true);
+      mockCache.delete.mockResolvedValue(true);
+
+      const invalidation = invalidateCachedTools({ userId: 'user1', serverName: 'github' });
+      const stalePublication = setCachedToolsIfCurrent(
+        { stale: { type: 'function' } },
+        {
+          userId: 'user1',
+          serverName: 'github',
+          publicationGeneration: 'old-generation',
+        },
+      );
+
+      await expect(Promise.all([invalidation, stalePublication])).resolves.toEqual([
+        undefined,
+        false,
+      ]);
+      expect(mockCache.set).not.toHaveBeenCalledWith(
+        ToolCacheKeys.MCP_SERVER('user1', 'github'),
+        expect.anything(),
+        expect.anything(),
       );
     });
 

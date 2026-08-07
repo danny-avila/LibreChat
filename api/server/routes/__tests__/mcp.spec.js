@@ -128,6 +128,9 @@ jest.mock('~/models', () => ({
 jest.mock('~/server/services/Config', () => ({
   setCachedTools: jest.fn(),
   getCachedTools: jest.fn(),
+  cacheMCPServerTools: jest.fn(),
+  getMCPToolsCacheGeneration: jest.fn().mockResolvedValue('test-generation'),
+  invalidateCachedTools: jest.fn(),
   getMCPServerTools: jest.fn(),
   loadCustomConfig: jest.fn(),
   getAppConfig: jest.fn().mockResolvedValue({ mcpConfig: {} }),
@@ -2435,6 +2438,13 @@ describe('MCP Routes', () => {
         'test-user-id',
         'test-server',
       );
+      expect(require('~/server/services/Config').invalidateCachedTools).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        serverName: 'test-server',
+      });
+      expect(
+        require('~/server/services/Config').invalidateCachedTools.mock.invocationCallOrder[0],
+      ).toBeLessThan(mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0]);
     });
 
     it('should handle server with custom user variables', async () => {
@@ -2953,6 +2963,7 @@ describe('MCP Routes', () => {
             .fn()
             .mockResolvedValue([{ name: 'test-tool', description: 'Test tool' }]),
         }),
+        getToolPublicationGeneration: jest.fn().mockReturnValue('oauth-connection-generation'),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
@@ -2967,6 +2978,14 @@ describe('MCP Routes', () => {
       const basePath = getBasePath();
 
       expect(response.headers.location).toContain(`${basePath}/oauth/success`);
+      expect(require('~/server/services/Config/mcp').updateMCPServerTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'test-user-id',
+          serverName: 'test-server',
+          tools: [{ name: 'test-tool', description: 'Test tool' }],
+          publicationGeneration: 'oauth-connection-generation',
+        }),
+      );
     });
   });
 
@@ -3064,6 +3083,43 @@ describe('MCP Routes', () => {
       expect(mockResolveAllMcpConfigs).not.toHaveBeenCalled();
     });
 
+    it('caches a live user snapshot with its connection-bound publication generation', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+      const pluginKey = `search${Constants.mcp_delimiter}user-server`;
+      const serverTools = {
+        [pluginKey]: {
+          type: 'function',
+          function: {
+            name: pluginKey,
+            description: 'Search',
+            parameters: { type: 'object' },
+          },
+        },
+      };
+      const serverConfig = { type: 'sse', url: 'https://user.example.com/sse' };
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'user-server': serverConfig });
+      getMCPServerTools.mockResolvedValueOnce(null);
+      cacheMCPServerTools.mockResolvedValueOnce();
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctionsSnapshot: jest.fn().mockResolvedValue({
+          tools: serverTools,
+          publicationGeneration: 'connection-generation',
+        }),
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(cacheMCPServerTools).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        serverName: 'user-server',
+        serverTools,
+        serverConfig,
+        publicationGeneration: 'connection-generation',
+      });
+    });
+
     it('should continue returning MCP tools when one server cache lookup fails', async () => {
       const { Constants } = require('librechat-data-provider');
       const { logger } = require('@librechat/data-schemas');
@@ -3095,9 +3151,12 @@ describe('MCP Routes', () => {
           },
         });
 
-      const mockGetServerToolFunctions = jest.fn().mockResolvedValue(null);
+      const mockGetServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({
+        tools: null,
+        publicationGeneration: 'test-generation',
+      });
       require('~/config').getMCPManager.mockReturnValue({
-        getServerToolFunctions: mockGetServerToolFunctions,
+        getServerToolFunctionsSnapshot: mockGetServerToolFunctionsSnapshot,
       });
 
       const response = await request(app).get('/api/mcp/tools');
@@ -3107,7 +3166,7 @@ describe('MCP Routes', () => {
         '[getMCPTools] Error fetching cached tools for bad-server:',
         expect.any(Error),
       );
-      expect(mockGetServerToolFunctions).toHaveBeenCalledWith('test-user-id', 'bad-server');
+      expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledWith('test-user-id', 'bad-server');
       expect(response.body.servers['good-server']).toMatchObject({
         name: 'good-server',
         icon: '/icons/good.svg',
@@ -3142,9 +3201,12 @@ describe('MCP Routes', () => {
 
       getMCPServerTools.mockRejectedValue(new Error('cache unavailable'));
 
-      const mockGetServerToolFunctions = jest.fn().mockResolvedValue(null);
+      const mockGetServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({
+        tools: null,
+        publicationGeneration: 'test-generation',
+      });
       require('~/config').getMCPManager.mockReturnValue({
-        getServerToolFunctions: mockGetServerToolFunctions,
+        getServerToolFunctionsSnapshot: mockGetServerToolFunctionsSnapshot,
       });
 
       const response = await request(app).get('/api/mcp/tools');
@@ -3159,7 +3221,7 @@ describe('MCP Routes', () => {
         tools: [],
       });
       expect(logger.error).toHaveBeenCalledTimes(2);
-      expect(mockGetServerToolFunctions).toHaveBeenCalledTimes(2);
+      expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledTimes(2);
     });
   });
 

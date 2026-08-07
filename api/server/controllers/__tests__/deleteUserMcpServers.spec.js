@@ -263,6 +263,10 @@ describe('deleteUserMcpServers', () => {
     await deleteUserMcpServers(userId.toString());
 
     expect(await MCPServer.findById(server._id)).toBeNull();
+    expect(mockInvalidateCachedTools).toHaveBeenCalledWith({
+      userId: userId.toString(),
+      serverName: 'no-manager-server',
+    });
   });
 
   test('should delete legacy MCP servers that have author but no ACL entries', async () => {

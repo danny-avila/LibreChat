@@ -310,6 +310,59 @@ describe('createMCPToolCacheService', () => {
       expect(deps.setCachedTools).toHaveBeenCalledWith({}, { userId: 'u1', serverName: 'srv' });
     });
 
+    it('fences a stale cross-replica publication without retrying it', async () => {
+      const setCachedToolsIfCurrent = jest.fn().mockResolvedValue(false);
+      const deps = createMockDeps({ setCachedToolsIfCurrent });
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      await expect(
+        updateMCPServerTools({
+          userId: 'u1',
+          serverName: 'srv',
+          tools: [{ name: 'stale' }],
+          publicationGeneration: 'old-generation',
+        }),
+      ).resolves.toBeDefined();
+
+      expect(setCachedToolsIfCurrent).toHaveBeenCalledWith(expect.any(Object), {
+        userId: 'u1',
+        serverName: 'srv',
+        publicationGeneration: 'old-generation',
+      });
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
+    });
+
+    it('publishes a connection snapshot while its distributed generation is current', async () => {
+      const setCachedToolsIfCurrent = jest.fn().mockResolvedValue(true);
+      const deps = createMockDeps({ setCachedToolsIfCurrent });
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      await updateMCPServerTools({
+        userId: 'u1',
+        serverName: 'srv',
+        tools: [{ name: 'current' }],
+        publicationGeneration: 'current-generation',
+      });
+
+      expect(setCachedToolsIfCurrent).toHaveBeenCalledTimes(1);
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
+    });
+
+    it('does not fall back to an unfenced user write when the generation is missing', async () => {
+      const setCachedToolsIfCurrent = jest.fn().mockResolvedValue(true);
+      const deps = createMockDeps({ setCachedToolsIfCurrent });
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+
+      await updateMCPServerTools({
+        userId: 'u1',
+        serverName: 'srv',
+        tools: [{ name: 'unknown-origin' }],
+      });
+
+      expect(setCachedToolsIfCurrent).not.toHaveBeenCalled();
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
+    });
+
     it('replaces the app-level server slice when no user scope is provided', async () => {
       const staleName = `stale${Constants.mcp_delimiter}srv`;
       const deps = createMockDeps({
@@ -594,6 +647,30 @@ describe('createMCPToolCacheService', () => {
       expect(setCachedAppServerSnapshots).toHaveBeenCalledWith(['empty']);
     });
 
+    it('preserves a known-good server slice when startup inspection is incomplete', async () => {
+      const failedKey = `known${Constants.mcp_delimiter}failed`;
+      const removedKey = `gone${Constants.mcp_delimiter}removed`;
+      const cached: LCAvailableTools = {
+        [failedKey]: { type: 'function', function: { name: failedKey } },
+        [removedKey]: { type: 'function', function: { name: removedKey } },
+      };
+      const setCachedAppServerSnapshots = jest.fn().mockResolvedValue(true);
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(cached),
+        getCachedAppServerSnapshots: jest.fn().mockResolvedValue(['failed', 'removed']),
+        setCachedAppServerSnapshots,
+        getAllServerConfigs: jest.fn().mockResolvedValue({
+          failed: { ...cacheableConfig, toolFunctions: undefined },
+        }),
+      });
+      const { mergeAppTools } = createMCPToolCacheService(deps);
+
+      await mergeAppTools({});
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith({ [failedKey]: cached[failedKey] });
+      expect(setCachedAppServerSnapshots).toHaveBeenCalledWith(['failed']);
+    });
+
     it('handles null cache (cold start) by defaulting to empty', async () => {
       const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(null) });
       const { mergeAppTools } = createMCPToolCacheService(deps);
@@ -667,6 +744,37 @@ describe('createMCPToolCacheService', () => {
         userId: 'u1',
         serverName: 'brave',
       });
+    });
+
+    it('uses the generation guard for a connection-bound discovery snapshot', async () => {
+      const setCachedToolsIfCurrent = jest.fn().mockResolvedValue(true);
+      const deps = createMockDeps({ setCachedToolsIfCurrent });
+      const { cacheMCPServerTools } = createMCPToolCacheService(deps);
+
+      await cacheMCPServerTools({
+        userId: 'u1',
+        serverName: 'brave',
+        serverTools,
+        publicationGeneration: 'generation-current',
+      });
+
+      expect(setCachedToolsIfCurrent).toHaveBeenCalledWith(serverTools, {
+        userId: 'u1',
+        serverName: 'brave',
+        publicationGeneration: 'generation-current',
+      });
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
+    });
+
+    it('does not cache an unfenced discovery snapshot when the guard is configured', async () => {
+      const setCachedToolsIfCurrent = jest.fn().mockResolvedValue(true);
+      const deps = createMockDeps({ setCachedToolsIfCurrent });
+      const { cacheMCPServerTools } = createMCPToolCacheService(deps);
+
+      await cacheMCPServerTools({ userId: 'u1', serverName: 'brave', serverTools });
+
+      expect(setCachedToolsIfCurrent).not.toHaveBeenCalled();
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
     });
 
     it('refreshes the global server slice for an app-shared server', async () => {

@@ -41,6 +41,7 @@ jest.mock('~/server/services/MCP', () => ({
 
 jest.mock('~/server/services/Config', () => ({
   cacheMCPServerTools: jest.fn(),
+  getMCPToolsCacheGeneration: jest.fn().mockResolvedValue('test-generation'),
   getMCPServerTools: jest.fn(),
 }));
 

@@ -11,6 +11,8 @@ export interface MCPToolsChangedEvent {
   tools: Tool[];
   serverConfig: MCPOptions;
   userId?: string;
+  /** Connection-bound token used to fence stale cross-replica cache publications. */
+  publicationGeneration?: string;
 }
 
 export type MCPToolsChangedHandler = (event: MCPToolsChangedEvent) => Promise<void> | void;
@@ -28,6 +30,12 @@ let handler: MCPToolsChangedHandler | null = null;
 const pendingChanges = new Map<string, PendingToolsChange>();
 
 type MCPToolsChangedScope = Pick<MCPToolsChangedEvent, 'serverName' | 'userId'>;
+
+export type MCPToolsChangedGenerationHandler = (
+  scope: MCPToolsChangedScope,
+) => Promise<string | undefined> | string | undefined;
+
+let generationHandler: MCPToolsChangedGenerationHandler | null = null;
 
 function getChangeKey(event: MCPToolsChangedScope): string {
   return JSON.stringify([event.userId ?? null, event.serverName]);
@@ -108,6 +116,20 @@ export function setMCPToolsChangedHandler(fn: MCPToolsChangedHandler | null): vo
 
 export function hasMCPToolsChangedHandler(): boolean {
   return handler != null;
+}
+
+/** Registers the app-layer provider for connection-bound publication generations. */
+export function setMCPToolsChangedGenerationHandler(
+  fn: MCPToolsChangedGenerationHandler | null,
+): void {
+  generationHandler = fn;
+}
+
+/** Captures the current cache generation before a durable user connection is created. */
+export async function getMCPToolsChangedGeneration(
+  scope: MCPToolsChangedScope,
+): Promise<string | undefined> {
+  return generationHandler?.(scope);
 }
 
 /**

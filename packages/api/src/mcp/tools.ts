@@ -17,6 +17,10 @@ export interface MCPToolCacheDeps {
     tools: LCAvailableTools,
     options?: { userId?: string; serverName?: string },
   ) => Promise<boolean>;
+  setCachedToolsIfCurrent?: (
+    tools: LCAvailableTools,
+    options: { userId: string; serverName: string; publicationGeneration: string },
+  ) => Promise<boolean>;
   getServerConfig: (serverName: string, userId?: string) => Promise<ParsedServerConfig | undefined>;
   getAllServerConfigs?: () => Promise<Record<string, ParsedServerConfig>>;
   isAppServerConfig?: (serverName: string, effectiveConfig: ParsedServerConfig) => Promise<boolean>;
@@ -31,6 +35,7 @@ export interface MCPToolCacheService {
     serverName: string;
     tools: MCPToolInput[] | null;
     serverConfig?: ParsedServerConfig;
+    publicationGeneration?: string;
   }) => Promise<LCAvailableTools>;
   mergeAppTools: (appTools: LCAvailableTools) => Promise<void>;
   replaceAppServerTools: (params: {
@@ -42,6 +47,7 @@ export interface MCPToolCacheService {
     serverName: string;
     serverTools: LCAvailableTools;
     serverConfig?: ParsedServerConfig;
+    publicationGeneration?: string;
   }) => Promise<void>;
   getMCPServerTools: (
     userId: string,
@@ -59,6 +65,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   const {
     getCachedTools,
     setCachedTools,
+    setCachedToolsIfCurrent,
     getServerConfig,
     getAllServerConfigs,
     isAppServerConfig,
@@ -226,8 +233,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     serverName: string;
     tools: MCPToolInput[] | null;
     serverConfig?: ParsedServerConfig;
+    publicationGeneration?: string;
   }): Promise<LCAvailableTools> {
-    const { userId, serverName, tools, serverConfig } = params;
+    const { userId, serverName, tools, serverConfig, publicationGeneration } = params;
     try {
       const serverTools: LCAvailableTools = {};
       const mcpDelimiter = Constants.mcp_delimiter;
@@ -267,7 +275,27 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       }
 
       if (userId && !(await isAppSharedConfig(serverName, resolvedConfig))) {
-        await writeCachedTools(serverTools, { userId, serverName });
+        if (setCachedToolsIfCurrent) {
+          if (!publicationGeneration) {
+            logger.debug(
+              `[MCP Cache] Skipped unfenced tool publication for ${serverName} (user: ${userId})`,
+            );
+            return serverTools;
+          }
+          const current = await setCachedToolsIfCurrent(serverTools, {
+            userId,
+            serverName,
+            publicationGeneration,
+          });
+          if (!current) {
+            logger.debug(
+              `[MCP Cache] Ignored stale tool publication for ${serverName} (user: ${userId})`,
+            );
+            return serverTools;
+          }
+        } else {
+          await writeCachedTools(serverTools, { userId, serverName });
+        }
       } else {
         await replaceAppServerTools({ serverName, serverTools });
       }
@@ -291,20 +319,32 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       await withGlobalCacheLock(async () => {
         const cachedTools = (await getCachedTools()) ?? {};
         const previousAppServerSnapshots = (await getCachedAppServerSnapshots?.()) ?? [];
+        const currentAppServers = new Set(appServerNames);
+        const authoritativeAppServers = new Set(appServerSnapshots ?? appServerNames);
         const boundaries = buildAppServerBoundaries([
           ...appServerNames,
           ...previousAppServerSnapshots,
         ]);
         const mergedTools: LCAvailableTools = {};
         for (const [name, tool] of Object.entries(cachedTools)) {
-          if (resolveToolServerName(name, boundaries) == null) {
+          const owner = resolveToolServerName(name, boundaries);
+          if (
+            owner == null ||
+            (currentAppServers.has(owner) && !authoritativeAppServers.has(owner))
+          ) {
             mergedTools[name] = tool;
           }
         }
         Object.assign(mergedTools, appTools);
         await writeCachedTools(mergedTools);
         if (appServerSnapshots) {
-          await writeCachedAppServerSnapshots(appServerSnapshots);
+          const nextSnapshots = new Set(appServerSnapshots);
+          for (const serverName of previousAppServerSnapshots) {
+            if (currentAppServers.has(serverName) && !authoritativeAppServers.has(serverName)) {
+              nextSnapshots.add(serverName);
+            }
+          }
+          await writeCachedAppServerSnapshots(Array.from(nextSnapshots));
         }
       });
       logger.debug(`Synchronized ${count} app-level MCP tools`);
@@ -366,8 +406,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     serverName: string;
     serverTools: LCAvailableTools;
     serverConfig?: ParsedServerConfig;
+    publicationGeneration?: string;
   }): Promise<void> {
-    const { userId, serverName, serverTools, serverConfig } = params;
+    const { userId, serverName, serverTools, serverConfig, publicationGeneration } = params;
     try {
       const count = Object.keys(serverTools).length;
       const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
@@ -382,7 +423,27 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         logger.debug(`Refreshed app-level MCP tools for ${serverName}`);
         return;
       }
-      await writeCachedTools(serverTools, { userId, serverName });
+      if (setCachedToolsIfCurrent) {
+        if (!publicationGeneration) {
+          logger.debug(
+            `[MCP Cache] Skipped unfenced discovered tools for ${serverName} (user: ${userId})`,
+          );
+          return;
+        }
+        const current = await setCachedToolsIfCurrent(serverTools, {
+          userId,
+          serverName,
+          publicationGeneration,
+        });
+        if (!current) {
+          logger.debug(
+            `[MCP Cache] Ignored stale discovered tools for ${serverName} (user: ${userId})`,
+          );
+          return;
+        }
+      } else {
+        await writeCachedTools(serverTools, { userId, serverName });
+      }
       logger.debug(`Cached ${count} MCP server tools for ${serverName} (user: ${userId})`);
     } catch (error) {
       logger.error(`Failed to cache MCP server tools for ${serverName} (user: ${userId}):`, error);

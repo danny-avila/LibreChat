@@ -1,8 +1,12 @@
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { registerShutdownTask, setMCPToolsChangedHandler } = require('@librechat/api');
+const {
+  registerShutdownTask,
+  setMCPToolsChangedHandler,
+  setMCPToolsChangedGenerationHandler,
+} = require('@librechat/api');
 const { mergeAppTools, getAppConfig } = require('./Config');
-const { updateMCPServerTools } = require('./Config/mcp');
+const { getMCPToolsCacheGeneration, updateMCPServerTools } = require('./Config/mcp');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
 
 /**
@@ -28,8 +32,20 @@ async function resolveMCPAllowlists(ctx) {
  * re-fetched from the live connection and written over that server's cache entry, so tools that
  * disappeared stop being advertised too.
  */
-async function refreshChangedServerTools({ serverName, userId, tools, serverConfig }) {
-  await updateMCPServerTools({ userId, serverName, tools, serverConfig });
+async function refreshChangedServerTools({
+  serverName,
+  userId,
+  tools,
+  serverConfig,
+  publicationGeneration,
+}) {
+  await updateMCPServerTools({
+    userId,
+    serverName,
+    tools,
+    serverConfig,
+    ...(publicationGeneration && { publicationGeneration }),
+  });
   const toolCount = tools.length;
   logger.info(
     `[MCP][${serverName}] Tool list changed; refreshed ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}${userId ? ` for user ${userId}` : ''}`,
@@ -58,6 +74,7 @@ async function initializeMCPs() {
   try {
     const mcpManager = await createMCPManager(mcpServers || {});
     setMCPToolsChangedHandler(refreshChangedServerTools);
+    setMCPToolsChangedGenerationHandler(getMCPToolsCacheGeneration);
     registerShutdownTask('MCP app connections', () => mcpManager.disconnectAppServers());
 
     if (mcpServers && Object.keys(mcpServers).length > 0) {

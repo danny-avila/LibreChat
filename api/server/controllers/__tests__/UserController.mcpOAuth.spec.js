@@ -174,6 +174,24 @@ beforeEach(() => {
 });
 
 describe('updateUserPluginsController MCP OAuth cleanup', () => {
+  it('invalidates the shared tool generation even when local disconnect fails', async () => {
+    const { mcpManager } = setupMCPMocks();
+    mcpManager.disconnectUserConnection.mockRejectedValue(new Error('local dispose failed'));
+    MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue(null);
+
+    const res = createResponse();
+    await updateUserPluginsController(createRequest(), res);
+
+    expect(mockInvalidateCachedTools).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+    });
+    expect(mockInvalidateCachedTools.mock.invocationCallOrder[0]).toBeLessThan(
+      mcpManager.disconnectUserConnection.mock.invocationCallOrder[0],
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   it('clears stored OAuth token state when client metadata is missing', async () => {
     const { flowManager, mcpManager } = setupMCPMocks();
     MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue(null);

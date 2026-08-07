@@ -5,12 +5,15 @@ const {
   runWithGlobalCacheLock,
   getCachedAppServerSnapshots,
   setCachedAppServerSnapshots,
+  setCachedToolsIfCurrent,
+  getMCPToolsCacheGeneration,
 } = require('./getCachedTools');
 
 const { mergeAppTools, cacheMCPServerTools, updateMCPServerTools, getMCPServerTools } =
   createMCPToolCacheService({
     getCachedTools,
     setCachedTools: setCachedToolsWithinGlobalLock,
+    setCachedToolsIfCurrent,
     getCachedAppServerSnapshots,
     setCachedAppServerSnapshots,
     runWithGlobalCacheLock,
@@ -26,4 +29,5 @@ module.exports = {
   getMCPServerTools,
   cacheMCPServerTools,
   updateMCPServerTools,
+  getMCPToolsCacheGeneration,
 };

@@ -1809,6 +1809,65 @@ describe('MCPManager', () => {
       expect(mockConnection.refreshToolList).toHaveBeenCalledTimes(1);
     });
 
+    it('binds durable tool publications to the generation captured before connection creation', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const notifySpy = jest
+        .spyOn(toolsChanged, 'notifyMCPToolsChanged')
+        .mockResolvedValue(undefined);
+      const serverConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'yaml',
+        startup: false,
+      };
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+        get: jest.fn().mockResolvedValue(null),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+      const expectedToolFunctions: t.LCAvailableTools = {
+        [`current_mcp_${serverName}`]: {
+          type: 'function',
+          function: {
+            name: `current_mcp_${serverName}`,
+            description: '',
+            parameters: { type: 'object' },
+          },
+        },
+      };
+      (MCPServerInspector.getToolFunctions as jest.Mock).mockResolvedValue(expectedToolFunctions);
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({ serverName, user: mockUser });
+        const listener = (mockConnection.on as jest.Mock).mock.calls.find(
+          ([eventName]) => eventName === 'toolsChanged',
+        )?.[1];
+        const tools: t.MCPTool[] = [{ name: 'current', inputSchema: { type: 'object' } }];
+        listener(tools);
+        const snapshot = await manager.getServerToolFunctionsSnapshot(userId, serverName);
+
+        expect(generationSpy).toHaveBeenCalledWith({ userId, serverName });
+        expect(snapshot).toEqual({
+          tools: expectedToolFunctions,
+          publicationGeneration: 'generation-a',
+        });
+        expect(notifySpy).toHaveBeenCalledWith({
+          tools,
+          userId,
+          serverName,
+          serverConfig,
+          publicationGeneration: 'generation-a',
+        });
+      } finally {
+        generationSpy.mockRestore();
+        notifySpy.mockRestore();
+      }
+    });
+
     it('should detect OAuth after resolving trusted runtime URL placeholders', async () => {
       const runtimeUrlConfig: t.ParsedServerConfig = {
         type: 'streamable-http',
