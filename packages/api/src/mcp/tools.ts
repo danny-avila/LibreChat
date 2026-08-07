@@ -3,8 +3,12 @@ import { Constants, normalizeServerName } from 'librechat-data-provider';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonSchemaType } from '@librechat/agents';
 import type { LCAvailableTools, LCFunctionTool, MCPOptions, ParsedServerConfig } from './types';
+import {
+  isUserSourced,
+  requiresUserScopedConnection,
+  requiresEphemeralUserConnection,
+} from './utils';
 import { normalizeJsonSchema, resolveJsonSchemaRefs } from './zod';
-import { requiresEphemeralUserConnection } from './utils';
 
 export type MCPToolInput = Pick<Tool, 'name' | 'description'> & Partial<Pick<Tool, 'inputSchema'>>;
 
@@ -69,6 +73,47 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       () => undefined,
     );
     return result;
+  }
+
+  function isAppSharedConfig(config: ParsedServerConfig | undefined): boolean {
+    return (
+      !!config &&
+      config.startup !== false &&
+      !isUserSourced(config) &&
+      !requiresUserScopedConnection(config)
+    );
+  }
+
+  async function resolveCacheConfig(
+    userId: string,
+    serverName: string,
+    serverConfig?: ParsedServerConfig,
+  ): Promise<ParsedServerConfig | undefined> {
+    if (serverConfig) {
+      return serverConfig;
+    }
+    try {
+      return await getServerConfig(serverName, userId);
+    } catch (error) {
+      logger.debug(
+        `[MCP Cache] Could not resolve config for ${serverName} (user: ${userId}), preserving legacy cache scope:`,
+        error,
+      );
+      return undefined;
+    }
+  }
+
+  function getServerToolSuffixes(serverName: string): string[] {
+    const rawSuffix = `${Constants.mcp_delimiter}${serverName}`;
+    const normalizedSuffix = `${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
+    return rawSuffix === normalizedSuffix ? [rawSuffix] : [rawSuffix, normalizedSuffix];
+  }
+
+  function getAppServerSlice(tools: LCAvailableTools, serverName: string): LCAvailableTools {
+    const suffixes = getServerToolSuffixes(serverName);
+    return Object.fromEntries(
+      Object.entries(tools).filter(([name]) => suffixes.some((suffix) => name.endsWith(suffix))),
+    );
   }
 
   /**
@@ -162,15 +207,18 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   async function mergeAppTools(appTools: LCAvailableTools): Promise<void> {
     try {
       const count = Object.keys(appTools).length;
-      if (!count) {
-        return;
-      }
       await withGlobalCacheLock(async () => {
         const cachedTools = (await getCachedTools()) ?? {};
-        const mergedTools: LCAvailableTools = { ...cachedTools, ...appTools };
+        const mergedTools: LCAvailableTools = {};
+        for (const [name, tool] of Object.entries(cachedTools)) {
+          if (!name.includes(Constants.mcp_delimiter)) {
+            mergedTools[name] = tool;
+          }
+        }
+        Object.assign(mergedTools, appTools);
         await writeCachedTools(mergedTools);
       });
-      logger.debug(`Merged ${count} app-level tools`);
+      logger.debug(`Synchronized ${count} app-level MCP tools`);
     } catch (error) {
       logger.error('Failed to merge app-level tools:', error);
       throw error;
@@ -192,10 +240,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     try {
       await withGlobalCacheLock(async () => {
         const cachedTools = (await getCachedTools()) ?? {};
-        const suffix = `${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
+        const suffixes = getServerToolSuffixes(serverName);
         const kept: LCAvailableTools = {};
         for (const [name, tool] of Object.entries(cachedTools)) {
-          if (!name.endsWith(suffix)) {
+          if (!suffixes.some((suffix) => name.endsWith(suffix))) {
             kept[name] = tool;
           }
         }
@@ -222,10 +270,16 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       if (!count) {
         return;
       }
-      if (await isRequestScoped(userId, serverName, serverConfig)) {
+      const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
+      if (resolvedConfig && requiresEphemeralUserConnection(resolvedConfig)) {
         logger.debug(
           `[MCP Cache] Skipped caching ${count} tools for request-scoped server ${serverName} (user: ${userId})`,
         );
+        return;
+      }
+      if (isAppSharedConfig(resolvedConfig)) {
+        await replaceAppServerTools({ serverName, serverTools });
+        logger.debug(`Refreshed app-level MCP tools for ${serverName}`);
         return;
       }
       await writeCachedTools(serverTools, { userId, serverName });
@@ -279,10 +333,22 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     serverName: string,
     serverConfig?: ParsedServerConfig,
   ): Promise<LCAvailableTools | null> {
-    if (await isRequestScoped(userId, serverName, serverConfig)) {
+    const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
+    if (resolvedConfig && requiresEphemeralUserConnection(resolvedConfig)) {
       return null;
     }
     try {
+      if (isAppSharedConfig(resolvedConfig)) {
+        const globalTools = await getCachedTools();
+        if (globalTools == null) {
+          return null;
+        }
+        const serverTools = getAppServerSlice(globalTools, serverName);
+        if (Object.keys(serverTools).length === 0) {
+          return null;
+        }
+        return normalizeCachedToolKeys(serverTools, serverName);
+      }
       const cached = (await getCachedTools({ userId, serverName })) ?? null;
       if (!cached || Object.keys(cached).length === 0) {
         return null;

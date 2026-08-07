@@ -23,6 +23,9 @@ mcpSettings:
   # admin override is honored by inspection/connection. stdio servers skip this check.
   allowedDomains:
     - https://allowed.example.com
+    # The port-specific origin leaves the intentionally blocked 127.0.0.1:8765
+    # allowlist fixture blocked while admitting the dynamic transport fixture.
+    - http://127.0.0.1:8766
 
 mcpServers:
   e2e-memory:
@@ -30,6 +33,8 @@ mcpServers:
     command: node
     args:
       - e2e/setup/fake-mcp-server.js
+    env:
+      E2E_MCP_STATE_PATH: __E2E_MCP_STATE_PATH__
     title: E2E Memory
     description: Local MCP fixture used by mock end-to-end tests.
     timeout: 30000
@@ -38,6 +43,18 @@ mcpServers:
     url: http://127.0.0.1:8765/mcp
     title: E2E HTTP
     description: Local HTTP MCP fixture for allowlist-override e2e tests.
+    timeout: 30000
+  e2e-streamable:
+    type: streamable-http
+    url: http://127.0.0.1:8766/mcp
+    title: E2E Streamable HTTP
+    description: Dynamic real-SDK Streamable HTTP fixture for mock end-to-end tests.
+    timeout: 30000
+  e2e-sse:
+    type: sse
+    url: http://127.0.0.1:8766/sse
+    title: E2E SSE
+    description: Dynamic real-SDK legacy SSE fixture for mock end-to-end tests.
     timeout: 30000
 
 endpoints:

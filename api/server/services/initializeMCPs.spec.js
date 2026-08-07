@@ -42,6 +42,7 @@ jest.mock('./Config', () => ({
 const mockCreateMCPServersRegistry = jest.fn();
 const mockCreateMCPManager = jest.fn();
 const mockMCPManagerInstance = {
+  connectAppServers: jest.fn(),
   getAppToolFunctions: jest.fn(),
 };
 
@@ -80,6 +81,7 @@ describe('initializeMCPs', () => {
     mockCreateMCPServersRegistry.mockReturnValue(undefined);
     mockCreateMCPManager.mockResolvedValue(mockMCPManagerInstance);
     mockMCPManagerInstance.getAppToolFunctions.mockResolvedValue({});
+    mockMCPManagerInstance.connectAppServers.mockResolvedValue(undefined);
     mockMergeAppTools.mockResolvedValue(undefined);
   });
 
@@ -255,6 +257,10 @@ describe('initializeMCPs', () => {
 
       expect(mockMCPManagerInstance.getAppToolFunctions).toHaveBeenCalledTimes(1);
       expect(mockMergeAppTools).toHaveBeenCalledWith(mcpTools);
+      expect(mockMCPManagerInstance.connectAppServers).toHaveBeenCalledTimes(1);
+      expect(mockMergeAppTools.mock.invocationCallOrder[0]).toBeLessThan(
+        mockMCPManagerInstance.connectAppServers.mock.invocationCallOrder[0],
+      );
       expect(logger.info).toHaveBeenCalledWith(
         '[MCP] Initialized with 1 configured server and 2 tools.',
       );
@@ -272,6 +278,16 @@ describe('initializeMCPs', () => {
       expect(logger.info).toHaveBeenCalledWith(
         '[MCP] Initialized with 1 configured server and 0 tools.',
       );
+    });
+
+    it('should connect app servers when startup cache synchronization fails', async () => {
+      const mcpServers = { 'test-server': { type: 'sse', url: 'http://localhost:3001' } };
+      mockGetAppConfig.mockResolvedValue({ mcpConfig: mcpServers });
+      mockMergeAppTools.mockRejectedValueOnce(new Error('cache lock timed out'));
+
+      await expect(initializeMCPs()).rejects.toThrow('cache lock timed out');
+
+      expect(mockMCPManagerInstance.connectAppServers).toHaveBeenCalledTimes(1);
     });
   });
 

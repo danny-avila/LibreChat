@@ -244,6 +244,21 @@ export class MCPManager extends UserConnectionManager {
     return toolFunctions;
   }
 
+  /** Opens eligible app-shared sessions after the inspected startup catalog has been cached. */
+  public async connectAppServers(): Promise<void> {
+    try {
+      const connections = await this.appConnections?.getAll();
+      if (!connections) {
+        return;
+      }
+      await Promise.all(
+        Array.from(connections.values(), (connection) => connection.refreshToolList()),
+      );
+    } catch (error) {
+      logger.warn('[MCP] Failed to establish one or more app connections after inspection', error);
+    }
+  }
+
   /** Returns all available tool functions from all connections available to user */
   public async getServerToolFunctions(
     userId: string,

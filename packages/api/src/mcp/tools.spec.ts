@@ -15,6 +15,16 @@ const cacheableConfig: ParsedServerConfig = {
   source: 'yaml',
 };
 
+const userScopedConfig: ParsedServerConfig = {
+  ...cacheableConfig,
+  requiresOAuth: true,
+};
+
+const lazyConfig: ParsedServerConfig = {
+  ...cacheableConfig,
+  startup: false,
+};
+
 function createMockDeps(overrides: Partial<MCPToolCacheDeps> = {}): MCPToolCacheDeps {
   return {
     getCachedTools: jest.fn().mockResolvedValue(null),
@@ -33,14 +43,14 @@ describe('createMCPToolCacheService', () => {
         [toolName('gone', 'dynamic')]: { type: 'function', function: { name: 'gone' } },
         [toolName('stays', 'dynamic')]: { type: 'function', function: { name: 'stays' } },
         [toolName('other', 'unrelated')]: { type: 'function', function: { name: 'other' } },
-      } as unknown as LCAvailableTools;
+      };
       const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(cached) });
       const service = createMCPToolCacheService(deps);
 
-      const serverTools = {
+      const serverTools: LCAvailableTools = {
         [toolName('stays', 'dynamic')]: { type: 'function', function: { name: 'stays' } },
         [toolName('added', 'dynamic')]: { type: 'function', function: { name: 'added' } },
-      } as unknown as LCAvailableTools;
+      };
 
       await service.replaceAppServerTools({ serverName: 'dynamic', serverTools });
 
@@ -51,9 +61,9 @@ describe('createMCPToolCacheService', () => {
     });
 
     it('clears a server that now reports no tools at all', async () => {
-      const cached = {
+      const cached: LCAvailableTools = {
         [toolName('gone', 'dynamic')]: { type: 'function', function: { name: 'gone' } },
-      } as unknown as LCAvailableTools;
+      };
       const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(cached) });
       const service = createMCPToolCacheService(deps);
 
@@ -65,9 +75,9 @@ describe('createMCPToolCacheService', () => {
     it('starts from an empty cache without failing', async () => {
       const deps = createMockDeps();
       const service = createMCPToolCacheService(deps);
-      const serverTools = {
+      const serverTools: LCAvailableTools = {
         [toolName('first', 'dynamic')]: { type: 'function', function: { name: 'first' } },
-      } as unknown as LCAvailableTools;
+      };
 
       await service.replaceAppServerTools({ serverName: 'dynamic', serverTools });
 
@@ -97,9 +107,23 @@ describe('createMCPToolCacheService', () => {
     it('matches cached keys by the normalized server name', async () => {
       const serverName = 'Dynamic Server';
       const normalized = normalizeServerName(serverName);
-      const cached = {
+      const cached: LCAvailableTools = {
         [toolName('gone', normalized)]: { type: 'function', function: { name: 'gone' } },
-      } as unknown as LCAvailableTools;
+      };
+      const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(cached) });
+      const service = createMCPToolCacheService(deps);
+
+      await service.replaceAppServerTools({ serverName, serverTools: {} });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith({});
+    });
+
+    it('drops legacy keys that still use the raw server name', async () => {
+      const serverName = 'Dynamic Server';
+      const legacyKey = toolName('gone', serverName);
+      const cached: LCAvailableTools = {
+        [legacyKey]: { type: 'function', function: { name: legacyKey } },
+      };
       const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(cached) });
       const service = createMCPToolCacheService(deps);
 
@@ -118,12 +142,12 @@ describe('createMCPToolCacheService', () => {
         }),
       });
       const service = createMCPToolCacheService(deps);
-      const first = {
+      const first: LCAvailableTools = {
         [toolName('one', 'first')]: { type: 'function', function: { name: 'one' } },
-      } as unknown as LCAvailableTools;
-      const second = {
+      };
+      const second: LCAvailableTools = {
         [toolName('two', 'second')]: { type: 'function', function: { name: 'two' } },
-      } as unknown as LCAvailableTools;
+      };
 
       await Promise.all([
         service.replaceAppServerTools({ serverName: 'first', serverTools: first }),
@@ -308,14 +332,18 @@ describe('createMCPToolCacheService', () => {
   });
 
   describe('mergeAppTools', () => {
-    it('no-ops when appTools is empty', async () => {
-      const deps = createMockDeps();
+    it('clears stale app MCP tools when the startup snapshot is empty', async () => {
+      const staleKey = `stale${Constants.mcp_delimiter}removed-server`;
+      const cached: LCAvailableTools = {
+        builtin: { type: 'function', function: { name: 'builtin' } },
+        [staleKey]: { type: 'function', function: { name: staleKey } },
+      };
+      const deps = createMockDeps({ getCachedTools: jest.fn().mockResolvedValue(cached) });
       const { mergeAppTools } = createMCPToolCacheService(deps);
 
       await mergeAppTools({});
 
-      expect(deps.getCachedTools).not.toHaveBeenCalled();
-      expect(deps.setCachedTools).not.toHaveBeenCalled();
+      expect(deps.setCachedTools).toHaveBeenCalledWith({ builtin: cached.builtin });
     });
 
     it('merges app tools with existing cached tools', async () => {
@@ -424,6 +452,41 @@ describe('createMCPToolCacheService', () => {
       });
     });
 
+    it('refreshes the global server slice for an app-shared server', async () => {
+      const deps = createMockDeps();
+      const { cacheMCPServerTools } = createMCPToolCacheService(deps);
+
+      await cacheMCPServerTools({
+        userId: 'u1',
+        serverName: 'brave',
+        serverTools,
+        serverConfig: cacheableConfig,
+      });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith(serverTools);
+      expect(deps.setCachedTools).not.toHaveBeenCalledWith(serverTools, {
+        userId: 'u1',
+        serverName: 'brave',
+      });
+    });
+
+    it('keeps startup-disabled server tools in the user cache', async () => {
+      const deps = createMockDeps();
+      const { cacheMCPServerTools } = createMCPToolCacheService(deps);
+
+      await cacheMCPServerTools({
+        userId: 'u1',
+        serverName: 'lazy',
+        serverTools,
+        serverConfig: lazyConfig,
+      });
+
+      expect(deps.setCachedTools).toHaveBeenCalledWith(serverTools, {
+        userId: 'u1',
+        serverName: 'lazy',
+      });
+    });
+
     it('skips caching for request-scoped servers', async () => {
       const deps = createMockDeps({
         getServerConfig: jest.fn().mockResolvedValue(requestScopedConfig),
@@ -459,10 +522,10 @@ describe('createMCPToolCacheService', () => {
       },
     };
 
-    it('returns cached tools for cacheable servers', async () => {
+    it('returns per-user cached tools for user-scoped servers', async () => {
       const deps = createMockDeps({
         getCachedTools: jest.fn().mockResolvedValue(cachedTools),
-        getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
+        getServerConfig: jest.fn().mockResolvedValue(userScopedConfig),
       });
       const { getMCPServerTools } = createMCPToolCacheService(deps);
 
@@ -472,10 +535,66 @@ describe('createMCPToolCacheService', () => {
       expect(deps.getCachedTools).toHaveBeenCalledWith({ userId: 'u1', serverName: 'brave' });
     });
 
+    it('reads an app-shared server from the global catalog instead of a stale user snapshot', async () => {
+      const staleKey = `stale${Constants.mcp_delimiter}brave`;
+      const currentKey = `current${Constants.mcp_delimiter}brave`;
+      const unrelatedKey = `other${Constants.mcp_delimiter}unrelated`;
+      const stale: LCAvailableTools = {
+        [staleKey]: { type: 'function', function: { name: staleKey } },
+      };
+      const current: LCAvailableTools = {
+        [currentKey]: { type: 'function', function: { name: currentKey } },
+        [unrelatedKey]: { type: 'function', function: { name: unrelatedKey } },
+      };
+      const getCachedTools = jest.fn(async (options?: { userId?: string }) =>
+        options?.userId ? stale : current,
+      );
+      const deps = createMockDeps({
+        getCachedTools,
+        getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
+      });
+      const { getMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await getMCPServerTools('u1', 'brave');
+
+      expect(result).toEqual({ [currentKey]: current[currentKey] });
+      expect(getCachedTools).toHaveBeenCalledWith();
+      expect(getCachedTools).not.toHaveBeenCalledWith({ userId: 'u1', serverName: 'brave' });
+    });
+
+    it('treats a missing app-shared server slice as a miss so a failed startup can recover', async () => {
+      const unrelatedKey = `other${Constants.mcp_delimiter}unrelated`;
+      const globalTools: LCAvailableTools = {
+        [unrelatedKey]: { type: 'function', function: { name: unrelatedKey } },
+      };
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(globalTools),
+        getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
+      });
+      const { getMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await getMCPServerTools('u1', 'brave');
+
+      expect(result).toBeNull();
+    });
+
+    it('reads startup-disabled server tools from the user cache', async () => {
+      const deps = createMockDeps({
+        getCachedTools: jest.fn().mockResolvedValue(cachedTools),
+        getServerConfig: jest.fn().mockResolvedValue(lazyConfig),
+      });
+      const { getMCPServerTools } = createMCPToolCacheService(deps);
+
+      const result = await getMCPServerTools('u1', 'lazy');
+
+      expect(result).toEqual(cachedTools);
+      expect(deps.getCachedTools).toHaveBeenCalledWith({ userId: 'u1', serverName: 'lazy' });
+    });
+
     it('treats a cached empty catalog as a miss so discovery remains enabled', async () => {
       const deps = createMockDeps({
         getCachedTools: jest.fn().mockResolvedValue({}),
-        getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
+        getServerConfig: jest.fn().mockResolvedValue(userScopedConfig),
       });
       const { getMCPServerTools } = createMCPToolCacheService(deps);
 
@@ -515,7 +634,7 @@ describe('createMCPToolCacheService', () => {
     it('returns the same reference for safe server names (no heal pass)', async () => {
       const deps = createMockDeps({
         getCachedTools: jest.fn().mockResolvedValue(cachedTools),
-        getServerConfig: jest.fn().mockResolvedValue(cacheableConfig),
+        getServerConfig: jest.fn().mockResolvedValue(userScopedConfig),
       });
       const { getMCPServerTools } = createMCPToolCacheService(deps);
 

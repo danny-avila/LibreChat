@@ -1895,10 +1895,16 @@ export class MCPConnection extends EventEmitter {
   private subscribeToToolListChanges(): void {
     this.client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
       logger.debug(`${this.getLogPrefix()} Server reported a changed tool list`);
-      this.toolListChangeGeneration++;
-      this.clearToolListRefreshRetry();
-      this.startToolListRefresh();
+      await this.refreshToolList();
     });
+  }
+
+  /** Queues a live tool-list refresh through the same coalescing path used by notifications. */
+  public async refreshToolList(): Promise<void> {
+    this.toolListChangeGeneration++;
+    this.clearToolListRefreshRetry();
+    this.startToolListRefresh();
+    await this.toolListRefreshPromise;
   }
 
   private clearToolListRefreshRetry(): void {

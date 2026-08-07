@@ -115,6 +115,7 @@ describe('MCPManager', () => {
     const mock = {
       has: jest.fn().mockResolvedValue(false),
       get: jest.fn().mockResolvedValue({} as unknown as MCPConnection),
+      getAll: jest.fn().mockResolvedValue(new Map()),
       ...appConnectionsConfig,
     };
     return (
@@ -143,6 +144,17 @@ describe('MCPManager', () => {
       const result = await manager.getAppToolFunctions();
 
       expect(result).toEqual({});
+    });
+
+    it('does not open live connections while collecting the startup snapshot', async () => {
+      const getAll = jest.fn().mockResolvedValue(new Map());
+      mockAppConnections({ getAll });
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({});
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getAppToolFunctions();
+
+      expect(getAll).not.toHaveBeenCalled();
     });
 
     it('should collect tool functions from multiple servers', async () => {
@@ -228,6 +240,22 @@ describe('MCPManager', () => {
       const result = await manager.getAppToolFunctions();
 
       expect(result).toEqual(toolFunctions1);
+    });
+  });
+
+  describe('connectAppServers', () => {
+    it('opens app connections and refreshes their current catalogs', async () => {
+      const refreshToolList = jest.fn().mockResolvedValue(undefined);
+      const getAll = jest
+        .fn()
+        .mockResolvedValue(new Map([['dynamic', { refreshToolList } as MCPConnection]]));
+      mockAppConnections({ getAll });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.connectAppServers();
+
+      expect(getAll).toHaveBeenCalledTimes(1);
+      expect(refreshToolList).toHaveBeenCalledTimes(1);
     });
   });
 

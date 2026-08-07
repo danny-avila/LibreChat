@@ -4,10 +4,23 @@ import path from 'path';
 import { getLocalE2EEnv, getE2EBaseURL } from './setup/env';
 
 const rootPath = path.resolve(__dirname, '..');
-const serverPath = path.resolve(rootPath, 'e2e/setup/start-server.js');
+const replicaCount = Number(process.env.E2E_REPLICAS || '1');
+if (replicaCount !== 1 && replicaCount !== 2) {
+  throw new Error(`E2E_REPLICAS must be 1 or 2, received ${process.env.E2E_REPLICAS}`);
+}
+const serverPath = path.resolve(
+  rootPath,
+  replicaCount === 2 ? 'e2e/setup/start-server-cluster.js' : 'e2e/setup/start-server.js',
+);
 const mcpHttpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-http-server.js');
+const dynamicMcpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-dynamic-network-server.js');
 /** Must match the `e2e-http` server URL in e2e/config/librechat.e2e.yaml. */
 const MCP_HTTP_PORT = process.env.E2E_MCP_HTTP_PORT || '8765';
+/** Must match the dynamic Streamable HTTP and SSE URLs in the e2e config template. */
+const MCP_DYNAMIC_PORT = process.env.E2E_MCP_DYNAMIC_PORT || '8766';
+const MCP_STATE_PATH =
+  process.env.E2E_MCP_STATE_PATH ||
+  path.resolve(rootPath, 'e2e/specs/.test-results/mcp-tool-state.json');
 const labelServerPath = path.resolve(rootPath, 'e2e/setup/fake-label-server.js');
 /** The template's custom-endpoint `baseURL`s hard-code 8889;
  *  `writeRuntimeMockConfig` substitutes any override into the generated copy. */
@@ -43,6 +56,7 @@ const baseEnv = {
   DEPLOYMENT_SKILLS_DIR: deploymentSkillsPath,
   /** Loaded in-process by `@librechat/api`'s `createRun` to swap in a fake model. */
   LIBRECHAT_TEST_RUN_HOOK: fakeModelHookPath,
+  E2E_MCP_STATE_PATH: MCP_STATE_PATH,
   ...vanillaOverrides,
 };
 
@@ -75,8 +89,14 @@ function writeRuntimeMockConfig() {
   if (LABEL_PORT !== '8889') {
     config = config.split('127.0.0.1:8889').join(`127.0.0.1:${LABEL_PORT}`);
   }
+  if (MCP_DYNAMIC_PORT !== '8766') {
+    config = config.split('127.0.0.1:8766').join(`127.0.0.1:${MCP_DYNAMIC_PORT}`);
+  }
+  config = config.replace('__E2E_MCP_STATE_PATH__', JSON.stringify(MCP_STATE_PATH));
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, config);
+  fs.mkdirSync(path.dirname(MCP_STATE_PATH), { recursive: true });
+  fs.writeFileSync(MCP_STATE_PATH, `${JSON.stringify({ revision: 0, tool: null })}\n`);
 }
 
 function neutralizeCredentialEnv(env: NodeJS.ProcessEnv, keep: Set<string>) {
@@ -148,20 +168,25 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `node ${serverPath}`,
-      cwd: rootPath,
-      url: baseURL,
-      stdout: 'pipe',
-      ignoreHTTPSErrors: true,
-      timeout: 120_000,
-      reuseExistingServer: false,
-    },
-    {
       // URL-based MCP fixture for the allowlist-override spec (its health route is GET /).
       command: `node ${mcpHttpServerPath}`,
       cwd: rootPath,
       env: { ...process.env, E2E_MCP_HTTP_PORT: MCP_HTTP_PORT },
       url: `http://127.0.0.1:${MCP_HTTP_PORT}/`,
+      stdout: 'pipe',
+      timeout: 60_000,
+      reuseExistingServer: false,
+    },
+    {
+      // One real SDK server exposes both current HTTP and legacy SSE transports.
+      command: `node ${dynamicMcpServerPath}`,
+      cwd: rootPath,
+      env: {
+        ...process.env,
+        E2E_MCP_DYNAMIC_PORT: MCP_DYNAMIC_PORT,
+        E2E_MCP_STATE_PATH: MCP_STATE_PATH,
+      },
+      url: `http://127.0.0.1:${MCP_DYNAMIC_PORT}/`,
       stdout: 'pipe',
       timeout: 60_000,
       reuseExistingServer: false,
@@ -174,6 +199,17 @@ export default defineConfig({
       url: `http://127.0.0.1:${LABEL_PORT}/`,
       stdout: 'pipe',
       timeout: 60_000,
+      reuseExistingServer: false,
+    },
+    {
+      // Start one LibreChat process, or a two-process topology behind a test-only proxy, after the
+      // network fixtures so inspection and persistent connections agree.
+      command: `node ${serverPath}`,
+      cwd: rootPath,
+      url: baseURL,
+      stdout: 'pipe',
+      ignoreHTTPSErrors: true,
+      timeout: 120_000,
       reuseExistingServer: false,
     },
   ],

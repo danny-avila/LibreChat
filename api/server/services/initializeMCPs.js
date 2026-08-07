@@ -61,7 +61,11 @@ async function initializeMCPs() {
 
     if (mcpServers && Object.keys(mcpServers).length > 0) {
       const mcpTools = (await mcpManager.getAppToolFunctions()) || {};
-      await mergeAppTools(mcpTools);
+      try {
+        await mergeAppTools(mcpTools);
+      } finally {
+        await mcpManager.connectAppServers();
+      }
       const serverCount = Object.keys(mcpServers).length;
       const toolCount = Object.keys(mcpTools).length;
       logger.info(
