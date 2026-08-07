@@ -34,7 +34,8 @@ router.get('/', async (req, res) => {
       messageId,
       search,
     } = req.query;
-    const pageSize = parseInt(pageSizeRaw, 10) || 25;
+    const parsedPageSize = parseInt(pageSizeRaw, 10);
+    const pageSize = Number.isFinite(parsedPageSize) && parsedPageSize > 0 ? parsedPageSize : 25;
 
     let response;
     const sortField = ['endpoint', 'createdAt', 'updatedAt'].includes(sortBy)
@@ -51,9 +52,10 @@ router.get('/', async (req, res) => {
         { sortField, sortOrder, limit: pageSize, cursor },
       );
     } else if (search) {
+      const searchLimit = Math.min(pageSize, MEILI_SEARCH_LIMIT);
       const searchResults = await db.searchMessages(
         search,
-        { filter: `user = "${user}"`, limit: MEILI_SEARCH_LIMIT },
+        { filter: `user = "${user}"`, limit: searchLimit },
         true,
       );
 
