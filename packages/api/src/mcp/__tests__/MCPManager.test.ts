@@ -245,10 +245,13 @@ describe('MCPManager', () => {
 
   describe('connectAppServers', () => {
     it('opens app connections and refreshes their current catalogs', async () => {
-      const refreshToolList = jest.fn().mockResolvedValue(undefined);
-      const getAll = jest
-        .fn()
-        .mockResolvedValue(new Map([['dynamic', { refreshToolList } as MCPConnection]]));
+      const connection = new MCPConnection({
+        serverName: 'dynamic',
+        serverConfig: { type: 'streamable-http', url: 'http://localhost/mcp' },
+        useSSRFProtection: false,
+      });
+      const refreshToolList = jest.spyOn(connection, 'refreshToolList').mockResolvedValue();
+      const getAll = jest.fn().mockResolvedValue(new Map([['dynamic', connection]]));
       mockAppConnections({ getAll });
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
