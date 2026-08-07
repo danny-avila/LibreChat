@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { EndpointFileConfig, FileConfig } from './types/files';
+import type { EndpointFileConfig, FileConfig, RegexLike } from './types/files';
 import { EModelEndpoint, isAgentsEndpoint, isDocumentSupportedProvider } from './schemas';
 import { normalizeEndpointName } from './utils';
 
@@ -183,6 +183,32 @@ export const bedrockDocumentMimeTypes: readonly string[] = Object.keys(bedrockDo
 /** File extensions accepted by Bedrock document uploads (for input accept attributes) */
 export const bedrockDocumentExtensions =
   '.pdf,.csv,.doc,.docx,.xls,.xlsx,.html,.htm,.txt,.md,application/pdf,text/csv,application/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/html,text/plain,text/markdown';
+
+/** Textual `application/*` MIME types that can be decoded and sent as plain text */
+const textualApplicationTypes = new Set([
+  'application/json',
+  'application/xml',
+  'application/yaml',
+  'application/sql',
+  'application/typescript',
+  'application/x-sh',
+  'application/csv',
+]);
+
+/**
+ * MIME types the Anthropic Messages API accepts as a plain-text document source
+ * (`source.type: 'text'`)
+ */
+export const isAnthropicTextDocumentType = (mimeType?: string): boolean =>
+  mimeType != null && (mimeType.startsWith('text/') || textualApplicationTypes.has(mimeType));
+
+/**
+ * MIME types the Anthropic Messages API document path can send to the model
+ * (mirrors `isBedrockDocumentType`): PDF via base64, textual types via a
+ * plain-text document source. All other types are rejected with a provider 400.
+ */
+export const isAnthropicDocumentType = (mimeType?: string): boolean =>
+  mimeType === 'application/pdf' || isAnthropicTextDocumentType(mimeType);
 
 export const excelMimeTypes =
   /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
@@ -464,7 +490,7 @@ export const fileConfig = {
   stt: {
     supportedMimeTypes: defaultSTTMimeTypes,
   },
-  checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
+  checkType: function (fileType: string, supportedTypes: RegexLike[] = supportedMimeTypes) {
     return supportedTypes.some((regex) => regex.test(fileType));
   },
 };
@@ -517,20 +543,46 @@ export const fileConfigSchema = z.object({
 
 export type TFileConfig = z.infer<typeof fileConfigSchema>;
 
-/** Helper function to safely convert string patterns to RegExp objects */
-export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
-  patterns.reduce((acc: RegExp[], pattern) => {
+/**
+ * Compiler for admin-supplied MIME patterns. Defaults to native `RegExp`, which browser
+ * builds keep so no extra dependency is bundled. The server swaps in a linear-time engine
+ * via `setFileConfigRegexCompiler` so an admin-authored catastrophic-backtracking pattern
+ * cannot ReDoS the shared event loop when tested against an uploaded file's MIME type.
+ */
+let compileMimeRegex: (pattern: string) => RegexLike = (pattern) => new RegExp(pattern);
+
+/** Override the MIME-pattern compiler; the server injects a linear-time engine at startup. */
+export const setFileConfigRegexCompiler = (compile: (pattern: string) => RegexLike): void => {
+  compileMimeRegex = compile;
+};
+
+/** Returned when every configured pattern fails to compile, so consumers that read an empty
+ *  allowlist as "no restriction" fail closed instead of allowing every file. */
+const rejectAllMimeMatcher: RegexLike = { test: () => false };
+
+/** Helper function to safely convert string patterns to matcher objects */
+export const convertStringsToRegex = (patterns: string[]): RegexLike[] => {
+  const compiled = patterns.reduce((acc: RegexLike[], pattern) => {
     try {
-      const regex = new RegExp(pattern);
-      acc.push(regex);
+      acc.push(compileMimeRegex(pattern));
     } catch (error) {
       console.error(`Invalid regex pattern "${pattern}" skipped.`, error);
     }
     return acc;
-  }, []);
+  }, [] as RegexLike[]);
+  // Every configured pattern was dropped. Return an explicit reject-all matcher so consumers that
+  // read an empty allowlist as "no restriction" fail closed instead of allowing every file.
+  if (patterns.length > 0 && compiled.length === 0) {
+    console.error(
+      `All ${patterns.length} MIME type pattern(s) were invalid and skipped; the resulting allowlist rejects every file.`,
+    );
+    return [rejectAllMimeMatcher];
+  }
+  return compiled;
+};
 
 /** Detects whether the given MIME type patterns accept all file types (e.g., `.*` or `.+`). */
-export const isPermissiveMimeConfig = (types?: RegExp[]): boolean => {
+export const isPermissiveMimeConfig = (types?: RegexLike[]): boolean => {
   if (!types || types.length === 0) {
     return false;
   }
@@ -688,7 +740,7 @@ const isRepresentable = (mimeType: string): boolean =>
  * picker never hides a file the path would have accepted.
  */
 const buildMimeAccept = (
-  types: RegExp[],
+  types: RegexLike[],
   { categories, documentMimeTypes }: MimeUploadCapability,
 ): string | undefined => {
   const permittedSet = new Set<MimeUploadCategory>(categories);
@@ -766,7 +818,7 @@ const buildMimeAccept = (
  * `supportedMimeTypes` on upload.
  */
 export const getConfiguredMimeAccept = (
-  types: RegExp[] | undefined,
+  types: RegexLike[] | undefined,
   capability: MimeUploadCapability,
 ): string | undefined => {
   /** Referential identity with the built-in list signals an unconfigured endpoint (keep provider filter). */

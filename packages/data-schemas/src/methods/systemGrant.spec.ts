@@ -1473,5 +1473,114 @@ describe('systemGrant methods', () => {
 
       expect(held.size).toBe(0);
     });
+
+    it('resolves a section-scoped read capability when the principal holds the same-section manage grant', async () => {
+      const sectionManager = new Types.ObjectId();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: sectionManager,
+        capability: 'manage:configs:endpoints' as SystemCapability,
+      });
+
+      const held = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.USER, principalId: sectionManager }],
+        capabilities: ['read:configs:endpoints' as SystemCapability],
+      });
+
+      expect(held).toEqual(new Set(['read:configs:endpoints']));
+    });
+
+    it("does not resolve a read capability from a different section's manage grant", async () => {
+      const otherSectionManager = new Types.ObjectId();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: otherSectionManager,
+        capability: 'manage:configs:balance' as SystemCapability,
+      });
+
+      const held = await methods.getHeldCapabilities({
+        principals: [{ principalType: PrincipalType.USER, principalId: otherSectionManager }],
+        capabilities: ['read:configs:endpoints' as SystemCapability],
+      });
+
+      expect(held.size).toBe(0);
+    });
+  });
+
+  describe('hasAnyConfigReadAccess', () => {
+    it('returns true for a broad read:configs holder', async () => {
+      const userId = new Types.ObjectId();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        capability: SystemCapabilities.READ_CONFIGS,
+      });
+
+      const result = await methods.hasAnyConfigReadAccess({
+        principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+      });
+      expect(result).toBe(true);
+    });
+
+    it('returns true for a broad manage:configs holder, which implies read', async () => {
+      const userId = new Types.ObjectId();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        capability: SystemCapabilities.MANAGE_CONFIGS,
+      });
+
+      const result = await methods.hasAnyConfigReadAccess({
+        principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+      });
+      expect(result).toBe(true);
+    });
+
+    it('returns true for a section-scoped read:configs:<section> holder', async () => {
+      const userId = new Types.ObjectId();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        capability: 'read:configs:endpoints' as SystemCapability,
+      });
+
+      const result = await methods.hasAnyConfigReadAccess({
+        principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+      });
+      expect(result).toBe(true);
+    });
+
+    it('returns true for a section-scoped manage:configs:<section> holder', async () => {
+      const userId = new Types.ObjectId();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        capability: 'manage:configs:endpoints' as SystemCapability,
+      });
+
+      const result = await methods.hasAnyConfigReadAccess({
+        principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+      });
+      expect(result).toBe(true);
+    });
+
+    it('returns false for a caller with no config capability at all', async () => {
+      const userId = new Types.ObjectId();
+      await methods.grantCapability({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        capability: SystemCapabilities.READ_USAGE,
+      });
+
+      const result = await methods.hasAnyConfigReadAccess({
+        principals: [{ principalType: PrincipalType.USER, principalId: userId }],
+      });
+      expect(result).toBe(false);
+    });
+
+    it('returns false for an empty principals array', async () => {
+      const result = await methods.hasAnyConfigReadAccess({ principals: [] });
+      expect(result).toBe(false);
+    });
   });
 });

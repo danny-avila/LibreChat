@@ -1,6 +1,11 @@
 import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
-import type { TModelSpec, TStartupConfig, TEndpointsConfig } from 'librechat-data-provider';
-import { getDefaultModelSpec } from '../endpoints';
+import type {
+  TModelSpec,
+  TStartupConfig,
+  TEndpointsConfig,
+  TAgentsMap,
+} from 'librechat-data-provider';
+import { getDefaultModelSpec, defaultSpecAwaitsAgents } from '../endpoints';
 
 const createModelSpec = (name: string, overrides: Partial<TModelSpec> = {}): TModelSpec =>
   ({
@@ -386,8 +391,68 @@ describe('getDefaultModelSpec', () => {
       expect(result).toEqual({ softDefault: softSpec });
     });
 
-    it('applies the soft default despite a stored agent when addedEndpoints only includes agents', () => {
+    it('yields to a stored agent when addedEndpoints only includes agents', () => {
       persistAgentSelection('agent_abc');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], {
+          prioritize: false,
+          addedEndpoints: [EModelEndpoint.agents],
+        }),
+        fullEndpointsConfig,
+      );
+
+      expect(result).toBeUndefined();
+    });
+
+    it('yields to a stored agent when agents is the only endpoint', () => {
+      persistAgentSelection('agent_abc');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], { prioritize: false }),
+        agentsOnlyEndpointsConfig,
+      );
+
+      expect(result).toBeUndefined();
+    });
+
+    it('yields to a stored agent under a prioritized agents-only allow-list', () => {
+      persistAgentSelection('agent_abc');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], {
+          addedEndpoints: [EModelEndpoint.agents],
+        }),
+        agentsOnlyEndpointsConfig,
+      );
+
+      expect(result).toBeUndefined();
+    });
+
+    it('yields to a stored assistant when assistants is the only added endpoint', () => {
+      localStorage.setItem(
+        `${LocalStorageKeys.LAST_CONVO_SETUP}_0`,
+        JSON.stringify({
+          endpoint: EModelEndpoint.assistants,
+          assistant_id: 'asst_abc',
+          model: null,
+          spec: null,
+        }),
+      );
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], {
+          prioritize: false,
+          addedEndpoints: [EModelEndpoint.assistants],
+        }),
+        { [EModelEndpoint.assistants]: { order: 0 } } as TEndpointsConfig,
+      );
+
+      expect(result).toBeUndefined();
+    });
+
+    it('applies the soft default over a stored ephemeral agent id in an agents-only allow-list', () => {
+      persistAgentSelection(Constants.EPHEMERAL_AGENT_ID);
 
       const result = getDefaultModelSpec(
         createStartupConfig([otherSpec, softSpec], {
@@ -400,12 +465,28 @@ describe('getDefaultModelSpec', () => {
       expect(result).toEqual({ softDefault: softSpec });
     });
 
-    it('applies the soft default despite a stored agent when agents is the only endpoint', () => {
+    it('applies the soft default over endpoint → model residue in an agents-only allow-list', () => {
+      persistEphemeralSelection('bedrock', 'claude-sonnet-4-6');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], {
+          addedEndpoints: [EModelEndpoint.agents],
+        }),
+        agentsOnlyEndpointsConfig,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+
+    it('applies the soft default over a stored agent when the endpoints config lacks agents', () => {
       persistAgentSelection('agent_abc');
 
       const result = getDefaultModelSpec(
-        createStartupConfig([otherSpec, softSpec], { prioritize: false }),
-        agentsOnlyEndpointsConfig,
+        createStartupConfig([otherSpec, softSpec], {
+          prioritize: false,
+          addedEndpoints: [EModelEndpoint.agents],
+        }),
+        { [EModelEndpoint.openAI]: { order: 0 } } as TEndpointsConfig,
       );
 
       expect(result).toEqual({ softDefault: softSpec });
@@ -448,7 +529,7 @@ describe('getDefaultModelSpec', () => {
     });
 
     it('detects an agents-only allow-list before the endpoints config loads', () => {
-      persistAgentSelection('agent_abc');
+      persistEphemeralSelection('bedrock', 'claude-sonnet-4-6');
 
       const result = getDefaultModelSpec(
         createStartupConfig([otherSpec, softSpec], {
@@ -460,5 +541,157 @@ describe('getDefaultModelSpec', () => {
 
       expect(result).toEqual({ softDefault: softSpec });
     });
+
+    it('yields to a stored agent in an agents-only allow-list before the endpoints config loads', () => {
+      persistAgentSelection('agent_abc');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], {
+          prioritize: false,
+          addedEndpoints: [EModelEndpoint.agents],
+        }),
+        undefined,
+      );
+
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('stored agent picks validated against the agent list', () => {
+    const softSpec = createModelSpec('soft-spec', { softDefault: true });
+    const liveAgentsMap = { agent_123: { id: 'agent_123' } } as unknown as TAgentsMap;
+
+    it('yields to a stored agent present in the loaded agent list', () => {
+      persistAgentSelection('agent_123');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([softSpec]),
+        fullEndpointsConfig,
+        liveAgentsMap,
+      );
+
+      expect(result).toBeUndefined();
+    });
+
+    it('re-arms the soft default when the stored agent is missing from the agent list', () => {
+      persistAgentSelection('agent_other_org');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([softSpec]),
+        fullEndpointsConfig,
+        liveAgentsMap,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+
+    it('re-arms the soft default over a stored agent when the agent list is empty', () => {
+      persistAgentSelection('agent_123');
+
+      const result = getDefaultModelSpec(createStartupConfig([softSpec]), fullEndpointsConfig, {});
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+
+    it('re-arms in an agents-only allow-list when the stored agent is missing', () => {
+      persistAgentSelection('agent_other_org');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([softSpec], { addedEndpoints: [EModelEndpoint.agents] }),
+        agentsOnlyEndpointsConfig,
+        liveAgentsMap,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+
+    it('trusts the stored agent while the agent list is unknown', () => {
+      persistAgentSelection('agent_other_org');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([softSpec]),
+        fullEndpointsConfig,
+        undefined,
+      );
+
+      expect(result).toBeUndefined();
+    });
+  });
+});
+
+describe('defaultSpecAwaitsAgents', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const softSpec = createModelSpec('soft-spec', { softDefault: true });
+
+  it('awaits the agent list for a stored agent pick with a soft default configured', () => {
+    persistAgentSelection('agent_123');
+
+    expect(defaultSpecAwaitsAgents(createStartupConfig([softSpec]), fullEndpointsConfig)).toBe(
+      true,
+    );
+  });
+
+  it('does not await without a stored agent pick', () => {
+    expect(defaultSpecAwaitsAgents(createStartupConfig([softSpec]), fullEndpointsConfig)).toBe(
+      false,
+    );
+  });
+
+  it('does not await when a stored spec decides first', () => {
+    persistAppliedSpec(softSpec);
+
+    expect(defaultSpecAwaitsAgents(createStartupConfig([softSpec]), fullEndpointsConfig)).toBe(
+      false,
+    );
+  });
+
+  it('does not await when a hard default decides first', () => {
+    const hardSpec = createModelSpec('hard-spec', { default: true });
+    persistAgentSelection('agent_123');
+
+    expect(
+      defaultSpecAwaitsAgents(createStartupConfig([hardSpec, softSpec]), fullEndpointsConfig),
+    ).toBe(false);
+  });
+
+  it('does not await without a soft default configured', () => {
+    const regularSpec = createModelSpec('regular-spec');
+    persistAgentSelection('agent_123');
+
+    expect(defaultSpecAwaitsAgents(createStartupConfig([regularSpec]), fullEndpointsConfig)).toBe(
+      false,
+    );
+  });
+
+  it('does not await when the endpoints config lacks agents', () => {
+    persistAgentSelection('agent_123');
+
+    expect(
+      defaultSpecAwaitsAgents(createStartupConfig([softSpec]), {
+        [EModelEndpoint.openAI]: { order: 0 },
+      } as TEndpointsConfig),
+    ).toBe(false);
+  });
+
+  it('does not await for an ephemeral stored agent id', () => {
+    persistAgentSelection('ephemeral_agent_123');
+
+    expect(defaultSpecAwaitsAgents(createStartupConfig([softSpec]), fullEndpointsConfig)).toBe(
+      false,
+    );
+  });
+
+  it('does not await when model selection is disabled', () => {
+    persistAgentSelection('agent_123');
+
+    expect(
+      defaultSpecAwaitsAgents(
+        createStartupConfig([softSpec], { modelSelect: false }),
+        fullEndpointsConfig,
+      ),
+    ).toBe(false);
   });
 });

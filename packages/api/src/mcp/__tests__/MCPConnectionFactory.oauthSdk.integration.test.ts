@@ -139,6 +139,8 @@ async function storeTokens(
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none'],
     scopes_supported: scope.split(/\s+/).filter(Boolean),
+    server_url: server.url,
+    client_source: 'dynamic',
     resource: server.resourceUrl,
   };
 

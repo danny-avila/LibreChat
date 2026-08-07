@@ -67,6 +67,8 @@ jest.mock('~/components/Chat/Messages/SearchMessage', () => ({
   ),
 }));
 jest.mock('~/utils', () => ({ cn: (...a: unknown[]) => a.filter(Boolean).join(' ') }));
+jest.mock('jotai', () => ({ useAtomValue: () => 'text-base' }));
+jest.mock('~/store/fontSize', () => ({ fontSizeAtom: {} }));
 
 type NavEntry = { id: string; index: number; isUser: boolean; isEnd: boolean; preview: string };
 type NavProps = {
@@ -107,6 +109,7 @@ const queryResult = (over: Record<string, unknown> = {}) => ({
   fetchNextPage: jest.fn(),
   isFetchingNextPage: false,
   hasNextPage: false,
+  isPreviousData: false,
   ...over,
 });
 
@@ -146,14 +149,45 @@ describe('Search route', () => {
       queryResult({ data: { pages: [{ messages: [], nextCursor: null }] } }),
     );
     render(<Search />);
-    expect(screen.getByText('com_ui_nothing_found')).toBeInTheDocument();
+    expect(screen.getAllByText('com_ui_nothing_found').length).toBeGreaterThan(0);
   });
 
-  it('renders nothing when there is no query', () => {
+  it('shows the spinner (not a false nothing-found) when stale empty data is held during a refetch', () => {
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(
+      queryResult({
+        data: { pages: [{ messages: [], nextCursor: null }] },
+        isPreviousData: true,
+      }),
+    );
+    render(<Search />);
+    expect(screen.getByTestId('spinner')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_nothing_found')).not.toBeInTheDocument();
+  });
+
+  it('renders nothing when there is no query and the user is idle', () => {
     mockUseRecoilValue.mockReturnValue(searchState({ debouncedQuery: '' }));
     mockUseQuery.mockReturnValue(queryResult({ data: undefined }));
     const { container } = render(<Search />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('shows the spinner during the initial debounce (query typed, not yet debounced)', () => {
+    mockUseRecoilValue.mockReturnValue(
+      searchState({ query: 'zephyrine', debouncedQuery: '', isTyping: true }),
+    );
+    mockUseQuery.mockReturnValue(queryResult({ data: undefined }));
+    render(<Search />);
+    expect(screen.getByTestId('spinner')).toBeInTheDocument();
+  });
+
+  it('announces empty results through a live region', () => {
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(
+      queryResult({ data: { pages: [{ messages: [], nextCursor: null }] } }),
+    );
+    render(<Search />);
+    expect(screen.getByRole('alert')).toHaveTextContent('com_ui_nothing_found');
   });
 
   it('fetches the next page when scrolled near the bottom', () => {
@@ -165,6 +199,38 @@ describe('Search route', () => {
       (globalThis as unknown as Record<string, () => void>).__triggerRowsRendered();
     });
     expect(fetchNextPage).toHaveBeenCalled();
+  });
+
+  it('does NOT paginate the outgoing query while the user is still typing', () => {
+    const fetchNextPage = jest.fn();
+    mockUseRecoilValue.mockReturnValue(searchState({ isTyping: true }));
+    mockUseQuery.mockReturnValue(queryResult({ hasNextPage: true, fetchNextPage }));
+    render(<Search />);
+    act(() => {
+      (globalThis as unknown as Record<string, () => void>).__triggerRowsRendered();
+    });
+    expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+
+  it('does NOT paginate while previous-query results are still mounted (refetch in flight)', () => {
+    const fetchNextPage = jest.fn();
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(
+      queryResult({ hasNextPage: true, isPreviousData: true, fetchNextPage }),
+    );
+    render(<Search />);
+    act(() => {
+      (globalThis as unknown as Record<string, () => void>).__triggerRowsRendered();
+    });
+    expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+
+  it('renders a trailing spacer row so the last result clears the bottom overlay', () => {
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(queryResult());
+    render(<Search />);
+    expect(screen.getByText('row one')).toBeInTheDocument();
+    expect(screen.getByTestId('search-footer')).toBeInTheDocument();
   });
 
   it('passes an entry per result (plus a trailing end marker) to the nav rail', () => {

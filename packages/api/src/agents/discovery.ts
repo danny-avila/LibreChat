@@ -12,6 +12,7 @@ import type { ServerRequest } from '~/types';
 import { validateAgentModel as defaultValidateAgentModel } from './validation';
 import { initializeAgent as defaultInitializeAgent } from './initialize';
 import { createEdgeCollector, filterOrphanedEdges } from './edges';
+import { isFatalAgentInitializationError } from './errors';
 import { createSequentialChainEdges } from './chain';
 
 /**
@@ -99,10 +100,17 @@ export interface DiscoverConnectedAgentsParams {
   /**
    * Run-level `run_in_background` capability gate. Forwarded verbatim so a
    * handoff/connected agent's own event-driven tools with
-   * `tool_options[tool].run_in_background` get the injected param + poll tool,
-   * matching how the same agent behaves when run as the primary.
+   * `tool_options[tool].run_in_background` (and its background-native code
+   * pair) get the injected param + poll tool, matching how the same agent
+   * behaves when run as the primary.
    */
   backgroundToolsAvailable?: InitializeAgentParams['backgroundToolsAvailable'];
+  /**
+   * Run-level `tool_intents` capability gate. Forwarded verbatim so a
+   * handoff/connected agent's opted-in tools get the injected `intent` param,
+   * matching how the same agent behaves when run as the primary.
+   */
+  toolIntentsAvailable?: InitializeAgentParams['toolIntentsAvailable'];
 }
 
 export interface DiscoverConnectedAgentsDeps {
@@ -173,6 +181,7 @@ export async function discoverConnectedAgents(
     defaultActiveOnShare,
     codeEnvAvailable,
     backgroundToolsAvailable,
+    toolIntentsAvailable,
     statefulSessionsAvailable,
     memoryAvailable,
   } = params;
@@ -279,6 +288,7 @@ export async function discoverConnectedAgents(
         defaultActiveOnShare,
         codeEnvAvailable,
         backgroundToolsAvailable,
+        toolIntentsAvailable,
         statefulSessionsAvailable,
         memoryAvailable,
       },
@@ -318,6 +328,9 @@ export async function discoverConnectedAgents(
         collectEdges(agent.edges);
       }
     } catch (err) {
+      if (isFatalAgentInitializationError(err)) {
+        throw err;
+      }
       logger.error(`[discoverConnectedAgents] Error processing agent ${agentId}:`, err);
       markSkipped(agentId);
     }
@@ -332,6 +345,9 @@ export async function discoverConnectedAgents(
       try {
         await processAgent(agentId);
       } catch (err) {
+        if (isFatalAgentInitializationError(err)) {
+          throw err;
+        }
         logger.error(`[discoverConnectedAgents] Error processing chain agent ${agentId}:`, err);
         markSkipped(agentId);
       }

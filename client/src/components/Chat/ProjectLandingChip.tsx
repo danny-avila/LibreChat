@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { Folder, X } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { ControlCombobox, TooltipAnchor } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
 import type { OptionWithIcon } from '~/common';
@@ -45,7 +45,9 @@ export default function ProjectLandingChip({ project }: { project: TChatProject 
       } else {
         nextParams.delete('projectId');
       }
-      setSearchParams(nextParams, { replace: true });
+      /** flushSync commits the URL with the draft update in one pass; a deferred
+       *  (startTransition) URL lets ChatRoute see draft≠URL and re-init the scope */
+      setSearchParams(nextParams, { replace: true, flushSync: true });
     },
     [conversation, setConversation, searchParams, setSearchParams],
   );

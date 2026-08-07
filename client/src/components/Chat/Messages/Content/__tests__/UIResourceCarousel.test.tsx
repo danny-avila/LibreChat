@@ -24,6 +24,7 @@ jest.mock('~/Providers', () => ({
 // Mock handleUIAction utility
 jest.mock('~/utils', () => ({
   handleUIAction: jest.fn(),
+  cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
 }));
 
 // Mock scrollTo

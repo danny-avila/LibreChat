@@ -2,7 +2,13 @@ import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } 
 import { useRecoilValue } from 'recoil';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
 import { ArrowDown, ChevronRight, Maximize2, Minimize2, Users } from 'lucide-react';
-import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import {
+  Button,
+  OGDialog,
+  OGDialogTitle,
+  OGDialogContent,
+  OGDialogDescription,
+} from '@librechat/client';
 import type { Agents, TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
@@ -16,7 +22,9 @@ import { MessageContext } from '~/Providers/MessageContext';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { subagentProgressByToolCallId } from '~/store';
 import { useAgentsMapContext } from '~/Providers';
+import { useMCPServerNames } from '~/hooks/MCP';
 import { AttachmentGroup } from './Attachment';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import Reasoning from './Reasoning';
 import Text from './Text';
@@ -251,9 +259,13 @@ export default function SubagentCall({
   /** Base verb-only label ("Running agent" / "Ran agent"). The agent name
    *  is rendered separately as a muted sub-label so "agent" stays a
    *  constant visual anchor regardless of name length. */
+  /** Model-authored live label (subagent carries `intent` natively); wins
+   *  over the generic verb, never over error/cancellation framing. */
+  const intent = useToolCallIntent(args);
   const getHeaderText = () => {
     if (hasError) return localize('com_ui_subagent_errored');
     if (cancelled) return localize('com_ui_subagent_cancelled');
+    if (intent != null) return intent;
     if (running) return localize('com_ui_subagent_running');
     return localize('com_ui_subagent_complete');
   };
@@ -465,7 +477,7 @@ export default function SubagentCall({
           <div
             className={cn(
               'flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full',
-              running && !subagentAgent && 'animate-pulse text-primary',
+              running && !subagentAgent && 'animate-pulse text-text-primary',
             )}
             aria-hidden="true"
           >
@@ -483,7 +495,9 @@ export default function SubagentCall({
               <Users size={14} />
             )}
           </div>
-          <span className="shrink-0">{headerText}</span>
+          <span className="min-w-0 truncate" title={headerText}>
+            {headerText}
+          </span>
           {subagentNameLabel ? (
             <span
               className="min-w-0 flex-1 truncate font-normal text-text-secondary"
@@ -539,14 +553,15 @@ export default function SubagentCall({
 
           <div className="relative min-h-0 flex-1 border-t border-border-light bg-surface-primary">
             {!isAtBottom && (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={scrollDialogToBottom}
                 aria-label={localize('com_ui_subagent_scroll_to_bottom')}
-                className="absolute bottom-3 right-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
+                className="absolute bottom-3 right-4 z-10 h-8 w-8 rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
               >
                 <ArrowDown size={16} aria-hidden="true" />
-              </button>
+              </Button>
             )}
             <div
               ref={scrollRef}
@@ -633,14 +648,15 @@ function SubagentPrompt({
         <h3 id={headingId} className="text-sm font-medium text-text-primary">
           {localize('com_ui_prompt')}
         </h3>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={onToggle}
           aria-controls={contentId}
           aria-expanded={expanded}
           aria-label={toggleLabel}
           title={toggleLabel}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-text-secondary transition hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-ring"
+          className="h-8 gap-1.5 rounded-md px-2 text-xs font-medium text-text-secondary transition hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-text-primary"
         >
           {expanded ? (
             <Minimize2 size={14} aria-hidden="true" />
@@ -648,7 +664,7 @@ function SubagentPrompt({
             <Maximize2 size={14} aria-hidden="true" />
           )}
           <span className="hidden sm:inline">{toggleLabel}</span>
-        </button>
+        </Button>
       </div>
       <div
         id={contentId}
@@ -657,7 +673,7 @@ function SubagentPrompt({
           expanded ? 'overflow-visible' : 'max-h-32 overflow-hidden',
         )}
       >
-        <div className="markdown prose prose-sm message-content light dark:prose-invert w-full max-w-none break-words text-text-primary dark:text-gray-100">
+        <div className="markdown prose prose-sm message-content light dark:prose-invert w-full max-w-none break-words text-text-primary">
           <MarkdownLite content={prompt} codeExecution={false} />
         </div>
         {!expanded && (
@@ -704,11 +720,13 @@ function ToolNameBadge({ name }: { name: string }): JSX.Element {
 function ToolIdentifier({
   rawName,
   localize,
+  mcpServerNames,
 }: {
   rawName: string;
   localize: ReturnType<typeof useLocalize>;
+  mcpServerNames?: readonly string[];
 }): JSX.Element {
-  const parsed = parseToolName(rawName);
+  const parsed = parseToolName(rawName, mcpServerNames);
   if (parsed.mcpServer) {
     return (
       <span className="inline-flex min-w-0 shrink items-baseline gap-1">
@@ -740,6 +758,7 @@ function ToolIdentifier({
  */
 function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
   const localize = useLocalize();
+  const mcpServerNames = useMCPServerNames();
   if (line.kind === 'writing' || line.kind === 'reasoning') {
     const prefix =
       line.kind === 'writing'
@@ -766,7 +785,7 @@ function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
           {line.toolNames.map((name, i) => (
             <span key={`${i}-${name}`} className="flex min-w-0 items-baseline gap-1">
               {i > 0 && <span className="shrink-0 text-text-tertiary">,</span>}
-              <ToolIdentifier rawName={name} localize={localize} />
+              <ToolIdentifier rawName={name} localize={localize} mcpServerNames={mcpServerNames} />
             </span>
           ))}
           {line.argsSnippet && (
@@ -779,7 +798,11 @@ function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
   if (line.kind === 'tool_complete') {
     return (
       <li className="flex w-full items-baseline gap-1 overflow-hidden whitespace-nowrap">
-        <ToolIdentifier rawName={line.toolName} localize={localize} />
+        <ToolIdentifier
+          rawName={line.toolName}
+          localize={localize}
+          mcpServerNames={mcpServerNames}
+        />
         <span className="shrink-0 text-text-tertiary">→</span>
         <span
           dir="rtl"
@@ -857,6 +880,7 @@ function SubagentDialogPart({
         initialProgress={tc.progress ?? 0.1}
         isSubmitting={isSubmitting}
         isLast={isLast}
+        toolCallId={tc.id}
         name={tc.name ?? ''}
         onExpand={onToolExpand}
       />

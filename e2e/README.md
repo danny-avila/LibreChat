@@ -2,6 +2,22 @@
 
 The mock e2e profile is the safest default for generated tests. It starts LibreChat with `e2e/config/librechat.e2e.yaml`, injects an in-process fake LLM (via `LIBRECHAT_TEST_RUN_HOOK`), creates an authenticated e2e user, and avoids real provider credentials.
 
+## Stream Stores and Shards
+
+The mock profile uses the in-memory generation stream store by default. To exercise the same browser scenarios through a real Redis job store and pub/sub transport, start Redis on port 6379 and run:
+
+```sh
+npm run e2e:mock:redis
+```
+
+Memory mode explicitly disables Redis. Redis mode defaults to database 15 with a `LibreChatE2E` key prefix, and fails closed: the test server pings Redis and verifies that the generation job manager did not silently fall back to memory. Override `REDIS_URI` or `E2E_REDIS_KEY_PREFIX` when needed.
+
+CI runs the complete mock suite in both stream modes. Each mode is split across four Playwright shards, while each shard keeps one worker so tests do not contend for the shard's authenticated user and database:
+
+```sh
+npx playwright test --config=e2e/playwright.config.mock.ts --shard=1/4
+```
+
 ## Recording Tests
 
 Use Playwright codegen when you want to turn an exploratory browser session into a draft test:

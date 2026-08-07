@@ -324,7 +324,6 @@ describe('AgentCard', () => {
       authorName: 'John Doe',
       owner_contact: {
         name: 'Owner User',
-        email: 'owner@example.com',
       },
     };
 
@@ -335,10 +334,8 @@ describe('AgentCard', () => {
     );
 
     expect(screen.getByText('Contact:')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Owner User' })).toHaveAttribute(
-      'href',
-      'mailto:owner@example.com',
-    );
+    expect(screen.getByText('Owner User')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Owner User' })).not.toBeInTheDocument();
     expect(screen.queryByText('by John Doe')).not.toBeInTheDocument();
   });
 

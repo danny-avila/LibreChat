@@ -26,6 +26,7 @@ import PendingManualSkillsChips from './PendingManualSkillsChips';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
+import InterruptSteerButton from './InterruptSteerButton';
 import DuringRunSendButton from './DuringRunSendButton';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
@@ -198,6 +199,10 @@ const ChatForm = memo(function ChatForm({
         overrideFiles,
         overrideQuotes: context?.quotes ?? [],
         overrideManualSkills: context?.manualSkills ?? [],
+        overrideClientRequestId: context?.clientRequestId,
+        overrideRecoverySteerId: context?.recoverySteerId,
+        overrideExpectedPredecessorCreatedAt: context?.expectedPredecessorCreatedAt,
+        overrideQueuedMessageOrigin: context?.queuedMessageOrigin,
       }),
     [submitMessage],
   );
@@ -266,14 +271,94 @@ const ChatForm = memo(function ChatForm({
     stopGenerating,
   });
 
+  /** Read at call time, not captured: a reclaim resolves into the callback from
+   *  the render it was clicked in, so the closure's `conversationId` is the OLD
+   *  chat — comparing it against itself would pass while `methods` (one form,
+   *  reused across conversations) writes into the chat now on screen. */
+  const liveConversationIdRef = useRef(conversationId);
+  liveConversationIdRef.current = conversationId;
+  /** Same reason: attachments staged after the click must be seen. */
+  const liveFilesRef = useRef(files);
+  liveFilesRef.current = files;
+  /** Same reason: the run can pause on `ask_user_question` mid-reclaim. */
+  const liveAnswerModeRef = useRef(answerMode.active);
+  liveAnswerModeRef.current = answerMode.active;
+  /** A reclaim can resolve after this form unmounts (left the route, closed the
+   *  pane). Its refs still hold the origin chat, so the restore would pass its
+   *  checks and write into a dead form — reporting success and making the caller
+   *  drop the steer, losing the text. Track mount so the restore refuses and the
+   *  caller queues it instead. */
+  const composerMountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      composerMountedRef.current = false;
+    },
+    [],
+  );
+
+  /** A draft is anything the user has staged, not just typed: `editToComposer`
+   *  MERGES the steer's attachments into the composer's file map and its quotes
+   *  and skill picks into their atoms, so restoring over staged context would
+   *  glue the two submissions together. */
+  const hasStagedComposerContext = useRecoilCallback(
+    ({ snapshot }) =>
+      (convoId: string) =>
+        snapshot.getLoadable(store.pendingQuotesByConvoId(convoId)).getValue().length > 0 ||
+        snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId)).getValue().length > 0,
+    [],
+  );
+
+  /**
+   * `editToComposer` for a steer whose reclaim was a round-trip: by the time it
+   * resolves the composer may have moved on. Refuses (returning false, so the
+   * caller re-homes the words instead of dropping them) rather than overwrite a
+   * draft the user has since staged, or drop a steer into whatever chat they
+   * navigated to.
+   */
+  const restoreReclaimedSteer = useCallback(
+    (
+      text: string,
+      steerFiles: TMessage['files'],
+      context: QueuedMessageContext,
+      originConversationId: string,
+    ): boolean => {
+      if (!composerMountedRef.current) {
+        return false;
+      }
+      const liveConversationId = liveConversationIdRef.current;
+      if (originConversationId !== liveConversationId) {
+        return false;
+      }
+      /** Answer mode owns the composer: `onSubmit` hands its text to
+       *  `answerMode.submitText` before any send/steer routing, so restoring
+       *  here would turn the steer into the tool's answer on the next Enter. */
+      if (liveAnswerModeRef.current) {
+        return false;
+      }
+      if (
+        (methods.getValues('text') ?? '').trim().length > 0 ||
+        (liveFilesRef.current?.size ?? 0) > 0 ||
+        hasStagedComposerContext(liveConversationId)
+      ) {
+        return false;
+      }
+      editToComposer(text, steerFiles, context);
+      return true;
+    },
+    [methods, editToComposer, hasStagedComposerContext],
+  );
+
   /** ⌘/Ctrl+Enter = the non-default during-run action, ⌥/Alt+Enter =
-   *  interrupt & send — the counterpart of Enter's `submitDuringRun`. */
+   *  interrupt & send (discards the answer), ⌘/Ctrl+Shift+Enter = interrupt &
+   *  steer (keeps it) — all counterparts of Enter's `submitDuringRun`. */
   const handleDuringRunModifier = useCallback(
-    (kind: 'other' | 'interrupt') => {
+    (kind: 'other' | 'interrupt' | 'preempt') => {
       const text = methods.getValues('text');
       let consumed = false;
       if (kind === 'interrupt') {
         consumed = steering.interruptAndSend(text);
+      } else if (kind === 'preempt') {
+        consumed = steering.interruptSteer(text);
       } else if (steering.effectiveAction === 'steer') {
         consumed = steering.queueFromComposer(text);
       } else {
@@ -355,24 +440,29 @@ const ChatForm = memo(function ChatForm({
   /** One button slot while a run is generating: with composer text the send
    *  button takes over (Enter steers/queues; hover reveals all actions);
    *  clearing the text restores Stop. */
-  const duringRunSlot =
-    steering.duringRunActive && (textValue?.trim() ?? '') !== '' ? (
-      <DuringRunSendButton
-        ref={submitButtonRef}
-        control={methods.control}
-        steering={steering}
-        getText={() => methods.getValues('text')}
-        onConsumed={() => methods.reset()}
-        disabled={filesLoading}
-      />
-    ) : (
-      <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
-    );
+  const duringRunSlot = (() => {
+    if (steering.duringRunActive && (textValue?.trim() ?? '') !== '') {
+      return (
+        <DuringRunSendButton
+          ref={submitButtonRef}
+          control={methods.control}
+          steering={steering}
+          getText={() => methods.getValues('text')}
+          onConsumed={() => methods.reset()}
+          disabled={filesLoading}
+        />
+      );
+    }
+    if (showStopButton) {
+      return <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />;
+    }
+    return null;
+  })();
 
   const baseClasses = useMemo(
     () =>
       cn(
-        'md:py-3.5 m-0 w-full resize-none py-[13px] placeholder-black/60 bg-transparent dark:placeholder-white/60 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+        'md:py-3.5 m-0 w-full resize-none py-[13px] placeholder:text-text-tertiary bg-transparent [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
         isCollapsed ? 'max-h-[52px]' : 'max-h-[45vh] md:max-h-[55vh]',
         isMoreThanThreeRows ? 'pl-5' : 'px-5',
       ),
@@ -412,10 +502,18 @@ const ChatForm = memo(function ChatForm({
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
         {/* Primary composer owns the selection popup so split-view doesn't double it. */}
         {index === 0 && quotesEnabled && <QuoteButton conversationId={conversationId} />}
-        <div className="flex w-full flex-col">
+        {/* `relative` anchors the in-flight steer overlay, which floats above
+            the composer (`bottom-full`) over the bottom of the thread. */}
+        <div className="relative flex w-full flex-col">
           {/* Run-scoped: `enabled` alone is any primary composer on a steerable
               endpoint, so a chip that outlives the run would strand a bubble. */}
-          {steering.enabled && isSubmitting && <InFlightSteers conversationId={conversationId} />}
+          {steering.enabled && isSubmitting && (
+            <InFlightSteers
+              steering={steering}
+              conversationId={conversationId}
+              onRestoreToComposer={restoreReclaimedSteer}
+            />
+          )}
           <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
             <Mention
               index={index}
@@ -460,6 +558,7 @@ const ChatForm = memo(function ChatForm({
                   conversationId={conversationId}
                   steering={steering}
                   onEditToComposer={editToComposer}
+                  onRestoreToComposer={restoreReclaimedSteer}
                 />
               )}
               {/* WIP */}
@@ -575,8 +674,22 @@ const ChatForm = memo(function ChatForm({
                     isSubmitting={isSubmitting}
                   />
                 )}
+                {steering.duringRunActive &&
+                  steering.canControlGeneration &&
+                  (textValue?.trim() ?? '') !== '' && (
+                    <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
+                      <InterruptSteerButton
+                        steering={steering}
+                        getText={() => methods.getValues('text')}
+                        onConsumed={() => methods.reset()}
+                        disabled={filesLoading}
+                      />
+                    </div>
+                  )}
                 <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                  {isSubmitting && showStopButton && !answerMode.active
+                  {isSubmitting &&
+                  (showStopButton || steering.duringRunActive) &&
+                  !answerMode.active
                     ? duringRunSlot
                     : endpoint && (
                         <SendButton

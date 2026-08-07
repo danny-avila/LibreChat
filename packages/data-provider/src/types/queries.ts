@@ -200,6 +200,12 @@ export type ListRolesResponse = {
 export interface MCPServerStatus {
   requiresOAuth: boolean;
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
+  authorizationState?:
+    | 'not_required'
+    | 'authorizing'
+    | 'authorized'
+    | 'needs_authorization'
+    | 'error';
 }
 
 export interface MCPConnectionStatusResponse {
@@ -214,6 +220,7 @@ export interface MCPServerConnectionStatusResponse {
   serverName: string;
   requiresOAuth: boolean;
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
+  authorizationState?: MCPServerStatus['authorizationState'];
 }
 
 export interface MCPAuthValuesResponse {

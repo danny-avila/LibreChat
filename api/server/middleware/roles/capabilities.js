@@ -1,9 +1,22 @@
 const { generateCapabilityCheck, capabilityContextMiddleware } = require('@librechat/api');
-const { getUserPrincipals, hasCapabilityForPrincipals } = require('~/models');
-
-const { hasCapability, requireCapability, hasConfigCapability } = generateCapabilityCheck({
+const {
   getUserPrincipals,
+  hasAnyConfigReadAccess,
   hasCapabilityForPrincipals,
+  getHeldCapabilities,
+} = require('~/models');
+
+const {
+  hasCapability,
+  requireCapability,
+  hasConfigCapability,
+  hasAnyConfigReadAccess: checkAnyConfigReadAccess,
+  getReadableConfigSections,
+} = generateCapabilityCheck({
+  getUserPrincipals,
+  hasAnyConfigReadAccess,
+  hasCapabilityForPrincipals,
+  getHeldCapabilities,
 });
 
 module.exports = {
@@ -11,4 +24,6 @@ module.exports = {
   requireCapability,
   hasConfigCapability,
   capabilityContextMiddleware,
+  hasAnyConfigReadAccess: checkAnyConfigReadAccess,
+  getReadableConfigSections,
 };

@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'client/src/**'
+      - '!**.md'
   workflow_dispatch:
     inputs:
       run_workflow:

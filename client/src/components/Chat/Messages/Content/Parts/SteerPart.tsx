@@ -1,7 +1,7 @@
 import { memo, useMemo, useState, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import { InfoHoverCard, ESide } from '@librechat/client';
+import { InfoHoverCard, ESide, UserIcon } from '@librechat/client';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
@@ -10,7 +10,6 @@ import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { useAuthContext } from '~/hooks/AuthContext';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -41,7 +40,9 @@ const SteerPart = memo(function SteerPart({
   createdAt?: number;
 }) {
   const localize = useLocalize();
-  const { user } = useAuthContext();
+  /** Read the atom rather than the auth context: AuthContextProvider mirrors the
+   *  user into it, and the public share route mounts outside that provider. */
+  const user = useRecoilValue(store.user);
   const fontSize = useAtomValue(fontSizeAtom);
   const { isSharedConvo } = useShareContext();
   const usernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
@@ -90,7 +91,24 @@ const SteerPart = memo(function SteerPart({
     >
       <div className="relative flex flex-shrink-0 flex-col items-center">
         <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-          <MessageIcon iconData={USER_ICON} />
+          {isSharedConvo === true ? (
+            /** The atom still holds the viewer's identity when a signed-in user opens
+             *  a share link, so rendering the identity-bearing avatar here would put
+             *  the viewer's face on the sharer's steer. Mirrors Share/MessageIcon. */
+            <div
+              style={{
+                backgroundColor: 'rgb(121, 137, 255)',
+                width: '20px',
+                height: '20px',
+                boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
+              }}
+              className="relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white"
+            >
+              <UserIcon />
+            </div>
+          ) : (
+            <MessageIcon iconData={USER_ICON} />
+          )}
         </div>
       </div>
       <div className="user-turn relative flex w-11/12 flex-col">

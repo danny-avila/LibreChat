@@ -42,11 +42,15 @@ const textFixture: UploadFixture = {
   buffer: Buffer.from('This text attachment should be available to the mock model.\n'),
 };
 
+// Valid 16x16 PNG. The previous 1x1 fixture had a corrupt IDAT CRC that older
+// libpng silently accepted but sharp 0.35.3's newer libpng rejects during
+// server-side image processing ("vipspng: libpng read error"). Keep this a
+// spec-conformant PNG (correct chunk CRCs).
 const imageFixture: UploadFixture = {
   name: 'provider-context.png',
   mimeType: 'image/png',
   buffer: Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+    'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVQ4jWNwaDjwnxLMMGrA/9EwODAaBg3DIgwACY9/HwbtciYAAAAASUVORK5CYII=',
     'base64',
   ),
 };
@@ -175,7 +179,9 @@ test.describe('core chat loop', () => {
 
     const firstAssistantMessage = messagesView(page).locator('.message-render').nth(1);
     await firstAssistantMessage.hover();
-    const regenerateButton = firstAssistantMessage.locator('button[title="Regenerate"]').last();
+    const regenerateButton = firstAssistantMessage
+      .getByRole('button', { name: 'Regenerate', exact: true })
+      .last();
     await expect(regenerateButton).toBeVisible();
 
     const [regenerateResponse] = await Promise.all([
@@ -211,7 +217,9 @@ test.describe('core chat loop', () => {
     // turn does not belong to.
     const firstAssistant = messagesView(page).locator('.message-render').nth(1);
     await firstAssistant.hover();
-    const regenInitial = firstAssistant.locator('button[title="Regenerate"]').last();
+    const regenInitial = firstAssistant
+      .getByRole('button', { name: 'Regenerate', exact: true })
+      .last();
     await expect(regenInitial).toBeVisible();
     [response] = await Promise.all([
       page.waitForResponse(isAgentsStream, { timeout: 30000 }),
@@ -231,7 +239,9 @@ test.describe('core chat loop', () => {
     // original thread; the view must stay put.
     const latestAssistant = messagesView(page).locator('.message-render').last();
     await latestAssistant.hover();
-    const regenLatest = latestAssistant.locator('button[title="Regenerate"]').last();
+    const regenLatest = latestAssistant
+      .getByRole('button', { name: 'Regenerate', exact: true })
+      .last();
     await expect(regenLatest).toBeVisible();
     [response] = await Promise.all([
       page.waitForResponse(isAgentsStream, { timeout: 30000 }),
@@ -272,7 +282,9 @@ test.describe('core chat loop', () => {
     // forks a fresh root branch that does not contain the later turns.
     const earlyAssistant = messagesView(page).locator('.message-render').nth(1);
     await earlyAssistant.hover();
-    const regenEarly = earlyAssistant.locator('button[title="Regenerate"]').last();
+    const regenEarly = earlyAssistant
+      .getByRole('button', { name: 'Regenerate', exact: true })
+      .last();
     await expect(regenEarly).toBeVisible();
     let [response] = await Promise.all([
       page.waitForResponse(isAgentsStream, { timeout: 30000 }),
@@ -295,7 +307,7 @@ test.describe('core chat loop', () => {
     // long original thread; it must stay intact.
     const lateAssistant = messagesView(page).locator('.message-render').last();
     await lateAssistant.hover();
-    const regenLate = lateAssistant.locator('button[title="Regenerate"]').last();
+    const regenLate = lateAssistant.getByRole('button', { name: 'Regenerate', exact: true }).last();
     await expect(regenLate).toBeVisible();
     [response] = await Promise.all([
       page.waitForResponse(isAgentsStream, { timeout: 30000 }),
