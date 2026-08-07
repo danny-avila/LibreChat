@@ -1,11 +1,11 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createScope } from '@librechat/data-schemas';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import type { ClickHouseDocumentRow, ClickHouseParam } from './types';
 import { buildTextArmQuery, buildVectorArmQuery } from './candidates';
 import { NEVER_RETIRE } from './consumer';
-import { resolveScope } from './scope';
 
 /**
  * Executes the real DDL and the real serving queries against a real ClickHouse
@@ -88,7 +88,7 @@ describeIfClickHouse('ClickHouse historical-serving schema', () => {
     };
   }
 
-  const scopeFilter = () => resolveScope({ tenantId: '__BASE__', userId: 'u1' });
+  const scopeFilter = () => createScope({ tenantId: '__BASE__', userId: 'u1' });
 
   /** Drives the REAL builders, so these assertions cover the shipped SQL. */
   function textArm<TRow>(text: string, limit = 50): TRow[] {

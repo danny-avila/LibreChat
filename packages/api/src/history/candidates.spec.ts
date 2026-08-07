@@ -1,6 +1,7 @@
+import { createScope, UnscopedAccessError } from '@librechat/data-schemas';
+import type { Scope } from '@librechat/data-schemas';
 import type { ClickHouseParam, ClickHouseQueryClient } from './types';
 import { buildTextArmQuery, buildVectorArmQuery, createCandidateAdapter } from './candidates';
-import { resolveScope, UnscopedQueryError } from './scope';
 
 type Captured = { query: string; params: Record<string, ClickHouseParam> };
 
@@ -35,8 +36,16 @@ class StubClickHouse implements ClickHouseQueryClient {
   }
 }
 
-const scope = { tenantId: '__BASE__', userId: 'u1' };
+const scope = createScope({ tenantId: '__BASE__', userId: 'u1' });
 const vector = new Array(1024).fill(0.01);
+/**
+ * A plain object shaped like a `Scope` but never branded by the shared core.
+ * The adapter must reject it — this is the brand-substitution defence, and it is
+ * what makes "scope came from ALS" enforceable rather than conventional.
+ */
+function forgedScope(input: { tenantId: string; userId: string }): Scope {
+  return input as unknown as Scope;
+}
 
 function hit(recordId: string, version: string, score: number) {
   return { record_id: recordId, conversation_id: 'c1', projection_version: version, score };
@@ -65,7 +74,7 @@ describe('candidate adapter — scoping', () => {
   });
 
   it('scopes both stages of the two-stage text query', () => {
-    const built = buildTextArmQuery(resolveScope(scope), 'message', 'hello', 50);
+    const built = buildTextArmQuery(scope, 'message', 'hello', 50);
     const stages = built.query.split('latest AS');
     expect(stages).toHaveLength(2);
     for (const stage of stages) {
@@ -76,30 +85,33 @@ describe('candidate adapter — scoping', () => {
   });
 
   it('scopes the vector arm', () => {
-    const built = buildVectorArmQuery(resolveScope(scope), 'message', vector, 50);
+    const built = buildVectorArmQuery(scope, 'message', vector, 50);
     expect(built.query).toContain('tenant_id = {tenant_id:String}');
     expect(built.query).toContain('user_id = {user_id:String}');
   });
 
-  it('rejects a scope with no user rather than widening it', async () => {
+  it('rejects an unbranded scope object', async () => {
+    // Resolution and normalization belong to the shared core; this tier's job is
+    // to refuse anything that did not come from it.
     const adapter = createCandidateAdapter(new StubClickHouse());
 
     await expect(
       adapter.fetchCandidates({
-        scope: { tenantId: '__BASE__', userId: '' },
+        scope: forgedScope({ tenantId: '__BASE__', userId: 'u1' }),
         kind: 'message',
         query: 'x',
         limit: 10,
       }),
-    ).rejects.toThrow(UnscopedQueryError);
+    ).rejects.toThrow(UnscopedAccessError);
   });
 
-  it('normalizes an absent tenant to the base tenant instead of failing', async () => {
-    // PLAN [R9]: normalize first, then fail closed. Failing on "empty tenant"
-    // before normalization would break search for every non-tenant deployment.
+  it('carries the normalized base tenant through when the core supplied it', async () => {
+    // PLAN [R9]: the core normalizes an absent tenant to __BASE__ before failing
+    // closed, so non-tenant OSS deployments keep working. This tier must render
+    // that value verbatim rather than re-deriving it.
     const clickhouse = new StubClickHouse();
     await createCandidateAdapter(clickhouse).fetchCandidates({
-      scope: { tenantId: '', userId: 'u1' },
+      scope: createScope({ tenantId: null, userId: 'u1' }),
       kind: 'message',
       query: 'x',
       limit: 10,
@@ -110,32 +122,38 @@ describe('candidate adapter — scoping', () => {
     expect(clickhouse.captured[0].params.user_id).toBe('u1');
   });
 
-  it('rejects the system tenant instead of treating it as a wildcard', async () => {
-    const adapter = createCandidateAdapter(new StubClickHouse());
-
-    await expect(
-      adapter.fetchCandidates({
-        scope: { tenantId: '__SYSTEM__', userId: 'u1' },
-        kind: 'message',
-        query: 'x',
-        limit: 10,
-      }),
-    ).rejects.toThrow(/query-time wildcard/);
-  });
-
   it('never issues a query when the scope check fails', async () => {
     const clickhouse = new StubClickHouse();
     const adapter = createCandidateAdapter(clickhouse);
 
     await expect(
       adapter.fetchCandidates({
-        scope: { tenantId: '__SYSTEM__', userId: 'u1' },
+        scope: forgedScope({ tenantId: '__SYSTEM__', userId: 'u1' }),
         kind: 'message',
         query: 'x',
         limit: 10,
       }),
     ).rejects.toThrow();
 
+    expect(clickhouse.captured).toEqual([]);
+  });
+
+  it('refuses a scope that names the system tenant even if branded', async () => {
+    // createScope() rejects __SYSTEM__ outright, so the only way such a value can
+    // exist is forgery — and assertScope catches it a second time.
+    expect(() => createScope({ tenantId: '__SYSTEM__', userId: 'u1' })).toThrow(
+      /query-time wildcard/,
+    );
+
+    const clickhouse = new StubClickHouse();
+    await expect(
+      createCandidateAdapter(clickhouse).fetchCandidates({
+        scope: forgedScope({ tenantId: '__SYSTEM__', userId: 'u1' }),
+        kind: 'message',
+        query: 'x',
+        limit: 10,
+      }),
+    ).rejects.toThrow(UnscopedAccessError);
     expect(clickhouse.captured).toEqual([]);
   });
 });

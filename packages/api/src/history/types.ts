@@ -1,3 +1,5 @@
+import type { Scope } from '@librechat/data-schemas';
+
 /**
  * Track 6 — ClickHouse historical search tier.
  *
@@ -6,11 +8,12 @@
  * through the interface re-exported from `./index`.
  */
 
-/** Mirrors `SearchScope` in the track-4 ChatSearch interface (PLAN Public interfaces). */
-export type HistoryScope = Readonly<{
-  tenantId: string;
-  userId: string;
-}>;
+/**
+ * Scope is the branded value from `@librechat/data-schemas`, resolved once from
+ * the ALS context and shared by every tier. This module never re-derives it and
+ * never accepts a plain `{ tenantId, userId }` object in its place.
+ */
+export type { Scope } from '@librechat/data-schemas';
 
 /** Mirrors `SearchTarget`, using the projector's `kind` vocabulary. */
 export type HistoryKind = 'message' | 'conversation' | 'shared-link';
@@ -133,7 +136,7 @@ export type ConsumerTickResult = Readonly<{
 export type HistoryArm = 'text' | 'vector';
 
 export type HistoryCandidateRequest = Readonly<{
-  scope: HistoryScope;
+  scope: Scope;
   kind: HistoryKind;
   query: string;
   /** `chat-v1` query vector: 1024 dims, Float32, L2-normalized. */

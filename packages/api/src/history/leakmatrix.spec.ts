@@ -2,16 +2,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createScope, UnscopedAccessError } from '@librechat/data-schemas';
+import type { Scope } from '@librechat/data-schemas';
 import type {
   ClickHouseDocumentRow,
   ClickHouseParam,
   ClickHouseQueryClient,
   HistoryKind,
-  HistoryScope,
 } from './types';
-import type { Scope } from './scope';
 import { buildTextArmQuery, buildVectorArmQuery, createCandidateAdapter } from './candidates';
-import { resolveScope, UnscopedQueryError } from './scope';
 import { renderScopePredicate } from './predicate';
 import { NEVER_RETIRE } from './consumer';
 
@@ -49,15 +48,18 @@ function resolveClickHouseBinary(): string | null {
 
 const KINDS: readonly HistoryKind[] = ['message', 'conversation', 'shared-link'];
 
+/** Plain principal values; every use brands them through the shared core. */
+type ScopeInput = Readonly<{ tenantId: string; userId: string }>;
+
 /**
  * Two principals whose data must never cross. Same user id in two tenants and
  * two user ids in one tenant, so a query that drops either half of the predicate
  * leaks.
  */
-const ALICE: HistoryScope = { tenantId: 'tenant-a', userId: 'user-1' };
-const BOB: HistoryScope = { tenantId: 'tenant-b', userId: 'user-1' };
-const CAROL: HistoryScope = { tenantId: 'tenant-a', userId: 'user-2' };
-const PRINCIPALS: ReadonlyArray<readonly [string, HistoryScope]> = [
+const ALICE: ScopeInput = { tenantId: 'tenant-a', userId: 'user-1' };
+const BOB: ScopeInput = { tenantId: 'tenant-b', userId: 'user-1' };
+const CAROL: ScopeInput = { tenantId: 'tenant-a', userId: 'user-2' };
+const PRINCIPALS: ReadonlyArray<readonly [string, ScopeInput]> = [
   ['alice', ALICE],
   ['bob', BOB],
   ['carol', CAROL],
@@ -109,7 +111,7 @@ describeIfClickHouse('leak matrix — ClickHouse tier', () => {
     },
   };
 
-  function row(scope: HistoryScope, kind: HistoryKind, suffix: string): ClickHouseDocumentRow {
+  function row(scope: ScopeInput, kind: HistoryKind, suffix: string): ClickHouseDocumentRow {
     return {
       tenant_id: scope.tenantId,
       user_id: scope.userId,
@@ -176,7 +178,7 @@ describeIfClickHouse('leak matrix — ClickHouse tier', () => {
 
   describe.each(KINDS)('kind: %s', (kind) => {
     describe.each(PRINCIPALS)('principal: %s', (name, scope) => {
-      const scoped = (): Scope => resolveScope(scope);
+      const scoped = (): Scope => createScope(scope);
 
       it('text arm returns only this principal rows', async () => {
         const built = buildTextArmQuery(scoped(), kind, COLLIDING_BODY, 200);
@@ -211,7 +213,7 @@ describeIfClickHouse('leak matrix — ClickHouse tier', () => {
       it('adapter end-to-end returns only this principal rows across both arms', async () => {
         const adapter = createCandidateAdapter(clickhouse, { armLimit: 200 });
         const result = await adapter.fetchCandidates({
-          scope,
+          scope: createScope(scope),
           kind,
           query: COLLIDING_BODY,
           queryVector: COLLIDING_VECTOR,
@@ -245,7 +247,7 @@ describeIfClickHouse('leak matrix — ClickHouse tier', () => {
   });
 
   it('isolates a kind from the other kinds of the same principal', () => {
-    const built = buildTextArmQuery(resolveScope(ALICE), 'message', COLLIDING_BODY, 200);
+    const built = buildTextArmQuery(createScope(ALICE), 'message', COLLIDING_BODY, 200);
     const rows = query<{ record_id: string }>(
       built.query,
       built.params as Record<string, ClickHouseParam>,
@@ -257,8 +259,8 @@ describeIfClickHouse('leak matrix — ClickHouse tier', () => {
   });
 
   it('emits a scope predicate in every stage of every arm', () => {
-    const text = buildTextArmQuery(resolveScope(ALICE), 'message', 'x', 10);
-    const vector = buildVectorArmQuery(resolveScope(ALICE), 'message', COLLIDING_VECTOR, 10);
+    const text = buildTextArmQuery(createScope(ALICE), 'message', 'x', 10);
+    const vector = buildVectorArmQuery(createScope(ALICE), 'message', COLLIDING_VECTOR, 10);
 
     const tenantOccurrences = text.query.split('{tenant_id:String}').length - 1;
     const userOccurrences = text.query.split('{user_id:String}').length - 1;
@@ -277,13 +279,13 @@ describe('scope fence — unscoped queries are unconstructible', () => {
   const vector = unitVector(0);
 
   it('throws when the user is missing', () => {
-    expect(() => resolveScope({ tenantId: 't1', userId: '' })).toThrow(UnscopedQueryError);
-    expect(() => resolveScope({ tenantId: 't1', userId: '\t' })).toThrow(UnscopedQueryError);
-    expect(() => resolveScope({ tenantId: 't1' })).toThrow(UnscopedQueryError);
+    expect(() => createScope({ tenantId: 't1', userId: '' })).toThrow(UnscopedAccessError);
+    expect(() => createScope({ tenantId: 't1', userId: '\t' })).toThrow(UnscopedAccessError);
+    expect(() => createScope({ tenantId: 't1' })).toThrow(UnscopedAccessError);
   });
 
   it('throws on the system tenant instead of widening to a wildcard', () => {
-    expect(() => resolveScope({ tenantId: '__SYSTEM__', userId: 'u1' })).toThrow(
+    expect(() => createScope({ tenantId: '__SYSTEM__', userId: 'u1' })).toThrow(
       /query-time wildcard/,
     );
   });
@@ -291,37 +293,37 @@ describe('scope fence — unscoped queries are unconstructible', () => {
   it('normalizes an absent tenant to the base tenant before failing closed', () => {
     // PLAN [R9]: normalize, THEN reject. The ordinary OSS deployment has no
     // tenant at all and must keep working.
-    expect(resolveScope({ tenantId: '', userId: 'u1' }).tenantId).toBe('__BASE__');
-    expect(resolveScope({ userId: 'u1' }).tenantId).toBe('__BASE__');
-    expect(resolveScope({ tenantId: '__BASE__', userId: 'u1' }).tenantId).toBe('__BASE__');
+    expect(createScope({ tenantId: '', userId: 'u1' }).tenantId).toBe('__BASE__');
+    expect(createScope({ userId: 'u1' }).tenantId).toBe('__BASE__');
+    expect(createScope({ tenantId: '__BASE__', userId: 'u1' }).tenantId).toBe('__BASE__');
   });
 
   it('throws on an unknown record kind at render time', () => {
-    const scope = resolveScope({ tenantId: 't1', userId: 'u1' });
-    expect(() => renderScopePredicate(scope, 'files' as HistoryKind)).toThrow(UnscopedQueryError);
+    const scope = createScope({ tenantId: 't1', userId: 'u1' });
+    expect(() => renderScopePredicate(scope, 'files' as HistoryKind)).toThrow(UnscopedAccessError);
     expect(() => buildTextArmQuery(scope, 'files' as HistoryKind, 'q', 10)).toThrow(
-      UnscopedQueryError,
+      UnscopedAccessError,
     );
   });
 
   it('refuses to build an arm query without a resolved Scope', () => {
     const missing = undefined as unknown as Scope;
-    expect(() => buildTextArmQuery(missing, 'message', 'q', 10)).toThrow(UnscopedQueryError);
-    expect(() => buildVectorArmQuery(missing, 'message', vector, 10)).toThrow(UnscopedQueryError);
+    expect(() => buildTextArmQuery(missing, 'message', 'q', 10)).toThrow(UnscopedAccessError);
+    expect(() => buildVectorArmQuery(missing, 'message', vector, 10)).toThrow(UnscopedAccessError);
   });
 
   it('refuses a forged object shaped like a Scope', () => {
     // The brand is a module-private symbol, so a structurally identical plain
-    // object cannot stand in for a scope that went through resolveScope().
+    // object cannot stand in for a scope that went through createScope().
     const forged = { tenantId: 't1', userId: 'u1' } as unknown as Scope;
 
-    expect(() => renderScopePredicate(forged, 'message')).toThrow(UnscopedQueryError);
-    expect(() => buildTextArmQuery(forged, 'message', 'q', 10)).toThrow(UnscopedQueryError);
-    expect(() => buildVectorArmQuery(forged, 'message', vector, 10)).toThrow(UnscopedQueryError);
+    expect(() => renderScopePredicate(forged, 'message')).toThrow(UnscopedAccessError);
+    expect(() => buildTextArmQuery(forged, 'message', 'q', 10)).toThrow(UnscopedAccessError);
+    expect(() => buildVectorArmQuery(forged, 'message', vector, 10)).toThrow(UnscopedAccessError);
   });
 
   it('renders both scope columns for every kind, from one shared predicate', () => {
-    const scope = resolveScope({ tenantId: 't1', userId: 'u1' });
+    const scope = createScope({ tenantId: 't1', userId: 'u1' });
     for (const kind of KINDS) {
       const rendered = renderScopePredicate(scope, kind);
       expect(rendered.predicateSql).toContain('tenant_id = {tenant_id:String}');
@@ -331,7 +333,7 @@ describe('scope fence — unscoped queries are unconstructible', () => {
   });
 
   it('rejects a wrong-dimension query vector at build time', () => {
-    const scope = resolveScope({ tenantId: 't1', userId: 'u1' });
+    const scope = createScope({ tenantId: 't1', userId: 'u1' });
     expect(() => buildVectorArmQuery(scope, 'message', [0.1, 0.2], 10)).toThrow(/1024 dimensions/);
   });
 });

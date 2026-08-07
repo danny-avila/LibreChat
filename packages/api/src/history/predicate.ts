@@ -2,22 +2,22 @@
  * ClickHouse scope rendering — the per-store half of PLAN "Multi-tenancy and
  * scope safety".
  *
- * This file renders a resolved `Scope` into ClickHouse `{name:Type}` parameter
- * predicates and nothing else. It performs NO identity resolution, normalization
- * or validation of its own: that half is shared and lives in
- * `packages/data-schemas/src/config/tenantContext.ts` (track 4), imported here
- * through `./scope` until it lands. Splitting it this way is deliberate — the
- * safety-critical decision "is this scope legitimate" must have exactly one
- * implementation across both stores, while SQL dialect cannot be shared at all.
+ * The scope VALUE is resolved once, in `@librechat/data-schemas`
+ * (`config/tenantContext.ts`), and is shared by every tier. This module renders
+ * that value into ClickHouse `{name:Type}` bindings and does nothing else: it
+ * performs no resolution, no normalization, and no validation of its own beyond
+ * the brand gate the shared core provides. The PostgreSQL tier renders the same
+ * value into `$n` predicates and RLS GUCs in `search/scope.ts`. Neither tier
+ * re-derives scope, so the two cannot drift.
  *
  * What this file DOES own is the record `kind`, which is a chat-search concept
  * and a ClickHouse column rather than a property of the principal.
  *
  * ClickHouse has no row-level security. The predicate below is the entire fence.
  */
+import { assertScope, UnscopedAccessError } from '@librechat/data-schemas';
+import type { Scope } from '@librechat/data-schemas';
 import type { ClickHouseParam, HistoryKind } from './types';
-import type { Scope } from './scope';
-import { assertScope, UnscopedQueryError } from './scope';
 
 const VALID_KINDS: readonly HistoryKind[] = ['message', 'conversation', 'shared-link'];
 
@@ -40,15 +40,15 @@ export type ScopePredicate = Readonly<{
 }>;
 
 /**
- * Renders the one predicate every arm shares. Throws rather than widening when
- * the scope is unresolved, forged, or the kind is unknown, so a query builder
- * cannot reach ClickHouse without it.
+ * Renders the one predicate every arm shares. `assertScope` rejects an absent or
+ * forged scope; an unknown kind is rejected here. Both throw rather than
+ * widening, so a query builder cannot reach ClickHouse without a full predicate.
  */
 export function renderScopePredicate(scope: Scope, kind: HistoryKind): ScopePredicate {
   const resolved = assertScope(scope);
 
   if (!VALID_KINDS.includes(kind)) {
-    throw new UnscopedQueryError('kind is missing or not a searchable record kind');
+    throw new UnscopedAccessError('kind is missing or not a searchable record kind');
   }
 
   return {

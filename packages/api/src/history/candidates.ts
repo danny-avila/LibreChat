@@ -1,3 +1,5 @@
+import { assertScope } from '@librechat/data-schemas';
+import type { Scope } from '@librechat/data-schemas';
 import type {
   ClickHouseParam,
   HistoryKind,
@@ -8,9 +10,7 @@ import type {
   HistoryCandidateResult,
   HistoryDegradation,
 } from './types';
-import type { Scope } from './scope';
 import { renderScopePredicate } from './predicate';
-import { resolveScope } from './scope';
 
 export const EMBEDDING_DIMENSIONS = 1024;
 
@@ -181,11 +181,12 @@ export function createCandidateAdapter(
     request: HistoryCandidateRequest,
   ): Promise<HistoryCandidateResult> {
     /**
-     * Scope is resolved once, up front, through the shared core, and throws
-     * before any I/O. Every arm below renders from this one `Scope`; none
-     * rebuilds scope SQL of its own.
+     * The caller resolved this scope from the ALS context through the shared
+     * core; this tier only gates it. `assertScope` throws before any I/O on an
+     * absent or forged value. Every arm below renders from this one `Scope` —
+     * none re-derives scope, and none rebuilds scope SQL of its own.
      */
-    const scope = resolveScope(request.scope);
+    const scope = assertScope(request.scope);
     const kind = request.kind;
 
     const arms = request.arms ?? BOTH_ARMS;

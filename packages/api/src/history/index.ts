@@ -29,6 +29,7 @@
  * Serving (request path, additive arm only):
  *
  *   const history = createCandidateAdapter(clickhouse, { armLimit: 50 });
+ *   const scope = resolveScope();            // from @librechat/data-schemas
  *   const { candidates, degradations } = await history.fetchCandidates({
  *     scope, kind: 'message', query, queryVector, limit: 50,
  *   });
@@ -54,16 +55,17 @@
  *    security, so application code here is the fence, not a net. Scope is
  *    enforced structurally (PLAN "Multi-tenancy and scope safety"):
  *
- *      - The safety-critical half — resolve, normalize, reject, brand — exists
- *        EXACTLY ONCE for both stores. It belongs in
- *        `packages/data-schemas/src/config/tenantContext.ts` (track 4); `scope.ts`
- *        here is a provisional stand-in with the same shape, to be deleted on
- *        merge. SQL dialect rendering genuinely cannot be shared, so that half
- *        stays per-store in `predicate.ts`.
- *      - `resolveScope` NORMALIZES an absent tenant to `BASE_TENANT_ID` and only
- *        then fails closed (PLAN [R9]), throwing `UnscopedQueryError` on a
- *        missing user or on `__SYSTEM__` — a query-time wildcard in this
- *        codebase that is never ported into a predicate.
+ *      - The safety-critical half — resolve, normalize, reject, brand — lives
+ *        EXACTLY ONCE, in `@librechat/data-schemas`
+ *        (`config/tenantContext.ts`). This tier never re-derives it. SQL dialect
+ *        rendering genuinely cannot be shared, so that half stays per-store:
+ *        `predicate.ts` here, `search/scope.ts` for PostgreSQL.
+ *      - The caller resolves scope once via `resolveScope()` (ALS) or
+ *        `createScope()` and passes the branded value in. It NORMALIZES an
+ *        absent tenant to `BASE_TENANT_ID` and only then fails closed
+ *        (PLAN [R9]), throwing `UnscopedAccessError` on a missing user or on
+ *        `__SYSTEM__` — a query-time wildcard in this codebase that is never
+ *        ported into a predicate.
  *      - `buildTextArmQuery` / `buildVectorArmQuery` accept nothing but a
  *        branded `Scope` and render the predicate internally into every stage.
  *        There is no module-level SQL constant with an unfilled scope hole and
@@ -157,22 +159,6 @@ export {
 } from './candidates';
 export type { ArmQuery, CandidateAdapterOptions, HistoryCandidateAdapter } from './candidates';
 
-/**
- * PROVISIONAL: `scope.ts` is a local stand-in for the shared scope core that
- * PLAN places in `packages/data-schemas/src/config/tenantContext.ts` (track 4).
- * Re-exported here so callers have one import today; when the shared core lands,
- * delete `scope.ts`, re-point `predicate.ts` at `@librechat/data-schemas`, and
- * drop these four lines. `predicate.ts` — the ClickHouse rendering half — stays.
- */
-export {
-  assertScope,
-  resolveScope,
-  BASE_TENANT_ID,
-  SYSTEM_TENANT_ID,
-  UnscopedQueryError,
-} from './scope';
-export type { Scope, ScopeInput } from './scope';
-
 export { renderScopePredicate, SCOPE_PREDICATE_SQL } from './predicate';
 export type { ScopePredicate } from './predicate';
 
@@ -216,7 +202,7 @@ export type {
   HistoryDocument,
   HistoryDocumentSource,
   HistoryKind,
-  HistoryScope,
+  Scope,
   LiveDocumentRow,
   OutboxOp,
   OutboxRow,

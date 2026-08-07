@@ -1,6 +1,6 @@
 import { join } from 'node:path';
-import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { existsSync, readFileSync } from 'node:fs';
 import type {
   ClickHouseDocumentRow,
   ClickHouseIngestLogRow,
@@ -61,46 +61,18 @@ function loadPg(): PgModule | null {
   return null;
 }
 
+/**
+ * `chat_search` DDL is owned by track 4 and applied from its migration. This
+ * module deliberately keeps NO second copy: a duplicated schema definition is
+ * the same drift hazard the shared scope core eliminated, and running the
+ * consumer against the authoritative file is the only thing that actually proves
+ * the column contract still lines up.
+ */
+const AUTHORITATIVE_MIGRATION = join(__dirname, '..', 'search', 'migrations', '001_schema.sql');
+
 const pgModule = TEST_URL ? loadPg() : null;
-const describeIfPg = TEST_URL && pgModule ? describe : describe.skip;
-
-/** Minimal stand-ins for the track-4 tables the consumer reads. */
-const TEST_DOCUMENT_TABLES = `
-CREATE TABLE IF NOT EXISTS chat_search.documents (
-  tenant_id            text   NOT NULL,
-  user_id              text   NOT NULL,
-  kind                 text   NOT NULL,
-  record_id            text   NOT NULL,
-  conversation_id      text,
-  project_id           text,
-  title                text,
-  body                 text,
-  tags                 text[],
-  is_archived          boolean DEFAULT false,
-  is_temporary         boolean DEFAULT false,
-  created_at           timestamptz NOT NULL DEFAULT now(),
-  updated_at           timestamptz NOT NULL DEFAULT now(),
-  expires_at           timestamptz,
-  deleted_at           timestamptz,
-  projection_version   bigint NOT NULL,
-  content_hash         text,
-  embedding_input_hash text,
-  PRIMARY KEY (tenant_id, user_id, kind, record_id)
-);
-
-CREATE TABLE IF NOT EXISTS chat_search.embeddings (
-  tenant_id            text NOT NULL,
-  user_id              text NOT NULL,
-  kind                 text NOT NULL,
-  record_id            text NOT NULL,
-  space                text NOT NULL,
-  embedding_input_hash text,
-  embedding            text,
-  PRIMARY KEY (tenant_id, user_id, kind, record_id, space),
-  FOREIGN KEY (tenant_id, user_id, kind, record_id)
-    REFERENCES chat_search.documents (tenant_id, user_id, kind, record_id) ON DELETE CASCADE
-);
-`;
+const describeIfPg =
+  TEST_URL && pgModule && existsSync(AUTHORITATIVE_MIGRATION) ? describe : describe.skip;
 
 class RecordingClickHouse implements ClickHouseQueryClient {
   rows: ClickHouseDocumentRow[] = [];
@@ -151,6 +123,13 @@ describeIfPg('outbox consumer against PostgreSQL', () => {
     );
   }
 
+  /** chat-v1: 1024 dims, Float32, L2-normalized. The real column enforces this. */
+  function chatV1Vector(): string {
+    const values = new Array(1024).fill(0);
+    values[0] = 0.1;
+    return `[${values.join(',')}]`;
+  }
+
   async function seedDocument(
     recordId: string,
     version: number,
@@ -159,8 +138,8 @@ describeIfPg('outbox consumer against PostgreSQL', () => {
     await client.query(
       `INSERT INTO chat_search.documents
          (tenant_id, user_id, kind, record_id, conversation_id, title, body, projection_version,
-          content_hash, embedding_input_hash)
-       VALUES ('__BASE__', 'u1', 'message', $1, 'c1', 'title', $2, $3, 'h', 'e')
+          content_hash, embedding_input_hash, source_created_at, source_updated_at)
+       VALUES ('__BASE__', 'u1', 'message', $1, 'c1', 'title', $2, $3, 'h', 'e', now(), now())
        ON CONFLICT (tenant_id, user_id, kind, record_id)
        DO UPDATE SET body = EXCLUDED.body, projection_version = EXCLUDED.projection_version`,
       [recordId, body, version],
@@ -177,9 +156,7 @@ describeIfPg('outbox consumer against PostgreSQL', () => {
 
   beforeAll(async () => {
     client = await newClient();
-    const ddl = readFileSync(join(__dirname, 'sql', 'outbox.sql'), 'utf8');
-    await client.query(ddl);
-    await client.query(TEST_DOCUMENT_TABLES);
+    await client.query(readFileSync(AUTHORITATIVE_MIGRATION, 'utf8'));
     pg = wrap(client);
   }, 30000);
 
@@ -368,8 +345,11 @@ describeIfPg('outbox consumer against PostgreSQL', () => {
     await seedDocument('m1', 1);
     await client.query(
       `INSERT INTO chat_search.embeddings
-         (tenant_id, user_id, kind, record_id, space, embedding_input_hash, embedding)
-       VALUES ('__BASE__', 'u1', 'message', 'm1', 'chat-v1', 'stale-hash', '[0.1,0.2]')`,
+         (tenant_id, user_id, kind, record_id, space, embedding_input_hash,
+          model, dimensions, normalized, formatter_version, embedding)
+       VALUES ('__BASE__', 'u1', 'message', 'm1', 'chat-v1', 'stale-hash',
+               'qwen3-embedding-8b', 1024, true, 'v1', $1)`,
+      [chatV1Vector()],
     );
 
     const source = createSqlDocumentSource(pg, 'chat-v1');
@@ -385,7 +365,8 @@ describeIfPg('outbox consumer against PostgreSQL', () => {
     const [freshJoin] = await source.fetchByKeys([
       { tenantId: '__BASE__', userId: 'u1', kind: 'message', recordId: 'm1' },
     ]);
-    expect(freshJoin.embedding).toEqual([0.1, 0.2]);
+    expect(freshJoin.embedding).toHaveLength(1024);
+    expect(freshJoin.embedding?.[0]).toBeCloseTo(0.1, 5);
   });
 
   it('runs the anti-join lookup and the audit queries against the real schema', async () => {

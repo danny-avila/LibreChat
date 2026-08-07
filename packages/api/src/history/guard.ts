@@ -1,14 +1,14 @@
+import { assertScope } from '@librechat/data-schemas';
+import type { Scope } from '@librechat/data-schemas';
 import type {
   AntiJoinRejection,
   AntiJoinResult,
   HistoryCandidate,
   HistoryKind,
-  HistoryScope,
   LiveDocumentRow,
   PgQueryClient,
   SqlParam,
 } from './types';
-import { resolveScope } from './scope';
 
 /**
  * Fail-closed anti-join (PLAN Watermark, finding [R7]).
@@ -98,16 +98,17 @@ WHERE d.tenant_id = $1
 
 export async function loadLiveDocumentRows(
   pg: PgQueryClient,
-  scope: HistoryScope,
+  scope: Scope,
   kind: HistoryKind,
   recordIds: readonly string[],
 ): Promise<readonly LiveDocumentRow[]> {
   /**
-   * Resolved through the same shared core the ClickHouse arms use, so the
-   * anti-join cannot be run under a wider scope than the query that produced the
-   * candidates. Forced RLS backs this DSN, but RLS is the net, not the fence.
+   * The same branded scope the ClickHouse arms rendered, gated by the same
+   * shared assertion — so the anti-join cannot run under a wider scope than the
+   * query that produced the candidates. Forced RLS backs this DSN, but RLS is
+   * the net, not the fence.
    */
-  const resolved = resolveScope(scope);
+  const resolved = assertScope(scope);
 
   if (recordIds.length === 0) {
     return [];
