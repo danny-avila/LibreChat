@@ -277,6 +277,49 @@ async function flushFileCache(dryRun = false, verbose = false) {
   return true;
 }
 
+async function flushOllamaCache(dryRun = false, verbose = false) {
+  const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+  const clearUrl = `${ollamaHost.replace(/\/+$/, '')}/api/clear`;
+
+  if (dryRun) {
+    console.log('🔍 [DRY RUN] Would clear Ollama model KV cache');
+    console.log(`   Endpoint: ${clearUrl}`);
+    return true;
+  }
+
+  try {
+    if (verbose) {
+      console.log(`🔍 Clearing Ollama model KV cache at ${clearUrl}`);
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(clearUrl, {
+      method: 'POST',
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      throw new Error(`Ollama /api/clear returned ${response.status} ${response.statusText}`);
+    }
+
+    console.log('✅ Ollama model KV cache cleared successfully');
+    return true;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn('⚠️  Ollama /api/clear request timed out — model KV cache may not have been cleared');
+    } else if (error.cause?.code === 'ECONNREFUSED' || error.cause?.code === 'ENOTFOUND') {
+      console.warn('⚠️  Ollama server is not reachable — skipping model KV cache clear');
+    } else {
+      console.warn(`⚠️  Failed to clear Ollama model KV cache: ${error.message}`);
+    }
+    // Never fail the whole flush just because Ollama clear didn't work
+    return true;
+  }
+}
+
 async function restartRecommendation() {
   console.log('\n💡 RECOMMENDATION:');
   console.log('   For complete cache clearing, especially for in-memory caches,');
@@ -317,6 +360,9 @@ async function main() {
 
   // Always check file cache
   success = (await flushFileCache(dryRun, verbose)) && success;
+
+  // Clear Ollama model KV cache to prevent context leakage between sessions
+  success = (await flushOllamaCache(dryRun, verbose)) && success;
 
   console.log('\n' + '='.repeat(50));
 
