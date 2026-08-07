@@ -1,9 +1,24 @@
 import mongoose from 'mongoose';
 import { randomUUID } from 'crypto';
+import {
+  Permissions,
+  PermissionBits,
+  ResourceType,
+  PrincipalType,
+  PrincipalModel,
+  PermissionTypes,
+} from 'librechat-data-provider';
 import type { ConnectOptions, Model } from 'mongoose';
 import type { IConversationTag } from '~/schema/conversationTag';
 import type * as t from '~/types';
+import {
+  createMCPAuthorityMethods,
+  createMCPAuthorityBootRevision,
+  createMCPAuthorityCredentialRevision,
+  createMCPAuthorityDatabaseSourceRevision,
+} from '~/methods/mcpAuthority';
 import { decrementTagCounts } from '~/methods/conversationTag';
+import { tenantStorage } from '~/config/tenantContext';
 import { supportsTransactions } from '~/utils/transactions';
 import { createUserMethods } from '~/methods/user';
 import { createFileMethods } from '~/methods/file';
@@ -190,6 +205,113 @@ describeLive('Amazon DocumentDB live compatibility', () => {
         ? 'supported'
         : 'unsupported (runtime fallback engages)';
       expect(typeof supported).toBe('boolean');
+    });
+
+    it('executes the bounded MCP authority snapshot transaction', async () => {
+      const tenantId = `authority-tenant-${runId}`;
+      const roleName = `AUTHORITY_${runId}`;
+      const serverName = `authority-server-${runId}`;
+      const models = mongoose.models;
+      const methods = createMCPAuthorityMethods(mongoose);
+      const boot = createMCPAuthorityBootRevision(`docdb-${runId}`, { mcpServers: {} });
+      const userId = new mongoose.Types.ObjectId();
+      const serverId = new mongoose.Types.ObjectId();
+      const agentIds = Array.from({ length: 3 }, () => new mongoose.Types.ObjectId());
+      try {
+        await tenantStorage.run({ tenantId, userId: userId.toHexString() }, async () => {
+          await models.User.create({
+            _id: userId,
+            name: 'DocumentDB authority probe',
+            email: testEmail('authority'),
+            provider: 'local',
+            role: roleName,
+          });
+          await models.Role.create({
+            name: roleName,
+            permissions: {
+              [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true },
+            },
+          });
+          await models.Config.create({
+            principalType: PrincipalType.USER,
+            principalId: userId.toHexString(),
+            principalModel: PrincipalModel.USER,
+            priority: 30,
+            overrides: { mcpSettings: { allowedDomains: ['example.com'] } },
+            tombstones: ['mcpSettings.autoStart'],
+            isActive: true,
+            configVersion: 1,
+          });
+          await models.MCPServer.create({
+            _id: serverId,
+            serverName,
+            config: { type: 'sse', url: `https://${serverName}.example/mcp` },
+            author: userId,
+          });
+          await models.Agent.insertMany(
+            agentIds.map((agentId, index) => ({
+              _id: agentId,
+              id: `authority-agent-${runId}-${index}`,
+              name: `DocumentDB authority probe agent ${index}`,
+              provider: 'openAI',
+              model: 'probe-model',
+              author: userId,
+              mcpServerNames: [serverName, `unselected-${runId}`],
+            })),
+          );
+          await models.AclEntry.create({
+            principalType: PrincipalType.USER,
+            principalId: userId,
+            principalModel: PrincipalModel.USER,
+            resourceType: ResourceType.MCPSERVER,
+            resourceId: serverId,
+            permBits: PermissionBits.VIEW,
+            grantedBy: userId,
+          });
+          const server = await models.MCPServer.findById(serverId).lean();
+          if (!server) {
+            throw new Error('DocumentDB authority probe server was not created');
+          }
+          const sourceRevision = createMCPAuthorityDatabaseSourceRevision({
+            databaseId: server._id.toHexString(),
+            serverName: server.serverName,
+            author: server.author.toString(),
+            config: server.config,
+            createdAt: server.createdAt,
+            updatedAt: server.updatedAt,
+          });
+          const proof = await methods.resolveMCPAuthorityProof({
+            userId: userId.toHexString(),
+            tenantId,
+            boot,
+            targets: [
+              {
+                serverName,
+                source: 'database',
+                databaseId: serverId.toHexString(),
+                sourceRevision,
+                expectedCredentialRevision: createMCPAuthorityCredentialRevision([], []),
+                expectedOAuthGrantGeneration: null,
+                resolvedConfig: server.config,
+              },
+            ],
+          });
+          expect(proof.servers[0].linkedAgentIds).toHaveLength(agentIds.length);
+          await methods.assertMCPAuthorityProofsCurrent({ proofs: proof, boot });
+        });
+        capabilities['MCP authority snapshot'] = 'supported';
+      } finally {
+        await Promise.all([
+          getDb().collection('aclentries').deleteMany({ resourceId: serverId }),
+          getDb().collection('mcpservers').deleteMany({ _id: serverId }),
+          getDb().collection('configs').deleteMany({ principalId: userId.toHexString() }),
+          getDb()
+            .collection('agents')
+            .deleteMany({ _id: { $in: agentIds } }),
+          getDb().collection('roles').deleteMany({ name: roleName }),
+          getDb().collection('users').deleteMany({ _id: userId }),
+        ]);
+      }
     });
 
     it('probes partial unique index support (OAuth id uniqueness relies on it)', async () => {
