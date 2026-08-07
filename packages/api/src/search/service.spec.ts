@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { chatSearchConfigured, createChatSearch } from './service';
-import { MeiliChatSearch } from './meili';
 import { PostgresChatSearch } from './search';
+import { MeiliChatSearch } from './meili';
 
 /**
  * The seam that decides which store answers a search. Nothing else in the stack
