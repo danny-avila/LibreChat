@@ -111,6 +111,10 @@ export class ConnectionsRepository {
 
     this.connections.set(serverName, connection);
     if (this.ownerId === undefined && options.refreshTools !== false) {
+      if (connection.client.getServerCapabilities()?.tools == null) {
+        await notifyMCPToolsChanged({ tools: [], serverName, serverConfig });
+        return connection;
+      }
       const snapshot = await connection.fetchToolsSnapshot();
       if (snapshot.complete) {
         await notifyMCPToolsChanged({

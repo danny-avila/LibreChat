@@ -76,6 +76,9 @@ describe('ConnectionsRepository', () => {
     ) as jest.Mock;
 
     mockConnection = {
+      client: {
+        getServerCapabilities: jest.fn().mockReturnValue({ tools: {} }),
+      },
       isConnected: jest.fn().mockResolvedValue(true),
       disconnect: jest.fn().mockResolvedValue(undefined),
       dispose: jest.fn().mockResolvedValue(undefined),
@@ -179,6 +182,19 @@ describe('ConnectionsRepository', () => {
       await repository.get('server1');
 
       expect(mockConnection.refreshToolList).toHaveBeenCalledTimes(1);
+    });
+
+    it('publishes an empty snapshot without listing tools when the server lacks the capability', async () => {
+      const handler = jest.fn().mockResolvedValue(undefined);
+      setMCPToolsChangedHandler(handler);
+      (mockConnection.client.getServerCapabilities as jest.Mock).mockReturnValue({ resources: {} });
+
+      await repository.get('server1');
+
+      expect(mockConnection.fetchToolsSnapshot).not.toHaveBeenCalled();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName: 'server1', tools: [] }),
+      );
     });
 
     it('should create new connection if existing connection is not connected', async () => {
