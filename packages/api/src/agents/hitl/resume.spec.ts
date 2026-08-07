@@ -1,3 +1,10 @@
+import {
+  ContentTypes,
+  GraphEvents,
+  StepTypes,
+  createContentAggregator,
+  type RunStep,
+} from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import {
   mapToolApprovalResolutions,
@@ -6,6 +13,7 @@ import {
   findDisallowedDecisions,
   findIncompleteDecisions,
   createContentIndexOffsetHandlers,
+  hydrateResumeRunSteps,
   attachAskUserQuestionAnswer,
   attachAskUserQuestionArgs,
 } from './resume';
@@ -264,6 +272,136 @@ describe('createContentIndexOffsetHandlers', () => {
   });
 });
 
+describe('hydrateResumeRunSteps', () => {
+  it('restores step and tool-call identity so a resumed completion updates its seeded card', () => {
+    const { contentParts, aggregateContent, stepMap } = createContentAggregator();
+    contentParts.push(
+      { type: ContentTypes.TEXT, text: 'Before approval' },
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'call-approval',
+          name: 'approval_probe',
+          args: '{"value":"before"}',
+        },
+      },
+    );
+    const runStep: RunStep = {
+      id: 'step-approval',
+      runId: 'response-1',
+      type: StepTypes.TOOL_CALLS,
+      index: 1,
+      stepDetails: {
+        type: StepTypes.TOOL_CALLS,
+        tool_calls: [
+          {
+            id: 'call-approval',
+            name: 'approval_probe',
+            args: { value: 'before' },
+          },
+        ],
+      },
+      usage: null,
+    };
+    const toolCallStepIds = new Map<string, string>();
+
+    hydrateResumeRunSteps([runStep], stepMap, { toolCallStepIds }, contentParts);
+    aggregateContent({
+      event: GraphEvents.ON_RUN_STEP_COMPLETED,
+      data: {
+        result: {
+          id: 'step-approval',
+          index: 1,
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            id: 'call-approval',
+            name: 'approval_probe',
+            args: { value: 'before' },
+            output: 'approved output',
+          },
+        },
+      },
+    });
+
+    expect(stepMap.get('step-approval')).toBe(runStep);
+    expect(toolCallStepIds.get('call-approval')).toBe('step-approval');
+    expect(contentParts[1]).toMatchObject({
+      type: ContentTypes.TOOL_CALL,
+      tool_call: {
+        id: 'call-approval',
+        output: 'approved output',
+        progress: 1,
+      },
+    });
+  });
+
+  it('realigns a stale persisted index to the seeded tool card by tool-call id', () => {
+    const { contentParts, aggregateContent, stepMap } = createContentAggregator();
+    contentParts.push(
+      { type: ContentTypes.TEXT, text: 'Prepended after the step was recorded' },
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'call-shifted',
+          name: 'approval_probe',
+          args: '{"value":"shifted"}',
+        },
+      },
+    );
+    const staleRunStep: RunStep = {
+      id: 'step-shifted',
+      runId: 'response-1',
+      type: StepTypes.TOOL_CALLS,
+      index: 0,
+      stepDetails: {
+        type: StepTypes.TOOL_CALLS,
+        tool_calls: [
+          {
+            id: 'call-shifted',
+            name: 'approval_probe',
+            args: { value: 'shifted' },
+          },
+        ],
+      },
+      usage: null,
+    };
+    const toolCallStepIds = new Map<string, string>();
+
+    hydrateResumeRunSteps([staleRunStep], stepMap, { toolCallStepIds }, contentParts);
+    aggregateContent({
+      event: GraphEvents.ON_RUN_STEP_COMPLETED,
+      data: {
+        result: {
+          id: 'step-shifted',
+          index: 0,
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            id: 'call-shifted',
+            name: 'approval_probe',
+            args: { value: 'shifted' },
+            output: 'shifted output',
+          },
+        },
+      },
+    });
+
+    expect(staleRunStep.index).toBe(0);
+    expect(stepMap.get('step-shifted')?.index).toBe(1);
+    expect(contentParts[0]).toEqual({
+      type: ContentTypes.TEXT,
+      text: 'Prepended after the step was recorded',
+    });
+    expect(contentParts[1]).toMatchObject({
+      type: ContentTypes.TOOL_CALL,
+      tool_call: {
+        id: 'call-shifted',
+        output: 'shifted output',
+        progress: 1,
+      },
+    });
+  });
+});
+
 describe('attachAskUserQuestionAnswer', () => {
   const question = { question: 'Which env?', options: [{ label: 'Staging', value: 'staging' }] };
   const askPart = (output?: string) => ({
@@ -299,6 +437,32 @@ describe('attachAskUserQuestionAnswer', () => {
     const content = [{ type: 'text' } as never, askPart('done')];
     expect(attachAskUserQuestionAnswer(content as never, question as never, 'x')).toBe(content);
   });
+
+  it('targets the payload tool_call_id exactly when provided (multi-ask turn)', () => {
+    const first = {
+      type: 'tool_call',
+      tool_call: { id: 'tc_a', name: 'ask_user_question', args: '' },
+    };
+    const second = {
+      type: 'tool_call',
+      tool_call: { id: 'tc_b', name: 'ask_user_question', args: '' },
+    };
+    const next = attachAskUserQuestionAnswer(
+      [first, second] as never,
+      question as never,
+      'the answer',
+      'tc_a',
+    );
+    expect((next[0] as { tool_call: { output?: string } }).tool_call.output).toBe('the answer');
+    expect((next[1] as { tool_call: { output?: string } }).tool_call.output).toBeUndefined();
+  });
+
+  it('returns the input untouched when the payload tool_call_id matches no part', () => {
+    const content = [askPart()];
+    expect(
+      attachAskUserQuestionAnswer(content as never, question as never, 'x', 'tc_missing'),
+    ).toBe(content);
+  });
 });
 
 describe('attachAskUserQuestionArgs (pause-time stamp)', () => {
@@ -323,5 +487,17 @@ describe('attachAskUserQuestionArgs (pause-time stamp)', () => {
       { type: 'tool_call', tool_call: { name: 'ask_user_question', args: '', output: 'done' } },
     ];
     expect(attachAskUserQuestionArgs(answered as never, question as never)).toBe(answered);
+  });
+
+  it('targets the payload tool_call_id exactly when provided (multi-ask turn)', () => {
+    const content = [
+      { type: 'tool_call', tool_call: { id: 'tc_a', name: 'ask_user_question', args: '' } },
+      { type: 'tool_call', tool_call: { id: 'tc_b', name: 'ask_user_question', args: '' } },
+    ];
+    const next = attachAskUserQuestionArgs(content as never, question as never, 'tc_a');
+    expect(JSON.parse((next[0] as { tool_call: { args: string } }).tool_call.args)).toEqual(
+      question,
+    );
+    expect((next[1] as { tool_call: { args: string } }).tool_call.args).toBe('');
   });
 });

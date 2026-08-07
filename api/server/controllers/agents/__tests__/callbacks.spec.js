@@ -7,6 +7,9 @@ jest.mock('nanoid', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  GenerationJobManager: {
+    emitChunk: jest.fn(),
+  },
   HOST_FILE_AUTHORING_ARTIFACT_KEY: '__librechat_file_authoring',
   getToolInputValidationDetails: jest.fn((result, validationError) =>
     validationError != null
@@ -73,6 +76,61 @@ jest.mock('~/server/services/Tools/credentials', () => ({
 jest.mock('~/server/services/Files/process', () => ({
   saveBase64Image: jest.fn(),
 }));
+
+describe('resumable event generation fencing', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('forwards the originating job epoch with run-step events', async () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { GraphEvents } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    const data = {
+      id: 'step-1',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-1', name: 'approval_probe', args: '{}' }],
+      },
+    };
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+    });
+
+    await handlers[GraphEvents.ON_RUN_STEP].handle(GraphEvents.ON_RUN_STEP, data);
+
+    expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
+      'conversation-1',
+      { event: GraphEvents.ON_RUN_STEP, data },
+      { expectedCreatedAt: 1234 },
+    );
+  });
+
+  it('forwards the originating job epoch with deferred attachments', () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { createAttachmentEmitter } = require('../callbacks');
+    const attachment = { file_id: 'file-1', status: 'ready' };
+    const emitAttachment = createAttachmentEmitter({
+      res: { write: jest.fn() },
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+    });
+
+    emitAttachment(attachment);
+
+    expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
+      'conversation-1',
+      { event: 'attachment', data: attachment },
+      { expectedCreatedAt: 1234 },
+    );
+  });
+});
 
 describe('createToolEndCallback', () => {
   let req, res, artifactPromises, createToolEndCallback;

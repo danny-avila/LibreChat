@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { SquirclePlusIcon } from '@librechat/client';
+import { Button, SquirclePlusIcon } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 interface MCPIconProps {
@@ -27,22 +27,13 @@ export default function MCPIcon({ icon, onIconChange }: MCPIconProps) {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handleClick();
-    }
-  };
-
   return (
     <div className="flex items-center gap-4">
-      <div
-        role="button"
-        tabIndex={0}
+      <Button
+        variant="ghost"
         onClick={handleClick}
-        onKeyDown={handleKeyDown}
         aria-label={localize('com_ui_upload_icon')}
-        className="bg-token-surface-secondary dark:bg-token-surface-tertiary border-token-border-medium flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center rounded-xl border-2 border-dashed focus:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+        className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-border-medium bg-surface-secondary p-0 hover:bg-surface-hover"
       >
         {previewUrl ? (
           <img
@@ -55,7 +46,7 @@ export default function MCPIcon({ icon, onIconChange }: MCPIconProps) {
         ) : (
           <SquirclePlusIcon />
         )}
-      </div>
+      </Button>
       <div className="flex flex-col gap-1">
         <span className="token-text-secondary text-sm">
           {localize('com_ui_icon')} {localize('com_ui_optional')}

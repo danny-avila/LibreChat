@@ -1,3 +1,4 @@
+import { Readable } from 'stream';
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import type {
@@ -553,6 +554,48 @@ describe('createToolExecuteHandler', () => {
       return createToolExecuteHandler({ loadTools, getSkillByName });
     }
 
+    /** Skill with one bundled file plus every dep the priming gate requires,
+     *  so the handler actually attempts the batch upload. */
+    function createPrimingSkillHandler(
+      skillName: string,
+      batchUploadCodeEnvFiles: NonNullable<ToolExecuteOptions['batchUploadCodeEnvFiles']>,
+    ) {
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [],
+        configurable: {
+          accessibleSkillIds: skillsInScope(),
+          codeEnvAvailable: true,
+          req: { user: { id: 'user-1' } },
+        },
+      }));
+      const getSkillByName: ToolExecuteOptions['getSkillByName'] = jest.fn(async () => ({
+        _id: `${skillName}-id` as unknown as never,
+        name: skillName,
+        body: 'skill body',
+        fileCount: 1,
+        version: 1,
+      }));
+      const listSkillFiles: ToolExecuteOptions['listSkillFiles'] = jest.fn(async () => [
+        {
+          relativePath: 'references/style.md',
+          filename: 'style.md',
+          filepath: `/storage/${skillName}/references/style.md`,
+          source: 's3',
+          bytes: 256,
+        },
+      ]);
+      const getStrategyFunctions: ToolExecuteOptions['getStrategyFunctions'] = jest.fn(() => ({
+        getDownloadStream: jest.fn(async () => Readable.from(Buffer.from(''))),
+      }));
+      return createToolExecuteHandler({
+        loadTools,
+        getSkillByName,
+        listSkillFiles,
+        getStrategyFunctions,
+        batchUploadCodeEnvFiles,
+      });
+    }
+
     it('rejects with a clear error when the named skill has disableModelInvocation=true', async () => {
       const getSkillByName = jest.fn(async () => ({
         _id: 'skill-id' as unknown as never,
@@ -684,6 +727,63 @@ describe('createToolExecuteHandler', () => {
         | { preferUserInvocable?: boolean }
         | undefined;
       expect(callOptions).not.toHaveProperty('preferUserInvocable', true);
+    });
+
+    it('appends an unavailability note when file priming fails, so the model avoids dead sandbox paths', async () => {
+      const batchUploadCodeEnvFiles = jest.fn(async () => {
+        throw new Error('Request failed with status code 429');
+      });
+      const handler = createPrimingSkillHandler('note-fail-skill', batchUploadCodeEnvFiles);
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_prime_fail',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'note-fail-skill' },
+        },
+      ]);
+
+      /* The skill body still loads (instructions inject regardless), but the
+       * tool result must say the bundled files never reached the sandbox. */
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('could not be loaded into the code environment');
+      expect(result.content).toContain('/mnt/data/skills/note-fail-skill/');
+      expect(result.content).toContain('read_file');
+      expect(result.artifact).toBeUndefined();
+    });
+
+    it('omits the unavailability note when file priming succeeds', async () => {
+      const batchUploadCodeEnvFiles = jest.fn(async () => ({
+        storage_session_id: 'session-ok',
+        files: [
+          { fileId: 'file-ok', filename: 'skills/note-ok-skill/references/style.md' },
+          { fileId: 'file-skillmd', filename: 'skills/note-ok-skill/SKILL.md' },
+        ],
+      }));
+      const handler = createPrimingSkillHandler('note-ok-skill', batchUploadCodeEnvFiles);
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_prime_ok',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'note-ok-skill' },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).not.toContain('could not be loaded');
+      expect(result.artifact).toEqual(
+        expect.objectContaining({
+          session_id: 'session-ok',
+          files: [
+            expect.objectContaining({
+              id: 'file-ok',
+              name: 'skills/note-ok-skill/references/style.md',
+              kind: 'skill',
+            }),
+          ],
+        }),
+      );
     });
 
     it("read_file pins lookup to the primed skill's _id when manually invoked this turn (no shadowing on collision)", async () => {

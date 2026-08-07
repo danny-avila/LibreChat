@@ -12,8 +12,12 @@ const envKeys = [
   'LANGFUSE_BASEURL',
   'LANGFUSE_FANOUT_ENABLED',
   'LANGFUSE_FANOUT_COLLECTOR_URL',
+  'LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED',
   'LANGFUSE_FANOUT_TENANT_DESTINATIONS',
   'LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED',
+  'LANGFUSE_TRACING_ENABLED',
+  'LANGFUSE_SAMPLE_RATE',
+  'TENANT_ISOLATION_STRICT',
 ];
 
 function clearEnv() {
@@ -25,13 +29,136 @@ function clearEnv() {
 describe('buildLangfuseConfig', () => {
   beforeEach(() => {
     clearEnv();
+    process.env.TENANT_ISOLATION_STRICT = 'true';
   });
 
   afterEach(() => {
     clearEnv();
   });
 
+  it('enables fanout only when both the toggle and collector URL are configured', async () => {
+    const { isLangfuseFanoutEnabled } = await import('./config');
+
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    expect(isLangfuseFanoutEnabled()).toBe(false);
+
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = '   ';
+    expect(isLangfuseFanoutEnabled()).toBe(false);
+
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+    expect(isLangfuseFanoutEnabled()).toBe(true);
+  });
+
+  it('uses a stored connection directly for every run in single-tenant mode', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        runId: 'run-1',
+        appConfig: {
+          langfuse: {
+            enabled: true,
+            publicKey: 'pk-stored',
+            secretKey: encryptV3('sk-stored'),
+            destination: 'us',
+          },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-stored',
+      secretKey: 'sk-stored',
+      baseUrl: 'https://us.cloud.langfuse.com',
+    });
+  });
+
+  it('prefers environment credentials in single-tenant mode', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://env.langfuse.example';
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        runId: 'run-1',
+        appConfig: {
+          langfuse: {
+            enabled: true,
+            publicKey: 'pk-stored',
+            secretKey: encryptV3('sk-stored'),
+            destination: 'us',
+          },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-env',
+      secretKey: 'sk-env',
+      baseUrl: 'https://env.langfuse.example',
+    });
+  });
+
+  it('does not trace a disabled stored connection in single-tenant mode', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        runId: 'run-1',
+        appConfig: {
+          langfuse: {
+            enabled: false,
+            publicKey: 'pk-stored',
+            secretKey: encryptV3('sk-stored'),
+            destination: 'us',
+          },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      enabled: false,
+    });
+  });
+
+  it.each(['false', '0', 'no', 'off'])(
+    'disables traces when LANGFUSE_TRACING_ENABLED is %s',
+    async (value) => {
+      process.env.LANGFUSE_TRACING_ENABLED = value;
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+      process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+      const { buildLangfuseConfig } = await import('./config');
+
+      expect(buildLangfuseConfig({ runId: 'run-1' })).toEqual({
+        deterministicTraceId: true,
+        enabled: false,
+      });
+    },
+  );
+
+  it('applies fractional sampling to deterministic run trace IDs', async () => {
+    process.env.LANGFUSE_SAMPLE_RATE = '0.5';
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(buildLangfuseConfig({ runId: 'sampled-run' })).toEqual({
+      deterministicTraceId: true,
+      enabled: false,
+    });
+    expect(buildLangfuseConfig({ runId: 'unsampled-run' })).toMatchObject({
+      deterministicTraceId: true,
+      publicKey: 'pk-central',
+      secretKey: 'sk-central',
+    });
+  });
+
   it('decrypts encrypted tenant secrets for tenant trace export', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout-collector:4318';
     const { encryptV3 } = await import('@librechat/data-schemas');
@@ -41,12 +168,10 @@ describe('buildLangfuseConfig', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
-          fanout: {
-            enabled: true,
-          },
         },
       } as unknown as AppConfig,
     });
@@ -60,6 +185,7 @@ describe('buildLangfuseConfig', () => {
         'librechat.langfuse.destination': 'eu',
       },
     });
+    expect(config).not.toHaveProperty('mediaUploadEnabled');
   });
 
   it('fails closed to central-only export when tenant secret decryption fails', async () => {
@@ -71,6 +197,7 @@ describe('buildLangfuseConfig', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: 'v3:not-valid-ciphertext',
           destination: 'eu',
@@ -95,6 +222,7 @@ describe('buildLangfuseConfig', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
           destination: 'eu',
@@ -183,6 +311,7 @@ describe('buildLangfuseConfig', () => {
         centralTraceExportEnabled: false,
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'us',
@@ -217,6 +346,7 @@ describe('buildLangfuseConfig', () => {
         centralTraceExportEnabled: false,
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'us',
@@ -234,7 +364,60 @@ describe('buildLangfuseConfig', () => {
     });
   });
 
-  it('honors tenant Langfuse enabled=false before adding routing attributes', async () => {
+  it('keeps central collector export when the tenant connection is disabled', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: {
+            enabled: false,
+            publicKey: 'pk-tenant-1',
+            secretKey: encryptV3('sk-tenant-1'),
+            destination: 'us',
+          },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('keeps central collector export when tenant enabled is missing', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: {
+            publicKey: 'pk-tenant-1',
+            secretKey: encryptV3('sk-tenant-1'),
+            destination: 'us',
+          },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('does not emit central-suppressed traces when the tenant connection is disabled', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
     const { buildLangfuseConfig } = await import('./config');
 
     expect(
@@ -251,7 +434,45 @@ describe('buildLangfuseConfig', () => {
       deterministicTraceId: true,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       enabled: false,
+      librechatTraceAttributes: {
+        [CENTRAL_EXPORT_ATTRIBUTE]: 'false',
+      },
       tags: ['tenant:tenant-1'],
     });
   });
+
+  it.each(['true', '1', 'yes', 'on'])(
+    'disables central collector media uploads when LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED is %s',
+    async (value) => {
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+      process.env.LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED = value;
+      const { buildLangfuseConfig } = await import('./config');
+
+      expect(buildLangfuseConfig({ tenantId: 'tenant-1' })).toEqual({
+        deterministicTraceId: true,
+        baseUrl: 'http://collector-from-env:4318',
+        mediaUploadEnabled: false,
+        metadata: { 'librechat.tenant.id': 'tenant-1' },
+        tags: ['tenant:tenant-1'],
+      });
+    },
+  );
+
+  it.each(['false', '0', 'no', 'off', ''])(
+    'keeps central collector media uploads at the SDK default when LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED is %s',
+    async (value) => {
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+      process.env.LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED = value;
+      const { buildLangfuseConfig } = await import('./config');
+
+      expect(buildLangfuseConfig({ tenantId: 'tenant-1' })).toEqual({
+        deterministicTraceId: true,
+        baseUrl: 'http://collector-from-env:4318',
+        metadata: { 'librechat.tenant.id': 'tenant-1' },
+        tags: ['tenant:tenant-1'],
+      });
+    },
+  );
 });

@@ -1,4 +1,5 @@
 import { memo, useState } from 'react';
+import { Button } from '@librechat/client';
 import { Info, Settings, X } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentItem } from './items/types';
@@ -78,32 +79,30 @@ function ToolRowImpl({ item, onInfo, onRemove }: Props) {
           'group-focus-within:opacity-100 group-hover:opacity-100',
         )}
       >
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           onClick={() => onInfo(item)}
           aria-label={
             configurable ? localize('com_ui_tools_configure') : localize('com_ui_tools_info')
           }
           className={cn(
-            'flex size-6 items-center justify-center rounded-md text-text-secondary',
-            'hover:bg-surface-hover hover:text-text-primary',
-            'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
+            'size-6 rounded-md p-0 text-text-secondary',
+            'hover:text-text-primary focus-visible:opacity-100',
           )}
         >
           <DetailIcon className="size-3.5" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="ghost"
           onClick={() => onRemove(item)}
           aria-label={localize('com_ui_tools_remove')}
           className={cn(
-            'flex size-6 items-center justify-center rounded-md text-text-secondary',
-            'hover:bg-surface-hover hover:text-text-primary',
-            'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
+            'size-6 rounded-md p-0 text-text-secondary',
+            'hover:text-text-primary focus-visible:opacity-100',
           )}
         >
           <X className="size-3.5" aria-hidden="true" />
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -45,7 +45,7 @@ export default function Sidebar({
           }}
           placeholder={localize('com_ui_settings_search_placeholder')}
           aria-label={localize('com_ui_settings_search_placeholder')}
-          className="w-full rounded-lg bg-surface-secondary py-2 pl-8 pr-8 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-border-xheavy"
+          className="w-full rounded-lg bg-surface-secondary py-2 pl-8 pr-8 text-sm text-text-primary focus:outline-none"
         />
         {query.length > 0 && (
           <button

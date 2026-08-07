@@ -95,15 +95,23 @@ const conversation = (conversationId: string) =>
     agent_id: 'agent-1',
   }) as TConversation;
 
-function renderAsk(messages: TMessage[] | undefined, conversationId = 'conversation-1') {
+function renderAsk(
+  messages: TMessage[] | undefined,
+  conversationId = 'conversation-1',
+  options: { endpoint?: TConversation['endpoint']; isSubmitting?: boolean } = {},
+) {
   const setMessages = jest.fn();
   const setSubmission = jest.fn();
   const getMessages = jest.fn(() => messages);
+  const immutableConversation = conversation(conversationId);
+  if ('endpoint' in options) {
+    immutableConversation.endpoint = options.endpoint ?? null;
+  }
   const hook = renderHook(() =>
     useChatFunctions({
-      isSubmitting: false,
+      isSubmitting: options.isSubmitting ?? false,
       latestMessage: messages?.at(-1) ?? null,
-      conversation: conversation(conversationId),
+      conversation: immutableConversation,
       getMessages,
       setMessages,
       setSubmission,
@@ -134,6 +142,55 @@ describe('useChatFunctions ask', () => {
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       '[useChatFunctions] Refusing to send before existing conversation history loads',
     );
+  });
+
+  it('synchronously reports a refusal while another submit is in flight', () => {
+    const { result, setMessages, setSubmission } = renderAsk([], 'conversation-1', {
+      isSubmitting: true,
+    });
+
+    let askResult: ReturnType<typeof result.current.ask>;
+    act(() => {
+      askResult = result.current.ask({ text: 'queued follow-up' });
+    });
+
+    expect(askResult!).toBe(false);
+    expect(setMessages).not.toHaveBeenCalled();
+    expect(setSubmission).not.toHaveBeenCalled();
+    expect(mockSetShowStopButton).not.toHaveBeenCalled();
+  });
+
+  it('reports a refusal when no endpoint is available', () => {
+    const { result, setMessages, setSubmission } = renderAsk([], 'conversation-1', {
+      endpoint: null,
+    });
+
+    let askResult: ReturnType<typeof result.current.ask>;
+    act(() => {
+      askResult = result.current.ask({ text: 'queued follow-up' });
+    });
+
+    expect(askResult!).toBe(false);
+    expect(setMessages).not.toHaveBeenCalled();
+    expect(setSubmission).not.toHaveBeenCalled();
+    expect(mockSetShowStopButton).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['empty text', { text: '   ' }, undefined],
+    ['the search view', { text: 'queued follow-up', conversationId: 'search' }, undefined],
+    ['a continue without a latest message', { text: 'continue' }, { isContinued: true }],
+  ])('reports a refusal for %s', (_label, props, askOptions) => {
+    const { result, setMessages, setSubmission } = renderAsk([]);
+
+    let askResult: ReturnType<typeof result.current.ask>;
+    act(() => {
+      askResult = result.current.ask(props, askOptions);
+    });
+
+    expect(askResult!).toBe(false);
+    expect(setMessages).not.toHaveBeenCalled();
+    expect(setSubmission).not.toHaveBeenCalled();
   });
 
   it('allows an existing conversation whose loaded history is empty', () => {

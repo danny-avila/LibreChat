@@ -1,6 +1,8 @@
 import dns from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
+import { isIP } from 'node:net';
+import type { AxiosRequestConfig } from 'axios';
 import type { LookupFunction } from 'node:net';
 import {
   normalizePort,
@@ -141,4 +143,56 @@ export function createSSRFSafeUndiciConnect(
     ? buildSSRFSafeLookup(allowedAddresses, port)
     : ssrfSafeLookup;
   return { lookup };
+}
+
+/**
+ * Attaches SSRF-safe HTTP(S) agents to an axios config for a direct request.
+ * Rejects non-http(s) (and unparseable) target urls, since the agents validate
+ * the resolved IP at connect time but never inspect the scheme. Sets
+ * `maxRedirects: 0` unconditionally so a redirect cannot bypass that check, and
+ * leaves the agents untouched when a proxy or agent is already set.
+ *
+ * @param config - The axios request config to mutate.
+ * @param url - The request target URL (http/https only).
+ * @param allowedAddresses - Optional admin exemption list of host:port pairs.
+ */
+export function applySSRFSafeAgentIfDirect(
+  config: AxiosRequestConfig,
+  url: string,
+  allowedAddresses?: string[] | null,
+): AxiosRequestConfig {
+  const { protocol, hostname, port } = new URL(url);
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    throw new Error(`Unsupported URL scheme for SSRF-guarded request: ${protocol}`);
+  }
+
+  config.maxRedirects = 0;
+
+  // Node skips the agent's custom DNS lookup for IP-literal hosts, and a configured proxy
+  // connects on our behalf without running that check, so a literal private IP (e.g.
+  // http://169.254.169.254) must be rejected before any proxy or agent early return.
+  const literalHost = hostname.replace(/^\[|\]$/g, '');
+  if (isIP(literalHost)) {
+    const exemptSet = normalizeAllowedAddressesSet(allowedAddresses);
+    const normalizedPort = normalizePort(port || (protocol === 'https:' ? '443' : '80'));
+    const hostnameAllowed = isAddressInAllowedSet(literalHost, exemptSet, normalizedPort);
+    const blockedAddress = getBlockedLookupAddress(
+      literalHost,
+      hostnameAllowed,
+      exemptSet,
+      normalizedPort,
+    );
+    if (blockedAddress) {
+      throw createSSRFLookupError(literalHost, blockedAddress);
+    }
+  }
+
+  if (config.httpsAgent || config.httpAgent || config.proxy) {
+    return config;
+  }
+
+  const { httpAgent, httpsAgent } = createSSRFSafeAgents(allowedAddresses);
+  config.httpAgent = httpAgent;
+  config.httpsAgent = httpsAgent;
+  return config;
 }

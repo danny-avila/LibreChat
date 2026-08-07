@@ -56,11 +56,26 @@ export type TModelSpec = {
   /** Equip the spec's ephemeral agent with the `ask_user_question` HITL tool. */
   askUserQuestion?: boolean;
   /**
-   * Let the model dispatch this spec's eligible tool calls in the background
-   * (poll results via `check_background_task`). Requires the `run_in_background`
+   * Let the model dispatch tool calls in the background (poll results via
+   * `check_background_task`). Code execution is background-NATIVE: when the
+   * admin enables the `run_in_background` agent capability, an
+   * `executeCode: true` spec backgrounds code with no flag here. `true` opts
+   * in every other eligible tool; a string array opts in only the named
+   * tools, matched against the spec's resolved tool ids (e.g.
+   * `['slow_report_mcp_analytics']`; `execute_code` and `bash_tool` both
+   * select the code pair). `false`, the empty list, or a list that omits the
+   * code pair explicitly opts it back out. Requires the `run_in_background`
+   * agent capability.
+   */
+  runInBackground?: boolean | string[];
+  /**
+   * Inject the `intent` label param so each call streams a live status label.
+   * `true` opts in every eligible tool; a string array opts in only the named
+   * tools, matched against the spec's resolved tool ids (e.g.
+   * `['web_search', 'search_code_mcp_github']`). Requires the `tool_intents`
    * agent capability to be enabled by the admin.
    */
-  runInBackground?: boolean;
+  describeIntent?: boolean | string[];
   artifacts?: string | boolean;
   mcpServers?: string[];
   skills?: boolean | string[];
@@ -96,7 +111,8 @@ export const tModelSpecSchema = z.object({
   executeCode: z.boolean().optional(),
   memory: z.boolean().optional(),
   askUserQuestion: z.boolean().optional(),
-  runInBackground: z.boolean().optional(),
+  runInBackground: z.union([z.boolean(), z.array(z.string())]).optional(),
+  describeIntent: z.union([z.boolean(), z.array(z.string())]).optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
   skills: z.union([z.boolean(), z.array(z.string())]).optional(),

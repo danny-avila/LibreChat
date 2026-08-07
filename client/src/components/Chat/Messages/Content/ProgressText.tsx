@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react';
+import { Button } from '@librechat/client';
 import * as Popover from '@radix-ui/react-popover';
 import CancelledIcon from './CancelledIcon';
 import { cn } from '~/utils';
@@ -6,15 +7,18 @@ import { cn } from '~/utils';
 const wrapperClass =
   'progress-text-wrapper text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5';
 
+/** `max-w-full` caps the absolutely-positioned line at the message column;
+ *  the label span truncates itself, so overflow stays visible for the
+ *  button's focus ring. */
+const contentClass =
+  'progress-text-content absolute left-0 top-0 max-w-full overflow-visible whitespace-nowrap';
+
 const Wrapper = ({ popover, children }: { popover: boolean; children: React.ReactNode }) => {
   if (popover) {
     return (
       <div className={wrapperClass}>
         <Popover.Trigger asChild>
-          <div
-            className="progress-text-content absolute left-0 top-0 overflow-visible whitespace-nowrap"
-            style={{ opacity: 1, transform: 'none' }}
-          >
+          <div className={contentClass} style={{ opacity: 1, transform: 'none' }}>
             {children}
           </div>
         </Popover.Trigger>
@@ -24,10 +28,7 @@ const Wrapper = ({ popover, children }: { popover: boolean; children: React.Reac
 
   return (
     <div className={wrapperClass}>
-      <div
-        className="progress-text-content absolute left-0 top-0 overflow-visible whitespace-nowrap"
-        style={{ opacity: 1, transform: 'none' }}
-      >
+      <div className={contentClass} style={{ opacity: 1, transform: 'none' }}>
         {children}
       </div>
     </div>
@@ -84,12 +85,13 @@ export default function ProgressText({
 
   return (
     <Wrapper popover={popover}>
-      <button
+      <Button
         type="button"
+        variant="ghost"
         className={cn(
-          'inline-flex w-full items-center gap-2',
+          'h-auto w-full justify-start gap-2 rounded-none p-0 hover:bg-transparent hover:text-inherit disabled:opacity-100',
           hasInput
-            ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
+            ? 'focus-visible:ring-border-heavy focus-visible:ring-offset-0'
             : 'pointer-events-none',
         )}
         disabled={!hasInput}
@@ -98,11 +100,11 @@ export default function ProgressText({
         aria-expanded={hasInput ? isExpanded : undefined}
       >
         {icon}
-        <span className={cn(showShimmer ? 'shimmer' : '', 'font-medium')}>{text}</span>
+        <span className={cn(showShimmer ? 'shimmer' : '', 'min-w-0 truncate font-medium')}>
+          {text}
+        </span>
         {subtitle && <span className="font-normal text-text-secondary">{subtitle}</span>}
-        {errorSuffix && (
-          <span className="font-normal text-red-600 dark:text-red-400">— {errorSuffix}</span>
-        )}
+        {errorSuffix && <span className="font-normal text-status-error">· {errorSuffix}</span>}
         {hasInput && (
           <ChevronDown
             className={cn(
@@ -112,7 +114,7 @@ export default function ProgressText({
             aria-hidden="true"
           />
         )}
-      </button>
+      </Button>
     </Wrapper>
   );
 }

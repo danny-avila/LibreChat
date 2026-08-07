@@ -11,7 +11,7 @@ import {
 } from '@librechat/client';
 import type { AgentItem, AgentItemKind, ItemFilter } from './items/types';
 import type { AgentForm } from '~/common';
-import { itemKey, mcpServerToken, matchesMcpServer } from './items/selectors';
+import { itemKey, mcpServerToken, matchesMcpServer, mcpServerIds } from './items/selectors';
 import { useAgentItems, useUninstallToolCredentials } from './hooks';
 import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
 import { computeToggleAction } from './items/mutations';
@@ -133,10 +133,11 @@ export default function ToolsMarketplaceDialog({
         case 'mcp-remove': {
           if (item.kind !== 'mcp') break;
           const toolIds = new Set((item.server.tools ?? []).map((t) => t.tool_id));
+          const allServerNames = mcpServerIds(catalog);
           const current = (getValues('tools') ?? []) as string[];
           setValue(
             'tools',
-            current.filter((t) => !matchesMcpServer(t, item.id) && !toolIds.has(t)),
+            current.filter((t) => !matchesMcpServer(t, item.id, allServerNames) && !toolIds.has(t)),
             { shouldDirty: true },
           );
           break;
@@ -145,7 +146,7 @@ export default function ToolsMarketplaceDialog({
           break;
       }
     },
-    [getValues, setValue, selectedIds, uninstallToolCredentials],
+    [getValues, setValue, selectedIds, uninstallToolCredentials, catalog],
   );
 
   const handleCardClick = useCallback(

@@ -1,4 +1,5 @@
 import type { TAgentsEndpoint } from 'librechat-data-provider';
+import { CREATE_FILE_TOOL_NAME } from '~/agents/tools';
 
 const DEFAULT_RECURSION_LIMIT = 50;
 
@@ -58,4 +59,44 @@ export function resolveSubagentMaxTurns(
 ): number {
   const limit = resolveRecursionLimit(agentsEConfig, agent);
   return Math.floor(limit / SUBAGENT_RECURSION_MULTIPLIER);
+}
+
+/** Mirrors `StreamLimits` in `@librechat/agents` (agents#381). */
+export interface StreamLimitsConfig {
+  maxToolCallArgBytes?: number;
+  maxToolCallArgBytesByTool?: Record<string, number>;
+  maxDeltaEventsPerTurn?: number;
+}
+
+/**
+ * LibreChat's shipped per-tool override: create_file legitimately streams
+ * whole documents as its content argument (production p99 of 80.6 KiB versus
+ * under 10 KiB for every other tool class), so it runs at twice the SDK's
+ * 64 KiB global default instead of loosening the cap for all tools.
+ */
+const CREATE_FILE_MAX_TOOL_CALL_ARG_BYTES = 131_072;
+
+/**
+ * Maps the librechat.yaml stream circuit-breaker fields
+ * (`endpoints.agents.maxToolCallArgBytes` / `maxToolCallArgBytesByTool` /
+ * `maxDeltaEventsPerTurn`) to the SDK's `RunConfig.streamLimits`. Unset
+ * global fields keep the SDK defaults (64 KiB per streamed tool call's
+ * arguments, per-turn delta event cap off), while the per-tool map always
+ * ships the create_file override; a yaml entry for the same tool wins. Value
+ * normalization (0 disables, NaN falls back) lives in the SDK's
+ * `resolveStreamLimits`.
+ */
+export function resolveStreamLimits(
+  agentsEConfig: Partial<TAgentsEndpoint> | undefined,
+): StreamLimitsConfig {
+  const maxToolCallArgBytes = agentsEConfig?.maxToolCallArgBytes;
+  const maxDeltaEventsPerTurn = agentsEConfig?.maxDeltaEventsPerTurn;
+  return {
+    ...(maxToolCallArgBytes != null && { maxToolCallArgBytes }),
+    maxToolCallArgBytesByTool: {
+      [CREATE_FILE_TOOL_NAME]: CREATE_FILE_MAX_TOOL_CALL_ARG_BYTES,
+      ...agentsEConfig?.maxToolCallArgBytesByTool,
+    },
+    ...(maxDeltaEventsPerTurn != null && { maxDeltaEventsPerTurn }),
+  };
 }

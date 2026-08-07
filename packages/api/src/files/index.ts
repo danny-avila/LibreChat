@@ -9,6 +9,7 @@ export * from './mistral/crud';
 export * from './ocr';
 export * from './parse';
 export * from './rag';
+export * from './regexEngine';
 export * from './retention';
 export * from './sse';
 export * from './sweep';

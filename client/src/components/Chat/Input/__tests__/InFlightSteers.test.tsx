@@ -1,10 +1,11 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { getDefaultStore } from 'jotai';
+import { RecoilRoot, useRecoilValue } from 'recoil';
 import { render, screen, fireEvent, act } from '@testing-library/react';
+import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
-import type { PendingSteer } from '~/store/families';
-import { steerOverlayHeightFamily } from '~/store/steer';
+import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import InFlightSteers from '../InFlightSteers';
 import store from '~/store';
 
@@ -12,8 +13,12 @@ const mockCancelMutateAsync = jest.fn();
 const mockShowToast = jest.fn();
 const mockQueueReclaimedSteer = jest.fn();
 const mockRemoveSteer = jest.fn();
+const mockRetrySteer = jest.fn();
+const mockArmMutateAsync = jest.fn();
 const mockSetDefaultAction = jest.fn();
 const mockRestoreToComposer = jest.fn();
+let convertSteersForTest: ReturnType<typeof useSteerConvert>;
+let observedQueueForTest: QueuedMessage[];
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -23,10 +28,23 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
+  InfoHoverCard: () => null,
+  ESide: { Top: 'top', Bottom: 'bottom' },
 }));
 
 jest.mock('~/data-provider', () => ({
   useCancelSteerMutation: () => ({ mutateAsync: mockCancelMutateAsync }),
+  useArmSteerMutation: () => ({ mutateAsync: mockArmMutateAsync }),
+  getGenerationProtocolVersion: (value: unknown) =>
+    value != null &&
+    typeof value === 'object' &&
+    (value as { generationProtocolVersion?: unknown }).generationProtocolVersion === 2
+      ? 2
+      : 1,
+  supportsGenerationProtocolV2: (value: unknown) =>
+    value != null &&
+    typeof value === 'object' &&
+    (value as { generationProtocolVersion?: unknown }).generationProtocolVersion === 2,
 }));
 
 jest.mock('~/components/Chat/Input/Files/FileContainer', () => ({
@@ -64,41 +82,67 @@ jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
 
 const CONVO_ID = 'convo-in-flight';
 
-const steeringStub = (defaultAction: 'steer' | 'queue' = 'steer') =>
+const steeringStub = (defaultAction: 'steer' | 'queue' = 'steer', duringRunActive = true) =>
   ({
     defaultAction,
+    duringRunActive,
+    pausedOnApproval: false,
     removeSteer: mockRemoveSteer,
+    retrySteer: mockRetrySteer,
     setDefaultAction: mockSetDefaultAction,
     queueReclaimedSteer: mockQueueReclaimedSteer,
   }) as unknown as SteeringControls;
 
-function renderSteers(
-  steers: PendingSteer[],
-  options?: {
-    enableUserMsgMarkdown?: boolean;
-    appliedSteerIds?: string[];
-    defaultAction?: 'steer' | 'queue';
-  },
-) {
-  return render(
+type RenderOptions = {
+  enableUserMsgMarkdown?: boolean;
+  appliedSteerIds?: string[];
+  defaultAction?: 'steer' | 'queue';
+  duringRunActive?: boolean;
+  activeGenerationCreatedAt?: number | null;
+  activeGenerationProtocolVersion?: 1 | 2;
+};
+
+/** Element builder shared by first render and rerenders — `initializeState`
+ *  only applies on mount, so a rerender just swaps the steering controls. */
+function steersElement(steers: PendingSteer[], options?: RenderOptions) {
+  const SteerRaceProbe = () => {
+    convertSteersForTest = useSteerConvert();
+    observedQueueForTest = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
+    return null;
+  };
+  return (
     <RecoilRoot
       initializeState={({ set }) => {
         set(store.pendingSteersByConvoId(CONVO_ID), steers);
+        const activeGenerationCreatedAt =
+          options?.activeGenerationCreatedAt === undefined ? 41 : options.activeGenerationCreatedAt;
         if (options?.appliedSteerIds != null) {
           set(store.appliedSteerIdsByConvoId(CONVO_ID), options.appliedSteerIds);
         }
         if (options?.enableUserMsgMarkdown != null) {
           set(store.enableUserMsgMarkdown, options.enableUserMsgMarkdown);
         }
+        if (activeGenerationCreatedAt != null) {
+          set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), activeGenerationCreatedAt);
+        }
+        set(
+          store.activeGenerationProtocolVersionByConvoId(CONVO_ID),
+          options?.activeGenerationProtocolVersion ?? 2,
+        );
       }}
     >
+      <SteerRaceProbe />
       <InFlightSteers
         conversationId={CONVO_ID}
-        steering={steeringStub(options?.defaultAction)}
+        steering={steeringStub(options?.defaultAction, options?.duringRunActive)}
         onRestoreToComposer={mockRestoreToComposer}
       />
-    </RecoilRoot>,
+    </RecoilRoot>
   );
+}
+
+function renderSteers(steers: PendingSteer[], options?: RenderOptions) {
+  return render(steersElement(steers, options));
 }
 
 /** Opens a bubble's "…" menu and clicks one of its items, flushing the reclaim
@@ -116,6 +160,7 @@ describe('InFlightSteers', () => {
     jest.clearAllMocks();
     mockCancelMutateAsync.mockResolvedValue({ removed: true });
     mockRestoreToComposer.mockReturnValue(true);
+    observedQueueForTest = [];
   });
 
   it('renders nothing when no steer is in flight', () => {
@@ -171,9 +216,43 @@ describe('InFlightSteers', () => {
     expect(mockCancelMutateAsync).toHaveBeenCalledWith({
       conversationId: CONVO_ID,
       steerId: 's-ack',
+      generationCreatedAt: 41,
     });
     await act(async () => {});
     expect(screen.queryByText('waiting on boundary')).toBeNull();
+  });
+
+  it('fences cancel to the generation recorded on the steer', async () => {
+    renderSteers(
+      [
+        {
+          steerId: 's-epoch',
+          text: 'belongs to the old turn',
+          status: 'pending',
+          createdAt: 1,
+          generationCreatedAt: 41,
+        },
+      ],
+      { activeGenerationCreatedAt: 99 },
+    );
+    await clickMenuItem('com_ui_steer_cancel');
+
+    expect(mockCancelMutateAsync).toHaveBeenCalledWith({
+      conversationId: CONVO_ID,
+      steerId: 's-epoch',
+      generationCreatedAt: 41,
+    });
+  });
+
+  it('does not send a cancel before any generation epoch is known', async () => {
+    renderSteers(
+      [{ steerId: 's-no-epoch', text: 'wait for start', status: 'pending', createdAt: 1 }],
+      { activeGenerationCreatedAt: null },
+    );
+    await clickMenuItem('com_ui_steer_cancel');
+
+    expect(mockCancelMutateAsync).not.toHaveBeenCalled();
+    expect(screen.getByText('wait for start')).toBeInTheDocument();
   });
 
   it('hands the words back to the composer once the cancel reclaims them', async () => {
@@ -216,8 +295,11 @@ describe('InFlightSteers', () => {
     await clickMenuItem('com_ui_steer_cancel');
     await act(async () => {});
     expect(mockRestoreToComposer).not.toHaveBeenCalled();
-    // The chip still left optimistically; the events own the outcome.
+    // Receiptless v1 cannot distinguish an injected steer from a terminal
+    // conversion race, so keep the original metadata until an event proves
+    // which path won.
     expect(mockCancelMutateAsync).toHaveBeenCalled();
+    expect(screen.getByText('too late')).toBeInTheDocument();
   });
 
   it('does not restore when the cancel POST fails', async () => {
@@ -239,19 +321,81 @@ describe('InFlightSteers', () => {
     expect(screen.getByText('network flake')).toBeInTheDocument();
   });
 
-  it('does not restore a steer that settled while the cancel POST was in flight', async () => {
-    // The run's final event converted this steer to a queued follow-up, which
-    // stamps its id into the applied set. Restoring it on a failed cancel would
-    // strand a stale entry that the NEXT run — a queue drain auto-sends one —
-    // renders as an in-flight bubble beside that queued copy.
-    mockCancelMutateAsync.mockRejectedValue(new Error('network'));
-    renderSteers(
-      [{ steerId: 's-settled', text: 'already queued', status: 'pending', createdAt: 1 }],
-      { appliedSteerIds: ['s-settled'] },
+  it('keeps the terminal recovery copy when an in-flight cancel POST fails', async () => {
+    let rejectCancel: ((reason?: unknown) => void) | undefined;
+    mockCancelMutateAsync.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectCancel = reject;
+      }),
     );
+    const steer = {
+      steerId: 's-settled',
+      clientSteerId: 'local-settled',
+      text: 'already queued',
+      status: 'pending' as const,
+      createdAt: 1,
+    };
+    renderSteers([steer]);
     await clickMenuItem('com_ui_steer_cancel');
-    await act(async () => {});
+
+    act(() => {
+      convertSteersForTest(CONVO_ID, [steer]);
+    });
+    expect(observedQueueForTest).toEqual([
+      expect.objectContaining({
+        id: steer.steerId,
+        recoverySteerId: steer.steerId,
+        recoveryClientSteerId: steer.clientSteerId,
+      }),
+    ]);
+
+    await act(async () => {
+      rejectCancel?.(new Error('network'));
+      await Promise.resolve();
+    });
     expect(screen.queryByText('already queued')).toBeNull();
+    expect(observedQueueForTest).toHaveLength(1);
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+    expect(mockQueueReclaimedSteer).not.toHaveBeenCalled();
+  });
+
+  it('keeps the terminal recovery copy when cancel reports an applied race', async () => {
+    let resolveCancel: ((value: { removed: boolean }) => void) | undefined;
+    mockCancelMutateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCancel = resolve;
+      }),
+    );
+    const steer = {
+      steerId: 's-terminal-race',
+      clientSteerId: 'local-terminal-race',
+      text: 'terminal recovery wins',
+      status: 'pending' as const,
+      createdAt: 1,
+    };
+    renderSteers([steer]);
+    await clickMenuItem('com_ui_steer_cancel');
+
+    act(() => {
+      convertSteersForTest(CONVO_ID, [steer]);
+    });
+    expect(observedQueueForTest).toHaveLength(1);
+
+    await act(async () => {
+      resolveCancel?.({ removed: false });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText(steer.text)).toBeNull();
+    expect(observedQueueForTest).toEqual([
+      expect.objectContaining({
+        id: steer.steerId,
+        recoverySteerId: steer.steerId,
+        recoveryClientSteerId: steer.clientSteerId,
+      }),
+    ]);
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+    expect(mockQueueReclaimedSteer).not.toHaveBeenCalled();
   });
 
   it('reclaims a pending steer before queueing it for after the response', async () => {
@@ -269,6 +413,7 @@ describe('InFlightSteers', () => {
     expect(mockCancelMutateAsync).toHaveBeenCalledWith({
       conversationId: CONVO_ID,
       steerId: 's-ack',
+      generationCreatedAt: 41,
     });
     // Routed through the shared conversion, which preserves the steer's id and
     // createdAt so it drains ahead of a follow-up queued after it.
@@ -337,21 +482,36 @@ describe('InFlightSteers', () => {
     );
   });
 
-  it('does not restore a steer a terminal conversion already queued', async () => {
-    // The chip stays interactive during the reclaim round-trip, so a run that
-    // ends or errors meanwhile converts it to a queued follow-up (stamping the
-    // applied set). Restoring afterwards would leave one copy queued and
-    // another in the composer draft.
-    renderSteers([{ steerId: 's-ack', text: 'already queued', status: 'pending', createdAt: 1 }], {
-      appliedSteerIds: ['s-ack'],
-    });
+  it('removes a competing terminal recovery copy before restoring a confirmed reclaim', async () => {
+    let resolveCancel: ((value: { removed: boolean }) => void) | undefined;
+    mockCancelMutateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCancel = resolve;
+      }),
+    );
+    const steer = {
+      steerId: 's-ack',
+      clientSteerId: 'local-ack',
+      text: 'already queued',
+      status: 'pending' as const,
+      createdAt: 1,
+    };
+    renderSteers([steer]);
     await clickMenuItem('com_ui_edit_message');
 
-    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+    act(() => {
+      convertSteersForTest(CONVO_ID, [steer]);
+    });
+    expect(observedQueueForTest).toHaveLength(1);
+
+    await act(async () => {
+      resolveCancel?.({ removed: true });
+      await Promise.resolve();
+    });
+
+    expect(observedQueueForTest).toEqual([]);
+    expect(mockRestoreToComposer).toHaveBeenCalledWith(steer.text, undefined, {}, CONVO_ID);
     expect(mockQueueReclaimedSteer).not.toHaveBeenCalled();
-    expect(mockShowToast).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'com_ui_steer_run_ended_queued' }),
-    );
   });
 
   it('never re-homes a steer the server already applied', async () => {
@@ -574,5 +734,381 @@ describe('InFlightSteers', () => {
     } finally {
       offsetHeight.mockRestore();
     }
+  });
+});
+
+/**
+ * The bubble's "Interrupt now" escalation is ONE atomic server op: `preempt`
+ * flips on the existing queued item, so its FIFO position, id, and timestamp
+ * survive and no reclaim window exists to race. `armed: false` is the honest
+ * answer for every "too late" interleaving (drained, cancelled, run ended or
+ * replaced) and for a deployment that cannot seal mid-stream.
+ */
+describe('InFlightSteers — interrupt-now escalation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockArmMutateAsync.mockReset();
+    mockCancelMutateAsync.mockResolvedValue({ removed: true });
+    mockArmMutateAsync.mockResolvedValue({ armed: true, generationProtocolVersion: 2 });
+    mockRestoreToComposer.mockReturnValue(true);
+    act(() => {
+      getDefaultStore().set(escalatingSteerFamily(CONVO_ID), false);
+    });
+  });
+
+  it("arms the interrupt in place, keeping the steer's id and position", async () => {
+    renderSteers([{ steerId: 's1', text: 'hold on', status: 'pending', createdAt: 1 }]);
+    const armButton = screen.getByTestId('steer-escalate-now');
+    act(() => armButton.focus());
+    await act(async () => {
+      fireEvent.click(armButton);
+    });
+
+    expect(mockArmMutateAsync).toHaveBeenCalledWith({
+      conversationId: CONVO_ID,
+      steerId: 's1',
+      generationCreatedAt: 41,
+    });
+    /** No cancel, no resubmission: the durable item never left the queue. */
+    expect(mockCancelMutateAsync).not.toHaveBeenCalled();
+    expect(mockRetrySteer).not.toHaveBeenCalled();
+    expect(screen.getByText('hold on')).toBeInTheDocument();
+
+    /** The chip relabelled in place: an interrupting steer offers no further
+     *  escalation, so its arrow control is gone. */
+    expect(screen.queryByTestId('steer-escalate-now')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByLabelText('com_ui_more_options'));
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_steer_in_flight_preempt');
+  });
+
+  it('names each escalation control with the message it will interrupt for', () => {
+    renderSteers([
+      { steerId: 's1', text: 'correct the city', status: 'pending', createdAt: 1 },
+      { steerId: 's2', text: 'use metric units', status: 'pending', createdAt: 2 },
+    ]);
+
+    expect(
+      screen.getByRole('button', {
+        name: 'com_ui_interrupt_steer_now: correct the city',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: 'com_ui_interrupt_steer_now: use metric units',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('bounds and normalizes the message suffix in an escalation control name', () => {
+    renderSteers([
+      {
+        steerId: 's-long-label',
+        text: `  one   two\n${'x'.repeat(100)}  `,
+        status: 'pending',
+        createdAt: 1,
+      },
+    ]);
+
+    expect(screen.getByTestId('steer-escalate-now')).toHaveAccessibleName(
+      `com_ui_interrupt_steer_now: one two ${'x'.repeat(71)}…`,
+    );
+  });
+
+  it('fences escalation to the generation recorded on the steer', async () => {
+    renderSteers(
+      [
+        {
+          steerId: 's-epoch',
+          text: 'old generation steer',
+          status: 'pending',
+          createdAt: 1,
+          generationCreatedAt: 41,
+        },
+      ],
+      { activeGenerationCreatedAt: 99 },
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
+
+    expect(mockArmMutateAsync).toHaveBeenCalledWith({
+      conversationId: CONVO_ID,
+      steerId: 's-epoch',
+      generationCreatedAt: 41,
+    });
+  });
+
+  it('does not arm an interrupt before any generation epoch is known', async () => {
+    renderSteers(
+      [{ steerId: 's-no-epoch', text: 'wait for start', status: 'pending', createdAt: 1 }],
+      { activeGenerationCreatedAt: null },
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
+
+    expect(mockArmMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not offer escalation on a steer that is already interrupting', async () => {
+    renderSteers([
+      { steerId: 's1', text: 'already sealing', status: 'pending', createdAt: 1, preempt: true },
+    ]);
+    expect(screen.queryByTestId('steer-escalate-now')).toBeNull();
+    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+    expect(await screen.findByText('com_ui_steer_cancel')).toBeInTheDocument();
+  });
+
+  it('keeps the chip an ordinary steer when the deployment cannot seal', async () => {
+    mockArmMutateAsync.mockResolvedValue({
+      armed: false,
+      code: 'PREEMPT_UNSUPPORTED',
+      generationProtocolVersion: 2,
+    });
+    renderSteers([{ steerId: 's1', text: 'no seal here', status: 'pending', createdAt: 1 }]);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
+
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_preempt_unsupported' }),
+    );
+    /** Still an ordinary steer: escalation stays offered. */
+    expect(screen.getByTestId('steer-escalate-now')).toBeEnabled();
+  });
+
+  it('stays neutral when the arm loses its race, whatever the reason', async () => {
+    /** `armed: false` covers injected, cancelled, re-homed, and run-over
+     *  alike, so the toast must not claim one specific outcome. */
+    mockArmMutateAsync.mockResolvedValue({ armed: false, generationProtocolVersion: 2 });
+    renderSteers([{ steerId: 's1', text: 'too late', status: 'pending', createdAt: 1 }]);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
+
+    expect(mockRetrySteer).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_arm_lost_race' }),
+    );
+  });
+
+  it('retries an indeterminate arm and relabels after confirmation', async () => {
+    mockArmMutateAsync
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce({ armed: true, generationProtocolVersion: 2 });
+    renderSteers([{ steerId: 's1', text: 'still queued', status: 'pending', createdAt: 1 }]);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
+
+    expect(mockArmMutateAsync).toHaveBeenCalledTimes(2);
+    expect(mockShowToast).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('steer-escalate-now')).toBeNull();
+  });
+
+  it.each([400, 403, 409])('does not retry a definitive HTTP %s rejection', async (status) => {
+    mockArmMutateAsync.mockRejectedValue({
+      response: { status, data: { code: 'RUN_PAUSED' } },
+    });
+    renderSteers([{ steerId: 's1', text: 'pause conflict', status: 'pending', createdAt: 1 }]);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
+
+    expect(mockArmMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).toHaveBeenCalledWith({
+      message: 'com_ui_steer_arm_lost_race',
+      status: 'info',
+    });
+  });
+
+  it('does not automatically retry an indeterminate arm on protocol v1', async () => {
+    mockArmMutateAsync.mockRejectedValue(new Error('response lost'));
+    renderSteers([{ steerId: 's1', text: 'legacy arm', status: 'pending', createdAt: 1 }], {
+      activeGenerationProtocolVersion: 1,
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
+
+    expect(mockArmMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_arm_unconfirmed', status: 'warning' }),
+    );
+  });
+
+  it('reports an indeterminate result after two transport failures', async () => {
+    mockArmMutateAsync.mockRejectedValue(new Error('network'));
+    renderSteers([{ steerId: 's1', text: 'status unknown', status: 'pending', createdAt: 1 }]);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
+
+    expect(mockArmMutateAsync).toHaveBeenCalledTimes(2);
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_arm_unconfirmed', status: 'warning' }),
+    );
+    expect(screen.getByText('status unknown')).toBeInTheDocument();
+  });
+
+  it('keeps a rejected-then-missing retry indeterminate', async () => {
+    mockArmMutateAsync
+      .mockRejectedValueOnce(new Error('response lost after commit'))
+      .mockResolvedValueOnce({ armed: false, generationProtocolVersion: 2 });
+    renderSteers([{ steerId: 's1', text: 'possibly armed', status: 'pending', createdAt: 1 }]);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
+
+    expect(mockArmMutateAsync).toHaveBeenCalledTimes(2);
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_arm_unconfirmed', status: 'warning' }),
+    );
+    expect(screen.getByText('possibly armed')).toBeInTheDocument();
+  });
+
+  it('locks every escalation control while an arm request is in flight', async () => {
+    /** The chip-derived gate cannot see an arm until its response lands, so
+     *  the flag flips synchronously at click — otherwise two bubbles could
+     *  both arm on a slow connection, belying the disabled controls. */
+    let resolveArm: (value: {
+      armed: boolean;
+      generationProtocolVersion: number;
+    }) => void = () => {};
+    mockArmMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveArm = resolve;
+        }),
+    );
+    renderSteers([
+      { steerId: 's1', text: 'first', status: 'pending', createdAt: 1 },
+      { steerId: 's2', text: 'second', status: 'pending', createdAt: 2 },
+    ]);
+    const buttons = screen.getAllByTestId('steer-escalate-now');
+    fireEvent.click(buttons[0]);
+
+    expect(buttons[1]).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(buttons[1]);
+    });
+
+    await act(async () => {
+      resolveArm({ armed: true, generationProtocolVersion: 2 });
+    });
+    expect(mockArmMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mockArmMutateAsync).toHaveBeenCalledWith({
+      conversationId: CONVO_ID,
+      steerId: 's1',
+      generationCreatedAt: 41,
+    });
+  });
+
+  it('warns and unlocks when arm confirmation never settles', async () => {
+    jest.useFakeTimers();
+    try {
+      mockArmMutateAsync.mockImplementation(() => new Promise(() => undefined));
+      renderSteers([
+        { steerId: 's1', text: 'stalled arm', status: 'pending', createdAt: 1 },
+        { steerId: 's2', text: 'still available later', status: 'pending', createdAt: 2 },
+      ]);
+      const buttons = screen.getAllByTestId('steer-escalate-now');
+      fireEvent.click(buttons[0]);
+      expect(buttons[1]).toBeDisabled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(10_000);
+        await Promise.resolve();
+      });
+
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'com_ui_steer_arm_unconfirmed', status: 'warning' }),
+      );
+      expect(buttons[1]).not.toBeDisabled();
+      expect(mockArmMutateAsync).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('disables escalation on every bubble while an interrupt is unresolved', async () => {
+    renderSteers([
+      { steerId: 's1', text: 'plain steer', status: 'pending', createdAt: 1 },
+      { steerId: 's2', text: 'sealing now', status: 'pending', createdAt: 2, preempt: true },
+    ]);
+    const button = screen.getByTestId('steer-escalate-now');
+    expect(button).toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(mockArmMutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Answer mode (`ask_user_question`) sets `duringRunActive` false while
+ * `pausedOnApproval` stays false (it only detects approval-bearing tool
+ * calls). The entry disables there as a UX gate; the server-side arm is the
+ * correctness backstop for states the client cannot see.
+ */
+describe('InFlightSteers — escalation while the run cannot accept a steer', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockArmMutateAsync.mockResolvedValue({ armed: true, generationProtocolVersion: 2 });
+  });
+
+  it('disables escalation in answer mode', async () => {
+    renderSteers([{ steerId: 's1', text: 'waiting', status: 'pending', createdAt: 1 }], {
+      duringRunActive: false,
+    });
+    const button = screen.getByTestId('steer-escalate-now');
+    expect(button).toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(mockArmMutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * One-off message actions and sticky behavior changes must never read as the
+ * same kind of choice: actions first (edit, cancel, queue), then a separated
+ * "Preferences" section holding the two mode toggles. Escalation is not a
+ * menu entry at all — it has its own always-visible arrow control.
+ */
+describe('InFlightSteers — menu structure', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCancelMutateAsync.mockResolvedValue({ removed: true });
+  });
+
+  it('orders actions above a separated Preferences section, with no escalation entry', async () => {
+    renderSteers([{ steerId: 's1', text: 'structured', status: 'pending', createdAt: 1 }]);
+    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+    await screen.findByText('com_ui_edit_message');
+
+    const items = screen
+      .getAllByRole('menuitem')
+      .filter((item) => !item.getAttribute('aria-label')?.startsWith('com_ui_more_info:'))
+      .map((item) => item.textContent);
+    expect(items).toEqual([
+      'com_ui_edit_message',
+      'com_ui_steer_cancel',
+      'com_ui_convert_to_queue',
+      'com_ui_turn_on_queueing',
+      'com_ui_always_interrupt',
+    ]);
+    const preferences = screen.getByRole('group', { name: 'com_ui_preferences' });
+    expect(preferences).toContainElement(
+      screen.getByRole('menuitem', { name: 'com_ui_turn_on_queueing' }),
+    );
+    expect(preferences).toContainElement(
+      screen.getByRole('menuitem', { name: 'com_ui_always_interrupt' }),
+    );
+    expect(screen.queryByRole('menuitem', { name: 'com_ui_interrupt_steer_now' })).toBeNull();
   });
 });

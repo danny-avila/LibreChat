@@ -3,6 +3,13 @@ const esModules = [
   '@langchain/langgraph-checkpoint',
   '@langchain/langgraph-sdk',
   '@mistralai/mistralai',
+  'domelementtype',
+  'domhandler',
+  'dom-serializer',
+  'domutils',
+  'entities',
+  'htmlparser2',
+  'sanitize-html',
   'uuid',
 ].join('|');
 

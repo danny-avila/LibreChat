@@ -86,6 +86,14 @@ jest.mock('@librechat/client', () => ({
   useMediaQuery: () => false,
   TooltipAnchor: ({ render }: { render: React.ReactNode }) => render,
   NewChatIcon: () => <svg data-testid="new-chat-icon" />,
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 jest.mock('~/data-provider', () => ({

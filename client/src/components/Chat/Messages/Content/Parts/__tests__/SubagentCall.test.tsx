@@ -84,6 +84,14 @@ jest.mock('../Attachment', () => ({
 
 jest.mock('@librechat/client', () => ({
   __esModule: true,
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+    <button {...props}>{children}</button>
+  ),
   OGDialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   OGDialogContent: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="dialog-content">{children}</div>
@@ -124,6 +132,11 @@ jest.mock('~/components/Share/MessageIcon', () => ({
     <span data-testid="agent-icon">{agent?.name ?? ''}</span>
   ),
 }));
+
+jest.mock('~/hooks/MCP', () => {
+  const mcpServerNames: string[] = [];
+  return { useMCPServerNames: () => mcpServerNames };
+});
 
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/groupToolCalls'),

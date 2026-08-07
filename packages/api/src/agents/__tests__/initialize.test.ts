@@ -33,7 +33,13 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint, EToolResources, Tools } from 'librechat-data-provider';
+import {
+  Constants,
+  ErrorTypes,
+  EModelEndpoint,
+  EToolResources,
+  Tools,
+} from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
@@ -1505,6 +1511,93 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(definedNames).not.toContain('mcp__broken__tool');
   });
 
+  it('does not retry a resource recovery failure when execute_code is skill-added', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const resourceRecoveryError = Object.assign(new Error('resource recovery required'), {
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      status: 409,
+      statusCode: 409,
+    });
+    loadTools.mockRejectedValue(resourceRecoveryError);
+
+    const getSkillByName = buildGetSkillByName(
+      'code-skill',
+      [Tools.execute_code],
+      skillId,
+      req.user!.id,
+    );
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['code-skill'],
+        },
+        { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+      ),
+    ).rejects.toBe(resourceRecoveryError);
+
+    expect(loadTools).toHaveBeenCalledTimes(1);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', Tools.execute_code]);
+  });
+
+  it('still retries when only skill-added tools expect unavailable MCP tools', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const expectedMCPError = Object.assign(new Error('expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    loadTools.mockRejectedValueOnce(expectedMCPError).mockResolvedValueOnce({
+      tools: [],
+      toolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: [{ name: 'web_search', description: '', parameters: {} }],
+      hasDeferredTools: false,
+      actionsEnabled: undefined,
+    });
+
+    const getSkillByName = buildGetSkillByName(
+      'mcp-skill',
+      ['mcp__warehouse__query'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['mcp-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'mcp__warehouse__query']);
+    expect(loadTools.mock.calls[1][0].tools).toEqual(['web_search']);
+    expect(result.toolDefinitions?.map((definition) => definition.name)).toContain('web_search');
+  });
+
   it('falls back to host-provided skill authoring tools when BOTH loadTools calls return undefined', async () => {
     /* Worst-case silent-failure path: production loaders catch errors
        and return undefined. If the agent's own tools fail to load AND
@@ -2221,5 +2314,66 @@ describe('initializeAgent — run-scoped MCP tool definitions', () => {
     );
 
     expect(result.mcpAvailableTools).toEqual(mcpAvailableTools);
+  });
+
+  it('retains the resolved collision audit on the initialized agent', async () => {
+    /** Deferred/event-driven execution reuses this snapshot instead of
+     *  repeating the merged-registry read — a transient failure there
+     *  would fail-closed a tool the turn already advertised. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    const rawServerName = 'Connector: Company';
+    const accessibleNames = [rawServerName, 'plain_server'];
+    (req as { config: { mcpConfig?: Record<string, unknown> } }).config = {
+      mcpConfig: { [rawServerName]: {} },
+    };
+    agent.tools = [`search${Constants.mcp_delimiter}${rawServerName}`];
+    const getAccessibleMcpServerNames = jest.fn(async () => accessibleNames);
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      { ...db, getAccessibleMcpServerNames },
+    );
+
+    expect(result.accessibleMcpServerNames).toEqual(accessibleNames);
+    expect(loadTools).toHaveBeenCalledWith(
+      expect.objectContaining({ accessibleMcpServerNames: accessibleNames }),
+    );
+  });
+
+  it('unions snapshot config names into the audit when the merged read omits them', async () => {
+    /** The registry's merged read tolerates config-server init failures and
+     *  can silently drop config-only servers — the heal audit must restore
+     *  them from the request's config snapshot or a collision goes unseen
+     *  while the audit still claims completeness. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    const rawServerName = 'Connector: Company';
+    (req as { config: { mcpConfig?: Record<string, unknown> } }).config = {
+      mcpConfig: { [rawServerName]: {} },
+    };
+    agent.tools = [`search${Constants.mcp_delimiter}${rawServerName}`];
+    const getAccessibleMcpServerNames = jest.fn(async () => ['db_only_server']);
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      { ...db, getAccessibleMcpServerNames },
+    );
+
+    expect(result.accessibleMcpServerNames).toEqual(['db_only_server', rawServerName]);
   });
 });

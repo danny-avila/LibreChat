@@ -1,6 +1,7 @@
 import { klona } from 'klona';
 import winston from 'winston';
 import type { TraverseContext } from '../utils/object-traverse';
+import { appendLogContext } from './requestLogContext';
 import { SYSTEM_TENANT_ID } from './tenantContext';
 import traverse from '../utils/object-traverse';
 
@@ -9,7 +10,6 @@ const MESSAGE_SYMBOL = Symbol.for('message');
 const CONSOLE_JSON_STRING_LENGTH: number =
   parseInt(process.env.CONSOLE_JSON_STRING_LENGTH || '', 10) || 255;
 const DEBUG_MESSAGE_LENGTH: number = parseInt(process.env.DEBUG_MESSAGE_LENGTH || '', 10) || 150;
-const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'] as const;
 const REDACTED_VALUE = '[REDACTED]';
 const REDACTION_TRUNCATED_KEY = '__redaction_truncated__';
 const MAX_REDACTION_DEPTH = 8;
@@ -396,25 +396,6 @@ const condenseArray = (item: unknown): string | unknown => {
   return item;
 };
 
-function formatRequestContext(metadata: Record<string, unknown>): string {
-  const context: Partial<Record<(typeof LOG_CONTEXT_KEYS)[number], string>> = {};
-  LOG_CONTEXT_KEYS.forEach((key) => {
-    const value = metadata[key];
-    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
-      return;
-    }
-    if (typeof value === 'string' && value) {
-      context[key] = value;
-    }
-  });
-  return Object.keys(context).length > 0 ? JSON.stringify(context) : '';
-}
-
-function appendRequestContext(line: string, metadata: Record<string, unknown>): string {
-  const context = formatRequestContext(metadata);
-  return context ? `${line} ${context}` : line;
-}
-
 /**
  * Formats log messages for debugging purposes.
  * - Truncates long strings within log messages.
@@ -442,7 +423,7 @@ const debugTraverse: winston.Logform.Format = winston.format.printf(
 
     try {
       if (level !== 'debug') {
-        return appendRequestContext(msgParts[0], metadata);
+        return appendLogContext(msgParts[0], metadata);
       }
 
       if (!metadata) {
@@ -455,17 +436,17 @@ const debugTraverse: winston.Logform.Format = winston.format.printf(
       const debugValue = Array.isArray(splatArray) ? splatArray[0] : undefined;
 
       if (!debugValue) {
-        return appendRequestContext(msgParts[0], metadata);
+        return appendLogContext(msgParts[0], metadata);
       }
 
       if (debugValue && Array.isArray(debugValue)) {
         msgParts.push(`\n${JSON.stringify(debugValue.map(condenseArray))}`);
-        return appendRequestContext(msgParts.join(''), metadata);
+        return appendLogContext(msgParts.join(''), metadata);
       }
 
       if (typeof debugValue !== 'object') {
         msgParts.push(` ${debugValue}`);
-        return appendRequestContext(msgParts.join(''), metadata);
+        return appendLogContext(msgParts.join(''), metadata);
       }
 
       msgParts.push('\n{');

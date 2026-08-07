@@ -8,6 +8,7 @@ import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, OutputRenderer, isError } from './ToolOutput';
 import FilePreviewDialog from './FilePreviewDialog';
 import { sortPagesByRelevance, cn } from '~/utils';
+import { useToolCallIntent } from './Parts/intent';
 import { useGetFiles } from '~/data-provider';
 import ProgressText from './ProgressText';
 import store from '~/store';
@@ -324,18 +325,24 @@ function FileHeader({
 export default function RetrievalCall({
   initialProgress = 0.1,
   isSubmitting,
+  args,
   output,
   attachments,
   onExpand,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
+  args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
   onExpand?: () => void;
 }) {
   const progress = useProgress(initialProgress);
   const localize = useLocalize();
+  /** Model-authored live label (injected when file_search is opted into
+   *  describe_intent); persists as the settled label. The sr-only live
+   *  region below deliberately keeps its stable generic value. */
+  const intent = useToolCallIntent(args);
 
   const errorState = typeof output === 'string' && isError(output);
   const cancelled = !isSubmitting && initialProgress < 1 && !errorState;
@@ -422,15 +429,15 @@ export default function RetrievalCall({
           if (cancelled) {
             return localize('com_ui_cancelled');
           }
-          return localize('com_ui_retrieved_files');
+          return intent ?? localize('com_ui_retrieved_files');
         })()}
       </span>
       <div className="relative my-1 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={hasOutput ? handleToggleOutput : undefined}
-          inProgressText={localize('com_ui_searching_files')}
-          finishedText={localize('com_ui_retrieved_files')}
+          inProgressText={intent ?? localize('com_ui_searching_files')}
+          finishedText={intent ?? localize('com_ui_retrieved_files')}
           errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <ToolIcon type="file_search" isAnimating={progress < 1 && !cancelled && !errorState} />

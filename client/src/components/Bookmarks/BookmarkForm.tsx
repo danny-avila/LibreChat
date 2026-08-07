@@ -119,7 +119,7 @@ const BookmarkForm = ({
             aria-describedby={errors.tag ? 'bookmark-tag-error' : undefined}
           />
           {errors.tag && (
-            <span id="bookmark-tag-error" role="alert" className="text-sm text-red-500">
+            <span id="bookmark-tag-error" role="alert" className="text-sm text-text-destructive">
               {errors.tag.message}
             </span>
           )}

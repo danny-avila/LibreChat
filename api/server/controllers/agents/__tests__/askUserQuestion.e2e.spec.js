@@ -55,6 +55,7 @@ const {
   buildPendingAction,
   getAgentCheckpointer,
   deleteAgentCheckpoint,
+  LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   __resetCheckpointerForTests,
 } = require('@librechat/api');
 const ResumeAgentController = require('~/server/controllers/agents/resume');
@@ -159,9 +160,14 @@ async function buildAskRunEventMode({ saver, responses, toolCalls, runId }) {
   return run;
 }
 
-const runConfig = (conversationId) => ({
+const runConfig = (conversationId, checkpointNamespace = '') => ({
   runName: 'AgentRun',
-  configurable: { thread_id: conversationId, user_id: USER_ID },
+  configurable: {
+    thread_id: conversationId,
+    checkpoint_ns: '',
+    [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: checkpointNamespace,
+    user_id: USER_ID,
+  },
   streamMode: 'values',
   version: 'v2',
 });
@@ -201,13 +207,9 @@ beforeAll(async () => {
 
   GenerationJobManager.configure({ ...createStreamServices(), cleanupOnComplete: false });
   GenerationJobManager.initialize();
-  GenerationJobManager.setApprovalExpiredHandler(async (conversationId) => {
-    await deleteAgentCheckpoint(conversationId, MONGO_CFG);
-  });
 }, 60000);
 
 afterAll(async () => {
-  GenerationJobManager.setApprovalExpiredHandler(null);
   await GenerationJobManager.destroy();
   await mongoose.disconnect();
   await mongoServer.stop();
@@ -225,6 +227,11 @@ describe('ask_user_question lifecycle (full wiring, approval policy disabled)', 
   test('a tool-body interrupt pauses durably and the REAL /resume controller delivers the answer as the tool result', async () => {
     const conversationId = `ask-e2e-resume-${Date.now()}`;
     const responseMessageId = 'resp-ask-1';
+    const job = await GenerationJobManager.createJob(conversationId, USER_ID, conversationId, {
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+    const checkpointNamespace = job.metadata.checkpointNamespace;
+    expect(checkpointNamespace).toBe(String(job.createdAt));
 
     // --- Turn 1: the model calls the ask tool → interrupt() from inside the tool body. ---
     const run = await buildAskRun({
@@ -248,7 +255,7 @@ describe('ask_user_question lifecycle (full wiring, approval policy disabled)', 
     });
     await run.processStream(
       { messages: [new HumanMessage('deploy the app')] },
-      runConfig(conversationId),
+      runConfig(conversationId, checkpointNamespace),
     );
 
     const interrupt = run.getInterrupt();
@@ -266,7 +273,6 @@ describe('ask_user_question lifecycle (full wiring, approval policy disabled)', 
     expect(paused.checkpoints).toBeGreaterThan(0); // the interrupt checkpoint is durable
 
     // --- Pause bookkeeping (mirrors AgentClient.handleRunInterrupt). ---
-    await GenerationJobManager.createJob(conversationId, USER_ID, conversationId);
     await GenerationJobManager.updateMetadata(conversationId, {
       endpoint: 'agents',
       agent_id: 'agent-ask-e2e',
@@ -295,7 +301,7 @@ describe('ask_user_question lifecycle (full wiring, approval policy disabled)', 
           runId: responseMessageId,
         });
         await resumed.resume(resumeValue, {
-          ...runConfig(conversationId),
+          ...runConfig(conversationId, checkpointNamespace),
           signal: (abortController ?? new AbortController()).signal,
         });
         const reInterrupt = resumed.getInterrupt?.();
@@ -349,6 +355,11 @@ describe('ask_user_question lifecycle (full wiring, approval policy disabled)', 
   test('EVENT-DRIVEN mode (production shape): the graphTools ask tool pauses and resumes over the REAL /resume controller', async () => {
     const conversationId = `ask-e2e-event-${Date.now()}`;
     const responseMessageId = 'resp-ask-event-1';
+    const job = await GenerationJobManager.createJob(conversationId, USER_ID, conversationId, {
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+    const checkpointNamespace = job.metadata.checkpointNamespace;
+    expect(checkpointNamespace).toBe(String(job.createdAt));
 
     const run = await buildAskRunEventMode({
       saver,
@@ -365,7 +376,7 @@ describe('ask_user_question lifecycle (full wiring, approval policy disabled)', 
     });
     await run.processStream(
       { messages: [new HumanMessage('run the migration')] },
-      runConfig(conversationId),
+      runConfig(conversationId, checkpointNamespace),
     );
 
     const interrupt = run.getInterrupt();
@@ -374,7 +385,6 @@ describe('ask_user_question lifecycle (full wiring, approval policy disabled)', 
     expect(bodyRuns).toBe(1);
     expect((await checkpointCounts(conversationId)).checkpoints).toBeGreaterThan(0);
 
-    await GenerationJobManager.createJob(conversationId, USER_ID, conversationId);
     await GenerationJobManager.updateMetadata(conversationId, {
       endpoint: 'agents',
       agent_id: 'agent-ask-e2e',
@@ -402,7 +412,7 @@ describe('ask_user_question lifecycle (full wiring, approval policy disabled)', 
           runId: responseMessageId,
         });
         await resumed.resume(resumeValue, {
-          ...runConfig(conversationId),
+          ...runConfig(conversationId, checkpointNamespace),
           signal: (abortController ?? new AbortController()).signal,
         });
         this.contentParts.push({ type: 'text', text: 'Migration underway.' });
