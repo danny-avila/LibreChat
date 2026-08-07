@@ -12,15 +12,15 @@ import { isEphemeralAgent } from '~/common';
  * AGENTS
  */
 export const defaultAgentParams: t.AgentListParams = {
-  limit: 10,
   requiredPermission: PermissionBits.EDIT,
 };
 
 /**
  * Page size for the internal pagination walk. Callers consume the flattened result, so
- * every page costs a serial round trip with no benefit — request the server's maximum
+ * every page costs a serial round trip with no benefit: request the server's maximum
  * (`getListAgentsByAccess` caps at 1000) so realistic agent sets resolve in one request.
- * Kept out of the query key: this is a transport detail, not part of the query identity.
+ * Kept out of the query key, and applied last so a caller-supplied `limit` cannot shrink
+ * it: this is a transport detail, and a caller limit never bounds what the walk returns.
  */
 const WALK_PAGE_SIZE = 1000;
 
@@ -30,9 +30,9 @@ async function fetchAllAgentPages(params: t.AgentListParams): Promise<t.AgentLis
   let cursor: string | null | undefined = params.cursor;
   do {
     const page = await dataService.listAgents({
-      limit: WALK_PAGE_SIZE,
       ...params,
       ...(cursor ? { cursor } : {}),
+      limit: WALK_PAGE_SIZE,
     });
     pages.push(page);
     cursor = page.after;

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, QueryKeys, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
 import type { AgentListResponse } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { useListAgentsQuery } from '../queries';
+import { defaultAgentParams, useListAgentsQuery } from '../queries';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -62,13 +62,17 @@ describe('useListAgentsQuery', () => {
     );
   });
 
-  it('lets an explicit caller limit win over the walk page size', async () => {
+  it('keeps the walk page size when a caller supplies a smaller limit', async () => {
     listAgents.mockResolvedValue(page(['a'], null));
 
     const { result } = renderListAgents({ limit: 10, requiredPermission: PermissionBits.VIEW });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(listAgents).toHaveBeenCalledWith(expect.objectContaining({ limit: 10 }));
+    expect(listAgents).toHaveBeenCalledWith(expect.objectContaining({ limit: 1000 }));
+  });
+
+  it('does not carry a page size in the default params', async () => {
+    expect(defaultAgentParams.limit).toBeUndefined();
   });
 
   it('still walks every page and flattens the result when the server returns a cursor', async () => {

@@ -47,7 +47,12 @@ export const useCreateAgentMutation = (
           if (!listRes) {
             return options?.onSuccess?.(newAgent, variables, context);
           }
-          const currentAgents = [newAgent, ...JSON.parse(JSON.stringify(listRes.data))];
+          /** The create succeeded, so the caller can edit it. Mutation responses carry no
+           *  `isEditable`; without this the cached row loses the field the list sets. */
+          const currentAgents = [
+            { ...newAgent, isEditable: true },
+            ...JSON.parse(JSON.stringify(listRes.data)),
+          ];
 
           queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, key], {
             ...listRes,
@@ -94,7 +99,9 @@ export const useUpdateAgentMutation = (
               ...listRes,
               data: listRes.data.map((agent) => {
                 if (agent.id === variables.agent_id) {
-                  return updatedAgent;
+                  /** The update succeeded, so the caller can edit it. Mutation responses
+                   *  carry no `isEditable`; without this the row loses the field. */
+                  return { ...updatedAgent, isEditable: true };
                 }
                 return agent;
               }),

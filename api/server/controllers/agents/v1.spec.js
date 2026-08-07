@@ -1701,6 +1701,22 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(byId[agentA3.id]).toBe(false);
     });
 
+    test('should forward idOnTheSource to every ACL lookup', async () => {
+      /** Without it `getUserPrincipals` reads the user document once per lookup, so the
+       *  handler pays an extra `User.findById` for each permission it resolves. */
+      mockReq.user.id = userA.toString();
+      mockReq.user.idOnTheSource = 'external-oid-1';
+      findAccessibleResources.mockResolvedValue([agentA1._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(findAccessibleResources.mock.calls.length).toBeGreaterThan(1);
+      for (const [args] of findAccessibleResources.mock.calls) {
+        expect(args.idOnTheSource).toBe('external-oid-1');
+      }
+    });
+
     test('should mark every agent editable when the request is already EDIT-scoped', async () => {
       mockReq.user.id = userA.toString();
       mockReq.query = { requiredPermission: String(PermissionBits.EDIT) };

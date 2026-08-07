@@ -714,10 +714,12 @@ export async function initializeAgent(
     }
 
     const getThreadMessages = db.getMessages;
+    /** Falsy anchors cannot match a parent chain, so they get no walk. */
+    const threadAnchor =
+      parentMessageId && parentMessageId !== Constants.NO_PARENT ? parentMessageId : null;
     const needsThreadWalk =
       toolResourceSet.has(EToolResources.execute_code) &&
-      parentMessageId != null &&
-      parentMessageId !== Constants.NO_PARENT &&
+      threadAnchor != null &&
       getThreadMessages != null;
 
     /**
@@ -730,12 +732,13 @@ export async function initializeAgent(
      * `file_id` refs the next turn must prime — selecting only `files` silently drops
      * every code-output ref.
      */
-    const [fileIds, threadMessages] = await Promise.all([
-      db.getConvoFiles(conversationId).then((ids) => ids ?? []),
+    const [convoFileIds, threadMessages] = await Promise.all([
+      db.getConvoFiles(conversationId),
       needsThreadWalk && getThreadMessages
         ? getThreadMessages({ conversationId }, 'messageId parentMessageId files attachments')
         : null,
     ]);
+    const fileIds = convoFileIds ?? [];
 
     /** Walk the parent chain and collect file_ids referenced by
      *  any message in the thread (`messages.files[].file_id` +
@@ -745,7 +748,7 @@ export async function initializeAgent(
      *  this layer. */
     const threadFileIds =
       threadMessages && threadMessages.length > 0
-        ? getThreadData(threadMessages, parentMessageId as string).fileIds
+        ? getThreadData(threadMessages, threadAnchor).fileIds
         : undefined;
 
     /**

@@ -1166,6 +1166,12 @@ const getListAgentsHandler = async (req, res) => {
       requiredPermission = PermissionBits.VIEW;
     }
     const canReturnSkillConfig = hasEditBit(requiredPermission);
+    /**
+     * Derived from the same bit as `canReturnSkillConfig` but answering a different question:
+     * skill-config exposure versus edit-permission reporting. An EDIT-scoped request matches
+     * only editable agents, so it needs no second lookup to know which ones those are.
+     */
+    const needsEditableLookup = !hasEditBit(requiredPermission);
     // Base filter
     const filter = {};
 
@@ -1201,7 +1207,12 @@ const getListAgentsHandler = async (req, res) => {
      * so consumers wanting just the editable subset can filter one shared VIEW fetch rather
      * than issuing a second full paginated walk under an EDIT-scoped cache key. Requests
      * that already ask for EDIT get it for free: everything they match is editable.
+     *
+     * `idOnTheSource` is forwarded so `getUserPrincipals` resolves identity without reading
+     * the user document; the auth strategies already normalize it to a value or null. Each
+     * omission would cost this handler another `User.findById`, once per lookup.
      */
+    const { idOnTheSource } = req.user;
     const [
       accessibleIds,
       publiclyAccessibleIds,
@@ -1212,6 +1223,7 @@ const getListAgentsHandler = async (req, res) => {
       findAccessibleResources({
         userId,
         role: req.user.role,
+        idOnTheSource,
         resourceType: ResourceType.AGENT,
         requiredPermissions: requiredPermission,
       }),
@@ -1225,17 +1237,19 @@ const getListAgentsHandler = async (req, res) => {
         : findAccessibleResources({
             userId,
             role: req.user.role,
+            idOnTheSource,
             resourceType: ResourceType.SKILL,
             requiredPermissions: PermissionBits.VIEW,
           }),
-      canReturnSkillConfig
-        ? null
-        : findAccessibleResources({
+      needsEditableLookup
+        ? findAccessibleResources({
             userId,
             role: req.user.role,
+            idOnTheSource,
             resourceType: ResourceType.AGENT,
             requiredPermissions: PermissionBits.EDIT,
-          }),
+          })
+        : null,
     ]);
 
     const isValidCachedRefresh =
@@ -1247,13 +1261,17 @@ const getListAgentsHandler = async (req, res) => {
      * Refresh all S3 avatars for this user's accessible agent set (not only the current page)
      * This addresses page-size limits preventing refresh of agents beyond the first page.
      *
-     * Scoped to agents that actually carry an S3 avatar: deployments on any other file
-     * strategy match nothing here instead of loading (and walking) up to
-     * `MAX_AVATAR_REFRESH_AGENTS` full agent documents to discover there is no work.
+     * Scoped to agents that actually carry an S3 avatar so the `MAX_AVATAR_REFRESH_AGENTS`
+     * budget is spent on agents that can do work. Unfiltered, that budget is the most
+     * recently updated accessible agents regardless of avatar, and because a refresh writes
+     * through `updateAgent` and advances `updatedAt`, the window is self-reinforcing: an
+     * S3-avatar agent ranked past the budget never enters it and its presigned URL is never
+     * regenerated. The predicate is not indexed (`avatar` is `Mixed`), so this trades docs
+     * examined for that coverage.
      *
      * Must settle BEFORE the list query below, and is deliberately not parallelized with
      * it. `updateAgent` writes through `findOneAndUpdate` on a `timestamps: true` schema,
-     * so refreshing an avatar advances `updatedAt` — the very field
+     * so refreshing an avatar advances `updatedAt`, the very field
      * `getListAgentsByAccess` sorts and cursors on. A refresh landing after the first
      * page's snapshot would move that agent ahead of the returned cursor, dropping it
      * from every later page and silently truncating the caller's flattened list.
@@ -1330,9 +1348,8 @@ const getListAgentsHandler = async (req, res) => {
         ) {
           agent.avatar = { ...agent.avatar, filepath: urlCache[agent.id] };
         }
-      } catch (e) {
-        // Silently ignore mapping errors
-        void e;
+      } catch (err) {
+        logger.warn('[/Agents] Error mapping agent %s for list response: %o', agent?.id, err);
       }
       return agent;
     });
