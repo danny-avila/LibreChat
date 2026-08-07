@@ -41,6 +41,13 @@ jest.mock('@librechat/api', () => {
     sanitizeFilename: jest.fn((n) => n),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
+    sendUploadSuccess: jest.fn((res, sseStream, message, result) => {
+      if (sseStream) {
+        sseStream.sendData({ message, ...result });
+        return;
+      }
+      res.status(200).json({ message, ...result });
+    }),
     getStorageMetadata: jest.fn(() => ({})),
     getRetentionExpiry,
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
@@ -188,11 +195,12 @@ const mockRes = {
   json: jest.fn().mockReturnValue({}),
 };
 
-const makeFileConfig = ({ ocrSupportedMimeTypes = [] } = {}) => ({
-  checkType: (mime, types) => (types ?? []).includes(mime),
+const makeFileConfig = ({ ocrSupportedMimeTypes = [], textSupportedMimeTypes = [] } = {}) => ({
+  checkType: (mime, types) =>
+    (types ?? []).some((t) => (typeof t === 'string' ? t === mime : t.test(mime))),
   ocr: { supportedMimeTypes: ocrSupportedMimeTypes },
   stt: { supportedMimeTypes: [] },
-  text: { supportedMimeTypes: [] },
+  text: { supportedMimeTypes: textSupportedMimeTypes },
 });
 
 const setupStoredFileUpload = (result = {}) => {
@@ -389,6 +397,100 @@ describe('processAgentFileUpload', () => {
       ).rejects.toThrow(/image-based and requires an OCR service/);
 
       expect(parseText).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('configured text (RAG) routing for document MIME types', () => {
+    const DOCX_TEXT_REGEX = [
+      /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/,
+    ];
+    let originalRagUrl;
+
+    beforeEach(() => {
+      originalRagUrl = process.env.RAG_API_URL;
+    });
+
+    afterEach(() => {
+      if (originalRagUrl === undefined) {
+        delete process.env.RAG_API_URL;
+      } else {
+        process.env.RAG_API_URL = originalRagUrl;
+      }
+    });
+
+    test('routes a document type to RAG /text (no native fallback) when admin narrows text config and RAG is set', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: DOCX_TEXT_REGEX }));
+      const { parseText } = require('@librechat/api');
+      parseText.mockResolvedValueOnce({ text: 'rag extracted', bytes: 13 });
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(parseText).toHaveBeenCalledWith(
+        expect.objectContaining({ allowNativeFallback: false }),
+      );
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.document_parser);
+    });
+
+    test('keeps the built-in document parser when text config is the permissive default', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ textSupportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] }),
+      );
+      const { parseText } = require('@librechat/api');
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+      expect(parseText).not.toHaveBeenCalled();
+    });
+
+    test('keeps the built-in document parser when RAG_API_URL is not configured', async () => {
+      delete process.env.RAG_API_URL;
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: DOCX_TEXT_REGEX }));
+      const { parseText } = require('@librechat/api');
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+      expect(parseText).not.toHaveBeenCalled();
+    });
+
+    test('falls back to the built-in document parser (not native text) when RAG is unavailable', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: DOCX_TEXT_REGEX }));
+      const { parseText } = require('@librechat/api');
+      parseText.mockRejectedValueOnce(new Error('native fallback is disabled'));
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).resolves.not.toThrow();
+
+      expect(parseText).toHaveBeenCalledWith(
+        expect.objectContaining({ allowNativeFallback: false }),
+      );
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+    });
+
+    test('surfaces a persistence failure without retrying via the document parser', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: DOCX_TEXT_REGEX }));
+      const { parseText } = require('@librechat/api');
+      parseText.mockResolvedValueOnce({ text: 'rag extracted', bytes: 13 });
+      // RAG extraction succeeds, but persisting the result fails.
+      db.createFile.mockRejectedValueOnce(new Error('DB down'));
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow('DB down');
+
+      // The persistence failure must not trigger a second extraction via the built-in parser.
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.document_parser);
     });
   });
 

@@ -1,14 +1,18 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
+import { useRecoilValue } from 'recoil';
 import type { TAttachment } from 'librechat-data-provider';
+import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
+import parseJsonField, { areToolCallArgsComplete } from './parseJsonField';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import LangIcon from '~/components/Messages/Content/LangIcon';
+import { sandboxStartingByToolCallId } from '~/store';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
 import { ERROR_PATTERNS } from './ExecuteCode';
 import { AttachmentGroup } from './Attachment';
-import parseJsonField, { areToolCallArgsComplete } from './parseJsonField';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -21,6 +25,7 @@ export default function BashCall({
   commandField = 'command',
   hideAttachments = false,
   onExpand,
+  toolCallId,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
@@ -30,16 +35,35 @@ export default function BashCall({
   commandField?: string;
   hideAttachments?: boolean;
   onExpand?: () => void;
+  toolCallId?: string;
 }) {
   const localize = useLocalize();
   const command = useMemo(() => parseJsonField(args, commandField), [args, commandField]);
   const isWritingCommand = !command || !areToolCallArgsComplete(args);
+  const sandboxStarting = useRecoilValue(sandboxStartingByToolCallId(toolCallId ?? ''));
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
     useToolCallState(initialProgress, isSubmitting, output, !!command, onExpand);
 
   const highlighted = useLazyHighlight(command || undefined, 'bash');
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
+  /** A backgrounded call's persisted output stays the dispatch handle until
+   *  the detached run settles and patches it; render a background state
+   *  instead of the handle JSON. Completion arrives live as the status marker
+   *  attachment (also covers stdout-only runs) or as harvested files. */
+  const backgroundHandle = useMemo(() => parseBackgroundHandle(output), [output]);
+  const { fileAttachments, backgroundStatus } = useMemo(
+    () => splitBackgroundAttachments(attachments, toolCallId),
+    [attachments, toolCallId],
+  );
+  const backgroundFailed = backgroundHandle != null && backgroundStatus === 'error';
+  const backgroundFinishedText = backgroundHandle
+    ? localize(
+        backgroundStatus != null || (fileAttachments?.length ?? 0) > 0
+          ? 'com_ui_background_finished'
+          : 'com_ui_background_running',
+      )
+    : null;
 
   const [isCopied, setIsCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -52,21 +76,41 @@ export default function BashCall({
     timerRef.current = setTimeout(() => setIsCopied(false), 3000);
   }, [command]);
 
+  /** The model-authored `intent` streams as the FIRST args key, so it is the
+   *  live label from the earliest delta — before the command exists and while
+   *  it runs. It persists as the settled label too (completion is a UI state,
+   *  not a tense change); the generic texts are the no-intent fallback. */
+  const intent = useToolCallIntent(args);
+  const inProgressText = (() => {
+    if (intent != null) {
+      return intent;
+    }
+    if (isWritingCommand) {
+      return localize('com_ui_writing_command');
+    }
+    if (sandboxStarting) {
+      return localize('com_ui_sandbox_starting');
+    }
+    return localize('com_ui_running_command');
+  })();
+
   return (
     <>
-      <div className="relative my-1.5 flex size-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={toggleCode}
-          inProgressText={
-            isWritingCommand
-              ? localize('com_ui_writing_command')
-              : localize('com_ui_running_command')
-          }
+          inProgressText={inProgressText}
           finishedText={
-            cancelled ? localize('com_ui_cancelled') : localize('com_ui_command_finished')
+            cancelled
+              ? localize('com_ui_cancelled')
+              : (backgroundFinishedText ?? intent ?? localize('com_ui_command_finished'))
           }
-          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
+          errorSuffix={
+            (hasError && !cancelled) || backgroundFailed
+              ? localize('com_ui_tool_failed')
+              : undefined
+          }
           icon={
             <LangIcon
               lang="bash"
@@ -101,12 +145,12 @@ export default function BashCall({
                 </pre>
               </div>
             )}
-            {hasOutput && (
+            {hasOutput && backgroundHandle == null && (
               <div className={cn(command && 'border-t border-border-light')}>
                 <pre
                   className={cn(
                     'max-h-[300px] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
-                    outputHasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
+                    outputHasError ? 'text-status-error' : 'text-text-primary',
                   )}
                 >
                   {output}
@@ -116,8 +160,8 @@ export default function BashCall({
           </div>
         </div>
       </div>
-      {!hideAttachments && attachments && attachments.length > 0 && (
-        <AttachmentGroup attachments={attachments} />
+      {!hideAttachments && fileAttachments && fileAttachments.length > 0 && (
+        <AttachmentGroup attachments={fileAttachments} />
       )}
     </>
   );

@@ -1,9 +1,8 @@
 import React, { useMemo, useEffect } from 'react';
 import keyBy from 'lodash/keyBy';
-import { ControlCombobox } from '@librechat/client';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
+import { Button, ControlCombobox } from '@librechat/client';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
-import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import {
   alternateName,
   getSettingsKeys,
@@ -15,6 +14,7 @@ import {
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
+import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -103,31 +103,28 @@ export default function ModelPanel({
   };
 
   return (
-    <div className="mb-1 flex w-full flex-col gap-2 text-sm">
-      <div className="model-panel relative flex flex-col items-center px-16 pt-2 text-center">
-        <div className="absolute left-0 top-4">
-          <button
-            type="button"
-            className="btn btn-neutral relative"
-            onClick={() => {
-              setActivePanel(Panel.builder);
-            }}
-            aria-label={localize('com_ui_back_to_builder')}
-          >
-            <div className="model-panel-content flex w-full items-center justify-center gap-2">
-              <ChevronLeft />
-            </div>
-          </button>
-        </div>
-
-        <div className="mb-2 mt-2 text-xl font-medium">{localize('com_ui_model_parameters')}</div>
-      </div>
+    <div className="mb-1 flex w-full flex-col gap-3 text-sm">
+      <header className="grid grid-cols-[auto_1fr_auto] items-center gap-2 pt-1">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setActivePanel(Panel.builder)}
+          aria-label={localize('com_ui_back_to_builder')}
+          className="h-10 w-10 flex-shrink-0 rounded-xl text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
+        >
+          <ChevronLeft className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
+        </Button>
+        <h2 className="text-center text-base font-semibold text-text-primary">
+          {localize('com_ui_model_parameters')}
+        </h2>
+        <span aria-hidden="true" className="h-10 w-10" />
+      </header>
       <div>
         {/* Endpoint aka Provider for Agents */}
-        <div className="mb-4">
+        <div className="mb-3">
           <label
             id="provider-label"
-            className="text-token-text-primary model-panel-label mb-2 block text-sm font-medium"
+            className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
             htmlFor="provider"
           >
             {localize('com_ui_provider')} <span className="text-red-500">*</span>
@@ -164,7 +161,7 @@ export default function ModelPanel({
                     showCarat={true}
                   />
                   {error && (
-                    <span className="model-panel-error text-sm text-red-500 transition duration-300 ease-in-out">
+                    <span className="mt-1 text-xs text-red-500" role="alert">
                       {localize('com_ui_field_required')}
                     </span>
                   )}
@@ -174,12 +171,12 @@ export default function ModelPanel({
           />
         </div>
         {/* Model */}
-        <div className="model-panel-section mb-4">
+        <div className="mb-3">
           <label
             id="model-label"
             className={cn(
-              'text-token-text-primary model-panel-label mb-2 block text-sm font-medium',
-              !provider && 'text-gray-500 dark:text-gray-400',
+              'mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary',
+              !provider && 'opacity-60',
             )}
             htmlFor="model"
           >
@@ -212,7 +209,7 @@ export default function ModelPanel({
                     showCarat={true}
                   />
                   {provider && error && (
-                    <span className="text-sm text-red-500 transition duration-300 ease-in-out">
+                    <span className="mt-1 text-xs text-red-500" role="alert">
                       {localize('com_ui_field_required')}
                     </span>
                   )}
@@ -225,7 +222,7 @@ export default function ModelPanel({
       {/* Model Parameters */}
       {parameters && (
         <div className="h-auto max-w-full">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             {/* This is the parent element containing all settings */}
             {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}
             {parameters.map((setting) => {
@@ -254,14 +251,14 @@ export default function ModelPanel({
         </div>
       )}
       {/* Reset Parameters Button */}
-      <button
-        type="button"
+      <Button
+        variant="outline"
         onClick={handleResetParameters}
-        className="btn btn-neutral my-1 flex w-full items-center justify-center gap-2 px-4 py-2 text-sm"
+        className="mt-2 h-9 w-full rounded-xl px-4 font-medium text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
       >
-        <RotateCcw className="h-4 w-4" aria-hidden="true" />
+        <RotateCcw className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
         {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
-      </button>
+      </Button>
     </div>
   );
 }

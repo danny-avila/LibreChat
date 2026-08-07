@@ -1,8 +1,14 @@
+import type { MimeUploadCapability } from './file-config';
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
+  isAnthropicTextDocumentType,
+  getConfiguredMimeAccept,
+  bedrockDocumentMimeTypes,
+  isAnthropicDocumentType,
   isPermissiveMimeConfig,
   convertStringsToRegex,
+  setFileConfigRegexCompiler,
   documentParserMimeTypes,
   getEndpointFileConfig,
   applicationMimeTypes,
@@ -65,6 +71,39 @@ describe('inferMimeType', () => {
 
   it('should reject raw text/x-markdown without normalization', () => {
     expect(baseFileConfig.checkType('text/x-markdown')).toBe(false);
+  });
+
+  it('should infer message/rfc822 from extension when browser type is empty', () => {
+    expect(inferMimeType('email.eml', '')).toBe('message/rfc822');
+  });
+
+  it('should pass through message/rfc822 when browser reports it', () => {
+    expect(inferMimeType('email.eml', 'message/rfc822')).toBe('message/rfc822');
+  });
+
+  it('should produce a type accepted by checkType for .eml files', () => {
+    const normalized = inferMimeType('test.eml', '');
+    expect(baseFileConfig.checkType(normalized)).toBe(true);
+  });
+
+  it('infers Office MIME types from extension when the browser reports none', () => {
+    expect(inferMimeType('legacy.doc', '')).toBe('application/msword');
+    expect(inferMimeType('report.docx', '')).toBe(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    expect(inferMimeType('legacy.xls', '')).toBe('application/vnd.ms-excel');
+    expect(inferMimeType('sheet.xlsx', '')).toBe(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    expect(inferMimeType('deck.pptx', '')).toBe(
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    );
+  });
+
+  it('produces Office types accepted by checkType after inference', () => {
+    expect(baseFileConfig.checkType(inferMimeType('report.docx', ''))).toBe(true);
+    expect(baseFileConfig.checkType(inferMimeType('sheet.xlsx', ''))).toBe(true);
+    expect(baseFileConfig.checkType(inferMimeType('legacy.doc', ''))).toBe(true);
   });
 });
 
@@ -148,6 +187,10 @@ describe('supportedMimeTypes', () => {
   ])('ODF type flows through supportedMimeTypes: %s', (mimeType) => {
     expect(checkSupported(mimeType)).toBe(true);
   });
+
+  it('message/rfc822 (.eml) flows through supportedMimeTypes', () => {
+    expect(checkSupported('message/rfc822')).toBe(true);
+  });
 });
 
 describe('documentParserMimeTypes', () => {
@@ -175,6 +218,47 @@ describe('documentParserMimeTypes', () => {
     'image/png',
   ])('does not match OCR-only or unsupported type: %s', (mimeType) => {
     expect(check(mimeType)).toBe(false);
+  });
+});
+
+describe('isAnthropicDocumentType', () => {
+  it.each([
+    'application/pdf',
+    'text/plain',
+    'text/html',
+    'text/markdown',
+    'text/csv',
+    'text/x-python',
+    'application/json',
+    'application/xml',
+    'application/yaml',
+    'application/sql',
+    'application/csv',
+  ])('accepts type the Anthropic document path can send: %s', (mimeType) => {
+    expect(isAnthropicDocumentType(mimeType)).toBe(true);
+  });
+
+  it.each([
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/msword',
+    'application/vnd.ms-excel',
+    'application/epub+zip',
+    'application/zip',
+    'application/vnd.apache.parquet',
+    'image/png',
+    '',
+  ])('rejects type Anthropic would 400 on: %s', (mimeType) => {
+    expect(isAnthropicDocumentType(mimeType)).toBe(false);
+  });
+
+  it('rejects undefined', () => {
+    expect(isAnthropicDocumentType(undefined)).toBe(false);
+  });
+
+  it('excludes PDF from the plain-text subset', () => {
+    expect(isAnthropicTextDocumentType('application/pdf')).toBe(false);
+    expect(isAnthropicTextDocumentType('text/plain')).toBe(true);
   });
 });
 
@@ -1340,5 +1424,227 @@ describe('isPermissiveMimeConfig', () => {
   it('returns true for regex produced by convertStringsToRegex with .*', () => {
     const converted = convertStringsToRegex(['.*']);
     expect(isPermissiveMimeConfig(converted)).toBe(true);
+  });
+});
+
+describe('getConfiguredMimeAccept', () => {
+  const toSet = (accept?: string) => new Set((accept ?? '').split(',').filter(Boolean));
+
+  /** Provider capability tiers: image-only, document providers, Google/OpenRouter, and Bedrock. */
+  const IMAGE_ONLY: MimeUploadCapability = { categories: ['image'] };
+  const IMAGE_DOC: MimeUploadCapability = { categories: ['image', 'document'] };
+  const ALL: MimeUploadCapability = { categories: ['image', 'document', 'audio', 'video'] };
+  const BEDROCK: MimeUploadCapability = {
+    categories: ['image', 'document'],
+    documentMimeTypes: bedrockDocumentMimeTypes,
+  };
+  const GOOGLE: MimeUploadCapability = {
+    categories: ['image', 'document', 'audio', 'video'],
+    documentMimeTypes: ['application/pdf'],
+  };
+
+  it('returns undefined for undefined', () => {
+    expect(getConfiguredMimeAccept(undefined, ALL)).toBeUndefined();
+  });
+
+  it('returns undefined for empty array', () => {
+    expect(getConfiguredMimeAccept([], ALL)).toBeUndefined();
+  });
+
+  it('returns undefined for the built-in default supportedMimeTypes (keep provider filter)', () => {
+    expect(getConfiguredMimeAccept(supportedMimeTypes, ALL)).toBeUndefined();
+  });
+
+  it("returns '' for permissive configs so the picker stays unrestricted", () => {
+    expect(getConfiguredMimeAccept(convertStringsToRegex(['.*']), ALL)).toBe('');
+    expect(getConfiguredMimeAccept([/^.+$/], ALL)).toBe('');
+  });
+
+  it('translates the finite Office + image allowlist from issue #14162', () => {
+    const config = convertStringsToRegex([
+      '^image/.*',
+      '^application/pdf$',
+      '^application/msword$',
+      '^application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document$',
+      '^application/vnd\\.ms-excel$',
+      '^application/vnd\\.openxmlformats-officedocument\\.spreadsheetml\\.sheet$',
+    ]);
+    const accept = toSet(getConfiguredMimeAccept(config, IMAGE_DOC));
+
+    for (const token of [
+      'image/*',
+      '.pdf',
+      'application/pdf',
+      '.doc',
+      'application/msword',
+      '.docx',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls',
+      'application/vnd.ms-excel',
+      '.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ]) {
+      expect(accept.has(token)).toBe(true);
+    }
+    expect(accept.has('.pptx')).toBe(false);
+    expect(accept.has('audio/*')).toBe(false);
+    expect(accept.has('video/*')).toBe(false);
+  });
+
+  it('emits image/* for an image-only allowlist', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^image\/(jpeg|png)$/], IMAGE_DOC));
+    expect(accept.has('image/*')).toBe(true);
+    expect(accept.has('.pdf')).toBe(false);
+  });
+
+  it('emits media wildcards for audio and video allowlists on a media-capable path', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^audio\/.*$/, /^video\/.*$/], ALL));
+    expect(accept.has('audio/*')).toBe(true);
+    expect(accept.has('video/*')).toBe(true);
+  });
+
+  it('returns undefined for a finite config with no recognized types (fall back to provider filter)', () => {
+    expect(getConfiguredMimeAccept([/^application\/x-librechat-unknown$/], ALL)).toBeUndefined();
+  });
+
+  it('falls back when any configured type is unrepresentable, rather than emitting a partial accept', () => {
+    expect(
+      getConfiguredMimeAccept([/^application\/pdf$/, /^text\/x-python$/], IMAGE_DOC),
+    ).toBeUndefined();
+  });
+
+  it('translates a fully-representable mixed pdf + audio allowlist on a media-capable path', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^application\/pdf$/, /^audio\/mp3$/], ALL));
+    expect(accept.has('.pdf')).toBe(true);
+    expect(accept.has('application/pdf')).toBe(true);
+    expect(accept.has('audio/*')).toBe(true);
+    expect(accept.has('video/*')).toBe(false);
+    expect(accept.has('image/*')).toBe(false);
+  });
+
+  it('keeps the image upload path image-only even when the allowlist adds documents', () => {
+    const config = convertStringsToRegex([
+      '^image/.*',
+      '^application/pdf$',
+      '^application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document$',
+    ]);
+    const accept = toSet(getConfiguredMimeAccept(config, IMAGE_ONLY));
+    expect(accept.has('image/*')).toBe(true);
+    expect(accept.has('.pdf')).toBe(false);
+    expect(accept.has('.docx')).toBe(false);
+  });
+
+  it('excludes audio/video for document providers that cannot send them', () => {
+    const accept = toSet(
+      getConfiguredMimeAccept([/^image\/.*$/, /^application\/pdf$/, /^audio\/mp3$/], IMAGE_DOC),
+    );
+    expect(accept.has('image/*')).toBe(true);
+    expect(accept.has('.pdf')).toBe(true);
+    expect(accept.has('audio/*')).toBe(false);
+  });
+
+  it('falls back for a broad application/.* regex that reaches unrepresentable types', () => {
+    expect(getConfiguredMimeAccept([/^application\/.*$/], IMAGE_DOC)).toBeUndefined();
+  });
+
+  it('restricts Bedrock document accepts to Bedrock-supported formats', () => {
+    const config = convertStringsToRegex([
+      '^application/pdf$',
+      '^application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document$',
+      '^application/vnd\\.openxmlformats-officedocument\\.presentationml\\.presentation$',
+    ]);
+    const accept = toSet(getConfiguredMimeAccept(config, BEDROCK));
+    expect(accept.has('.pdf')).toBe(true);
+    expect(accept.has('.docx')).toBe(true);
+    expect(accept.has('.pptx')).toBe(false);
+    expect(
+      accept.has('application/vnd.openxmlformats-officedocument.presentationml.presentation'),
+    ).toBe(false);
+  });
+
+  it('includes both .html and .htm when translating text/html', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^text\/html$/], BEDROCK));
+    expect(accept.has('.html')).toBe(true);
+    expect(accept.has('.htm')).toBe(true);
+    expect(accept.has('text/html')).toBe(true);
+  });
+
+  it('restricts Google/OpenRouter documents to PDF while keeping media categories', () => {
+    const config = convertStringsToRegex([
+      '^image/.*$',
+      '^application/pdf$',
+      '^application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document$',
+      '^audio/.*$',
+    ]);
+    const accept = toSet(getConfiguredMimeAccept(config, GOOGLE));
+    expect(accept.has('image/*')).toBe(true);
+    expect(accept.has('.pdf')).toBe(true);
+    expect(accept.has('audio/*')).toBe(true);
+    expect(accept.has('.docx')).toBe(false);
+  });
+
+  it('translates a sampled audio subtype (audio/webm) rather than hiding it', () => {
+    const accept = toSet(getConfiguredMimeAccept([/^image\/.*$/, /^audio\/webm$/], GOOGLE));
+    expect(accept.has('image/*')).toBe(true);
+    expect(accept.has('audio/*')).toBe(true);
+  });
+
+  it('falls back when a configured pattern matches no known MIME type', () => {
+    expect(
+      getConfiguredMimeAccept([/^image\/.*$/, /^audio\/x-librechat-unknown$/], GOOGLE),
+    ).toBeUndefined();
+  });
+
+  it('translates a finite Excel allowlist that includes legacy MIME aliases', () => {
+    const config = convertStringsToRegex([
+      '^application/(vnd\\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\\.openxmlformats-officedocument\\.spreadsheetml\\.sheet)$',
+    ]);
+    const accept = toSet(getConfiguredMimeAccept(config, IMAGE_DOC));
+    expect(accept.has('.xls')).toBe(true);
+    expect(accept.has('.xlsx')).toBe(true);
+  });
+
+  it('translates finite epub and parquet document allowlists', () => {
+    const accept = toSet(
+      getConfiguredMimeAccept(
+        [/^application\/epub\+zip$/, /^application\/vnd\.apache\.parquet$/],
+        IMAGE_DOC,
+      ),
+    );
+    expect(accept.has('.epub')).toBe(true);
+    expect(accept.has('.parquet')).toBe(true);
+  });
+});
+
+describe('setFileConfigRegexCompiler (MIME pattern compiler seam)', () => {
+  afterEach(() => {
+    setFileConfigRegexCompiler((pattern) => new RegExp(pattern));
+  });
+
+  it('defaults to a native RegExp compiler', () => {
+    const [regex] = convertStringsToRegex(['^text/']);
+    expect(regex.test('text/csv')).toBe(true);
+    expect(regex.test('image/png')).toBe(false);
+  });
+
+  it('routes patterns through an injected compiler', () => {
+    const seen: string[] = [];
+    setFileConfigRegexCompiler((pattern) => {
+      seen.push(pattern);
+      return { test: () => false };
+    });
+    const compiled = convertStringsToRegex(['application/pdf', 'text/*']);
+    expect(seen).toEqual(['application/pdf', 'text/*']);
+    expect(compiled.every((matcher) => matcher.test('anything') === false)).toBe(true);
+  });
+
+  it('returns a single reject-all matcher when every pattern fails to compile', () => {
+    setFileConfigRegexCompiler(() => {
+      throw new Error('unsupported pattern');
+    });
+    const compiled = convertStringsToRegex(['application/pdf', 'text/*']);
+    expect(compiled).toHaveLength(1);
+    expect(compiled[0].test('application/pdf')).toBe(false);
+    expect(compiled[0].test('anything')).toBe(false);
   });
 });

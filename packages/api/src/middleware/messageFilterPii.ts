@@ -1,4 +1,6 @@
+import { RE2JS } from 're2js';
 import { logger } from '@librechat/data-schemas';
+import { setMessageFilterRegexValidator } from 'librechat-data-provider';
 import type {
   NextFunction,
   RequestHandler,
@@ -6,13 +8,44 @@ import type {
   Response as ServerResponse,
 } from 'express';
 import type { MessageFilterPiiConfig } from 'librechat-data-provider';
+import { getReferencedQuotes, mergeQuotedText } from '../utils/quotes';
 
-type CompiledPattern = { id: string; label: string; pattern: RegExp };
+/**
+ * Wire the messageFilter PII config validator to the linear-time engine (RE2) so a custom
+ * pattern the runtime cannot compile is rejected at config load rather than silently dropped at
+ * request time. Call once at server startup, before config is parsed; browser builds keep the
+ * native default and pull in no engine.
+ */
+export function configureMessageFilterRegexValidator(): void {
+  setMessageFilterRegexValidator((pattern) => {
+    try {
+      RE2JS.compile(pattern);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+type CompiledPattern = { id: string; label: string; pattern: RE2JS };
+
+const WHITESPACE = '\\s\\p{Zs}\\x0B\\x{2028}\\x{2029}\\x{FEFF}';
 
 const STARTER_PATTERNS: CompiledPattern[] = [
-  { id: 'sk_prefix', label: 'sk- prefix token', pattern: /\b(sk-)[a-zA-Z0-9_-]+/g },
-  { id: 'bearer_header', label: 'Bearer token', pattern: /\b(Bearer )[^\s"']+/gi },
-  { id: 'api_key_header', label: 'api-key header', pattern: /\b(api-key:?\s+)[^\s"']+/gi },
+  { id: 'sk_prefix', label: 'sk- prefix token', pattern: RE2JS.compile('\\b(sk-)[a-zA-Z0-9_-]+') },
+  {
+    id: 'bearer_header',
+    label: 'Bearer token',
+    pattern: RE2JS.compile(`\\b(Bearer )[^${WHITESPACE}"']+`, RE2JS.CASE_INSENSITIVE),
+  },
+  {
+    id: 'api_key_header',
+    label: 'api-key header',
+    pattern: RE2JS.compile(
+      `\\b(api-key:?[${WHITESPACE}]+)[^${WHITESPACE}"']+`,
+      RE2JS.CASE_INSENSITIVE,
+    ),
+  },
 ];
 
 const STARTER_BY_ID = new Map(STARTER_PATTERNS.map((p) => [p.id, p]));
@@ -31,32 +64,40 @@ function selectStarter(ids?: string[]): CompiledPattern[] {
   return out;
 }
 
-const COMPILE_CACHE = new WeakMap<object, CompiledPattern[]>();
+type CompiledConfig = { patterns: CompiledPattern[]; failClosed: boolean };
 
-function compile(config: MessageFilterPiiConfig): CompiledPattern[] {
+const COMPILE_CACHE = new WeakMap<object, CompiledConfig>();
+
+function compile(config: MessageFilterPiiConfig): CompiledConfig {
   const cached = COMPILE_CACHE.get(config);
   if (cached != null) {
     return cached;
   }
   const starter = selectStarter(config.starterPatterns);
   const custom: CompiledPattern[] = [];
+  let dropped = 0;
   for (const p of config.customPatterns ?? []) {
     try {
-      custom.push({ id: p.id, label: p.label, pattern: new RegExp(p.regex, 'g') });
+      custom.push({ id: p.id, label: p.label, pattern: RE2JS.compile(p.regex) });
     } catch (err) {
+      dropped += 1;
       logger.warn(
-        `[messageFilter.pii] dropping invalid customPattern ${JSON.stringify(p.id)}: ${(err as Error).message}`,
+        `[messageFilter.pii] dropping invalid or unsupported customPattern ${JSON.stringify(p.id)}: ${(err as Error).message}`,
       );
     }
   }
-  const result = [...starter, ...custom];
+  const patterns = [...starter, ...custom];
+  // Fail closed when any declared custom pattern fails to compile (e.g. a DB or admin override
+  // carrying RE2-incompatible syntax that never hit load-time validation): a silently dropped
+  // pattern would let the text it was meant to catch pass even when other patterns survive, so
+  // block rather than enforce an unintended subset.
+  const result: CompiledConfig = { patterns, failClosed: dropped > 0 };
   COMPILE_CACHE.set(config, result);
   return result;
 }
 
 function findMatch(text: string, patterns: CompiledPattern[]): CompiledPattern | null {
   for (const p of patterns) {
-    p.pattern.lastIndex = 0;
     if (p.pattern.test(text)) {
       return p;
     }
@@ -67,6 +108,8 @@ function findMatch(text: string, patterns: CompiledPattern[]): CompiledPattern |
 export interface PiiMatch {
   id: string;
   label: string;
+  /** Set when a configured custom pattern failed to compile; block without a real matched label. */
+  misconfigured?: boolean;
 }
 
 type ContentPart = { type?: string; text?: string; [key: string]: unknown };
@@ -82,7 +125,10 @@ export function findPiiMatchInMessages(
   if (config == null || !Array.isArray(messages) || messages.length === 0) {
     return null;
   }
-  const patterns = compile(config);
+  const { patterns, failClosed } = compile(config);
+  if (failClosed) {
+    return { id: '__misconfigured__', label: 'restricted value', misconfigured: true };
+  }
   if (patterns.length === 0) {
     return null;
   }
@@ -122,24 +168,80 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
       next();
       return;
     }
-    const text = req.body?.text;
-    if (typeof text !== 'string' || text.length === 0) {
+    /**
+     * Scan the typed text, each quoted excerpt, and — crucially — the merged
+     * blockquote+text exactly as `AgentClient` sends it to the model. Quotes are
+     * normalized via `getReferencedQuotes` first (matching `BaseClient`). Scanning
+     * the merged string catches a secret split across a quote and the typed text
+     * (each clean alone) that only matches once concatenated; scanning the raw
+     * pieces keeps anchored patterns working against un-prefixed excerpts.
+     */
+    const candidates: string[] = [];
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    if (text.length > 0) {
+      candidates.push(text);
+    }
+    const quotes = getReferencedQuotes(req.body?.quotes);
+    if (quotes != null) {
+      candidates.push(...quotes);
+      candidates.push(mergeQuotedText(text, quotes));
+    }
+    /**
+     * The shared `/agents/chat/resume` route carries user-authored text in different
+     * fields than a typed message: an ask-user `answer`, and a tool-approval decision's
+     * `respond` text, `reject` reason, and edited tool arguments. Scan them too — else a
+     * blocked token could ride a resume payload straight back into the model/tool,
+     * bypassing the filter the typed path enforces.
+     */
+    if (typeof req.body?.answer === 'string' && req.body.answer.length > 0) {
+      candidates.push(req.body.answer);
+    }
+    if (Array.isArray(req.body?.decisions)) {
+      for (const decision of req.body.decisions) {
+        if (typeof decision?.responseText === 'string' && decision.responseText.length > 0) {
+          candidates.push(decision.responseText);
+        }
+        if (typeof decision?.reason === 'string' && decision.reason.length > 0) {
+          candidates.push(decision.reason);
+        }
+        if (decision?.editedArguments != null) {
+          try {
+            const edited = JSON.stringify(decision.editedArguments);
+            if (edited.length > 0) {
+              candidates.push(edited);
+            }
+          } catch {
+            /* ignore unstringifiable edited args */
+          }
+        }
+      }
+    }
+    if (candidates.length === 0) {
       next();
       return;
     }
-    const patterns = compile(config);
+    const { patterns, failClosed } = compile(config);
+    if (failClosed) {
+      res.status(400).json({
+        error: 'message_filter_pii_block',
+        message: 'Message filtering is misconfigured; contact your administrator.',
+      });
+      return;
+    }
     if (patterns.length === 0) {
       next();
       return;
     }
-    const match = findMatch(text, patterns);
-    if (match == null) {
-      next();
-      return;
+    for (const candidate of candidates) {
+      const match = findMatch(candidate, patterns);
+      if (match != null) {
+        res.status(400).json({
+          error: 'message_filter_pii_block',
+          message: `Message contains a ${match.label}. Remove it and try again.`,
+        });
+        return;
+      }
     }
-    res.status(400).json({
-      error: 'message_filter_pii_block',
-      message: `Message contains a ${match.label}. Remove it and try again.`,
-    });
+    next();
   };
 }

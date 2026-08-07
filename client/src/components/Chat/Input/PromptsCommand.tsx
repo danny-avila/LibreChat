@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
 import { AutoSizer, List } from 'react-virtualized';
-import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { Input, Spinner, useCombobox } from '@librechat/client';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
@@ -138,10 +138,15 @@ function PromptsCommand({
   useEffect(() => {
     if (!open) {
       setActiveIndex(0);
+      setSearchValue('');
     } else {
       setVariableGroup(null);
     }
-  }, [open]);
+  }, [open, setSearchValue]);
+
+  useEffect(() => {
+    setActiveIndex((prev) => Math.min(prev, Math.max(matches.length - 1, 0)));
+  }, [matches.length]);
 
   useEffect(() => {
     return () => {
@@ -201,10 +206,10 @@ function PromptsCommand({
     >
       <div className="absolute bottom-28 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
-          <input
+          <Input
             ref={initInputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}
-            className="mb-1 w-full border-0 bg-surface-tertiary-alt p-2 text-sm focus:outline-none dark:text-gray-200"
+            className="mb-1 h-auto w-full rounded-none border-0 bg-surface-tertiary-alt p-2 text-sm text-text-primary focus:outline-none"
             autoComplete="off"
             value={searchValue}
             onKeyDown={(e) => {
@@ -214,10 +219,23 @@ function PromptsCommand({
                 textAreaRef.current?.focus();
               }
               if (e.key === 'ArrowDown') {
+                if (matches.length === 0) {
+                  return;
+                }
                 setActiveIndex((prevIndex) => (prevIndex + 1) % matches.length);
               } else if (e.key === 'ArrowUp') {
+                if (matches.length === 0) {
+                  return;
+                }
                 setActiveIndex((prevIndex) => (prevIndex - 1 + matches.length) % matches.length);
               } else if (e.key === 'Enter' || e.key === 'Tab') {
+                if (matches.length === 0) {
+                  e.preventDefault();
+                  setOpen(false);
+                  setShowPromptsPopover(false);
+                  textAreaRef.current?.focus();
+                  return;
+                }
                 if (e.key === 'Enter') {
                   e.preventDefault();
                 }

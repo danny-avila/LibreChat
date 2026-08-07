@@ -3,7 +3,9 @@ import {
   isOpenAILikeProvider,
   isBedrockDocumentType,
   bedrockDocumentFormats,
+  isAnthropicDocumentType,
   isDocumentSupportedProvider,
+  isAnthropicTextDocumentType,
 } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type {
@@ -15,13 +17,31 @@ import type {
 } from '~/types';
 import { validatePdf, validateBedrockDocument } from '~/files/validation';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
+import { runGuardedEncode } from './memoryGuard';
 
-const ANTHROPIC_CITATION_TYPES = new Set([
-  'application/pdf',
-  'text/plain',
-  'text/html',
-  'text/markdown',
-]);
+/** Anthropic only accepts PDFs as base64 documents; textual types must use a text source */
+function getAnthropicDocumentSource(
+  mimeType: string,
+  content: string,
+): AnthropicDocumentBlock['source'] | null {
+  if (isAnthropicTextDocumentType(mimeType)) {
+    return {
+      type: 'text',
+      media_type: 'text/plain',
+      data: Buffer.from(content, 'base64').toString('utf8'),
+    };
+  }
+
+  if (mimeType === 'application/pdf') {
+    return {
+      type: 'base64',
+      media_type: mimeType,
+      data: content,
+    };
+  }
+
+  return null;
+}
 
 /**
  * Formats a base64-encoded document into the appropriate provider-specific block.
@@ -35,18 +55,16 @@ function formatDocumentBlock(
   useResponsesApi: boolean | undefined,
 ): DocumentBlock | null {
   if (provider === Providers.ANTHROPIC) {
+    const source = getAnthropicDocumentSource(mimeType, content);
+    if (!source) {
+      return null;
+    }
+
     const document: AnthropicDocumentBlock = {
       type: 'document',
-      source: {
-        type: 'base64',
-        media_type: mimeType,
-        data: content,
-      },
+      source,
+      citations: { enabled: true },
     };
-
-    if (ANTHROPIC_CITATION_TYPES.has(mimeType)) {
-      document.citations = { enabled: true };
-    }
 
     if (filename) {
       document.context = `File: "${filename}"`;
@@ -86,6 +104,48 @@ function formatDocumentBlock(
   return null;
 }
 
+/**
+ * Filters out files the provider's document path cannot send to the model.
+ * Claude rejects non-PDF binary documents with a 400 that recurs on every retry,
+ * including when it is reached through an OpenAI-compatible gateway. Unsupported
+ * types are skipped instead of bricking the conversation.
+ */
+function filterProviderDocumentFiles(
+  provider: Providers,
+  files: IMongoFile[],
+  model?: string,
+): IMongoFile[] {
+  if (provider === Providers.BEDROCK) {
+    return files.filter((file) => isBedrockDocumentType(file.type));
+  }
+
+  const usesAnthropicDocumentCapabilities =
+    provider === Providers.ANTHROPIC ||
+    (isOpenAILikeProvider(provider) && model?.toLowerCase().includes('claude'));
+
+  if (!usesAnthropicDocumentCapabilities) {
+    return files;
+  }
+
+  const processable: IMongoFile[] = [];
+  const skipped: string[] = [];
+  for (const file of files) {
+    if (isAnthropicDocumentType(file.type)) {
+      processable.push(file);
+    } else {
+      skipped.push(`"${file.filename}" (${file.type})`);
+    }
+  }
+
+  if (skipped.length) {
+    console.warn(
+      `Skipping attachment(s) unsupported by Claude document input: ${skipped.join(', ')}`,
+    );
+  }
+
+  return processable;
+}
+
 function getBase64DecodedByteCount(content: string): number {
   let paddingChars = 0;
 
@@ -105,6 +165,8 @@ function getBase64DecodedByteCount(content: string): number {
  * (e.g., via `supportedMimeTypes` in `processAttachments`). This function processes
  * every file it receives and dispatches to the appropriate provider format:
  * - **Bedrock**: Only encodes types in `bedrockDocumentFormats`; all others are skipped.
+ * - **Anthropic**: Only encodes PDFs (base64 source) and textual types (plain-text source);
+ *   all others are skipped.
  * - **PDF**: Validated via `validatePdf` before encoding.
  * - **Generic types**: Encoded with a provider-specific size check.
  */
@@ -129,9 +191,7 @@ export async function encodeAndFormatDocuments(
     return result;
   }
 
-  const processableFiles = isBedrock
-    ? files.filter((file) => isBedrockDocumentType(file.type))
-    : files;
+  const processableFiles = filterProviderDocumentFiles(provider, files, model);
 
   if (!processableFiles.length) {
     return result;
@@ -140,9 +200,11 @@ export async function encodeAndFormatDocuments(
   const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, { provider, endpoint });
 
   const results = await Promise.allSettled(
-    processableFiles.map((file) => {
-      return getFileStream(req, file, encodingMethods, getStrategyFunctions);
-    }),
+    processableFiles.map((file) =>
+      runGuardedEncode(file.bytes ?? 0, () =>
+        getFileStream(req, file, encodingMethods, getStrategyFunctions),
+      ),
+    ),
   );
 
   for (const settledResult of results) {

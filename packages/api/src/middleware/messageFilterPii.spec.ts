@@ -1,10 +1,15 @@
+import { messageFilterPiiSchema, setMessageFilterRegexValidator } from 'librechat-data-provider';
 import type { MessageFilterPiiConfig } from 'librechat-data-provider';
 import type { Request, Response, NextFunction } from 'express';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
-import { createMessageFilterPii, findPiiMatchInMessages } from './messageFilterPii';
+import {
+  createMessageFilterPii,
+  findPiiMatchInMessages,
+  configureMessageFilterRegexValidator,
+} from './messageFilterPii';
 
 type CapturedResponse = { status?: number; body?: unknown };
 
@@ -89,6 +94,60 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
+  it.each([
+    ['U+00A0 no-break space', 0x00a0],
+    ['U+000B vertical tab', 0x000b],
+    ['U+2028 line separator', 0x2028],
+    ['U+2029 paragraph separator', 0x2029],
+    ['U+FEFF zero-width no-break space', 0xfeff],
+  ])('rejects an api-key header separated by %s', (_label, code) => {
+    const ws = String.fromCharCode(code);
+    const { capturedRes, nextCalls } = runMiddleware({}, { text: `api-key:${ws}foo123bar` });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  const SK = 'sk-proj-FAKE1234567890ABCDEF';
+
+  it('rejects a resume ask-user answer containing a blocked token', () => {
+    const { capturedRes, nextCalls } = runMiddleware({}, { answer: `the key is ${SK}` });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects a tool-approval decision responseText containing a blocked token', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { decisions: [{ tool_call_id: 'a', decision: 'respond', responseText: `use ${SK}` }] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects a reject-reason containing a blocked token', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { decisions: [{ tool_call_id: 'a', decision: 'reject', reason: `leaked ${SK}` }] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects edited tool arguments containing a blocked token (stringified)', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { decisions: [{ tool_call_id: 'a', decision: 'edit', editedArguments: { token: SK } }] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('passes a clean resume answer through', () => {
+    const { capturedRes, nextCalls } = runMiddleware({}, { answer: 'name it report.pdf' });
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
+  });
+
   it('honors a starterPatterns subset (sk passes when only bearer is enabled)', () => {
     const { capturedRes, nextCalls } = runMiddleware(
       { starterPatterns: ['bearer_header'] },
@@ -134,6 +193,52 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
+  it('rejects with 400 when a quoted excerpt contains a blocked token (clean text)', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: 'explain this', quotes: ['leaked sk-proj-FAKE1234567890ABCDEF here'] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
+  it('scans quotes even when req.body.text is empty', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: '', quotes: ['api-key: foo123bar'] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects a secret split across a quote and the typed text (merged scan)', () => {
+    // Neither piece matches the api-key pattern alone, but the merged
+    // `> api-key:\n\nsecret` the model receives does (the pattern allows whitespace).
+    const { capturedRes, nextCalls } = runMiddleware({}, { text: 'secret', quotes: ['api-key:'] });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
+  it('passes through when neither text nor quotes match', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: 'hello world', quotes: ['a clean excerpt', 'another clean one'] },
+    );
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
+  });
+
+  it('ignores non-string quote entries without throwing', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: 'hello world', quotes: [null, 42, '', 'clean'] },
+    );
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
+  });
+
   it('returns the same compiled pattern array for repeat calls with the same config (memoization)', () => {
     const config: MessageFilterPiiConfig = {
       customPatterns: [{ id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' }],
@@ -144,20 +249,85 @@ describe('messageFilterPii middleware', () => {
     expect(b.nextCalls).toBe(1);
   });
 
-  it('drops an invalid customPattern regex without throwing and keeps other patterns active', () => {
-    const config = {
+  it('fails closed when a custom pattern fails to compile, blocking even benign text', () => {
+    const config: MessageFilterPiiConfig = {
       starterPatterns: [],
       customPatterns: [
         { id: 'broken', label: 'Broken', regex: '(' },
         { id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' },
       ],
-    } as unknown as MessageFilterPiiConfig;
+    };
+    // A dropped pattern means the config no longer enforces what the operator declared, so
+    // every request is blocked rather than silently enforcing only the surviving subset.
     const benign = runMiddleware(config, { text: 'plain text' });
-    expect(benign.nextCalls).toBe(1);
-    expect(benign.capturedRes.status).toBeUndefined();
+    expect(benign.nextCalls).toBe(0);
+    expect(benign.capturedRes.status).toBe(400);
     const matching = runMiddleware(config, { text: 'token ORG-DEADBEEF here' });
     expect(matching.nextCalls).toBe(0);
     expect(matching.capturedRes.status).toBe(400);
+  });
+
+  it('evaluates a catastrophic-backtracking customPattern in bounded time', () => {
+    // `(a+)+$` against a long non-terminating run is exponential on a backtracking
+    // engine (native RegExp takes tens of seconds at ~32 chars); the linear-time
+    // engine returns immediately, so this must not hang.
+    const config: MessageFilterPiiConfig = {
+      starterPatterns: [],
+      customPatterns: [{ id: 'evil', label: 'Evil', regex: '(a+)+$' }],
+    };
+    const adversarial = 'a'.repeat(60) + '!';
+    const start = process.hrtime.bigint();
+    const { nextCalls } = runMiddleware(config, { text: adversarial });
+    const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+    expect(nextCalls).toBe(1);
+    expect(elapsedMs).toBeLessThan(1000);
+  });
+
+  it('still matches a catastrophic-shaped pattern against matching input', () => {
+    const config: MessageFilterPiiConfig = {
+      starterPatterns: [],
+      customPatterns: [{ id: 'evil', label: 'Evil', regex: '(a+)+$' }],
+    };
+    const { capturedRes, nextCalls } = runMiddleware(config, { text: 'a'.repeat(20) });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('fails closed when a custom pattern uses engine-unsupported syntax', () => {
+    const config: MessageFilterPiiConfig = {
+      starterPatterns: [],
+      customPatterns: [
+        { id: 'backref', label: 'Backref', regex: '(a)\\1' },
+        { id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' },
+      ],
+    };
+    const benign = runMiddleware(config, { text: 'plain text' });
+    expect(benign.nextCalls).toBe(0);
+    expect(benign.capturedRes.status).toBe(400);
+    const matching = runMiddleware(config, { text: 'token ORG-DEADBEEF here' });
+    expect(matching.nextCalls).toBe(0);
+    expect(matching.capturedRes.status).toBe(400);
+  });
+
+  it('fails closed on a dropped custom pattern even when default starters remain', () => {
+    // The partial-drop case: with starterPatterns omitted the three defaults survive, so the
+    // pattern set is non-empty; failing closed must key off the drop, not an empty set, or the
+    // dropped rule's target passes silently.
+    const config: MessageFilterPiiConfig = {
+      customPatterns: [{ id: 'dup', label: 'Duplicate', regex: '(a)\\1' }],
+    };
+    const { capturedRes, nextCalls } = runMiddleware(config, { text: 'aa' });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
+  it('findPiiMatchInMessages flags misconfigured on a dropped pattern under default starters', () => {
+    const config: MessageFilterPiiConfig = {
+      customPatterns: [{ id: 'dup', label: 'Duplicate', regex: '(a)\\1' }],
+    };
+    const hit = findPiiMatchInMessages([{ role: 'user', content: 'aa' }], config);
+    expect(hit?.misconfigured).toBe(true);
   });
 });
 
@@ -231,5 +401,53 @@ describe('findPiiMatchInMessages', () => {
       customPatterns: [{ id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' }],
     });
     expect(hit).toEqual({ id: 'org', label: 'Org token' });
+  });
+});
+
+describe('configureMessageFilterRegexValidator (RE2 config-load validation)', () => {
+  afterAll(() => {
+    setMessageFilterRegexValidator((value) => {
+      try {
+        new RegExp(value, 'g');
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  });
+
+  it('rejects RE2-incompatible custom patterns at config parse once wired', () => {
+    configureMessageFilterRegexValidator();
+    const reject = (regex: string) =>
+      messageFilterPiiSchema.safeParse({ customPatterns: [{ id: 'a', label: 'A', regex }] })
+        .success;
+    // lookahead, numeric + named backreference, control escape: all valid JS, unsupported by RE2
+    expect(reject('(?=x)y')).toBe(false);
+    expect(reject('(a)\\1')).toBe(false);
+    expect(reject('(?<n>x)\\k<n>')).toBe(false);
+    expect(reject('token-\\cA+')).toBe(false);
+    // a normal RE2-compatible pattern still passes
+    expect(reject('\\bORG-[A-Z0-9]{6,}')).toBe(true);
+  });
+
+  it('fails closed with 400 when every configured pattern fails to compile', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {
+        starterPatterns: [],
+        customPatterns: [{ id: 'backref', label: 'Backref', regex: '(a)\\1' }],
+      },
+      { text: 'anything at all' },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
+  it('findPiiMatchInMessages returns a misconfigured match when every pattern fails to compile', () => {
+    const hit = findPiiMatchInMessages([{ role: 'user', content: 'hello' }], {
+      starterPatterns: [],
+      customPatterns: [{ id: 'backref', label: 'Backref', regex: '(a)\\1' }],
+    });
+    expect(hit?.misconfigured).toBe(true);
   });
 });

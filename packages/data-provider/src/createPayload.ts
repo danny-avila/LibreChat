@@ -24,6 +24,9 @@ export default function createPayload(submission: t.TSubmission) {
     ephemeralAgent,
     endpointOption,
     manualSkills,
+    clientRequestId,
+    recoverySteerId,
+    expectedPredecessorCreatedAt,
   } = submission;
   const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
   const { endpoint: _e, endpointType } = endpointOption as {
@@ -52,6 +55,9 @@ export default function createPayload(submission: t.TSubmission) {
     ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
     manualSkills: s.isAssistantsEndpoint(endpoint) ? undefined : manualSkills,
     timezone: getUserTimezone(),
+    clientRequestId,
+    recoverySteerId,
+    expectedPredecessorCreatedAt,
   };
 
   return { server, payload };

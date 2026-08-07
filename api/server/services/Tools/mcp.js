@@ -1,5 +1,9 @@
 const { logger } = require('@librechat/data-schemas');
-const { getMissingCustomUserVars, requiresEphemeralUserConnection } = require('@librechat/api');
+const {
+  getMissingCustomUserVars,
+  requiresEphemeralUserConnection,
+  getMissingRuntimeBodyPlaceholderFields,
+} = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
@@ -8,6 +12,13 @@ const { exchangeOboToken } = require('~/server/services/OboTokenService');
 const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
 const { updateMCPServerTools } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
+
+const MCP_REINITIALIZE_FAILURE_REASONS = {
+  UNREACHABLE: 'unreachable',
+  MISSING_CUSTOM_USER_VARS: 'missing_custom_user_vars',
+  OAUTH_REQUIRED: 'oauth_required',
+  INITIALIZATION_FAILED: 'initialization_failed',
+};
 
 /**
  * Reinitializes an MCP server connection and discovers available tools.
@@ -52,6 +63,7 @@ async function reinitMCPServer({
   let tools = null;
   let oauthRequired = false;
   let oauthUrl = null;
+  let oauthExpiresAt;
   let ephemeralServer = false;
 
   try {
@@ -68,6 +80,7 @@ async function reinitMCPServer({
           availableTools: null,
           success: false,
           message: `MCP server '${serverName}' is still unreachable`,
+          failureReason: MCP_REINITIALIZE_FAILURE_REASONS.UNREACHABLE,
           oauthRequired: false,
           serverName,
           oauthUrl: null,
@@ -90,6 +103,7 @@ async function reinitMCPServer({
             availableTools: null,
             success: false,
             message: `MCP server '${serverName}' is still unreachable`,
+            failureReason: MCP_REINITIALIZE_FAILURE_REASONS.UNREACHABLE,
             oauthRequired: false,
             serverName,
             oauthUrl: null,
@@ -114,6 +128,34 @@ async function reinitMCPServer({
         message: `MCP server '${serverName}' requires user-provided variable(s) [${missingUserVars.join(
           ', ',
         )}] which are not set`,
+        failureReason: MCP_REINITIALIZE_FAILURE_REASONS.MISSING_CUSTOM_USER_VARS,
+        missingUserVars,
+        oauthRequired: false,
+        serverName,
+        oauthUrl: null,
+        tools: null,
+      };
+    }
+
+    /** `{{LIBRECHAT_BODY_*}}` placeholders only resolve during a chat turn; connecting
+     *  without them would fail, so defer the connection instead of reporting a failure. */
+    const missingBodyFields = serverConfig
+      ? getMissingRuntimeBodyPlaceholderFields(serverConfig, requestBody)
+      : [];
+    if (missingBodyFields.length > 0) {
+      logger.info(
+        `[MCP Reinitialize] Server '${serverName}' requires request body field(s) [${missingBodyFields.join(
+          ', ',
+        )}] for runtime placeholders; connection deferred to first use in a chat turn`,
+      );
+      return {
+        availableTools: null,
+        success: true,
+        /** Lets clients distinguish "connection deferred to a chat turn" from a
+         *  plain success with no tools, e.g. to attach the server at the server
+         *  level instead of waiting for a tool list that never arrives. */
+        connectionDeferred: true,
+        message: `MCP server '${serverName}' uses request-scoped placeholders; connection will be established on first use in a chat turn`,
         oauthRequired: false,
         serverName,
         oauthUrl: null,
@@ -127,9 +169,15 @@ async function reinitMCPServer({
 
     const oauthStart =
       _oauthStart ??
-      (async (authURL) => {
+      (async (authURL, options) => {
         logger.info(`[MCP Reinitialize] OAuth URL received for ${serverName}`);
+        if (authURL !== oauthUrl) {
+          oauthExpiresAt = undefined;
+        }
         oauthUrl = authURL;
+        if (typeof options?.expiresAt === 'number' && Number.isFinite(options.expiresAt)) {
+          oauthExpiresAt = options.expiresAt;
+        }
         oauthRequired = true;
       });
 
@@ -214,7 +262,7 @@ async function reinitMCPServer({
       tools = await connection.fetchTools();
     }
 
-    if (tools && tools.length > 0) {
+    if (tools) {
       availableTools = await updateMCPServerTools({
         userId: user.id,
         serverName,
@@ -240,17 +288,24 @@ async function reinitMCPServer({
       return `Failed to reinitialize MCP server '${serverName}'`;
     };
 
+    const success = Boolean(
+      (connection && !oauthRequired) || (oauthRequired && oauthUrl) || (tools && tools.length > 0),
+    );
+    let failureReason;
+    if (!success) {
+      failureReason = oauthRequired
+        ? MCP_REINITIALIZE_FAILURE_REASONS.OAUTH_REQUIRED
+        : MCP_REINITIALIZE_FAILURE_REASONS.INITIALIZATION_FAILED;
+    }
     const result = {
       availableTools,
-      success: Boolean(
-        (connection && !oauthRequired) ||
-          (oauthRequired && oauthUrl) ||
-          (tools && tools.length > 0),
-      ),
+      success,
       message: getResponseMessage(),
+      failureReason,
       oauthRequired,
       serverName,
       oauthUrl,
+      oauthExpiresAt,
       tools,
     };
 

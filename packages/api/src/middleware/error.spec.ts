@@ -1,7 +1,7 @@
-import { logger } from '@librechat/data-schemas';
-import { ErrorController } from './error';
+import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { ValidationError, MongoServerError, CustomError } from '~/types';
+import { ErrorController } from './error';
 
 // Mock the logger
 jest.mock('@librechat/data-schemas', () => ({
@@ -230,6 +230,69 @@ describe('ErrorController', () => {
       expect(mockRes.status).toHaveBeenCalledWith(500);
       expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
       expect(logger.error).toHaveBeenCalledWith('ErrorController => error', genericError);
+    });
+
+    it('emits a structured, joinable event for tenant-isolation errors', () => {
+      Object.assign(mockReq, {
+        id: 'request-123',
+        method: 'GET',
+        originalUrl: '/api/banner?access_token=secret-token',
+      });
+      const tenantError = new Error(
+        '[TenantIsolation] Query attempted without tenant context in strict mode',
+      );
+
+      ErrorController(tenantError, mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(logger.error).toHaveBeenCalledWith({
+        message: 'Tenant-isolation request failed',
+        event_name: 'tenant_isolation_error',
+        error_category: 'tenant_isolation',
+        error_signature: 'missing_query_context',
+        response_status: 500,
+        request_id: 'request-123',
+        request_method: 'GET',
+        request_path: '/api/banner',
+      });
+      expect(JSON.stringify((logger.error as jest.Mock).mock.calls)).not.toContain('secret-token');
+    });
+
+    it('preserves the captured router mount for tenant-isolation errors', () => {
+      Object.assign(mockReq, {
+        id: 'request-123',
+        method: 'GET',
+        baseUrl: '/api',
+        route: { path: '/:id' },
+        originalUrl: '/api/convos/conversation-123?access_token=secret-token',
+      });
+      const tenantError = new Error(
+        '[TenantIsolation] Query attempted without tenant context in strict mode',
+      );
+
+      tenantStorage.run(
+        {
+          requestId: 'request-123',
+          requestMethod: 'GET',
+          requestPath: '/api/convos',
+        },
+        () => ErrorController(tenantError, mockReq, mockRes, mockNext),
+      );
+
+      expect(logger.error).toHaveBeenCalledWith({
+        message: 'Tenant-isolation request failed',
+        event_name: 'tenant_isolation_error',
+        error_category: 'tenant_isolation',
+        error_signature: 'missing_query_context',
+        response_status: 500,
+        request_id: 'request-123',
+        request_method: 'GET',
+        request_path: '/api/convos',
+      });
+      expect(JSON.stringify((logger.error as jest.Mock).mock.calls)).not.toContain(
+        'conversation-123',
+      );
+      expect(JSON.stringify((logger.error as jest.Mock).mock.calls)).not.toContain('secret-token');
     });
   });
 

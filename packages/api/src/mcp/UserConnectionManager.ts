@@ -104,7 +104,6 @@ export abstract class UserConnectionManager {
           requestScopedConnections.connections.delete(requestConnectionKey);
         } else if (await existing.isConnected()) {
           logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing request-scoped connection`);
-          this.updateUserLastActivity(userId);
           return existing;
         } else {
           requestScopedConnections.connections.delete(requestConnectionKey);
@@ -525,8 +524,9 @@ export abstract class UserConnectionManager {
       }
 
       logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
-      // Update timestamp on creation
-      this.updateUserLastActivity(userId);
+      if (!ephemeralConnection) {
+        this.updateUserLastActivity(userId);
+      }
       return connection;
     } catch (error) {
       logger.error(`[MCP][User: ${userId}][${serverName}] Failed to establish connection`, error);
@@ -643,7 +643,7 @@ export abstract class UserConnectionManager {
   }): Promise<t.ParsedServerConfig> {
     if (
       config.requiresOAuth != null ||
-      config.apiKey?.source === 'admin' ||
+      (config.apiKey != null && config.oauth == null) ||
       !hasRuntimeUrlPlaceholders(config)
     ) {
       return config;

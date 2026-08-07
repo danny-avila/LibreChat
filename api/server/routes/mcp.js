@@ -3,9 +3,9 @@ const { logger, getTenantId, tenantStorage } = require('@librechat/data-schemas'
 const {
   CacheKeys,
   Constants,
+  Permissions,
   PermissionBits,
   PermissionTypes,
-  Permissions,
 } = require('librechat-data-provider');
 const {
   getBasePath,
@@ -14,7 +14,6 @@ const {
   MCPTokenStorage,
   setOAuthSession,
   PENDING_STALE_MS,
-  mcpConfig: mcpSettings,
   getUserMCPAuthMap,
   validateOAuthCsrf,
   OAUTH_CSRF_COOKIE,
@@ -22,6 +21,8 @@ const {
   generateCheckAccess,
   validateOAuthSession,
   OAUTH_SESSION_COOKIE,
+  mcpConfig: mcpSettings,
+  getServerCustomUserVars,
 } = require('@librechat/api');
 const {
   createMCPServerController,
@@ -254,11 +255,21 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
               const hasCsrf = validateOAuthCsrf(req, res, flowId, OAUTH_CSRF_COOKIE_PATH);
               const hasSession = !hasCsrf && validateOAuthSession(req, parsed.userId);
               if (hasCsrf || hasSession) {
-                await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
-                logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
-                  flowId,
-                  error: oauthError,
-                });
+                /** A stale mapping can resolve a superseded attempt's state to the
+                 *  current flow (deterministic flow ids); only fail the flow this
+                 *  error callback actually belongs to */
+                const flowMeta = await MCPOAuthHandler.getFlowState(flowId, flowManager);
+                if (flowMeta?.state === state) {
+                  await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
+                  logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
+                    flowId,
+                    error: oauthError,
+                  });
+                } else {
+                  logger.warn('[MCP OAuth] Skipping failFlow for superseded OAuth error callback', {
+                    flowId,
+                  });
+                }
               }
             }
           }
@@ -334,6 +345,17 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
     }
 
+    /**
+     * Flow ids are deterministic (userId:serverName), so a stale state mapping
+     * can resolve to a newer flow for the same server. The stored state is the
+     * only per-attempt nonce; a mismatch means this callback belongs to a
+     * superseded authorization attempt and must not consume the current flow.
+     */
+    if (flowState.state !== state) {
+      logger.error('[MCP OAuth] State mismatch for flow', { flowId, serverName });
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
+    }
+
     logger.debug('[MCP OAuth] Flow state details', {
       serverName: flowState.serverName,
       userId: flowState.userId,
@@ -351,14 +373,19 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       });
       return res.redirect(`${basePath}/oauth/success?serverName=${encodeURIComponent(serverName)}`);
     }
+    const isStalePendingFlow =
+      currentFlowState?.status === 'PENDING' &&
+      (!currentFlowState.createdAt || Date.now() - currentFlowState.createdAt >= PENDING_STALE_MS);
+    if (currentFlowState?.status === 'FAILED' || isStalePendingFlow) {
+      logger.warn('[MCP OAuth] Refusing token exchange for terminal flow', {
+        flowId,
+        serverName,
+        status: currentFlowState.status,
+      });
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
+    }
 
     logger.debug('[MCP OAuth] Completing OAuth flow');
-    if (!flowState.oauthHeaders) {
-      logger.warn(
-        '[MCP OAuth] oauthHeaders absent from flow state — config-source server oauth_headers will be empty',
-        { serverName, flowId },
-      );
-    }
     /**
      * Restore tenant context for the callback body. The callback is a cross-origin
      * redirect from the OAuth provider, so SameSite=Strict cookies (including the
@@ -381,62 +408,71 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         code,
         flowManager,
         oauthHeaders,
-      );
-      logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
+        async (exchangedTokens) => {
+          if (!flowState?.userId) {
+            return exchangedTokens;
+          }
 
-      /** Persist tokens immediately so reconnection uses fresh credentials */
-      if (flowState?.userId && tokens) {
-        try {
-          await MCPTokenStorage.storeTokens({
-            userId: flowState.userId,
-            serverName,
-            tokens,
-            createToken: db.createToken,
-            updateToken: db.updateToken,
-            findToken: db.findToken,
-            clientInfo: flowState.clientInfo,
-            metadata: MCPOAuthHandler.buildStoredClientMetadata(
-              flowState.metadata,
-              flowState.resourceMetadata,
-            ),
-          });
-          logger.debug('[MCP OAuth] Stored OAuth tokens prior to reconnection', {
-            serverName,
-            userId: flowState.userId,
-          });
-        } catch (error) {
-          logger.error('[MCP OAuth] Failed to store OAuth tokens after callback', error);
-          throw error;
-        }
-
-        /**
-         * Clear any cached `mcp_get_tokens` flow result so subsequent lookups
-         * re-fetch the freshly stored credentials instead of returning stale nulls.
-         */
-        if (typeof flowManager?.deleteFlow === 'function') {
+          let storedTokens;
           try {
-            const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(
-              flowState.userId,
+            storedTokens =
+              (await MCPTokenStorage.storeTokens({
+                userId: flowState.userId,
+                serverName,
+                tokens: exchangedTokens,
+                createToken: db.createToken,
+                updateToken: db.updateToken,
+                deleteTokens: db.deleteTokens,
+                findToken: db.findToken,
+                clientInfo: flowState.clientInfo,
+                metadata: MCPOAuthHandler.buildStoredClientMetadata(
+                  flowState.metadata,
+                  flowState.resourceMetadata,
+                  flowState.serverUrl,
+                  flowState.clientSource,
+                ),
+              })) ?? exchangedTokens;
+            logger.debug('[MCP OAuth] Stored OAuth tokens before completing callback flow', {
               serverName,
-              flowState.tenantId,
-            );
-            await clearGetTokensFlow({
-              flowManager,
-              flowId: tokenFlowId,
-              tokens,
+              userId: flowState.userId,
             });
-            if (tokenFlowId !== flowId) {
+          } catch (error) {
+            logger.error('[MCP OAuth] Failed to store OAuth tokens before flow completion', error);
+            throw error;
+          }
+
+          /**
+           * Clear any cached `mcp_get_tokens` flow result before the OAuth flow wakes its
+           * waiters, so they cannot observe stale credentials after completion.
+           */
+          if (typeof flowManager?.deleteFlow === 'function') {
+            try {
+              const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(
+                flowState.userId,
+                serverName,
+                flowState.tenantId,
+              );
               await clearGetTokensFlow({
                 flowManager,
-                flowId,
-                tokens,
+                flowId: tokenFlowId,
+                tokens: storedTokens,
               });
+              if (tokenFlowId !== flowId) {
+                await clearGetTokensFlow({
+                  flowManager,
+                  flowId,
+                  tokens: storedTokens,
+                });
+              }
+            } catch (error) {
+              logger.warn('[MCP OAuth] Failed to clear cached token flow state', error);
             }
-          } catch (error) {
-            logger.warn('[MCP OAuth] Failed to clear cached token flow state', error);
           }
-        }
-      }
+
+          return storedTokens;
+        },
+      );
+      logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
       try {
         const mcpManager = getMCPManager(flowState.userId);
@@ -459,11 +495,38 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             );
           }
 
+          /**
+           * Without this, getUserConnection resolves `headers`/`oauth_headers`
+           * customUserVars templates (e.g. `{{MY_VAR}}`) with no substitution
+           * data, so the literal placeholder is sent on this first post-callback
+           * connection attempt even though the user's value is already saved -
+           * surfaces upstream as a generic auth rejection from the MCP server.
+           * The other reconnect path (oauth/reinitialize route below) already
+           * resolves this the same way; this one was missing it.
+           */
+          let userMCPAuthMap;
+          if (serverConfig?.customUserVars && typeof serverConfig.customUserVars === 'object') {
+            try {
+              userMCPAuthMap = await getUserMCPAuthMap({
+                userId: flowState.userId,
+                servers: [serverName],
+                findPluginAuthsByKeys: db.findPluginAuthsByKeys,
+              });
+            } catch (error) {
+              logger.warn(
+                `[MCP OAuth] Could not resolve customUserVars for ${serverName} before reconnecting:`,
+                error,
+              );
+            }
+          }
+          const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
+
           const userConnection = await mcpManager.getUserConnection({
             user,
             serverName,
             flowManager,
             serverConfig,
+            customUserVars,
             tokenMethods: {
               findToken: db.findToken,
               updateToken: db.updateToken,
@@ -658,6 +721,43 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
   }
 });
 
+function createMCPStatusRuntimeContext(user, mcpConfig, serverNames) {
+  const customUserVarServers = serverNames.filter((serverName) => {
+    const customUserVars = mcpConfig[serverName]?.customUserVars;
+    return (
+      customUserVars && typeof customUserVars === 'object' && Object.keys(customUserVars).length > 0
+    );
+  });
+  let userMCPAuthMapPromise;
+  let mcpAllowlistsPromise;
+  const loadUserMCPAuthMap = () => {
+    if (!customUserVarServers.length) {
+      return Promise.resolve(undefined);
+    }
+    userMCPAuthMapPromise ??= getUserMCPAuthMap({
+      userId: user.id,
+      servers: customUserVarServers,
+      findPluginAuthsByKeys: db.findPluginAuthsByKeys,
+    });
+    return userMCPAuthMapPromise;
+  };
+  const loadMCPAllowlists = () => {
+    mcpAllowlistsPromise ??= getMCPServersRegistry().resolveAllowlists({
+      userId: user.id,
+      role: user.role,
+    });
+    return mcpAllowlistsPromise;
+  };
+  return { user: createSafeUser(user), loadUserMCPAuthMap, loadMCPAllowlists };
+}
+
+function getMCPReinitializeOAuthTimeout(oauthExpiresAt) {
+  if (typeof oauthExpiresAt !== 'number' || !Number.isFinite(oauthExpiresAt)) {
+    return mcpSettings.OAUTH_HANDLING_TIMEOUT;
+  }
+  return Math.max(0, oauthExpiresAt - Date.now());
+}
+
 /**
  * Reinitialize MCP server
  * This endpoint allows reinitializing a specific MCP server
@@ -718,10 +818,20 @@ router.post(
         return res.status(500).json({ error: 'Failed to reinitialize MCP server for user' });
       }
 
-      const { success, message, oauthRequired, oauthUrl } = result;
+      const {
+        success,
+        message,
+        oauthRequired,
+        oauthUrl,
+        oauthExpiresAt,
+        failureReason,
+        missingUserVars,
+        connectionDeferred,
+      } = result;
 
+      let flowId;
       if (oauthRequired) {
-        const flowId = getOAuthFlowId(user.id, serverName);
+        flowId = getOAuthFlowId(user.id, serverName);
         setOAuthCsrfCookie(res, flowId, OAUTH_CSRF_COOKIE_PATH);
       }
 
@@ -729,8 +839,13 @@ router.post(
         success,
         message,
         oauthUrl,
+        flowId,
+        oauthTimeout: oauthRequired ? getMCPReinitializeOAuthTimeout(oauthExpiresAt) : undefined,
         serverName,
         oauthRequired,
+        failureReason,
+        missingUserVars,
+        connectionDeferred,
       });
     } catch (error) {
       logger.error('[MCP Reinitialize] Unexpected error', error);
@@ -755,28 +870,37 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
       user.id,
       { role: user.role, tenantId: getTenantId() },
     );
-    const connectionStatus = {};
-
-    for (const [serverName, config] of Object.entries(mcpConfig)) {
-      try {
-        connectionStatus[serverName] = await getServerConnectionStatus(
-          user.id,
-          serverName,
-          config,
-          appConnections,
-          userConnections,
-          oauthServers,
-        );
-      } catch (error) {
-        const message = `Failed to get status for server "${serverName}"`;
-        logger.error(`[MCP Connection Status] ${message},`, error);
-        connectionStatus[serverName] = {
-          connectionState: 'error',
-          requiresOAuth: oauthServers.has(serverName),
-          error: message,
-        };
-      }
-    }
+    const runtimeContext = createMCPStatusRuntimeContext(user, mcpConfig, Object.keys(mcpConfig));
+    const connectionStatus = Object.fromEntries(
+      await Promise.all(
+        Object.entries(mcpConfig).map(async ([serverName, config]) => {
+          try {
+            const status = await getServerConnectionStatus(
+              user.id,
+              serverName,
+              config,
+              appConnections,
+              userConnections,
+              oauthServers,
+              runtimeContext,
+            );
+            return [serverName, status];
+          } catch (error) {
+            const message = `Failed to get status for server "${serverName}"`;
+            logger.error(`[MCP Connection Status] ${message},`, error);
+            return [
+              serverName,
+              {
+                connectionState: 'error',
+                requiresOAuth: oauthServers.has(serverName),
+                authorizationState: oauthServers.has(serverName) ? 'error' : 'not_required',
+                error: message,
+              },
+            ];
+          }
+        }),
+      ),
+    );
 
     res.json({
       success: true,
@@ -813,6 +937,8 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
         .json({ error: `MCP server '${serverName}' not found in configuration` });
     }
 
+    const runtimeContext = createMCPStatusRuntimeContext(user, mcpConfig, [serverName]);
+
     const serverStatus = await getServerConnectionStatus(
       user.id,
       serverName,
@@ -820,6 +946,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
       appConnections,
       userConnections,
       oauthServers,
+      runtimeContext,
     );
 
     res.json({
@@ -827,6 +954,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
       serverName,
       connectionStatus: serverStatus.connectionState,
       requiresOAuth: serverStatus.requiresOAuth,
+      authorizationState: serverStatus.authorizationState,
     });
   } catch (error) {
     logger.error(

@@ -3,7 +3,13 @@ const fs = require('fs').promises;
 const FormData = require('form-data');
 const { Readable } = require('stream');
 const { logger } = require('@librechat/data-schemas');
-const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@librechat/api');
+const {
+  genAzureEndpoint,
+  logAxiosError,
+  applyAxiosProxyConfig,
+  resolveConfigSecret,
+  applySSRFSafeAgentIfDirect,
+} = require('@librechat/api');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const { getAppConfig } = require('~/server/services/Config');
 
@@ -133,7 +139,7 @@ class STTService {
   /**
    * Retrieves the configured STT provider and its schema.
    * @param {ServerRequest} req - The request object.
-   * @returns {Promise<[string, Object]>} A promise that resolves to an array containing the provider name and its schema.
+   * @returns {Promise<[string, Object, (string[]|undefined)]>} A promise that resolves to the provider name, its schema, and the section-level allowedAddresses exemption list.
    * @throws {Error} If no STT schema is set, multiple providers are set, or no provider is set.
    */
   async getProviderSchema(req) {
@@ -152,7 +158,7 @@ class STTService {
     }
 
     const providers = Object.entries(sttSchema).filter(
-      ([, value]) => Object.keys(value).length > 0,
+      ([key, value]) => key !== 'allowedAddresses' && Object.keys(value).length > 0,
     );
 
     if (providers.length !== 1) {
@@ -164,7 +170,7 @@ class STTService {
     }
 
     const [provider, schema] = providers[0];
-    return [provider, schema];
+    return [provider, schema, sttSchema.allowedAddresses];
   }
 
   /**
@@ -195,7 +201,7 @@ class STTService {
    */
   openAIProvider(sttSchema, audioReadStream, audioFile, language) {
     const url = sttSchema?.url || 'https://api.openai.com/v1/audio/transcriptions';
-    const apiKey = extractEnvVariable(sttSchema.apiKey) || '';
+    const apiKey = resolveConfigSecret(sttSchema.apiKey) || '';
 
     const data = {
       file: audioReadStream,
@@ -231,7 +237,7 @@ class STTService {
       azureOpenAIApiDeploymentName: extractEnvVariable(sttSchema?.deploymentName),
     })}/audio/transcriptions?api-version=${extractEnvVariable(sttSchema?.apiVersion)}`;
 
-    const apiKey = sttSchema.apiKey ? extractEnvVariable(sttSchema.apiKey) : '';
+    const apiKey = sttSchema.apiKey ? resolveConfigSecret(sttSchema.apiKey) || '' : '';
 
     if (audioBuffer.byteLength > 25 * 1024 * 1024) {
       throw new Error('The audio file size exceeds the limit of 25MB');
@@ -278,10 +284,11 @@ class STTService {
    * @param {Buffer} requestData.audioBuffer - The audio data to be transcribed.
    * @param {Object} requestData.audioFile - The audio file object containing originalname, mimetype, and size.
    * @param {string} requestData.language - The language code for the transcription.
+   * @param {string[]} [allowedAddresses] - Section-level SSRF exemption list of host:port pairs.
    * @returns {Promise<string>} A promise that resolves to the transcribed text.
    * @throws {Error} If the provider is invalid, the response status is not 200, or the response data is missing.
    */
-  async sttRequest(provider, sttSchema, { audioBuffer, audioFile, language }) {
+  async sttRequest(provider, sttSchema, { audioBuffer, audioFile, language }, allowedAddresses) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
@@ -303,6 +310,7 @@ class STTService {
     const options = { headers };
 
     applyAxiosProxyConfig(options, url);
+    applySSRFSafeAgentIfDirect(options, url, allowedAddresses);
 
     try {
       const response = await axios.post(url, data, options);
@@ -342,9 +350,14 @@ class STTService {
     };
 
     try {
-      const [provider, sttSchema] = await this.getProviderSchema(req);
+      const [provider, sttSchema, allowedAddresses] = await this.getProviderSchema(req);
       const language = req.body?.language || '';
-      const text = await this.sttRequest(provider, sttSchema, { audioBuffer, audioFile, language });
+      const text = await this.sttRequest(
+        provider,
+        sttSchema,
+        { audioBuffer, audioFile, language },
+        allowedAddresses,
+      );
       res.json({ text });
     } catch (error) {
       logAxiosError({ message: 'An error occurred while processing the audio:', error });

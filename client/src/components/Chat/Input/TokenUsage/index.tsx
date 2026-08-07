@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useRef } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { TooltipAnchor } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
@@ -29,6 +29,7 @@ function TokenUsageIndicator({
   const localize = useLocalize();
   const view = useTokenUsage({ index, conversation, isSubmitting });
   const popover = Ariakit.usePopoverStore({ placement: 'top' });
+  const disclosureRef = useRef<HTMLButtonElement>(null);
 
   /** Hide until the branch has data — keeps a fresh, message-less chat clean and
    *  lets the indicator animate into view once the first tokens land. */
@@ -64,6 +65,7 @@ function TokenUsageIndicator({
         side="top"
         render={
           <Ariakit.PopoverDisclosure
+            ref={disclosureRef}
             store={popover}
             type="button"
             data-testid="token-usage"
@@ -71,7 +73,7 @@ function TokenUsageIndicator({
             aria-haspopup="dialog"
             className={cn(
               'flex size-9 items-center justify-center rounded-full p-1 transition-colors',
-              'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
               'duration-300 animate-in fade-in zoom-in-95',
             )}
           >
@@ -88,11 +90,17 @@ function TokenUsageIndicator({
           </Ariakit.PopoverDisclosure>
         }
       />
+      {/* Focus the labelled dialog on open so screen readers enter and announce
+          the breakdown, and so focus stays contained instead of falling back to
+          the body (which the composer's global focus logic would steal). The
+          visible ring is suppressed via focus:outline-none, and finalFocus
+          returns focus to the gauge trigger on close. */}
       <Ariakit.Popover
         store={popover}
         gutter={8}
         portal
         unmountOnHide
+        finalFocus={disclosureRef}
         aria-label={localize('com_ui_context_usage')}
         className="z-[200] rounded-xl border border-border-medium bg-surface-secondary p-3 shadow-lg focus:outline-none"
       >

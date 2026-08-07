@@ -8,6 +8,7 @@ import useLazyHighlight from './useLazyHighlight';
 import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
 import { langFromPath } from './ReadFileCall';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -128,6 +129,7 @@ export default function FileAuthoringCall({
    *  `Created`/`Updated`, so key the finished label off it for truthfulness. */
   const overwrote = isCreate && output.startsWith('Updated ');
   const filePath = useMemo(() => parseJsonField(args, 'file_path'), [args]);
+  const intent = useToolCallIntent(args);
   const authoredContent = useMemo(() => parseJsonField(args, 'content'), [args]);
   const editArgsPreview = useMemo(() => buildEditArgsPreview(args), [args]);
   const fileName = filePath.split('/').pop() || filePath;
@@ -158,15 +160,20 @@ export default function FileAuthoringCall({
 
   return (
     <>
-      <div className="relative my-1.5 flex size-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={toggleCode}
-          inProgressText={localize(isCreate ? 'com_ui_creating_file' : 'com_ui_editing_file', {
-            0: fileName,
-          })}
+          inProgressText={
+            intent ??
+            localize(isCreate ? 'com_ui_creating_file' : 'com_ui_editing_file', {
+              0: fileName,
+            })
+          }
           finishedText={
-            cancelled ? localize('com_ui_cancelled') : localize(finishedKey, { 0: fileName })
+            cancelled
+              ? localize('com_ui_cancelled')
+              : (intent ?? localize(finishedKey, { 0: fileName }))
           }
           errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
@@ -197,7 +204,7 @@ export default function FileAuthoringCall({
                 <pre
                   className={cn(
                     'max-h-[300px] overflow-auto whitespace-pre-wrap break-words border-t border-border-light px-3 py-2.5 font-mono text-xs',
-                    hasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
+                    hasError ? 'text-status-error' : 'text-text-primary',
                   )}
                 >
                   {output}

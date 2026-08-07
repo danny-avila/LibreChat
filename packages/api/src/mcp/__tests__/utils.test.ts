@@ -2,6 +2,9 @@ import type { ParsedServerConfig } from '~/mcp/types';
 import {
   buildOAuthToolCallName,
   normalizeServerName,
+  normalizeAgentToolKeys,
+  findShadowedServerNames,
+  splitMCPToolKey,
   redactAllServerSecrets,
   redactServerSecrets,
   requiresUserScopedConnection,
@@ -42,6 +45,167 @@ describe('normalizeServerName', () => {
     const result = normalizeServerName('!server-name!');
     expect(result).toBe('server-name');
     expect(result).toMatch(/^[a-zA-Z0-9_.-]+$/);
+  });
+});
+
+describe('splitMCPToolKey', () => {
+  it('should return the tool name unchanged with an undefined server name when there is no delimiter', () => {
+    expect(splitMCPToolKey('plainToolName')).toEqual(['plainToolName', undefined]);
+  });
+
+  it('should split a normal single-occurrence key the same way String.split would', () => {
+    expect(splitMCPToolKey('search_mcp_myserver')).toEqual(['search', 'myserver']);
+  });
+
+  it('should resolve a raw tool name that itself contains the delimiter substring by using the last occurrence', () => {
+    // Regression test: a tool whose own (possibly gateway-prefixed) name
+    // already contains "_mcp_" - e.g. LiteLLM's MCP gateway prefixes
+    // aggregated tool names with "{server}-", so GitLab's own
+    // "get_mcp_server_version" tool becomes "gitlab-get_mcp_server_version"
+    // before LibreChat appends its own "_mcp_gitlab" suffix. A naive
+    // `.split(delimiter)` produces 3 segments here and silently drops the
+    // 3rd, yielding a bogus server name ("server_version" instead of
+    // "gitlab"). See https://github.com/danny-avila/LibreChat/issues/14440
+    expect(splitMCPToolKey('gitlab-get_mcp_server_version_mcp_gitlab')).toEqual([
+      'gitlab-get_mcp_server_version',
+      'gitlab',
+    ]);
+  });
+
+  it('should handle a raw tool name with multiple delimiter occurrences by always taking the last segment as the server name', () => {
+    expect(splitMCPToolKey('a_mcp_b_mcp_c_mcp_server')).toEqual(['a_mcp_b_mcp_c', 'server']);
+  });
+});
+
+describe('findShadowedServerNames', () => {
+  it('flags later names whose normalized form an earlier different name claimed', () => {
+    const shadowed = findShadowedServerNames(['Sales Force', 'Sales:Force', 'other']);
+    expect(shadowed).toEqual(new Set(['Sales:Force']));
+  });
+
+  it('does not flag exact duplicates or safe distinct names', () => {
+    expect(findShadowedServerNames(['srv', 'srv', 'other']).size).toBe(0);
+    expect(findShadowedServerNames(['Sales Force', 'Sales_Force2']).size).toBe(0);
+  });
+
+  it('an identity name always wins over a colliding raw name, in either order', () => {
+    /** A server literally named `Sales_Force` owns that key segment; the
+     *  special-character `Sales Force` is the shadowed one regardless of
+     *  configuration order — mirroring `buildServerNameAliases` routing. */
+    expect(findShadowedServerNames(['Sales_Force', 'Sales Force'])).toEqual(
+      new Set(['Sales Force']),
+    );
+    expect(findShadowedServerNames(['Sales Force', 'Sales_Force'])).toEqual(
+      new Set(['Sales Force']),
+    );
+  });
+});
+
+describe('normalizeAgentToolKeys', () => {
+  const rawServerNames = ['plain', 'Connector: Company'];
+
+  it('rewrites legacy raw-keyed tools and tool_options to the normalized form', () => {
+    const { tools, toolOptions } = normalizeAgentToolKeys({
+      tools: ['web_search', 'search_mcp_plain', 'search_mcp_Connector: Company'],
+      toolOptions: {
+        'search_mcp_Connector: Company': { run_in_background: true, describe_intent: true },
+        search_mcp_plain: { defer_loading: true },
+      },
+      rawServerNames,
+    });
+    expect(tools).toEqual(['web_search', 'search_mcp_plain', 'search_mcp_Connector__Company']);
+    expect(toolOptions).toEqual({
+      search_mcp_Connector__Company: { run_in_background: true, describe_intent: true },
+      search_mcp_plain: { defer_loading: true },
+    });
+  });
+
+  it('returns the same references when no configured name needs rewriting (fast path)', () => {
+    const tools = ['search_mcp_plain'];
+    const toolOptions = { search_mcp_plain: { defer_loading: true } };
+    const result = normalizeAgentToolKeys({
+      tools,
+      toolOptions,
+      rawServerNames: ['plain', 'safe-name.v2'],
+    });
+    expect(result.tools).toBe(tools);
+    expect(result.toolOptions).toBe(toolOptions);
+  });
+
+  it('returns the same references when keys are already normalized', () => {
+    const tools = ['search_mcp_Connector__Company'];
+    const toolOptions = { search_mcp_Connector__Company: { describe_intent: true } };
+    const result = normalizeAgentToolKeys({ tools, toolOptions, rawServerNames });
+    expect(result.tools).toBe(tools);
+    expect(result.toolOptions).toBe(toolOptions);
+  });
+
+  it('leaves placeholder and server-pin tokens untouched (config-identity references)', () => {
+    const tools = [
+      'sys__all__sys_mcp_Connector: Company',
+      'sys__server__sys_mcp_Connector: Company',
+      'search_mcp_Connector: Company',
+    ];
+    const result = normalizeAgentToolKeys({ tools, toolOptions: undefined, rawServerNames });
+    expect(result.tools).toEqual([
+      'sys__all__sys_mcp_Connector: Company',
+      'sys__server__sys_mcp_Connector: Company',
+      'search_mcp_Connector__Company',
+    ]);
+  });
+
+  it('handles undefined tools and options', () => {
+    const result = normalizeAgentToolKeys({
+      tools: undefined,
+      toolOptions: undefined,
+      rawServerNames,
+    });
+    expect(result.tools).toBeUndefined();
+    expect(result.toolOptions).toBeUndefined();
+  });
+
+  it('the CURRENT (normalized) entry wins when both spellings carry options', () => {
+    /** A client can write the new spelling before cleaning up the legacy
+     *  entry; object insertion order must not let stale legacy settings
+     *  clobber it. */
+    const rawLater = normalizeAgentToolKeys({
+      tools: undefined,
+      toolOptions: {
+        search_mcp_Connector__Company: { run_in_background: false },
+        'search_mcp_Connector: Company': { run_in_background: true, defer_loading: true },
+      },
+      rawServerNames: ['Connector: Company'],
+    });
+    expect(rawLater.toolOptions).toEqual({
+      search_mcp_Connector__Company: { run_in_background: false, defer_loading: true },
+    });
+
+    const rawFirst = normalizeAgentToolKeys({
+      tools: undefined,
+      toolOptions: {
+        'search_mcp_Connector: Company': { run_in_background: true, defer_loading: true },
+        search_mcp_Connector__Company: { run_in_background: false },
+      },
+      rawServerNames: ['Connector: Company'],
+    });
+    expect(rawFirst.toolOptions).toEqual({
+      search_mcp_Connector__Company: { run_in_background: false, defer_loading: true },
+    });
+  });
+
+  it('never heals a SHADOWED server key into the first server’s key', () => {
+    /** Rewriting `search__Sales:Force` would produce exactly the key of the
+     *  earlier `Sales Force` server — the persisted tool would silently
+     *  execute the wrong server's action. Left raw, it fails visibly. */
+    const result = normalizeAgentToolKeys({
+      tools: ['search_mcp_Sales:Force', 'search_mcp_Connector: Company'],
+      toolOptions: { 'search_mcp_Sales:Force': { run_in_background: true } },
+      rawServerNames: ['Sales Force', 'Sales:Force', 'Connector: Company'],
+    });
+    expect(result.tools).toEqual(['search_mcp_Sales:Force', 'search_mcp_Connector__Company']);
+    expect(result.toolOptions).toEqual({
+      'search_mcp_Sales:Force': { run_in_background: true },
+    });
   });
 });
 

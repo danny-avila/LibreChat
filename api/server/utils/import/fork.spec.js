@@ -6,6 +6,15 @@ jest.mock('~/models', () => ({
   getMessages: jest.fn(),
   bulkSaveMessages: jest.fn(),
   bulkIncrementTagCounts: jest.fn(),
+  getSharedMessages: jest.fn(),
+}));
+
+jest.mock('~/server/controllers/ModelController', () => ({
+  getModelsConfig: jest.fn().mockResolvedValue({ openAI: ['gpt-test'] }),
+}));
+
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({ interfaceConfig: {} }),
 }));
 
 let mockIdCounter = 0;
@@ -21,6 +30,7 @@ jest.mock('uuid', () => {
 const {
   forkConversation,
   duplicateConversation,
+  forkSharedConversation,
   splitAtTargetLevel,
   getAllMessagesUpToParent,
   getMessagesUpToTargetLevel,
@@ -32,7 +42,9 @@ const {
   bulkSaveConvos,
   getMessages,
   bulkSaveMessages,
+  getSharedMessages,
 } = require('~/models');
+const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const BaseClient = require('~/app/clients/BaseClient');
 
@@ -298,6 +310,359 @@ describe('duplicateConversation', () => {
 
     // bulkIncrementTagCounts will be called with empty array
     expect(bulkIncrementTagCounts).toHaveBeenCalledWith('user1', []);
+  });
+});
+
+describe('forkSharedConversation', () => {
+  const mockSharedMessages = [
+    {
+      messageId: 'msg_a',
+      parentMessageId: Constants.NO_PARENT,
+      text: 'Shared root',
+      isCreatedByUser: true,
+      createdAt: '2021-01-01',
+    },
+    {
+      messageId: 'msg_b',
+      parentMessageId: 'msg_a',
+      text: 'Shared reply',
+      isCreatedByUser: false,
+      createdAt: '2021-01-02',
+    },
+  ];
+
+  const mockShare = {
+    shareId: 'share123',
+    conversationId: 'convo_anon',
+    title: 'Shared Title',
+    messages: mockSharedMessages,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIdCounter = 0;
+    getSharedMessages.mockResolvedValue(mockShare);
+    getConvo.mockResolvedValue(mockConversation);
+    getMessages.mockResolvedValue(mockSharedMessages);
+    bulkSaveConvos.mockResolvedValue(null);
+    bulkSaveMessages.mockResolvedValue(null);
+    bulkIncrementTagCounts.mockResolvedValue(null);
+  });
+
+  test('should clone shared messages into a conversation owned by the requesting user', async () => {
+    const result = await forkSharedConversation({
+      shareId: 'share123',
+      shareResourceId: 'resource123',
+      requestUserId: 'user1',
+    });
+
+    expect(getSharedMessages).toHaveBeenCalledWith('share123', 'resource123', {
+      snapshotFiles: undefined,
+    });
+
+    const savedMessages = bulkSaveMessages.mock.calls[0][0];
+    expect(savedMessages).toHaveLength(2);
+    const [root, reply] = savedMessages;
+    expect(root).toMatchObject({
+      text: 'Shared root',
+      user: 'user1',
+      endpoint: 'openAI',
+      parentMessageId: Constants.NO_PARENT,
+    });
+    expect(reply).toMatchObject({
+      text: 'Shared reply',
+      user: 'user1',
+      parentMessageId: root.messageId,
+    });
+    expect(root.messageId).not.toBe('msg_a');
+    expect(reply.messageId).not.toBe('msg_b');
+
+    const savedConvos = bulkSaveConvos.mock.calls[0][0];
+    expect(savedConvos[0]).toMatchObject({
+      user: 'user1',
+      title: 'Shared Title',
+      endpoint: 'openAI',
+      model: 'gpt-test',
+    });
+
+    expect(getConvo).toHaveBeenCalledWith('user1', savedConvos[0].conversationId);
+    expect(result).toMatchObject({ conversation: mockConversation, messages: mockSharedMessages });
+  });
+
+  test('should use an available endpoint when the deployment does not expose OpenAI', async () => {
+    getModelsConfig.mockResolvedValueOnce({ anthropic: ['claude-test'] });
+
+    await forkSharedConversation({
+      shareId: 'share123',
+      shareResourceId: 'resource123',
+      requestUserId: 'user1',
+    });
+
+    const savedConvos = bulkSaveConvos.mock.calls[0][0];
+    expect(savedConvos[0]).toMatchObject({ endpoint: 'anthropic', model: 'claude-test' });
+
+    const savedMessages = bulkSaveMessages.mock.calls[0][0];
+    expect(savedMessages.every((message) => message.endpoint === 'anthropic')).toBe(true);
+  });
+
+  test('should return null when the share is not found', async () => {
+    getSharedMessages.mockResolvedValue(null);
+
+    const result = await forkSharedConversation({
+      shareId: 'missing',
+      requestUserId: 'user1',
+    });
+
+    expect(result).toBeNull();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
+
+  test('should return null when the share has no messages', async () => {
+    getSharedMessages.mockResolvedValue({ ...mockShare, messages: [] });
+
+    const result = await forkSharedConversation({
+      shareId: 'share123',
+      requestUserId: 'user1',
+    });
+
+    expect(result).toBeNull();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
+
+  test('should normalize orphaned parentMessageId references to NO_PARENT', async () => {
+    getSharedMessages.mockResolvedValue({
+      ...mockShare,
+      messages: [
+        {
+          messageId: 'msg_orphan',
+          parentMessageId: 'msg_deleted',
+          text: 'Orphaned message',
+          createdAt: '2021-01-01',
+        },
+      ],
+    });
+
+    await forkSharedConversation({
+      shareId: 'share123',
+      requestUserId: 'user1',
+    });
+
+    const savedMessages = bulkSaveMessages.mock.calls[0][0];
+    expect(savedMessages[0].parentMessageId).toBe(Constants.NO_PARENT);
+  });
+
+  test('should forward snapshotFiles to getSharedMessages so the kill switch is honored', async () => {
+    await forkSharedConversation({
+      shareId: 'share123',
+      shareResourceId: 'resource123',
+      requestUserId: 'user1',
+      snapshotFiles: false,
+    });
+
+    expect(getSharedMessages).toHaveBeenCalledWith('share123', 'resource123', {
+      snapshotFiles: false,
+    });
+  });
+
+  test('should strip anonymized model identifiers from cloned messages', async () => {
+    getSharedMessages.mockResolvedValue({
+      ...mockShare,
+      messages: [
+        {
+          messageId: 'msg_a',
+          parentMessageId: Constants.NO_PARENT,
+          text: 'Assistant message',
+          model: 'a_anon123',
+          createdAt: '2021-01-01',
+        },
+      ],
+    });
+
+    await forkSharedConversation({
+      shareId: 'share123',
+      requestUserId: 'user1',
+    });
+
+    const savedMessages = bulkSaveMessages.mock.calls[0][0];
+    expect(savedMessages[0].model).not.toBe('a_anon123');
+  });
+
+  test('should strip file_id from cloned files and attachments', async () => {
+    getSharedMessages.mockResolvedValue({
+      ...mockShare,
+      messages: [
+        {
+          messageId: 'msg_a',
+          parentMessageId: Constants.NO_PARENT,
+          text: 'Message with files',
+          isCreatedByUser: true,
+          createdAt: '2021-01-01',
+          files: [{ file_id: 'owner-file-1', filepath: '/images/owner/a.png' }],
+          attachments: [
+            { file_id: 'owner-file-2', toolCallId: 'tool_1', filepath: '/images/owner/b.png' },
+          ],
+        },
+      ],
+    });
+
+    await forkSharedConversation({
+      shareId: 'share123',
+      requestUserId: 'user1',
+    });
+
+    const savedMessages = bulkSaveMessages.mock.calls[0][0];
+    const [message] = savedMessages;
+    expect(message.files[0]).not.toHaveProperty('file_id');
+    expect(message.attachments[0]).not.toHaveProperty('file_id');
+    // Render-only metadata is preserved
+    expect(message.files[0].filepath).toBe('/images/owner/a.png');
+    expect(message.attachments[0].toolCallId).toBe('tool_1');
+  });
+
+  test('should resolve interfaceConfig from the app config and pass it to the builder', async () => {
+    const interfaceConfig = { retentionMode: 'all', retention: { days: 30 } };
+    const loadAppConfig = jest.fn().mockResolvedValue({ interfaceConfig });
+    const builderFactory = jest.fn((userId, config) => createImportBatchBuilder(userId, config));
+
+    await forkSharedConversation({
+      shareId: 'share123',
+      requestUserId: 'user1',
+      userRole: 'USER',
+      userTenantId: 'tenant-viewer',
+      loadAppConfig,
+      builderFactory,
+    });
+
+    expect(loadAppConfig).toHaveBeenCalledWith({
+      role: 'USER',
+      userId: 'user1',
+      tenantId: 'tenant-viewer',
+    });
+    expect(builderFactory).toHaveBeenCalledWith('user1', interfaceConfig);
+  });
+
+  test('should resolve the app config under the requesting user tenant', async () => {
+    const { tenantStorage, getTenantId } = require('@librechat/data-schemas');
+    let tenantDuringConfigLoad;
+    const loadAppConfig = jest.fn(async () => {
+      tenantDuringConfigLoad = getTenantId();
+      return { interfaceConfig: {} };
+    });
+
+    await tenantStorage.run({ tenantId: 'tenant-share-owner' }, () =>
+      forkSharedConversation({
+        shareId: 'share123',
+        requestUserId: 'user1',
+        userTenantId: 'tenant-viewer',
+        loadAppConfig,
+      }),
+    );
+
+    expect(tenantDuringConfigLoad).toBe('tenant-viewer');
+  });
+
+  test('should clone only the active branch path when targetMessageIndex is provided', async () => {
+    getSharedMessages.mockResolvedValue({
+      ...mockShare,
+      messages: [
+        {
+          messageId: 'msg_root',
+          parentMessageId: Constants.NO_PARENT,
+          text: 'Root',
+          createdAt: '2021-01-01T00:00:00.000Z',
+        },
+        {
+          messageId: 'msg_branch_a',
+          parentMessageId: 'msg_root',
+          text: 'Branch A (shared)',
+          createdAt: '2021-01-02T00:00:00.000Z',
+        },
+        {
+          messageId: 'msg_branch_b',
+          parentMessageId: 'msg_root',
+          text: 'Branch B (newer sibling)',
+          createdAt: '2021-01-03T00:00:00.000Z',
+        },
+      ],
+    });
+
+    // Index 1 = the "Branch A" tip the viewer had active.
+    await forkSharedConversation({
+      shareId: 'share123',
+      requestUserId: 'user1',
+      targetMessageIndex: 1,
+    });
+
+    const savedTexts = bulkSaveMessages.mock.calls[0][0].map((message) => message.text);
+    expect(savedTexts).toEqual(['Root', 'Branch A (shared)']);
+    expect(savedTexts).not.toContain('Branch B (newer sibling)');
+  });
+
+  test('should select the correct branch even when siblings share a createdAt', async () => {
+    getSharedMessages.mockResolvedValue({
+      ...mockShare,
+      messages: [
+        {
+          messageId: 'msg_root',
+          parentMessageId: Constants.NO_PARENT,
+          text: 'Root',
+          createdAt: '2021-01-01T00:00:00.000Z',
+        },
+        {
+          messageId: 'msg_sib_a',
+          parentMessageId: 'msg_root',
+          text: 'Sibling A',
+          createdAt: '2021-01-02T00:00:00.000Z',
+        },
+        {
+          messageId: 'msg_sib_b',
+          parentMessageId: 'msg_root',
+          text: 'Sibling B (same timestamp)',
+          createdAt: '2021-01-02T00:00:00.000Z',
+        },
+      ],
+    });
+
+    // Index 2 unambiguously targets Sibling B despite the shared createdAt.
+    await forkSharedConversation({
+      shareId: 'share123',
+      requestUserId: 'user1',
+      targetMessageIndex: 2,
+    });
+
+    const savedTexts = bulkSaveMessages.mock.calls[0][0].map((message) => message.text);
+    expect(savedTexts).toEqual(['Root', 'Sibling B (same timestamp)']);
+    expect(savedTexts).not.toContain('Sibling A');
+  });
+
+  test('should fall back to the full set when targetMessageIndex is out of range', async () => {
+    await forkSharedConversation({
+      shareId: 'share123',
+      requestUserId: 'user1',
+      targetMessageIndex: 999,
+    });
+
+    expect(bulkSaveMessages.mock.calls[0][0]).toHaveLength(mockSharedMessages.length);
+  });
+
+  test('should persist under the requesting user tenant, not the share tenant', async () => {
+    const { tenantStorage, getTenantId } = require('@librechat/data-schemas');
+    let tenantDuringSave;
+    bulkSaveConvos.mockImplementation(async () => {
+      tenantDuringSave = getTenantId();
+    });
+
+    // Simulate the handler running inside the share owner's tenant context
+    // (as `canAccessSharedLink` does) and ensure the write switches to the viewer's.
+    await tenantStorage.run({ tenantId: 'tenant-share-owner' }, () =>
+      forkSharedConversation({
+        shareId: 'share123',
+        requestUserId: 'user1',
+        userTenantId: 'tenant-viewer',
+      }),
+    );
+
+    expect(tenantDuringSave).toBe('tenant-viewer');
   });
 });
 

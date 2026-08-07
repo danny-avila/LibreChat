@@ -36,7 +36,7 @@ function createOAuthHandler(redirectUri = domains.client) {
         return;
       }
 
-      /** Check if this is an admin panel redirect (cross-origin) */
+      /** Check if this is an admin panel redirect (cross-origin or same-origin subpath) */
       if (isAdminPanelRedirect(redirectUri, getAdminPanelUrl(), domains.client)) {
         /** For admin panel, generate exchange code instead of setting cookies */
         const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);

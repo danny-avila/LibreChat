@@ -49,6 +49,39 @@ const setBalanceConfig = createSetBalanceConfig({
 
 const router = express.Router();
 
+function getOptionalOpenIdConfig() {
+  try {
+    return getOpenIdConfig();
+  } catch {
+    return null;
+  }
+}
+
+function requireOpenIdConfig(req, res, next) {
+  const openidConfig = getOptionalOpenIdConfig();
+  if (!openidConfig) {
+    return res.status(404).json({
+      error: 'OpenID configuration not found',
+      error_code: 'OPENID_NOT_CONFIGURED',
+    });
+  }
+
+  next();
+}
+
+/** Returns middleware that responds 404 when the given admin passport strategy is not registered. */
+function requireAdminStrategy(strategyName, provider) {
+  return (req, res, next) => {
+    if (passport._strategy(strategyName)) {
+      return next();
+    }
+    return res.status(404).json({
+      error: `${provider} configuration not found`,
+      error_code: `${provider.toUpperCase()}_NOT_CONFIGURED`,
+    });
+  };
+}
+
 function resolveRequestOrigin(req) {
   const originHeader = req.get('origin');
   if (originHeader) {
@@ -125,6 +158,7 @@ router.post(
   middleware.logHeaders,
   middleware.loginLimiter,
   middleware.checkBan,
+  middleware.validateEmailLogin,
   middleware.requireLocalAuth,
   tenantContextMiddleware,
   requireAdminAccess,
@@ -139,7 +173,7 @@ router.get('/verify', middleware.requireJwtAuth, requireAdminAccess, (req, res) 
 });
 
 router.get('/oauth/openid/check', (req, res) => {
-  const openidConfig = getOpenIdConfig();
+  const openidConfig = getOptionalOpenIdConfig();
   if (!openidConfig) {
     return res.status(404).json({
       error: 'OpenID configuration not found',
@@ -196,7 +230,7 @@ function retrievePkceChallenge(provider) {
  * OpenID Admin Routes
  * ────────────────────────────────────────────── */
 
-router.get('/oauth/openid', async (req, res, next) => {
+router.get('/oauth/openid', requireOpenIdConfig, async (req, res, next) => {
   const state = generateState();
   const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
   const stored = await storeAndStripChallenge(cache, req, state, 'openid');
@@ -218,6 +252,7 @@ router.get(
     req.oauthState = typeof req.query.state === 'string' ? req.query.state : undefined;
     next();
   },
+  requireOpenIdConfig,
   passport.authenticate('openidAdmin', {
     failureRedirect: `${getAdminPanelUrl()}/auth/openid/callback?error=auth_failed&error_description=Authentication+failed`,
     failureMessage: true,
@@ -235,7 +270,7 @@ router.get(
  * SAML Admin Routes
  * ────────────────────────────────────────────── */
 
-router.get('/oauth/saml', async (req, res, next) => {
+router.get('/oauth/saml', requireAdminStrategy('samlAdmin', 'SAML'), async (req, res, next) => {
   const state = generateState();
   const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
   const stored = await storeAndStripChallenge(cache, req, state, 'saml');
@@ -257,6 +292,7 @@ router.post(
     req.oauthState = typeof req.body.RelayState === 'string' ? req.body.RelayState : undefined;
     next();
   },
+  requireAdminStrategy('samlAdmin', 'SAML'),
   passport.authenticate('samlAdmin', {
     failureRedirect: `${getAdminPanelUrl()}/auth/saml/callback?error=auth_failed&error_description=Authentication+failed`,
     failureMessage: true,
@@ -274,24 +310,28 @@ router.post(
  * Google Admin Routes
  * ────────────────────────────────────────────── */
 
-router.get('/oauth/google', async (req, res, next) => {
-  const state = generateState();
-  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
-  const stored = await storeAndStripChallenge(cache, req, state, 'google');
-  if (!stored) {
-    return res.redirect(
-      `${getAdminPanelUrl()}/auth/google/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
-    );
-  }
+router.get(
+  '/oauth/google',
+  requireAdminStrategy('googleAdmin', 'Google'),
+  async (req, res, next) => {
+    const state = generateState();
+    const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+    const stored = await storeAndStripChallenge(cache, req, state, 'google');
+    if (!stored) {
+      return res.redirect(
+        `${getAdminPanelUrl()}/auth/google/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
+      );
+    }
 
-  return passport.authenticate('googleAdmin', {
-    scope: ['openid', 'profile', 'email'],
-    session: false,
-    state,
-    accessType: 'offline',
-    prompt: 'consent',
-  })(req, res, next);
-});
+    return passport.authenticate('googleAdmin', {
+      scope: ['openid', 'profile', 'email'],
+      session: false,
+      state,
+      accessType: 'offline',
+      prompt: 'consent',
+    })(req, res, next);
+  },
+);
 
 router.get(
   '/oauth/google/callback',
@@ -299,6 +339,7 @@ router.get(
     req.oauthState = typeof req.query.state === 'string' ? req.query.state : undefined;
     next();
   },
+  requireAdminStrategy('googleAdmin', 'Google'),
   passport.authenticate('googleAdmin', {
     failureRedirect: `${getAdminPanelUrl()}/auth/google/callback?error=auth_failed&error_description=Authentication+failed`,
     failureMessage: true,
@@ -316,22 +357,26 @@ router.get(
  * GitHub Admin Routes
  * ────────────────────────────────────────────── */
 
-router.get('/oauth/github', async (req, res, next) => {
-  const state = generateState();
-  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
-  const stored = await storeAndStripChallenge(cache, req, state, 'github');
-  if (!stored) {
-    return res.redirect(
-      `${getAdminPanelUrl()}/auth/github/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
-    );
-  }
+router.get(
+  '/oauth/github',
+  requireAdminStrategy('githubAdmin', 'GitHub'),
+  async (req, res, next) => {
+    const state = generateState();
+    const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+    const stored = await storeAndStripChallenge(cache, req, state, 'github');
+    if (!stored) {
+      return res.redirect(
+        `${getAdminPanelUrl()}/auth/github/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
+      );
+    }
 
-  return passport.authenticate('githubAdmin', {
-    scope: ['user:email', 'read:user'],
-    session: false,
-    state,
-  })(req, res, next);
-});
+    return passport.authenticate('githubAdmin', {
+      scope: ['user:email', 'read:user'],
+      session: false,
+      state,
+    })(req, res, next);
+  },
+);
 
 router.get(
   '/oauth/github/callback',
@@ -339,6 +384,7 @@ router.get(
     req.oauthState = typeof req.query.state === 'string' ? req.query.state : undefined;
     next();
   },
+  requireAdminStrategy('githubAdmin', 'GitHub'),
   passport.authenticate('githubAdmin', {
     failureRedirect: `${getAdminPanelUrl()}/auth/github/callback?error=auth_failed&error_description=Authentication+failed`,
     failureMessage: true,
@@ -356,22 +402,26 @@ router.get(
  * Discord Admin Routes
  * ────────────────────────────────────────────── */
 
-router.get('/oauth/discord', async (req, res, next) => {
-  const state = generateState();
-  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
-  const stored = await storeAndStripChallenge(cache, req, state, 'discord');
-  if (!stored) {
-    return res.redirect(
-      `${getAdminPanelUrl()}/auth/discord/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
-    );
-  }
+router.get(
+  '/oauth/discord',
+  requireAdminStrategy('discordAdmin', 'Discord'),
+  async (req, res, next) => {
+    const state = generateState();
+    const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+    const stored = await storeAndStripChallenge(cache, req, state, 'discord');
+    if (!stored) {
+      return res.redirect(
+        `${getAdminPanelUrl()}/auth/discord/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
+      );
+    }
 
-  return passport.authenticate('discordAdmin', {
-    scope: ['identify', 'email'],
-    session: false,
-    state,
-  })(req, res, next);
-});
+    return passport.authenticate('discordAdmin', {
+      scope: ['identify', 'email'],
+      session: false,
+      state,
+    })(req, res, next);
+  },
+);
 
 router.get(
   '/oauth/discord/callback',
@@ -379,6 +429,7 @@ router.get(
     req.oauthState = typeof req.query.state === 'string' ? req.query.state : undefined;
     next();
   },
+  requireAdminStrategy('discordAdmin', 'Discord'),
   passport.authenticate('discordAdmin', {
     failureRedirect: `${getAdminPanelUrl()}/auth/discord/callback?error=auth_failed&error_description=Authentication+failed`,
     failureMessage: true,
@@ -396,22 +447,26 @@ router.get(
  * Facebook Admin Routes
  * ────────────────────────────────────────────── */
 
-router.get('/oauth/facebook', async (req, res, next) => {
-  const state = generateState();
-  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
-  const stored = await storeAndStripChallenge(cache, req, state, 'facebook');
-  if (!stored) {
-    return res.redirect(
-      `${getAdminPanelUrl()}/auth/facebook/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
-    );
-  }
+router.get(
+  '/oauth/facebook',
+  requireAdminStrategy('facebookAdmin', 'Facebook'),
+  async (req, res, next) => {
+    const state = generateState();
+    const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+    const stored = await storeAndStripChallenge(cache, req, state, 'facebook');
+    if (!stored) {
+      return res.redirect(
+        `${getAdminPanelUrl()}/auth/facebook/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
+      );
+    }
 
-  return passport.authenticate('facebookAdmin', {
-    scope: ['public_profile'],
-    session: false,
-    state,
-  })(req, res, next);
-});
+    return passport.authenticate('facebookAdmin', {
+      scope: ['public_profile'],
+      session: false,
+      state,
+    })(req, res, next);
+  },
+);
 
 router.get(
   '/oauth/facebook/callback',
@@ -419,6 +474,7 @@ router.get(
     req.oauthState = typeof req.query.state === 'string' ? req.query.state : undefined;
     next();
   },
+  requireAdminStrategy('facebookAdmin', 'Facebook'),
   passport.authenticate('facebookAdmin', {
     failureRedirect: `${getAdminPanelUrl()}/auth/facebook/callback?error=auth_failed&error_description=Authentication+failed`,
     failureMessage: true,
@@ -436,7 +492,7 @@ router.get(
  * Apple Admin Routes (POST callback)
  * ────────────────────────────────────────────── */
 
-router.get('/oauth/apple', async (req, res, next) => {
+router.get('/oauth/apple', requireAdminStrategy('appleAdmin', 'Apple'), async (req, res, next) => {
   const state = generateState();
   const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
   const stored = await storeAndStripChallenge(cache, req, state, 'apple');
@@ -458,6 +514,7 @@ router.post(
     req.oauthState = typeof req.body.state === 'string' ? req.body.state : undefined;
     next();
   },
+  requireAdminStrategy('appleAdmin', 'Apple'),
   passport.authenticate('appleAdmin', {
     failureRedirect: `${getAdminPanelUrl()}/auth/apple/callback?error=auth_failed&error_description=Authentication+failed`,
     failureMessage: true,

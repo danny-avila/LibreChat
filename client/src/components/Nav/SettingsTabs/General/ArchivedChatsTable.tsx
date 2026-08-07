@@ -109,7 +109,7 @@ export default function ArchivedChatsTable({
     },
   });
 
-  const unarchiveMutation = useArchiveConvoMutation({
+  const { mutate: unarchiveConversation, isLoading: isUnarchiving } = useArchiveConvoMutation({
     onSuccess: async () => {
       await refetch();
     },
@@ -178,7 +178,7 @@ export default function ArchivedChatsTable({
                 to={`/c/${conversationId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex items-center gap-1 truncate rounded-sm text-blue-600 underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                className="group flex items-center gap-1 truncate rounded-sm text-link underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-text-primary"
                 title={title}
                 aria-label={localize('com_ui_open_archived_chat_new_tab_title', { title })}
               >
@@ -253,20 +253,15 @@ export default function ArchivedChatsTable({
                     variant="ghost"
                     className="h-8 w-8 p-0 hover:bg-surface-hover"
                     onClick={() =>
-                      unarchiveMutation.mutate({
+                      unarchiveConversation({
                         conversationId: conversation.conversationId,
                         isArchived: false,
                       })
                     }
-                    title={localize('com_ui_unarchive_conversation')}
                     aria-label={localize('com_ui_unarchive_conversation')}
-                    disabled={unarchiveMutation.isLoading}
+                    disabled={isUnarchiving}
                   >
-                    {unarchiveMutation.isLoading ? (
-                      <Spinner />
-                    ) : (
-                      <ArchiveRestore className="size-4" />
-                    )}
+                    {isUnarchiving ? <Spinner /> : <ArchiveRestore className="size-4" />}
                   </Button>
                 }
               />
@@ -280,7 +275,6 @@ export default function ArchivedChatsTable({
                       setDeleteConversation(row.original);
                       setIsDeleteOpen(true);
                     }}
-                    title={localize('com_ui_delete_conversation_tooltip')}
                     aria-label={localize('com_ui_delete_conversation_tooltip')}
                   >
                     <TrashIcon className="size-4" />
@@ -296,24 +290,29 @@ export default function ArchivedChatsTable({
         },
       },
     ],
-    [isSmallScreen, localize, unarchiveMutation],
+    [isSmallScreen, localize, unarchiveConversation, isUnarchiving],
   );
 
   return (
     <>
-      <DataTable
-        columns={columns}
-        data={allConversations}
-        filterColumn="title"
-        onFilterChange={debouncedFilterChange}
-        filterValue={queryParams.search}
-        fetchNextPage={handleFetchNextPage}
-        hasNextPage={hasNextPage}
-        isFetchingNextPage={isFetchingNextPage}
-        isLoading={isLoading}
-        showCheckboxes={false}
-        enableSearch={searchState.enabled === true}
-      />
+      {/* Fixed height keeps the loading (skeleton) and loaded states the same
+          size, so the virtualized table can't reflow the dialog on load. */}
+      <div className="h-[60vh]">
+        <DataTable
+          columns={columns}
+          data={allConversations}
+          className="scrollbar-gutter-stable"
+          filterColumn="title"
+          onFilterChange={debouncedFilterChange}
+          filterValue={queryParams.search}
+          fetchNextPage={handleFetchNextPage}
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+          isLoading={isLoading}
+          showCheckboxes={false}
+          enableSearch={searchState.enabled === true}
+        />
+      </div>
 
       <OGDialog open={isDeleteOpen} onOpenChange={onOpenChange}>
         <OGDialogContent
@@ -332,7 +331,11 @@ export default function ArchivedChatsTable({
             </OGDialogTitle>
           </OGDialogHeader>
           <div className="flex justify-end gap-4 pt-4">
-            <Button aria-label="cancel" variant="outline" onClick={() => setIsDeleteOpen(false)}>
+            <Button
+              aria-label={localize('com_ui_cancel')}
+              variant="outline"
+              onClick={() => setIsDeleteOpen(false)}
+            >
               {localize('com_ui_cancel')}
             </Button>
             <Button

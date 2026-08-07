@@ -10,6 +10,7 @@ import {
   mergeUsage,
   setEntryUsage,
   sumTotalUsage,
+  prunedBranchTokens,
   findBranchSnapshotAnchor,
   estimateTokens,
   normalizeUsageUnits,
@@ -86,6 +87,164 @@ describe('token index', () => {
 
     const altTotals = sumBranch(CONVO, 'a2-alt');
     expect(altTotals.output).toBe(1019);
+  });
+
+  it('estimates count-less messages by text length without inflating counted totals', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 12),
+      /** Imported message with no `tokenCount`: 40 chars of text → ~10 est tokens. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        text: 'x'.repeat(40),
+      } as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    /** Known counts feed input/output/counted; the count-less message stays out
+     *  of those and lands in the separate (uncalibrated) estimate bucket. */
+    expect(totals.input).toBe(12);
+    expect(totals.output).toBe(0);
+    expect(totals.counted).toBe(1);
+    expect(totals.total).toBe(2);
+    expect(totals.estTokens).toBe(10);
+  });
+
+  it('estimates object-form content text and merged quote excerpts', () => {
+    buildIndex(CONVO, [
+      /** Assistant body lives only in object-form content (`text.value`). */
+      {
+        messageId: 'a1',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        content: [{ type: 'text', text: { value: 'y'.repeat(20) } }],
+      } as unknown as TMessage,
+      /** User turn whose quotes are merged into the prompt at send time. */
+      {
+        messageId: 'u1',
+        parentMessageId: 'a1',
+        isCreatedByUser: true,
+        conversationId: CONVO,
+        text: 'z'.repeat(16),
+        quotes: ['q'.repeat(8)],
+      } as TMessage,
+    ]);
+
+    /** a1: 20 content chars / 4 = 5; u1: (16 text + 8 quote) / 4 = 6. */
+    const totals = sumBranch(CONVO, 'u1');
+    expect(totals.counted).toBe(0);
+    expect(totals.estTokens).toBe(11);
+  });
+
+  it('recounts quoted user turns (ignoring stale counts), counts tool calls, skips reasoning', () => {
+    buildIndex(CONVO, [
+      /** Quoted user turn with a stale text-only stored count: the send path
+       *  recounts the merged prompt every turn, so the estimate ignores the count
+       *  and recounts from text+quotes. */
+      {
+        messageId: 'u1',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: true,
+        conversationId: CONVO,
+        tokenCount: 999,
+        text: 'hi',
+        quotes: ['q'.repeat(38)],
+      } as TMessage,
+      /** Count-less assistant turn: tool-call name/args/output count toward the
+       *  estimate (sent back as context); reasoning does not. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        content: [
+          { type: 'think', think: 'r'.repeat(40) },
+          { type: 'tool_call', tool_call: { name: 'sub', args: 'aa', output: 'o'.repeat(11) } },
+        ],
+      } as unknown as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    /** u1 quoted: stored 999 ignored; (2 text + 38 quote) / 4 = 10. a1 tool_call
+     *  name 3 + args 2 + output 11 = 16 / 4 = 4 (think skipped). */
+    expect(totals.input).toBe(0);
+    expect(totals.counted).toBe(0);
+    expect(totals.estTokens).toBe(14);
+  });
+
+  it('prefers content over text for count-less messages carrying both', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 8),
+      /** Stopped agent response: saved with both a short `text` and structured
+       *  `content` (a tool call). The send path formats from content, so the
+       *  estimate must use content (tool tokens), not the shorter text. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        text: 'hi',
+        content: [
+          { type: 'tool_call', tool_call: { name: 'run', args: 'aa', output: 'o'.repeat(13) } },
+        ],
+      } as unknown as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    /** a1 uses content (name 3 + args 2 + output 13 = 18 / 4 = 5), not text 'hi'. */
+    expect(totals.input).toBe(8);
+    expect(totals.estTokens).toBe(5);
+  });
+
+  it('exposes the count-less tail estimate so live output is not double-counted', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 12),
+      /** In-flight / resumed response: count-less, so it lands in estTokens; it is
+       *  also covered by liveTokens, so the estimate path drops tailEstTokens. */
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        text: 'o'.repeat(20),
+      } as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    /** a1 is the tail: 20 / 4 = 5, surfaced both in estTokens and tailEstTokens. */
+    expect(totals.estTokens).toBe(5);
+    expect(totals.tailEstTokens).toBe(5);
+  });
+
+  describe('prunedBranchTokens (over-window mirror of getMessagesWithinTokenLimit)', () => {
+    /** u1 ← a1(huge, old) ← u2 ← a2(tail). */
+    const buildChain = () =>
+      buildIndex(CONVO, [
+        msg('u1', Constants.NO_PARENT, true, 2),
+        msg('a1', 'u1', false, 10),
+        msg('u2', 'a1', true, 2),
+        msg('a2', 'u2', false, 2),
+      ]);
+
+    it('keeps the newest messages that fit and stops at the first overflow', () => {
+      buildChain();
+      /** Budget 8: a2(2)+u2(2)=4 fit; a1(10) would overflow → pruned. */
+      expect(prunedBranchTokens(CONVO, 'a2', 8, false)).toBe(4);
+    });
+
+    it('returns the full branch sum when it fits the budget', () => {
+      buildChain();
+      expect(prunedBranchTokens(CONVO, 'a2', 100, false)).toBe(16);
+    });
+
+    it('skips the in-flight tail when excludeTail is set', () => {
+      buildChain();
+      /** Skip a2; a1(10)+u2(2)+u1(2)=14 all fit under 100. */
+      expect(prunedBranchTokens(CONVO, 'a2', 100, true)).toBe(14);
+    });
   });
 
   it('caps the branch at a summary marker instead of re-summing compacted history', () => {

@@ -223,7 +223,7 @@ describe('File Routes - Agent Files Endpoint', () => {
         author: authorId,
         tool_resources: {
           file_search: {
-            file_ids: [fileId1, fileId2],
+            file_ids: [fileId1, fileId2, fileId3],
           },
         },
       });
@@ -249,9 +249,10 @@ describe('File Routes - Agent Files Endpoint', () => {
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
-      expect(response.body).toHaveLength(2);
+      expect(response.body).toHaveLength(3);
       expect(response.body.map((f) => f.file_id)).toContain(fileId1);
       expect(response.body.map((f) => f.file_id)).toContain(fileId2);
+      expect(response.body.map((f) => f.file_id)).toContain(fileId3);
     });
 
     it('should return 400 when agent_id is not provided', async () => {
@@ -333,27 +334,8 @@ describe('File Routes - Agent Files Endpoint', () => {
       expect(response.body).toHaveLength(2);
     });
 
-    it('should not return files owned by other users through agent file references', async () => {
-      const anotherUserId = new mongoose.Types.ObjectId();
-      const otherUserFileId = uuidv4();
-
-      await User.create({
-        _id: anotherUserId,
-        username: 'another',
-        email: 'another@test.com',
-      });
-
-      await createFile({
-        user: anotherUserId,
-        file_id: otherUserFileId,
-        filename: 'other-user-file.txt',
-        filepath: '/uploads/other-user-file.txt',
-        bytes: 400,
-        type: 'text/plain',
-      });
-
-      // Create agent to include the file uploaded by another user
-      await createAgent({
+    it('should return attached files uploaded by another editor', async () => {
+      const agent = await createAgent({
         id: agentId,
         name: 'Test Agent',
         provider: 'openai',
@@ -361,9 +343,19 @@ describe('File Routes - Agent Files Endpoint', () => {
         author: authorId,
         tool_resources: {
           file_search: {
-            file_ids: [fileId1, otherUserFileId],
+            file_ids: [fileId1, fileId3],
           },
         },
+      });
+
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
       });
 
       // Create a new app instance with author authentication
@@ -380,9 +372,9 @@ describe('File Routes - Agent Files Endpoint', () => {
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
-      expect(response.body).toHaveLength(1);
+      expect(response.body).toHaveLength(2);
       expect(response.body.map((f) => f.file_id)).toContain(fileId1);
-      expect(response.body.map((f) => f.file_id)).not.toContain(otherUserFileId);
+      expect(response.body.map((f) => f.file_id)).toContain(fileId3);
     });
   });
 

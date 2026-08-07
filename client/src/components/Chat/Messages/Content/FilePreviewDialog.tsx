@@ -3,9 +3,10 @@ import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
-import CopyButton from '~/components/Messages/Content/CopyButton';
+import { useFileDownload, useSharedFileDownload } from '~/data-provider';
 import { logger, sortPagesByRelevance, triggerDownload } from '~/utils';
-import { useFileDownload } from '~/data-provider';
+import CopyButton from '~/components/Messages/Content/CopyButton';
+import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -14,6 +15,7 @@ interface FilePreviewDialogProps {
   onOpenChange: (open: boolean) => void;
   fileName: string;
   fileId?: string;
+  filePath?: string;
   relevance?: number;
   pages?: number[];
   pageRelevance?: Record<number, number>;
@@ -128,6 +130,7 @@ export default function FilePreviewDialog({
   onOpenChange,
   fileName,
   fileId,
+  filePath,
   relevance,
   pages,
   pageRelevance,
@@ -136,7 +139,13 @@ export default function FilePreviewDialog({
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
-  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', fileId, { direct: false });
+  const { shareId } = useShareContext();
+  const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
+  const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);
+  // Use the share route only for snapshotted files (filepath rewritten to the
+  // share path); otherwise fall back to the owner route.
+  const useShared = !!shareId && (filePath?.startsWith('/api/share/') ?? false);
+  const downloadFile = useShared ? downloadShared : downloadOwned;
 
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);

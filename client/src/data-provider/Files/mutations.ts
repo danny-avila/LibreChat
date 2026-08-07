@@ -8,8 +8,9 @@ import {
   defaultOrderQuery,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import type * as t from 'librechat-data-provider';
+import { useGetStartupConfig } from '../Endpoints';
 import { useLocalize } from '~/hooks';
 
 export const useUploadFileMutation = (
@@ -21,6 +22,8 @@ export const useUploadFileMutation = (
   FormData, // request
   unknown // context
 > => {
+  const { data: startupConfig } = useGetStartupConfig();
+  const sseEnabled = startupConfig?.fileUploadSseEnabled === true;
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileUpload], {
@@ -30,14 +33,14 @@ export const useUploadFileMutation = (
       const version = body.get('version') ?? '';
       const endpoint = (body.get('endpoint') ?? '') as string;
       if (isAssistantsEndpoint(endpoint) && version === '2') {
-        return dataService.uploadFile(body, signal);
+        return dataService.uploadFile(body, signal, sseEnabled);
       }
 
       if (width !== '' && height !== '') {
-        return dataService.uploadImage(body, signal);
+        return dataService.uploadImage(body, signal, sseEnabled);
       }
 
-      return dataService.uploadFile(body, signal);
+      return dataService.uploadFile(body, signal, sseEnabled);
     },
     ...options,
     onSuccess: (data, formData, context) => {
@@ -135,6 +138,22 @@ export const useUploadFileMutation = (
       );
       onSuccess?.(data, formData, context);
     },
+  });
+};
+
+/**
+ * Owner-scoped usage touch for uploads entering the client-side queue, so the
+ * upload-window TTL cannot reap them while the message waits out a long run.
+ * Fire-and-forget: failures are tolerated (send-time marking is the backstop).
+ */
+export const useMarkFilesUsageMutation = (): UseMutationResult<
+  t.TFilesUsageResponse, // response data
+  unknown, // error
+  t.TFilesUsageBody, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.fileUsage], {
+    mutationFn: (body: t.TFilesUsageBody) => dataService.markFilesUsage(body),
   });
 };
 

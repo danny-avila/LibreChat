@@ -23,6 +23,7 @@ describe('Convos Routes', () => {
   let convosRouter;
   const { deleteToolCalls, deleteConvos, saveConvo } = require('~/models');
   const {
+    deleteAgentCheckpoints,
     deleteAllSharedLinksWithCleanup,
     deleteConvoSharedLinksWithCleanup,
   } = require('@librechat/api');
@@ -47,6 +48,20 @@ describe('Convos Routes', () => {
   });
 
   describe('DELETE /all', () => {
+    it('prunes the deleted conversations’ agent checkpoints (bulk, ids from deleteConvos)', async () => {
+      // HITL: a paused conversation's durable checkpoint must not outlive the conversation.
+      const conversationIds = ['conv-a', 'conv-b'];
+      deleteConvos.mockResolvedValue({ deletedCount: 2, conversationIds });
+      deleteToolCalls.mockResolvedValue({ deletedCount: 0 });
+      deleteAllSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 0 });
+
+      const response = await request(app).delete('/api/convos/all');
+
+      expect(response.status).toBe(201);
+      expect(deleteAgentCheckpoints).toHaveBeenCalledTimes(1);
+      expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(conversationIds);
+    });
+
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
       const mockDbResponse = {
         deletedCount: 5,

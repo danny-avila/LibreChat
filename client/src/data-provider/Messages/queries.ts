@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { UseQueryOptions, QueryObserverResult, QueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
+import type { UseQueryOptions, QueryObserverResult, QueryClient } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import { isNotFoundError, logger } from '~/utils';
 
@@ -99,11 +99,26 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
   return useQuery<t.TMessage[], unknown, TData>(
     [QueryKeys.messages, id],
     async () => {
+      const queryKey = [QueryKeys.messages, id];
+      const messagesAtRequestStart = queryClient.getQueryData<t.TMessage[]>(queryKey);
+
+      if (id === Constants.NEW_CONVO) {
+        return messagesAtRequestStart ?? [];
+      }
+
       let result: t.TMessage[];
       try {
         result = await dataService.getMessagesByConvoId(id);
       } catch (error) {
-        const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
+        const currentMessages = queryClient.getQueryData<t.TMessage[]>(queryKey);
+        if (
+          messagesAtRequestStart != null &&
+          currentMessages != null &&
+          currentMessages !== messagesAtRequestStart
+        ) {
+          return currentMessages;
+        }
+
         const hasLiveStream = isStreamingRef.current || hasActiveJob(queryClient, id);
         if (
           currentMessages &&
@@ -125,7 +140,15 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
         throw error;
       }
 
-      const currentMessages = queryClient.getQueryData<t.TMessage[]>([QueryKeys.messages, id]);
+      const currentMessages = queryClient.getQueryData<t.TMessage[]>(queryKey);
+      if (
+        messagesAtRequestStart != null &&
+        currentMessages != null &&
+        currentMessages !== messagesAtRequestStart
+      ) {
+        return currentMessages;
+      }
+
       const stableMessages = getStableMessages({
         pathname: location.pathname,
         result,

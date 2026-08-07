@@ -198,7 +198,7 @@ const DeleteButton = memo(
           <Spinner className="size-4" />
         ) : (
           <>
-            <TrashIcon className="size-3.5 text-red-400 sm:size-4" />
+            <TrashIcon className="size-3.5 text-text-destructive sm:size-4" />
             {!isSmallScreen && <span className="ml-2">Delete</span>}
           </>
         )}
@@ -429,13 +429,16 @@ export default function DataTable<TData, TValue>({
       <div
         ref={tableContainerRef}
         className={cn(
-          'relative min-h-0 max-w-full flex-1 overflow-x-auto overflow-y-auto rounded-md border border-black/10 dark:border-white/10',
+          'relative min-h-0 max-w-full flex-1 overflow-x-auto overflow-y-auto rounded-md border border-border-light',
           'transition-all duration-300 ease-out',
           isSearching && 'bg-surface-secondary/50',
           className,
         )}
       >
-        <Table className="w-full min-w-[300px] table-fixed border-separate border-spacing-0">
+        <Table
+          unwrapped
+          className="w-full min-w-[300px] table-fixed border-separate border-spacing-0"
+        >
           <TableHeader className="sticky top-0 z-50 bg-surface-secondary">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="border-b border-border-light">

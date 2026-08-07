@@ -1,7 +1,6 @@
 import _ from 'lodash';
 import { parseTextParts } from 'librechat-data-provider';
 import { MeiliSearch, MeiliSearchTimeOutError } from 'meilisearch';
-import type { SearchResponse, SearchParams, Index, MeiliSearchErrorInfo } from 'meilisearch';
 import type {
   CallbackWithoutResultAndOptionalError,
   FilterQuery,
@@ -11,9 +10,10 @@ import type {
   Types,
   Model,
 } from 'mongoose';
+import type { SearchResponse, SearchParams, Index, MeiliSearchErrorInfo } from 'meilisearch';
 import type { IConversation, IMessage } from '~/types';
-import logger from '~/config/meiliLogger';
 import { buildRetentionVisibilityFilter, legacyPermanentExpirationFilter } from '~/utils/retention';
+import logger from '~/config/meiliLogger';
 
 interface MongoMeiliOptions {
   host: string;
@@ -452,7 +452,8 @@ const createMeiliMongooseModel = ({
       }
 
       if (object.content && Array.isArray(object.content)) {
-        object.text = parseTextParts(object.content);
+        /** Search indexes the full conversational record, steered words included. */
+        object.text = parseTextParts(object.content, false, { includeSteer: true });
         delete object.content;
       }
 
@@ -792,32 +793,47 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   });
 
   // Post-findOneAndUpdate hook
-  schema.post('findOneAndUpdate', async function (doc: DocumentWithMeiliIndex, next) {
-    if (!meiliEnabled) {
-      return next();
-    }
-
-    if (doc.unfinished) {
-      return next();
-    }
-
-    let meiliDoc: Record<string, unknown> | undefined;
-    if (doc.messages) {
-      try {
-        meiliDoc = await client.index('convos').getDocument(doc.conversationId as string);
-      } catch (error: unknown) {
-        logger.debug(
-          '[MeiliMongooseModel.findOneAndUpdate] Convo not found in MeiliSearch and will index ' +
-            doc.conversationId,
-          error as Record<string, unknown>,
-        );
+  schema.post(
+    'findOneAndUpdate',
+    async function (
+      res: DocumentWithMeiliIndex | { value: DocumentWithMeiliIndex | null } | null,
+      next: CallbackWithoutResultAndOptionalError,
+    ) {
+      if (!meiliEnabled) {
+        return next();
       }
-    }
 
-    if (meiliDoc && meiliDoc.title === doc.title) {
+      // `saveConvo` issues `findOneAndUpdate` with `includeResultMetadata: true`, so
+      // the hook receives the raw `{ value, ok, lastErrorObject }` result instead of
+      // the document. Unwrap `value` so indexing runs for that path too.
+      const doc = res instanceof mongoose.Document ? res : (res?.value ?? null);
+
+      if (!doc || doc.unfinished) {
+        return next();
+      }
+
+      let meiliDoc: Record<string, unknown> | undefined;
+      if (doc.messages) {
+        try {
+          meiliDoc = await client.index('convos').getDocument(doc.conversationId as string);
+        } catch (error: unknown) {
+          logger.debug(
+            '[MeiliMongooseModel.findOneAndUpdate] Convo not found in MeiliSearch and will index ' +
+              doc.conversationId,
+            error as Record<string, unknown>,
+          );
+        }
+      }
+
+      if (meiliDoc && meiliDoc.title === doc.title) {
+        return next();
+      }
+
+      if (typeof doc.postSaveHook === 'function') {
+        return doc.postSaveHook(next);
+      }
+
       return next();
-    }
-
-    doc.postSaveHook?.(next);
-  });
+    },
+  );
 }

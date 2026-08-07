@@ -5,10 +5,8 @@ const { logger } = require('@librechat/data-schemas');
 const {
   isEnabled,
   tenantContextMiddleware,
-  getAuthFailureReason,
-  getAuthFailureErrorName,
+  getAuthFailureReasonCategory,
   buildSafeAuthLogContext,
-  formatAuthLogMessage,
   maybeRefreshCloudFrontAuthCookiesMiddleware,
   recordRumProxyRequest,
 } = require('@librechat/api');
@@ -36,6 +34,12 @@ const getAuthenticatedUserId = (user) => user?.id?.toString?.() ?? user?._id?.to
 const refreshCloudFrontCookies =
   maybeRefreshCloudFrontAuthCookiesMiddleware ?? ((_req, _res, next) => next());
 
+const getAuthTokenSource = (req) => {
+  const authorization = req.headers.authorization;
+  const value = Array.isArray(authorization) ? authorization[0] : authorization;
+  return typeof value === 'string' && /^Bearer\s+/i.test(value) ? 'bearer' : 'none';
+};
+
 const getAuthStrategies = (req) => {
   const cookieHeader = req.headers.cookie;
   const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
@@ -48,6 +52,7 @@ const getAuthStrategies = (req) => {
 
   return {
     tokenProvider,
+    tokenSource: getAuthTokenSource(req),
     openidReuseEnabled,
     openidJwtAvailable,
     openIdReuseUserId,
@@ -84,49 +89,61 @@ const isOpenIdReuseUser = (strategy, user, openIdReuseUserId) =>
  * for downstream Mongoose tenant isolation and structured logging.
  */
 const requireJwtAuth = (req, res, next) => {
-  const { tokenProvider, openidReuseEnabled, openidJwtAvailable, openIdReuseUserId, strategies } =
-    getAuthStrategies(req);
+  const {
+    tokenProvider,
+    tokenSource,
+    openidReuseEnabled,
+    openidJwtAvailable,
+    openIdReuseUserId,
+    strategies,
+  } = getAuthStrategies(req);
   const authLogState = {
     tokenProvider,
+    tokenSource,
     openidReuseEnabled,
     openidJwtAvailable,
     hasOpenIdReuseUserId: openIdReuseUserId != null,
   };
-  let primaryFailureReason;
-  let primaryFailureErrorName;
+  let primaryFailureReasonCategory;
   let fallbackAttempted = false;
 
-  const logOpenIdFallbackAttempt = ({ fallbackStrategy, reason, errorName, status }) => {
-    primaryFailureReason = reason;
-    primaryFailureErrorName = errorName;
+  const logOpenIdFallbackAttempt = ({ fallbackStrategy, reasonCategory, status }) => {
+    primaryFailureReasonCategory = reasonCategory;
     fallbackAttempted = true;
     const message = '[requireJwtAuth] OpenID JWT auth failed; trying fallback';
     const context = buildSafeAuthLogContext(req, authLogState, {
+      event_name: 'jwt_auth_fallback_attempt',
       primary_strategy: 'openidJwt',
       fallback_strategy: fallbackStrategy,
       fallback_attempted: true,
-      reason,
-      error_name: errorName,
-      status,
+      reason_category: reasonCategory,
+      recovery_classification: 'fallback_attempted',
+      strategy_status: status,
     });
-    logger.debug(formatAuthLogMessage(message, context), context);
+    logger.debug({ message, ...context });
   };
 
   const logAuthenticationFailure = ({ strategy, info, status, err }) => {
     const message = '[requireJwtAuth] Authentication failed after all strategies';
+    const reasonCategory = getAuthFailureReasonCategory(err, info);
     const context = buildSafeAuthLogContext(req, authLogState, {
+      event_name: 'jwt_auth_rejected',
       primary_strategy: strategies[0],
       fallback_strategy: strategies[1],
       fallback_attempted: fallbackAttempted,
       fallback_succeeded: false,
       attempted_strategies: strategies,
       final_strategy: strategy,
-      reason: getAuthFailureReason(err, info),
-      error_name: getAuthFailureErrorName(err, info),
-      status: status || 401,
+      ...(fallbackAttempted && {
+        primary_failure_reason_category: primaryFailureReasonCategory,
+      }),
+      reason_category: reasonCategory,
+      recovery_classification: 'terminal_rejection',
+      response_status: status || 401,
     });
-    const log = fallbackAttempted ? logger.warn : logger.debug;
-    log.call(logger, formatAuthLogMessage(message, context), context);
+    const log =
+      fallbackAttempted || reasonCategory === 'malformed_jwt' ? logger.warn : logger.debug;
+    log.call(logger, { message, ...context });
   };
 
   const logFallbackSuccess = (strategy) => {
@@ -135,16 +152,16 @@ const requireJwtAuth = (req, res, next) => {
     }
     const message = '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure';
     const context = buildSafeAuthLogContext(req, authLogState, {
+      event_name: 'jwt_auth_recovered',
       auth_strategy: 'jwt',
       primary_strategy: 'openidJwt',
       fallback_strategy: 'jwt',
       fallback_attempted: true,
       fallback_succeeded: true,
-      primary_failure_reason: primaryFailureReason,
-      reason: primaryFailureReason,
-      error_name: primaryFailureErrorName,
+      primary_failure_reason_category: primaryFailureReasonCategory,
+      recovery_classification: 'fallback_succeeded',
     });
-    logger.debug(formatAuthLogMessage(message, context), context);
+    logger.debug({ message, ...context });
   };
 
   const authenticateWithStrategy = (index) => {
@@ -157,8 +174,7 @@ const requireJwtAuth = (req, res, next) => {
         if (index + 1 < strategies.length) {
           logOpenIdFallbackAttempt({
             fallbackStrategy: strategies[index + 1],
-            reason: getAuthFailureReason(err, info),
-            errorName: getAuthFailureErrorName(err, info),
+            reasonCategory: getAuthFailureReasonCategory(err, info),
             status: status || 401,
           });
           return authenticateWithStrategy(index + 1);
@@ -172,7 +188,7 @@ const requireJwtAuth = (req, res, next) => {
         if (index + 1 < strategies.length) {
           logOpenIdFallbackAttempt({
             fallbackStrategy: strategies[index + 1],
-            reason: 'openid user-id mismatch',
+            reasonCategory: 'principal_mismatch',
             status: 401,
           });
           return authenticateWithStrategy(index + 1);

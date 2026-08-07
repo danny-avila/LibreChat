@@ -1,24 +1,38 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
-import type { Agents, TConversation } from 'librechat-data-provider';
+import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
+import type { Agents, TConversation, TPendingSteer } from 'librechat-data-provider';
+import { generationProtocolHeaders, withGenerationProtocolQuery } from './protocol';
 import { isNotFoundError, updateConvoInAllQueries } from '~/utils';
 import { useGetStartupConfig } from '../Endpoints';
 
 export interface StreamStatusResponse {
+  /** Exact protocol selected by the job. Missing/1 is always legacy. */
+  generationProtocolVersion?: number;
   active: boolean;
+  /** Client-local cache marker used to force useResumeOnLoad to replace a
+   * stale generation attachment with the newer epoch occupying this stream. */
+  generationHandoff?: boolean;
   streamId?: string;
-  status?: 'running' | 'complete' | 'error' | 'aborted';
+  status?: 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
   aggregatedContent?: Array<{ type: string; text?: string }>;
   createdAt?: number;
   resumeState?: Agents.ResumeState;
+  /** Live pending approval when `status === 'requires_action'`; mirrors
+   *  `resumeState.pendingAction`, surfaced top-level for the resume-on-load path. */
+  pendingAction?: Agents.PendingAction;
+  /** Acknowledged steers a terminal drain parked because no subscriber was
+   *  live for the final/abort event. Reads are replayable until an exact
+   *  recovery turn persists or the user discards the item. */
+  unrecoveredSteers?: TPendingSteer[];
 }
 
 export const streamStatusQueryKey = (conversationId: string) => ['streamStatus', conversationId];
 
 export const fetchStreamStatus = async (conversationId: string): Promise<StreamStatusResponse> => {
   return request.get<StreamStatusResponse>(
-    `${apiBaseUrl()}/api/agents/chat/status/${conversationId}`,
+    withGenerationProtocolQuery(`${apiBaseUrl()}/api/agents/chat/status/${conversationId}`),
+    { headers: generationProtocolHeaders() },
   );
 };
 

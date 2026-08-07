@@ -271,8 +271,10 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     overscan: dynamicOverscan,
   });
 
-  const virtualRows = rowVirtualizer.getVirtualItems();
-  const totalSize = rowVirtualizer.getTotalSize();
+  // Only read the virtualizer when active; the non-virtualized branch renders rows directly,
+  // so engaging it for small tables is wasted render-phase work.
+  const virtualRows = virtualizationActive ? rowVirtualizer.getVirtualItems() : [];
+  const totalSize = virtualizationActive ? rowVirtualizer.getTotalSize() : 0;
   const paddingTop = virtualRows[0]?.start ?? 0;
   const paddingBottom =
     virtualRows.length > 0 ? totalSize - (virtualRows[virtualRows.length - 1]?.end ?? 0) : 0;
@@ -436,7 +438,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   return (
     <div
       className={cn(
-        'relative flex w-full flex-col overflow-hidden rounded-lg border border-border-light bg-background',
+        'relative flex w-full flex-col overflow-hidden rounded-lg border border-border-light bg-surface-primary',
         'h-[calc(100vh-8rem)] max-h-[80vh]',
         className,
       )}
