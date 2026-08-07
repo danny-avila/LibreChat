@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { JSX } from 'react/jsx-runtime';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowUp, ArrowDown, ArrowDownUp } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowDownUp } from 'lucide';
 import {
   useReactTable,
   getCoreRowModel,
@@ -18,6 +18,7 @@ import { Table, TableBody, TableHead, TableHeader, TableCell, TableRow } from '.
 import { useDebounced, useOptimizedRowSelection } from './DataTable.hooks';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { DataTableSearch } from './DataTableSearch';
+import { MorphIcon } from '../MorphIcon';
 import { cn, logger } from '~/utils';
 import { Button } from '../Button';
 import { Label } from '../Label';
@@ -640,12 +641,15 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                       >
                         {renderedHeader}
                         <span className="text-text-primary" aria-hidden="true">
-                          {{
-                            asc: <ArrowUp className="size-4 text-text-primary" />,
-                            desc: <ArrowDown className="size-4 text-text-primary" />,
-                          }[header.column.getIsSorted() as string] ?? (
-                            <ArrowDownUp className="size-4 text-text-primary" />
-                          )}
+                          <MorphIcon
+                            icon={
+                              {
+                                asc: ArrowUp,
+                                desc: ArrowDown,
+                              }[header.column.getIsSorted() as string] ?? ArrowDownUp
+                            }
+                            className="size-4 text-text-primary"
+                          />
                         </span>
                       </Button>
                     );
