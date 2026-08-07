@@ -29,6 +29,7 @@ export interface MCPToolCacheDeps {
   setCachedAppServerSnapshots?: (serverNames: string[]) => Promise<boolean>;
   getCachedAppServerGenerations?: () => Promise<Record<string, string> | null>;
   setCachedAppServerGenerations?: (generations: Record<string, string>) => Promise<boolean>;
+  getActiveAppServerGenerations?: () => Promise<Record<string, string>> | Record<string, string>;
   runWithGlobalCacheLock?: <T>(operation: () => Promise<T>) => Promise<T>;
 }
 
@@ -77,6 +78,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     setCachedAppServerSnapshots,
     getCachedAppServerGenerations,
     setCachedAppServerGenerations,
+    getActiveAppServerGenerations,
     runWithGlobalCacheLock,
   } = deps;
   let globalCacheQueue: Promise<void> = Promise.resolve();
@@ -174,6 +176,15 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           )
         : null,
     };
+  }
+
+  /** Rebuilds publication authority after shared cache loss from registry and live connections. */
+  async function rebuildAppServerGenerations(): Promise<Record<string, string>> {
+    const startupGenerations = (await getStartupAppServers()).generations ?? {};
+    const activeGenerations = (await getActiveAppServerGenerations?.()) ?? {};
+    const generations = { ...activeGenerations, ...startupGenerations };
+    await writeCachedAppServerGenerations(generations);
+    return generations;
   }
 
   async function resolveCacheConfig(
@@ -419,9 +430,16 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         }
       }
       const replaced = await withGlobalCacheLock(async () => {
-        const appServerGenerations = getCachedAppServerGenerations
-          ? ((await getCachedAppServerGenerations()) ?? {})
+        let appServerGenerations = getCachedAppServerGenerations
+          ? await getCachedAppServerGenerations()
           : null;
+        if (
+          publicationGeneration &&
+          appServerGenerations == null &&
+          setCachedAppServerGenerations
+        ) {
+          appServerGenerations = await rebuildAppServerGenerations();
+        }
         if (
           publicationGeneration &&
           appServerGenerations != null &&

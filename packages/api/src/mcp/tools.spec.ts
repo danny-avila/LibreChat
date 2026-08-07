@@ -337,6 +337,63 @@ describe('createMCPToolCacheService', () => {
       expect(deps.setCachedTools).not.toHaveBeenCalled();
       expect(deps.setCachedAppServerGenerations).not.toHaveBeenCalled();
     });
+
+    it('rebuilds app publication generations after shared cache loss', async () => {
+      const publicationGeneration = getMCPAppToolsPublicationGeneration(cacheableConfig);
+      const setCachedAppServerGenerations = jest.fn().mockResolvedValue(true);
+      const deps = createMockDeps({
+        getAllServerConfigs: jest.fn().mockResolvedValue({}),
+        getActiveAppServerGenerations: jest
+          .fn()
+          .mockResolvedValue({ dynamic: publicationGeneration }),
+        getCachedAppServerGenerations: jest.fn().mockResolvedValue(null),
+        setCachedAppServerGenerations,
+      });
+      const service = createMCPToolCacheService(deps);
+
+      await expect(
+        service.replaceAppServerTools({
+          serverName: 'dynamic',
+          serverTools: {},
+          publicationGeneration,
+        }),
+      ).resolves.toBe(true);
+
+      expect(setCachedAppServerGenerations).toHaveBeenCalledWith({
+        dynamic: publicationGeneration,
+      });
+      expect(deps.setCachedTools).toHaveBeenCalledWith({});
+    });
+
+    it('keeps stale replicas fenced while rebuilding generations after cache loss', async () => {
+      const staleGeneration = getMCPAppToolsPublicationGeneration(cacheableConfig);
+      const currentConfig = {
+        ...cacheableConfig,
+        url: 'https://mcp.example.com/v2/mcp',
+      };
+      const currentGeneration = getMCPAppToolsPublicationGeneration(currentConfig);
+      const setCachedAppServerGenerations = jest.fn().mockResolvedValue(true);
+      const deps = createMockDeps({
+        getAllServerConfigs: jest.fn().mockResolvedValue({ dynamic: currentConfig }),
+        getActiveAppServerGenerations: jest.fn().mockResolvedValue({ dynamic: staleGeneration }),
+        getCachedAppServerGenerations: jest.fn().mockResolvedValue(null),
+        setCachedAppServerGenerations,
+      });
+      const service = createMCPToolCacheService(deps);
+
+      await expect(
+        service.replaceAppServerTools({
+          serverName: 'dynamic',
+          serverTools: {},
+          publicationGeneration: staleGeneration,
+        }),
+      ).resolves.toBe(false);
+
+      expect(setCachedAppServerGenerations).toHaveBeenCalledWith({
+        dynamic: currentGeneration,
+      });
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateMCPServerTools', () => {

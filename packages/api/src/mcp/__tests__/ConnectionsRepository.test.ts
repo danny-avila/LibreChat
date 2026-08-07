@@ -145,6 +145,21 @@ describe('ConnectionsRepository', () => {
       expect(mockConnection.refreshToolList).not.toHaveBeenCalled();
     });
 
+    it('serializes concurrent creation so only one connection is retained', async () => {
+      const [first, second] = await Promise.all([
+        repository.get('server1'),
+        repository.get('server1'),
+      ]);
+
+      expect(first).toBe(mockConnection);
+      expect(second).toBe(mockConnection);
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+      expect(mockConnection.on).toHaveBeenCalledTimes(1);
+      expect(repository.getPublicationGenerations()).toEqual({
+        server1: getMCPAppToolsPublicationGeneration(mockServerConfigs.server1),
+      });
+    });
+
     it('awaits initial app tool publication before returning a new connection', async () => {
       let releasePublication: (() => void) | undefined;
       const publication = new Promise<void>((resolve) => {

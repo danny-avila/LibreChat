@@ -155,7 +155,11 @@ describe('getCachedTools', () => {
 
       expect(mockCache.set).toHaveBeenCalledWith(
         ToolCacheKeys.MCP_SERVER('user1', 'github'),
-        tools,
+        {
+          version: 1,
+          publicationGeneration: 'generation-a',
+          tools,
+        },
         expect.any(Number),
       );
       expect(mockCache.set).toHaveBeenCalledWith(
@@ -163,6 +167,33 @@ describe('getCachedTools', () => {
         'generation-a',
         expect.any(Number),
       );
+    });
+
+    it('returns generation-guarded user tools only while their owner is current', async () => {
+      const tools = { current: { type: 'function' } };
+      mockCache.get
+        .mockResolvedValueOnce({
+          version: 1,
+          publicationGeneration: 'generation-a',
+          tools,
+        })
+        .mockResolvedValueOnce('generation-a');
+
+      await expect(getCachedTools({ userId: 'user1', serverName: 'github' })).resolves.toEqual(
+        tools,
+      );
+    });
+
+    it('hides a delayed stale write after its publication generation was replaced', async () => {
+      mockCache.get
+        .mockResolvedValueOnce({
+          version: 1,
+          publicationGeneration: 'generation-a',
+          tools: { stale: { type: 'function' } },
+        })
+        .mockResolvedValueOnce('generation-b');
+
+      await expect(getCachedTools({ userId: 'user1', serverName: 'github' })).resolves.toBeNull();
     });
 
     it('renews an active connection lease only for its current publication generation', async () => {

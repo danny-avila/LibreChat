@@ -4,12 +4,15 @@ const mockRedisClient = {
   set: jest.fn(),
   eval: jest.fn(),
 };
+const mockKeyvRedisClient = {
+  eval: jest.fn(),
+};
 
 jest.mock('@librechat/api', () => ({
   cacheConfig: { FORCED_IN_MEMORY_CACHE_NAMESPACES: [] },
   mcpConfig: { USER_CONNECTION_IDLE_TIMEOUT: 15 * 60 * 1000 },
   ioredisClient: mockRedisClient,
-  keyvRedisClient: {},
+  keyvRedisClient: mockKeyvRedisClient,
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -39,6 +42,7 @@ describe('global tool cache write lock', () => {
     jest.clearAllMocks();
     mockRedisClient.set.mockResolvedValue('OK');
     mockRedisClient.eval.mockResolvedValue(1);
+    mockKeyvRedisClient.eval.mockResolvedValue(1);
     mockCache.set.mockResolvedValue(true);
     mockCache.delete.mockResolvedValue(true);
   });
@@ -88,9 +92,7 @@ describe('global tool cache write lock', () => {
     expect(mockCache.set).toHaveBeenCalledTimes(1);
   });
 
-  it('uses a distributed scope lock for generation-guarded user publications', async () => {
-    mockCache.get.mockResolvedValue('generation-current');
-
+  it('uses an atomic generation check for generation-guarded user publications', async () => {
     await expect(
       setCachedToolsIfCurrent(
         { current: {} },
@@ -110,6 +112,39 @@ describe('global tool cache write lock', () => {
       'NX',
     );
     expect(mockRedisClient.eval).toHaveBeenCalledTimes(1);
+    expect(mockKeyvRedisClient.eval).toHaveBeenCalledWith(
+      expect.stringContaining("value['value'] ~= ARGV[1]"),
+      expect.objectContaining({
+        keys: [`${CacheKeys.TOOL_CACHE}:tools:metadata:mcp:user-generation:user-1:server-1`],
+        arguments: ['generation-current', expect.any(String), expect.any(String)],
+      }),
+    );
+    expect(mockCache.set).toHaveBeenCalledWith(
+      'tools:mcp:user-1:server-1',
+      {
+        version: 1,
+        publicationGeneration: 'generation-current',
+        tools: { current: {} },
+      },
+      expect.any(Number),
+    );
+  });
+
+  it('does not write tools when the atomic generation check observes a replacement', async () => {
+    mockKeyvRedisClient.eval.mockResolvedValue(0);
+
+    await expect(
+      setCachedToolsIfCurrent(
+        { stale: {} },
+        {
+          userId: 'user-1',
+          serverName: 'server-1',
+          publicationGeneration: 'generation-old',
+        },
+      ),
+    ).resolves.toBe(false);
+
+    expect(mockCache.set).not.toHaveBeenCalled();
   });
 
   it('waits through the full abandoned Redis lease before giving up', async () => {

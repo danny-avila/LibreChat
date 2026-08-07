@@ -17,6 +17,7 @@ const MCP_SERVER_GENERATION_TTL_MS = Math.max(
     ? configuredUserConnectionIdleTimeout * 2
     : 0,
 );
+const MCP_SERVER_CACHE_ENTRY_VERSION = 1;
 let globalToolsQueue = Promise.resolve();
 const userToolsQueues = new Map();
 const RELEASE_GLOBAL_TOOLS_LOCK_SCRIPT = `
@@ -24,6 +25,19 @@ if redis.call('GET', KEYS[1]) == ARGV[1] then
   return redis.call('DEL', KEYS[1])
 end
 return 0
+`;
+const RENEW_MCP_SERVER_GENERATION_SCRIPT = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+  return 0
+end
+local decoded, value = pcall(cjson.decode, raw)
+if not decoded or type(value) ~= 'table' or value['value'] ~= ARGV[1] then
+  return 0
+end
+value['expires'] = tonumber(ARGV[2])
+redis.call('PSETEX', KEYS[1], ARGV[3], cjson.encode(value))
+return 1
 `;
 
 /**
@@ -49,6 +63,47 @@ function usesSharedRedisToolCache() {
     keyvRedisClient != null &&
     !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(CacheKeys.TOOL_CACHE)
   );
+}
+
+function getRawRedisToolCacheKey(key) {
+  const namespacedKey = `${CacheKeys.TOOL_CACHE}:${key}`;
+  return cacheConfig.REDIS_KEY_PREFIX
+    ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR ?? '::'}${namespacedKey}`
+    : namespacedKey;
+}
+
+function isGenerationGuardedToolEntry(value) {
+  return (
+    value != null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    value.version === MCP_SERVER_CACHE_ENTRY_VERSION &&
+    typeof value.publicationGeneration === 'string' &&
+    value.tools != null &&
+    typeof value.tools === 'object' &&
+    !Array.isArray(value.tools)
+  );
+}
+
+/** Atomically renews one generation lease without allowing an obsolete owner to restore it. */
+async function renewGenerationIfCurrent(cache, key, publicationGeneration) {
+  if (usesSharedRedisToolCache()) {
+    const expiresAt = Date.now() + MCP_SERVER_GENERATION_TTL_MS;
+    const renewed = await keyvRedisClient.eval(RENEW_MCP_SERVER_GENERATION_SCRIPT, {
+      keys: [getRawRedisToolCacheKey(key)],
+      arguments: [publicationGeneration, String(expiresAt), String(MCP_SERVER_GENERATION_TTL_MS)],
+    });
+    return Number(renewed) === 1;
+  }
+
+  const generation = await cache.get(key);
+  if (generation !== publicationGeneration) {
+    return false;
+  }
+  if ((await cache.set(key, generation, MCP_SERVER_GENERATION_TTL_MS)) === false) {
+    throw new Error('Tool publication generation cache rejected the lease refresh');
+  }
+  return true;
 }
 
 async function runWithRedisCacheLock(lockKey, ttl, wait, operation) {
@@ -114,7 +169,12 @@ async function getCachedTools(options = {}) {
 
   // Return MCP server-specific tools if requested
   if (serverName && userId) {
-    return await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName));
+    const cached = await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName));
+    if (!isGenerationGuardedToolEntry(cached)) {
+      return cached;
+    }
+    const generation = await cache.get(ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName));
+    return generation === cached.publicationGeneration ? cached.tools : null;
   }
 
   // Default to global tools
@@ -185,14 +245,7 @@ async function renewMCPToolsCacheGeneration({ userId, serverName, publicationGen
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
   return runWithUserToolsQueue(userId, serverName, async () => {
     const key = ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName);
-    const generation = await cache.get(key);
-    if (generation !== publicationGeneration) {
-      return false;
-    }
-    if ((await cache.set(key, generation, MCP_SERVER_GENERATION_TTL_MS)) === false) {
-      throw new Error('Tool publication generation cache rejected the lease refresh');
-    }
-    return true;
+    return renewGenerationIfCurrent(cache, key, publicationGeneration);
   });
 }
 
@@ -201,20 +254,20 @@ async function setCachedToolsIfCurrent(tools, options) {
   const { userId, serverName, publicationGeneration, ttl = Time.TWELVE_HOURS } = options;
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
   return runWithUserToolsQueue(userId, serverName, async () => {
-    const generation = await cache.get(ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName));
-    if (generation !== publicationGeneration) {
+    const generationKey = ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName);
+    if (!(await renewGenerationIfCurrent(cache, generationKey, publicationGeneration))) {
       return false;
     }
-    if (
-      (await cache.set(
-        ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName),
-        generation,
-        MCP_SERVER_GENERATION_TTL_MS,
-      )) === false
-    ) {
-      throw new Error('Tool publication generation cache rejected the lease refresh');
-    }
-    const written = await cache.set(ToolCacheKeys.MCP_SERVER(userId, serverName), tools, ttl);
+    const guardedEntry = {
+      version: MCP_SERVER_CACHE_ENTRY_VERSION,
+      publicationGeneration,
+      tools,
+    };
+    const written = await cache.set(
+      ToolCacheKeys.MCP_SERVER(userId, serverName),
+      guardedEntry,
+      ttl,
+    );
     if (written === false) {
       throw new Error('Tool cache rejected the generation-guarded write');
     }

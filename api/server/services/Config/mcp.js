@@ -1,4 +1,4 @@
-const { createMCPToolCacheService, MCPServersRegistry } = require('@librechat/api');
+const { createMCPToolCacheService, MCPManager, MCPServersRegistry } = require('@librechat/api');
 const {
   getCachedTools,
   setCachedToolsWithinGlobalLock,
@@ -21,6 +21,13 @@ const { mergeAppTools, cacheMCPServerTools, updateMCPServerTools, getMCPServerTo
     setCachedAppServerSnapshots,
     getCachedAppServerGenerations,
     setCachedAppServerGenerations,
+    getActiveAppServerGenerations: () => {
+      try {
+        return MCPManager.getInstance().appConnections?.getPublicationGenerations() ?? {};
+      } catch {
+        return {};
+      }
+    },
     runWithGlobalCacheLock,
     getServerConfig: (serverName, userId) =>
       MCPServersRegistry.getInstance().getServerConfig(serverName, userId),

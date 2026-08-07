@@ -30,6 +30,8 @@ export class ConnectionsRepository {
   protected connections: Map<string, MCPConnection> = new Map();
   protected oauthOpts: t.OAuthConnectionOptions | undefined;
   private readonly ownerId: string | undefined;
+  private readonly connectionOperations = new Map<string, Promise<void>>();
+  private readonly publicationGenerations = new Map<string, string>();
 
   constructor(ownerId?: string, oauthOpts?: t.OAuthConnectionOptions) {
     this.ownerId = ownerId;
@@ -39,6 +41,28 @@ export class ConnectionsRepository {
   /** Returns the number of active connections in this repository */
   public getConnectionCount(): number {
     return this.connections.size;
+  }
+
+  /** Returns generations bound to this process's currently tracked app connections. */
+  public getPublicationGenerations(): Record<string, string> {
+    return Object.fromEntries(this.publicationGenerations);
+  }
+
+  /** Serializes connection lifecycle transitions for one server without blocking other servers. */
+  private runConnectionOperation<T>(serverName: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.connectionOperations.get(serverName) ?? Promise.resolve();
+    const result = previous.then(operation, operation);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.connectionOperations.set(serverName, tail);
+    void tail.then(() => {
+      if (this.connectionOperations.get(serverName) === tail) {
+        this.connectionOperations.delete(serverName);
+      }
+    });
+    return result;
   }
 
   /** Checks whether this repository can connect to a specific server */
@@ -57,6 +81,13 @@ export class ConnectionsRepository {
     serverName: string,
     options: ConnectionLoadOptions = {},
   ): Promise<MCPConnection | null> {
+    return this.runConnectionOperation(serverName, () => this.loadConnection(serverName, options));
+  }
+
+  private async loadConnection(
+    serverName: string,
+    options: ConnectionLoadOptions,
+  ): Promise<MCPConnection | null> {
     const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
       serverName,
       this.ownerId,
@@ -64,7 +95,7 @@ export class ConnectionsRepository {
 
     const existingConnection = this.connections.get(serverName);
     if (!serverConfig || !this.isAllowedToConnectToServer(serverConfig)) {
-      await this.disconnect(serverName);
+      await this.disconnectConnection(serverName);
       return null;
     }
     if (existingConnection) {
@@ -79,12 +110,12 @@ export class ConnectionsRepository {
         );
 
         // Disconnect stale connection
-        await this.disconnect(serverName);
+        await this.disconnectConnection(serverName);
         // Fall through to create new connection
       } else if (await existingConnection.isConnected()) {
         return existingConnection;
       } else {
-        await this.disconnect(serverName);
+        await this.disconnectConnection(serverName);
       }
     }
     const registry = MCPServersRegistry.getInstance();
@@ -117,6 +148,9 @@ export class ConnectionsRepository {
     });
 
     this.connections.set(serverName, connection);
+    if (publicationGeneration) {
+      this.publicationGenerations.set(serverName, publicationGeneration);
+    }
     if (this.ownerId === undefined && options.refreshTools !== false) {
       if (connection.client.getServerCapabilities()?.tools == null) {
         await notifyMCPToolsChanged({
@@ -183,7 +217,12 @@ export class ConnectionsRepository {
 
   /** Disconnects and removes a specific server connection from the pool */
   async disconnect(serverName: string): Promise<void> {
+    return this.runConnectionOperation(serverName, () => this.disconnectConnection(serverName));
+  }
+
+  private async disconnectConnection(serverName: string): Promise<void> {
     const connection = this.connections.get(serverName);
+    this.publicationGenerations.delete(serverName);
     if (!connection) {
       await cancelMCPToolsChanged({ userId: this.ownerId, serverName });
       return;
