@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import type { SearchClient } from './types';
 import type { ScopedQuery } from './scope';
 import { ARM_LIMIT, MIN_QUERY_LENGTH } from './constants';
@@ -46,11 +47,28 @@ function toCandidates(rows: readonly Row[]): readonly ArmCandidate[] {
 }
 
 /**
+ * Neutralizes the `LIKE` metacharacters in a user's query.
+ *
+ * `%` and `_` are everywhere in identifiers, filenames and error strings, and
+ * unescaped they stop being text: `foo_bar` would match `fooXbar` as a
+ * *high-confidence* exact hit, and a query of `%%%` would match every row in
+ * scope and force the cheapest arm into the broadest possible scan. The
+ * backslash itself is escaped first so it cannot be used to smuggle the others
+ * back in.
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
+}
+
+/**
  * Exact/phrase containment — the known-item and identifier path.
  *
  * Case-insensitive substring rather than equality: a user searching a filename,
  * an error string or an id expects to find the message containing it, not only a
  * message equal to it. Title matches outrank body matches.
+ *
+ * The surrounding `%` are the arm's own wildcards; everything between them is
+ * escaped literal text under an explicit `ESCAPE`.
  */
 export function buildExactArm(
   scoped: ScopedQuery,
@@ -59,15 +77,16 @@ export function buildExactArm(
 ): ArmQuery {
   const s = assertScopedQuery(scoped);
   const q = s.nextIndex;
+  const contains = `'%' || $${q} || '%' ESCAPE '\\'`;
   return {
     text: `SELECT d.record_id, d.conversation_id, d.projection_version,
-                  CASE WHEN d.title ILIKE '%' || $${q} || '%' THEN 2.0 ELSE 1.0 END AS score
+                  CASE WHEN d.title ILIKE ${contains} THEN 2.0 ELSE 1.0 END AS score
              FROM chat_search.documents d
             WHERE ${s.text}
-              AND (d.title ILIKE '%' || $${q} || '%' OR d.body ILIKE '%' || $${q} || '%')
+              AND (d.title ILIKE ${contains} OR d.body ILIKE ${contains})
             ORDER BY score DESC, d.source_updated_at DESC NULLS LAST, d.record_id DESC
             LIMIT $${q + 1}`,
-    values: [...s.values, query, limit],
+    values: [...s.values, escapeLikePattern(query), limit],
   };
 }
 
@@ -187,6 +206,36 @@ export function runVectorArm(
   limit: number = ARM_LIMIT,
 ): Promise<readonly ArmCandidate[]> {
   return run(client, buildVectorArm(scoped, embedding, space, limit));
+}
+
+const VECTOR_SAVEPOINT = 'chat_search_vector_arm';
+
+/**
+ * The vector arm, confined to a savepoint. Returns null when it failed.
+ *
+ * A vector query fails on its own terms — a dimension mismatch, a vector the
+ * server rejects, an extension that is not there — and in PostgreSQL a failed
+ * statement poisons the whole transaction, taking the lexical results computed
+ * alongside it. The savepoint is what keeps the vector arm genuinely additive:
+ * it degrades this one arm instead of emptying the response.
+ */
+export async function runVectorArmOrNull(
+  client: SearchClient,
+  scoped: ScopedQuery,
+  embedding: readonly number[],
+  space: string,
+  limit: number = ARM_LIMIT,
+): Promise<readonly ArmCandidate[] | null> {
+  await client.query(`SAVEPOINT ${VECTOR_SAVEPOINT}`);
+  try {
+    const candidates = await runVectorArm(client, scoped, embedding, space, limit);
+    await client.query(`RELEASE SAVEPOINT ${VECTOR_SAVEPOINT}`);
+    return candidates;
+  } catch (error) {
+    logger.warn('[chatSearch] vector arm failed; serving lexical arms only', error);
+    await client.query(`ROLLBACK TO SAVEPOINT ${VECTOR_SAVEPOINT}`).catch(() => undefined);
+    return null;
+  }
 }
 
 /**

@@ -5,8 +5,10 @@ import {
   clearFailure,
   currentVersionSnapshot,
   quarantinedKeys,
+  missingFromProjection,
   recordFailure,
-  sweepUnseen,
+  scanProjectedKeys,
+  sweepMissing,
   tombstoneDocument,
   upsertDocument,
   writeEmbedding,
@@ -376,10 +378,7 @@ describePg('projector write path', () => {
       const snapshot = await withTransaction(pool, (client) => currentVersionSnapshot(client));
 
       const swept = await withTransaction(pool, (client) =>
-        sweepUnseen(client, lease.epoch, 'message', snapshot, [], {
-          tenantId: KEY.tenantId,
-          userId: KEY.userId,
-        }),
+        sweepMissing(client, lease.epoch, 'message', snapshot, [KEY]),
       );
 
       expect(swept).toBe(1);
@@ -396,18 +395,15 @@ describePg('projector write path', () => {
       const snapshot = await withTransaction(pool, (client) => currentVersionSnapshot(client));
 
       const swept = await withTransaction(pool, (client) =>
-        sweepUnseen(client, lease.epoch, 'message', snapshot, [KEY.recordId], {
-          tenantId: KEY.tenantId,
-          userId: KEY.userId,
-        }),
+        sweepMissing(client, lease.epoch, 'message', snapshot, []),
       );
 
       expect(swept).toBe(0);
     });
 
     /**
-     * The buried-write race: a record projected *after* the scan passed its key
-     * range looks unseen. Without the version fence it takes a winning sweep
+     * The buried-write race: a record projected *after* the scan read its key
+     * looks missing. Without the version fence it takes a winning sweep
      * tombstone and stays buried until the next hourly run.
      */
     it('does not bury a write that landed after the scan started', async () => {
@@ -418,10 +414,7 @@ describePg('projector write path', () => {
       );
 
       const swept = await withTransaction(pool, (client) =>
-        sweepUnseen(client, lease.epoch, 'message', snapshot, [], {
-          tenantId: KEY.tenantId,
-          userId: KEY.userId,
-        }),
+        sweepMissing(client, lease.epoch, 'message', snapshot, [KEY]),
       );
 
       expect(swept).toBe(0);
@@ -432,17 +425,22 @@ describePg('projector write path', () => {
       expect(rows[0].title).toBe('Quarterly report');
     });
 
-    it('never reaches another user in the same tenant', async () => {
+    /**
+     * The very first record ever projected. An untouched sequence reports
+     * `last_value = 1` while `nextval` still returns 1, so a snapshot of
+     * `last_value + 1` sits *above* that record and makes the sweep treat a row
+     * written after the snapshot as older than it.
+     */
+    it('does not bury the first record ever written on a fresh sequence', async () => {
+      await pool.query("SELECT setval('chat_search.projection_version_seq', 1, false)");
+      const snapshot = await withTransaction(pool, (client) => currentVersionSnapshot(client));
+
       await withTransaction(pool, (client) =>
         upsertDocument(client, lease.epoch, sourceOf(), DEFAULT_EMBEDDING_SPACE),
       );
-      const snapshot = await withTransaction(pool, (client) => currentVersionSnapshot(client));
 
       const swept = await withTransaction(pool, (client) =>
-        sweepUnseen(client, lease.epoch, 'message', snapshot, [], {
-          tenantId: KEY.tenantId,
-          userId: 'bob',
-        }),
+        sweepMissing(client, lease.epoch, 'message', snapshot, [KEY]),
       );
 
       expect(swept).toBe(0);
@@ -450,6 +448,94 @@ describePg('projector write path', () => {
         'SELECT deleted_at FROM chat_search.documents',
       );
       expect(rows[0].deleted_at).toBeNull();
+    });
+
+    it('never reaches another user in the same tenant', async () => {
+      await withTransaction(pool, (client) =>
+        upsertDocument(client, lease.epoch, sourceOf(), DEFAULT_EMBEDDING_SPACE),
+      );
+      const snapshot = await withTransaction(pool, (client) => currentVersionSnapshot(client));
+
+      const swept = await withTransaction(pool, (client) =>
+        sweepMissing(client, lease.epoch, 'message', snapshot, [{ ...KEY, userId: 'bob' }]),
+      );
+
+      expect(swept).toBe(0);
+      const { rows } = await pool.query<{ deleted_at: Date | null }>(
+        'SELECT deleted_at FROM chat_search.documents',
+      );
+      expect(rows[0].deleted_at).toBeNull();
+    });
+
+    /**
+     * The reconciliation walk is driven from PostgreSQL rather than from an
+     * in-memory copy of the source keyspace, so the key window is the primitive
+     * that keeps the whole sweep bounded.
+     */
+    it('walks the live projection in resumable key windows', async () => {
+      for (const recordId of ['m1', 'm2', 'm3']) {
+        await withTransaction(pool, (client) =>
+          upsertDocument(client, lease.epoch, sourceOf({ recordId }), DEFAULT_EMBEDDING_SPACE),
+        );
+      }
+
+      const first = await withTransaction(pool, (client) =>
+        scanProjectedKeys(client, 'message', null, 2),
+      );
+      expect(first.map((key) => key.recordId)).toEqual(['m1', 'm2']);
+
+      const second = await withTransaction(pool, (client) =>
+        scanProjectedKeys(client, 'message', first[first.length - 1], 2),
+      );
+      expect(second.map((key) => key.recordId)).toEqual(['m3']);
+    });
+
+    it('omits tombstoned rows from the key window', async () => {
+      await withTransaction(pool, (client) =>
+        upsertDocument(client, lease.epoch, sourceOf(), DEFAULT_EMBEDDING_SPACE),
+      );
+      await withTransaction(pool, (client) => tombstoneDocument(client, lease.epoch, KEY));
+
+      const window = await withTransaction(pool, (client) =>
+        scanProjectedKeys(client, 'message', null, 10),
+      );
+
+      expect(window).toEqual([]);
+    });
+  });
+
+  describe('missing-from-projection lookup', () => {
+    it('reports keys PostgreSQL has never seen', async () => {
+      const missing = await withTransaction(pool, (client) =>
+        missingFromProjection(client, 'message', [KEY]),
+      );
+
+      expect(missing).toEqual([KEY]);
+    });
+
+    it('reports a key whose row is tombstoned', async () => {
+      await withTransaction(pool, (client) =>
+        upsertDocument(client, lease.epoch, sourceOf(), DEFAULT_EMBEDDING_SPACE),
+      );
+      await withTransaction(pool, (client) => tombstoneDocument(client, lease.epoch, KEY));
+
+      const missing = await withTransaction(pool, (client) =>
+        missingFromProjection(client, 'message', [KEY]),
+      );
+
+      expect(missing).toEqual([KEY]);
+    });
+
+    it('reports nothing for a key already serving', async () => {
+      await withTransaction(pool, (client) =>
+        upsertDocument(client, lease.epoch, sourceOf(), DEFAULT_EMBEDDING_SPACE),
+      );
+
+      const missing = await withTransaction(pool, (client) =>
+        missingFromProjection(client, 'message', [KEY]),
+      );
+
+      expect(missing).toEqual([]);
     });
   });
 

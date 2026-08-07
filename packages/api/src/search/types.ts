@@ -36,9 +36,17 @@ export type ChatSearchRequest = Readonly<{
   filters?: SearchFilters;
 }>;
 
-export type SearchDegradation = 'embedding-unavailable' | 'clickhouse-unavailable';
+/**
+ * `embedding-unavailable` is "no query vector to search with";
+ * `vector-unavailable` is "the query vector existed and the arm itself failed".
+ * Distinct because they point at different systems.
+ */
+export type SearchDegradation =
+  | 'embedding-unavailable'
+  | 'vector-unavailable'
+  | 'clickhouse-unavailable';
 
-export type SearchSource = 'postgres' | 'clickhouse';
+export type SearchSource = 'postgres' | 'clickhouse' | 'meilisearch';
 
 export type ChatSearchHit = Readonly<{
   recordId: string;

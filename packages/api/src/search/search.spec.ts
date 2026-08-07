@@ -4,6 +4,9 @@ import type { SearchPool } from './types';
 import { describePg, dropIsolatedDatabase, migrateFresh } from './pg.helper';
 import { decodeCursor, encodeCursor, hashQuery } from './cursor';
 import { PostgresChatSearch } from './search';
+import { runLexicalArms } from './arms';
+import { scopedQuery } from './scope';
+import { withScope } from './pool';
 
 const DB_NAME = 'search';
 const SECRET = 'test-cursor-secret';
@@ -343,6 +346,186 @@ describePg('PostgresChatSearch', () => {
       for (const hit of result.hits) {
         expect(hit.conversationId).toBe('convo-tenant-a');
       }
+    });
+
+    /**
+     * The vector arm is additive, and a failure of it must stay additive. It
+     * runs inside the same transaction as the lexical arms, so an error there
+     * poisons that transaction and takes results that were already computed —
+     * turning an optional arm into a load-bearing one.
+     */
+    it('serves lexical hits when the vector arm itself fails', async () => {
+      const chat = new PostgresChatSearch({
+        pool,
+        resolveScope: () => scope,
+        cursorSecret: SECRET,
+        /** The right shape, the wrong width: PostgreSQL rejects the comparison. */
+        embedder: { embed: async () => new Array(8).fill(0.1) },
+      });
+
+      const result = await chat.search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 5,
+      });
+
+      expect(result.degradations).toContain('vector-unavailable');
+      expect(result.hits.length).toBe(5);
+      for (const hit of result.hits) {
+        expect(hit.conversationId).toBe('convo-tenant-a');
+      }
+    });
+  });
+
+  /**
+   * Listing filters belong in the candidate query. Applied to its output they
+   * truncate first and filter second, so a page whose top-ranked candidates all
+   * fail the filter comes back empty — with no cursor — while matching rows sit
+   * one rank below the cut.
+   */
+  describe('listing filters', () => {
+    const archivedIds = ['rec-0', 'rec-1', 'rec-2', 'rec-3', 'rec-4'];
+
+    beforeAll(async () => {
+      await pool.query(
+        `UPDATE chat_search.documents SET is_archived = true
+          WHERE tenant_id = $1 AND user_id = $2 AND kind = 'message'
+            AND record_id = ANY($3::text[])`,
+        [ALICE.tenantId, ALICE.userId, archivedIds],
+      );
+      await pool.query(
+        `UPDATE chat_search.documents SET tags = ARRAY['work'], project_id = 'p1'
+          WHERE tenant_id = $1 AND user_id = $2 AND kind = 'message' AND record_id = 'rec-11'`,
+        [ALICE.tenantId, ALICE.userId],
+      );
+    });
+
+    afterAll(async () => {
+      await pool.query(
+        `UPDATE chat_search.documents
+            SET is_archived = false, tags = '{}'::text[], project_id = NULL
+          WHERE tenant_id = $1 AND user_id = $2 AND kind = 'message'`,
+        [ALICE.tenantId, ALICE.userId],
+      );
+    });
+
+    it('fills a page from below the archived candidates instead of returning nothing', async () => {
+      const result = await search().search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 5,
+        filters: { archived: false },
+      });
+
+      expect(result.hits.length).toBe(5);
+      for (const hit of result.hits) {
+        expect(archivedIds).not.toContain(hit.recordId);
+      }
+    });
+
+    it('returns only archived rows when the listing asks for them', async () => {
+      const result = await search().search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 20,
+        filters: { archived: true },
+      });
+
+      expect(result.hits.map((hit) => hit.recordId).sort()).toEqual([...archivedIds].sort());
+    });
+
+    it('narrows to a tag', async () => {
+      const result = await search().search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 20,
+        filters: { tags: ['work'] },
+      });
+
+      expect(result.hits.map((hit) => hit.recordId)).toEqual(['rec-11']);
+    });
+
+    it('narrows to a project, and to the unassigned ones', async () => {
+      const assigned = await search().search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 20,
+        filters: { projectId: 'p1' },
+      });
+      expect(assigned.hits.map((hit) => hit.recordId)).toEqual(['rec-11']);
+
+      const unassigned = await search().search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 20,
+        filters: { projectId: 'unassigned' },
+      });
+      expect(unassigned.hits.map((hit) => hit.recordId)).not.toContain('rec-11');
+    });
+  });
+
+  /**
+   * `%` and `_` are `ILIKE` wildcards, and identifiers, filenames and error
+   * strings are full of them. Unescaped they stop being text: a false
+   * high-confidence "exact" hit, or a query of `%%%` that matches every row in
+   * scope and forces the cheapest arm into the broadest possible scan.
+   *
+   * Asserted on the arm rather than on the fused result: the trigram arm is
+   * *supposed* to return near-misses, so only the exact arm can show whether the
+   * query was treated as literal text.
+   */
+  describe('exact arm metacharacters', () => {
+    beforeAll(async () => {
+      const rows: ReadonlyArray<readonly [string, string]> = [
+        ['lit-underscore', 'config_value is set'],
+        ['lit-decoy', 'configXvalue is set'],
+        ['lit-percent', 'usage hit 90% today'],
+      ];
+      for (const [recordId, body] of rows) {
+        await pool.query(
+          `INSERT INTO chat_search.documents
+             (tenant_id, user_id, kind, record_id, conversation_id, title, body,
+              projection_version, embedding_input_hash)
+           VALUES ($1, $2, 'message', $3, 'convo-lit', '', $4, 1, 'h1')
+           ON CONFLICT DO NOTHING`,
+          [ALICE.tenantId, ALICE.userId, recordId, body],
+        );
+      }
+    });
+
+    afterAll(async () => {
+      await pool.query(
+        `DELETE FROM chat_search.documents
+          WHERE tenant_id = $1 AND user_id = $2 AND record_id LIKE 'lit-%'`,
+        [ALICE.tenantId, ALICE.userId],
+      );
+    });
+
+    const exactHits = (query: string) =>
+      withScope(pool, ALICE, async (client) => {
+        const arms = await runLexicalArms(client, scopedQuery(ALICE, 'message'), query);
+        return arms.exact.map((candidate) => candidate.recordId);
+      });
+
+    it('treats an underscore as a literal, not a single-character wildcard', async () => {
+      const ids = await exactHits('config_value');
+
+      expect(ids).toContain('lit-underscore');
+      expect(ids).not.toContain('lit-decoy');
+    });
+
+    it('does not let a bare wildcard query match every row in scope', async () => {
+      await expect(exactHits('%%%')).resolves.toEqual([]);
+    });
+
+    it('still finds a percent sign the user actually typed', async () => {
+      await expect(exactHits('90%')).resolves.toContain('lit-percent');
     });
   });
 });

@@ -57,9 +57,21 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    /** `undefined` when this is not a search; `[]` when it matched nothing. */
+    /**
+     * `undefined` when this is not a search; `[]` when it matched nothing.
+     *
+     * The listing filters go into the search rather than being applied to its
+     * output: ranking only rows this listing can actually show is what stops a
+     * page of archived candidates from coming back empty while matching
+     * conversations sit one rank below the cut with no cursor to reach them.
+     */
     const searchIds = search
-      ? (await resolveCandidates('conversations', search, { limit })).recordIds
+      ? (
+          await resolveCandidates('conversations', search, {
+            limit,
+            filters: { archived: isArchived, tags, projectId },
+          })
+        ).recordIds
       : undefined;
 
     const result = await db.getConvosByCursor(req.user.id, {

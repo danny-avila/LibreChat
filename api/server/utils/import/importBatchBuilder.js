@@ -1,6 +1,8 @@
 const { v4: uuidv4 } = require('uuid');
 const {
   logger,
+  getTenantId,
+  SYSTEM_TENANT_ID,
   createFallbackRetentionDate,
   createTempChatExpirationDate,
 } = require('@librechat/data-schemas');
@@ -178,10 +180,23 @@ class ImportBatchBuilder {
    * @returns {Promise<void>}
    */
   async enqueueProjectionEvents() {
+    /**
+     * Resolved from the active request context, not from the staged objects.
+     * `tenantSafeBulkWrite` injects the tenant into *clones* of the bulk
+     * operations, so `this.conversations` and `this.messages` still carry no
+     * `tenantId` after the write lands. Reading it from them would announce every
+     * import under the base tenant while Mongo stored it under the request
+     * tenant, and the projector's key-scoped source read — which exists to stop a
+     * recycled record id projecting one user's content under another's scope —
+     * would correctly reject the mismatch and project nothing at all.
+     */
+    const active = getTenantId();
+    const tenantId = active && active !== SYSTEM_TENANT_ID ? active : null;
+
     const events = [];
     for (const convo of this.conversations) {
       events.push({
-        tenantId: convo.tenantId ?? null,
+        tenantId: tenantId ?? convo.tenantId ?? null,
         userId: this.requestUserId,
         kind: 'conversation',
         recordId: convo.conversationId,
@@ -190,7 +205,7 @@ class ImportBatchBuilder {
     }
     for (const message of this.messages) {
       events.push({
-        tenantId: message.tenantId ?? null,
+        tenantId: tenantId ?? message.tenantId ?? null,
         userId: this.requestUserId,
         kind: 'message',
         recordId: message.messageId,
@@ -201,8 +216,11 @@ class ImportBatchBuilder {
       await enqueueSearchEvents(events);
     } catch (error) {
       /**
-       * The queue is an accelerant, never load-bearing: a failed enqueue must not
-       * fail a user's import. The reconciliation sweep still picks these rows up.
+       * A failed enqueue must not fail a user's import. Recovery is the
+       * reconciliation sweep's backfill pass, which projects source records
+       * PostgreSQL is missing — the forward safety poll cannot help here, because
+       * imports deliberately preserve historic `updatedAt` values that sort
+       * behind its cursor forever.
        */
       logger.error('[ImportBatchBuilder] Failed to enqueue projection events', error);
     }

@@ -35,9 +35,14 @@ function getChatSearch() {
  * empty result set instead of a 500 — matching how shared-link search already
  * failed soft, and fixing conversation search, which used to 500.
  *
+ * Listing filters are passed *into* the search rather than applied to its
+ * output. Applied afterwards they truncate first and filter second, so a page
+ * whose candidates are all archived comes back empty while matching
+ * conversations sit one rank below the cut, with no cursor to reach them.
+ *
  * @param {'messages'|'conversations'|'shared-links'} target
  * @param {string} query
- * @param {{ cursor?: string, limit?: number }} [options]
+ * @param {{ cursor?: string, limit?: number, filters?: { archived?: boolean, tags?: string[], projectId?: string } }} [options]
  * @returns {Promise<{ recordIds: string[], conversationIds: string[], nextCursor: string|null }>}
  */
 async function resolveCandidates(target, query, options = {}) {
@@ -52,6 +57,7 @@ async function resolveCandidates(target, query, options = {}) {
       query,
       limit: options.limit ?? 50,
       cursor: options.cursor,
+      filters: options.filters,
     });
 
     const recordIds = [];

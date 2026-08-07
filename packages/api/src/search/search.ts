@@ -7,6 +7,7 @@ import type {
   ChatSearchResult,
   InternalHit,
   SearchDegradation,
+  SearchFilters,
   SearchPool,
   SearchTarget,
 } from './types';
@@ -29,7 +30,7 @@ import {
   MIN_QUERY_LENGTH,
   TARGET_KIND,
 } from './constants';
-import { runLexicalArms, runVectorArm, shouldRunVectorArm } from './arms';
+import { runLexicalArms, runVectorArmOrNull, shouldRunVectorArm } from './arms';
 import { normalizeSearchText } from './hash';
 import { scopedQuery } from './scope';
 import { fuseByRrf } from './fusion';
@@ -102,6 +103,7 @@ export class PostgresChatSearch implements ChatSearch {
     scope: Scope,
     target: SearchTarget,
     query: string,
+    filters: SearchFilters | undefined,
   ): Promise<{ hits: readonly InternalHit[]; degradations: SearchDegradation[] }> {
     const degradations: SearchDegradation[] = [];
     const kind = TARGET_KIND[target];
@@ -126,10 +128,10 @@ export class PostgresChatSearch implements ChatSearch {
       degradations.push('embedding-unavailable');
     }
 
-    const hits = await withScope(this.deps.pool, scope, async (client) => {
+    const { hits, vectorFailed } = await withScope(this.deps.pool, scope, async (client) => {
       /** One instant for every arm in this request. */
       const now = new Date();
-      const scoped = scopedQuery(scope, kind, { now });
+      const scoped = scopedQuery(scope, kind, { now, filters });
 
       const lexical = await runLexicalArms(client, scoped, query, ARM_LIMIT);
       const arms: ArmResult[] = [
@@ -138,13 +140,28 @@ export class PostgresChatSearch implements ChatSearch {
         { name: 'fts', source: 'postgres', candidates: lexical.fts },
       ];
 
+      /**
+       * A vector arm that fails is a degradation, not an outage: the lexical
+       * results in hand at this point are already serviceable, and discarding
+       * them would make the vector arm load-bearing for a response it is only
+       * ever supposed to improve.
+       */
+      let failed = false;
       if (embedding) {
-        const vector = await runVectorArm(client, scoped, embedding, this.space, ARM_LIMIT);
-        arms.push({ name: 'vector', source: 'postgres', candidates: vector });
+        const vector = await runVectorArmOrNull(client, scoped, embedding, this.space, ARM_LIMIT);
+        if (vector) {
+          arms.push({ name: 'vector', source: 'postgres', candidates: vector });
+        } else {
+          failed = true;
+        }
       }
 
-      return fuseByRrf(arms, { cap: CANDIDATE_CAP });
+      return { hits: fuseByRrf(arms, { cap: CANDIDATE_CAP }), vectorFailed: failed };
     });
+
+    if (vectorFailed) {
+      degradations.push('vector-unavailable');
+    }
 
     return { hits, degradations };
   }
@@ -189,7 +206,12 @@ export class PostgresChatSearch implements ChatSearch {
        */
     }
 
-    const { hits, degradations } = await this.collect(scope, request.target, query);
+    const { hits, degradations } = await this.collect(
+      scope,
+      request.target,
+      query,
+      request.filters,
+    );
     const snapshotId = newSnapshotId();
     await this.snapshots.set(
       snapshotId,
@@ -252,7 +274,7 @@ export class PostgresChatSearch implements ChatSearch {
      * every page is what keeps a record deleted, expired or made temporary since
      * page one from being served — the reject list is applied per page, not once.
      */
-    const rows = await this.readSnapshotSlice(scope, request.target, slice);
+    const rows = await this.readSnapshotSlice(scope, request.target, slice, request.filters);
     const exhausted = offset + limit >= accepted.snapshot.recordIds.length;
 
     return {
@@ -276,10 +298,11 @@ export class PostgresChatSearch implements ChatSearch {
     scope: Scope,
     target: SearchTarget,
     recordIds: readonly string[],
+    filters: SearchFilters | undefined,
   ): Promise<readonly ChatSearchHit[]> {
     const kind = TARGET_KIND[target];
     return withScope(this.deps.pool, scope, async (client) => {
-      const scoped = scopedQuery(scope, kind);
+      const scoped = scopedQuery(scope, kind, { filters });
       const idIndex = scoped.nextIndex;
       const { rows } = await client.query<{
         record_id: string;

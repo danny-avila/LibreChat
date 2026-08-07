@@ -287,60 +287,174 @@ export async function writeEmbedding(
 }
 
 /**
- * Version-fenced reconciliation sweep.
+ * Version-fenced reconciliation sweep over an explicit, bounded key set.
  *
- * Tombstones rows the source scan did not see, but only those whose version is
+ * Tombstones rows the source no longer has, but only those whose version is
  * below the counter snapshot taken at scan start. Without the fence, a record
- * upserted by the drain *after* the scan passed its key range looks "unseen",
- * takes a winning sweep tombstone, and stays buried until the next hourly run.
+ * upserted by the drain *after* the scan read its key looks missing, takes a
+ * winning sweep tombstone, and stays buried until the next hourly run.
+ *
+ * Keys are passed in rather than derived from a scope plus an exclusion list:
+ * the caller walks PostgreSQL in bounded windows and asks the source about
+ * exactly those keys, so neither this statement's parameters nor the caller's
+ * memory scale with the size of a user's history. Every key carries its own
+ * tenant and user, so a sweep can never widen past the rows it was handed.
  */
-export async function sweepUnseen(
+export async function sweepMissing(
   client: SearchClient,
   epoch: number,
   kind: SearchKind,
   versionSnapshot: number,
-  seenRecordIds: readonly string[],
-  scope: { tenantId: string; userId: string },
+  missing: readonly SearchRecordKey[],
   now: Date = new Date(),
 ): Promise<number> {
+  if (missing.length === 0) {
+    return 0;
+  }
   await assertLeaseEpoch(client, epoch);
   const result = await client.query(
     `WITH v AS (SELECT nextval('chat_search.projection_version_seq') AS version),
+     targets AS (
+       SELECT * FROM unnest($1::text[], $2::text[], $3::text[])
+         AS t(tenant_id, user_id, record_id)
+     ),
      victims AS (
-       SELECT d.record_id
+       SELECT d.tenant_id, d.user_id, d.record_id
          FROM chat_search.documents d
-        WHERE d.tenant_id = $1 AND d.user_id = $2 AND d.kind = $3
+         JOIN targets t
+           ON t.tenant_id = d.tenant_id AND t.user_id = d.user_id AND t.record_id = d.record_id
+        WHERE d.kind = $4
           AND d.deleted_at IS NULL
-          AND d.projection_version < $4
-          AND NOT (d.record_id = ANY($5::text[]))
-        FOR UPDATE
+          AND d.projection_version < $5
+        FOR UPDATE OF d
      ),
      upd AS (
        UPDATE chat_search.documents d
           SET title = '', body = '', tags = '{}'::text[],
               deleted_at = $6, projection_version = v.version, updated_at = now()
          FROM v, victims
-        WHERE d.tenant_id = $1 AND d.user_id = $2 AND d.kind = $3
-          AND d.record_id = victims.record_id
-       RETURNING d.record_id, d.projection_version
+        WHERE d.tenant_id = victims.tenant_id AND d.user_id = victims.user_id
+          AND d.kind = $4 AND d.record_id = victims.record_id
+       RETURNING d.tenant_id, d.user_id, d.record_id, d.projection_version
      ),
      del AS (
        DELETE FROM chat_search.embeddings e
         USING upd
-        WHERE e.tenant_id = $1 AND e.user_id = $2 AND e.kind = $3
+        WHERE e.tenant_id = upd.tenant_id AND e.user_id = upd.user_id AND e.kind = $4
           AND e.record_id = upd.record_id
      )
      INSERT INTO chat_search.outbox
        (tenant_id, user_id, kind, record_id, projection_version, op)
-     SELECT $1, $2, $3, upd.record_id, upd.projection_version, 'tombstone' FROM upd`,
-    [scope.tenantId, scope.userId, kind, versionSnapshot, [...seenRecordIds], now],
+     SELECT upd.tenant_id, upd.user_id, $4, upd.record_id, upd.projection_version, 'tombstone'
+       FROM upd`,
+    [
+      missing.map((key) => normalizeTenantId(key.tenantId)),
+      missing.map((key) => key.userId),
+      missing.map((key) => key.recordId),
+      kind,
+      versionSnapshot,
+      now,
+    ],
   );
   return result.rowCount ?? 0;
 }
 
+/**
+ * One live key window of the projection, ordered so the caller can resume.
+ *
+ * Reconciliation walks PostgreSQL rather than holding the source keyspace in
+ * memory, so this is the page primitive that keeps the whole sweep bounded.
+ */
+export async function scanProjectedKeys(
+  client: SearchClient,
+  kind: SearchKind,
+  after: SearchRecordKey | null,
+  limit: number,
+): Promise<readonly SearchRecordKey[]> {
+  /** Two statements rather than one with an `OR`, so the keyset stays index-driven. */
+  const resume = after
+    ? 'AND (tenant_id, user_id, record_id) > ($3::text, $4::text, $5::text)'
+    : '';
+  const values: unknown[] = after
+    ? [kind, limit, normalizeTenantId(after.tenantId), after.userId, after.recordId]
+    : [kind, limit];
+
+  const { rows } = await client.query<{
+    tenant_id: string;
+    user_id: string;
+    record_id: string;
+  }>(
+    `SELECT tenant_id, user_id, record_id
+       FROM chat_search.documents
+      WHERE kind = $1
+        AND deleted_at IS NULL
+        ${resume}
+      ORDER BY tenant_id, user_id, record_id
+      LIMIT $2`,
+    values,
+  );
+  return rows.map((row) => ({
+    tenantId: row.tenant_id,
+    userId: row.user_id,
+    kind,
+    recordId: row.record_id,
+  }));
+}
+
+/**
+ * Of the keys handed in, the ones PostgreSQL is not currently serving.
+ *
+ * The reconciliation sweep only ever removes; this is the other direction, and
+ * it is what makes "the sweep covers it" true for writes that never produced a
+ * usable event — bulk imports above all, whose historic `updatedAt` values sort
+ * behind the forward poll cursor forever.
+ */
+export async function missingFromProjection(
+  client: SearchClient,
+  kind: SearchKind,
+  keys: readonly SearchRecordKey[],
+): Promise<readonly SearchRecordKey[]> {
+  if (keys.length === 0) {
+    return [];
+  }
+  const { rows } = await client.query<{
+    tenant_id: string;
+    user_id: string;
+    record_id: string;
+  }>(
+    `SELECT t.tenant_id, t.user_id, t.record_id
+       FROM unnest($1::text[], $2::text[], $3::text[]) AS t(tenant_id, user_id, record_id)
+       LEFT JOIN chat_search.documents d
+         ON d.tenant_id = t.tenant_id AND d.user_id = t.user_id
+        AND d.kind = $4 AND d.record_id = t.record_id
+      WHERE d.record_id IS NULL OR d.deleted_at IS NOT NULL`,
+    [
+      keys.map((key) => normalizeTenantId(key.tenantId)),
+      keys.map((key) => key.userId),
+      keys.map((key) => key.recordId),
+      kind,
+    ],
+  );
+  return rows.map((row) => ({
+    tenantId: row.tenant_id,
+    userId: row.user_id,
+    kind,
+    recordId: row.record_id,
+  }));
+}
+
+/**
+ * The version every row projected after this point will exceed.
+ *
+ * `is_called` matters: an untouched sequence reports `last_value = START WITH`
+ * while the *next* `nextval` still returns that same value, so a bare
+ * `last_value + 1` would sit above the first record ever written and make the
+ * sweep treat it as older than the snapshot.
+ */
 export async function currentVersionSnapshot(client: SearchClient): Promise<number> {
   const { rows } = await client.query<{ version: string }>(
-    'SELECT last_value + 1 AS version FROM chat_search.projection_version_seq',
+    `SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END AS version
+       FROM chat_search.projection_version_seq`,
   );
   return Number(rows[0].version);
 }

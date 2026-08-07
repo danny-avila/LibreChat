@@ -10,6 +10,7 @@ export * from './projector';
 export * from './roles';
 export * from './scope';
 export * from './search';
+export * from './service';
 export * from './source';
 export * from './writer';
 export type * from './types';

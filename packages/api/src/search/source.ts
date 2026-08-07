@@ -1,4 +1,4 @@
-import { flattenContent, normalizeTenantId } from '@librechat/data-schemas';
+import { flattenContent, normalizeTenantId, runAsSystem } from '@librechat/data-schemas';
 import type { Model } from 'mongoose';
 import type { ProjectionSource, SearchKind, SearchRecordKey } from './types';
 
@@ -100,6 +100,19 @@ const PROJECTION_FIELDS =
   'messageId conversationId shareId user tenantId title text content tags isArchived ' +
   'chatProjectId isTemporary expiredAt unfinished createdAt updatedAt';
 
+/**
+ * The projector is a cross-tenant background consumer: it reads every tenant's
+ * records and writes each one back under the scope the document itself carries.
+ * `Message`, `Conversation` and `SharedLink` are tenant-isolated, so under
+ * `TENANT_ISOLATION_STRICT` every one of these reads is rejected outright unless
+ * it declares that intent — which would leave PostgreSQL permanently empty on
+ * exactly the deployments that most need isolation to hold.
+ *
+ * Declared here, at the one boundary that touches the tenant-isolated models,
+ * rather than around the projector's timers: a source read is a source read
+ * whether the drain, the poll or the sweep asked for it, and a wrapper further
+ * out is one refactor away from no longer covering all three.
+ */
 export function createMongoSourceReader(
   mongoose: typeof import('mongoose'),
 ): ProjectionSourceReader {
@@ -117,10 +130,13 @@ export function createMongoSourceReader(
         return [];
       }
       const model = modelFor(kind);
-      const docs = await model
-        .find({ [KIND_ID[kind]]: { $in: keys.map((key) => key.recordId) } })
-        .select(PROJECTION_FIELDS)
-        .lean<Array<Record<string, unknown>>>();
+      const docs = await runAsSystem(() =>
+        model
+          .find({ [KIND_ID[kind]]: { $in: keys.map((key) => key.recordId) } })
+          .select(PROJECTION_FIELDS)
+          .lean<Array<Record<string, unknown>>>()
+          .exec(),
+      );
 
       /**
        * The event carries the scope the writer observed; the document carries
@@ -153,12 +169,15 @@ export function createMongoSourceReader(
               ],
             };
 
-      const docs = await model
-        .find(filter)
-        .select(PROJECTION_FIELDS)
-        .sort({ updatedAt: 1, [KIND_ID[kind]]: 1 })
-        .limit(limit)
-        .lean<Array<Record<string, unknown>>>();
+      const docs = await runAsSystem(() =>
+        model
+          .find(filter)
+          .select(PROJECTION_FIELDS)
+          .sort({ updatedAt: 1, [KIND_ID[kind]]: 1 })
+          .limit(limit)
+          .lean<Array<Record<string, unknown>>>()
+          .exec(),
+      );
 
       const sources = docs.map((doc) => toProjectionSource(kind, doc));
       const last = sources[sources.length - 1];
@@ -176,12 +195,15 @@ export function createMongoSourceReader(
       let cursor: string | null = null;
       for (;;) {
         const filter = cursor == null ? {} : { [KIND_ID[kind]]: { $gt: cursor } };
-        const docs = await model
-          .find(filter)
-          .select(`${KIND_ID[kind]} user tenantId`)
-          .sort({ [KIND_ID[kind]]: 1 })
-          .limit(batchSize)
-          .lean<Array<Record<string, unknown>>>();
+        const docs = await runAsSystem(() =>
+          model
+            .find(filter)
+            .select(`${KIND_ID[kind]} user tenantId`)
+            .sort({ [KIND_ID[kind]]: 1 })
+            .limit(batchSize)
+            .lean<Array<Record<string, unknown>>>()
+            .exec(),
+        );
 
         if (docs.length === 0) {
           return;

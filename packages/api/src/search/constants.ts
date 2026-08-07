@@ -36,6 +36,14 @@ export const SWEEP_INTERVAL_MS = 3_600_000;
 export const LEASE_TTL_MS = 30_000;
 export const LEASE_RENEW_MS = 10_000;
 
+/**
+ * How long a pod that lost the election waits before trying again, and the
+ * ceiling its backoff climbs to. A standby that stops trying is how a cluster
+ * ends up with no projector at all once the leader dies.
+ */
+export const STANDBY_RETRY_MS = 5_000;
+export const STANDBY_MAX_RETRY_MS = 60_000;
+
 export const EMBEDDING_DIMENSIONS = 1024;
 export const DEFAULT_EMBEDDING_SPACE = 'chat-v1';
 export const FORMATTER_VERSION = 'v1';

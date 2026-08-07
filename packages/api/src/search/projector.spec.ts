@@ -9,10 +9,24 @@ import {
 } from '@librechat/data-schemas';
 import type { SearchPool } from './types';
 import { describePg, dropIsolatedDatabase, migrateFresh } from './pg.helper';
+import { quarantinedKeys, recordFailure } from './writer';
 import { createMongoSourceReader } from './source';
+import { withTransaction } from './pool';
 import { Projector } from './projector';
 
 const DB_NAME = 'projector';
+
+/** Polls a condition the standby loop satisfies on its own schedule. */
+async function waitFor(condition: () => boolean, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (condition()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('condition was never met');
+}
 
 type Models = ReturnType<typeof createModels>;
 
@@ -335,7 +349,7 @@ describePg('projector', () => {
       expect(rows.map((row) => row.record_id)).toContain('m-lost');
     });
 
-    it('persists a cursor rewound by the lookback so a skewed write is re-scanned', async () => {
+    it('persists the page cursor it actually reached, unrewound', async () => {
       await models.Message.create({
         messageId: 'm1',
         conversationId: 'c1',
@@ -352,8 +366,109 @@ describePg('projector', () => {
       expect(rows[0].record_id).toBe('m1');
 
       const source = await models.Message.findOne({ messageId: 'm1' }).lean<{ updatedAt: Date }>();
-      const drift = source!.updatedAt.getTime() - rows[0].updated_at.getTime();
-      expect(drift).toBe(60_000);
+      expect(rows[0].updated_at.getTime()).toBe(source!.updatedAt.getTime());
+    });
+
+    /**
+     * The overlap moved to read time, so it still has to happen: a write stamped
+     * `T - epsilon` by a pod with a skewed clock can land after the scan passed
+     * `T`, and re-scanning the trailing window with idempotent upserts is the
+     * only thing that makes it recoverable.
+     */
+    it('re-scans the trailing lookback window once a pass has caught up', async () => {
+      await models.Message.create({
+        messageId: 'm-skew',
+        conversationId: 'c1',
+        user: 'alice',
+        text: 'body',
+        isCreatedByUser: true,
+      });
+      await projector.safetyPoll();
+      expect(await projected()).toHaveLength(1);
+
+      /** Stands in for the write the first pass could not have seen. */
+      await pool.query('TRUNCATE chat_search.documents CASCADE');
+
+      await projector.safetyPoll();
+
+      expect((await projected()).map((row) => row.record_id)).toEqual(['m-skew']);
+    });
+
+    /**
+     * A rewound cursor at rest is a cursor that can loop. Once more than one
+     * page of records shares the lookback window, persisting `last - lookback`
+     * makes the next scan re-select the same earliest page — `updatedAt >
+     * rewound` ignores the retained record id — so the poll repeats that page
+     * forever and never reaches anything newer.
+     */
+    it('reaches records beyond the first page when a whole page shares the lookback window', async () => {
+      await projector.stop();
+      projector = new Projector(
+        { pool, mongoose, source: createMongoSourceReader(mongoose), batches: { scan: 2 } },
+        {
+          readSearchEvents: (limit) => readSearchEvents(mongoose, limit),
+          deleteSearchEvents: (ids) =>
+            deleteSearchEvents(mongoose, ids as mongoose.Types.ObjectId[]),
+          dedupeSearchEvents,
+        },
+      );
+      if (!(await projector.start())) {
+        throw new Error('failed to acquire the projector lease for the test');
+      }
+
+      for (const suffix of ['a', 'b', 'c']) {
+        await models.Message.create({
+          messageId: `m-page-${suffix}`,
+          conversationId: 'c1',
+          user: 'alice',
+          text: 'inside the lookback window',
+          isCreatedByUser: true,
+        });
+      }
+
+      await projector.safetyPoll();
+      await projector.safetyPoll();
+
+      expect((await projected()).map((row) => row.record_id)).toEqual([
+        'm-page-a',
+        'm-page-b',
+        'm-page-c',
+      ]);
+    });
+
+    /**
+     * Quarantine is only ever cleared by the drain, and the drain skips a
+     * quarantined record without re-reading it — so the poll is the only path
+     * that can prove the record is healthy again. If it does not clear the
+     * failure, every later event for that record keeps being discarded and the
+     * row goes permanently stale once the cursor moves on.
+     */
+    it('clears a quarantine it has just projected past', async () => {
+      const key = {
+        tenantId: '__BASE__',
+        userId: 'alice',
+        kind: 'message' as const,
+        recordId: 'm-poison',
+      };
+      await models.Message.create({
+        messageId: 'm-poison',
+        conversationId: 'c1',
+        user: 'alice',
+        text: 'corrected',
+        isCreatedByUser: true,
+      });
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await withTransaction(pool, (client) => recordFailure(client, key, new Error('boom')));
+      }
+      const quarantined = await withTransaction(pool, (client) => quarantinedKeys(client, [key]));
+      expect(quarantined.size).toBe(1);
+
+      await projector.safetyPoll();
+
+      const stillQuarantined = await withTransaction(pool, (client) =>
+        quarantinedKeys(client, [key]),
+      );
+      expect(stillQuarantined.size).toBe(0);
     });
 
     it('skips unfinished rows exactly as the drain does', async () => {
@@ -441,6 +556,134 @@ describePg('projector', () => {
       expect((await projected())[0].deleted_at).toBeNull();
     });
 
+    /**
+     * Imports are the write class every fast path is blind to: `bulkWrite` skips
+     * Mongoose middleware so no event is enqueued, and imports deliberately keep
+     * historic `updatedAt` values that sort behind the forward poll cursor
+     * forever. Without a backfill direction, "reconciliation covers it" is not
+     * true of the one path that most needs it to be.
+     */
+    it('projects a record the source has and PostgreSQL never saw', async () => {
+      await models.Message.collection.insertOne({
+        messageId: 'm-imported',
+        conversationId: 'c-import',
+        user: 'alice',
+        text: 'imported long ago',
+        isCreatedByUser: true,
+        createdAt: new Date('2020-01-01T00:00:00Z'),
+        updatedAt: new Date('2020-01-01T00:00:00Z'),
+      });
+
+      /** The cursor has long since moved past 2020, as it would in any live deployment. */
+      await pool.query(
+        `INSERT INTO chat_search.poll_cursor (kind, updated_at, record_id, scanned_at)
+         VALUES ('message', now(), 'zzz', now())
+         ON CONFLICT (kind) DO UPDATE SET updated_at = now(), record_id = 'zzz'`,
+      );
+
+      await projector.safetyPoll();
+      expect(await projected()).toHaveLength(0);
+
+      await projector.reconcile();
+
+      const rows = await projected();
+      expect(rows.map((row) => row.record_id)).toEqual(['m-imported']);
+      expect(rows[0].body).toBe('imported long ago');
+    });
+
+    it('revives a row the source still has after it was tombstoned', async () => {
+      await models.Message.create({
+        messageId: 'm-revive',
+        conversationId: 'c1',
+        user: 'alice',
+        text: 'still here',
+        isCreatedByUser: true,
+      });
+      await projector.drain();
+      await pool.query(
+        "UPDATE chat_search.documents SET deleted_at = now(), body = '' WHERE record_id = 'm-revive'",
+      );
+
+      await projector.reconcile();
+
+      const rows = await projected();
+      expect(rows[0].deleted_at).toBeNull();
+      expect(rows[0].body).toBe('still here');
+    });
+
+    it('skips an unfinished record when backfilling', async () => {
+      await models.Message.collection.insertOne({
+        messageId: 'm-half',
+        conversationId: 'c1',
+        user: 'alice',
+        text: 'half written',
+        unfinished: true,
+        isCreatedByUser: false,
+        createdAt: new Date('2020-01-01T00:00:00Z'),
+        updatedAt: new Date('2020-01-01T00:00:00Z'),
+      });
+
+      await projector.reconcile();
+
+      expect(await projected()).toHaveLength(0);
+    });
+
+    /**
+     * The sweep must never need the whole source keyspace resident to be
+     * correct, so it is driven from PostgreSQL in bounded windows. Shrinking the
+     * window to one record forces the multi-page path that a default-sized run
+     * would never reach in a test.
+     */
+    it('reconciles correctly across several bounded windows', async () => {
+      await projector.stop();
+      const reader = createMongoSourceReader(mongoose);
+      let widestRead = 0;
+      const source: typeof reader = {
+        ...reader,
+        read: (kind, keys) => {
+          widestRead = Math.max(widestRead, keys.length);
+          return reader.read(kind, keys);
+        },
+      };
+      projector = new Projector(
+        { pool, mongoose, source, batches: { reconcile: 1 } },
+        {
+          readSearchEvents: (limit) => readSearchEvents(mongoose, limit),
+          deleteSearchEvents: (ids) =>
+            deleteSearchEvents(mongoose, ids as mongoose.Types.ObjectId[]),
+          dedupeSearchEvents,
+        },
+      );
+      if (!(await projector.start())) {
+        throw new Error('failed to acquire the projector lease for the test');
+      }
+
+      for (const suffix of ['a', 'b', 'c']) {
+        await models.Message.create({
+          messageId: `m-win-${suffix}`,
+          conversationId: 'c1',
+          user: 'alice',
+          text: 'windowed',
+          isCreatedByUser: true,
+        });
+      }
+      await projector.drain();
+      await models.Message.collection.deleteOne({ messageId: 'm-win-b' });
+
+      /** Only the sweep's own reads are of interest; the drain reads in its own batches. */
+      widestRead = 0;
+      const tombstoned = await projector.reconcile();
+
+      expect(tombstoned).toBe(1);
+      const rows = await projected();
+      expect(rows.filter((row) => row.deleted_at === null).map((row) => row.record_id)).toEqual([
+        'm-win-a',
+        'm-win-c',
+      ]);
+      /** Never more than one window resident, whatever the size of the source. */
+      expect(widestRead).toBe(1);
+    });
+
     it('never tombstones one user because another user owns the record', async () => {
       await models.Message.create([
         {
@@ -477,6 +720,41 @@ describePg('projector', () => {
       expect(await second.start()).toBe(false);
       await second.stop();
     });
+
+    /**
+     * A standby that gives up after one attempt is how a cluster ends up with no
+     * projector at all: the leader's advisory lock is released the moment its
+     * session ends, and if nobody is still trying, projection simply stops until
+     * a process happens to restart.
+     */
+    it('acquires the lease once the leader releases it', async () => {
+      const standby = new Projector(
+        {
+          pool,
+          mongoose,
+          source: createMongoSourceReader(mongoose),
+          intervals: { drainMs: 50 },
+        },
+        {
+          readSearchEvents: (limit) => readSearchEvents(mongoose, limit),
+          deleteSearchEvents: (ids) =>
+            deleteSearchEvents(mongoose, ids as mongoose.Types.ObjectId[]),
+          dedupeSearchEvents,
+        },
+      );
+
+      try {
+        expect(await standby.start()).toBe(false);
+        expect(standby.isLeader).toBe(false);
+
+        await projector.stop();
+
+        await waitFor(() => standby.isLeader, 20_000);
+        expect(standby.epoch).not.toBeNull();
+      } finally {
+        await standby.stop();
+      }
+    }, 30_000);
 
     it('projects nothing while it does not hold the lease', async () => {
       await projector.stop();

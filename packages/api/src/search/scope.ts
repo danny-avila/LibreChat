@@ -1,6 +1,6 @@
 import { assertScope } from '@librechat/data-schemas';
 import type { Scope } from '@librechat/data-schemas';
-import type { SearchKind } from './types';
+import type { SearchFilters, SearchKind } from './types';
 import { TENANT_GUC, USER_GUC } from './constants';
 
 export type { Scope };
@@ -61,7 +61,7 @@ const ALIAS_PATTERN = /^[a-z_][a-z0-9_]*$/;
 export function scopedQuery(
   scope: Scope,
   kind: SearchKind,
-  options: { alias?: string; now?: Date } = {},
+  options: { alias?: string; now?: Date; filters?: SearchFilters } = {},
 ): ScopedQuery {
   const validated = assertScope(scope);
   if (!VALID_KINDS.includes(kind)) {
@@ -72,16 +72,55 @@ export function scopedQuery(
     throw new Error(`[chatSearch] unsafe table alias: ${alias}`);
   }
 
+  const values: unknown[] = [validated.tenantId, validated.userId, kind, options.now ?? new Date()];
+  const clauses = [
+    `${alias}.tenant_id = $1 AND ${alias}.user_id = $2 AND ${alias}.kind = $3`,
+    `${alias}.deleted_at IS NULL AND ${alias}.is_temporary = false`,
+    `(${alias}.expires_at IS NULL OR ${alias}.expires_at > $4)`,
+  ];
+
+  /**
+   * Listing filters belong here rather than in the caller's post-hydration pass.
+   * Applied afterwards they truncate first and filter second, so a page of
+   * candidates that all fail the filter comes back empty while matching records
+   * sit one rank below the cut. Folded in here, every arm ranks only rows the
+   * caller can actually show.
+   */
+  for (const clause of filterClauses(alias, options.filters, values)) {
+    clauses.push(clause);
+  }
+
   return Object.freeze({
-    text:
-      `${alias}.tenant_id = $1 AND ${alias}.user_id = $2 AND ${alias}.kind = $3 ` +
-      `AND ${alias}.deleted_at IS NULL AND ${alias}.is_temporary = false ` +
-      `AND (${alias}.expires_at IS NULL OR ${alias}.expires_at > $4)`,
-    values: Object.freeze([validated.tenantId, validated.userId, kind, options.now ?? new Date()]),
-    nextIndex: 5,
+    text: clauses.join(' AND '),
+    values: Object.freeze(values),
+    nextIndex: values.length + 1,
     scope: validated,
     kind,
   });
+}
+
+function filterClauses(alias: string, filters: SearchFilters | undefined, values: unknown[]) {
+  const clauses: string[] = [];
+  if (!filters) {
+    return clauses;
+  }
+
+  if (filters.archived != null) {
+    values.push(filters.archived);
+    clauses.push(`${alias}.is_archived = $${values.length}`);
+  }
+  if (filters.tags && filters.tags.length > 0) {
+    values.push([...filters.tags]);
+    clauses.push(`${alias}.tags && $${values.length}::text[]`);
+  }
+  if (filters.projectId === 'unassigned') {
+    clauses.push(`${alias}.project_id IS NULL`);
+  } else if (filters.projectId) {
+    values.push(filters.projectId);
+    clauses.push(`${alias}.project_id = $${values.length}`);
+  }
+
+  return clauses;
 }
 
 /**

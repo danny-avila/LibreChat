@@ -1,3 +1,4 @@
+const { runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const { enqueueSearchEvents, bulkSaveConvos, bulkSaveMessages } = require('~/models');
 
@@ -48,6 +49,42 @@ describe('ImportBatchBuilder projection events', () => {
     expect(events.every((event) => typeof event.recordId === 'string' && event.recordId)).toBe(
       true,
     );
+  });
+
+  /**
+   * `tenantSafeBulkWrite` injects the tenant into *clones* of the bulk
+   * operations, so the staged objects still carry no `tenantId` after Mongo has
+   * stored the records under the request tenant. An event built from those
+   * objects announces the base tenant, the projector's key-scoped source read
+   * correctly rejects the mismatch, and the import projects nothing at all.
+   */
+  it('announces the tenant the request is actually writing under', async () => {
+    const builder = buildBatch();
+    await tenantStorage.run({ tenantId: 'acme', userId: USER_ID }, () => builder.saveBatch());
+
+    const events = enqueueSearchEvents.mock.calls[0][0];
+    expect(events).toHaveLength(3);
+    expect(events.every((event) => event.tenantId === 'acme')).toBe(true);
+  });
+
+  it('announces the base tenant when no tenant context is active', async () => {
+    const builder = buildBatch();
+    await builder.saveBatch();
+
+    const events = enqueueSearchEvents.mock.calls[0][0];
+    expect(events.every((event) => event.tenantId === null)).toBe(true);
+  });
+
+  /**
+   * A cross-tenant system context is a query-time wildcard, never a tenant to
+   * store against, so it must not be copied onto an event.
+   */
+  it('never announces the system tenant', async () => {
+    const builder = buildBatch();
+    await runAsSystem(() => builder.saveBatch());
+
+    const events = enqueueSearchEvents.mock.calls[0][0];
+    expect(events.every((event) => event.tenantId === null)).toBe(true);
   });
 
   it('does not fail the import when the projection queue is unavailable', async () => {

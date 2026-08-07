@@ -46,6 +46,7 @@ const {
   seedDatabase,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const { initializeChatSearch, shutdownChatSearch } = require('./services/Search');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
@@ -129,6 +130,11 @@ const startServer = async () => {
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
   });
+  /* Serving and projecting are independent: a pod that loses the projector
+   * election still answers every search, so the reader is installed here rather
+   * than behind the lease. */
+  initializeChatSearch();
+  registerShutdownTask('chat search', () => shutdownChatSearch());
   startSearchSync().catch((err) => {
     logger.error('[searchSync] Failed to start the chat-search projector:', err);
   });
