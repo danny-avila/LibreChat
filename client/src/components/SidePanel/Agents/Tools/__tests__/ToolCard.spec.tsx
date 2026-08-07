@@ -89,10 +89,8 @@ describe('ToolCard', () => {
 
     render(<ToolCard item={mcp} selected={false} onToggle={jest.fn()} />);
 
-    expect(screen.getByRole('link', { name: 'Platform Support' })).toHaveAttribute(
-      'href',
-      'mailto:support@example.com',
-    );
+    const contactLink = screen.getByRole('link', { name: 'Platform Support' });
+    expect(contactLink).toHaveAttribute('href', 'mailto:support@example.com');
   });
 
   test('renders the owner fallback for MCP cards', () => {

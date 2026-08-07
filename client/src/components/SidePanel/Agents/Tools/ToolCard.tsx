@@ -195,7 +195,7 @@ function ToolCardImpl({
       {item.kind === 'mcp' && (
         <AgentContact
           resource={item.server}
-          className="pointer-events-none absolute bottom-3 left-4 right-20 z-10 text-xs [&_a]:pointer-events-auto"
+          className="pointer-events-none absolute bottom-3 left-4 right-20 z-10 text-xs [&_a]:pointer-events-auto [&_a]:font-normal [&_a]:!text-text-secondary"
         />
       )}
       {(canFavorite || canConfigure || showInfoOnly) && (
