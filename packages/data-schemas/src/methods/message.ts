@@ -1,6 +1,8 @@
 import { HITL_MESSAGE_FILTER_FIELDS, RetentionMode } from 'librechat-data-provider';
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
+import type { SearchParams } from 'meilisearch';
 import type { DeleteResult, FilterQuery, Model, Types } from 'mongoose';
+import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type { AppConfig, IConversation, IMessage } from '~/types';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
@@ -523,6 +525,8 @@ export type ParentSubagentTaskRecord = {
   >;
 };
 
+type MessageSearchResult = Awaited<ReturnType<SchemaWithMeiliMethods['meiliSearch']>>;
+
 export interface MessageMethods {
   saveMessage(
     ctx: {
@@ -678,9 +682,9 @@ export interface MessageMethods {
   ): Promise<{ messages: IMessage[]; nextCursor: string | null }>;
   searchMessages(
     query: string,
-    searchOptions: Record<string, unknown>,
+    searchOptions: SearchParams,
     hydrate?: boolean,
-  ): Promise<unknown>;
+  ): Promise<MessageSearchResult>;
   deleteMessages(filter: FilterQuery<IMessage>): Promise<DeleteResult>;
 }
 
@@ -3145,12 +3149,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
    */
   async function searchMessages(
     query: string,
-    searchOptions: Record<string, unknown>,
+    searchOptions: SearchParams,
     hydrate?: boolean,
-  ) {
-    const Message = mongoose.models.Message as Model<IMessage> & {
-      meiliSearch?: (q: string, opts: Record<string, unknown>, h?: boolean) => Promise<unknown>;
-    };
+  ): Promise<MessageSearchResult> {
+    const Message = mongoose.models.Message as SchemaWithMeiliMethods;
     if (typeof Message.meiliSearch !== 'function') {
       throw new Error('MeiliSearch plugin not registered on Message model');
     }

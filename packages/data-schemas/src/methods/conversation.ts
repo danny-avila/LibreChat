@@ -1,7 +1,9 @@
 import { Buffer } from 'node:buffer';
 import { RetentionMode } from 'librechat-data-provider';
+import type { SearchParams } from 'meilisearch';
 import type { AnyBulkWriteOperation, FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
+import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type {
   IAgentEventActorCheckpoint,
   IAgentEventActorReconciliation,
@@ -2626,30 +2628,25 @@ export function createConversationMethods(
     if (search) {
       try {
         const { searchMessages } = getMessageMethods();
+        const ConversationMeili = mongoose.models.Conversation as SchemaWithMeiliMethods;
+        const searchParams: SearchParams = {
+          filter: `user = "${user}"`,
+          limit: MEILI_SEARCH_LIMIT,
+        };
         const [convoResults, messageResults] = await Promise.all([
-          (
-            Conversation as unknown as {
-              meiliSearch: (
-                query: string,
-                options: Record<string, string | number>,
-              ) => Promise<{
-                hits: Array<{ conversationId: string }>;
-              }>;
-            }
-          ).meiliSearch(search, { filter: `user = "${user}"`, limit: MEILI_SEARCH_LIMIT }),
-          searchMessages(search, {
-            filter: `user = "${user}"`,
-            limit: MEILI_SEARCH_LIMIT,
-          }) as Promise<{
-            hits?: Array<{ conversationId: string }>;
-          }>,
+          ConversationMeili.meiliSearch(search, searchParams),
+          searchMessages(search, searchParams),
         ]);
         const matchingIds = new Set<string>();
         for (const hit of convoResults.hits ?? []) {
-          matchingIds.add(hit.conversationId);
+          if (typeof hit.conversationId === 'string') {
+            matchingIds.add(hit.conversationId);
+          }
         }
         for (const hit of messageResults.hits ?? []) {
-          matchingIds.add(hit.conversationId);
+          if (typeof hit.conversationId === 'string') {
+            matchingIds.add(hit.conversationId);
+          }
         }
         if (!matchingIds.size) {
           return { conversations: [], nextCursor: null };
