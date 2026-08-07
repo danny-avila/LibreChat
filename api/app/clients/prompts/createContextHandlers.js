@@ -24,21 +24,27 @@ function createContextHandlers(req, userMessageContent) {
    * under, so both the token and the request have to name that entity. Message
    * attachments carry none, and stay scoped to the user alone.
    *
+   * The two branches reach different planes of the RAG service and so mint
+   * different scopes: reading a file's stored context needs document access and
+   * no inference, while a retrieval query embeds the user's message and needs
+   * exactly the reverse.
+   *
    * @param {MongoFile & { entity_id?: string }} file
    */
   const query = async (file) => {
     const entity_id = file.entity_id;
-    const jwtToken = generateShortLivedToken({
-      userId: req.user.id,
-      tenantId: req.user.tenantId,
-      entityIds: entity_id ? [entity_id] : [],
-      scopes: [RagScopes.embed],
-    });
+    const mintToken = (scope) =>
+      generateShortLivedToken({
+        userId: req.user.id,
+        tenantId: req.user.tenantId,
+        entityIds: entity_id ? [entity_id] : [],
+        scopes: [scope],
+      });
 
     if (useFullContext) {
       return axios.get(`${process.env.RAG_API_URL}/documents/${file.file_id}/context`, {
         headers: {
-          Authorization: `Bearer ${jwtToken}`,
+          Authorization: `Bearer ${mintToken(RagScopes.documents)}`,
         },
         params: entity_id ? { entity_id } : undefined,
       });
@@ -54,7 +60,7 @@ function createContextHandlers(req, userMessageContent) {
       },
       {
         headers: {
-          Authorization: `Bearer ${jwtToken}`,
+          Authorization: `Bearer ${mintToken(RagScopes.embed)}`,
           'Content-Type': 'application/json',
         },
       },

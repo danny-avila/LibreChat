@@ -7,7 +7,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('~/crypto/jwt', () => ({
-  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank' },
+  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank', documents: 'rag:documents' },
   generateShortLivedToken: jest.fn().mockReturnValue('mock-jwt-token'),
 }));
 
@@ -55,7 +55,7 @@ describe('deleteRagFile', () => {
         userId: 'user123',
         tenantId: undefined,
         entityIds: [],
-        scopes: ['rag:embed'],
+        scopes: ['rag:documents'],
       });
       expect(mockedAxios.delete).toHaveBeenCalledWith('http://localhost:8000/documents', {
         headers: {
@@ -82,7 +82,7 @@ describe('deleteRagFile', () => {
         userId: 'user123',
         tenantId: 'tenant-1',
         entityIds: ['agent_abc'],
-        scopes: ['rag:embed'],
+        scopes: ['rag:documents'],
       });
       expect(mockedAxios.delete).toHaveBeenCalledWith(
         'http://localhost:8000/documents',

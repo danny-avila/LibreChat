@@ -109,6 +109,24 @@ describe('generateShortLivedToken', () => {
       ).toThrow(/At least one scope is required/);
     });
 
+    it('mints the document scope without any inference scope alongside it', () => {
+      const token = generateShortLivedToken({
+        userId: 'user-1',
+        entityIds: ['agent_abc'],
+        scopes: [RagScopes.documents],
+      });
+
+      const claims = decodeWithRagKey(token);
+      expect(claims.scopes).toEqual(['rag:documents']);
+      expect(claims.entities).toEqual(['agent_abc']);
+    });
+
+    it('keeps the document and inference scopes distinct', () => {
+      expect(RagScopes.documents).not.toBe(RagScopes.embed);
+      expect(RagScopes.documents).not.toBe(RagScopes.rerank);
+      expect(new Set(Object.values(RagScopes)).size).toBe(Object.values(RagScopes).length);
+    });
+
     it('refuses to mint a token for the system tenant', () => {
       expect(() =>
         generateShortLivedToken({

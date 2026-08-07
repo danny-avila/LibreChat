@@ -29,7 +29,7 @@ const deleteVectors = async (req, file) => {
       userId: req.user.id,
       tenantId: req.user.tenantId,
       entityIds: file.entity_id ? [file.entity_id] : [],
-      scopes: [RagScopes.embed],
+      scopes: [RagScopes.documents],
     });
 
     return await axios.delete(`${process.env.RAG_API_URL}/documents`, {

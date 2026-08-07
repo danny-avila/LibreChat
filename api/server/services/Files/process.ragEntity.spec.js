@@ -30,7 +30,7 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
-  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank' },
+  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank', documents: 'rag:documents' },
   generateShortLivedToken: jest.fn(() => 'mock-jwt-token'),
   logAxiosError: jest.fn(),
   sanitizeFilename: jest.fn((n) => n),
@@ -174,7 +174,7 @@ describe('processDeleteRequest — agent knowledge-base scoping', () => {
       userId: userId.toString(),
       tenantId: 'tenant-a',
       entityIds: [agent.id],
-      scopes: ['rag:embed'],
+      scopes: ['rag:documents'],
     });
   });
 
@@ -194,7 +194,7 @@ describe('processDeleteRequest — agent knowledge-base scoping', () => {
       userId: userId.toString(),
       tenantId: undefined,
       entityIds: [],
-      scopes: ['rag:embed'],
+      scopes: ['rag:documents'],
     });
   });
 

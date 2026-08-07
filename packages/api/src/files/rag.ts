@@ -53,7 +53,7 @@ export async function deleteRagFile({
       userId,
       tenantId,
       entityIds,
-      scopes: [RagScopes.embed],
+      scopes: [RagScopes.documents],
     });
   } catch (error) {
     logger.error('[deleteRagFile] Unable to mint a RAG API token:', (error as Error).message);

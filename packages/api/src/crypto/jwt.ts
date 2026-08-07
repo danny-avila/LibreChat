@@ -3,14 +3,20 @@ import { SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Algorithm } from 'jsonwebtoken';
 
 /**
- * Scopes the RAG service recognises. `rag:embed` guards its embeddings
- * endpoint, `rag:rerank` its rerank endpoint. A strict token carrying no scope
- * at all is refused, so every call path names the scopes it actually uses
+ * Scopes the RAG service recognises, one per capability. `rag:embed` guards its
+ * embeddings endpoint and `rag:rerank` its rerank endpoint; both spend
+ * inference budget. `rag:documents` guards the stored-chunk routes — reading a
+ * file's context, listing ids, deleting a file — and buys no inference at all.
+ *
+ * Neither plane substitutes for the other, so a token minted to delete a file
+ * cannot be replayed against an embedding provider. A strict token carrying no
+ * scope at all is refused, so every call path names the scopes it actually uses
  * instead of receiving a blanket grant.
  */
 export const RagScopes = {
   embed: 'rag:embed',
   rerank: 'rag:rerank',
+  documents: 'rag:documents',
 } as const;
 
 export type RagScope = (typeof RagScopes)[keyof typeof RagScopes];

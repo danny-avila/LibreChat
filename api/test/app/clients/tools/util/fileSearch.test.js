@@ -3,7 +3,7 @@ const { ResourceType } = require('librechat-data-provider');
 
 jest.mock('axios');
 jest.mock('@librechat/api', () => ({
-  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank' },
+  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank', documents: 'rag:documents' },
   generateShortLivedToken: jest.fn(),
   logAxiosError: jest.fn(),
 }));

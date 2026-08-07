@@ -3,7 +3,7 @@ const axios = require('axios');
 jest.mock('axios');
 
 jest.mock('@librechat/api', () => ({
-  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank' },
+  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank', documents: 'rag:documents' },
   isEnabled: jest.fn(() => false),
   logAxiosError: jest.fn(),
   generateShortLivedToken: jest.fn(() => 'mock-jwt-token'),
@@ -91,7 +91,7 @@ describe('createContextHandlers', () => {
         userId: 'user-1',
         tenantId: 'tenant-a',
         entityIds: ['agent_123'],
-        scopes: ['rag:embed'],
+        scopes: ['rag:documents'],
       });
     });
 
@@ -103,6 +103,34 @@ describe('createContextHandlers', () => {
       const [, config] = axios.get.mock.calls[0];
       expect(config.params).toBeUndefined();
     });
+
+    it('buys no inference for a read that only returns stored text', async () => {
+      const handlers = createContextHandlers(req, 'what does it say?');
+      await handlers.processFile(embeddedFile('attachment-1'));
+      await handlers.createContext();
+
+      const { scopes } = generateShortLivedToken.mock.calls[0][0];
+      expect(scopes).toEqual(['rag:documents']);
+      expect(scopes).not.toContain('rag:embed');
+      expect(scopes).not.toContain('rag:rerank');
+    });
+  });
+
+  it('mints the plane each branch reaches, not one token covering both', async () => {
+    isEnabled.mockReturnValue(true);
+    const fullContext = createContextHandlers(req, 'what does it say?');
+    await fullContext.processFile(embeddedFile('kb-1'));
+    await fullContext.createContext();
+
+    isEnabled.mockReturnValue(false);
+    const semanticSearch = createContextHandlers(req, 'what does it say?');
+    await semanticSearch.processFile(embeddedFile('kb-1'));
+    await semanticSearch.createContext();
+
+    expect(generateShortLivedToken.mock.calls.map(([{ scopes }]) => scopes)).toEqual([
+      ['rag:documents'],
+      ['rag:embed'],
+    ]);
   });
 
   it('returns nothing when the RAG API is not configured', () => {

@@ -15,7 +15,7 @@ jest.mock('fs', () => ({
 }));
 
 jest.mock('../crypto/jwt', () => ({
-  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank' },
+  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank', documents: 'rag:documents' },
   generateShortLivedToken: jest.fn(),
 }));
 
@@ -370,7 +370,7 @@ describe('text', () => {
       );
     });
 
-    it('requests only the embed scope and no entity for text extraction', async () => {
+    it('requests only the document scope and no entity for text extraction', async () => {
       process.env.RAG_API_URL = 'http://rag-api.test';
 
       mockedAxios.get.mockResolvedValue({ status: 200, statusText: 'OK' });
@@ -386,7 +386,7 @@ describe('text', () => {
         userId: 'user123',
         tenantId: undefined,
         entityIds: [],
-        scopes: ['rag:embed'],
+        scopes: ['rag:documents'],
       });
     });
 

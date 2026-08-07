@@ -100,12 +100,14 @@ export async function parseText({
 
   try {
     /** Text extraction never reaches a knowledge base, so the token carries no
-     * entity — the upload is stored under the user alone. */
+     * entity — the upload is stored under the user alone. Nor does it embed
+     * anything: the file is parsed to text and handed back, so the token buys
+     * document access and no inference. */
     const jwtToken = generateShortLivedToken({
       userId,
       entityIds: [],
       tenantId: req.user?.tenantId,
-      scopes: [RagScopes.embed],
+      scopes: [RagScopes.documents],
     });
     const formData = new FormData();
     formData.append('file_id', file_id);
