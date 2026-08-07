@@ -579,9 +579,18 @@ export function createConversationMethods(
           filter: `user = "${user}"`,
           limit: MEILI_SEARCH_LIMIT,
         };
-        const [convoResults, messageResults] = await Promise.all([
+        const [convoResults, messageHits] = await Promise.all([
           ConversationMeili.meiliSearch(search, searchParams),
-          searchMessages(search, searchParams),
+          searchMessages(search, searchParams).then(
+            (results) => results.hits ?? [],
+            (error) => {
+              logger.error(
+                '[getConvosByCursor] Message search failed, using title matches only',
+                error,
+              );
+              return [];
+            },
+          ),
         ]);
         const matchingIds = new Set<string>();
         for (const hit of convoResults.hits ?? []) {
@@ -589,7 +598,7 @@ export function createConversationMethods(
             matchingIds.add(hit.conversationId);
           }
         }
-        for (const hit of messageResults.hits ?? []) {
+        for (const hit of messageHits) {
           if (typeof hit.conversationId === 'string') {
             matchingIds.add(hit.conversationId);
           }
