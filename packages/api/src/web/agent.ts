@@ -46,10 +46,9 @@ const agentsByExemptions = new Map<string, WebSearchSSRFAgents>();
  * Connect-time SSRF agents for the web-search tool, which issues its own requests and accepts
  * only a shared agent pair.
  *
- * Redirect hops traverse these agents, so a redirect to a private hostname is rejected. A
- * redirect to a private IP literal is not: Node skips the lookup for literals and
- * `HttpAgentConfig` exposes no `maxRedirects` to forward, so closing that needs a change in
- * `@librechat/agents`. When a proxy carries the request the proxy resolves the destination, so
+ * Redirect hops traverse these agents, so `blockLiteralHosts` covers a redirect to a private
+ * address whether it is named or a literal, which is what `maxRedirects` would otherwise be
+ * needed for. When a proxy carries the request the proxy resolves the destination, so
  * enforcement there belongs to the proxy's own egress policy.
  */
 export function resolveWebSearchSSRFAgents(
@@ -63,7 +62,7 @@ export function resolveWebSearchSSRFAgents(
     return cached;
   }
 
-  const agents = createSSRFSafeAgents(exemptions, { keepAlive: true });
+  const agents = createSSRFSafeAgents(exemptions, { keepAlive: true }, { blockLiteralHosts: true });
   agentsByExemptions.set(cacheKey, agents);
   return agents;
 }

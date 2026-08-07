@@ -96,15 +96,54 @@ function getConnectionPort(options: Record<string, unknown>): string {
   return normalizePort(options.port ?? options.defaultPort);
 }
 
+/**
+ * Rejects a connection whose host is already an IP literal in blocked space.
+ *
+ * Node resolves nothing for a literal host, so the SSRF lookup below never runs for one.
+ * Redirect hops reach this same `createConnection`, so checking here is what covers a
+ * redirect whose target is a literal private address. Opt-in: a caller that reaches a
+ * proxy or a deliberate private service by literal address must exempt it first, so
+ * enabling this by default would break existing configurations.
+ */
+function assertLiteralHostAllowed(
+  options: Record<string, unknown>,
+  allowedAddresses?: string[] | null,
+): void {
+  const host = typeof options.host === 'string' ? options.host.replace(/^\[|\]$/g, '') : '';
+  if (host.length === 0 || !isIP(host)) {
+    return;
+  }
+
+  const port = getConnectionPort(options);
+  if (isAddressInAllowedSet(host, normalizeAllowedAddressesSet(allowedAddresses), port)) {
+    return;
+  }
+  if (isPrivateIP(host)) {
+    throw createSSRFLookupError(host, host);
+  }
+}
+
+export interface SSRFProtectionOptions {
+  /** Also reject IP-literal hosts, covering literal destinations and literal redirect targets. */
+  blockLiteralHosts?: boolean;
+}
+
 /** Patches an agent instance to inject SSRF-safe DNS lookup at connect time */
-function withSSRFProtection<T extends http.Agent>(agent: T, allowedAddresses?: string[] | null): T {
+function withSSRFProtection<T extends http.Agent>(
+  agent: T,
+  allowedAddresses?: string[] | null,
+  options?: SSRFProtectionOptions,
+): T {
   const internal = agent as unknown as AgentInternal;
   const origCreate = internal.createConnection.bind(agent);
-  internal.createConnection = (options: Record<string, unknown>, oncreate?: unknown) => {
-    options.lookup = allowedAddresses?.length
-      ? buildSSRFSafeLookup(allowedAddresses, getConnectionPort(options))
+  internal.createConnection = (connectOptions: Record<string, unknown>, oncreate?: unknown) => {
+    if (options?.blockLiteralHosts) {
+      assertLiteralHostAllowed(connectOptions, allowedAddresses);
+    }
+    connectOptions.lookup = allowedAddresses?.length
+      ? buildSSRFSafeLookup(allowedAddresses, getConnectionPort(connectOptions))
       : ssrfSafeLookup;
-    return origCreate(options, oncreate);
+    return origCreate(connectOptions, oncreate);
   };
   return agent;
 }
@@ -121,14 +160,16 @@ function withSSRFProtection<T extends http.Agent>(agent: T, allowedAddresses?: s
  */
 export function createSSRFSafeAgents(
   allowedAddresses?: string[] | null,
-  agentOptions?: http.AgentOptions & https.AgentOptions,
+  agentOptions?: (http.AgentOptions & https.AgentOptions) | null,
+  protection?: SSRFProtectionOptions,
 ): {
   httpAgent: http.Agent;
   httpsAgent: https.Agent;
 } {
+  const options = agentOptions ?? undefined;
   return {
-    httpAgent: withSSRFProtection(new http.Agent(agentOptions), allowedAddresses),
-    httpsAgent: withSSRFProtection(new https.Agent(agentOptions), allowedAddresses),
+    httpAgent: withSSRFProtection(new http.Agent(options), allowedAddresses, protection),
+    httpsAgent: withSSRFProtection(new https.Agent(options), allowedAddresses, protection),
   };
 }
 

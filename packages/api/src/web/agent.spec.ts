@@ -10,6 +10,16 @@ function agentOptions(agent: object): AgentOptionsProbe['options'] {
   return (agent as AgentOptionsProbe).options;
 }
 
+/** Drives the seam every request and every redirect hop passes through. */
+interface ConnectProbe {
+  createConnection: (options: Record<string, unknown>) => unknown;
+}
+
+function connect(agent: object, host: string, port: number): void {
+  const socket = (agent as ConnectProbe).createConnection({ host, port });
+  (socket as { destroy?: () => void })?.destroy?.();
+}
+
 describe('resolveWebSearchSSRFAgents', () => {
   const originalEnv = process.env;
 
@@ -110,8 +120,42 @@ describe('resolveWebSearchSSRFAgents', () => {
     expect(resolveWebSearchSSRFAgents(['searxng:8080'])).not.toBe(resolveWebSearchSSRFAgents([]));
   });
 
-  it('does not throw for a private destination, leaving enforcement at connect time', () => {
+  it('does not throw while building agents, leaving enforcement at connect time', () => {
     expect(() => resolveWebSearchSSRFAgents(['127.0.0.1:8080'])).not.toThrow();
+  });
+
+  it('rejects an IP-literal private host at connect time, covering literal redirect targets', () => {
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connect(httpAgent, '169.254.169.254', 80)).toThrow(
+      expect.objectContaining({ code: 'ESSRF' }),
+    );
+    expect(() => connect(httpAgent, '127.0.0.1', 8080)).toThrow(
+      expect.objectContaining({ code: 'ESSRF' }),
+    );
+  });
+
+  it('exempts an IP-literal host listed in allowedAddresses, scoped to its port', () => {
+    const { httpAgent } = resolveWebSearchSSRFAgents(['127.0.0.1:8080']);
+
+    expect(() => connect(httpAgent, '127.0.0.1', 8080)).not.toThrow();
+    expect(() => connect(httpAgent, '127.0.0.1', 9)).toThrow(
+      expect.objectContaining({ code: 'ESSRF' }),
+    );
+  });
+
+  it('keeps a literal-address proxy reachable, since the proxy hop is exempted', () => {
+    process.env.HTTP_PROXY = 'http://10.1.2.3:3128';
+
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connect(httpAgent, '10.1.2.3', 3128)).not.toThrow();
+  });
+
+  it('allows a public IP literal', () => {
+    const { httpAgent } = resolveWebSearchSSRFAgents();
+
+    expect(() => connect(httpAgent, '93.184.216.34', 80)).not.toThrow();
   });
 
   it('ignores an unparseable proxy value rather than throwing during tool load', () => {
