@@ -721,7 +721,10 @@ export abstract class UserConnectionManager {
     this.connectionBorrowers.set(connection, borrowers + 1);
   }
 
-  protected async releaseConnection(connection: MCPConnection): Promise<void> {
+  protected async releaseConnection(
+    connection: MCPConnection,
+    preserveDeferredDisposal = false,
+  ): Promise<void> {
     const borrowers = this.connectionBorrowers.get(connection) ?? 0;
     if (borrowers > 1) {
       this.connectionBorrowers.set(connection, borrowers - 1);
@@ -731,7 +734,9 @@ export abstract class UserConnectionManager {
     this.connectionBorrowers.delete(connection);
     const logPrefix = this.deferredConnectionDisposals.get(connection);
     if (logPrefix) {
-      this.deferredConnectionDisposals.delete(connection);
+      if (!preserveDeferredDisposal) {
+        this.deferredConnectionDisposals.delete(connection);
+      }
       await this.disconnectEvictedConnection(connection, logPrefix);
     }
 

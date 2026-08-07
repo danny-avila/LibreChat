@@ -610,16 +610,18 @@ Please follow these instructions when using tools from the respective MCP server
       this.retainConnection(connection);
       connectionRetained = true;
     };
-    const releaseConnectionLease = async () => {
+    const releaseConnectionLease = async (preserveDeferredDisposal = false) => {
       if (!connection || !connectionRetained) {
         return;
       }
       connectionRetained = false;
-      await this.releaseConnection(connection);
+      await this.releaseConnection(connection, preserveDeferredDisposal);
     };
     const waitForRecoveryWithoutLease = async (startRecovery: () => Promise<void>) => {
       const recovery = startRecovery();
-      await releaseConnectionLease();
+      // If another caller evicted this connection, keep its disposal marker across
+      // the temporary lease gap so a successful reconnect is closed after the retry.
+      await releaseConnectionLease(true);
       try {
         await recovery;
       } finally {

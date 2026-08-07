@@ -1119,6 +1119,29 @@ describe('MCPManager', () => {
       expect(request.mock.calls[1]).toEqual(request.mock.calls[0]);
     });
 
+    it('disposes a recovered connection that was evicted before recovery', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn();
+      const connection = createConnection(request);
+      attachOAuthHandler();
+      const manager = await createManager(connection);
+      const lifecycle = manager as unknown as {
+        disposeEvictedConnection: (connection: MCPConnection, logPrefix: string) => Promise<void>;
+      };
+      request
+        .mockImplementationOnce(async () => {
+          await lifecycle.disposeEvictedConnection(connection, '[MCP][evicted]');
+          throw authError;
+        })
+        .mockResolvedValueOnce(toolResult);
+
+      await expect(callTool(manager)).resolves.toBeDefined();
+
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(connection.disconnect).toHaveBeenCalledTimes(2);
+      expect(request).toHaveBeenCalledTimes(2);
+    });
+
     it('recovers an OAuth failure found by the connection preflight check', async () => {
       const authError = new Error('Non-200 status code (401)');
       const request = jest.fn().mockResolvedValueOnce(toolResult);
