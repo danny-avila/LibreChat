@@ -192,6 +192,11 @@ export class MCPServerInspector {
     const keyServerName = normalizeServerName(serverName);
     tools.forEach((tool) => {
       const name = `${tool.name}${Constants.mcp_delimiter}${keyServerName}`;
+      const outputSchema = tool.outputSchema
+        ? (normalizeJsonSchema(
+            resolveJsonSchemaRefs(tool.outputSchema as Record<string, unknown>),
+          ) as JsonSchemaType)
+        : undefined;
       toolFunctions[name] = {
         type: 'function',
         ['function']: {
@@ -204,6 +209,8 @@ export class MCPServerInspector {
           parameters: normalizeJsonSchema(
             resolveJsonSchemaRefs(tool.inputSchema as Record<string, unknown>),
           ) as JsonSchemaType,
+          ...(outputSchema ? { outputSchema } : {}),
+          ...(tool.annotations ? { annotations: tool.annotations } : {}),
         },
       };
     });

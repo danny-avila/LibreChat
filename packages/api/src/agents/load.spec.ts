@@ -49,4 +49,22 @@ describe('loadEphemeralAgent ephemeral id stability (#14253 Bug 2)', () => {
     const b = await idFor({ model: 'claude-opus-4', modelLabel: 'My Opus' });
     expect(a).toEqual(b);
   });
+
+  test('retains the legacy two-argument MCP tool callback contract', async () => {
+    const getMCPServerTools = jest.fn().mockResolvedValue({ search_mcp_docs: {} });
+    const agent = await loadEphemeralAgent(
+      {
+        req: {
+          ...baseReq,
+          body: { ephemeralAgent: { mcp: ['docs'] } },
+        },
+        endpoint: 'my-custom-endpoint',
+        model_parameters: {},
+      },
+      { ...deps, getMCPServerTools },
+    );
+
+    expect(getMCPServerTools).toHaveBeenCalledWith('user-1', 'docs');
+    expect(agent?.tools).toContain('search_mcp_docs');
+  });
 });

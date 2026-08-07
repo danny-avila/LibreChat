@@ -128,7 +128,12 @@ export class MCPManager extends UserConnectionManager {
       const existingAppConnection = await this.appConnections?.get(serverName);
       if (existingAppConnection && (await existingAppConnection.isConnected())) {
         const tools = await existingAppConnection.fetchTools();
-        return { tools, oauthRequired: false, oauthUrl: null };
+        return {
+          tools,
+          oauthRequired: false,
+          oauthUrl: null,
+          provenance: existingAppConnection.getDiscoveryProvenance?.() ?? null,
+        };
       }
     } catch {
       logger.debug(`${logPrefix} [Discovery] App connection not available, trying discovery mode`);
@@ -142,7 +147,7 @@ export class MCPManager extends UserConnectionManager {
 
     if (!serverConfig) {
       logger.warn(`${logPrefix} [Discovery] Server config not found`);
-      return { tools: null, oauthRequired: false, oauthUrl: null };
+      return { tools: null, oauthRequired: false, oauthUrl: null, provenance: null };
     }
 
     const missingBodyFields = getMissingRuntimeBodyPlaceholderFields(
@@ -153,7 +158,7 @@ export class MCPManager extends UserConnectionManager {
       logger.warn(
         `${logPrefix} [Discovery] Request body field(s) required to resolve runtime MCP placeholders: ${missingBodyFields.join(', ')}`,
       );
-      return { tools: null, oauthRequired: false, oauthUrl: null };
+      return { tools: null, oauthRequired: false, oauthUrl: null, provenance: null };
     }
 
     const registry = MCPServersRegistry.getInstance();
@@ -195,6 +200,7 @@ export class MCPManager extends UserConnectionManager {
         tools: result.tools,
         oauthRequired: result.oauthRequired,
         oauthUrl: result.oauthUrl,
+        provenance: result.provenance,
       };
     };
 
@@ -211,7 +217,7 @@ export class MCPManager extends UserConnectionManager {
 
     if (!user || !args.flowManager) {
       logger.warn(`${logPrefix} [Discovery] OAuth server requires user and flowManager`);
-      return { tools: null, oauthRequired: true, oauthUrl: null };
+      return { tools: null, oauthRequired: true, oauthUrl: null, provenance: null };
     }
 
     const result = await MCPConnectionFactory.discoverTools(basic, {
@@ -249,11 +255,25 @@ export class MCPManager extends UserConnectionManager {
     userId: string,
     serverName: string,
   ): Promise<t.LCAvailableTools | null> {
+    const result = await this.getServerToolFunctionsWithProvenance(userId, serverName);
+    return result?.tools ?? null;
+  }
+
+  public async getServerToolFunctionsWithProvenance(
+    userId: string,
+    serverName: string,
+  ): Promise<{
+    tools: t.LCAvailableTools;
+    provenance: ReturnType<MCPConnection['getDiscoveryProvenance']>;
+  } | null> {
     try {
       //try get the appConnection (if the config is not in the app level anymore any existing connection will disconnect and get will return null)
       const existingAppConnection = await this.appConnections?.get(serverName);
       if (existingAppConnection) {
-        return MCPServerInspector.getToolFunctions(serverName, existingAppConnection);
+        return {
+          tools: await MCPServerInspector.getToolFunctions(serverName, existingAppConnection),
+          provenance: existingAppConnection.getDiscoveryProvenance?.() ?? null,
+        };
       }
 
       const userConnections = this.getUserConnections(userId);
@@ -264,7 +284,11 @@ export class MCPManager extends UserConnectionManager {
         return null;
       }
 
-      return MCPServerInspector.getToolFunctions(serverName, userConnections.get(serverName)!);
+      const connection = userConnections.get(serverName)!;
+      return {
+        tools: await MCPServerInspector.getToolFunctions(serverName, connection),
+        provenance: connection.getDiscoveryProvenance?.() ?? null,
+      };
     } catch (error) {
       logger.warn(
         `[getServerToolFunctions] Error getting tool functions for server ${serverName}`,

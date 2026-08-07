@@ -19,6 +19,7 @@ import type {
 } from 'undici';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { MCPOAuthTokens } from './oauth/types';
+import type { MCPConnectionProvenance } from './types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { isOAuthServer, sanitizeUrlForLogging } from './utils';
@@ -1119,6 +1120,7 @@ interface MCPConnectionParams {
   useSSRFProtection?: boolean;
   allowedAddresses?: string[] | null;
   ephemeralConnection?: boolean;
+  provenance?: MCPConnectionProvenance | null;
 }
 
 /** Result of an MCP `tools/list` request: one page of tools plus an optional pagination cursor. */
@@ -1147,6 +1149,7 @@ export class MCPConnection extends EventEmitter {
   private readonly useSSRFProtection: boolean;
   private readonly allowedAddresses?: string[] | null;
   private readonly ephemeralConnection: boolean;
+  private readonly provenance: MCPConnectionProvenance | null;
   private readonly proxyConfig?: MCPProxyConfig;
   iconPath?: string;
   timeout?: number;
@@ -1264,6 +1267,7 @@ export class MCPConnection extends EventEmitter {
     this.useSSRFProtection = params.useSSRFProtection === true;
     this.allowedAddresses = params.allowedAddresses ?? null;
     this.ephemeralConnection = params.ephemeralConnection === true;
+    this.provenance = params.provenance ?? null;
     this.proxyConfig = getMCPProxyConfig(params.serverConfig);
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
@@ -1284,6 +1288,10 @@ export class MCPConnection extends EventEmitter {
     );
 
     this.setupEventListeners();
+  }
+
+  public getDiscoveryProvenance(): MCPConnectionProvenance | null {
+    return this.provenance;
   }
 
   /** Helper to generate consistent log prefixes */

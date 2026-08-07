@@ -1465,7 +1465,12 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       const result = await manager.discoverServerTools({ serverName });
 
-      expect(result).toEqual({ tools: null, oauthRequired: false, oauthUrl: null });
+      expect(result).toEqual({
+        tools: null,
+        oauthRequired: false,
+        oauthUrl: null,
+        provenance: null,
+      });
       expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.stringContaining('Request body field(s) required'),

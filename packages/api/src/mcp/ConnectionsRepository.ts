@@ -4,6 +4,12 @@ import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { isUserSourced, requiresUserScopedConnection } from './utils';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from './connection';
+import {
+  createMCPToolCatalogSecurityPolicyIdentity,
+  isMCPToolCatalogFingerprintAvailable,
+  matchesMCPConnectionProvenance,
+} from './catalog';
+import { processMCPEnv } from '~/utils/env';
 
 const CONNECT_CONCURRENCY = 3;
 
@@ -56,6 +62,9 @@ export class ConnectionsRepository {
       }
       return null;
     }
+    const registry = MCPServersRegistry.getInstance();
+    const { allowedDomains, allowedAddresses, useSSRFProtection } =
+      await registry.resolveAllowlists({ userId: this.ownerId });
     if (existingConnection) {
       // Check if config was cached/updated since connection was created
       if (serverConfig.updatedAt && existingConnection.isStale(serverConfig.updatedAt)) {
@@ -71,15 +80,18 @@ export class ConnectionsRepository {
         await existingConnection.disconnect();
         this.connections.delete(serverName);
         // Fall through to create new connection
-      } else if (await existingConnection.isConnected()) {
+      } else if (
+        (await existingConnection.isConnected()) &&
+        this.isConnectionProvenanceCurrent(existingConnection, serverName, serverConfig, {
+          allowedDomains,
+          allowedAddresses,
+        })
+      ) {
         return existingConnection;
       } else {
         await this.disconnect(serverName);
       }
     }
-    const registry = MCPServersRegistry.getInstance();
-    const { allowedDomains, allowedAddresses, useSSRFProtection } =
-      await registry.resolveAllowlists({ userId: this.ownerId });
     const connection = await MCPConnectionFactory.create(
       {
         serverName,
@@ -94,6 +106,29 @@ export class ConnectionsRepository {
 
     this.connections.set(serverName, connection);
     return connection;
+  }
+
+  private isConnectionProvenanceCurrent(
+    connection: MCPConnection,
+    serverName: string,
+    serverConfig: t.ParsedServerConfig,
+    policy: { allowedDomains?: string[] | null; allowedAddresses?: string[] | null },
+  ): boolean {
+    if (!isMCPToolCatalogFingerprintAvailable()) {
+      return true;
+    }
+    return matchesMCPConnectionProvenance(connection.getDiscoveryProvenance(), {
+      tenantId: null,
+      userId: this.ownerId ?? '__app__',
+      serverName,
+      serverConfig,
+      effectiveServerConfig: processMCPEnv({
+        options: serverConfig,
+        dbSourced: isUserSourced(serverConfig),
+      }),
+      securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity(policy),
+      authorizationIdentity: 'none',
+    });
   }
 
   /** Gets or creates connections for multiple servers concurrently */

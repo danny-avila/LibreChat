@@ -52,6 +52,18 @@ export interface LCFunctionTool {
 }
 
 export type LCAvailableTools = Record<string, LCFunctionTool>;
+export interface MCPConnectionProvenance {
+  version: 1;
+  scope: {
+    tenant: string;
+    principal: string;
+    server: string;
+    policy: string;
+    config: string;
+    credentials: string;
+  };
+  principalKind: 'app' | 'user';
+}
 export type LCManifestTool = TPlugin;
 export type LCToolManifest = TPlugin[];
 export interface MCPPrompt {
@@ -271,4 +283,5 @@ export interface ToolDiscoveryResult {
   tools: Tool[] | null;
   oauthRequired: boolean;
   oauthUrl: string | null;
+  provenance: MCPConnectionProvenance | null;
 }

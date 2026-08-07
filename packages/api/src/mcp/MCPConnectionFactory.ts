@@ -13,6 +13,7 @@ import type {
 } from '~/mcp/oauth';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
+import type { MCPConnectionProvenance } from './types';
 import type * as t from './types';
 import {
   MCPTokenStorage,
@@ -28,12 +29,18 @@ import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
 import { mcpConfig } from './mcpConfig';
+import {
+  createMCPConnectionProvenance,
+  createMCPToolCatalogSecurityPolicyIdentity,
+  isMCPToolCatalogFingerprintAvailable,
+} from './catalog';
 
 export interface ToolDiscoveryResult {
   tools: Tool[] | null;
   connection: MCPConnection | null;
   oauthRequired: boolean;
   oauthUrl: string | null;
+  provenance: MCPConnectionProvenance | null;
 }
 
 type OAuthRequiredEvent = {
@@ -52,12 +59,14 @@ type OAuthRequiredEvent = {
 export class MCPConnectionFactory {
   protected readonly serverName: string;
   protected readonly serverConfig: t.MCPOptions;
+  protected readonly declarativeServerConfig: t.MCPOptions;
   protected readonly logPrefix: string;
   protected readonly useOAuth: boolean;
   protected readonly useSSRFProtection: boolean;
   protected readonly allowedDomains?: string[] | null;
   protected readonly allowedAddresses?: string[] | null;
   protected readonly ephemeralConnection: boolean;
+  protected readonly customUserVars?: Record<string, string>;
 
   // OAuth-related properties (only set when useOAuth is true)
   protected readonly userId?: string;
@@ -181,6 +190,7 @@ export class MCPConnectionFactory {
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
       ephemeralConnection: this.ephemeralConnection,
+      provenance: this.createDiscoveryProvenance(oauthTokens),
     });
 
     const oauthHandler = () => {
@@ -206,7 +216,13 @@ export class MCPConnectionFactory {
       if (await connection.isConnected()) {
         const tools = await connection.fetchTools();
         connection.removeListener('oauthRequired', oauthHandler);
-        return { tools, connection, oauthRequired: false, oauthUrl: null };
+        return {
+          tools,
+          connection,
+          oauthRequired: false,
+          oauthUrl: null,
+          provenance: connection.getDiscoveryProvenance(),
+        };
       }
     } catch {
       MCPConnection.decrementCycleCount(this.serverName);
@@ -227,7 +243,13 @@ export class MCPConnectionFactory {
         } catch {
           // Ignore cleanup errors
         }
-        return { tools, connection: null, oauthRequired, oauthUrl };
+        return {
+          tools,
+          connection: null,
+          oauthRequired,
+          oauthUrl,
+          provenance: this.createDiscoveryProvenance(null),
+        };
       }
       MCPConnection.decrementCycleCount(this.serverName);
     } catch (listError) {
@@ -243,7 +265,7 @@ export class MCPConnectionFactory {
       // Ignore cleanup errors
     }
 
-    return { tools: null, connection: null, oauthRequired, oauthUrl };
+    return { tools: null, connection: null, oauthRequired, oauthUrl, provenance: null };
   }
 
   protected async attemptUnauthenticatedToolListing(): Promise<Tool[] | null> {
@@ -293,6 +315,7 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ) {
+    this.declarativeServerConfig = basic.serverConfig;
     this.serverConfig = basic.skipEnvProcessing
       ? basic.serverConfig
       : processMCPEnv({
@@ -307,6 +330,7 @@ export class MCPConnectionFactory {
     this.allowedDomains = basic.allowedDomains;
     this.allowedAddresses = basic.allowedAddresses;
     this.ephemeralConnection = basic.ephemeralConnection === true;
+    this.customUserVars = options?.customUserVars;
     this.connectionTimeout = options?.connectionTimeout;
     this.tenantContext = tenantStorage?.getStore?.();
     this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
@@ -330,6 +354,36 @@ export class MCPConnectionFactory {
     } else {
       this.useOAuth = false;
     }
+  }
+
+  private createDiscoveryProvenance(
+    oauthTokens: MCPOAuthTokens | null,
+  ): MCPConnectionProvenance | null {
+    if (this.usesObo || !isMCPToolCatalogFingerprintAvailable()) {
+      return null;
+    }
+    const authorizationIdentity = this.useOAuth
+      ? (oauthTokens?.credential_set_id ?? (oauthTokens ? null : 'none'))
+      : 'none';
+    if (authorizationIdentity == null) {
+      return null;
+    }
+    return createMCPConnectionProvenance(
+      {
+        tenantId: this.tenantId ?? null,
+        userId: this.userId ?? '__app__',
+        serverName: this.serverName,
+        serverConfig: this.declarativeServerConfig as t.ParsedServerConfig,
+        effectiveServerConfig: this.serverConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: this.allowedDomains,
+          allowedAddresses: this.allowedAddresses,
+        }),
+        customUserVars: this.customUserVars,
+        authorizationIdentity,
+      },
+      this.userId ? 'user' : 'app',
+    );
   }
 
   /** Resolves OBO tokens when the server config specifies obo, returns null otherwise */
@@ -405,6 +459,7 @@ export class MCPConnectionFactory {
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
       ephemeralConnection: this.ephemeralConnection,
+      provenance: this.createDiscoveryProvenance(oauthTokens),
     });
 
     let cleanupOAuthHandlers: (() => void) | null = null;

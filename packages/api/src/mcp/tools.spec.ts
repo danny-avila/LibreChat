@@ -2,6 +2,7 @@ import { Constants } from 'librechat-data-provider';
 import type { LCAvailableTools, ParsedServerConfig } from './types';
 import type { MCPToolInput, MCPToolCacheDeps } from './tools';
 import {
+  createMCPConnectionProvenance,
   createMCPToolCatalogEnvelope,
   createMCPToolCatalogSecurityPolicyIdentity,
 } from './catalog';
@@ -20,6 +21,30 @@ const cacheableConfig: ParsedServerConfig = {
 };
 const testSecurityPolicyIdentity = () =>
   createMCPToolCatalogSecurityPolicyIdentity({ allowedDomains: null, allowedAddresses: null });
+
+function createTestProvenance({
+  userId = 'u1',
+  serverName,
+  serverConfig = cacheableConfig,
+  authorizationIdentity = 'none',
+}: {
+  userId?: string;
+  serverName: string;
+  serverConfig?: ParsedServerConfig;
+  authorizationIdentity?: string;
+}) {
+  return createMCPConnectionProvenance(
+    {
+      tenantId: null,
+      userId,
+      serverName,
+      serverConfig,
+      securityPolicyIdentity: testSecurityPolicyIdentity(),
+      authorizationIdentity,
+    },
+    'user',
+  );
+}
 
 const originalCredsKey = process.env.CREDS_KEY;
 const originalJwtSecret = process.env.JWT_SECRET;
@@ -87,6 +112,36 @@ describe('createMCPToolCacheService', () => {
     } finally {
       process.env.CREDS_KEY = 'tool-cache-test-key';
     }
+  });
+
+  it('keeps legacy cache dependencies compatible while scoped catalogs fail closed', async () => {
+    const deps = createMockDeps();
+    delete deps.getSecurityPolicy;
+    const { getMCPServerCatalog, updateMCPServerTools } = createMCPToolCacheService(deps);
+
+    await updateMCPServerTools({
+      tenantId: null,
+      userId: 'u1',
+      serverName: 'srv',
+      serverConfig: cacheableConfig,
+      tools: [{ name: 'search' }],
+      authorizationIdentity: 'none',
+      discoveryProvenance: createTestProvenance({ serverName: 'srv' }),
+    });
+
+    await expect(
+      getMCPServerCatalog({
+        tenantId: null,
+        userId: 'u1',
+        serverName: 'srv',
+        serverConfig: cacheableConfig,
+        authorizationIdentity: 'none',
+      }),
+    ).resolves.toEqual({
+      status: 'pending_activation',
+      reason: 'authorization_unavailable',
+    });
+    expect(deps.setCachedTools).not.toHaveBeenCalled();
   });
 
   it('fails closed when legacy callers omit tenant and authorization scope', async () => {
@@ -178,6 +233,7 @@ describe('createMCPToolCacheService', () => {
         tools: [],
         tenantId: null,
         authorizationIdentity: 'none',
+        discoveryProvenance: createTestProvenance({ serverName: 'srv' }),
       });
 
       expect(result).toEqual({});
@@ -204,6 +260,7 @@ describe('createMCPToolCacheService', () => {
         tools,
         tenantId: null,
         authorizationIdentity: 'none',
+        discoveryProvenance: createTestProvenance({ serverName: 'Connector: Company' }),
       });
 
       const expectedKey = `search${Constants.mcp_delimiter}Connector__Company`;
@@ -235,6 +292,7 @@ describe('createMCPToolCacheService', () => {
         tools,
         tenantId: null,
         authorizationIdentity: 'none',
+        discoveryProvenance: createTestProvenance({ serverName: 'brave' }),
       });
 
       const expectedKey = `search${Constants.mcp_delimiter}brave`;
@@ -471,6 +529,7 @@ describe('createMCPToolCacheService', () => {
         serverTools,
         tenantId: null,
         authorizationIdentity: 'none',
+        discoveryProvenance: createTestProvenance({ serverName: 'brave' }),
       });
 
       expect(deps.setCachedTools).toHaveBeenCalledWith(

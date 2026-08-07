@@ -66,6 +66,7 @@ async function reinitMCPServer({
   let oauthUrl = null;
   let oauthExpiresAt;
   let ephemeralServer = false;
+  let discoveryProvenance = null;
 
   try {
     const registry = getMCPServersRegistry();
@@ -246,6 +247,7 @@ async function reinitMCPServer({
 
           if (Array.isArray(discoveryResult.tools)) {
             tools = discoveryResult.tools;
+            discoveryProvenance = discoveryResult.provenance ?? null;
             logger.info(
               `[MCP Reinitialize] Discovered ${tools.length} tools for ${serverName} without full auth`,
             );
@@ -265,6 +267,7 @@ async function reinitMCPServer({
 
     if (connection && !oauthRequired) {
       tools = await connection.fetchTools();
+      discoveryProvenance = connection.getDiscoveryProvenance?.() ?? null;
     }
 
     if (tools) {
@@ -286,6 +289,7 @@ async function reinitMCPServer({
         customUserVars,
         authorizationIdentity,
         persistCatalog: authorizationIdentity != null,
+        discoveryProvenance,
       });
     }
 

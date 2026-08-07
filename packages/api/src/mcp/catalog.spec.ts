@@ -1,10 +1,12 @@
 import { createHash } from 'crypto';
 import type { LCAvailableTools, ParsedServerConfig } from './types';
 import {
+  createMCPConnectionProvenance,
   createMCPToolCatalogEnvelope,
   createMCPToolCatalogSecurityPolicyIdentity,
   createMCPToolCatalogScope,
   getMCPAuthorizationIdentity,
+  matchesMCPConnectionProvenance,
   resolveMCPToolCatalog,
   serializeMCPToolCatalogConfigContext,
   withMCPToolCatalogConfigContext,
@@ -226,6 +228,48 @@ describe('MCP tool catalogs', () => {
       status: 'pending_activation',
       reason: 'credentials_changed',
     });
+  });
+
+  it.each([
+    ['OAuth regrant', { authorizationIdentity: 'grant-b' }],
+    ['custom credential rotation', { customUserVars: { TOKEN: 'new' } }],
+    ['policy tightening', { securityPolicyIdentity: 'policy-b' }],
+  ])('rejects stale discovery provenance after %s', (_name, changed) => {
+    const discoveryScope = {
+      ...scope,
+      authorizationIdentity: 'grant-a',
+      customUserVars: { TOKEN: 'old' },
+    };
+    const provenance = createMCPConnectionProvenance(discoveryScope, 'user');
+
+    expect(matchesMCPConnectionProvenance(provenance, { ...discoveryScope, ...changed })).toBe(
+      false,
+    );
+  });
+
+  it('rejects stale discovery provenance when an effective environment secret rotates', () => {
+    const environmentConfig: ParsedServerConfig = {
+      type: 'stdio',
+      command: 'server',
+      env: { API_KEY: '${MCP_CATALOG_TEST_SECRET}' },
+      source: 'yaml',
+    };
+    process.env.MCP_CATALOG_TEST_SECRET = 'old-secret';
+    const provenance = createMCPConnectionProvenance(
+      {
+        ...scope,
+        serverConfig: environmentConfig,
+        effectiveServerConfig: { ...environmentConfig, env: { API_KEY: 'old-secret' } },
+      },
+      'user',
+    );
+
+    process.env.MCP_CATALOG_TEST_SECRET = 'new-secret';
+    expect(
+      matchesMCPConnectionProvenance(provenance, { ...scope, serverConfig: environmentConfig }),
+    ).toBe(false);
+    expect(JSON.stringify(provenance)).not.toContain('old-secret');
+    delete process.env.MCP_CATALOG_TEST_SECRET;
   });
 
   it('returns no authorization identity when token storage is unavailable', async () => {

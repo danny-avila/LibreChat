@@ -566,6 +566,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
               serverConfig,
               customUserVars,
               authorizationIdentity: authorizationIdentityAfterDiscovery,
+              discoveryProvenance: userConnection.getDiscoveryProvenance?.() ?? null,
             });
           }
         } else {

@@ -3,6 +3,10 @@ import type * as t from '~/mcp/types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from '~/mcp/connection';
+import {
+  createMCPConnectionProvenance,
+  createMCPToolCatalogSecurityPolicyIdentity,
+} from '~/mcp/catalog';
 
 // Mock external dependencies
 jest.mock('@librechat/data-schemas', () => ({
@@ -239,6 +243,66 @@ describe('ConnectionsRepository', () => {
       // Verify repository still has the same connection
       expect(repository['connections'].get('server1')).toBe(freshConnection);
     });
+
+    it.each(['policy tightening', 'environment secret rotation'])(
+      'disconnects a process-local connection after %s',
+      async (change) => {
+        const originalCredsKey = process.env.CREDS_KEY;
+        const originalEnvSecret = process.env.MCP_REPOSITORY_TEST_SECRET;
+        process.env.CREDS_KEY = 'repository-provenance-key';
+        process.env.MCP_REPOSITORY_TEST_SECRET = 'old-secret';
+        const config: t.ParsedServerConfig = {
+          type: 'stdio',
+          command: 'test',
+          env: { API_KEY: '${MCP_REPOSITORY_TEST_SECRET}' },
+        };
+        mockServerConfigs.server1 = config;
+        const provenance = createMCPConnectionProvenance(
+          {
+            tenantId: null,
+            userId: '__app__',
+            serverName: 'server1',
+            serverConfig: config,
+            effectiveServerConfig: { ...config, env: { API_KEY: 'old-secret' } },
+            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+              allowedDomains: null,
+              allowedAddresses: null,
+            }),
+            authorizationIdentity: 'none',
+          },
+          'app',
+        );
+        const staleConnection = {
+          isConnected: jest.fn().mockResolvedValue(true),
+          disconnect: jest.fn().mockResolvedValue(undefined),
+          isStale: jest.fn().mockReturnValue(false),
+          getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+        } as unknown as jest.Mocked<MCPConnection>;
+        repository['connections'].set('server1', staleConnection);
+
+        if (change === 'policy tightening') {
+          mockGetAllowedDomains.mockReturnValue(['new.example.com']);
+        } else {
+          process.env.MCP_REPOSITORY_TEST_SECRET = 'new-secret';
+        }
+
+        await repository.get('server1');
+
+        expect(staleConnection.disconnect).toHaveBeenCalled();
+        expect(MCPConnectionFactory.create).toHaveBeenCalled();
+        mockGetAllowedDomains.mockReturnValue(null);
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+        if (originalEnvSecret == null) {
+          delete process.env.MCP_REPOSITORY_TEST_SECRET;
+        } else {
+          process.env.MCP_REPOSITORY_TEST_SECRET = originalEnvSecret;
+        }
+      },
+    );
     //todo revist later when async getAll(): in packages/api/src/mcp/ConnectionsRepository.ts is refactored
     it.skip('should throw error for non-existent server configuration', async () => {
       await expect(repository.get('nonexistent')).rejects.toThrow(

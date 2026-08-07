@@ -20,6 +20,12 @@ import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
 import { mcpConfig } from './mcpConfig';
+import {
+  createMCPToolCatalogSecurityPolicyIdentity,
+  getMCPAuthorizationIdentity,
+  isMCPToolCatalogFingerprintAvailable,
+  matchesMCPConnectionProvenance,
+} from './catalog';
 
 type PendingOAuthStart = {
   authURL: string;
@@ -419,9 +425,25 @@ export abstract class UserConnectionManager {
         await this.disconnectUserConnection(userId, serverName);
         connection = undefined;
       } else if (await connection.isConnected()) {
-        logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
-        this.updateUserLastActivity(userId);
-        return connection;
+        const provenanceCurrent = await this.isConnectionProvenanceCurrent(connection, config, {
+          userId,
+          serverName,
+          user,
+          customUserVars,
+          requestBody,
+          graphTokenResolver,
+          tokenMethods,
+        });
+        if (provenanceCurrent) {
+          logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
+          this.updateUserLastActivity(userId);
+          return connection;
+        }
+        logger.info(
+          `[MCP][User: ${userId}][${serverName}] Connection scope changed, disconnecting stale connection`,
+        );
+        await this.disconnectUserConnection(userId, serverName);
+        connection = undefined;
       } else {
         // Connection exists but is not connected, attempt to remove potentially stale entry
         logger.warn(
@@ -541,6 +563,72 @@ export abstract class UserConnectionManager {
       this.removeUserConnection(userId, serverName);
       throw error; // Re-throw the error to the caller
     }
+  }
+
+  private async isConnectionProvenanceCurrent(
+    connection: MCPConnection,
+    config: t.ParsedServerConfig,
+    context: Pick<
+      t.UserMCPConnectionOptions,
+      | 'serverName'
+      | 'user'
+      | 'customUserVars'
+      | 'requestBody'
+      | 'graphTokenResolver'
+      | 'tokenMethods'
+    > & { userId: string },
+  ): Promise<boolean> {
+    if (!isMCPToolCatalogFingerprintAvailable()) {
+      return true;
+    }
+    const {
+      userId,
+      serverName,
+      user,
+      customUserVars,
+      requestBody,
+      graphTokenResolver,
+      tokenMethods,
+    } = context;
+    const configuredOAuth = requiresOAuthMachinery(config);
+    if (configuredOAuth && !tokenMethods?.findToken) {
+      return false;
+    }
+    const authorizationIdentity = configuredOAuth
+      ? await getMCPAuthorizationIdentity({
+          userId,
+          serverName,
+          findToken: tokenMethods!.findToken!,
+        })
+      : 'none';
+    if (authorizationIdentity == null) {
+      return false;
+    }
+    const registry = MCPServersRegistry.getInstance();
+    const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
+      userId,
+      role: user?.role,
+    });
+    const effectiveServerConfig = await this.resolveRuntimeConfig({
+      config,
+      user,
+      customUserVars,
+      requestBody,
+      graphTokenResolver,
+    });
+    return matchesMCPConnectionProvenance(connection.getDiscoveryProvenance(), {
+      tenantId: user?.tenantId ?? getTenantId() ?? null,
+      userId,
+      serverName,
+      serverConfig: config,
+      effectiveServerConfig,
+      securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+        allowedDomains,
+        allowedAddresses,
+      }),
+      customUserVars,
+      authorizationIdentity,
+    });
   }
 
   /**

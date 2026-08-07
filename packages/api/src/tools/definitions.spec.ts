@@ -482,7 +482,7 @@ describe('definitions.ts', () => {
         expect(result.mcpResolution).toEqual({ expectedToolCount: 1, resolvedToolCount: 1 });
       });
 
-      it('refreshes an empty server catalog once when all server tools are expected', async () => {
+      it('does not refresh an authoritative empty server catalog for mcp_all', async () => {
         const wildcardTool = 'sys__all__sys_mcp_warehouse';
         const refreshedTool = 'run_query_mcp_warehouse';
         const refreshedTools = {
@@ -510,11 +510,9 @@ describe('definitions.ts', () => {
           },
         );
 
-        expect(refreshMCPServerTools).toHaveBeenCalledTimes(1);
-        expect(result.toolDefinitions).toEqual([
-          expect.objectContaining({ name: refreshedTool, serverName: 'warehouse' }),
-        ]);
-        expect(result.mcpResolution).toEqual({ expectedToolCount: 1, resolvedToolCount: 1 });
+        expect(refreshMCPServerTools).not.toHaveBeenCalled();
+        expect(result.toolDefinitions).toEqual([]);
+        expect(result.mcpResolution).toEqual({ expectedToolCount: 1, resolvedToolCount: 0 });
       });
 
       it('should load MCP tools with underscored server names (server_one)', async () => {

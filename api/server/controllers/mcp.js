@@ -199,8 +199,18 @@ const getMCPTools = async (req, res) => {
       }
 
       let serverTools;
+      let discoveryProvenance = null;
       try {
-        serverTools = await mcpManager.getServerToolFunctions(userId, serverName);
+        if (typeof mcpManager.getServerToolFunctionsWithProvenance === 'function') {
+          const discovery = await mcpManager.getServerToolFunctionsWithProvenance(
+            userId,
+            serverName,
+          );
+          serverTools = discovery?.tools ?? null;
+          discoveryProvenance = discovery?.provenance ?? null;
+        } else {
+          serverTools = await mcpManager.getServerToolFunctions(userId, serverName);
+        }
       } catch (error) {
         logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
         continue;
@@ -223,11 +233,7 @@ const getMCPTools = async (req, res) => {
       const authorizationIdentityStable =
         authorizationIdentityBeforeDiscovery != null &&
         authorizationIdentityAfterDiscovery === authorizationIdentityBeforeDiscovery;
-      const authoritative = Object.prototype.hasOwnProperty.call(
-        mcpConfig[serverName],
-        'toolFunctions',
-      );
-      if ((Object.keys(serverTools).length > 0 || authoritative) && authorizationIdentityStable) {
+      if (authorizationIdentityStable) {
         // Cache asynchronously without blocking
         cacheMCPServerTools({
           tenantId: req.user.tenantId ?? getTenantId() ?? null,
@@ -237,7 +243,8 @@ const getMCPTools = async (req, res) => {
           serverConfig: mcpConfig[serverName],
           customUserVars: userMCPAuthMap[`${Constants.mcp_prefix}${serverName}`],
           authorizationIdentity: authorizationIdentityAfterDiscovery,
-          authoritative,
+          authoritative: true,
+          discoveryProvenance,
         }).catch((err) =>
           logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
         );

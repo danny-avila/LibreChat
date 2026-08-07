@@ -22,7 +22,8 @@ const mockGetMCPServerTools = jest.fn();
 
 const deps: LoadAgentDeps = {
   getAgent: (searchParameter) => getAgent(searchParameter) as Promise<LibreChatAgent | null>,
-  getMCPServerTools: mockGetMCPServerTools,
+  getMCPServerTools: jest.fn(),
+  getScopedMCPServerTools: mockGetMCPServerTools,
 };
 
 describe('loadAgent', () => {

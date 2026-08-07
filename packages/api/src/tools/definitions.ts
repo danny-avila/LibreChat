@@ -153,6 +153,7 @@ export async function loadToolDefinitions(
   }
 
   const mcpServerToolsCache = new Map<string, MCPServerTools>();
+  const readyServerNames = new Set<string>();
   const refreshedServerNames = new Set<string>();
   /** Parsed key segment → the RAW server name it resolved to (direct-first). */
   const resolvedServerNames = new Map<string, string>();
@@ -238,6 +239,9 @@ export async function loadToolDefinitions(
         }
       }
       mcpServerToolsCache.set(parsed, fetched || {});
+      if (fetched != null) {
+        readyServerNames.add(parsed);
+      }
       resolvedServerNames.set(parsed, resolvedName);
     }
 
@@ -248,13 +252,14 @@ export async function loadToolDefinitions(
     }
 
     const selectedToolMissing = isMCPAllPlaceholder(toolName)
-      ? Object.keys(serverTools).length === 0
+      ? !readyServerNames.has(parsed)
       : !serverTools[toolName]?.function;
     if (selectedToolMissing && refreshMCPServerTools && !refreshedServerNames.has(serverName)) {
       refreshedServerNames.add(serverName);
       const refreshedTools = await refreshMCPServerTools(userId, serverName);
       if (refreshedTools != null) {
         mcpServerToolsCache.set(parsed, refreshedTools);
+        readyServerNames.add(parsed);
         serverTools = refreshedTools;
       }
     }

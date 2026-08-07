@@ -989,6 +989,7 @@ describe('MCP Routes', () => {
           serverConfig: mergedServerConfig,
           customUserVars: undefined,
           authorizationIdentity: 'none',
+          discoveryProvenance: null,
         });
       });
 
@@ -3193,8 +3194,12 @@ describe('MCP Routes', () => {
         },
       });
       getMCPServerTools.mockResolvedValueOnce(null);
+      const discoveryProvenance = { version: 1, scope: {}, principalKind: 'user' };
       require('~/config').getMCPManager.mockReturnValue({
-        getServerToolFunctions: jest.fn().mockResolvedValue({}),
+        getServerToolFunctionsWithProvenance: jest.fn().mockResolvedValue({
+          tools: {},
+          provenance: discoveryProvenance,
+        }),
       });
 
       const response = await request(app).get('/api/mcp/tools');
@@ -3202,7 +3207,12 @@ describe('MCP Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body.servers.empty.tools).toEqual([]);
       expect(cacheMCPServerTools).toHaveBeenCalledWith(
-        expect.objectContaining({ serverName: 'empty', serverTools: {}, authoritative: true }),
+        expect.objectContaining({
+          serverName: 'empty',
+          serverTools: {},
+          authoritative: true,
+          discoveryProvenance,
+        }),
       );
     });
 

@@ -1,10 +1,19 @@
 import { createHash, createHmac } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import type { IToken, TokenMethods } from '@librechat/data-schemas';
-import type { LCAvailableTools, MCPServerSource, ParsedServerConfig } from './types';
+import type {
+  LCAvailableTools,
+  MCPConnectionProvenance,
+  MCPOptions,
+  MCPServerSource,
+  ParsedServerConfig,
+} from './types';
+export type { MCPConnectionProvenance } from './types';
+import { isUserSourced } from './utils';
+import { processMCPEnv } from '~/utils/env';
 
 export const MCP_TOOL_CATALOG_VERSION = 1 as const;
-export const MCP_TOOL_CATALOG_TTL_MS = 12 * 60 * 60 * 1000;
+export const MCP_TOOL_CATALOG_TTL_MS: number = 12 * 60 * 60 * 1000;
 
 export type MCPToolCatalogPendingReason =
   | 'cold'
@@ -60,6 +69,8 @@ export interface MCPToolCatalogScopeInput {
   securityPolicyIdentity: string;
   customUserVars?: Record<string, string>;
   authorizationIdentity: string;
+  /** Exact post-placeholder config used to construct the discovering connection. */
+  effectiveServerConfig?: MCPOptions;
 }
 
 const RUNTIME_CONFIG_FIELDS = new Set([
@@ -135,6 +146,17 @@ function declarativeConfig(serverConfig: ParsedServerConfig): Record<string, unk
   return config;
 }
 
+function effectiveConfig(input: MCPToolCatalogScopeInput): MCPOptions {
+  if (input.effectiveServerConfig) {
+    return input.effectiveServerConfig;
+  }
+  return processMCPEnv({
+    options: input.serverConfig,
+    dbSourced: isUserSourced(input.serverConfig),
+    customUserVars: input.customUserVars,
+  });
+}
+
 function normalizePolicyValues(values?: string[] | null): string[] | null {
   return values == null ? null : [...new Set(values)].sort();
 }
@@ -191,6 +213,7 @@ export function createMCPToolCatalogScope({
   securityPolicyIdentity,
   customUserVars,
   authorizationIdentity,
+  effectiveServerConfig,
 }: MCPToolCatalogScopeInput): MCPToolCatalogScope {
   return {
     tenant: digest(tenantId ?? '__default_tenant__'),
@@ -201,8 +224,58 @@ export function createMCPToolCatalogScope({
     credentials: fingerprint({
       customUserVars: customUserVars ?? {},
       authorizationIdentity: authorizationIdentity ?? 'none',
+      effectiveServerConfig: declarativeConfig(
+        effectiveConfig({
+          tenantId,
+          userId,
+          serverName,
+          serverConfig,
+          securityPolicyIdentity,
+          customUserVars,
+          authorizationIdentity,
+          effectiveServerConfig,
+        }) as ParsedServerConfig,
+      ),
     }),
   };
+}
+
+export function createMCPConnectionProvenance(
+  input: MCPToolCatalogScopeInput,
+  principalKind: MCPConnectionProvenance['principalKind'],
+): MCPConnectionProvenance | null {
+  if (!isMCPToolCatalogFingerprintAvailable()) {
+    return null;
+  }
+  return {
+    version: MCP_TOOL_CATALOG_VERSION,
+    scope: createMCPToolCatalogScope(input),
+    principalKind,
+  };
+}
+
+export function matchesMCPConnectionProvenance(
+  provenance: MCPConnectionProvenance | null | undefined,
+  input: MCPToolCatalogScopeInput,
+): boolean {
+  if (!provenance || provenance.version !== MCP_TOOL_CATALOG_VERSION) {
+    return false;
+  }
+  const expected = createMCPToolCatalogScope(input);
+  const actual = provenance.scope;
+  const principalMatches =
+    actual.principal === expected.principal ||
+    (provenance.principalKind === 'app' &&
+      input.authorizationIdentity === 'none' &&
+      Object.keys(input.customUserVars ?? {}).length === 0);
+  return (
+    principalMatches &&
+    actual.tenant === expected.tenant &&
+    actual.server === expected.server &&
+    actual.policy === expected.policy &&
+    actual.config === expected.config &&
+    actual.credentials === expected.credentials
+  );
 }
 
 export function getMCPToolCatalogRevision(serverConfig: ParsedServerConfig): string {
@@ -252,7 +325,7 @@ export async function getMCPAuthorizationIdentity({
 export function createMCPToolCatalogEnvelope(
   tools: LCAvailableTools,
   input: MCPToolCatalogScopeInput,
-  now = Date.now(),
+  now: number = Date.now(),
 ): MCPToolCatalogEnvelope {
   return {
     metadata: {
@@ -312,7 +385,7 @@ export function isValidMCPToolCatalogTools(tools: LCAvailableTools): boolean {
 export function resolveMCPToolCatalog(
   cached: unknown,
   input: MCPToolCatalogScopeInput,
-  now = Date.now(),
+  now: number = Date.now(),
 ): MCPToolCatalogResult {
   if (!isMCPToolCatalogFingerprintAvailable()) {
     return { status: 'pending_activation', reason: 'authorization_unavailable' };

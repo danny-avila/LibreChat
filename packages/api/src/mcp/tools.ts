@@ -1,13 +1,24 @@
 import { logger } from '@librechat/data-schemas';
 import { Constants, normalizeServerName } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/agents';
-import type { LCAvailableTools, LCFunctionTool, MCPTool, ParsedServerConfig } from './types';
-import type { MCPToolCatalogEnvelope, MCPToolCatalogResult } from './catalog';
+import type {
+  LCAvailableTools,
+  LCFunctionTool,
+  MCPConnectionProvenance,
+  MCPTool,
+  ParsedServerConfig,
+} from './types';
+import type {
+  MCPToolCatalogEnvelope,
+  MCPToolCatalogResult,
+  MCPToolCatalogScopeInput,
+} from './catalog';
 import {
   createMCPToolCatalogSecurityPolicyIdentity,
   createMCPToolCatalogEnvelope,
   isMCPToolCatalogEnvelope,
   isMCPToolCatalogFingerprintAvailable,
+  matchesMCPConnectionProvenance,
   resolveMCPToolCatalog,
 } from './catalog';
 import {
@@ -35,7 +46,7 @@ export interface MCPToolCacheDeps {
     options?: { userId?: string; serverName?: string; tenantId?: string | null },
   ) => Promise<boolean>;
   getServerConfig: (serverName: string, userId?: string) => Promise<ParsedServerConfig | undefined>;
-  getSecurityPolicy: (userId: string) => Promise<{
+  getSecurityPolicy?: (userId: string) => Promise<{
     allowedDomains?: string[] | null;
     allowedAddresses?: string[] | null;
   }>;
@@ -51,6 +62,7 @@ export interface MCPToolCacheService {
     tenantId?: string | null;
     authorizationIdentity?: string | null;
     persistCatalog?: boolean;
+    discoveryProvenance?: MCPConnectionProvenance | null;
   }) => Promise<LCAvailableTools>;
   mergeAppTools: (appTools: LCAvailableTools) => Promise<void>;
   cacheMCPServerTools: (params: {
@@ -62,6 +74,7 @@ export interface MCPToolCacheService {
     tenantId?: string | null;
     authorizationIdentity?: string | null;
     authoritative?: boolean;
+    discoveryProvenance?: MCPConnectionProvenance | null;
   }) => Promise<void>;
   getMCPServerTools: (
     userId: string,
@@ -85,7 +98,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   const { getCachedTools, setCachedTools, getServerConfig, getSecurityPolicy } = deps;
 
   async function getSecurityPolicyIdentity(userId: string): Promise<string | null> {
-    if (!isMCPToolCatalogFingerprintAvailable()) {
+    if (!isMCPToolCatalogFingerprintAvailable() || !getSecurityPolicy) {
       return null;
     }
     try {
@@ -99,15 +112,23 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   async function persistMCPToolCatalog(
     envelope: MCPToolCatalogEnvelope,
     options: { userId: string; serverName: string; tenantId: string | null },
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
-      await setCachedTools(envelope, options);
+      return await setCachedTools(envelope, options);
     } catch (error) {
       logger.warn(
         `[MCP Cache] Catalog write unavailable for ${options.serverName}; live tools remain usable`,
         error,
       );
+      return false;
     }
+  }
+
+  function hasMatchingDiscoveryProvenance(
+    provenance: MCPConnectionProvenance | null | undefined,
+    input: MCPToolCatalogScopeInput,
+  ): boolean {
+    return matchesMCPConnectionProvenance(provenance, input);
   }
 
   /**
@@ -159,6 +180,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     tenantId?: string | null;
     authorizationIdentity?: string | null;
     persistCatalog?: boolean;
+    discoveryProvenance?: MCPConnectionProvenance | null;
   }): Promise<LCAvailableTools> {
     const {
       userId,
@@ -169,6 +191,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       tenantId,
       authorizationIdentity,
       persistCatalog = authorizationIdentity != null && tenantId !== undefined,
+      discoveryProvenance,
     } = params;
     try {
       const serverTools: LCAvailableTools = {};
@@ -201,22 +224,31 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           }
           const securityPolicyIdentity = await getSecurityPolicyIdentity(userId);
           if (securityPolicyIdentity) {
-            await persistMCPToolCatalog(
-              createMCPToolCatalogEnvelope(serverTools, {
-                tenantId: tenantId ?? null,
-                userId,
-                serverName,
-                serverConfig: resolvedConfig,
-                securityPolicyIdentity,
-                customUserVars,
-                authorizationIdentity,
-              }),
-              { userId, serverName, tenantId: tenantId ?? null },
-            );
+            const scopeInput = {
+              tenantId: tenantId ?? null,
+              userId,
+              serverName,
+              serverConfig: resolvedConfig,
+              securityPolicyIdentity,
+              customUserVars,
+              authorizationIdentity,
+            };
+            if (hasMatchingDiscoveryProvenance(discoveryProvenance, scopeInput)) {
+              const persisted = await persistMCPToolCatalog(
+                createMCPToolCatalogEnvelope(serverTools, scopeInput),
+                {
+                  userId,
+                  serverName,
+                  tenantId: tenantId ?? null,
+                },
+              );
+              if (persisted) {
+                logger.debug(
+                  `[MCP Cache] Cleared stale tools for server ${serverName} (user: ${userId})`,
+                );
+              }
+            }
           }
-          logger.debug(
-            `[MCP Cache] Cleared stale tools for server ${serverName} (user: ${userId})`,
-          );
         }
         return serverTools;
       }
@@ -276,21 +308,27 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       if (!securityPolicyIdentity) {
         return serverTools;
       }
-      await persistMCPToolCatalog(
-        createMCPToolCatalogEnvelope(serverTools, {
-          tenantId: tenantId ?? null,
-          userId,
-          serverName,
-          serverConfig: resolvedConfig,
-          securityPolicyIdentity,
-          customUserVars,
-          authorizationIdentity,
-        }),
+      const scopeInput = {
+        tenantId: tenantId ?? null,
+        userId,
+        serverName,
+        serverConfig: resolvedConfig,
+        securityPolicyIdentity,
+        customUserVars,
+        authorizationIdentity,
+      };
+      if (!hasMatchingDiscoveryProvenance(discoveryProvenance, scopeInput)) {
+        return serverTools;
+      }
+      const persisted = await persistMCPToolCatalog(
+        createMCPToolCatalogEnvelope(serverTools, scopeInput),
         { userId, serverName, tenantId: tenantId ?? null },
       );
-      logger.debug(
-        `[MCP Cache] Updated ${tools.length} tools for server ${serverName} (user: ${userId})`,
-      );
+      if (persisted) {
+        logger.debug(
+          `[MCP Cache] Updated ${tools.length} tools for server ${serverName} (user: ${userId})`,
+        );
+      }
       return serverTools;
     } catch (error) {
       logger.error(
@@ -327,6 +365,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     tenantId?: string | null;
     authorizationIdentity?: string | null;
     authoritative?: boolean;
+    discoveryProvenance?: MCPConnectionProvenance | null;
   }): Promise<void> {
     const {
       userId,
@@ -337,6 +376,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       tenantId,
       authorizationIdentity,
       authoritative = false,
+      discoveryProvenance,
     } = params;
     try {
       const count = Object.keys(serverTools).length;
@@ -375,19 +415,26 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       if (!securityPolicyIdentity) {
         return;
       }
-      await persistMCPToolCatalog(
-        createMCPToolCatalogEnvelope(serverTools, {
-          tenantId: tenantId ?? null,
-          userId,
-          serverName,
-          serverConfig: resolvedConfig,
-          securityPolicyIdentity,
-          customUserVars,
-          authorizationIdentity,
-        }),
+      const scopeInput = {
+        tenantId: tenantId ?? null,
+        userId,
+        serverName,
+        serverConfig: resolvedConfig,
+        securityPolicyIdentity,
+        customUserVars,
+        authorizationIdentity,
+      };
+      if (!hasMatchingDiscoveryProvenance(discoveryProvenance, scopeInput)) {
+        logger.debug(`[MCP Cache] Skipped catalog write with stale provenance for ${serverName}`);
+        return;
+      }
+      const persisted = await persistMCPToolCatalog(
+        createMCPToolCatalogEnvelope(serverTools, scopeInput),
         { userId, serverName, tenantId: tenantId ?? null },
       );
-      logger.debug(`Cached ${count} MCP server tools for ${serverName} (user: ${userId})`);
+      if (persisted) {
+        logger.debug(`Cached ${count} MCP server tools for ${serverName} (user: ${userId})`);
+      }
     } catch (error) {
       logger.error(`Failed to cache MCP server tools for ${serverName} (user: ${userId}):`, error);
       throw error;
