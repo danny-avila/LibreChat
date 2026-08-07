@@ -54,6 +54,8 @@ export abstract class UserConnectionManager {
   protected userLastActivity: Map<string, number> = new Map();
   /** In-flight connection promises keyed by `userId:serverName` — coalesces concurrent attempts */
   protected pendingConnections: Map<string, PendingConnection> = new Map();
+  private readonly connectionBorrowers = new WeakMap<MCPConnection, number>();
+  private readonly deferredConnectionDisposals = new WeakMap<MCPConnection, string>();
 
   /** Updates the last activity timestamp for a user */
   protected updateUserLastActivity(userId: string): void {
@@ -107,6 +109,7 @@ export abstract class UserConnectionManager {
           return existing;
         } else {
           requestScopedConnections.connections.delete(requestConnectionKey);
+          await this.disposeEvictedConnection(existing, `[MCP][User: ${userId}][${serverName}]`);
         }
       }
 
@@ -428,6 +431,7 @@ export abstract class UserConnectionManager {
           `[MCP][User: ${userId}][${serverName}] Found existing but disconnected connection object. Cleaning up.`,
         );
         this.removeUserConnection(userId, serverName); // Clean up maps
+        await this.disposeEvictedConnection(connection, `[MCP][User: ${userId}][${serverName}]`);
         connection = undefined;
       }
     }
@@ -708,6 +712,51 @@ export abstract class UserConnectionManager {
     }
 
     logger.debug(`[MCP][User: ${userId}][${serverName}] Removed connection entry.`);
+  }
+
+  protected retainConnection(connection: MCPConnection): void {
+    const borrowers = this.connectionBorrowers.get(connection) ?? 0;
+    this.connectionBorrowers.set(connection, borrowers + 1);
+  }
+
+  protected async releaseConnection(connection: MCPConnection): Promise<void> {
+    const borrowers = this.connectionBorrowers.get(connection) ?? 0;
+    if (borrowers > 1) {
+      this.connectionBorrowers.set(connection, borrowers - 1);
+      return;
+    }
+
+    this.connectionBorrowers.delete(connection);
+    const logPrefix = this.deferredConnectionDisposals.get(connection);
+    if (!logPrefix) {
+      return;
+    }
+
+    this.deferredConnectionDisposals.delete(connection);
+    await this.disconnectEvictedConnection(connection, logPrefix);
+  }
+
+  private async disposeEvictedConnection(
+    connection: MCPConnection,
+    logPrefix: string,
+  ): Promise<void> {
+    if ((this.connectionBorrowers.get(connection) ?? 0) > 0) {
+      this.deferredConnectionDisposals.set(connection, logPrefix);
+      return;
+    }
+
+    await this.disconnectEvictedConnection(connection, logPrefix);
+  }
+
+  private async disconnectEvictedConnection(
+    connection: MCPConnection,
+    logPrefix: string,
+  ): Promise<void> {
+    try {
+      await connection.disconnect();
+    } catch (error) {
+      logger.warn(`${logPrefix} Failed to dispose evicted connection`, error);
+    }
   }
 
   /** Disconnects and removes a specific user connection */

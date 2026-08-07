@@ -106,6 +106,8 @@ describe('MCPConnection Error Detection', () => {
       { message: 'Error POSTing to endpoint (HTTP 403): Forbidden' },
       { message: 'Non-200 status code (403)' },
       { message: '403 Forbidden' },
+      { message: 'Unauthorized (401)' },
+      { message: 'Forbidden (403)' },
       { message: 'The server rejected the token with insufficient_scope' },
     ])('should detect OAuth authentication error %#', (error) => {
       expect(isOAuthAuthenticationError(error)).toBe(true);

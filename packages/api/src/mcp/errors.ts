@@ -18,7 +18,7 @@ interface OAuthErrorLike {
 }
 
 const OAUTH_HTTP_STATUS_PATTERN =
-  /(?:\bhttp\s+(?:401|403)\b|\bnon-2\d\d\s+status\s+code\s*\((?:401|403)\)|^(?:error:\s*)?(?:401|403)\b)/i;
+  /(?:\bhttp\s+(?:401|403)\b|\bnon-2\d\d\s+status\s+code\s*\((?:401|403)\)|^(?:error:\s*)?(?:401|403)\b|\bunauthorized\s*\(\s*401\s*\)|\bforbidden\s*\(\s*403\s*\))/i;
 
 /** Detects HTTP authentication failures and OAuth protocol errors without matching unrelated IDs. */
 export function isOAuthAuthenticationError(error: unknown): boolean {

@@ -450,13 +450,13 @@ Please follow these instructions when using tools from the respective MCP server
 
     const recoveryEntry = { promise: recovery, allowsTakeover };
     this.oauthRecoveries.set(connection, recoveryEntry);
-    try {
-      await recovery;
-    } finally {
+    const clearRecovery = () => {
       if (this.oauthRecoveries.get(connection) === recoveryEntry) {
         this.oauthRecoveries.delete(connection);
       }
-    }
+    };
+    void recovery.then(clearRecovery, clearRecovery);
+    await this.waitForActiveRecovery(recovery, signal);
   }
 
   private async connectAfterOAuthRecovery(
@@ -597,6 +597,7 @@ Please follow these instructions when using tools from the respective MCP server
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
+    let connectionRetained = false;
     let attachRequestOAuthHandler: (() => () => void) | undefined;
     let disconnectAfterCall = false;
     const userId = user?.id;
@@ -619,6 +620,8 @@ Please follow these instructions when using tools from the respective MCP server
         requestScopedConnections,
         serverConfig: providedConfig,
       });
+      this.retainConnection(connection);
+      connectionRetained = true;
 
       const connectionIsActive = await connection.isConnected();
       const connectionCheckError = connectionIsActive
@@ -833,6 +836,9 @@ Please follow these instructions when using tools from the respective MCP server
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
     } finally {
+      if (connectionRetained && connection) {
+        await this.releaseConnection(connection);
+      }
       // Ephemeral connections are never stored in userConnections, so disconnecting
       // is the only cleanup needed; removing the map entry here could orphan a
       // still-connected cached connection from before a config change.
