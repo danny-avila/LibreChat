@@ -163,14 +163,35 @@ jest.mock('~/server/services/Config/mcp', () => ({
   updateMCPServerTools: jest.fn(),
 }));
 
+const mockResolveCurrentMCPDiscoveryScope = jest.fn();
+const mockResolveCurrentMCPPrincipal = jest.fn();
+jest.mock('~/server/services/MCPDiscoveryScope', () => ({
+  resolveCurrentMCPDiscoveryScope: (...args) => mockResolveCurrentMCPDiscoveryScope(...args),
+  resolveCurrentMCPPrincipal: (...args) => mockResolveCurrentMCPPrincipal(...args),
+}));
+
 const mockResolveAllMcpConfigs = jest.fn().mockResolvedValue({});
+const mockResolveAllMcpConfigsFresh = jest.fn();
 const mockResolveMcpConfigNames = jest.fn().mockResolvedValue([]);
 jest.mock('~/server/services/MCP', () => ({
   getMCPSetupData: jest.fn(),
   resolveConfigServers: jest.fn().mockResolvedValue({}),
   resolveMcpConfigNames: (...args) => mockResolveMcpConfigNames(...args),
   resolveAllMcpConfigs: (...args) => mockResolveAllMcpConfigs(...args),
+  resolveAllMcpConfigsFresh: (...args) => mockResolveAllMcpConfigsFresh(...args),
   getServerConnectionStatus: jest.fn(),
+}));
+
+jest.mock('~/server/services/MCPConfigResolver', () => ({
+  resolveMCPDiscoveryConfigSnapshot: async (userId, user) => ({
+    configs: await mockResolveAllMcpConfigsFresh(userId, user),
+    securityPolicy: await mockRegistryInstance.resolveCatalogSecurityPolicy({
+      userId,
+      role: user?.role,
+      tenantId: user?.tenantId ?? null,
+      refresh: true,
+    }),
+  }),
 }));
 
 jest.mock('~/server/services/PluginService', () => ({
@@ -247,6 +268,19 @@ describe('MCP Routes', () => {
     jest.clearAllMocks();
     currentUser = undefined;
     mockResolveAllMcpConfigs.mockResolvedValue({});
+    mockResolveAllMcpConfigsFresh.mockImplementation((...args) =>
+      mockResolveAllMcpConfigs(...args),
+    );
+    mockResolveCurrentMCPDiscoveryScope.mockImplementation(
+      async ({ user, serverConfig, customUserVars }) => ({
+        tenantId: user.tenantId ?? null,
+        user,
+        serverConfig,
+        customUserVars,
+        authorizationIdentity: 'none',
+      }),
+    );
+    mockResolveCurrentMCPPrincipal.mockImplementation(async (user) => user);
     mockResolveMcpConfigNames.mockResolvedValue([]);
     require('~/models').findUser.mockResolvedValue({ role: undefined, tenantId: undefined });
     const { MCPOAuthHandler } = require('@librechat/api');
@@ -1012,6 +1046,7 @@ describe('MCP Routes', () => {
         expect(response.status).toBe(302);
         expect(mockResolveAllMcpConfigs).toHaveBeenCalledWith('test-user-id', {
           id: 'test-user-id',
+          idOnTheSource: null,
           role: undefined,
           tenantId: undefined,
         });
@@ -1063,7 +1098,7 @@ describe('MCP Routes', () => {
         require('~/config').getOAuthReconnectionManager.mockReturnValue({
           clearReconnection: jest.fn(),
         });
-        require('@librechat/api').getMCPAuthorizationIdentity.mockResolvedValueOnce(null);
+        mockResolveCurrentMCPDiscoveryScope.mockResolvedValueOnce(null);
         const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 
         const response = await request(app)
@@ -1073,6 +1108,91 @@ describe('MCP Routes', () => {
         expect(response.status).toBe(302);
         expect(updateMCPServerTools).not.toHaveBeenCalled();
       });
+
+      it.each(['config', 'custom credentials', 'policy'])(
+        'rejects callback discovery when the current %s rotates during fetch',
+        async (rotation) => {
+          const flowId = 'test-user-id:test-server';
+          const flowManager = {
+            getFlowState: jest.fn().mockResolvedValue({
+              status: 'PENDING',
+              createdAt: Date.now(),
+            }),
+            completeFlow: jest.fn().mockResolvedValue(true),
+            deleteFlow: jest.fn().mockResolvedValue(true),
+          };
+          const serverConfig = {
+            type: 'streamable-http',
+            url: 'https://mcp.example.com',
+            ...(rotation === 'custom credentials'
+              ? { customUserVars: { API_KEY: { title: 'API key' } } }
+              : {}),
+          };
+          const customUserVars =
+            rotation === 'custom credentials' ? { API_KEY: 'initial-key' } : undefined;
+          const discoveryProvenance = { version: 1, scope: { config: 'initial' } };
+          const userConnection = {
+            fetchTools: jest
+              .fn()
+              .mockResolvedValue([{ name: 'search', inputSchema: { type: 'object' } }]),
+            getDiscoveryProvenance: jest.fn().mockReturnValue(discoveryProvenance),
+          };
+          const mcpManager = {
+            getUserConnection: jest.fn().mockResolvedValue(userConnection),
+            disconnectUserConnection: jest.fn().mockResolvedValue(undefined),
+          };
+
+          getLogStores.mockReturnValue({});
+          require('~/config').getFlowStateManager.mockReturnValue(flowManager);
+          MCPOAuthHandler.getFlowState.mockResolvedValue({
+            state: flowId,
+            serverName: 'test-server',
+            userId: 'test-user-id',
+            metadata: {},
+            clientInfo: {},
+            codeVerifier: 'test-verifier',
+          });
+          mockOAuthCompletion({ access_token: 'test-token' });
+          MCPTokenStorage.storeTokens.mockResolvedValue();
+          mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'test-server': serverConfig });
+          if (customUserVars) {
+            require('@librechat/api').getUserMCPAuthMap.mockResolvedValueOnce({
+              [`mcp_test-server`]: customUserVars,
+            });
+          }
+          require('~/config').getMCPManager.mockReturnValue(mcpManager);
+          require('~/config').getOAuthReconnectionManager.mockReturnValue({
+            clearReconnection: jest.fn(),
+          });
+          mockResolveCurrentMCPDiscoveryScope.mockResolvedValueOnce(null);
+          const { updateMCPServerTools } = require('~/server/services/Config/mcp');
+
+          const response = await request(app)
+            .get('/api/mcp/test-server/oauth/callback')
+            .query({ code: 'test-code', state: flowId });
+
+          expect(response.status).toBe(302);
+          expect(mockResolveCurrentMCPDiscoveryScope).toHaveBeenCalledWith({
+            user: {
+              id: 'test-user-id',
+              role: undefined,
+              tenantId: undefined,
+              idOnTheSource: null,
+            },
+            serverName: 'test-server',
+            serverConfig,
+            customUserVars,
+            discoveryProvenance,
+            oauthRequiredHint: true,
+          });
+          expect(updateMCPServerTools).not.toHaveBeenCalled();
+          expect(mcpManager.disconnectUserConnection).toHaveBeenCalledWith(
+            'test-user-id',
+            'test-server',
+            userConnection,
+          );
+        },
+      );
 
       it('should resolve and forward customUserVars so header templates are substituted on first post-callback connection', async () => {
         const flowId = 'test-user-id:test-server';
@@ -1390,6 +1510,7 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
+      require('~/models').findUser.mockResolvedValue({ role: undefined, tenantId: 'tenant-a' });
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
@@ -1465,6 +1586,7 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue(storedTokens);
+      require('~/models').findUser.mockResolvedValue({ role: undefined, tenantId: 'tenant-a' });
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
@@ -3078,8 +3200,18 @@ describe('MCP Routes', () => {
       const { findUser } = require('~/models');
       const flowId = 'user123:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
+      let activeTenantId;
 
       getTenantId.mockReturnValue(undefined);
+      tenantStorage.run.mockImplementation(async (store, fn) => {
+        const previousTenantId = activeTenantId;
+        activeTenantId = store.tenantId;
+        try {
+          return await fn();
+        } finally {
+          activeTenantId = previousTenantId;
+        }
+      });
 
       MCPOAuthHandler.resolveStateToFlowId.mockResolvedValue(flowId);
       MCPOAuthHandler.getFlowState.mockResolvedValue({
@@ -3096,12 +3228,22 @@ describe('MCP Routes', () => {
         token_type: 'bearer',
       });
       MCPTokenStorage.storeTokens.mockResolvedValue();
-      findUser.mockResolvedValue({ role: 'ADMIN', tenantId: 'tenant-abc' });
-      const getUserConnection = jest.fn().mockResolvedValue({
+      findUser.mockImplementation(async () => {
+        if (activeTenantId !== 'tenant-abc') {
+          throw new Error('strict tenant context is required');
+        }
+        return { role: 'ADMIN', tenantId: 'tenant-abc' };
+      });
+      const userConnection = {
         fetchTools: jest.fn().mockResolvedValue([]),
         getDiscoveryProvenance: jest.fn().mockReturnValue(null),
+      };
+      const getUserConnection = jest.fn().mockResolvedValue(userConnection);
+      const releaseDetachedUserConnection = jest.fn().mockResolvedValue(false);
+      require('~/config').getMCPManager.mockReturnValue({
+        getUserConnection,
+        releaseDetachedUserConnection,
       });
-      require('~/config').getMCPManager.mockReturnValue({ getUserConnection });
 
       const response = await request(app)
         .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
@@ -3114,16 +3256,26 @@ describe('MCP Routes', () => {
       );
       expect(getUserConnection).toHaveBeenCalledWith(
         expect.objectContaining({
-          user: { id: 'user123', tenantId: 'tenant-abc', role: 'ADMIN' },
+          user: {
+            id: 'user123',
+            tenantId: 'tenant-abc',
+            role: 'ADMIN',
+            idOnTheSource: null,
+          },
         }),
       );
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalled();
+      expect(releaseDetachedUserConnection).toHaveBeenCalledWith(
+        'user123',
+        'test-server',
+        userConnection,
+      );
 
       const basePath = getBasePath();
       expect(response.headers.location).toContain(`${basePath}/oauth/success`);
     });
 
-    it('should not call tenantStorage.run when flowState has no tenantId', async () => {
+    it('should explicitly clear tenant context when the current user has no tenant', async () => {
       const { getTenantId, tenantStorage } = require('@librechat/data-schemas');
       const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
       const flowId = 'user123:test-server';
@@ -3133,6 +3285,7 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.resolveStateToFlowId.mockResolvedValue(flowId);
       MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: flowId,
         serverName: 'test-server',
         userId: 'user123',
         metadata: {},
@@ -3144,14 +3297,110 @@ describe('MCP Routes', () => {
         token_type: 'bearer',
       });
       MCPTokenStorage.storeTokens.mockResolvedValue();
+      require('~/models').findUser.mockResolvedValue({ role: 'USER', tenantId: undefined });
 
       await request(app)
         .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
         .set('Cookie', [`oauth_csrf=${csrfToken}`])
         .expect(302);
 
-      expect(tenantStorage.run).not.toHaveBeenCalled();
+      expect(tenantStorage.run).toHaveBeenCalledWith({ tenantId: undefined }, expect.any(Function));
     });
+
+    it.each([
+      ['is removed', null],
+      ['moves to another tenant', { role: 'USER', tenantId: 'tenant-b' }],
+      ['moves from a tenant to no tenant', { role: 'USER', tenantId: undefined }],
+    ])(
+      'rejects the callback before token exchange when the user %s',
+      async (_label, storedUser) => {
+        const { tenantStorage } = require('@librechat/data-schemas');
+        const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+        const flowId = 'user123:test-server';
+        const flowManager = {
+          getFlowState: jest.fn().mockResolvedValue({
+            status: 'PENDING',
+            createdAt: Date.now(),
+          }),
+        };
+        require('~/cache').getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(flowManager);
+        MCPOAuthHandler.resolveStateToFlowId.mockResolvedValue(flowId);
+        MCPOAuthHandler.getFlowState.mockResolvedValue({
+          state: flowId,
+          serverName: 'test-server',
+          userId: 'user123',
+          tenantId: 'tenant-a',
+          metadata: {},
+          clientInfo: {},
+          codeVerifier: 'test-verifier',
+        });
+        require('~/models').findUser.mockResolvedValue(storedUser);
+
+        const response = await request(app)
+          .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
+          .set('Cookie', [`oauth_csrf=${generateTestCsrfToken(flowId)}`])
+          .expect(302);
+
+        expect(response.headers.location).toBe(
+          `${getBasePath()}/oauth/error?error=callback_failed`,
+        );
+        expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
+        expect(MCPTokenStorage.storeTokens).not.toHaveBeenCalled();
+        expect(tenantStorage.run).toHaveBeenCalledWith(
+          { tenantId: 'tenant-a' },
+          expect.any(Function),
+        );
+      },
+    );
+
+    it.each([
+      ['is removed', null],
+      ['moves to another tenant', { role: 'USER', tenantId: 'tenant-b' }],
+    ])(
+      'rejects token persistence when the user %s during provider exchange',
+      async (_label, currentStoredUser) => {
+        const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+        const { findUser } = require('~/models');
+        const flowId = 'user123:test-server';
+        const flowManager = {
+          getFlowState: jest.fn().mockResolvedValue({
+            status: 'PENDING',
+            createdAt: Date.now(),
+          }),
+          completeFlow: jest.fn(),
+        };
+        require('~/cache').getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(flowManager);
+        MCPOAuthHandler.resolveStateToFlowId.mockResolvedValue(flowId);
+        MCPOAuthHandler.getFlowState.mockResolvedValue({
+          state: flowId,
+          serverName: 'test-server',
+          userId: 'user123',
+          tenantId: 'tenant-a',
+          metadata: {},
+          clientInfo: {},
+          codeVerifier: 'test-verifier',
+        });
+        mockOAuthCompletion({ access_token: 'token', token_type: 'bearer' });
+        MCPTokenStorage.storeTokens.mockResolvedValue();
+        findUser
+          .mockResolvedValueOnce({ role: 'USER', tenantId: 'tenant-a' })
+          .mockResolvedValueOnce(currentStoredUser);
+
+        const response = await request(app)
+          .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
+          .set('Cookie', [`oauth_csrf=${generateTestCsrfToken(flowId)}`])
+          .expect(302);
+
+        expect(response.headers.location).toBe(
+          `${getBasePath()}/oauth/error?error=callback_failed`,
+        );
+        expect(findUser).toHaveBeenCalledTimes(2);
+        expect(MCPTokenStorage.storeTokens).not.toHaveBeenCalled();
+        expect(flowManager.completeFlow).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('GET /tools', () => {
@@ -3247,7 +3496,7 @@ describe('MCP Routes', () => {
         url: 'https://mcp.example.com',
         toolFunctions: {},
       };
-      mockResolveAllMcpConfigs.mockResolvedValueOnce({
+      mockResolveAllMcpConfigs.mockResolvedValue({
         empty: serverConfig,
       });
       getMCPServerTools.mockResolvedValueOnce(null);
@@ -3314,9 +3563,9 @@ describe('MCP Routes', () => {
         tenantId: 'tenant-runtime',
         role: 'USER',
       };
-      mockResolveAllMcpConfigs.mockResolvedValueOnce({ runtime: serverConfig });
+      mockResolveAllMcpConfigs.mockResolvedValue({ runtime: serverConfig });
       getMCPServerTools.mockResolvedValueOnce(null);
-      getGraphApiToken.mockResolvedValueOnce({ access_token: 'rotated-graph-token' });
+      getGraphApiToken.mockResolvedValue({ access_token: 'rotated-graph-token' });
       require('~/config').getMCPManager.mockReturnValue({
         getServerToolFunctionsWithProvenance: jest.fn(async (userId, serverName, scope) => {
           receivedScope = scope;
@@ -3356,6 +3605,72 @@ describe('MCP Routes', () => {
       );
     });
 
+    it('returns runtime-detected OAuth tools only when provenance matches the stored grant', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const {
+        createMCPConnectionProvenance,
+        createMCPToolCatalogSecurityPolicyIdentity,
+        getMCPAuthorizationIdentity,
+      } = require('@librechat/api');
+      const { getMCPServerTools } = require('~/server/services/Config');
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/users/{{LIBRECHAT_USER_ID}}',
+        source: 'yaml',
+      };
+      const detectedConfig = { ...serverConfig, requiresOAuth: true };
+      const toolKey = `search${Constants.mcp_delimiter}runtime-oauth`;
+      const discoveryProvenance = createMCPConnectionProvenance(
+        {
+          tenantId: null,
+          userId: 'test-user-id',
+          serverName: 'runtime-oauth',
+          serverConfig: detectedConfig,
+          effectiveServerConfig: {
+            ...detectedConfig,
+            url: 'https://mcp.example.com/users/test-user-id',
+          },
+          securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+            allowedDomains: null,
+            allowedAddresses: null,
+          }),
+          authorizationIdentity: 'grant-runtime',
+        },
+        'user',
+        'oauth',
+      );
+      mockResolveAllMcpConfigs.mockResolvedValue({ 'runtime-oauth': serverConfig });
+      getMCPServerTools.mockResolvedValueOnce(null);
+      getMCPAuthorizationIdentity.mockResolvedValue('grant-runtime');
+      const getServerToolFunctionsWithProvenance = jest.fn().mockResolvedValue({
+        tools: {
+          [toolKey]: {
+            type: 'function',
+            function: {
+              name: toolKey,
+              description: 'Search',
+              parameters: { type: 'object' },
+            },
+          },
+        },
+        provenance: discoveryProvenance,
+      });
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctionsWithProvenance,
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers['runtime-oauth'].tools).toHaveLength(1);
+      expect(getServerToolFunctionsWithProvenance).toHaveBeenCalledWith(
+        'test-user-id',
+        'runtime-oauth',
+        expect.objectContaining({ authorizationIdentity: 'none' }),
+      );
+      expect(getMCPAuthorizationIdentity).toHaveBeenCalledTimes(1);
+    });
+
     it('returns live OBO tools using lifecycle provenance without cataloging the grant', async () => {
       const { Constants } = require('librechat-data-provider');
       const {
@@ -3372,7 +3687,7 @@ describe('MCP Routes', () => {
       };
       const toolKey = `read${Constants.mcp_delimiter}obo`;
 
-      mockResolveAllMcpConfigs.mockResolvedValueOnce({ obo: serverConfig });
+      mockResolveAllMcpConfigs.mockResolvedValue({ obo: serverConfig });
       getMCPServerTools.mockResolvedValueOnce(null);
       require('~/config').getMCPManager.mockReturnValue({
         getServerToolFunctionsWithProvenance: jest.fn(async (userId, serverName, scope) => ({
@@ -3445,7 +3760,7 @@ describe('MCP Routes', () => {
         'user',
       );
 
-      mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'schema-server': serverConfig });
+      mockResolveAllMcpConfigs.mockResolvedValue({ 'schema-server': serverConfig });
       getMCPServerTools.mockResolvedValueOnce(null);
       require('~/config').getMCPManager.mockReturnValue({
         getServerToolFunctionsWithProvenance: jest.fn().mockResolvedValue({
@@ -3501,14 +3816,14 @@ describe('MCP Routes', () => {
         },
         'user',
       );
-      const disconnectUserConnection = jest.fn().mockResolvedValue();
+      const disconnectUserConnectionIfProvenanceMatches = jest.fn().mockResolvedValue();
       const toolKey = `search${Constants.mcp_delimiter}protected`;
 
-      mockResolveAllMcpConfigs.mockResolvedValueOnce({ protected: serverConfig });
+      mockResolveAllMcpConfigs.mockResolvedValue({ protected: serverConfig });
       getMCPAuthorizationIdentity.mockResolvedValue('grant-b');
       getMCPServerTools.mockResolvedValueOnce(null);
       require('~/config').getMCPManager.mockReturnValue({
-        disconnectUserConnection,
+        disconnectUserConnectionIfProvenanceMatches,
         getServerToolFunctionsWithProvenance: jest.fn().mockResolvedValue({
           tools: {
             [toolKey]: {
@@ -3532,9 +3847,94 @@ describe('MCP Routes', () => {
       expect(getMCPAuthorizationIdentities).toHaveBeenCalledWith(
         expect.objectContaining({ serverNames: ['protected'], userId: 'test-user-id' }),
       );
-      expect(disconnectUserConnection).toHaveBeenCalledWith('test-user-id', 'protected');
+      expect(disconnectUserConnectionIfProvenanceMatches).toHaveBeenCalledWith(
+        'test-user-id',
+        'protected',
+        staleProvenance,
+      );
       expect(cacheMCPServerTools).not.toHaveBeenCalled();
     });
+
+    it.each(['config', 'custom credentials', 'policy'])(
+      'rejects live schemas when the current %s rotates during discovery',
+      async (rotatedScope) => {
+        const { Constants } = require('librechat-data-provider');
+        const { createMCPConnectionProvenance, getUserMCPAuthMap } = require('@librechat/api');
+        const { getMCPServerTools, cacheMCPServerTools } = require('~/server/services/Config');
+        const serverName = 'rotating';
+        const toolKey = `search${Constants.mcp_delimiter}${serverName}`;
+        let currentServerConfig = {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/a',
+          customUserVars: { API_KEY: { title: 'API key' } },
+        };
+        let currentAuthMap = {
+          [`${Constants.mcp_prefix}${serverName}`]: { API_KEY: 'credential-a' },
+        };
+        let currentPolicy = {
+          allowedDomains: ['mcp.example.com'],
+          allowedAddresses: null,
+        };
+        const disconnectUserConnectionIfProvenanceMatches = jest.fn().mockResolvedValue();
+
+        mockResolveAllMcpConfigs.mockImplementation(async () => ({
+          [serverName]: currentServerConfig,
+        }));
+        getUserMCPAuthMap
+          .mockImplementationOnce(async () => currentAuthMap)
+          .mockImplementationOnce(async () => currentAuthMap);
+        mockRegistryInstance.resolveCatalogSecurityPolicy.mockImplementation(
+          async () => currentPolicy,
+        );
+        getMCPServerTools.mockResolvedValueOnce(null);
+        require('~/config').getMCPManager.mockReturnValue({
+          disconnectUserConnectionIfProvenanceMatches,
+          getServerToolFunctionsWithProvenance: jest.fn(async (_userId, _serverName, scope) => {
+            const provenance = createMCPConnectionProvenance(scope, 'user');
+            if (rotatedScope === 'config') {
+              currentServerConfig = { ...currentServerConfig, url: 'https://mcp.example.com/b' };
+            } else if (rotatedScope === 'custom credentials') {
+              currentAuthMap = {
+                [`${Constants.mcp_prefix}${serverName}`]: { API_KEY: 'credential-b' },
+              };
+            } else {
+              currentPolicy = {
+                allowedDomains: ['mcp.example.com', 'restricted.example.com'],
+                allowedAddresses: null,
+              };
+            }
+            return {
+              tools: {
+                [toolKey]: {
+                  type: 'function',
+                  function: {
+                    name: toolKey,
+                    description: 'Stale scope schema',
+                    parameters: { type: 'object' },
+                  },
+                },
+              },
+              provenance,
+            };
+          }),
+        });
+
+        const response = await request(app).get('/api/mcp/tools');
+
+        expect(response.status).toBe(200);
+        expect(response.body.servers[serverName].tools).toEqual([]);
+        expect(mockResolveAllMcpConfigs).toHaveBeenCalledTimes(2);
+        expect(mockResolveAllMcpConfigsFresh).toHaveBeenCalledTimes(1);
+        expect(getUserMCPAuthMap).toHaveBeenCalledTimes(2);
+        expect(mockRegistryInstance.resolveCatalogSecurityPolicy).toHaveBeenCalledTimes(2);
+        expect(disconnectUserConnectionIfProvenanceMatches).toHaveBeenCalledWith(
+          'test-user-id',
+          serverName,
+          expect.any(Object),
+        );
+        expect(cacheMCPServerTools).not.toHaveBeenCalled();
+      },
+    );
 
     it('batches post-discovery OAuth identity validation across cold servers', async () => {
       const {
@@ -3560,7 +3960,7 @@ describe('MCP Routes', () => {
         allowedAddresses: null,
       });
 
-      mockResolveAllMcpConfigs.mockResolvedValueOnce(serverConfigs);
+      mockResolveAllMcpConfigs.mockResolvedValue(serverConfigs);
       getMCPAuthorizationIdentity.mockResolvedValue('grant-current');
       getMCPServerTools.mockResolvedValue(null);
       require('~/config').getMCPManager.mockReturnValue({

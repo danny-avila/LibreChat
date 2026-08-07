@@ -55,6 +55,11 @@ const { exchangeOboToken } = require('./OboTokenService');
 const { createOboTrustChecker } = require('./OboPolicyService');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
+const {
+  getAppConfigForUser,
+  resolveAllMcpConfigs,
+  resolveAllMcpConfigsFresh,
+} = require('./MCPConfigResolver');
 const { getLogStores } = require('~/cache');
 
 const MAX_CACHE_SIZE = 1000;
@@ -117,10 +122,6 @@ function getOAuthFlowId(userId, serverName, tenantId = getTenantId()) {
 async function getAppConfigForRequest(req) {
   const user = req?.user;
   return await getAppConfigForUser(user?.id, user);
-}
-
-async function getAppConfigForUser(userId, user) {
-  return await getAppConfig({ role: user?.role, tenantId: getTenantId(), userId });
 }
 
 /**
@@ -339,25 +340,6 @@ async function resolveCollisionAuditNames({ rawServerNames, accessibleServerName
     );
     return { names: rawServerNames, complete: false };
   }
-}
-
-async function resolveAllMcpConfigs(userId, user) {
-  const registry = getMCPServersRegistry();
-  const appConfig = await getAppConfigForUser(userId, user);
-  let configServers = {};
-  try {
-    configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
-  } catch (error) {
-    logger.warn(
-      '[resolveAllMcpConfigs] Config server resolution failed, continuing without:',
-      error,
-    );
-  }
-  if (user?.role) {
-    return await registry.getAllServerConfigs(userId, configServers, user.role);
-  }
-
-  return await registry.getAllServerConfigs(userId, configServers);
 }
 
 /**
@@ -1435,6 +1417,7 @@ module.exports = {
   resolveCollisionAuditNames,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  resolveAllMcpConfigsFresh,
   createOAuthStart,
   checkOAuthFlowStatus,
   getServerConnectionStatus,

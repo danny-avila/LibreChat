@@ -46,6 +46,10 @@ export class ServerConfigsCacheInMemory {
     return Object.fromEntries(this.cache);
   }
 
+  public async getAllFresh(): Promise<Record<string, ParsedServerConfig>> {
+    return Object.fromEntries(this.cache);
+  }
+
   public async reset(): Promise<void> {
     this.cache.clear();
   }

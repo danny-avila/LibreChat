@@ -143,6 +143,18 @@ describe('initializeMCPs', () => {
       });
     });
 
+    it('requests fail-closed app config resolution for fresh policy validation', async () => {
+      mockGetAppConfig.mockResolvedValue({ mcpConfig: null, mcpSettings: {} });
+      await initializeMCPs();
+      const resolver = mockCreateMCPServersRegistry.mock.calls[0][3];
+
+      await resolver({ userId: 'u1', role: 'ADMIN', refresh: true });
+
+      expect(mockGetAppConfig).toHaveBeenLastCalledWith(
+        expect.objectContaining({ refresh: true, failClosed: true }),
+      );
+    });
+
     it('should throw and log error if MCPServersRegistry initialization fails', async () => {
       const registryError = new Error('Registry initialization failed');
       mockCreateMCPServersRegistry.mockImplementation(() => {

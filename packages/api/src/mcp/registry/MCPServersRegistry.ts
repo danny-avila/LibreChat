@@ -91,6 +91,7 @@ export interface MCPAllowlistContext {
   userId?: string;
   role?: string;
   tenantId?: string | null;
+  refresh?: boolean;
 }
 
 /**
@@ -334,10 +335,46 @@ export class MCPServersRegistry {
     configServers?: Record<string, t.ParsedServerConfig>,
     role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
-    if (configServers == null || !Object.keys(configServers).length) {
-      return this.getBaseServerConfigs(userId, role);
-    }
     const base = await this.getBaseServerConfigs(userId, role);
+    return this.mergeConfigServerOverrides(base, configServers);
+  }
+
+  /** Bypasses process-local read-through caches for post-discovery scope validation. */
+  public async getAllServerConfigsFresh(
+    userId?: string,
+    configServers?: Record<string, t.ParsedServerConfig>,
+    role?: string,
+  ): Promise<Record<string, t.ParsedServerConfig>> {
+    const [dbConfigs, yamlConfigs] = await Promise.all([
+      this.dbConfigsRepo.getAll(userId, role),
+      this.getAllRepositoryConfigsFresh(this.cacheConfigsRepo, 'YAML'),
+    ]);
+    this.warnOnOperatorManagedNameCollisions(yamlConfigs, dbConfigs, 'YAML');
+    const base = { ...dbConfigs, ...yamlConfigs };
+    return this.mergeConfigServerOverrides(base, configServers);
+  }
+
+  private async getAllRepositoryConfigsFresh(
+    repository: IServerConfigsRepositoryInterface,
+    source: string,
+  ): Promise<Record<string, t.ParsedServerConfig>> {
+    if (!repository.getAllFresh) {
+      throw new Error(`The MCP ${source} config repository does not support authoritative reads`);
+    }
+    try {
+      return await repository.getAllFresh();
+    } catch (error) {
+      throw error ?? new Error(`The MCP ${source} config repository fresh read failed`);
+    }
+  }
+
+  private mergeConfigServerOverrides(
+    base: Record<string, t.ParsedServerConfig>,
+    configServers?: Record<string, t.ParsedServerConfig>,
+  ): Record<string, t.ParsedServerConfig> {
+    if (configServers == null || !Object.keys(configServers).length) {
+      return base;
+    }
     const result: Record<string, t.ParsedServerConfig> = { ...base };
     for (const [name, override] of Object.entries(configServers)) {
       if (result[name]?.source === 'user') {
@@ -575,6 +612,7 @@ export class MCPServersRegistry {
    */
   public async ensureConfigServers(
     resolvedMcpConfig: Record<string, t.MCPOptions>,
+    options?: { failClosed?: boolean; allowlists?: ResolvedMCPAllowlists },
   ): Promise<Record<string, t.ParsedServerConfig>> {
     if (!resolvedMcpConfig || Object.keys(resolvedMcpConfig).length === 0) {
       return {};
@@ -585,27 +623,47 @@ export class MCPServersRegistry {
     // Config-source servers are admin-defined with no acting user; resolve the effective
     // allowlists once at tenant scope and fold them into each config-cache key so a tenant
     // whose allowlist rejects a URL cannot poison the shared key for a tenant that allows it.
-    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists();
-    const allowlists: ResolvedMCPAllowlists = { allowedDomains, allowedAddresses };
+    const allowlists = options?.allowlists ?? (await this.resolveAllowlists());
 
-    /** Single snapshot of the YAML cache for the whole pass: in the Redis aggregate-key backend, every per-name get() reads and deserializes the full map, so N concurrent per-server lookups would issue N full-map reads. The snapshot also keeps the unchanged-YAML comparison consistent against one view of YAML across all entries. */
-    const yamlSnapshot = await this.cacheConfigsRepo.getAll();
+    /** Single snapshots keep the pass internally consistent and avoid N aggregate-map reads. Strict validation bypasses both repositories' process-local snapshots. */
+    let yamlSnapshot: Record<string, t.ParsedServerConfig>;
+    let configCacheSnapshot: Record<string, t.ParsedServerConfig> | undefined;
+    if (options?.failClosed) {
+      [yamlSnapshot, configCacheSnapshot] = await Promise.all([
+        this.getAllRepositoryConfigsFresh(this.cacheConfigsRepo, 'YAML'),
+        this.getAllRepositoryConfigsFresh(this.configCacheRepo, 'Config-tier'),
+      ]);
+    } else {
+      yamlSnapshot = await this.cacheConfigsRepo.getAll();
+    }
 
     const settled = await Promise.allSettled(
       Object.entries(resolvedMcpConfig).map(async ([serverName, rawConfig]) => {
         if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
           return;
         }
-        const parsed = await this.ensureSingleConfigServer(serverName, rawConfig, allowlists);
+        const parsed = await this.ensureSingleConfigServer(
+          serverName,
+          rawConfig,
+          allowlists,
+          configCacheSnapshot,
+        );
         if (parsed) {
           result[serverName] = parsed;
         }
       }),
     );
+    let firstError: unknown;
+    let hadRejection = false;
     for (const outcome of settled) {
       if (outcome.status === 'rejected') {
+        hadRejection = true;
         logger.error('[MCPServersRegistry][ensureConfigServers] Unexpected error:', outcome.reason);
+        firstError ??= outcome.reason;
       }
+    }
+    if (options?.failClosed && hadRejection) {
+      throw firstError ?? new Error('MCP config-server resolution failed without an error reason');
     }
 
     return result;
@@ -646,10 +704,13 @@ export class MCPServersRegistry {
     serverName: string,
     rawConfig: t.MCPOptions,
     allowlists: ResolvedMCPAllowlists,
+    cacheSnapshot?: Record<string, t.ParsedServerConfig>,
   ): Promise<t.ParsedServerConfig | undefined> {
     const cacheKey = this.configCacheKey(serverName, rawConfig, allowlists);
 
-    const cached = await this.configCacheRepo.get(cacheKey);
+    const cached = cacheSnapshot
+      ? cacheSnapshot[cacheKey]
+      : await this.configCacheRepo.get(cacheKey);
     if (cached) {
       const isStaleStub =
         cached.inspectionFailed && Date.now() - (cached.updatedAt ?? 0) > CONFIG_STUB_RETRY_MS;

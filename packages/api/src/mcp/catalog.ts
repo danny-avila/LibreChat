@@ -241,9 +241,21 @@ export function createMCPToolCatalogScope({
   };
 }
 
+function getMCPAuthorizationKind(
+  authorizationIdentity: string,
+): MCPConnectionProvenance['authorizationKind'] {
+  if (authorizationIdentity === MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY) {
+    return 'obo';
+  }
+  return authorizationIdentity === 'none' ? 'none' : 'oauth';
+}
+
 export function createMCPConnectionProvenance(
   input: MCPToolCatalogScopeInput,
   principalKind: MCPConnectionProvenance['principalKind'],
+  authorizationKind: MCPConnectionProvenance['authorizationKind'] = getMCPAuthorizationKind(
+    input.authorizationIdentity,
+  ),
 ): MCPConnectionProvenance | null {
   if (!isMCPToolCatalogFingerprintAvailable()) {
     return null;
@@ -252,6 +264,7 @@ export function createMCPConnectionProvenance(
     version: MCP_TOOL_CATALOG_VERSION,
     scope: createMCPToolCatalogScope(input),
     principalKind,
+    authorizationKind,
   };
 }
 

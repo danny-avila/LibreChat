@@ -1,6 +1,7 @@
 const mockRegistry = {
   ensureConfigServers: jest.fn(),
   getAllServerConfigs: jest.fn(),
+  getAllServerConfigsFresh: jest.fn(),
 };
 
 jest.mock('~/config', () => ({
@@ -77,6 +78,7 @@ const {
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  resolveAllMcpConfigsFresh,
   resolveMcpServerContext,
   resolveCollisionAuditNames,
 } = require('../MCP');
@@ -245,6 +247,53 @@ describe('resolveAllMcpConfigs', () => {
     getAppConfig.mockRejectedValue(new Error('mongo down'));
 
     await expect(resolveAllMcpConfigs('u1', { id: 'u1' })).rejects.toThrow('mongo down');
+  });
+
+  it('forces fresh app and registry reads for post-discovery validation', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { cfg_srv: {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({ cfg_srv: { name: 'cfg_srv' } });
+    mockRegistry.getAllServerConfigsFresh.mockResolvedValue({
+      cfg_srv: { name: 'cfg_srv' },
+    });
+
+    await expect(resolveAllMcpConfigsFresh('u1', { id: 'u1', role: 'user' })).resolves.toEqual({
+      cfg_srv: { name: 'cfg_srv' },
+    });
+
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'u1',
+        role: 'user',
+        refresh: true,
+        failClosed: true,
+      }),
+    );
+    expect(mockRegistry.ensureConfigServers).toHaveBeenCalledWith(
+      { cfg_srv: {} },
+      {
+        failClosed: true,
+        allowlists: {
+          allowedAddresses: undefined,
+          allowedDomains: undefined,
+        },
+      },
+    );
+    expect(mockRegistry.getAllServerConfigsFresh).toHaveBeenCalledWith(
+      'u1',
+      { cfg_srv: { name: 'cfg_srv' } },
+      'user',
+    );
+    expect(mockRegistry.getAllServerConfigs).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when config-server resolution is unavailable during a fresh read', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { cfg_srv: {} } });
+    mockRegistry.ensureConfigServers.mockRejectedValue(new Error('registry unavailable'));
+
+    await expect(resolveAllMcpConfigsFresh('u1', { id: 'u1' })).rejects.toThrow(
+      'registry unavailable',
+    );
+    expect(mockRegistry.getAllServerConfigsFresh).not.toHaveBeenCalled();
   });
 });
 

@@ -214,6 +214,15 @@ export function isOAuthServer(
   return config.requiresOAuth === true || config.oauth != null;
 }
 
+/** Whether OAuth must be detected only after runtime URL placeholders are resolved. */
+export function shouldDetectRuntimeOAuth(config: ParsedServerConfig): boolean {
+  return (
+    config.requiresOAuth == null &&
+    !(config.apiKey != null && config.oauth == null) &&
+    hasRuntimeUrlPlaceholders(config)
+  );
+}
+
 /**
  * Whether a server needs the OAuth-style connection wiring (flow manager,
  * token methods, OBO/OAuth resolvers). Distinct from `isOAuthServer`: OBO

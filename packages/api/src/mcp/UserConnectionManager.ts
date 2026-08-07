@@ -19,6 +19,7 @@ import {
   isOAuthServer,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
+  shouldDetectRuntimeOAuth,
 } from './utils';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { detectOAuthRequirement, MCPOAuthHandler } from '~/mcp/oauth';
@@ -61,6 +62,10 @@ type PendingConnection = {
   context: ConnectionScopeContext;
 };
 
+type DetachedConnectionLease = {
+  teardown?: Promise<void>;
+};
+
 /**
  * Abstract base class for managing user-specific MCP connections with lifecycle management.
  * Only meant to be extended by MCPManager.
@@ -73,6 +78,12 @@ export abstract class UserConnectionManager {
   public appConnections: ConnectionsRepository | null = null;
   // Connections per userId -> serverName -> connection
   protected userConnections: Map<string, Map<string, MCPConnection>> = new Map();
+  /** Concurrent force-new results that callers own until explicit or idle cleanup. */
+  protected detachedUserConnections: Map<
+    string,
+    Map<string, Map<MCPConnection, DetachedConnectionLease>>
+  > = new Map();
+
   /** Last activity timestamp for users (not per server) */
   protected userLastActivity: Map<string, number> = new Map();
   /** In-flight connection promises keyed by `userId:serverName` — coalesces concurrent attempts */
@@ -102,6 +113,7 @@ export abstract class UserConnectionManager {
   private async getUserConnectionInternal(
     opts: t.UserMCPConnectionOptions,
     allowAppLevelServer: boolean,
+    returnDetached = false,
   ): Promise<MCPConnection> {
     const { serverName, forceNew, user } = opts;
     const userId = user?.id;
@@ -230,6 +242,16 @@ export abstract class UserConnectionManager {
           );
           await this.addPendingOAuthStart(pending.oauth, opts, userId);
           const connection = await pending.promise;
+          if (this.userConnections.get(userId)?.get(serverName) !== connection) {
+            logger.info(
+              `[MCP][User: ${userId}][${serverName}] Joined connection became caller-owned; creating an isolated result`,
+            );
+            return this.getUserConnectionInternal(
+              { ...opts, serverConfig: config, forceNew: true },
+              allowAppLevelServer,
+              true,
+            );
+          }
           const provenanceCurrent = await this.isConnectionProvenanceCurrent(
             connection,
             config!,
@@ -260,6 +282,7 @@ export abstract class UserConnectionManager {
       },
       userId,
       clearCooldown,
+      returnDetached,
     );
 
     if (!forceNewConnection) {
@@ -469,6 +492,7 @@ export abstract class UserConnectionManager {
     }: t.UserMCPConnectionOptions,
     userId: string,
     clearCooldown: boolean,
+    returnDetached = false,
   ): Promise<MCPConnection> {
     const config =
       providedConfig ??
@@ -499,7 +523,7 @@ export abstract class UserConnectionManager {
             `[MCP][User: ${userId}][${serverName}] Config was updated, disconnecting stale connection`,
           );
         }
-        await this.disconnectUserConnection(userId, serverName);
+        await this.disconnectUserConnection(userId, serverName, connection);
         connection = undefined;
       } else if (await connection.isConnected()) {
         const provenanceCurrent = await this.isConnectionProvenanceCurrent(connection, config, {
@@ -520,7 +544,7 @@ export abstract class UserConnectionManager {
         logger.info(
           `[MCP][User: ${userId}][${serverName}] Connection scope changed, disconnecting stale connection`,
         );
-        await this.disconnectUserConnection(userId, serverName);
+        await this.disconnectUserConnection(userId, serverName, connection);
         connection = undefined;
       } else {
         // Connection exists but is not connected, attempt to remove potentially stale entry
@@ -542,6 +566,7 @@ export abstract class UserConnectionManager {
 
     // If no valid connection exists, create a new one
     logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
+    const connectionToReplace = this.userConnections.get(userId)?.get(serverName);
 
     try {
       const runtimeConfig = await this.applyRuntimeOAuthDetection({
@@ -621,10 +646,11 @@ export abstract class UserConnectionManager {
       }
 
       if (!ephemeralConnection) {
-        if (!this.userConnections.has(userId)) {
-          this.userConnections.set(userId, new Map());
+        if (returnDetached) {
+          this.trackDetachedUserConnection(userId, serverName, connection);
+        } else {
+          await this.trackUserConnection(userId, serverName, connection, connectionToReplace);
         }
-        this.userConnections.get(userId)?.set(serverName, connection);
       }
 
       logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
@@ -641,8 +667,9 @@ export abstract class UserConnectionManager {
           disconnectError,
         );
       });
-      // Ensure cleanup even if connection attempt fails
-      this.removeUserConnection(userId, serverName);
+      if (connection) {
+        this.removeUserConnectionIfOwned(userId, serverName, connection);
+      }
       throw error; // Re-throw the error to the caller
     }
   }
@@ -650,6 +677,7 @@ export abstract class UserConnectionManager {
   private async resolveCurrentConnectionScope(
     config: t.ParsedServerConfig,
     context: ConnectionScopeContext,
+    discoveryProvenance?: t.MCPConnectionProvenance | null,
   ): Promise<MCPToolCatalogScopeInput | null> {
     if (!isMCPToolCatalogFingerprintAvailable()) {
       return null;
@@ -664,7 +692,12 @@ export abstract class UserConnectionManager {
       tokenMethods,
       oboTokenResolver,
     } = context;
-    const configuredOAuth = isOAuthServer(config);
+    const runtimeOAuthDetected =
+      discoveryProvenance?.authorizationKind === 'oauth' && shouldDetectRuntimeOAuth(config);
+    const provenanceServerConfig = runtimeOAuthDetected
+      ? { ...config, requiresOAuth: true }
+      : config;
+    const configuredOAuth = isOAuthServer(provenanceServerConfig);
     if (configuredOAuth && !tokenMethods?.findToken) {
       return null;
     }
@@ -693,7 +726,7 @@ export abstract class UserConnectionManager {
       tenantId: user?.tenantId ?? getTenantId() ?? null,
     });
     const effectiveServerConfig = await this.resolveRuntimeConfig({
-      config,
+      config: provenanceServerConfig,
       user,
       customUserVars,
       requestBody,
@@ -703,7 +736,7 @@ export abstract class UserConnectionManager {
       tenantId: user?.tenantId ?? getTenantId() ?? null,
       userId,
       serverName,
-      serverConfig: config,
+      serverConfig: provenanceServerConfig,
       effectiveServerConfig,
       securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
         allowedDomains,
@@ -722,10 +755,9 @@ export abstract class UserConnectionManager {
     if (!isMCPToolCatalogFingerprintAvailable()) {
       return true;
     }
-    const scope = await this.resolveCurrentConnectionScope(config, context);
-    return (
-      scope != null && matchesMCPConnectionProvenance(connection.getDiscoveryProvenance(), scope)
-    );
+    const provenance = connection.getDiscoveryProvenance();
+    const scope = await this.resolveCurrentConnectionScope(config, context, provenance);
+    return scope != null && matchesMCPConnectionProvenance(provenance, scope);
   }
 
   /**
@@ -826,11 +858,7 @@ export abstract class UserConnectionManager {
     requestBody?: t.UserMCPConnectionOptions['requestBody'];
     graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
   }): Promise<t.ParsedServerConfig> {
-    if (
-      config.requiresOAuth != null ||
-      (config.apiKey != null && config.oauth == null) ||
-      !hasRuntimeUrlPlaceholders(config)
-    ) {
+    if (!shouldDetectRuntimeOAuth(config)) {
       return config;
     }
 
@@ -888,33 +916,218 @@ export abstract class UserConnectionManager {
       userMap.delete(serverName);
       if (userMap.size === 0) {
         this.userConnections.delete(userId);
-        // Only remove user activity timestamp if all connections are gone
-        this.userLastActivity.delete(userId);
+        if (!this.detachedUserConnections.has(userId)) {
+          this.userLastActivity.delete(userId);
+        }
       }
     }
 
     logger.debug(`[MCP][User: ${userId}][${serverName}] Removed connection entry.`);
   }
 
-  /** Disconnects and removes a specific user connection */
-  public async disconnectUserConnection(userId: string, serverName: string): Promise<void> {
-    this.pendingConnections.delete(`${userId}:${serverName}`);
+  private removeUserConnectionIfOwned(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+  ): void {
+    if (this.userConnections.get(userId)?.get(serverName) !== connection) {
+      return;
+    }
+    this.removeUserConnection(userId, serverName);
+  }
+
+  private trackDetachedUserConnection(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+  ): void {
+    let serverMap = this.detachedUserConnections.get(userId);
+    if (!serverMap) {
+      serverMap = new Map();
+      this.detachedUserConnections.set(userId, serverMap);
+    }
+    let connections = serverMap.get(serverName);
+    if (!connections) {
+      connections = new Map();
+      serverMap.set(serverName, connections);
+    }
+    connections.set(connection, {});
+  }
+
+  private removeDetachedUserConnection(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+    expectedLease?: DetachedConnectionLease,
+  ): void {
+    const serverMap = this.detachedUserConnections.get(userId);
+    if (!serverMap) {
+      return;
+    }
+    const connections = serverMap.get(serverName);
+    if (!connections) {
+      return;
+    }
+    const lease = connections.get(connection);
+    if (!lease || (expectedLease && lease !== expectedLease)) {
+      return;
+    }
+    connections.delete(connection);
+    if (connections.size === 0) {
+      serverMap.delete(serverName);
+    }
+    if (serverMap.size === 0) {
+      this.detachedUserConnections.delete(userId);
+      if (!this.userConnections.has(userId)) {
+        this.userLastActivity.delete(userId);
+      }
+    }
+  }
+
+  /** Releases a concurrent force-new result without disturbing the connection that owns the slot. */
+  public async releaseDetachedUserConnection(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+  ): Promise<boolean> {
+    return this.closeDetachedUserConnection(userId, serverName, connection);
+  }
+
+  private async closeDetachedUserConnection(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+  ): Promise<boolean> {
+    const lease = this.detachedUserConnections.get(userId)?.get(serverName)?.get(connection);
+    if (!lease) {
+      return false;
+    }
+    if (lease.teardown) {
+      await lease.teardown;
+      return true;
+    }
+    const teardown = connection.disconnect();
+    lease.teardown = teardown;
+    try {
+      await teardown;
+      this.removeDetachedUserConnection(userId, serverName, connection, lease);
+      return true;
+    } catch (error) {
+      if (lease.teardown === teardown) {
+        lease.teardown = undefined;
+      }
+      throw error;
+    }
+  }
+
+  private async trackUserConnection(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+    expectedConnection?: MCPConnection,
+  ): Promise<void> {
+    let userMap = this.userConnections.get(userId);
+    if (!userMap) {
+      userMap = new Map();
+      this.userConnections.set(userId, userMap);
+    }
+    const displacedConnection = userMap.get(serverName);
+    if (displacedConnection !== expectedConnection) {
+      this.trackDetachedUserConnection(userId, serverName, connection);
+      logger.info(
+        `[MCP][User: ${userId}][${serverName}] Returning concurrent scoped connection with detached lifecycle`,
+      );
+      return;
+    }
+    userMap.set(serverName, connection);
+    if (!displacedConnection || displacedConnection === connection) {
+      return;
+    }
+    try {
+      await displacedConnection.disconnect();
+    } catch (error) {
+      logger.warn(
+        `[MCP][User: ${userId}][${serverName}] Failed to disconnect displaced scoped connection`,
+        error,
+      );
+    }
+  }
+
+  /** Disconnects and removes a specific user connection. */
+  public async disconnectUserConnection(
+    userId: string,
+    serverName: string,
+    expectedConnection?: MCPConnection,
+  ): Promise<void> {
     const userMap = this.userConnections.get(userId);
     const connection = userMap?.get(serverName);
+    if (expectedConnection && connection !== expectedConnection) {
+      await this.closeDetachedUserConnection(userId, serverName, expectedConnection);
+      return;
+    }
+    if (!expectedConnection) {
+      this.pendingConnections.delete(`${userId}:${serverName}`);
+    }
     if (connection) {
       logger.info(`[MCP][User: ${userId}][${serverName}] Disconnecting...`);
       await connection.disconnect();
-      this.removeUserConnection(userId, serverName);
+      this.removeUserConnectionIfOwned(userId, serverName, connection);
     }
+    if (expectedConnection) {
+      return;
+    }
+    const detachedConnections = Array.from(
+      this.detachedUserConnections.get(userId)?.get(serverName)?.keys() ?? [],
+    );
+    for (const detachedConnection of detachedConnections) {
+      await this.closeDetachedUserConnection(userId, serverName, detachedConnection);
+    }
+  }
+
+  /** Disconnects only the connection that produced the rejected discovery result. */
+  public async disconnectUserConnectionIfProvenanceMatches(
+    userId: string,
+    serverName: string,
+    expectedProvenance: t.MCPConnectionProvenance | null,
+  ): Promise<void> {
+    const connection = this.userConnections.get(userId)?.get(serverName);
+    const currentProvenance = connection?.getDiscoveryProvenance() ?? null;
+    if (!connection || !this.hasSameConnectionProvenance(currentProvenance, expectedProvenance)) {
+      return;
+    }
+    await this.disconnectUserConnection(userId, serverName, connection);
+  }
+
+  private hasSameConnectionProvenance(
+    left: t.MCPConnectionProvenance | null,
+    right: t.MCPConnectionProvenance | null,
+  ): boolean {
+    return (
+      left != null &&
+      right != null &&
+      left.version === right.version &&
+      left.principalKind === right.principalKind &&
+      left.authorizationKind === right.authorizationKind &&
+      left.scope.tenant === right.scope.tenant &&
+      left.scope.principal === right.scope.principal &&
+      left.scope.server === right.scope.server &&
+      left.scope.policy === right.scope.policy &&
+      left.scope.config === right.scope.config &&
+      left.scope.credentials === right.scope.credentials
+    );
   }
 
   /** Disconnects and removes all connections for a specific user */
   public async disconnectUserConnections(userId: string): Promise<void> {
     const userMap = this.userConnections.get(userId);
+    const detachedServerMap = this.detachedUserConnections.get(userId);
     const disconnectPromises: Promise<void>[] = [];
-    if (userMap) {
+    if (userMap || detachedServerMap) {
       logger.info(`[MCP][User: ${userId}] Disconnecting all servers...`);
-      const userServers = Array.from(userMap.keys());
+      const userServers = new Set([
+        ...(userMap?.keys() ?? []),
+        ...(detachedServerMap?.keys() ?? []),
+      ]);
       for (const serverName of userServers) {
         disconnectPromises.push(
           this.disconnectUserConnection(userId, serverName).catch((error) => {
@@ -976,8 +1189,16 @@ export abstract class UserConnectionManager {
     for (const serverMap of this.userConnections.values()) {
       totalConnections += serverMap.size;
     }
+    for (const serverMap of this.detachedUserConnections.values()) {
+      for (const connections of serverMap.values()) {
+        totalConnections += connections.size;
+      }
+    }
     return {
-      trackedUsers: this.userConnections.size,
+      trackedUsers: new Set([
+        ...this.userConnections.keys(),
+        ...this.detachedUserConnections.keys(),
+      ]).size,
       totalConnections,
       activityEntries: this.userLastActivity.size,
       appConnectionCount: this.appConnections?.getConnectionCount() ?? 0,

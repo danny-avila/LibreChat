@@ -526,6 +526,38 @@ describe('MCPServersRegistry', () => {
         expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(1); // Still 1
       });
 
+      it('bypasses the process-local read-through cache for authoritative validation', async () => {
+        const oldConfig = {
+          ...testParsedConfig,
+          source: 'user' as const,
+          title: 'Old config',
+        };
+        const newConfig = { ...oldConfig, title: 'Rotated config' };
+        const dbRepoGetAllSpy = jest
+          .spyOn(registry['dbConfigsRepo'], 'getAll')
+          .mockResolvedValueOnce({ rotating: oldConfig })
+          .mockResolvedValue({ rotating: newConfig });
+        const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
+        const cacheRepoGetAllFreshSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAllFresh');
+
+        await expect(registry.getAllServerConfigs('user123')).resolves.toMatchObject({
+          rotating: { title: 'Old config' },
+        });
+        await expect(registry.getAllServerConfigs('user123')).resolves.toMatchObject({
+          rotating: { title: 'Old config' },
+        });
+        await expect(registry.getAllServerConfigsFresh('user123')).resolves.toMatchObject({
+          rotating: { title: 'Rotated config' },
+        });
+        await expect(registry.getAllServerConfigs('user123')).resolves.toMatchObject({
+          rotating: { title: 'Old config' },
+        });
+
+        expect(dbRepoGetAllSpy).toHaveBeenCalledTimes(2);
+        expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(1);
+        expect(cacheRepoGetAllFreshSpy).toHaveBeenCalledTimes(1);
+      });
+
       it('should use different cache keys for different userIds', async () => {
         // Spy on the cache repository getAll method
         const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
@@ -557,6 +589,68 @@ describe('MCPServersRegistry', () => {
       source: 'yaml',
       updatedAt: FIXED_TIME,
     }) as t.ParsedServerConfig;
+
+    it('propagates authoritative config-cache failures in fail-closed mode', async () => {
+      const error = new Error('config cache unavailable');
+      const cacheGetAllFresh = jest
+        .spyOn(registry['configCacheRepo'], 'getAllFresh')
+        .mockRejectedValueOnce(error);
+
+      await expect(
+        registry.ensureConfigServers(
+          {
+            override: {
+              type: 'streamable-http',
+              url: 'https://override.example.com/mcp',
+            },
+          },
+          { failClosed: true },
+        ),
+      ).rejects.toBe(error);
+
+      cacheGetAllFresh.mockRejectedValueOnce(undefined);
+      await expect(
+        registry.ensureConfigServers(
+          {
+            override: {
+              type: 'streamable-http',
+              url: 'https://override.example.com/mcp',
+            },
+          },
+          { failClosed: true },
+        ),
+      ).rejects.toThrow('The MCP Config-tier config repository fresh read failed');
+    });
+
+    it('uses the authoritative config-tier snapshot during strict validation', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://override.example.com/mcp',
+      };
+      const allowlists = { allowedDomains: null, allowedAddresses: null };
+      const cacheKey = registry['configCacheKey']('override', rawConfig, allowlists);
+      const staleConfig: t.ParsedServerConfig = {
+        ...rawConfig,
+        source: 'config',
+        title: 'Stale replica',
+      };
+      const currentConfig: t.ParsedServerConfig = {
+        ...rawConfig,
+        source: 'config',
+        title: 'Current replica',
+      };
+      const cacheGet = jest
+        .spyOn(registry['configCacheRepo'], 'get')
+        .mockResolvedValue(staleConfig);
+      jest
+        .spyOn(registry['configCacheRepo'], 'getAllFresh')
+        .mockResolvedValue({ [cacheKey]: currentConfig });
+
+      await expect(
+        registry.ensureConfigServers({ override: rawConfig }, { failClosed: true, allowlists }),
+      ).resolves.toEqual({ override: currentConfig });
+      expect(cacheGet).not.toHaveBeenCalled();
+    });
 
     it('flows config-tier override on a YAML-defined server through to getAllServerConfigs', async () => {
       await registry['cacheConfigsRepo'].add('langfuse-docs', yamlLangfuseConfig);

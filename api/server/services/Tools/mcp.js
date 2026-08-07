@@ -1,34 +1,17 @@
-const { logger, getTenantId } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const {
-  MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
-  getMCPAuthorizationIdentity,
-  getServerCustomUserVars,
-  getUserMCPAuthMap,
   getMissingCustomUserVars,
   requiresEphemeralUserConnection,
   getMissingRuntimeBodyPlaceholderFields,
-  createMCPToolCatalogSecurityPolicyIdentity,
-  isMCPToolCatalogFingerprintAvailable,
-  matchesMCPConnectionProvenance,
-  preProcessGraphTokens,
-  processMCPEnv,
-  isUserSourced,
-  isOAuthServer,
 } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
-const {
-  findToken,
-  findTokens,
-  createToken,
-  updateToken,
-  deleteTokens,
-  findPluginAuthsByKeys,
-} = require('~/models');
+const { findToken, findTokens, createToken, updateToken, deleteTokens } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { exchangeOboToken } = require('~/server/services/OboTokenService');
 const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
 const { updateMCPServerTools } = require('~/server/services/Config');
+const { resolveCurrentMCPDiscoveryScope } = require('~/server/services/MCPDiscoveryScope');
 const { getLogStores } = require('~/cache');
 
 const MCP_REINITIALIZE_FAILURE_REASONS = {
@@ -37,90 +20,6 @@ const MCP_REINITIALIZE_FAILURE_REASONS = {
   OAUTH_REQUIRED: 'oauth_required',
   INITIALIZATION_FAILED: 'initialization_failed',
 };
-
-async function resolveCurrentDiscoveryScope({
-  registry,
-  user,
-  serverName,
-  serverConfig,
-  configServers,
-  customUserVars,
-  requestBody,
-  authorizationIdentity,
-  discoveryProvenance,
-}) {
-  const tenantId = user.tenantId ?? getTenantId() ?? null;
-  if (!isMCPToolCatalogFingerprintAvailable()) {
-    return { tenantId, serverConfig, customUserVars };
-  }
-  if (!discoveryProvenance || authorizationIdentity == null) {
-    return null;
-  }
-
-  try {
-    const currentServerConfig = await registry.getServerConfig(serverName, user.id, configServers);
-    if (!currentServerConfig) {
-      return null;
-    }
-
-    let currentCustomUserVars = customUserVars;
-    if (Object.keys(currentServerConfig.customUserVars ?? {}).length > 0) {
-      const currentAuthMap = await getUserMCPAuthMap({
-        userId: user.id,
-        servers: [serverName],
-        findPluginAuthsByKeys,
-      });
-      currentCustomUserVars = getServerCustomUserVars(currentAuthMap, serverName);
-      if (getMissingCustomUserVars(currentServerConfig, currentCustomUserVars).length > 0) {
-        return null;
-      }
-    }
-
-    const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
-      userId: user.id,
-      role: user.role,
-      tenantId,
-    });
-    const dbSourced = isUserSourced(currentServerConfig);
-    const graphProcessedConfig = dbSourced
-      ? currentServerConfig
-      : await preProcessGraphTokens(currentServerConfig, {
-          user,
-          graphTokenResolver: getGraphApiToken,
-          scopes: process.env.GRAPH_API_SCOPES,
-        });
-    const effectiveServerConfig = processMCPEnv({
-      user,
-      body: requestBody,
-      dbSourced,
-      options: graphProcessedConfig,
-      customUserVars: currentCustomUserVars,
-    });
-    const current = matchesMCPConnectionProvenance(discoveryProvenance, {
-      tenantId,
-      userId: user.id,
-      serverName,
-      serverConfig: currentServerConfig,
-      effectiveServerConfig,
-      securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
-        allowedDomains,
-        allowedAddresses,
-      }),
-      customUserVars: currentCustomUserVars,
-      authorizationIdentity,
-    });
-    return current
-      ? {
-          tenantId,
-          serverConfig: currentServerConfig,
-          customUserVars: currentCustomUserVars,
-        }
-      : null;
-  } catch (error) {
-    logger.warn(`[MCP Reinitialize] Discovery scope validation failed for ${serverName}`, error);
-    return null;
-  }
-}
 
 /**
  * Reinitializes an MCP server connection and discovers available tools.
@@ -169,6 +68,7 @@ async function reinitMCPServer({
   let ephemeralServer = false;
   let discoveryProvenance = null;
   let discoveryScopeRejected = false;
+  let mcpManager;
 
   try {
     const registry = getMCPServersRegistry();
@@ -268,9 +168,8 @@ async function reinitMCPServer({
     }
 
     const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
-    const mcpManager = getMCPManager();
+    mcpManager = getMCPManager();
     const tokenMethods = { findToken, findTokens, updateToken, createToken, deleteTokens };
-    const configuredOAuth = serverConfig ? isOAuthServer(serverConfig) : false;
     const oauthStart =
       _oauthStart ??
       (async (authURL, options) => {
@@ -369,27 +268,14 @@ async function reinitMCPServer({
     }
 
     if (tools) {
-      let authorizationIdentity = 'none';
-      if (serverConfig.obo) {
-        authorizationIdentity = MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY;
-      } else if (configuredOAuth || oauthRequired) {
-        authorizationIdentity = await getMCPAuthorizationIdentity({
-          userId: user.id,
-          serverName,
-          findToken,
-          findTokens,
-        });
-      }
-      const currentScope = await resolveCurrentDiscoveryScope({
-        registry,
+      const currentScope = await resolveCurrentMCPDiscoveryScope({
         user,
         serverName,
         serverConfig,
-        configServers,
         customUserVars,
         requestBody,
-        authorizationIdentity,
         discoveryProvenance,
+        oauthRequiredHint: oauthRequired,
       });
       if (!currentScope) {
         discoveryScopeRejected = true;
@@ -400,7 +286,7 @@ async function reinitMCPServer({
           typeof mcpManager.disconnectUserConnection === 'function'
         ) {
           try {
-            await mcpManager.disconnectUserConnection(user.id, serverName);
+            await mcpManager.disconnectUserConnection(user.id, serverName, connection);
           } catch (error) {
             logger.warn(
               `[MCP Reinitialize] Failed to disconnect stale user connection for ${serverName}`,
@@ -416,9 +302,9 @@ async function reinitMCPServer({
           tools,
           serverConfig: currentScope.serverConfig,
           customUserVars: currentScope.customUserVars,
-          role: user.role,
-          authorizationIdentity,
-          persistCatalog: authorizationIdentity != null,
+          role: currentScope.user.role,
+          authorizationIdentity: currentScope.authorizationIdentity,
+          persistCatalog: currentScope.authorizationIdentity != null,
           discoveryProvenance,
         });
       }
@@ -489,6 +375,15 @@ async function reinitMCPServer({
       } catch (error) {
         logger.warn(
           `[MCP Reinitialize] Failed to disconnect ephemeral server ${serverName}`,
+          error,
+        );
+      }
+    } else if (connection && typeof mcpManager?.releaseDetachedUserConnection === 'function') {
+      try {
+        await mcpManager.releaseDetachedUserConnection(user.id, serverName, connection);
+      } catch (error) {
+        logger.warn(
+          `[MCP Reinitialize] Failed to release detached connection for ${serverName}`,
           error,
         );
       }

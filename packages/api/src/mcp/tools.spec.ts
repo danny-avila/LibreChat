@@ -265,6 +265,23 @@ describe('createMCPToolCacheService', () => {
     expect(writes).toEqual([{ tools, options: { userId: 'u1', serverName: 'srv' } }]);
   });
 
+  it('accepts the original strict legacy getter callback signature', async () => {
+    const getCachedTools = async (_options?: {
+      userId?: string;
+      serverName?: string;
+      tenantId?: string | null;
+    }): Promise<LCAvailableTools | null> => null;
+    const deps: MCPToolCacheDeps = {
+      getCachedTools,
+      setCachedTools: async () => true,
+      getServerConfig: async () => cacheableConfig,
+    };
+
+    await expect(
+      createMCPToolCacheService(deps).getMCPServerTools('u1', 'srv'),
+    ).resolves.toBeNull();
+  });
+
   it('keeps the separately named scoped reader fail-closed without auth identity', async () => {
     const deps = createMockDeps();
     const { getScopedMCPServerTools } = createMCPToolCacheService(deps);

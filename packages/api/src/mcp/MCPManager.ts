@@ -18,6 +18,7 @@ import {
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
   requiresUserScopedConnection,
+  shouldDetectRuntimeOAuth,
 } from './utils';
 import {
   createMCPToolCatalogSecurityPolicyIdentity,
@@ -354,7 +355,15 @@ export class MCPManager extends UserConnectionManager {
       const existingAppConnection = await this.appConnections?.get(serverName);
       if (existingAppConnection) {
         const provenance = existingAppConnection.getDiscoveryProvenance?.() ?? null;
-        if (expectedScope && !matchesMCPConnectionProvenance(provenance, expectedScope)) {
+        const runtimeOAuthRequiresPostValidation =
+          expectedScope != null &&
+          provenance?.authorizationKind === 'oauth' &&
+          shouldDetectRuntimeOAuth(expectedScope.serverConfig);
+        if (
+          expectedScope &&
+          !runtimeOAuthRequiresPostValidation &&
+          !matchesMCPConnectionProvenance(provenance, expectedScope)
+        ) {
           return null;
         }
         return {
@@ -373,8 +382,16 @@ export class MCPManager extends UserConnectionManager {
 
       const connection = userConnections.get(serverName)!;
       const provenance = connection.getDiscoveryProvenance?.() ?? null;
-      if (expectedScope && !matchesMCPConnectionProvenance(provenance, expectedScope)) {
-        await this.disconnectUserConnection(userId, serverName);
+      const runtimeOAuthRequiresPostValidation =
+        expectedScope != null &&
+        provenance?.authorizationKind === 'oauth' &&
+        shouldDetectRuntimeOAuth(expectedScope.serverConfig);
+      if (
+        expectedScope &&
+        !runtimeOAuthRequiresPostValidation &&
+        !matchesMCPConnectionProvenance(provenance, expectedScope)
+      ) {
+        await this.disconnectUserConnection(userId, serverName, connection);
         return null;
       }
       return {
@@ -668,6 +685,14 @@ Please follow these instructions when using tools from the respective MCP server
           await connection.disconnect();
         } catch (disconnectError) {
           logger.warn(`${logPrefix}[${toolName}] Failed to disconnect ephemeral connection`, {
+            error: disconnectError,
+          });
+        }
+      } else if (userId && connection) {
+        try {
+          await this.releaseDetachedUserConnection(userId, serverName, connection);
+        } catch (disconnectError) {
+          logger.warn(`${logPrefix}[${toolName}] Failed to release detached connection`, {
             error: disconnectError,
           });
         }

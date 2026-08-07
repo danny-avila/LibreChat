@@ -170,7 +170,13 @@ export class MCPConnectionFactory {
       scopes: process.env.GRAPH_API_SCOPES,
     });
 
-    return serverConfig === basic.serverConfig ? basic : { ...basic, serverConfig };
+    return serverConfig === basic.serverConfig
+      ? basic
+      : {
+          ...basic,
+          declarativeServerConfig: basic.declarativeServerConfig ?? basic.serverConfig,
+          serverConfig,
+        };
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
@@ -316,7 +322,7 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ) {
-    this.declarativeServerConfig = basic.serverConfig;
+    this.declarativeServerConfig = basic.declarativeServerConfig ?? basic.serverConfig;
     this.serverConfig = basic.skipEnvProcessing
       ? basic.serverConfig
       : processMCPEnv({
@@ -364,10 +370,13 @@ export class MCPConnectionFactory {
       return null;
     }
     let authorizationIdentity: string | null = 'none';
+    let authorizationKind: MCPConnectionProvenance['authorizationKind'] = 'none';
     if (this.usesObo) {
       authorizationIdentity = MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY;
+      authorizationKind = 'obo';
     } else if (this.useOAuth) {
       authorizationIdentity = oauthTokens?.credential_set_id ?? (oauthTokens ? null : 'none');
+      authorizationKind = 'oauth';
     }
     if (authorizationIdentity == null) {
       return null;
@@ -388,6 +397,7 @@ export class MCPConnectionFactory {
         authorizationIdentity,
       },
       principalKind,
+      authorizationKind,
     );
   }
 

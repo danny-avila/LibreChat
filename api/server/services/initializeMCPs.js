@@ -8,7 +8,7 @@ const { createMCPServersRegistry, createMCPManager } = require('~/config');
  * config. The registry calls this per inspection/connection so admin-panel `mcpSettings`
  * overrides are honored without a restart. Tenant comes from the ALS context inside
  * `getAppConfig`; `userId`/`role` pick up user/role-scoped overrides when an actor exists.
- * @param {{ userId?: string, role?: string, tenantId?: string | null }} [ctx]
+ * @param {{ userId?: string, role?: string, tenantId?: string | null, refresh?: boolean }} [ctx]
  */
 async function resolveMCPAllowlists(ctx) {
   const resolve = () =>
@@ -16,6 +16,8 @@ async function resolveMCPAllowlists(ctx) {
       role: ctx?.role,
       userId: ctx?.userId,
       tenantId: ctx?.tenantId ?? undefined,
+      refresh: ctx?.refresh,
+      failClosed: ctx?.refresh,
     });
   const appConfig = Object.prototype.hasOwnProperty.call(ctx ?? {}, 'tenantId')
     ? await tenantStorage.run({ tenantId: ctx.tenantId ?? undefined }, resolve)

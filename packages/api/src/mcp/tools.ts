@@ -72,7 +72,7 @@ export interface MCPToolCacheDeps {
     userId?: string;
     serverName?: string;
     tenantId?: string | null;
-  }) => Promise<LCAvailableTools | MCPToolCatalogEnvelope | null>;
+  }) => Promise<LCAvailableTools | null>;
   setCachedTools: (
     tools: LCAvailableTools,
     options?: { userId?: string; serverName?: string },

@@ -124,4 +124,8 @@ export class ServerConfigsCacheRedis
 
     return fromPairs(entries);
   }
+
+  public async getAllFresh(): Promise<Record<string, ParsedServerConfig>> {
+    return this.getAll();
+  }
 }

@@ -63,6 +63,7 @@ export interface MCPConnectionProvenance {
     credentials: string;
   };
   principalKind: 'app' | 'user';
+  authorizationKind: 'none' | 'oauth' | 'obo';
 }
 export type LCManifestTool = TPlugin;
 export type LCToolManifest = TPlugin[];
@@ -201,6 +202,8 @@ export type AddServerResult = {
 export interface BasicConnectionOptions {
   serverName: string;
   serverConfig: MCPOptions;
+  /** Internal pre-Graph declarative config retained for provenance fingerprints. */
+  declarativeServerConfig?: MCPOptions;
   useSSRFProtection?: boolean;
   allowedDomains?: string[] | null;
   /** Admin exemption list of host:port pairs that bypass the SSRF private-IP block */

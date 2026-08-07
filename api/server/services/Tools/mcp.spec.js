@@ -8,7 +8,11 @@ const mockGetMCPAuthorizationIdentity = jest.fn();
 const mockGetUserMCPAuthMap = jest.fn();
 const mockGetServerConfig = jest.fn();
 const mockResolveAllowlists = jest.fn();
+const mockResolveCatalogSecurityPolicy = jest.fn();
+const mockResolveAllMcpConfigsFresh = jest.fn();
 const mockDisconnectUserConnection = jest.fn();
+const mockReleaseDetachedUserConnection = jest.fn();
+const mockFindUser = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
@@ -21,14 +25,17 @@ jest.mock('~/config', () => ({
     getConnection: mockGetConnection,
     discoverServerTools: mockDiscoverServerTools,
     disconnectUserConnection: mockDisconnectUserConnection,
+    releaseDetachedUserConnection: mockReleaseDetachedUserConnection,
   })),
   getMCPServersRegistry: jest.fn(() => ({
     getServerConfig: mockGetServerConfig,
     resolveAllowlists: mockResolveAllowlists,
+    resolveCatalogSecurityPolicy: mockResolveCatalogSecurityPolicy,
   })),
   getFlowStateManager: jest.fn(() => ({})),
 }));
 jest.mock('~/models', () => ({
+  findUser: (...args) => mockFindUser(...args),
   findToken: jest.fn(),
   findTokens: jest.fn(),
   createToken: jest.fn(),
@@ -38,6 +45,18 @@ jest.mock('~/models', () => ({
 }));
 jest.mock('~/server/services/Config', () => ({
   updateMCPServerTools: mockUpdateMCPServerTools,
+}));
+jest.mock('~/server/services/MCPConfigResolver', () => ({
+  resolveAllMcpConfigsFresh: (...args) => mockResolveAllMcpConfigsFresh(...args),
+  resolveMCPDiscoveryConfigSnapshot: async (userId, user) => ({
+    configs: await mockResolveAllMcpConfigsFresh(userId, user),
+    securityPolicy: await mockResolveCatalogSecurityPolicy({
+      userId,
+      role: user.role,
+      tenantId: user.tenantId ?? null,
+      refresh: true,
+    }),
+  }),
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: mockGetGraphApiToken,
@@ -59,6 +78,11 @@ const originalJwtSecret = process.env.JWT_SECRET;
 beforeEach(() => {
   delete process.env.CREDS_KEY;
   delete process.env.JWT_SECRET;
+  mockResolveAllMcpConfigsFresh.mockImplementation(async () => {
+    const config = await mockGetServerConfig();
+    return config ? { Thingy: config } : {};
+  });
+  mockFindUser.mockImplementation(async ({ _id }) => ({ _id }));
 });
 
 afterAll(() => {
@@ -95,7 +119,12 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       allowedAddresses: null,
       useSSRFProtection: false,
     });
+    mockResolveCatalogSecurityPolicy.mockResolvedValue({
+      allowedDomains: null,
+      allowedAddresses: null,
+    });
     mockDisconnectUserConnection.mockResolvedValue(undefined);
+    mockReleaseDetachedUserConnection.mockResolvedValue(false);
   });
 
   it('rejects live tools when a stale connection grant differs from the current grant', async () => {
@@ -124,17 +153,22 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     );
     mockGetMCPAuthorizationIdentity.mockResolvedValue('grant-b');
     mockGetServerConfig.mockResolvedValue(oauthConfig);
-    mockGetConnection.mockResolvedValue({
+    const connection = {
       fetchTools: jest.fn().mockResolvedValue(tools),
       getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
-    });
+    };
+    mockGetConnection.mockResolvedValue(connection);
 
     try {
       const result = await reinitMCPServer({ user, serverName, serverConfig: oauthConfig });
 
       expect(result).toMatchObject({ availableTools: null, tools: null, success: false });
       expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
-      expect(mockDisconnectUserConnection).toHaveBeenCalledWith(user.id, serverName);
+      expect(mockDisconnectUserConnection).toHaveBeenCalledWith(
+        user.id,
+        serverName,
+        expect.any(Object),
+      );
       expect(mockGetMCPAuthorizationIdentity).toHaveBeenCalledTimes(1);
     } finally {
       if (originalCredsKey == null) {
@@ -171,10 +205,11 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     );
     mockGetMCPAuthorizationIdentity.mockResolvedValue('grant-b');
     mockGetServerConfig.mockResolvedValue(oauthConfig);
-    mockGetConnection.mockResolvedValue({
+    const connection = {
       fetchTools: jest.fn().mockResolvedValue(tools),
       getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
-    });
+    };
+    mockGetConnection.mockResolvedValue(connection);
 
     try {
       const result = await reinitMCPServer({ user, serverName, serverConfig: oauthConfig });
@@ -189,6 +224,11 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
         }),
       );
       expect(mockDisconnectUserConnection).not.toHaveBeenCalled();
+      expect(mockReleaseDetachedUserConnection).toHaveBeenCalledWith(
+        user.id,
+        serverName,
+        connection,
+      );
     } finally {
       if (originalCredsKey == null) {
         delete process.env.CREDS_KEY;
@@ -196,6 +236,66 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
         process.env.CREDS_KEY = originalCredsKey;
       }
     }
+  });
+
+  it('accepts a runtime URL auto-OAuth connection with the current stored grant', async () => {
+    process.env.CREDS_KEY = 'reinit-runtime-oauth-key';
+    const tools = [{ name: 'search', inputSchema: { type: 'object' } }];
+    const runtimeConfig = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/users/{{LIBRECHAT_USER_ID}}',
+      source: 'yaml',
+    };
+    const detectedConfig = { ...runtimeConfig, requiresOAuth: true };
+    const provenance = createMCPConnectionProvenance(
+      {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig: detectedConfig,
+        effectiveServerConfig: {
+          ...detectedConfig,
+          url: `https://mcp.example.com/users/${user.id}`,
+        },
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: 'grant-runtime',
+      },
+      'user',
+      'oauth',
+    );
+    mockGetMCPAuthorizationIdentity.mockResolvedValue('grant-runtime');
+    mockGetServerConfig.mockResolvedValue(runtimeConfig);
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue(tools),
+      getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+    });
+
+    const result = await reinitMCPServer({ user, serverName, serverConfig: runtimeConfig });
+
+    expect(result.tools).toEqual(tools);
+    expect(provenance.authorizationKind).toBe('oauth');
+    expect(mockGetMCPAuthorizationIdentity).toHaveBeenCalledTimes(1);
+    expect(mockResolveAllMcpConfigsFresh).toHaveBeenCalledWith(
+      user.id,
+      expect.objectContaining({ id: user.id, idOnTheSource: null }),
+    );
+    expect(mockResolveCatalogSecurityPolicy).toHaveBeenCalledWith({
+      userId: user.id,
+      role: undefined,
+      tenantId: null,
+      refresh: true,
+    });
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools,
+        authorizationIdentity: 'grant-runtime',
+        discoveryProvenance: provenance,
+      }),
+    );
+    expect(mockDisconnectUserConnection).not.toHaveBeenCalled();
   });
 
   it('accepts OBO lifecycle provenance without querying persistent OAuth grants', async () => {
@@ -288,7 +388,118 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       expect.objectContaining({ userId: user.id, servers: [serverName] }),
     );
     expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
-    expect(mockDisconnectUserConnection).toHaveBeenCalledWith(user.id, serverName);
+    expect(mockDisconnectUserConnection).toHaveBeenCalledWith(
+      user.id,
+      serverName,
+      expect.any(Object),
+    );
+  });
+
+  it('rejects live tools when the authoritative server config rotates after discovery', async () => {
+    process.env.CREDS_KEY = 'reinit-config-rotation-key';
+    const tools = [{ name: 'search', inputSchema: { type: 'object' } }];
+    const initialConfig = {
+      type: 'streamable-http',
+      url: 'https://old.example.com/mcp',
+      source: 'yaml',
+    };
+    const currentConfig = { ...initialConfig, url: 'https://new.example.com/mcp' };
+    const provenance = createMCPConnectionProvenance(
+      {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig: initialConfig,
+        effectiveServerConfig: initialConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: 'none',
+      },
+      'user',
+    );
+    mockGetServerConfig.mockResolvedValue(currentConfig);
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue(tools),
+      getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+    });
+
+    const result = await reinitMCPServer({ user, serverName, serverConfig: initialConfig });
+
+    expect(result).toMatchObject({ availableTools: null, tools: null, success: false });
+    expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
+    expect(mockDisconnectUserConnection).toHaveBeenCalledWith(
+      user.id,
+      serverName,
+      expect.any(Object),
+    );
+  });
+
+  it('rejects live tools when the authoritative policy rotates after discovery', async () => {
+    process.env.CREDS_KEY = 'reinit-policy-rotation-key';
+    const tools = [{ name: 'search', inputSchema: { type: 'object' } }];
+    const config = {
+      type: 'streamable-http',
+      url: 'https://thingy.example.com/mcp',
+      source: 'yaml',
+    };
+    const provenance = createMCPConnectionProvenance(
+      {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig: config,
+        effectiveServerConfig: config,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: ['thingy.example.com'],
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: 'none',
+      },
+      'user',
+    );
+    mockGetServerConfig.mockResolvedValue(config);
+    mockResolveCatalogSecurityPolicy.mockResolvedValue({
+      allowedDomains: ['new.example.com'],
+      allowedAddresses: null,
+    });
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue(tools),
+      getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+    });
+
+    const result = await reinitMCPServer({ user, serverName, serverConfig: config });
+
+    expect(result).toMatchObject({ availableTools: null, tools: null, success: false });
+    expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['deleted', null],
+    ['role changed', { _id: user.id, role: 'ADMIN' }],
+    ['source identity changed', { _id: user.id, role: 'USER', idOnTheSource: 'source-b' }],
+  ])('rejects live tools when the authoritative user is %s', async (_label, storedUser) => {
+    process.env.CREDS_KEY = 'reinit-principal-rotation-key';
+    const scopedUser = { ...user, role: 'USER', idOnTheSource: 'source-a' };
+    const config = {
+      type: 'streamable-http',
+      url: 'https://thingy.example.com/mcp',
+      source: 'yaml',
+    };
+    const tools = [{ name: 'search', inputSchema: { type: 'object' } }];
+    mockFindUser.mockResolvedValue(storedUser);
+    mockGetServerConfig.mockResolvedValue(config);
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue(tools),
+      getDiscoveryProvenance: jest.fn().mockReturnValue({ version: 1 }),
+    });
+
+    const result = await reinitMCPServer({ user: scopedUser, serverName, serverConfig: config });
+
+    expect(result).toMatchObject({ availableTools: null, tools: null, success: false });
+    expect(mockResolveAllMcpConfigsFresh).not.toHaveBeenCalled();
+    expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
   });
 
   it('does not connect and exposes no tools when a required customUserVar is unset', async () => {

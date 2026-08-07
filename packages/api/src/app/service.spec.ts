@@ -105,6 +105,22 @@ describe('createAppConfigService', () => {
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
     });
 
+    it('propagates principal lookup failures when failClosed is true', async () => {
+      const error = new Error('principal store unavailable');
+      const deps = createDeps({ getUserPrincipals: jest.fn().mockRejectedValue(error) });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await expect(getAppConfig({ userId: 'uid1', failClosed: true })).rejects.toBe(error);
+    });
+
+    it('propagates override lookup failures when failClosed is true', async () => {
+      const error = new Error('override store unavailable');
+      const deps = createDeps({ getApplicableConfigs: jest.fn().mockRejectedValue(error) });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await expect(getAppConfig({ userId: 'uid1', failClosed: true })).rejects.toBe(error);
+    });
+
     it('queries DB for applicable configs', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);

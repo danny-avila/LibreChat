@@ -23,7 +23,6 @@ const {
   OAUTH_SESSION_COOKIE,
   mcpConfig: mcpSettings,
   getServerCustomUserVars,
-  getMCPAuthorizationIdentity,
 } = require('@librechat/api');
 const {
   createMCPServerController,
@@ -49,6 +48,7 @@ const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middlew
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { resolveCurrentMCPDiscoveryScope } = require('~/server/services/MCPDiscoveryScope');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
@@ -393,22 +393,44 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
     }
 
-    logger.debug('[MCP OAuth] Completing OAuth flow');
-    /**
-     * Restore tenant context for the callback body. The callback is a cross-origin
-     * redirect from the OAuth provider, so SameSite=Strict cookies (including the
-     * JWT) are not sent. The tenantId was stored in the flow metadata at initiation
-     * time when the user was authenticated.
-     */
-    const runWithTenant = async (fn) => {
-      const flowTenantId = flowState.tenantId;
-      if (flowTenantId) {
-        return tenantStorage.run({ tenantId: flowTenantId }, fn);
+    const normalizeTenantId = (tenantId) => (tenantId == null ? null : String(tenantId));
+    const normalizePrincipalValue = (value) => (value == null ? null : String(value));
+    const flowTenantId = normalizeTenantId(flowState.tenantId);
+    const loadCallbackUser = async () =>
+      await tenantStorage.run(
+        { tenantId: flowTenantId ?? undefined },
+        async () => await db.findUser({ _id: flowState.userId }, 'role tenantId idOnTheSource'),
+      );
+    const toCallbackUser = (storedUser) => ({
+      id: flowState.userId,
+      tenantId: normalizeTenantId(storedUser.tenantId) ?? undefined,
+      role: storedUser.role,
+      idOnTheSource: normalizePrincipalValue(storedUser.idOnTheSource),
+    });
+    let callbackUser;
+    let callbackTenantId = flowTenantId;
+    if (!flowState.userId) {
+      throw new Error(`OAuth callback user scope is unavailable for ${serverName}`);
+    }
+    if (flowState.userId !== 'system') {
+      let storedUser;
+      try {
+        storedUser = await loadCallbackUser();
+      } catch (error) {
+        throw new Error(`Current user scope is unavailable for ${serverName}`, { cause: error });
       }
-      return fn();
-    };
+      if (!storedUser) {
+        throw new Error(`Current user scope was not found for ${serverName}`);
+      }
+      callbackTenantId = normalizeTenantId(storedUser.tenantId);
+      if (flowTenantId !== callbackTenantId) {
+        throw new Error(`Current tenant scope changed during OAuth for ${serverName}`);
+      }
+      callbackUser = toCallbackUser(storedUser);
+    }
 
-    await runWithTenant(async () => {
+    logger.debug('[MCP OAuth] Completing OAuth flow');
+    await tenantStorage.run({ tenantId: callbackTenantId ?? undefined }, async () => {
       const oauthHeaders =
         flowState.oauthHeaders ?? (await getOAuthHeaders(serverName, flowState.userId));
       const tokens = await MCPOAuthHandler.completeOAuthFlow(
@@ -419,6 +441,29 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         async (exchangedTokens) => {
           if (!flowState?.userId) {
             return exchangedTokens;
+          }
+
+          if (callbackUser) {
+            let currentStoredUser;
+            try {
+              currentStoredUser = await loadCallbackUser();
+            } catch (error) {
+              throw new Error(`Current user scope is unavailable for ${serverName}`, {
+                cause: error,
+              });
+            }
+            if (!currentStoredUser) {
+              throw new Error(`Current user scope was not found for ${serverName}`);
+            }
+            const currentCallbackUser = toCallbackUser(currentStoredUser);
+            if (
+              normalizeTenantId(currentCallbackUser.tenantId) !== callbackTenantId ||
+              normalizePrincipalValue(currentCallbackUser.role) !==
+                normalizePrincipalValue(callbackUser.role) ||
+              currentCallbackUser.idOnTheSource !== callbackUser.idOnTheSource
+            ) {
+              throw new Error(`Current principal scope changed during OAuth for ${serverName}`);
+            }
           }
 
           let storedTokens;
@@ -458,7 +503,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
               const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(
                 flowState.userId,
                 serverName,
-                flowState.tenantId,
+                callbackTenantId ?? undefined,
               );
               await clearGetTokensFlow({
                 flowManager,
@@ -482,39 +527,14 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       );
       logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
+      let mcpManager;
+      let userConnection;
       try {
-        const mcpManager = getMCPManager(flowState.userId);
+        mcpManager = getMCPManager(flowState.userId);
         logger.debug(`[MCP OAuth] Attempting to reconnect ${serverName} with new OAuth tokens`);
 
-        if (flowState.userId !== 'system') {
-          let storedUser;
-          if (typeof db.findUser === 'function') {
-            try {
-              storedUser = await db.findUser({ _id: flowState.userId }, 'role tenantId');
-            } catch (error) {
-              throw new Error(`Current user scope is unavailable for ${serverName}`, {
-                cause: error,
-              });
-            }
-            if (!storedUser) {
-              throw new Error(`Current user scope was not found for ${serverName}`);
-            }
-            if (
-              flowState.tenantId &&
-              storedUser.tenantId &&
-              flowState.tenantId !== storedUser.tenantId
-            ) {
-              throw new Error(`Current tenant scope changed during OAuth for ${serverName}`);
-            }
-          }
-          const user = {
-            id: flowState.userId,
-            tenantId: flowState.tenantId ?? storedUser?.tenantId ?? getTenantId() ?? undefined,
-            role:
-              typeof db.findUser === 'function'
-                ? storedUser?.role
-                : (flowState.role ?? flowState.metadata?.role),
-          };
+        if (callbackUser) {
+          const user = callbackUser;
 
           /** Merged config (incl. Config-tier overlays) so the reconnection and
            *  the cache gate both see request-scoped servers the base registry
@@ -555,14 +575,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             }
           }
           const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
-          const authorizationIdentityBeforeDiscovery = await getMCPAuthorizationIdentity({
-            userId: flowState.userId,
-            serverName,
-            findToken: db.findToken,
-            findTokens: db.findTokens,
-          });
-
-          const userConnection = await mcpManager.getUserConnection({
+          userConnection = await mcpManager.getUserConnection({
             user,
             serverName,
             flowManager,
@@ -585,27 +598,34 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
 
           const tools = await userConnection.fetchTools();
-          const authorizationIdentityAfterDiscovery = await getMCPAuthorizationIdentity({
-            userId: flowState.userId,
+          const discoveryProvenance = userConnection.getDiscoveryProvenance?.() ?? null;
+          const currentScope = await resolveCurrentMCPDiscoveryScope({
+            user,
             serverName,
-            findToken: db.findToken,
-            findTokens: db.findTokens,
+            serverConfig,
+            customUserVars,
+            discoveryProvenance,
+            oauthRequiredHint: true,
           });
-          if (
-            authorizationIdentityBeforeDiscovery != null &&
-            authorizationIdentityAfterDiscovery === authorizationIdentityBeforeDiscovery
-          ) {
+          if (currentScope) {
             await updateMCPServerTools({
-              tenantId: user.tenantId ?? null,
+              tenantId: currentScope.tenantId,
               userId: flowState.userId,
               serverName,
               tools,
-              serverConfig,
-              customUserVars,
-              role: user.role,
-              authorizationIdentity: authorizationIdentityAfterDiscovery,
-              discoveryProvenance: userConnection.getDiscoveryProvenance?.() ?? null,
+              serverConfig: currentScope.serverConfig,
+              customUserVars: currentScope.customUserVars,
+              role: currentScope.user.role,
+              authorizationIdentity: currentScope.authorizationIdentity,
+              discoveryProvenance,
             });
+          } else {
+            logger.warn(
+              `[MCP OAuth] Skipping stale discovery result for ${serverName} after callback`,
+            );
+            if (typeof mcpManager.disconnectUserConnection === 'function') {
+              await mcpManager.disconnectUserConnection(user.id, serverName, userConnection);
+            }
           }
         } else {
           logger.debug(`[MCP OAuth] System-level OAuth completed for ${serverName}`);
@@ -615,6 +635,22 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           `[MCP OAuth] Failed to reconnect ${serverName} after OAuth, but tokens are saved:`,
           error,
         );
+      } finally {
+        if (
+          callbackUser &&
+          userConnection &&
+          typeof mcpManager?.releaseDetachedUserConnection === 'function'
+        ) {
+          try {
+            await mcpManager.releaseDetachedUserConnection(
+              callbackUser.id,
+              serverName,
+              userConnection,
+            );
+          } catch (error) {
+            logger.warn(`[MCP OAuth] Failed to release detached ${serverName} connection`, error);
+          }
+        }
       }
 
       /** ID of the flow that the tool/connection is waiting for */
@@ -629,7 +665,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           );
         }
       }
-    }); /* end runWithTenant */
+    });
 
     /** Redirect to success page with flowId and serverName */
     const redirectUrl = `${basePath}/oauth/success?serverName=${encodeURIComponent(serverName)}`;

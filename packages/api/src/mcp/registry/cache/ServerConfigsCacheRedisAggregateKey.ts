@@ -107,6 +107,13 @@ export class ServerConfigsCacheRedisAggregateKey
     return result;
   }
 
+  public async getAllFresh(): Promise<Record<string, ParsedServerConfig>> {
+    return (
+      ((await this.cache.get(AGGREGATE_KEY)) as Record<string, ParsedServerConfig> | undefined) ??
+      {}
+    );
+  }
+
   public async get(serverName: string): Promise<ParsedServerConfig | undefined> {
     const all = await this.getAll();
     return all[serverName];

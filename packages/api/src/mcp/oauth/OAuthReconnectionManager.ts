@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { MCPConnection } from '~/mcp/connection';
 import type { MCPOAuthTokens } from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
@@ -117,7 +118,6 @@ export class OAuthReconnectionManager {
   private cleanupOnFailedReconnect(userId: string, serverName: string): void {
     this.reconnectionsTracker.setFailed(userId, serverName);
     this.reconnectionsTracker.removeActive(userId, serverName);
-    this.mcpManager?.disconnectUserConnection(userId, serverName);
   }
 
   /**
@@ -152,11 +152,13 @@ export class OAuthReconnectionManager {
 
     logger.info(`${logPrefix} Attempting reconnection`);
 
+    let connection: MCPConnection | undefined;
+    let connected = false;
     try {
       const config = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
 
       // attempt to get connection (this will use existing tokens and refresh if needed)
-      const connection = await this.mcpManager.getUserConnection({
+      connection = await this.mcpManager.getUserConnection({
         serverName,
         user: { id: userId } as IUser,
         flowManager: this.flowManager,
@@ -169,17 +171,33 @@ export class OAuthReconnectionManager {
         returnOnOAuth: true,
       });
 
-      if (connection && (await connection.isConnected())) {
+      connected = connection != null && (await connection.isConnected());
+      if (connected) {
         logger.info(`${logPrefix} Successfully reconnected`);
         this.clearReconnection(userId, serverName);
       } else {
         logger.warn(`${logPrefix} Failed to reconnect`);
-        await connection?.disconnect();
-        this.cleanupOnFailedReconnect(userId, serverName);
       }
     } catch (error) {
       logger.warn(`${logPrefix} Failed to reconnect: ${error}`);
-      this.cleanupOnFailedReconnect(userId, serverName);
+    } finally {
+      if (!connected) {
+        this.cleanupOnFailedReconnect(userId, serverName);
+        if (connection) {
+          try {
+            await this.mcpManager.disconnectUserConnection(userId, serverName, connection);
+          } catch (error) {
+            logger.warn(`${logPrefix} Failed to disconnect rejected reconnection`, error);
+          }
+        }
+      }
+      if (connection && typeof this.mcpManager.releaseDetachedUserConnection === 'function') {
+        try {
+          await this.mcpManager.releaseDetachedUserConnection(userId, serverName, connection);
+        } catch (error) {
+          logger.warn(`${logPrefix} Failed to release detached reconnection`, error);
+        }
+      }
     }
   }
 

@@ -21,5 +21,8 @@ export interface IServerConfigsRepositoryInterface {
   //ACL Entry get all accessible mcp config definitions + any mcp configured with agents
   getAll(userId?: string, role?: string): Promise<Record<string, ParsedServerConfig>>;
 
+  /** Bypasses process-local snapshots when the backing repository supports them. */
+  getAllFresh?(userId?: string, role?: string): Promise<Record<string, ParsedServerConfig>>;
+
   reset(): Promise<void>;
 }
