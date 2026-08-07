@@ -40,9 +40,6 @@ const ROW_HEIGHT_DESC = 46;
 /* Kept short enough that the popup clears the space below the composer, so it
    opens downward instead of Ariakit flipping it up over the thread. */
 const LIST_MAX_HEIGHT = 300;
-/* Unsearched, the section is a shortcut to what was just uploaded rather than a
-   file manager; typing searches the whole list. */
-const RECENT_FILE_COUNT = 5;
 /** Gap between the composer and the popup, and between the popup and the
  *  bottom of the window. Shared with the `gutter` prop so the room the page
  *  makes and the room the popup takes cannot drift apart. */
@@ -299,7 +296,8 @@ function Palette({
   }, [mounted, popupHeight, setLift, anchorRef, follow]);
 
   const favorites = useToolFavorites();
-  const recent = useRecentFiles(mounted && canAttach, { files, setFiles, conversation });
+  const query = search.trim().toLowerCase();
+  const recent = useRecentFiles(mounted && canAttach, { files, setFiles, conversation }, search);
   const attach = useAttachItems({
     agentId,
     endpoint,
@@ -312,8 +310,6 @@ function Palette({
     setFiles,
     setFilesLoading,
   });
-
-  const query = search.trim().toLowerCase();
 
   /** One pass over each source: filter by query, split favourites out, then
    *  flatten to the row model the virtualized list renders from. */
@@ -409,16 +405,10 @@ function Palette({
     pushSection('skill');
     pushSection('mcp');
 
-    if (canAttach) {
-      const matchedFiles =
-        query === ''
-          ? recent.files.slice(0, RECENT_FILE_COUNT)
-          : recent.files.filter((file) => file.filename?.toLowerCase().includes(query));
-      if (matchedFiles.length > 0) {
-        next.push({ type: 'header', key: 'h:files', label: localize('com_ui_composer_files') });
-        for (const file of matchedFiles) {
-          next.push({ type: 'file', key: `file:${file.file_id}`, file });
-        }
+    if (canAttach && recent.files.length > 0) {
+      next.push({ type: 'header', key: 'h:files', label: localize('com_ui_composer_files') });
+      for (const file of recent.files) {
+        next.push({ type: 'file', key: `file:${file.file_id}`, file });
       }
     }
 

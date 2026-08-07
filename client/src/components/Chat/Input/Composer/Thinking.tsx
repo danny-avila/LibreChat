@@ -7,6 +7,7 @@ import Effort, { AUTO_VALUES, resolveEffortLabel } from './Effort';
 import useThinkingSetting from '~/hooks/Input/useThinkingSetting';
 import useReducedMotion from '~/hooks/Generic/useReducedMotion';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import { useChatContext } from '~/Providers';
 import { cn } from '~/utils';
 
@@ -169,15 +170,19 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
  * parameters panel under a different name per provider.
  *
  * Model and agent selection deliberately stay in the header; this owns effort
- * only. Renders nothing at all for models that expose no reasoning parameter.
+ * only. Renders nothing at all for models that expose no reasoning parameter,
+ * and nothing when `interface.parameters` is off (the same gate as the
+ * Parameters side panel — model specs default that flag to false).
  *
  * Split in two so the control's hooks are never behind that early return.
  */
 function Thinking() {
   const { conversation } = useChatContext();
+  const { data: startupConfig } = useGetStartupConfig();
   const setting = useThinkingSetting(conversation ?? null);
+  const parametersEnabled = startupConfig?.interface?.parameters === true;
 
-  if (!setting) {
+  if (!parametersEnabled || !setting) {
     return null;
   }
 
