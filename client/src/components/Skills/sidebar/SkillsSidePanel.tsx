@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { Spinner } from '@librechat/client';
 import { useParams } from 'react-router-dom';
 import type { TSkillListResponse } from 'librechat-data-provider';
@@ -9,6 +10,7 @@ import SkillListPanel from '../lists/SkillList';
 import { PanelContent } from '~/components/ui';
 import FilterSkills from './FilterSkills';
 import { cn } from '~/utils';
+import store from '~/store';
 
 interface SkillsSidePanelProps {
   className?: string;
@@ -23,7 +25,6 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
   const localize = useLocalize();
   const { skillId: activeSkillId } = useParams();
   const [searchTerm, setSearchTerm] = useState('');
-  const [showLoading, setShowLoading] = useState(false);
   const debouncedSearch = useDebounce(searchTerm, 250);
 
   const listQuery = useSkillsInfiniteQuery({ search: debouncedSearch || undefined, limit: 20 });
@@ -34,11 +35,14 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
   const lastPage = pages[pages.length - 1];
   const nextCursor = lastPage?.has_more === true ? lastPage.after : null;
 
+  /** A collapsed sidebar keeps this panel mounted, so stop draining pages into it */
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+
   const { containerRef } = useNavScrolling<TSkillListResponse>({
-    setShowLoading,
     nextCursor,
     isFetchingNext: listQuery.isFetchingNextPage,
     fetchNextPage: listQuery.fetchNextPage,
+    enabled: sidebarExpanded,
   });
 
   return (
@@ -63,9 +67,12 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
       >
         <SkillListPanel skills={skills} activeSkillId={activeSkillId} />
         {/* Appending the next page, so the loaded rows stay put */}
-        {(listQuery.isFetchingNextPage || showLoading) && (
+        {listQuery.isFetchingNextPage && (
           <div className="flex shrink-0 justify-center py-2">
-            <Spinner className="size-4" aria-label={localize('com_ui_loading')} />
+            <Spinner className="size-4" />
+            <span className="sr-only" aria-live="polite" aria-atomic="true">
+              {localize('com_ui_loading')}
+            </span>
           </div>
         )}
       </PanelContent>

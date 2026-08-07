@@ -1,5 +1,6 @@
 import React from 'react';
 import type { ReactNode } from 'react';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 /**
@@ -23,9 +24,19 @@ const PanelContent = React.forwardRef<
     className?: string;
   }
 >(({ isLoading, isEmpty, skeleton, empty, children, className }, ref) => {
+  const localize = useLocalize();
+
   const renderContent = () => {
     if (isLoading) {
-      return skeleton;
+      /** Skeleton rows are decorative, so a live region carries the announcement */
+      return (
+        <>
+          <span className="sr-only" aria-live="polite" aria-atomic="true">
+            {localize('com_ui_loading')}
+          </span>
+          {skeleton}
+        </>
+      );
     }
     if (isEmpty === true && empty != null) {
       return empty;
@@ -34,7 +45,11 @@ const PanelContent = React.forwardRef<
   };
 
   return (
-    <div ref={ref} className={cn('min-h-0 flex-1 overflow-y-auto', className)}>
+    <div
+      ref={ref}
+      aria-busy={isLoading}
+      className={cn('min-h-0 flex-1 overflow-y-auto', className)}
+    >
       {renderContent()}
     </div>
   );

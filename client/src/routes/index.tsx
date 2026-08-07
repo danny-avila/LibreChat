@@ -139,6 +139,11 @@ export const router = createBrowserRouter(
               element: <Navigate to="/c/new" replace={true} />,
             },
             {
+              /** Prompts are created from a dialog, so there is no "new" page to land on */
+              path: 'prompts/new',
+              element: <Navigate to="/c/new" replace={true} />,
+            },
+            {
               path: 'prompts/:promptId',
               lazy: loadInlinePromptsView,
             },

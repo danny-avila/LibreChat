@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useLocation } from 'react-router-dom';
 import { Button, Sidebar, Spinner, TooltipAnchor } from '@librechat/client';
 import type { PromptGroupListResponse } from 'librechat-data-provider';
@@ -8,6 +8,7 @@ import { usePromptGroupsContext } from '~/Providers';
 import { PanelContent } from '~/components/ui';
 import List from '../lists/List';
 import { cn } from '~/utils';
+import store from '~/store';
 
 export default function GroupSidePanel({
   children,
@@ -29,14 +30,16 @@ export default function GroupSidePanel({
   const localize = useLocalize();
   const isChatRoute = isChatRouteProp ?? location.pathname?.startsWith('/c/') ?? false;
 
-  const [showLoading, setShowLoading] = useState(false);
   const context = usePromptGroupsContext();
 
+  /** A collapsed sidebar keeps this panel mounted, so stop draining pages into it */
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+
   const { containerRef } = useNavScrolling<PromptGroupListResponse>({
-    setShowLoading,
     nextCursor: context?.nextCursor,
     isFetchingNext: context?.isFetchingNextPage ?? false,
     fetchNextPage: context?.fetchNextPage,
+    enabled: sidebarExpanded,
   });
 
   if (!context) {
@@ -78,9 +81,12 @@ export default function GroupSidePanel({
         >
           <List groups={promptGroups} isChatRoute={isChatRoute} />
           {/* Appending the next page, so the loaded rows stay put */}
-          {(isFetchingNextPage || showLoading) && (
+          {isFetchingNextPage && (
             <div className="flex shrink-0 justify-center py-2">
-              <Spinner className="size-4" aria-label={localize('com_ui_loading')} />
+              <Spinner className="size-4" />
+              <span className="sr-only" aria-live="polite" aria-atomic="true">
+                {localize('com_ui_loading')}
+              </span>
             </div>
           )}
         </PanelContent>

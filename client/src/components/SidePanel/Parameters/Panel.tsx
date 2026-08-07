@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import keyBy from 'lodash/keyBy';
 import { RotateCcw } from 'lucide-react';
 import { Button } from '@librechat/client';
@@ -17,7 +17,7 @@ import { SaveAsPresetDialog } from '~/components/Endpoints';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { componentMapping } from './components';
-import { logger } from '~/utils';
+import { logger, cn } from '~/utils';
 
 export default function Parameters() {
   const localize = useLocalize();
@@ -27,7 +27,8 @@ export default function Parameters() {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [preset, setPreset] = useState<TPreset | null>(null);
-  const resetIconRef = useRef<SVGSVGElement>(null);
+  /** Bumped on every reset; used as a key so the spin animation replays */
+  const [resetCount, setResetCount] = useState(0);
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
   const provider = conversation?.endpoint ?? '';
@@ -143,13 +144,7 @@ export default function Parameters() {
 
     announcePolite({ message: localize('com_ui_model_parameters_reset'), isStatus: true });
 
-    const icon = resetIconRef.current;
-    if (icon) {
-      icon.classList.remove('animate-reset-spin');
-      /** Forces a reflow so the animation replays on consecutive clicks */
-      void icon.getBoundingClientRect();
-      icon.classList.add('animate-reset-spin');
-    }
+    setResetCount((count) => count + 1);
   }, [setConversation, announcePolite, localize]);
 
   const openDialog = useCallback(() => {
@@ -201,8 +196,11 @@ export default function Parameters() {
           className="flex w-full items-center justify-center gap-2 px-4 py-2 text-sm active:scale-[0.98] motion-reduce:transform-none"
         >
           <RotateCcw
-            ref={resetIconRef}
-            className="h-4 w-4 motion-reduce:animate-none"
+            key={resetCount}
+            className={cn(
+              'h-4 w-4 motion-reduce:animate-none',
+              resetCount > 0 && 'animate-reset-spin',
+            )}
             aria-hidden="true"
           />
           {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}

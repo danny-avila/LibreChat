@@ -4,7 +4,7 @@ import DashboardRoute from './Layouts/Dashboard';
 function PromptsRedirect() {
   const { '*': splat } = useParams();
   /** Prompts are created from a dialog, so there is no "new" page to land on */
-  const target = splat ? `/prompts/${splat}` : '/c/new';
+  const target = splat && splat !== 'new' ? `/prompts/${splat}` : '/c/new';
   return <Navigate to={target} replace={true} />;
 }
 

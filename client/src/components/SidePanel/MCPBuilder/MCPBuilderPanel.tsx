@@ -1,8 +1,8 @@
 import { useState, useRef, useMemo } from 'react';
 import { Plus } from 'lucide-react';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { Button, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/client';
-import { useLocalize, useMCPServerManager, useHasAccess } from '~/hooks';
+import { useLocalize, useMCPServerManager, useHasAccess, useAuthContext } from '~/hooks';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { PanelFooter, PanelContent } from '~/components/ui';
 import MCPServerCardSkeleton from './MCPServerCardSkeleton';
@@ -12,6 +12,7 @@ import MCPServerList from './MCPServerList';
 
 export default function MCPBuilderPanel() {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const { availableMCPServers, isLoading, getServerStatusIconProps, getConfigDialogProps } =
     useMCPServerManager();
 
@@ -98,9 +99,11 @@ export default function MCPBuilderPanel() {
       {/* Config Dialog for custom user vars */}
       {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
 
-      <PanelFooter>
-        <MCPAdminSettings />
-      </PanelFooter>
+      {user?.role === SystemRoles.ADMIN && (
+        <PanelFooter>
+          <MCPAdminSettings />
+        </PanelFooter>
+      )}
     </div>
   );
 }
