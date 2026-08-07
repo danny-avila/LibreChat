@@ -93,8 +93,8 @@ const CreatePromptForm = ({
   const promptText = watch('prompt');
   const isCreating = createPromptMutation.isLoading;
   const isBlocked = !isDirty || isSubmitting || !isValid || isCreating;
-  /** Floating labels notch out the surface behind them: the dialog sits on `background`, the page on `presentation` */
-  const labelBgClassName = isDialog ? 'bg-background' : 'bg-presentation';
+  /** Floating labels notch out the surface behind them: the dialog sits on `surface-primary`, the page on `presentation` */
+  const labelBgClassName = isDialog ? 'bg-surface-primary' : 'bg-presentation';
 
   const onSubmit = (data: CreateFormValues) => {
     const { name, category, oneliner, command, ...rest } = data;
