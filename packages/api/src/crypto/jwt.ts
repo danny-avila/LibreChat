@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Algorithm } from 'jsonwebtoken';
+import { normalizePem } from '~/crypto/keys';
 
 /**
  * Scopes the RAG service recognises, one per capability. `rag:embed` guards its
@@ -55,16 +56,40 @@ const MIN_HMAC_SECRET_LENGTH = 32;
 
 const TRUTHY_VALUES: ReadonlySet<string> = new Set(['true', '1', 'yes', 'on', 'y']);
 
-const HMAC_ALGORITHMS: ReadonlySet<string> = new Set(['HS256', 'HS384', 'HS512']);
-const ASYMMETRIC_ALGORITHMS: ReadonlySet<string> = new Set([
+/**
+ * Every algorithm the pinned `jsonwebtoken` can both sign and verify. `EdDSA`
+ * is deliberately absent: the pinned `jws`/`jwa` implementation has no Ed25519
+ * signer, so offering it would accept a configuration that then throws on the
+ * first mint. `jwt.spec.ts` signs and verifies a real key of the matching type
+ * for every entry below, so nothing can be listed here without being exercised.
+ */
+const HMAC_ALGORITHMS: ReadonlySet<Algorithm> = new Set<Algorithm>(['HS256', 'HS384', 'HS512']);
+const ASYMMETRIC_ALGORITHMS: ReadonlySet<Algorithm> = new Set<Algorithm>([
   'RS256',
   'RS384',
   'RS512',
+  'PS256',
+  'PS384',
+  'PS512',
   'ES256',
   'ES384',
   'ES512',
-  'EdDSA',
 ]);
+
+/**
+ * Case-insensitive lookup from configured value to the exact spelling
+ * `jsonwebtoken` expects. Matching on an upper-cased copy rather than
+ * upper-casing the value itself keeps mixed-case algorithm names (the JOSE
+ * registry has them) resolvable instead of silently unmatchable.
+ */
+const ALGORITHMS_BY_UPPERCASE: ReadonlyMap<string, Algorithm> = new Map(
+  [...HMAC_ALGORITHMS, ...ASYMMETRIC_ALGORITHMS].map((algorithm) => [
+    algorithm.toUpperCase(),
+    algorithm,
+  ]),
+);
+
+export const supportedRagAlgorithms = (): Algorithm[] => [...ALGORITHMS_BY_UPPERCASE.values()];
 
 /**
  * Mirrors the RAG service's own `RAG_AUTH_ACCEPT_LEGACY` parsing so both sides
@@ -110,13 +135,14 @@ export const isRagAudience = (audience?: string | string[] | null): boolean => {
  * versa, which is the whole reason the dedicated key exists.
  */
 function resolveSigningConfig(): RagSigningConfig | null {
-  const algorithm = (process.env.RAG_JWT_ALGORITHM ?? 'HS256').trim().toUpperCase() as Algorithm;
-  const isHmac = HMAC_ALGORITHMS.has(algorithm);
+  const configured = (process.env.RAG_JWT_ALGORITHM ?? 'HS256').trim();
+  const algorithm = ALGORITHMS_BY_UPPERCASE.get(configured.toUpperCase());
 
-  if (!isHmac && !ASYMMETRIC_ALGORITHMS.has(algorithm)) {
-    throw new Error(`[generateShortLivedToken] RAG_JWT_ALGORITHM '${algorithm}' is not supported`);
+  if (!algorithm) {
+    throw new Error(`[generateShortLivedToken] RAG_JWT_ALGORITHM '${configured}' is not supported`);
   }
 
+  const isHmac = HMAC_ALGORITHMS.has(algorithm);
   const keyVariable = isHmac ? 'RAG_JWT_SECRET' : 'RAG_JWT_PRIVATE_KEY';
   const key = isHmac ? process.env.RAG_JWT_SECRET : process.env.RAG_JWT_PRIVATE_KEY;
 
@@ -147,6 +173,14 @@ function resolveSigningConfig(): RagSigningConfig | null {
     }
   }
 
+  /**
+   * An HMAC secret is opaque bytes and has to reach the signer exactly as the
+   * RAG service reads it; a PEM is structured text that environments routinely
+   * flatten to one line with literal `\n` escapes, which Node's key parser
+   * rejects.
+   */
+  const signingKey = isHmac ? key : normalizePem(key);
+
   const issuer = configuredIssuer();
   if (!issuer) {
     throw new Error('[generateShortLivedToken] RAG_JWT_ISSUER must not be empty');
@@ -157,7 +191,7 @@ function resolveSigningConfig(): RagSigningConfig | null {
     throw new Error('[generateShortLivedToken] RAG_JWT_AUDIENCE must not be empty');
   }
 
-  return { key, algorithm, issuer, audience };
+  return { key: signingKey, algorithm, issuer, audience };
 }
 
 function signLegacyToken(userId: string, expireIn: string): string {

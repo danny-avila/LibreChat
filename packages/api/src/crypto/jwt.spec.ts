@@ -1,6 +1,13 @@
 import jwt from 'jsonwebtoken';
-import type { JwtPayload } from 'jsonwebtoken';
-import { RagScopes, isRagAudience, getRagAudience, generateShortLivedToken } from './jwt';
+import { generateKeyPairSync } from 'crypto';
+import type { Algorithm, JwtPayload } from 'jsonwebtoken';
+import {
+  RagScopes,
+  isRagAudience,
+  getRagAudience,
+  supportedRagAlgorithms,
+  generateShortLivedToken,
+} from './jwt';
 
 const RAG_SECRET = 'rag-secret-that-is-long-enough-for-hs256';
 const APP_SECRET = 'app-secret-that-is-long-enough-for-hs256';
@@ -10,6 +17,48 @@ const decodeWithRagKey = (token: string): JwtPayload =>
     audience: 'rag_api',
     issuer: 'librechat',
   }) as JwtPayload;
+
+const EC_CURVES: Record<string, string> = {
+  ES256: 'prime256v1',
+  ES384: 'secp384r1',
+  ES512: 'secp521r1',
+};
+
+interface KeyPair {
+  privateKey: string;
+  publicKey: string;
+}
+
+const keyPairCache = new Map<string, KeyPair>();
+
+/**
+ * A real key of the type the algorithm demands, so the round trip below
+ * exercises the signer instead of a stub. An algorithm with no known key type
+ * throws rather than being skipped: that is what keeps an unusable entry from
+ * sitting in the supported set unexercised.
+ */
+const keyPairFor = (algorithm: Algorithm): KeyPair => {
+  const cached = keyPairCache.get(algorithm);
+  if (cached) {
+    return cached;
+  }
+
+  const publicKeyEncoding = { type: 'spki', format: 'pem' } as const;
+  const privateKeyEncoding = { type: 'pkcs8', format: 'pem' } as const;
+
+  const curve = EC_CURVES[algorithm];
+  const isRsa = algorithm.startsWith('RS') || algorithm.startsWith('PS');
+  if (!curve && !isRsa) {
+    throw new Error(`No key type is known for algorithm '${algorithm}'`);
+  }
+
+  const pair = curve
+    ? generateKeyPairSync('ec', { namedCurve: curve, publicKeyEncoding, privateKeyEncoding })
+    : generateKeyPairSync('rsa', { modulusLength: 2048, publicKeyEncoding, privateKeyEncoding });
+
+  keyPairCache.set(algorithm, pair);
+  return pair;
+};
 
 describe('generateShortLivedToken', () => {
   const originalEnv = process.env;
@@ -182,6 +231,129 @@ describe('generateShortLivedToken', () => {
       expect(() =>
         generateShortLivedToken({ userId: 'user-1', entityIds: [], scopes: [RagScopes.embed] }),
       ).toThrow(/at least 32 characters/);
+    });
+  });
+
+  describe('algorithm support', () => {
+    const mint = () =>
+      generateShortLivedToken({
+        userId: 'user-1',
+        tenantId: 'tenant-a',
+        entityIds: ['agent_abc'],
+        scopes: [RagScopes.documents],
+      });
+
+    it.each(supportedRagAlgorithms())(
+      'signs and verifies end to end with %s',
+      (algorithm: Algorithm) => {
+        process.env.RAG_JWT_ALGORITHM = algorithm;
+
+        let verificationKey = RAG_SECRET;
+        if (algorithm.startsWith('HS')) {
+          process.env.RAG_JWT_SECRET = RAG_SECRET;
+        } else {
+          const { privateKey, publicKey } = keyPairFor(algorithm);
+          process.env.RAG_JWT_PRIVATE_KEY = privateKey;
+          verificationKey = publicKey;
+        }
+
+        const token = mint();
+        const header = jwt.decode(token, { complete: true })?.header;
+        expect(header?.alg).toBe(algorithm);
+
+        const claims = jwt.verify(token, verificationKey, {
+          algorithms: [algorithm],
+          audience: 'rag_api',
+          issuer: 'librechat',
+        }) as JwtPayload;
+        expect(claims.sub).toBe('user-1');
+        expect(claims.scopes).toEqual(['rag:documents']);
+      },
+    );
+
+    it('does not offer EdDSA, which the pinned jsonwebtoken cannot sign', () => {
+      expect(supportedRagAlgorithms()).not.toContain('EdDSA');
+
+      process.env.RAG_JWT_ALGORITHM = 'EdDSA';
+      process.env.RAG_JWT_PRIVATE_KEY = keyPairFor('RS256').privateKey;
+
+      expect(mint).toThrow(/RAG_JWT_ALGORITHM 'EdDSA' is not supported/);
+    });
+
+    it('resolves a supported algorithm whatever case it is configured in', () => {
+      process.env.RAG_JWT_ALGORITHM = 'hs384';
+      process.env.RAG_JWT_SECRET = RAG_SECRET;
+
+      const token = mint();
+      expect(jwt.decode(token, { complete: true })?.header.alg).toBe('HS384');
+    });
+
+    it('reports an unsupported algorithm exactly as it was configured', () => {
+      process.env.RAG_JWT_SECRET = RAG_SECRET;
+      process.env.RAG_JWT_ALGORITHM = 'Ed25519';
+
+      expect(mint).toThrow(/RAG_JWT_ALGORITHM 'Ed25519' is not supported/);
+    });
+  });
+
+  describe('private key normalization', () => {
+    it('accepts an RSA key supplied as one line with literal \\n escapes', () => {
+      const { privateKey, publicKey } = keyPairFor('RS256');
+      process.env.RAG_JWT_ALGORITHM = 'RS256';
+      process.env.RAG_JWT_PRIVATE_KEY = privateKey.replace(/\n/g, '\\n');
+
+      const token = generateShortLivedToken({
+        userId: 'user-1',
+        entityIds: [],
+        scopes: [RagScopes.embed],
+      });
+
+      const claims = jwt.verify(token, publicKey, {
+        algorithms: ['RS256'],
+        audience: 'rag_api',
+        issuer: 'librechat',
+      }) as JwtPayload;
+      expect(claims.sub).toBe('user-1');
+    });
+
+    it('accepts an EC key supplied as one line with literal \\n escapes', () => {
+      const { privateKey, publicKey } = keyPairFor('ES256');
+      process.env.RAG_JWT_ALGORITHM = 'ES256';
+      process.env.RAG_JWT_PRIVATE_KEY = privateKey.replace(/\n/g, '\\n');
+
+      const token = generateShortLivedToken({
+        userId: 'user-1',
+        entityIds: [],
+        scopes: [RagScopes.embed],
+      });
+
+      expect(
+        (
+          jwt.verify(token, publicKey, {
+            algorithms: ['ES256'],
+            audience: 'rag_api',
+            issuer: 'librechat',
+          }) as JwtPayload
+        ).sub,
+      ).toBe('user-1');
+    });
+
+    it('leaves an HMAC secret containing escape sequences byte for byte', () => {
+      const secret = 'rag-secret-with-\\n-escape-and-enough-length';
+      process.env.RAG_JWT_SECRET = secret;
+
+      const token = generateShortLivedToken({
+        userId: 'user-1',
+        entityIds: [],
+        scopes: [RagScopes.embed],
+      });
+
+      expect(() =>
+        jwt.verify(token, secret, { audience: 'rag_api', issuer: 'librechat' }),
+      ).not.toThrow();
+      expect(() =>
+        jwt.verify(token, secret.replace(/\\n/g, '\n'), { audience: 'rag_api' }),
+      ).toThrow(jwt.JsonWebTokenError);
     });
   });
 

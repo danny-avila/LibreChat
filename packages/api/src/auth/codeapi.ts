@@ -2,6 +2,7 @@ import { getTenantId } from '@librechat/data-schemas';
 import { createHash, createPrivateKey, randomUUID, sign as cryptoSign } from 'crypto';
 import type { KeyObject, JsonWebKey } from 'crypto';
 import type { ServerRequest } from '~/types';
+import { normalizePem } from '~/crypto/keys';
 import { isEnabled } from '~/utils';
 
 type CodeApiJwtAlg = 'EdDSA' | 'RS256';
@@ -75,10 +76,6 @@ let tokenCacheLastPrunedAt = 0;
 
 function base64Url(value: Buffer | string): string {
   return Buffer.from(value).toString('base64url');
-}
-
-function normalizePem(value: string): string {
-  return value.replace(/\\n/g, '\n').trim();
 }
 
 function getPrivateKeyRaw(): string {
