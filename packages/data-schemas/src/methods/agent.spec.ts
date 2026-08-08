@@ -20,6 +20,7 @@ import type {
 import type { IAgent, IAclEntry, IUser, IAccessRole } from '..';
 import { createAgentMethods, type AgentMethods } from './agent';
 import { createAclEntryMethods } from './aclEntry';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { createModels } from '~/models';
 
 /** Version snapshot stored in `IAgent.versions[]`. Extends the base omit with runtime-only fields. */
@@ -134,6 +135,38 @@ afterAll(async () => {
 describe('Agent Methods', () => {
   beforeEach(() => {
     externalSkillIds.clear();
+  });
+
+  describe('MCP authority consistency', () => {
+    beforeEach(async () => {
+      await Agent.deleteMany({});
+    });
+
+    test('publishes only for agent writes that change MCP authority inputs', async () => {
+      const consistency = getMCPAuthorityConsistencyModule(mongoose);
+      const initial = await consistency.initializeMCPAuthorityConsistency();
+      const { agentId, authorId } = createTestIds();
+
+      await createAgent({
+        id: agentId,
+        name: 'Unlinked Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await expect(consistency.assertGeneration(initial.generation)).resolves.toBeUndefined();
+
+      await updateAgent({ id: agentId }, { name: 'Still Unlinked' });
+      await expect(consistency.assertGeneration(initial.generation)).resolves.toBeUndefined();
+
+      await updateAgent(
+        { id: agentId },
+        { tools: [`search${Constants.mcp_delimiter}authority-server`] },
+      );
+      await expect(consistency.assertGeneration(initial.generation)).rejects.toMatchObject({
+        reason: 'generation_changed',
+      });
+    });
   });
 
   describe('Agent Resource File Operations', () => {

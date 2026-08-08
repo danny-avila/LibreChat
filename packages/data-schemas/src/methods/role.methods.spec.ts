@@ -11,6 +11,7 @@ import {
 import type { IRole, IUser, RolePermissions } from '..';
 import { _resetStrictCache } from '../models/plugins/tenantIsolation';
 import { tenantStorage } from '~/config/tenantContext';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { createRoleMethods } from './role';
 import { createModels } from '../models';
 
@@ -1262,5 +1263,32 @@ describe('createRoleByName - duplicate key race', () => {
     await expect(createRoleByName({ name: 'editor2' })).rejects.toThrow(/already exists/);
 
     insertSpy.mockRestore();
+  });
+});
+
+describe('MCP authority consistency', () => {
+  it('publishes a new generation after a role mutation', async () => {
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    const before = await consistency.initializeMCPAuthorityConsistency();
+
+    await createRoleByName({
+      name: 'mcp-authority-role',
+      permissions: { MCP_SERVERS: { USE: true } } as RolePermissions,
+    });
+
+    await expect(consistency.assertGeneration(before.generation)).rejects.toMatchObject({
+      reason: 'generation_changed',
+    });
+  });
+
+  it('publishes a new generation when a missing system role is created lazily', async () => {
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    const before = await consistency.initializeMCPAuthorityConsistency();
+
+    await getRoleByName(SystemRoles.USER);
+
+    await expect(consistency.assertGeneration(before.generation)).rejects.toMatchObject({
+      reason: 'generation_changed',
+    });
   });
 });

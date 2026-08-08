@@ -9,6 +9,10 @@ import {
 import type { FilterQuery, Model, PipelineStage, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry } from '~/types';
+import {
+  getMCPAuthorityConsistencyModule,
+  runMCPAuthorityMutation,
+} from './mcpAuthority/consistency';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
 
@@ -27,6 +31,22 @@ const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
   EToolResources.context,
   EToolResources.ocr,
 ];
+
+const MCP_AUTHORITY_AGENT_FIELDS = new Set(['id', 'mcpServerNames', 'tools']);
+
+function agentUpdateAffectsMCPAuthority(update: Record<string, unknown>): boolean {
+  for (const [field, value] of Object.entries(update)) {
+    if (MCP_AUTHORITY_AGENT_FIELDS.has(field.split('.')[0])) {
+      return true;
+    }
+    if (field.startsWith('$') && value !== null && typeof value === 'object') {
+      if (agentUpdateAffectsMCPAuthority(value as Record<string, unknown>)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 /** Builds an atomic update that prunes deleted IDs without discarding surviving edge members. */
 function createEdgeCleanupPipeline(agentIds: string[]): PipelineStage[] {
@@ -452,6 +472,7 @@ export function createAgentMethods(
   }) => Promise<{ matchedCount: number; modifiedCount: number }>;
 } {
   const { removeAllPermissions, getActions, getSoleOwnedResourceIds, isExternalSkillId } = deps;
+  const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
 
   /**
    * Create an agent with the provided data.
@@ -490,7 +511,12 @@ export function createAgentMethods(
         extractMCPServerNames(agentData.tools as string[] | undefined),
     };
 
-    return (await Agent.create(initialAgentData)).toObject() as IAgent;
+    const create = async (): Promise<IAgent> =>
+      (await Agent.create(initialAgentData)).toObject() as IAgent;
+    if (initialAgentData.mcpServerNames.length === 0) {
+      return await create();
+    }
+    return await runMCPAuthorityMutation(authorityMutationGate, create);
   }
 
   /**
@@ -725,11 +751,19 @@ export function createAgentMethods(
       }
     }
 
-    return (await Agent.findOneAndUpdate(
-      searchParameter,
-      updateData,
-      mongoOptions,
-    ).lean()) as IAgent | null;
+    if (!currentAgent) {
+      return null;
+    }
+    const update = async (): Promise<IAgent | null> =>
+      (await Agent.findOneAndUpdate(
+        searchParameter,
+        updateData,
+        mongoOptions,
+      ).lean()) as IAgent | null;
+    if (!agentUpdateAffectsMCPAuthority(updateData)) {
+      return await update();
+    }
+    return await runMCPAuthorityMutation(authorityMutationGate, update);
   }
 
   /**
@@ -863,35 +897,37 @@ export function createAgentMethods(
    * Deletes an agent based on the provided search parameter.
    */
   async function deleteAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
-    const Agent = mongoose.models.Agent as Model<IAgent>;
-    const User = mongoose.models.User as Model<unknown>;
-    const agent = await Agent.findOneAndDelete(searchParameter);
-    if (agent) {
-      await Promise.all([
-        removeAllPermissions({
-          resourceType: ResourceType.AGENT,
-          resourceId: agent._id,
-        }),
-        removeAllPermissions({
-          resourceType: ResourceType.REMOTE_AGENT,
-          resourceId: agent._id,
-        }),
-      ]);
-      try {
-        await removeAgentIdsFromEdges(Agent, [(agent as unknown as { id: string }).id]);
-      } catch (error) {
-        logger.error('[deleteAgent] Error removing agent from handoff edges', error);
+    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const Agent = mongoose.models.Agent as Model<IAgent>;
+      const User = mongoose.models.User as Model<unknown>;
+      const agent = await Agent.findOneAndDelete(searchParameter);
+      if (agent) {
+        await Promise.all([
+          removeAllPermissions({
+            resourceType: ResourceType.AGENT,
+            resourceId: agent._id,
+          }),
+          removeAllPermissions({
+            resourceType: ResourceType.REMOTE_AGENT,
+            resourceId: agent._id,
+          }),
+        ]);
+        try {
+          await removeAgentIdsFromEdges(Agent, [(agent as unknown as { id: string }).id]);
+        } catch (error) {
+          logger.error('[deleteAgent] Error removing agent from handoff edges', error);
+        }
+        try {
+          await User.updateMany(
+            { 'favorites.agentId': (agent as unknown as { id: string }).id },
+            { $pull: { favorites: { agentId: (agent as unknown as { id: string }).id } } },
+          );
+        } catch (error) {
+          logger.error('[deleteAgent] Error removing agent from user favorites', error);
+        }
       }
-      try {
-        await User.updateMany(
-          { 'favorites.agentId': (agent as unknown as { id: string }).id },
-          { $pull: { favorites: { agentId: (agent as unknown as { id: string }).id } } },
-        );
-      } catch (error) {
-        logger.error('[deleteAgent] Error removing agent from user favorites', error);
-      }
-    }
-    return agent ? (agent.toObject() as IAgent) : null;
+      return agent ? (agent.toObject() as IAgent) : null;
+    });
   }
 
   /**
@@ -1131,9 +1167,11 @@ export function createAgentMethods(
       }
     }
 
-    const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertToVersion, {
-      new: true,
-    }).lean<IAgent>();
+    const revertedAgent = await runMCPAuthorityMutation(authorityMutationGate, async () =>
+      Agent.findOneAndUpdate(searchParameter, revertToVersion, {
+        new: true,
+      }).lean<IAgent>(),
+    );
     if (!revertedAgent) {
       throw new Error('Agent not found');
     }
@@ -1177,7 +1215,8 @@ export function createAgentMethods(
     getMCPServerNamesByAgentIds,
     updateAgent,
     deleteAgent,
-    deleteUserAgents,
+    deleteUserAgents: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, () => deleteUserAgents(...args)),
     revertAgentVersion,
     countPromotedAgents,
     addAgentResourceFile,

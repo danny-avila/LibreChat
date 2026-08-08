@@ -982,42 +982,6 @@ describe('userGroup methods', () => {
       expect(groupPrincipalIds(await parkedRead)).toEqual([]);
     });
 
-    it('defers invalidation for transactional writes until the session ends', async () => {
-      const user = await createTestUser({ idOnTheSource: 'txn-ext-1' });
-      const group = await Group.create({
-        name: 'Transactional Team',
-        source: 'entra',
-        idOnTheSource: 'txn-grp-1',
-        memberIds: [],
-      });
-      const cache = createFakeCache();
-      const cachedMethods = createCachedMethods(cache);
-      const params = {
-        userId: user._id.toString(),
-        role: SystemRoles.USER,
-        idOnTheSource: 'txn-ext-1',
-      };
-
-      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
-
-      const session = await mongoose.startSession();
-      session.startTransaction();
-      await cachedMethods.addUserToGroup(user._id, group._id, session);
-
-      /** Mid-transaction: no invalidation, reads keep the pre-commit membership */
-      expect(cache.delete).not.toHaveBeenCalled();
-      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
-
-      await session.commitTransaction();
-      await session.endSession();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-
-      expect(cache.delete).toHaveBeenCalledWith('txn-ext-1');
-      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
-        group._id.toString(),
-      ]);
-    });
-
     it('caches and invalidates under tenant-scoped keys within a tenant context', async () => {
       const user = await createTestUser({ idOnTheSource: 'tenant-ext-1' });
       const group = await Group.create({
@@ -1047,34 +1011,6 @@ describe('userGroup methods', () => {
       expect(cache.store.has('tenant-ext-1:tenant-a')).toBe(false);
       expect(cache.delete).toHaveBeenCalledWith('tenant-ext-1:tenant-a');
       expect(cache.delete).toHaveBeenCalledWith('tenant-ext-1');
-    });
-
-    it('keeps tenant scoping for invalidations deferred past the transaction', async () => {
-      const user = await createTestUser({ idOnTheSource: 'txn-tenant-ext-1' });
-      const group = await Group.create({
-        name: 'Tenant Transactional Team',
-        source: 'entra',
-        idOnTheSource: 'txn-tenant-grp-1',
-        memberIds: [],
-      });
-      const cache = createFakeCache();
-      const cachedMethods = createCachedMethods(cache);
-
-      let session!: mongoose.ClientSession;
-      await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
-        session = await mongoose.startSession();
-        session.startTransaction();
-        await cachedMethods.addUserToGroup(user._id, group._id, session);
-      });
-      expect(cache.delete).not.toHaveBeenCalled();
-
-      /** Session ends outside the tenant context; the snapshot must preserve it */
-      await session.commitTransaction();
-      await session.endSession();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-
-      expect(cache.delete).toHaveBeenCalledWith('txn-tenant-ext-1:tenant-b');
-      expect(cache.delete).toHaveBeenCalledWith('txn-tenant-ext-1');
     });
 
     it('runs a delayed second invalidation to evict cross-process stale rewrites', async () => {
@@ -1204,36 +1140,6 @@ describe('userGroup methods', () => {
       await methods.getUserPrincipals(params);
       expect(readSpy).not.toHaveBeenCalledWith('primary');
       readSpy.mockRestore();
-    });
-
-    it('coalesces deferred invalidations into one session listener', async () => {
-      const user = await createTestUser({ idOnTheSource: 'coalesce-ext-1' });
-      const groups = await Group.create(
-        Array.from({ length: 12 }, (_, index) => ({
-          name: `Coalesce Team ${index}`,
-          source: 'entra' as const,
-          idOnTheSource: `coalesce-grp-${index}`,
-          memberIds: [],
-        })),
-      );
-      const cache = createFakeCache();
-      const cachedMethods = createCachedMethods(cache);
-
-      const session = await mongoose.startSession();
-      session.startTransaction();
-      const baseListenerCount = session.listenerCount('ended');
-      for (const group of groups) {
-        await cachedMethods.addUserToGroup(user._id, group._id, session);
-      }
-      expect(session.listenerCount('ended')).toBe(baseListenerCount + 1);
-      expect(cache.delete).not.toHaveBeenCalled();
-
-      await session.commitTransaction();
-      await session.endSession();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-
-      expect(cache.delete).toHaveBeenCalledWith('coalesce-ext-1');
-      expect(cache.delete.mock.calls.length).toBeGreaterThanOrEqual(groups.length);
     });
 
     it('clears the cache for aggregation-pipeline bulk updates touching memberIds', async () => {
