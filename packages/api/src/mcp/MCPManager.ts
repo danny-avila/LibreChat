@@ -47,6 +47,8 @@ function createOboToolCallErrorMessage(
   return `${logPrefix} ${error.userMessage} Cannot execute tool ${toolName}. ${failureSuffix}`;
 }
 
+class OAuthRecoveryTakeoverRequired extends Error {}
+
 /**
  * Centralized manager for MCP server connections and tool execution.
  * Extends UserConnectionManager to handle both app-level and user-specific connections.
@@ -445,21 +447,13 @@ Please follow these instructions when using tools from the respective MCP server
         if (signal?.aborted) {
           throw recoveryError;
         }
-        if (!this.claimRecoveryTakeover(existingRecovery)) {
+        if (!allowsTakeover || !this.claimRecoveryTakeover(existingRecovery)) {
           throw recoveryError;
         }
         if (this.oauthRecoveries.get(connection) === existingRecovery) {
           this.oauthRecoveries.delete(connection);
         }
-        return this.recoverOAuthConnection(
-          connection,
-          error,
-          serverName,
-          userId,
-          attachRequestOAuthHandler,
-          signal,
-          false,
-        );
+        throw new OAuthRecoveryTakeoverRequired();
       }
     }
 
@@ -641,322 +635,338 @@ Please follow these instructions when using tools from the respective MCP server
     oboTokenResolver?: OboTokenResolver;
     oboTrustChecker?: OboTrustChecker;
   }): Promise<t.FormattedToolResponse> {
-    /** User-specific connection */
-    let connection: MCPConnection | undefined;
-    let connectionRetained = false;
-    let deferredDisposalHeld = false;
-    let recoveryTakeoverConsumed = false;
-    let attachRequestOAuthHandler: (() => () => void) | undefined;
-    let disconnectAfterCall = false;
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
-    const retainConnectionLease = () => {
-      if (!connection || connectionRetained) {
-        return;
-      }
-      this.retainConnection(connection);
-      connectionRetained = true;
-    };
-    const releaseConnectionLease = async (preserveDisposalHold = false) => {
-      if (!connection || !connectionRetained) {
-        return;
-      }
-      if (deferredDisposalHeld && !preserveDisposalHold) {
-        this.releaseDeferredConnectionDisposal(connection);
-        deferredDisposalHeld = false;
-      }
-      connectionRetained = false;
-      await this.releaseConnection(connection);
-    };
-    const waitForRecoveryWithoutLease = async (startRecovery: () => Promise<void>) => {
-      const recovery = startRecovery();
-      // Keep an eviction marker across the temporary lease gap and transfer that
-      // responsibility back to this caller after recovery. An unrelated final
-      // borrower may disconnect the old client, but cannot consume the marker.
-      if (!deferredDisposalHeld) {
-        this.holdDeferredConnectionDisposal(connection!);
-        deferredDisposalHeld = true;
-      }
-      await releaseConnectionLease(true);
+    let recoveryTakeoverConsumed = false;
+    while (true) {
+      /** User-specific connection */
+      let connection: MCPConnection | undefined;
+      let connectionRetained = false;
+      let deferredDisposalHeld = false;
+      let attachRequestOAuthHandler: (() => () => void) | undefined;
+      let disconnectAfterCall = false;
+      const retainConnectionLease = () => {
+        if (!connection || connectionRetained) {
+          return;
+        }
+        this.retainConnection(connection);
+        connectionRetained = true;
+      };
+      const releaseConnectionLease = async (preserveDisposalHold = false) => {
+        if (!connection || !connectionRetained) {
+          return;
+        }
+        if (deferredDisposalHeld && !preserveDisposalHold) {
+          this.releaseDeferredConnectionDisposal(connection);
+          deferredDisposalHeld = false;
+        }
+        connectionRetained = false;
+        await this.releaseConnection(connection);
+      };
+      const waitForRecoveryWithoutLease = async (startRecovery: () => Promise<void>) => {
+        const recovery = startRecovery();
+        // Keep an eviction marker across the temporary lease gap and transfer that
+        // responsibility back to this caller after recovery. An unrelated final
+        // borrower may disconnect the old client, but cannot consume the marker.
+        if (!deferredDisposalHeld) {
+          this.holdDeferredConnectionDisposal(connection!);
+          deferredDisposalHeld = true;
+        }
+        await releaseConnectionLease(true);
+        try {
+          await recovery;
+        } finally {
+          retainConnectionLease();
+        }
+      };
+
       try {
-        await recovery;
-      } finally {
-        retainConnectionLease();
-      }
-    };
-
-    try {
-      let awaitedCheckoutRecovery: Promise<void> | undefined;
-      while (true) {
-        connection = await this.getConnection({
-          serverName,
-          user,
-          flowManager,
-          tokenMethods,
-          oauthStart,
-          oauthEnd,
-          oboTokenResolver,
-          oboTrustChecker,
-          graphTokenResolver,
-          signal: options?.signal,
-          customUserVars,
-          requestBody,
-          requestScopedConnections,
-          serverConfig: providedConfig,
-        });
-        retainConnectionLease();
-        const checkoutRecovery = this.oauthRecoveries.get(connection);
-        if (!checkoutRecovery || checkoutRecovery.promise === awaitedCheckoutRecovery) {
-          break;
-        }
-        awaitedCheckoutRecovery = checkoutRecovery.promise;
-        await releaseConnectionLease();
-        try {
-          await this.waitForConnectionRecovery(checkoutRecovery.promise, options?.signal);
-        } catch (recoveryError) {
-          if (options?.signal?.aborted || !this.claimRecoveryTakeover(checkoutRecovery)) {
-            throw recoveryError;
-          }
-          recoveryTakeoverConsumed = true;
-          if (this.oauthRecoveries.get(connection) === checkoutRecovery) {
-            this.oauthRecoveries.delete(connection);
-          }
-          continue;
-        }
-      }
-
-      const connectionIsActive = await connection.isConnected();
-      const connectionCheckError = connectionIsActive
-        ? undefined
-        : connection.getLastConnectionCheckError();
-
-      if (
-        !connectionIsActive &&
-        (!userId || !connection.isOAuthAuthenticationError(connectionCheckError))
-      ) {
-        /** May happen if getUserConnection failed silently or app connection dropped */
-        throw new McpError(
-          ErrorCode.InternalError,
-          `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
-        );
-      }
-
-      const registry = MCPServersRegistry.getInstance();
-      const rawConfig = providedConfig ?? (await registry.getServerConfig(serverName, userId));
-      if (!rawConfig) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          `${logPrefix} Configuration for server "${serverName}" not found.`,
-        );
-      }
-      const isDbSourced = isUserSourced(rawConfig);
-      const ephemeralConnection = !!userId && requiresEphemeralUserConnection(rawConfig);
-      disconnectAfterCall = ephemeralConnection && !requestScopedConnections;
-
-      /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
-      const graphProcessedConfig = isDbSourced
-        ? (rawConfig as t.MCPOptions)
-        : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
+        let awaitedCheckoutRecovery: Promise<void> | undefined;
+        while (true) {
+          connection = await this.getConnection({
+            serverName,
             user,
+            flowManager,
+            tokenMethods,
+            oauthStart,
+            oauthEnd,
+            oboTokenResolver,
+            oboTrustChecker,
             graphTokenResolver,
-            scopes: process.env.GRAPH_API_SCOPES,
+            signal: options?.signal,
+            customUserVars,
+            requestBody,
+            requestScopedConnections,
+            serverConfig: providedConfig,
           });
-      const currentOptions = processMCPEnv({
-        user,
-        body: requestBody,
-        dbSourced: isDbSourced,
-        options: graphProcessedConfig,
-        customUserVars,
-      });
-
-      const resolvedHeaders: Record<string, string> =
-        'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
-
-      /** Refresh OBO token on each tool call to ensure it's current */
-      const oboConfig = rawConfig.obo;
-      if (oboConfig && oboTokenResolver && user) {
-        const oboTrusted = oboTrustChecker
-          ? await oboTrustChecker({
-              source: rawConfig.source,
-              author: rawConfig.author,
-              dbId: rawConfig.dbId,
-            })
-          : true;
-        if (!oboTrusted) {
-          logger.warn(
-            `${logPrefix} OBO config not trusted (author lacks ${PermissionTypes.MCP_SERVERS}.${Permissions.CONFIGURE_OBO}); refusing to mint a downstream token`,
-          );
-          throw new McpError(
-            ErrorCode.InternalError,
-            `${logPrefix} OBO is not permitted for server "${serverName}". The user who configured it no longer has permission to use OBO.`,
-          );
-        }
-        let oboTokens: MCPOAuthTokens;
-        try {
-          oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
-        } catch (error) {
-          if (error instanceof OboTokenResolutionError) {
-            throw new McpError(
-              ErrorCode.InternalError,
-              createOboToolCallErrorMessage(logPrefix, toolName, error),
-            );
+          retainConnectionLease();
+          const checkoutRecovery = this.oauthRecoveries.get(connection);
+          if (!checkoutRecovery || checkoutRecovery.promise === awaitedCheckoutRecovery) {
+            break;
           }
-          throw error;
+          awaitedCheckoutRecovery = checkoutRecovery.promise;
+          await releaseConnectionLease();
+          try {
+            await this.waitForConnectionRecovery(checkoutRecovery.promise, options?.signal);
+          } catch (recoveryError) {
+            if (
+              options?.signal?.aborted ||
+              recoveryTakeoverConsumed ||
+              !this.claimRecoveryTakeover(checkoutRecovery)
+            ) {
+              throw recoveryError;
+            }
+            recoveryTakeoverConsumed = true;
+            if (this.oauthRecoveries.get(connection) === checkoutRecovery) {
+              this.oauthRecoveries.delete(connection);
+            }
+            continue;
+          }
         }
 
-        if (!oboTokens.access_token) {
-          throw new McpError(
-            ErrorCode.InternalError,
-            `${logPrefix} OBO token refresh failed. Cannot execute tool ${toolName}. Re-authenticate the user and retry.`,
-          );
-        }
-        resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
-      }
-      if (
-        userId &&
-        user &&
-        oauthStart &&
-        flowManager &&
-        (isOAuthServer(currentOptions) || connection.usesOAuth())
-      ) {
-        const { allowedDomains, allowedAddresses, useSSRFProtection } =
-          await registry.resolveAllowlists({ userId, role: user?.role });
-        attachRequestOAuthHandler = () =>
-          MCPConnectionFactory.attachRequestOAuthHandler(
-            {
-              serverName,
-              serverConfig: currentOptions,
-              dbSourced: isDbSourced,
-              skipEnvProcessing: true,
-              useSSRFProtection,
-              allowedDomains,
-              allowedAddresses,
-            },
-            {
-              useOAuth: true,
-              user,
-              flowManager,
-              tokenMethods,
-              signal: options?.signal,
-              oauthStart,
-              oauthEnd,
-              customUserVars,
-              requestBody,
-            },
-            connection!,
-          );
-      }
+        const connectionIsActive = await connection.isConnected();
+        const connectionCheckError = connectionIsActive
+          ? undefined
+          : connection.getLastConnectionCheckError();
 
-      connection.setRequestHeaders(resolvedHeaders);
-
-      if (!connectionIsActive) {
-        const requestOAuthHandler = attachRequestOAuthHandler;
-        if (!requestOAuthHandler || !userId) {
+        if (
+          !connectionIsActive &&
+          (!userId || !connection.isOAuthAuthenticationError(connectionCheckError))
+        ) {
+          /** May happen if getUserConnection failed silently or app connection dropped */
           throw new McpError(
             ErrorCode.InternalError,
             `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
           );
         }
 
-        try {
-          await waitForRecoveryWithoutLease(() =>
-            this.recoverOAuthConnection(
-              connection!,
-              connectionCheckError,
-              serverName,
-              userId,
-              requestOAuthHandler,
-              options?.signal,
-              !recoveryTakeoverConsumed,
-            ),
+        const registry = MCPServersRegistry.getInstance();
+        const rawConfig = providedConfig ?? (await registry.getServerConfig(serverName, userId));
+        if (!rawConfig) {
+          throw new McpError(
+            ErrorCode.InvalidRequest,
+            `${logPrefix} Configuration for server "${serverName}" not found.`,
           );
-        } catch (recoveryError) {
-          if (options?.signal?.aborted) {
-            throw recoveryError;
-          }
-          logger.warn(
-            `${logPrefix}[${toolName}] Connection-check OAuth recovery failed`,
-            recoveryError,
-          );
-          throw connectionCheckError;
         }
-      }
+        const isDbSourced = isUserSourced(rawConfig);
+        const ephemeralConnection = !!userId && requiresEphemeralUserConnection(rawConfig);
+        disconnectAfterCall = ephemeralConnection && !requestScopedConnections;
 
-      const requestTool = () =>
-        connection!.client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: toolName,
-              arguments: toolArguments,
+        /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
+        const graphProcessedConfig = isDbSourced
+          ? (rawConfig as t.MCPOptions)
+          : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
+              user,
+              graphTokenResolver,
+              scopes: process.env.GRAPH_API_SCOPES,
+            });
+        const currentOptions = processMCPEnv({
+          user,
+          body: requestBody,
+          dbSourced: isDbSourced,
+          options: graphProcessedConfig,
+          customUserVars,
+        });
+
+        const resolvedHeaders: Record<string, string> =
+          'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
+
+        /** Refresh OBO token on each tool call to ensure it's current */
+        const oboConfig = rawConfig.obo;
+        if (oboConfig && oboTokenResolver && user) {
+          const oboTrusted = oboTrustChecker
+            ? await oboTrustChecker({
+                source: rawConfig.source,
+                author: rawConfig.author,
+                dbId: rawConfig.dbId,
+              })
+            : true;
+          if (!oboTrusted) {
+            logger.warn(
+              `${logPrefix} OBO config not trusted (author lacks ${PermissionTypes.MCP_SERVERS}.${Permissions.CONFIGURE_OBO}); refusing to mint a downstream token`,
+            );
+            throw new McpError(
+              ErrorCode.InternalError,
+              `${logPrefix} OBO is not permitted for server "${serverName}". The user who configured it no longer has permission to use OBO.`,
+            );
+          }
+          let oboTokens: MCPOAuthTokens;
+          try {
+            oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
+          } catch (error) {
+            if (error instanceof OboTokenResolutionError) {
+              throw new McpError(
+                ErrorCode.InternalError,
+                createOboToolCallErrorMessage(logPrefix, toolName, error),
+              );
+            }
+            throw error;
+          }
+
+          if (!oboTokens.access_token) {
+            throw new McpError(
+              ErrorCode.InternalError,
+              `${logPrefix} OBO token refresh failed. Cannot execute tool ${toolName}. Re-authenticate the user and retry.`,
+            );
+          }
+          resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
+        }
+        if (
+          userId &&
+          user &&
+          oauthStart &&
+          flowManager &&
+          (isOAuthServer(currentOptions) || connection.usesOAuth())
+        ) {
+          const { allowedDomains, allowedAddresses, useSSRFProtection } =
+            await registry.resolveAllowlists({ userId, role: user?.role });
+          attachRequestOAuthHandler = () =>
+            MCPConnectionFactory.attachRequestOAuthHandler(
+              {
+                serverName,
+                serverConfig: currentOptions,
+                dbSourced: isDbSourced,
+                skipEnvProcessing: true,
+                useSSRFProtection,
+                allowedDomains,
+                allowedAddresses,
+              },
+              {
+                useOAuth: true,
+                user,
+                flowManager,
+                tokenMethods,
+                signal: options?.signal,
+                oauthStart,
+                oauthEnd,
+                customUserVars,
+                requestBody,
+              },
+              connection!,
+            );
+        }
+
+        connection.setRequestHeaders(resolvedHeaders);
+
+        if (!connectionIsActive) {
+          const requestOAuthHandler = attachRequestOAuthHandler;
+          if (!requestOAuthHandler || !userId) {
+            throw new McpError(
+              ErrorCode.InternalError,
+              `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
+            );
+          }
+
+          try {
+            await waitForRecoveryWithoutLease(() =>
+              this.recoverOAuthConnection(
+                connection!,
+                connectionCheckError,
+                serverName,
+                userId,
+                requestOAuthHandler,
+                options?.signal,
+                !recoveryTakeoverConsumed,
+              ),
+            );
+          } catch (recoveryError) {
+            if (recoveryError instanceof OAuthRecoveryTakeoverRequired) {
+              throw recoveryError;
+            }
+            if (options?.signal?.aborted) {
+              throw recoveryError;
+            }
+            logger.warn(
+              `${logPrefix}[${toolName}] Connection-check OAuth recovery failed`,
+              recoveryError,
+            );
+            throw connectionCheckError;
+          }
+        }
+
+        const requestTool = () =>
+          connection!.client.request(
+            {
+              method: 'tools/call',
+              params: {
+                name: toolName,
+                arguments: toolArguments,
+              },
             },
-          },
-          CallToolResultSchema,
-          {
-            timeout: connection!.timeout,
-            resetTimeoutOnProgress: true,
-            ...options,
-          },
-        );
-
-      let result: Awaited<ReturnType<typeof requestTool>>;
-      try {
-        result = await requestTool();
-      } catch (error) {
-        const requestOAuthHandler = attachRequestOAuthHandler;
-        if (!requestOAuthHandler || !userId) {
-          throw error;
-        }
-
-        if (!connection.isOAuthAuthenticationError(error)) {
-          throw error;
-        }
-
-        try {
-          await waitForRecoveryWithoutLease(() =>
-            this.recoverOAuthConnection(
-              connection!,
-              error,
-              serverName,
-              userId,
-              requestOAuthHandler,
-              options?.signal,
-              !recoveryTakeoverConsumed,
-            ),
+            CallToolResultSchema,
+            {
+              timeout: connection!.timeout,
+              resetTimeoutOnProgress: true,
+              ...options,
+            },
           );
-        } catch (recoveryError) {
-          if (options?.signal?.aborted) {
-            throw recoveryError;
-          }
-          logger.warn(`${logPrefix}[${toolName}] Runtime OAuth recovery failed`, recoveryError);
-          throw error;
-        }
-        result = await requestTool();
-      }
-      const hasPersistentUserConnections =
-        !!userId && (this.userConnections.get(userId)?.size ?? 0) > 0;
-      if (!ephemeralConnection && hasPersistentUserConnections) {
-        this.updateUserLastActivity(userId);
-      }
-      this.checkIdleConnections();
-      return formatToolContent(result as t.MCPToolCallResponse, provider);
-    } catch (error) {
-      // Log with context and re-throw or handle as needed
-      logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
-      // Rethrowing allows the caller (createMCPTool) to handle the final user message
-      throw error;
-    } finally {
-      await releaseConnectionLease();
-      // Ephemeral connections are never stored in userConnections, so disconnecting
-      // is the only cleanup needed; removing the map entry here could orphan a
-      // still-connected cached connection from before a config change.
-      if (disconnectAfterCall && connection) {
+
+        let result: Awaited<ReturnType<typeof requestTool>>;
         try {
-          await connection.disconnect();
-        } catch (disconnectError) {
-          logger.warn(`${logPrefix}[${toolName}] Failed to disconnect ephemeral connection`, {
-            error: disconnectError,
-          });
+          result = await requestTool();
+        } catch (error) {
+          const requestOAuthHandler = attachRequestOAuthHandler;
+          if (!requestOAuthHandler || !userId) {
+            throw error;
+          }
+
+          if (!connection.isOAuthAuthenticationError(error)) {
+            throw error;
+          }
+
+          try {
+            await waitForRecoveryWithoutLease(() =>
+              this.recoverOAuthConnection(
+                connection!,
+                error,
+                serverName,
+                userId,
+                requestOAuthHandler,
+                options?.signal,
+                !recoveryTakeoverConsumed,
+              ),
+            );
+          } catch (recoveryError) {
+            if (recoveryError instanceof OAuthRecoveryTakeoverRequired) {
+              throw recoveryError;
+            }
+            if (options?.signal?.aborted) {
+              throw recoveryError;
+            }
+            logger.warn(`${logPrefix}[${toolName}] Runtime OAuth recovery failed`, recoveryError);
+            throw error;
+          }
+          result = await requestTool();
+        }
+        const hasPersistentUserConnections =
+          !!userId && (this.userConnections.get(userId)?.size ?? 0) > 0;
+        if (!ephemeralConnection && hasPersistentUserConnections) {
+          this.updateUserLastActivity(userId);
+        }
+        this.checkIdleConnections();
+        return formatToolContent(result as t.MCPToolCallResponse, provider);
+      } catch (error) {
+        if (error instanceof OAuthRecoveryTakeoverRequired) {
+          recoveryTakeoverConsumed = true;
+          continue;
+        }
+        // Log with context and re-throw or handle as needed
+        logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
+        // Rethrowing allows the caller (createMCPTool) to handle the final user message
+        throw error;
+      } finally {
+        await releaseConnectionLease();
+        // Ephemeral connections are never stored in userConnections, so disconnecting
+        // is the only cleanup needed; removing the map entry here could orphan a
+        // still-connected cached connection from before a config change.
+        if (disconnectAfterCall && connection) {
+          try {
+            await connection.disconnect();
+          } catch (disconnectError) {
+            logger.warn(`${logPrefix}[${toolName}] Failed to disconnect ephemeral connection`, {
+              error: disconnectError,
+            });
+          }
         }
       }
     }

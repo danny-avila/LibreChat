@@ -1660,6 +1660,34 @@ describe('MCPManager', () => {
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
 
+    it('restarts checkout when a post-request recovery waiter claims takeover', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const staleRequest = jest.fn().mockRejectedValue(authError);
+      const recoveredRequest = jest.fn().mockResolvedValue(toolResult);
+      const staleConnection = createConnection(staleRequest);
+      const recoveredConnection = createConnection(recoveredRequest);
+      attachOAuthHandler(() => undefined);
+      const manager = await createManager(staleConnection);
+      let currentConnection = staleConnection;
+      (manager.getConnection as jest.Mock).mockImplementation(async () => currentConnection);
+
+      const ownerCall = callTool(manager);
+      const waiterCall = callTool(manager);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledTimes(1);
+      currentConnection = recoveredConnection;
+      staleConnection.emit('oauthFailed', new Error('Recovery owner failed'));
+
+      await expect(ownerCall).rejects.toBe(authError);
+      await expect(waiterCall).resolves.toBeDefined();
+      expect(staleRequest).toHaveBeenCalledTimes(2);
+      expect(recoveredRequest).toHaveBeenCalledTimes(1);
+      expect(staleConnection.connect).not.toHaveBeenCalled();
+      expect(recoveredConnection.connect).not.toHaveBeenCalled();
+      expect(staleConnection.listenerCount('oauthReauthenticationRequired')).toBe(0);
+    });
+
     it('caps waiter takeover after a shared recovery keeps failing', async () => {
       const authError = new Error('Non-200 status code (401)');
       const request = jest.fn().mockRejectedValue(authError);
