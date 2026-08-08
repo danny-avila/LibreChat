@@ -276,6 +276,46 @@ describe('ingestAssets', () => {
     archive.close();
   });
 
+  it('uses the sniffed image extension for the public storage path', async () => {
+    const imageWithHtmlSuffix = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+      Buffer.from('<script>alert(1)</script>'),
+    ]);
+    const archive: Archive = {
+      entries: [
+        { name: ASSET_NAMES_ENTRY, bytes: 32 },
+        { name: 'file-one.dat', bytes: imageWithHtmlSuffix.byteLength },
+      ],
+      read: async (entry: string) =>
+        entry === ASSET_NAMES_ENTRY
+          ? Buffer.from(JSON.stringify({ 'file-one.dat': 'payload.html' }))
+          : imageWithHtmlSuffix,
+      close: () => undefined,
+    };
+    const stored: Array<{ fileName: string; type: string }> = [];
+
+    const result = await ingestAssets({
+      archive,
+      layout: { ...resolveLayout(archive.entries, null), assetNames: ASSET_NAMES_ENTRY },
+      userId: 'u1',
+      tenantId: undefined,
+      pointers: ['file-service://file-one'],
+      deps: {
+        saveBuffer: async ({ fileName, type }) => {
+          stored.push({ fileName, type });
+          return { filepath: `/images/${fileName}`, source: 'local' };
+        },
+        createFile: async (data) => ({ file_id: data.file_id }),
+      },
+    });
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0].type).toBe('image/png');
+    expect(stored[0].fileName).toMatch(/\.png$/);
+    expect(stored[0].fileName).not.toMatch(/\.html$/);
+    expect(result.map.get('file-service://file-one')?.filename).toBe('payload.html');
+  });
+
   it('falls back to the dimensions recorded inline on the pointer', async () => {
     const filepath = await buildFixtureExport();
     const archive = await openArchive(filepath);

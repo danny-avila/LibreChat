@@ -559,6 +559,36 @@ describe('runImport', () => {
     expect(recorded.conversations[0].title).toBe('Good convo five');
   });
 
+  it('rejects a shard containing any malformed conversation and imports the other shards', async () => {
+    const filepath = await writeZip({
+      'conversations-000.json': JSON.stringify([
+        textConversation('ext-before-null', 'Before malformed entry', 1700009100),
+        null,
+      ]),
+      'conversations-001.json': JSON.stringify([
+        textConversation('ext-after-null', 'After malformed shard', 1700009200),
+      ]),
+      'export_manifest.json': shardedManifest(['conversations-000.json', 'conversations-001.json']),
+    });
+
+    const { sink, recorded } = recorder();
+    const report = await runImport({
+      filepath,
+      userId: 'u1',
+      defaultModel: 'gpt-4o',
+      deps: DEPS,
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.imported).toBe(1);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toContain('conversations-000.json');
+    expect(report.errors[0]).toContain('expected ChatGPT conversation objects');
+    expect(recorded.conversations).toHaveLength(1);
+    expect(recorded.conversations[0].title).toBe('After malformed shard');
+  });
+
   it('records a conversation that fails to convert and still imports the others', async () => {
     const good = textConversation('ext-good2', 'Good convo two', 1700003000);
     const broken = {

@@ -11,6 +11,7 @@ import {
   isJobGone,
 } from '~/data-provider';
 import { readActiveJobId, writeActiveJobId } from './storage';
+import { useAuthContext } from '~/hooks/AuthContext';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 import Dropzone from './Dropzone';
@@ -30,6 +31,7 @@ function getUploadErrorMessage(error: unknown): string | undefined {
 
 export default function Import() {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const { showToast } = useToastContext();
   /**
    * Seeded from `localStorage` so closing the settings dialog, navigating,
@@ -38,7 +40,7 @@ export default function Import() {
    * instead of tempting a second upload, which would duplicate every
    * conversation the first run had not yet committed.
    */
-  const [jobId, setJobId] = useState<string | null>(readActiveJobId);
+  const [jobId, setJobId] = useState<string | null>(() => readActiveJobId(user?.id));
   const cameFromResetRef = useRef(false);
 
   const { data: startupConfig } = useGetStartupConfig();
@@ -65,14 +67,17 @@ export default function Import() {
   const isLost = isGone || (isJobError && job == null);
   useEffect(() => {
     if (isSettled || isGone) {
-      writeActiveJobId(null);
+      writeActiveJobId(user?.id, null);
     }
-  }, [isSettled, isGone]);
+  }, [isSettled, isGone, user?.id]);
 
-  const trackJob = useCallback((next: string | null) => {
-    writeActiveJobId(next);
-    setJobId(next);
-  }, []);
+  const trackJob = useCallback(
+    (next: string | null) => {
+      writeActiveJobId(user?.id, next);
+      setJobId(next);
+    },
+    [user?.id],
+  );
 
   const uploadMutation = useUploadImportMutation({
     onSuccess: (data: TImportResponse) => {

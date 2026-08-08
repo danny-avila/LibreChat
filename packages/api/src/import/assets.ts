@@ -107,6 +107,13 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   pdf: 'application/pdf',
 };
 
+const IMAGE_EXTENSION_BY_MIME: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+};
+
 function pointerId(pointer: string): string {
   return pointer.includes('://') ? pointer.split('://')[1] : pointer;
 }
@@ -172,6 +179,17 @@ function sniffMime(buffer: Buffer): string | undefined {
 
 function isImageMime(mime: string): boolean {
   return mime.startsWith('image/');
+}
+
+/** Public image responses derive their content type from this path suffix. */
+function normalizeImageExtension(filename: string, mime: string): string {
+  const extension = IMAGE_EXTENSION_BY_MIME[mime];
+  if (!extension) {
+    return filename;
+  }
+  const lastDot = filename.lastIndexOf('.');
+  const stem = lastDot > 0 ? filename.slice(0, lastDot) : filename;
+  return `${stem}.${extension}`;
 }
 
 /**
@@ -316,7 +334,8 @@ async function ingestOne(
    * punctuation allow-list, dotfile guard, NAME_MAX truncation). The
    * `fileId` prefix is a fresh `uuidv4()` per asset, so two entries whose
    * names sanitize to the same string still land at distinct paths. */
-  const fileName = `${fileId}-${sanitizeFilename(originalName)}`;
+  const storageName = normalizeImageExtension(originalName, type);
+  const fileName = `${fileId}-${sanitizeFilename(storageName)}`;
 
   const { filepath, source } = await deps.saveBuffer({ userId, buffer, fileName, type, tenantId });
 

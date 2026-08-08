@@ -2,6 +2,7 @@ import userEvent from '@testing-library/user-event';
 import * as librechatClient from '@librechat/client';
 import type { TImportResponse, TImportSummary } from 'librechat-data-provider';
 import { render, screen, act, fireEvent } from 'test/layout-test-utils';
+import { useAuthContext } from '~/hooks/AuthContext';
 import Import from '../index';
 
 jest.mock('~/data-provider', () => ({
@@ -18,8 +19,15 @@ jest.mock('@librechat/client', () => ({
   useToastContext: jest.fn(),
 }));
 
+jest.mock('~/hooks/AuthContext', () => ({
+  ...jest.requireActual('~/hooks/AuthContext'),
+  useAuthContext: jest.fn(),
+}));
+
 const dataProvider = jest.requireMock('~/data-provider');
 const mockUseToastContext = librechatClient.useToastContext as jest.Mock;
+const mockUseAuthContext = useAuthContext as jest.Mock;
+const activeJobKey = (userId = 'user-1') => `importJobId:${userId}`;
 
 function summary(): TImportSummary {
   return {
@@ -71,6 +79,7 @@ describe('Import panel', () => {
     showToast = jest.fn();
     uploadMutate = jest.fn();
 
+    mockUseAuthContext.mockReturnValue({ user: { id: 'user-1' } });
     mockUseToastContext.mockReturnValue({ showToast });
     dataProvider.useGetStartupConfig.mockReturnValue({ data: undefined });
     dataProvider.useUploadImportMutation.mockImplementation(
@@ -483,7 +492,7 @@ describe('Import panel', () => {
   });
 
   it('rejoins a running job recorded before the panel unmounted', () => {
-    window.localStorage.setItem('importJobId', 'job-99');
+    window.localStorage.setItem(activeJobKey(), 'job-99');
     dataProvider.useImportJobQuery.mockReturnValue({
       data: job({ phase: 'conversations', status: 'active' }),
     });
@@ -494,13 +503,36 @@ describe('Import panel', () => {
     expect(screen.queryByRole('button', { name: /import data import$/i })).not.toBeInTheDocument();
   });
 
+  it('keeps remembered jobs isolated between accounts in the same browser', () => {
+    mockUseAuthContext.mockReturnValue({ user: { id: 'user-a' } });
+    const firstAccount = render(<Import />);
+
+    act(() => {
+      capturedUploadOptions.onSuccess?.({ jobId: 'job-a', summary: summary() });
+    });
+    firstAccount.unmount();
+
+    dataProvider.useImportJobQuery.mockClear();
+    mockUseAuthContext.mockReturnValue({ user: { id: 'user-b' } });
+    const secondAccount = render(<Import />);
+
+    expect(dataProvider.useImportJobQuery).toHaveBeenLastCalledWith(null);
+    secondAccount.unmount();
+
+    dataProvider.useImportJobQuery.mockClear();
+    mockUseAuthContext.mockReturnValue({ user: { id: 'user-a' } });
+    render(<Import />);
+
+    expect(dataProvider.useImportJobQuery).toHaveBeenLastCalledWith('job-a');
+  });
+
   it('records the started job so it survives the panel unmounting, and clears it on reset', () => {
     const { rerender } = render(<Import />);
 
     act(() => {
       capturedUploadOptions.onSuccess?.({ jobId: 'job-42', summary: summary() });
     });
-    expect(window.localStorage.getItem('importJobId')).toBe('job-42');
+    expect(window.localStorage.getItem(activeJobKey())).toBe('job-42');
 
     dataProvider.useImportJobQuery.mockReturnValue({
       data: job({
@@ -518,7 +550,7 @@ describe('Import panel', () => {
     rerender(<Import />);
     fireEvent.click(screen.getByRole('button', { name: /import another/i }));
 
-    expect(window.localStorage.getItem('importJobId')).toBeNull();
+    expect(window.localStorage.getItem(activeJobKey())).toBeNull();
   });
 
   /**
@@ -530,7 +562,7 @@ describe('Import panel', () => {
   it.each(['completed', 'failed', 'cancelled'] as const)(
     'stops remembering a %s job while still showing its outcome',
     (phase) => {
-      window.localStorage.setItem('importJobId', 'job-99');
+      window.localStorage.setItem(activeJobKey(), 'job-99');
       dataProvider.useImportJobQuery.mockReturnValue({
         data: job({
           phase,
@@ -547,24 +579,24 @@ describe('Import panel', () => {
 
       render(<Import />);
 
-      expect(window.localStorage.getItem('importJobId')).toBeNull();
+      expect(window.localStorage.getItem(activeJobKey())).toBeNull();
       expect(screen.getByRole('button', { name: /import another/i })).toBeInTheDocument();
     },
   );
 
   it('keeps remembering a job that is still running', () => {
-    window.localStorage.setItem('importJobId', 'job-99');
+    window.localStorage.setItem(activeJobKey(), 'job-99');
     dataProvider.useImportJobQuery.mockReturnValue({
       data: job({ phase: 'conversations', status: 'active' }),
     });
 
     render(<Import />);
 
-    expect(window.localStorage.getItem('importJobId')).toBe('job-99');
+    expect(window.localStorage.getItem(activeJobKey())).toBe('job-99');
   });
 
   it('stops remembering a job the server no longer has', () => {
-    window.localStorage.setItem('importJobId', 'job-99');
+    window.localStorage.setItem(activeJobKey(), 'job-99');
     dataProvider.useImportJobQuery.mockReturnValue({
       data: undefined,
       isError: true,
@@ -573,7 +605,7 @@ describe('Import panel', () => {
 
     render(<Import />);
 
-    expect(window.localStorage.getItem('importJobId')).toBeNull();
+    expect(window.localStorage.getItem(activeJobKey())).toBeNull();
   });
 
   /**
@@ -583,7 +615,7 @@ describe('Import panel', () => {
    * reset, while the run went on writing conversations behind it.
    */
   it('keeps showing a running job through a transient poll failure', () => {
-    window.localStorage.setItem('importJobId', 'job-99');
+    window.localStorage.setItem(activeJobKey(), 'job-99');
     dataProvider.useImportJobQuery.mockReturnValue({
       data: job({ phase: 'conversations', status: 'active' }),
       isError: true,
@@ -593,7 +625,7 @@ describe('Import panel', () => {
     render(<Import />);
 
     expect(screen.getByRole('button', { name: /cancel import/i })).toBeInTheDocument();
-    expect(window.localStorage.getItem('importJobId')).toBe('job-99');
+    expect(window.localStorage.getItem(activeJobKey())).toBe('job-99');
   });
 
   /**
@@ -603,7 +635,7 @@ describe('Import panel', () => {
    * import that is a Cancel button that silently does nothing.
    */
   it('starts the job the panel is currently tracking', () => {
-    window.localStorage.setItem('importJobId', 'job-99');
+    window.localStorage.setItem(activeJobKey(), 'job-99');
     dataProvider.useImportJobQuery.mockReturnValue({ data: job() });
 
     render(<Import />);
@@ -613,7 +645,7 @@ describe('Import panel', () => {
   });
 
   it('cancels the job it is tracking, from the confirmation screen', () => {
-    window.localStorage.setItem('importJobId', 'job-99');
+    window.localStorage.setItem(activeJobKey(), 'job-99');
     dataProvider.useImportJobQuery.mockReturnValue({ data: job() });
 
     render(<Import />);
@@ -623,7 +655,7 @@ describe('Import panel', () => {
   });
 
   it('cancels the job it is tracking, mid-run', () => {
-    window.localStorage.setItem('importJobId', 'job-99');
+    window.localStorage.setItem(activeJobKey(), 'job-99');
     dataProvider.useImportJobQuery.mockReturnValue({
       data: job({
         phase: 'conversations',
