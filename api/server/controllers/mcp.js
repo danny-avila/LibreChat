@@ -181,18 +181,16 @@ const getMCPTools = async (req, res) => {
       }
       serverToolsMap.set(serverName, serverTools);
 
-      if (Object.keys(serverTools).length > 0) {
-        // Cache asynchronously without blocking
-        cacheMCPServerTools({
-          userId,
-          serverName,
-          serverTools,
-          serverConfig: mcpConfig[serverName],
-          publicationGeneration,
-        }).catch((err) =>
-          logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
-        );
-      }
+      // Empty is an authoritative catalog too; re-cache it after TTL expiry to avoid polling.
+      cacheMCPServerTools({
+        userId,
+        serverName,
+        serverTools,
+        serverConfig: mcpConfig[serverName],
+        publicationGeneration,
+      }).catch((err) =>
+        logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
+      );
     }
 
     // Process each configured server

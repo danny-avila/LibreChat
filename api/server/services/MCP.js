@@ -54,7 +54,12 @@ const { getGraphApiToken } = require('./GraphTokenService');
 const { exchangeOboToken } = require('./OboTokenService');
 const { createOboTrustChecker } = require('./OboPolicyService');
 const { reinitMCPServer } = require('./Tools/mcp');
-const { getAppConfig } = require('./Config');
+const {
+  getAppConfig,
+  getCachedTools,
+  getMCPServerTools,
+  cacheMCPServerTools,
+} = require('./Config');
 const { getLogStores } = require('~/cache');
 
 const MAX_CACHE_SIZE = 1000;
@@ -301,6 +306,70 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
     healedList.push(healedTool);
   }
   return healedList;
+}
+
+/**
+ * Loads static and MCP function definitions used by assistant create/update writes. MCP catalogs
+ * are stored per server and effective config, so assistant writers must resolve the referenced
+ * server slices instead of relying on the static aggregate cache.
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {Array<string | object>} [params.tools]
+ * @returns {Promise<object>}
+ */
+async function getAssistantToolDefinitions({ req, tools }) {
+  const toolDefinitions = (await getCachedTools()) ?? {};
+  const mcpToolNames = (tools ?? []).filter(
+    (tool) => typeof tool === 'string' && tool.includes(Constants.mcp_delimiter),
+  );
+  if (mcpToolNames.length === 0) {
+    return toolDefinitions;
+  }
+
+  const userId = req.user?.id;
+  const configs = await resolveAllMcpConfigs(userId, req.user);
+  const serverNames = Object.keys(configs);
+  const aliases = buildServerNameAliases(serverNames);
+  const knownNames = [...new Set([...serverNames, ...aliases.keys()])];
+  const shadowed = findShadowedServerNames(serverNames);
+  const selectedServers = new Set();
+
+  for (const toolName of mcpToolNames) {
+    const [, parsedServerName] = splitMCPToolKey(toolName, knownNames);
+    const serverName = Object.hasOwn(configs, parsedServerName)
+      ? parsedServerName
+      : aliases.get(parsedServerName);
+    if (serverName && !shadowed.has(serverName)) {
+      selectedServers.add(serverName);
+    }
+  }
+
+  const serverCatalogs = await Promise.all(
+    Array.from(selectedServers, async (serverName) => {
+      const serverConfig = configs[serverName];
+      const cached = await getMCPServerTools(userId, serverName, serverConfig);
+      if (cached != null) {
+        return cached;
+      }
+
+      const snapshot = await getMCPManager()?.getServerToolFunctionsSnapshot(userId, serverName);
+      if (snapshot?.tools == null) {
+        throw new Error(`MCP tool definitions unavailable for assistant server "${serverName}"`);
+      }
+      cacheMCPServerTools({
+        userId,
+        serverName,
+        serverTools: snapshot.tools,
+        serverConfig,
+        publicationGeneration: snapshot.publicationGeneration,
+      }).catch((error) =>
+        logger.error(`[MCP] Failed to cache assistant tool definitions for ${serverName}:`, error),
+      );
+      return snapshot.tools;
+    }),
+  );
+
+  return Object.assign({}, toolDefinitions, ...serverCatalogs);
 }
 
 /**
@@ -1431,6 +1500,7 @@ module.exports = {
   resolveMcpServerContext,
   getAccessibleMcpServerNames,
   healMcpToolNames,
+  getAssistantToolDefinitions,
   resolveCollisionAuditNames,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,

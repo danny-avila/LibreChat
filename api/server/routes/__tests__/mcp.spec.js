@@ -3179,6 +3179,31 @@ describe('MCP Routes', () => {
       });
     });
 
+    it('re-caches an authoritative empty live snapshot after a cache miss', async () => {
+      const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+      const serverConfig = { type: 'sse', url: 'https://empty.example.com/sse' };
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'empty-server': serverConfig });
+      getMCPServerTools.mockResolvedValueOnce(null);
+      cacheMCPServerTools.mockResolvedValueOnce();
+      const getServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({
+        tools: {},
+        publicationGeneration: undefined,
+      });
+      require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctionsSnapshot });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers['empty-server'].tools).toEqual([]);
+      expect(cacheMCPServerTools).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        serverName: 'empty-server',
+        serverTools: {},
+        serverConfig,
+        publicationGeneration: undefined,
+      });
+    });
+
     it('should continue returning MCP tools when one server cache lookup fails', async () => {
       const { Constants } = require('librechat-data-provider');
       const { logger } = require('@librechat/data-schemas');

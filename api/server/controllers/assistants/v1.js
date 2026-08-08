@@ -7,8 +7,7 @@ const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
-const { healMcpToolNames } = require('~/server/services/MCP');
-const { getCachedTools } = require('~/server/services/Config');
+const { healMcpToolNames, getAssistantToolDefinitions } = require('~/server/services/MCP');
 const { manifestToolMap, isAgentsOnlyTool } = require('~/app/clients/tools');
 
 /**
@@ -31,7 +30,7 @@ const createAssistant = async (req, res) => {
     delete assistantData.conversation_starters;
     delete assistantData.append_current_datetime;
 
-    const toolDefinitions = (await getCachedTools()) ?? {};
+    const toolDefinitions = await getAssistantToolDefinitions({ req, tools });
     const healedTools = await healMcpToolNames({ req, tools, toolDefinitions });
 
     assistantData.tools = healedTools
@@ -146,7 +145,7 @@ const patchAssistant = async (req, res) => {
       ...updateData
     } = req.body;
 
-    const toolDefinitions = (await getCachedTools()) ?? {};
+    const toolDefinitions = await getAssistantToolDefinitions({ req, tools: updateData.tools });
     const healedTools = await healMcpToolNames({ req, tools: updateData.tools, toolDefinitions });
 
     updateData.tools = healedTools
