@@ -12,7 +12,12 @@ import {
   useDeletePresetMutation,
   useGetPresetsQuery,
 } from '~/data-provider';
-import { cleanupPreset, removeUnavailableTools, getConvoSwitchLogic } from '~/utils';
+import {
+  normalizeExportFilename,
+  removeUnavailableTools,
+  getConvoSwitchLogic,
+  cleanupPreset,
+} from '~/utils';
 import useGetConversation from '~/hooks/Conversations/useGetConversation';
 import useDefaultConvo from '~/hooks/Conversations/useDefaultConvo';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -264,7 +269,7 @@ export default function usePresets(index = 0) {
     if (!preset) {
       return;
     }
-    const fileName = filenamify(preset.title || 'preset');
+    const fileName = normalizeExportFilename(filenamify(preset.title || 'preset'));
     exportFromJSON({
       data: cleanupPreset({ preset }),
       fileName,

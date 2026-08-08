@@ -11,6 +11,7 @@ import {
 } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import { useLocalize, useExportConversation } from '~/hooks';
+import { normalizeExportFilename } from '~/utils';
 
 const TYPE_OPTIONS = [
   { value: 'screenshot', label: 'screenshot (.png)' },
@@ -72,7 +73,7 @@ export default function ExportModal({
 
   const { exportConversation } = useExportConversation({
     conversation,
-    filename: filenamify(filename),
+    filename: normalizeExportFilename(filenamify(filename)),
     type,
     includeOptions,
     exportBranches,
