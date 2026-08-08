@@ -4,7 +4,12 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Constants, ContentTypes, FileSources, Tools } from 'librechat-data-provider';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
-import { createShareMethods, anonymizeSharedContent, type ShareMethods } from './share';
+import {
+  createShareMethods,
+  anonymizeSharedContent,
+  FILE_SNAPSHOT_VERSION,
+  type ShareMethods,
+} from './share';
 
 describe('Share Methods', () => {
   let mongoServer: MongoMemoryServer;
@@ -31,6 +36,7 @@ describe('Share Methods', () => {
         expiredAt: { type: Date },
         snapshotFiles: { type: Boolean },
         fileSnapshots: { type: [mongoose.Schema.Types.Mixed], default: undefined },
+        snapshotVersion: { type: Number },
       },
       { timestamps: true },
     );
@@ -2661,6 +2667,81 @@ describe('Share Methods', () => {
       const missing = await shareMethods.getSharedLinkFile(shareId, 'file_does_not_exist');
       expect(missing.file).toBeNull();
       expect(missing.hasSnapshots).toBe(true);
+    });
+
+    /**
+     * Links shared between the snapshot feature and parsed-text previews hold a
+     * populated array that skipped every `FileSources.text` record. A presence check
+     * treats that as complete, so the preview stays missing until the owner updates
+     * the link; the stored version is what marks it for rebuild.
+     */
+    test('rebuilds a snapshot built before parsed text was captured', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId, {
+        source: FileSources.text,
+        filepath: FileSources.anydoc,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'report.docx',
+        text: '# Parsed report',
+      });
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'parsed document',
+        isCreatedByUser: true,
+        files: [{ file_id: docId, filepath: FileSources.anydoc }],
+      });
+
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+        fileSnapshots: [],
+      });
+
+      const stale = await shareMethods.getSharedLinkFile(shareId, docId);
+      expect(stale.hasSnapshots).toBe(false);
+
+      const shared = await shareMethods.getSharedMessages(shareId);
+      expect(shared?.messages[0].files?.[0]?.hasTextPreview).toBe(true);
+
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.fileSnapshots).toHaveLength(1);
+      expect(saved?.snapshotVersion).toBe(FILE_SNAPSHOT_VERSION);
+
+      const current = await shareMethods.getSharedLinkFile(shareId, docId);
+      expect(current.hasSnapshots).toBe(true);
+      expect(current.file?.hasTextPreview).toBe(true);
+    });
+
+    test('leaves a current snapshot alone when a referenced file is unsnapshottable', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const skippedId = await createFile(userId, { source: FileSources.vectordb });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'vector file',
+        isCreatedByUser: true,
+        files: [{ file_id: skippedId }],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      const created = await SharedLink.findOne({ shareId }).lean();
+      expect(created?.fileSnapshots).toHaveLength(0);
+      expect(created?.snapshotVersion).toBe(FILE_SNAPSHOT_VERSION);
+
+      await shareMethods.getSharedMessages(shareId);
+
+      const { hasSnapshots } = await shareMethods.getSharedLinkFile(shareId, skippedId);
+      expect(hasSnapshots).toBe(true);
     });
 
     test('backfillSharedLinkFiles populates a legacy share missing snapshots', async () => {
