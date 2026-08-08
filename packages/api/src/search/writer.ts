@@ -371,7 +371,14 @@ export async function scanProjectedKeys(
   after: SearchRecordKey | null,
   limit: number,
 ): Promise<readonly SearchRecordKey[]> {
-  /** Two statements rather than one with an `OR`, so the keyset stays index-driven. */
+  /**
+   * Two statements rather than one with an `OR`, so the keyset stays
+   * index-driven. `kind` stays an equality and the row comparison covers the
+   * remaining three columns: that is the shape `documents_reconcile_idx`
+   * (kind, tenant_id, user_id, record_id) serves as a contiguous index-only
+   * range. Folding `kind` into the row comparison instead measures worse — the
+   * planner can no longer treat it as a leading equality.
+   */
   const resume = after
     ? 'AND (tenant_id, user_id, record_id) > ($3::text, $4::text, $5::text)'
     : '';

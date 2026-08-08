@@ -14,6 +14,7 @@ describe('migration files', () => {
       '002_roles.sql',
       '003_policies.sql',
       '004_poll.sql',
+      '005_reconcile.sql',
     ]);
     for (const migration of migrations) {
       expect(migration.checksum).toMatch(/^[0-9a-f]{64}$/);
@@ -137,6 +138,34 @@ describePg('chat_search migrations (live PostgreSQL)', () => {
     expect(byName.get('documents_expires_idx')).toContain('expires_at IS NOT NULL');
     expect(byName.get('outbox_key_idx')).toBeDefined();
     expect(byName.get('embeddings_hnsw_cosine_idx')).toContain('hnsw');
+  });
+
+  /**
+   * The reconciliation walk pages the whole projection every hour. Served by the
+   * primary key it reads every kind's index entries to return one kind's rows,
+   * because `kind` sits between the columns the resume compares. Leading with
+   * `kind` makes the page a contiguous, index-only range instead.
+   */
+  it('serves the reconciliation walk from a covering index rather than the primary key', async () => {
+    const { rows } = await pool.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes
+        WHERE schemaname = 'chat_search' AND indexname = 'documents_reconcile_idx'`,
+    );
+    expect(rows[0]?.indexdef).toContain('(kind, tenant_id, user_id, record_id)');
+    expect(rows[0]?.indexdef).toContain('WHERE (deleted_at IS NULL)');
+
+    const { rows: plan } = await pool.query<{ 'QUERY PLAN': string }>(
+      `EXPLAIN SELECT tenant_id, user_id, record_id
+         FROM chat_search.documents
+        WHERE kind = 'message' AND deleted_at IS NULL
+          AND (tenant_id, user_id, record_id) > ('__BASE__', 'u', 'r')
+        ORDER BY tenant_id, user_id, record_id
+        LIMIT 1000`,
+    );
+    const explained = plan.map((row) => row['QUERY PLAN']).join('\n');
+    expect(explained).toContain('documents_reconcile_idx');
+    /** A sort here would mean the index no longer matches the walk's order. */
+    expect(explained).not.toContain('Sort');
   });
 
   it('cascades embeddings when the owning document row is deleted', async () => {
