@@ -1,3 +1,5 @@
+export { MCP_USER_PLACEHOLDER_FIELDS as MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS } from 'librechat-data-provider';
+
 export const MCP_AUTHORITY_OAUTH_TOKEN_TYPES = [
   'mcp_oauth',
   'mcp_oauth_refresh',
@@ -5,27 +7,6 @@ export const MCP_AUTHORITY_OAUTH_TOKEN_TYPES = [
 ] as const;
 
 export type MCPAuthorityOAuthTokenType = (typeof MCP_AUTHORITY_OAUTH_TOKEN_TYPES)[number];
-
-export const MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS = [
-  'id',
-  'name',
-  'username',
-  'email',
-  'provider',
-  'role',
-  'googleId',
-  'facebookId',
-  'openidId',
-  'samlId',
-  'ldapId',
-  'githubId',
-  'discordId',
-  'appleId',
-  'emailVerified',
-  'twoFactorEnabled',
-  'termsAccepted',
-  'termsAcceptedAt',
-] as const;
 
 const mcpOAuthTokenTypes = new Set<string>(MCP_AUTHORITY_OAUTH_TOKEN_TYPES);
 

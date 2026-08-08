@@ -2,6 +2,27 @@ import { z } from 'zod';
 import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
+export const MCP_USER_PLACEHOLDER_FIELDS = [
+  'id',
+  'name',
+  'username',
+  'email',
+  'provider',
+  'role',
+  'googleId',
+  'facebookId',
+  'openidId',
+  'samlId',
+  'ldapId',
+  'githubId',
+  'discordId',
+  'appleId',
+  'emailVerified',
+  'twoFactorEnabled',
+  'termsAccepted',
+  'termsAcceptedAt',
+] as const;
+
 const validateOAuthClientCredentials = (
   oauth: {
     client_id?: string;
