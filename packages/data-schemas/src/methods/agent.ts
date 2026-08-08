@@ -861,12 +861,22 @@ export function createAgentMethods(
   }
 
   /**
-   * Maps file ids to the agent whose `file_search` knowledge base holds them.
+   * LEGACY FALLBACK ONLY — do not call this to decide where a file's chunks
+   * live. Uploads record that on the file itself (`embedding_entity_id`), and
+   * that recorded value is the only one that reflects what was sent to the RAG
+   * service at embed time.
    *
-   * Knowledge-base files are embedded in the vector store under the agent's id
-   * rather than the uploader's, so reading or deleting their chunks has to name
-   * that entity. The agent document is the only durable record of which entity
-   * a given file was embedded under.
+   * A `file_search` association is not evidence of it: the agent create and
+   * update APIs accept file ids the user already owns, and a message attachment
+   * is embedded with no entity at all, so a file can end up listed by an agent
+   * that never embedded it. This exists solely for records written before
+   * `embedding_entity_id` did, where nothing better survives; for those, an
+   * associated agent is a better guess than naming no entity, which is what
+   * they got before.
+   *
+   * A file listed by several agents is genuinely ambiguous. The lowest id wins
+   * so a repeated delete behaves the same way twice rather than depending on
+   * the order Mongo happened to return.
    */
   async function getAgentIdsByFileIds({
     file_ids,
@@ -889,7 +899,11 @@ export function createAgentMethods(
     for (const agent of agents) {
       const knowledgeFileIds = agent.tool_resources?.[EToolResources.file_search]?.file_ids ?? [];
       for (const fileId of knowledgeFileIds) {
-        if (requested.has(fileId) && entityByFileId[fileId] == null) {
+        if (!requested.has(fileId)) {
+          continue;
+        }
+        const current = entityByFileId[fileId];
+        if (current == null || agent.id < current) {
           entityByFileId[fileId] = agent.id;
         }
       }

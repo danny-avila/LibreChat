@@ -1,5 +1,11 @@
 const axios = require('axios');
-const { RagScopes, isEnabled, logAxiosError, generateShortLivedToken } = require('@librechat/api');
+const {
+  RagScopes,
+  isEnabled,
+  logAxiosError,
+  generateShortLivedToken,
+  getRecordedEmbeddingEntityId,
+} = require('@librechat/api');
 
 const footer = `Use the context as your learned knowledge to better answer the user.
 
@@ -22,17 +28,19 @@ function createContextHandlers(req, userMessageContent) {
   /**
    * Chunks of a knowledge-base file are owned by the agent it was embedded
    * under, so both the token and the request have to name that entity. Message
-   * attachments carry none, and stay scoped to the user alone.
+   * attachments carry none, and stay scoped to the user alone. The file record
+   * says which of the two it was; a file that predates that record has nothing
+   * to name and stays user-scoped, exactly as it always has.
    *
    * The two branches reach different planes of the RAG service and so mint
    * different scopes: reading a file's stored context needs document access and
    * no inference, while a retrieval query embeds the user's message and needs
    * exactly the reverse.
    *
-   * @param {MongoFile & { entity_id?: string }} file
+   * @param {MongoFile} file
    */
   const query = async (file) => {
-    const entity_id = file.entity_id;
+    const entity_id = getRecordedEmbeddingEntityId(file);
     const mintToken = (scope) =>
       generateShortLivedToken({
         userId: req.user.id,

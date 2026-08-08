@@ -13,7 +13,12 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { FileSources } = require('librechat-data-provider');
-const { agentSchema, fileSchema, createMethods } = require('@librechat/data-schemas');
+const {
+  agentSchema,
+  fileSchema,
+  createMethods,
+  NO_EMBEDDING_ENTITY,
+} = require('@librechat/data-schemas');
 
 jest.mock('axios');
 
@@ -25,17 +30,11 @@ jest.mock('@librechat/data-schemas', () => {
   };
 });
 
-jest.mock('@librechat/agents', () => ({
-  EnvVar: { CODE_API_KEY: 'CODE_API_KEY' },
-}));
-
+/* Everything except the token mint stays real: the entity resolution under
+ * test is the whole point of this file, so only the signing key is stubbed. */
 jest.mock('@librechat/api', () => ({
-  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank', documents: 'rag:documents' },
+  ...jest.requireActual('@librechat/api'),
   generateShortLivedToken: jest.fn(() => 'mock-jwt-token'),
-  logAxiosError: jest.fn(),
-  sanitizeFilename: jest.fn((n) => n),
-  parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
-  processAudioFile: jest.fn(),
 }));
 
 jest.mock('~/server/controllers/assistants/v2', () => ({
@@ -123,7 +122,9 @@ describe('processDeleteRequest — agent knowledge-base scoping', () => {
     await File.deleteMany({});
   });
 
-  const seedFile = async (file_id, userId, source = FileSources.vectordb) =>
+  /** Seeds a file record. Omitting `embedding_entity_id` produces a legacy
+   * record — one written before uploads recorded where the chunks went. */
+  const seedFile = async (file_id, userId, { source = FileSources.vectordb, ...rest } = {}) =>
     File.create({
       file_id,
       user: userId,
@@ -134,11 +135,12 @@ describe('processDeleteRequest — agent knowledge-base scoping', () => {
       bytes: 1,
       embedded: true,
       source,
+      ...rest,
     });
 
-  const seedAgent = async (authorId, file_ids) =>
+  const seedAgent = async (authorId, file_ids, id) =>
     Agent.create({
-      id: `agent_${Math.random().toString(36).slice(2, 10)}`,
+      id: id ?? `agent_${Math.random().toString(36).slice(2, 10)}`,
       name: 'Knowledge Agent',
       provider: 'test',
       model: 'test-model',
@@ -157,8 +159,8 @@ describe('processDeleteRequest — agent knowledge-base scoping', () => {
   test('names the owning agent on the vector delete and in the token', async () => {
     const userId = new mongoose.Types.ObjectId();
     const fileId = 'file_kb_1';
-    const file = await seedFile(fileId, userId);
     const agent = await seedAgent(userId, [fileId]);
+    const file = await seedFile(fileId, userId, { embedding_entity_id: agent.id });
 
     await processDeleteRequest({
       req: buildReq([file.toObject()], { id: userId.toString(), tenantId: 'tenant-a' }),
@@ -181,7 +183,9 @@ describe('processDeleteRequest — agent knowledge-base scoping', () => {
   test('leaves a user-owned file scoped to the user alone', async () => {
     const userId = new mongoose.Types.ObjectId();
     const fileId = 'file_attachment_1';
-    const file = await seedFile(fileId, userId);
+    const file = await seedFile(fileId, userId, {
+      embedding_entity_id: NO_EMBEDDING_ENTITY,
+    });
 
     await processDeleteRequest({
       req: buildReq([file.toObject()], { id: userId.toString() }),
@@ -201,8 +205,11 @@ describe('processDeleteRequest — agent knowledge-base scoping', () => {
   test('scopes the secondary vector delete when the file lives in another store', async () => {
     const userId = new mongoose.Types.ObjectId();
     const fileId = 'file_kb_local';
-    const file = await seedFile(fileId, userId, FileSources.local);
     const agent = await seedAgent(userId, [fileId]);
+    const file = await seedFile(fileId, userId, {
+      source: FileSources.local,
+      embedding_entity_id: agent.id,
+    });
 
     await processDeleteRequest({
       req: buildReq([file.toObject()], { id: userId.toString() }),
@@ -222,9 +229,11 @@ describe('processDeleteRequest — agent knowledge-base scoping', () => {
     const userId = new mongoose.Types.ObjectId();
     const kbFileId = 'file_kb_mixed';
     const ownFileId = 'file_own_mixed';
-    const kbFile = await seedFile(kbFileId, userId);
-    const ownFile = await seedFile(ownFileId, userId);
     const agent = await seedAgent(userId, [kbFileId]);
+    const kbFile = await seedFile(kbFileId, userId, { embedding_entity_id: agent.id });
+    const ownFile = await seedFile(ownFileId, userId, {
+      embedding_entity_id: NO_EMBEDDING_ENTITY,
+    });
 
     await processDeleteRequest({
       req: buildReq([kbFile.toObject(), ownFile.toObject()], { id: userId.toString() }),
@@ -294,6 +303,112 @@ describe('processDeleteRequest — agent knowledge-base scoping', () => {
       expect(result.deletedFileIds).toContain('file_rag_absent');
       expect(result.failedFileIds).not.toContain('file_rag_absent');
       expect(record).toBeNull();
+    });
+  });
+
+  /**
+   * The entity comes from what the upload recorded, never from whichever agent
+   * happens to list the file at delete time. Those two disagree routinely: an
+   * agent can be given a file id it never embedded, and can drop one it did.
+   */
+  describe('the recorded entity outranks the current association', () => {
+    const deleteAndReadEntity = async (file, userId) => {
+      await processDeleteRequest({
+        req: buildReq([file.toObject()], { id: userId.toString() }),
+        files: [file.toObject()],
+      });
+      const [, config] = deleteCall();
+      return {
+        param: config.params?.entity_id,
+        claimed: generateShortLivedToken.mock.calls[0][0].entityIds,
+      };
+    };
+
+    test('a message attachment later referenced by an agent stays user-scoped', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = 'file_attachment_adopted';
+      const file = await seedFile(fileId, userId, {
+        embedding_entity_id: NO_EMBEDDING_ENTITY,
+      });
+      await seedAgent(userId, [fileId]);
+
+      const { param, claimed } = await deleteAndReadEntity(file, userId);
+
+      expect(param).toBeUndefined();
+      expect(claimed).toEqual([]);
+    });
+
+    test('a file listed by several agents keeps the one that embedded it', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = 'file_kb_shared';
+      const owner = await seedAgent(userId, [fileId], 'agent_zzz_owner');
+      await seedAgent(userId, [fileId], 'agent_aaa_borrower');
+      const file = await seedFile(fileId, userId, { embedding_entity_id: owner.id });
+
+      const { param, claimed } = await deleteAndReadEntity(file, userId);
+
+      expect(param).toBe(owner.id);
+      expect(claimed).toEqual([owner.id]);
+    });
+
+    test('a file detached from its agent still names that agent', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = 'file_kb_detached';
+      const agent = await seedAgent(userId, []);
+      const file = await seedFile(fileId, userId, { embedding_entity_id: agent.id });
+
+      const { param, claimed } = await deleteAndReadEntity(file, userId);
+
+      expect(param).toBe(agent.id);
+      expect(claimed).toEqual([agent.id]);
+    });
+  });
+
+  /* Records written before uploads stamped the entity have nothing to read
+   * back, so they alone still infer it from the agents that hold them. */
+  describe('files predating the recorded entity', () => {
+    test('infer the entity from the agent that holds them', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = 'file_legacy_held';
+      const agent = await seedAgent(userId, [fileId]);
+      const file = await seedFile(fileId, userId);
+
+      await processDeleteRequest({
+        req: buildReq([file.toObject()], { id: userId.toString() }),
+        files: [file.toObject()],
+      });
+
+      expect(deleteCall()[1].params).toEqual({ entity_id: agent.id });
+      expect(await File.findOne({ file_id: fileId })).toBeNull();
+    });
+
+    test('are deleted user-scoped when no agent holds them', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = 'file_legacy_unheld';
+      const file = await seedFile(fileId, userId);
+
+      await processDeleteRequest({
+        req: buildReq([file.toObject()], { id: userId.toString() }),
+        files: [file.toObject()],
+      });
+
+      expect(deleteCall()[1].params).toBeUndefined();
+      expect(await File.findOne({ file_id: fileId })).toBeNull();
+    });
+
+    test('resolve to the same agent every time when several hold them', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = 'file_legacy_shared';
+      await seedAgent(userId, [fileId], 'agent_zzz');
+      await seedAgent(userId, [fileId], 'agent_aaa');
+      const file = await seedFile(fileId, userId);
+
+      await processDeleteRequest({
+        req: buildReq([file.toObject()], { id: userId.toString() }),
+        files: [file.toObject()],
+      });
+
+      expect(deleteCall()[1].params).toEqual({ entity_id: 'agent_aaa' });
     });
   });
 

@@ -2,6 +2,14 @@ import mongoose, { Schema } from 'mongoose';
 import { FileContext, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '~/types';
 
+/**
+ * Recorded in `embedding_entity_id` when a file's vectors were written with no
+ * entity — owned by the uploading user alone. Storing it explicitly is what
+ * separates a deliberately user-scoped embedding from a record that predates
+ * the field, whose scope can only be guessed at.
+ */
+export const NO_EMBEDDING_ENTITY = '__NONE__';
+
 const file: Schema<IMongoFile> = new Schema(
   {
     user: {
@@ -52,6 +60,17 @@ const file: Schema<IMongoFile> = new Schema(
     },
     embedded: {
       type: Boolean,
+    },
+    embedding_entity_id: {
+      /* The entity the file's chunks were written under, stamped at embed
+       * time from the same value sent to the RAG API — the agent id for a
+       * knowledge-base upload, `NO_EMBEDDING_ENTITY` for a user-scoped one.
+       * Deleting or querying those chunks has to name the same entity, and an
+       * agent's *current* file_search association does not prove it: an
+       * existing file id can be added to any agent's tool_resources long after
+       * it was embedded. Absent on records written before this field existed
+       * and on files that were never embedded. */
+      type: String,
     },
     type: {
       type: String,

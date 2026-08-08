@@ -19,13 +19,14 @@ const {
   documentParserMimeTypes,
   isPermissiveMimeConfig,
 } = require('librechat-data-provider');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem, NO_EMBEDDING_ENTITY } = require('@librechat/data-schemas');
 const {
   sanitizeFilename,
   parseText,
   processAudioFile,
   sendUploadSuccess,
   getStorageMetadata,
+  resolveEmbeddingEntityIds,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -154,30 +155,15 @@ function enqueueDeleteOperation({
  *
  * Knowledge-base files are embedded under the agent's id rather than the
  * uploader's, so a delete that names only the user matches nothing and leaves
- * the chunks behind. One lookup covers the whole batch.
+ * the chunks behind. The entity is read from what the upload recorded; only
+ * files predating that record need the agent lookup, and one call covers them
+ * all.
  *
  * @param {MongoFile[]} files - The files being deleted.
  * @returns {Promise<Record<string, string>>} File id to owning entity id.
  */
-async function resolveVectorEntityIds(files) {
-  const embeddedFileIds = [];
-  for (const file of files) {
-    if (file.embedded === true && file.file_id) {
-      embeddedFileIds.push(file.file_id);
-    }
-  }
-
-  if (embeddedFileIds.length === 0) {
-    return {};
-  }
-
-  try {
-    return await db.getAgentIdsByFileIds({ file_ids: embeddedFileIds });
-  } catch (error) {
-    logger.error('Error resolving knowledge-base owners before vector deletion', error);
-    return {};
-  }
-}
+const resolveVectorEntityIds = (files) =>
+  resolveEmbeddingEntityIds({ files, lookupLegacyEntityIds: db.getAgentIdsByFileIds });
 
 const getDeleteMethod = ({ source, deletionMethods }) => {
   if (deletionMethods[source]) {
@@ -1061,6 +1047,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       metadata: fileInfoMetadata,
       type: file.mimetype,
       embedded,
+      /* Stamped from the value the vectors were actually written under, so a
+       * later delete or query names the same entity instead of inferring one
+       * from whichever agent happens to reference the file by then. */
+      embedding_entity_id: embedded ? (entity_id ?? NO_EMBEDDING_ENTITY) : undefined,
       source,
       height,
       width,

@@ -7,6 +7,10 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => false),
   logAxiosError: jest.fn(),
   generateShortLivedToken: jest.fn(() => 'mock-jwt-token'),
+  getRecordedEmbeddingEntityId: (file) =>
+    file.embedding_entity_id != null && file.embedding_entity_id !== '__NONE__'
+      ? file.embedding_entity_id
+      : undefined,
 }));
 
 const createContextHandlers = require('./createContextHandlers');
@@ -45,7 +49,7 @@ describe('createContextHandlers', () => {
   describe('semantic search', () => {
     it('names the owning agent on the query and in the token', async () => {
       const handlers = createContextHandlers(req, 'what does it say?');
-      await handlers.processFile(embeddedFile('kb-1', { entity_id: 'agent_123' }));
+      await handlers.processFile(embeddedFile('kb-1', { embedding_entity_id: 'agent_123' }));
       await handlers.createContext();
 
       const [, body] = axios.post.mock.calls[0];
@@ -81,7 +85,7 @@ describe('createContextHandlers', () => {
 
     it('names the owning agent on the document context request', async () => {
       const handlers = createContextHandlers(req, 'what does it say?');
-      await handlers.processFile(embeddedFile('kb-1', { entity_id: 'agent_123' }));
+      await handlers.processFile(embeddedFile('kb-1', { embedding_entity_id: 'agent_123' }));
       await handlers.createContext();
 
       const [url, config] = axios.get.mock.calls[0];
@@ -131,6 +135,16 @@ describe('createContextHandlers', () => {
       ['rag:documents'],
       ['rag:embed'],
     ]);
+  });
+
+  it('keeps a file recorded as user-scoped unscoped', async () => {
+    const handlers = createContextHandlers(req, 'what does it say?');
+    await handlers.processFile(embeddedFile('attachment-1', { embedding_entity_id: '__NONE__' }));
+    await handlers.createContext();
+
+    const [, body] = axios.post.mock.calls[0];
+    expect(body).not.toHaveProperty('entity_id');
+    expect(generateShortLivedToken.mock.calls[0][0].entityIds).toEqual([]);
   });
 
   it('returns nothing when the RAG API is not configured', () => {

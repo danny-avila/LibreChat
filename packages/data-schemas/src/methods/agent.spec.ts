@@ -3301,6 +3301,33 @@ describe('Agent Methods', () => {
       test('queries nothing for an empty batch', async () => {
         expect(await getAgentIdsByFileIds({ file_ids: [] })).toEqual({});
       });
+
+      /* Only records written before uploads stamped `embedding_entity_id` reach
+       * this lookup, and a file several agents list is genuinely ambiguous. The
+       * answer at least has to be the same one twice, so a second delete
+       * attempt reaches the same place as the first. */
+      test('picks the same agent every time when several hold the file', async () => {
+        const fileId = `file_${uuidv4()}`;
+        const agents = await Promise.all([
+          createBasicAgent(),
+          createBasicAgent(),
+          createBasicAgent(),
+        ]);
+        for (const agent of agents) {
+          await addAgentResourceFile({
+            agent_id: agent.id,
+            tool_resource: EToolResources.file_search,
+            file_id: fileId,
+          });
+        }
+
+        const lowestId = agents.map((agent) => agent.id).sort()[0];
+        const first = await getAgentIdsByFileIds({ file_ids: [fileId] });
+        const second = await getAgentIdsByFileIds({ file_ids: [fileId] });
+
+        expect(first).toEqual({ [fileId]: lowestId });
+        expect(second).toEqual(first);
+      });
     });
 
     test('should handle updateAgent with complex nested updates', async () => {

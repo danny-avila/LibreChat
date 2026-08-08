@@ -1,7 +1,13 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { tool } = require('@librechat/agents/langchain/tools');
-const { RagScopes, logAxiosError, generateShortLivedToken } = require('@librechat/api');
+const {
+  RagScopes,
+  logAxiosError,
+  generateShortLivedToken,
+  hasRecordedEmbeddingEntity,
+  getRecordedEmbeddingEntityId,
+} = require('@librechat/api');
 const { Tools, EToolResources } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getFiles } = require('~/models');
@@ -57,6 +63,21 @@ const primeFiles = async (options) => {
 
   let toolContext = `- Note: Semantic search is available through the ${Tools.file_search} tool but no files are currently loaded. Request the user to upload documents to search through.`;
 
+  /**
+   * Whether this agent's id is the one the file's chunks were written under.
+   * Being listed in its knowledge base does not settle that — an already-owned
+   * file id can be added to any agent's `tool_resources`, and a message
+   * attachment is embedded with no entity — so the recorded value decides
+   * wherever there is one. Files predating that record fall back to the
+   * association, which is all they ever had.
+   *
+   * @param {MongoFile} file
+   */
+  const isEmbeddedUnderAgent = (file) =>
+    hasRecordedEmbeddingEntity(file)
+      ? getRecordedEmbeddingEntityId(file) === agentId
+      : agentResourceIds.has(file.file_id);
+
   const files = [];
   for (let i = 0; i < dbFiles.length; i++) {
     const file = dbFiles[i];
@@ -72,7 +93,7 @@ const primeFiles = async (options) => {
     files.push({
       file_id: file.file_id,
       filename: file.filename,
-      fromAgent: agentResourceIds.has(file.file_id),
+      fromAgent: isEmbeddedUnderAgent(file),
     });
   }
 
