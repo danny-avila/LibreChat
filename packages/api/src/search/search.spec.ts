@@ -316,6 +316,35 @@ describePg('PostgresChatSearch', () => {
       }
     });
 
+    /**
+     * The configuration production actually ships: no embedder is injected and
+     * nothing writes vectors, so the vector arm cannot return a row. It has to
+     * say so on every search — an arm that quietly contributes nothing looks
+     * exactly like one that ran and matched nothing, which is how it came to be
+     * shipped inert without anyone noticing.
+     */
+    it('reports an unconfigured embedder rather than serving as if the arm ran', async () => {
+      const chat = new PostgresChatSearch({
+        pool,
+        resolveScope: () => scope,
+        cursorSecret: SECRET,
+      });
+
+      const result = await chat.search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 5,
+      });
+
+      expect(result.degradations).toContain('embedding-unconfigured');
+      /** Lexical still serves in full; the vector arm is additive, never load-bearing. */
+      expect(result.hits.length).toBe(5);
+      for (const hit of result.hits) {
+        expect(hit.conversationId).toBe('convo-tenant-a');
+      }
+    });
+
     it('merges the vector arm when an embedding is available', async () => {
       for (const owner of [ALICE, BOB]) {
         await pool.query(

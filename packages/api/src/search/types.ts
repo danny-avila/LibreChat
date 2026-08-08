@@ -37,11 +37,18 @@ export type ChatSearchRequest = Readonly<{
 }>;
 
 /**
- * `embedding-unavailable` is "no query vector to search with";
+ * `embedding-unconfigured` is "this deployment injected no embedder, so the
+ * vector arm can never contribute";
+ * `embedding-unavailable` is "an embedder exists and produced no query vector";
  * `vector-unavailable` is "the query vector existed and the arm itself failed".
- * Distinct because they point at different systems.
+ *
+ * Distinct because they point at different systems, and the first is deliberately
+ * separate: it is a standing property of the deployment rather than an incident,
+ * and it is reported on every search so an inert arm can never be mistaken for a
+ * healthy one that happened to match nothing.
  */
 export type SearchDegradation =
+  | 'embedding-unconfigured'
   | 'embedding-unavailable'
   | 'vector-unavailable'
   | 'clickhouse-unavailable';

@@ -236,6 +236,17 @@ export async function tombstoneDocument(
  * Writes a vector only while the document's embedding-input hash still matches
  * the text that was actually embedded — a compare-and-set in one statement.
  *
+ * **This has no production caller yet.** Nothing in the shipped stack embeds
+ * documents, and no query embedder is injected either, so the vector arm is
+ * inert end to end and every search reports `embedding-unconfigured` to say so.
+ * The compare-and-set, the hash join on the read side and the tombstone deletion
+ * are the hard parts and they are finished and tested; what remains is a worker
+ * that consumes `upsertDocument`'s `embeddingStale` / `embeddingInputHash` and
+ * calls this. Choosing an embedding provider, a batching and rate-limit policy
+ * and a backfill strategy is a feature decision, not wiring, and is deliberately
+ * not being made here — but the inertness is reported rather than hidden, so no
+ * one can mistake this for a working semantic search.
+ *
  * Without this, an edit that lands between "send text to the embedding service"
  * and "store the returned vector" leaves a vector describing text that no longer
  * exists, ranking the record by content it no longer has. The read side performs

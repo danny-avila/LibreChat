@@ -90,6 +90,19 @@ export function createChatSearch(options: ChatSearchOptions = {}): ChatSearchRun
   });
 
   logger.info('[chatSearch] PostgreSQL chat search is enabled');
+  if (!options.embedder) {
+    /**
+     * Said once, at boot, rather than left for someone to infer from empty
+     * vector results. Nothing writes embeddings yet either — `writeEmbedding`
+     * has no production caller — so the arm is inert end to end, and every
+     * search additionally reports `embedding-unconfigured` so the state is
+     * visible per query and not only in a startup log nobody re-reads.
+     */
+    logger.info(
+      '[chatSearch] no query embedder is configured: serving the lexical arms only ' +
+        '(exact, trigram, full-text). Semantic ranking is inactive.',
+    );
+  }
 
   return Object.freeze({
     chatSearch,

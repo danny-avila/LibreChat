@@ -115,7 +115,17 @@ export class PostgresChatSearch implements ChatSearch {
      * never leaves this process at all on this path.
      */
     let embedding: readonly number[] | null = null;
-    if (this.deps.embedder && shouldRunVectorArm(query)) {
+    if (!this.deps.embedder) {
+      /**
+       * No embedder was injected, so the vector arm contributes nothing on this
+       * or any other query — and nothing writes vectors either, since
+       * `writeEmbedding` has no production caller yet. Reporting it every time is
+       * the point: an arm that silently returns zero candidates is
+       * indistinguishable from one that ran and matched nothing, and that is
+       * exactly how this shipped looking healthy.
+       */
+      degradations.push('embedding-unconfigured');
+    } else if (shouldRunVectorArm(query)) {
       try {
         embedding = await this.deps.embedder.embed(query);
       } catch (error) {
@@ -124,7 +134,7 @@ export class PostgresChatSearch implements ChatSearch {
       if (!embedding) {
         degradations.push('embedding-unavailable');
       }
-    } else if (this.deps.embedder) {
+    } else {
       degradations.push('embedding-unavailable');
     }
 
