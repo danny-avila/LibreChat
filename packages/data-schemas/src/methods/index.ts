@@ -116,6 +116,11 @@ import {
   type MCPAuthorityConfigSourceDocument,
   type MCPAuthorityCredentialSourceDocument,
 } from './mcpAuthority';
+export { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
+export type {
+  MCPAuthorityConsistencyReconciliation,
+  MCPAuthorityConsistencyStatus,
+} from './mcpAuthority/consistency';
 
 export {
   RoleConflictError,

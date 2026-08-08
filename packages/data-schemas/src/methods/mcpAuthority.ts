@@ -33,6 +33,7 @@ import type {
   MCPAuthorityServerSource,
 } from '~/types';
 import type { MCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
+import { MAX_PERM_BITS } from '~/common/permissions';
 import {
   MCP_AUTHORITY_OAUTH_TOKEN_TYPES,
   type MCPAuthorityOAuthTokenType,
@@ -48,6 +49,7 @@ interface PreparedTarget {
   readonly source: MCPAuthorityServerSource;
   readonly databaseId: string | null;
   readonly sourceRevision: string;
+  readonly configSourceRevision: string;
   readonly expectedCredentialRevision: string;
   readonly expectedOAuthGrantGeneration: string | null;
   readonly resolvedConfigDigest: string;
@@ -535,6 +537,14 @@ function prepareTargets(targets: MCPAuthorityResolveInput['targets']): readonly 
       reject('malformed_input', `Source revision for "${target.serverName}" is required`);
     }
     if (
+      typeof target.configSourceRevision !== 'string' ||
+      !target.configSourceRevision ||
+      target.configSourceRevision.trim() !== target.configSourceRevision ||
+      target.configSourceRevision.length > MAX_MCP_AUTHORITY_SOURCE_REVISION_LENGTH
+    ) {
+      reject('malformed_input', `Config revision for "${target.serverName}" is required`);
+    }
+    if (
       typeof target.expectedCredentialRevision !== 'string' ||
       !target.expectedCredentialRevision ||
       target.expectedCredentialRevision.length > MAX_MCP_AUTHORITY_SOURCE_REVISION_LENGTH ||
@@ -561,6 +571,7 @@ function prepareTargets(targets: MCPAuthorityResolveInput['targets']): readonly 
       source,
       databaseId: target.databaseId ?? null,
       sourceRevision: target.sourceRevision,
+      configSourceRevision: target.configSourceRevision,
       expectedCredentialRevision: target.expectedCredentialRevision,
       expectedOAuthGrantGeneration: target.expectedOAuthGrantGeneration,
       resolvedConfigDigest: digestMCPAuthorityValue(target.resolvedConfig),
@@ -603,7 +614,9 @@ function assertProofIntegrity(proof: MCPAuthorityProofV1): void {
     !shared.user.revision ||
     !shared.role.revision ||
     !shared.boot.revision ||
-    !shared.boot.digest
+    !shared.boot.digest ||
+    typeof shared.configSourceRevision !== 'string' ||
+    !shared.configSourceRevision
   ) {
     reject('malformed_input', 'MCP authority shared proof is invalid');
   }
@@ -920,13 +933,40 @@ function oauthTokenKey(type: string, identifier: string): string {
 }
 
 function isActiveViewAcl(entry: AclProjection, now: Date): boolean {
-  if (!Number.isInteger(entry.permBits) || entry.permBits < 0) {
+  if (
+    !Number.isSafeInteger(entry.permBits) ||
+    entry.permBits < 0 ||
+    entry.permBits > MAX_PERM_BITS ||
+    (entry.permBits & ~MAX_PERM_BITS) !== 0
+  ) {
     reject('proof_unavailable', 'MCP ACL proof is malformed');
   }
   return (
     (entry.permBits & PermissionBits.VIEW) === PermissionBits.VIEW &&
     (!entry.expiredAt || entry.expiredAt > now)
   );
+}
+
+function isAllowedAclPrincipal(
+  entry: AclProjection,
+  userId: string,
+  roleName: string,
+  groupIds: ReadonlySet<string>,
+): boolean {
+  const principalId = entry.principalId?.toString();
+  if (entry.principalType === PrincipalType.PUBLIC) {
+    return principalId === undefined;
+  }
+  if (entry.principalType === PrincipalType.USER) {
+    return principalId === userId;
+  }
+  if (entry.principalType === PrincipalType.ROLE) {
+    return principalId === roleName;
+  }
+  if (entry.principalType === PrincipalType.GROUP) {
+    return principalId !== undefined && groupIds.has(principalId);
+  }
+  return false;
 }
 
 function aclRevision(entry: AclProjection): object {
@@ -1080,7 +1120,11 @@ export function createMCPAuthorityMethods(
     if (!role || role.name !== roleName) {
       reject('role_changed', 'MCP authority role no longer exists');
     }
-    const useMCP = role.permissions?.[PermissionTypes.MCP_SERVERS]?.[Permissions.USE] === true;
+    const storedUseMCP = role.permissions?.[PermissionTypes.MCP_SERVERS]?.[Permissions.USE];
+    if (storedUseMCP !== undefined && typeof storedUseMCP !== 'boolean') {
+      reject('proof_unavailable', 'MCP authority role permission is malformed');
+    }
+    const useMCP = storedUseMCP === true;
     if (!useMCP) {
       reject('mcp_use_revoked', 'MCP server use permission is not current');
     }
@@ -1339,7 +1383,11 @@ export function createMCPAuthorityMethods(
     }
     const directAclByServerId = new Map<string, AclProjection[]>();
     const agentAclByAgentId = new Map<string, AclProjection[]>();
+    const allowedAclGroupIds = new Set(sortedGroups.map((group) => group._id.toHexString()));
     for (const entry of aclEntries) {
+      if (!isAllowedAclPrincipal(entry, userId, roleName, allowedAclGroupIds)) {
+        reject('proof_unavailable', 'MCP ACL principal proof is malformed');
+      }
       const resourceId = entry.resourceId.toHexString();
       if (entry.resourceType === ResourceType.MCPSERVER) {
         appendIndexValue(directAclByServerId, resourceId, entry);
@@ -1407,6 +1455,7 @@ export function createMCPAuthorityMethods(
       boot,
       groupsRevision,
       configsRevision,
+      configSourceRevision,
     };
     const shared = {
       ...sharedWithoutRevision,
@@ -1451,6 +1500,13 @@ export function createMCPAuthorityMethods(
           })
         : digestMCPAuthorityValue({ source: 'config', name: target.serverName });
       const sourceRevision = target.source === 'database' ? serverRevision : configSourceRevision;
+      if (target.configSourceRevision !== configSourceRevision) {
+        reject(
+          'config_changed',
+          'Shared MCP configuration changed before authority was resolved',
+          target.serverName,
+        );
+      }
       if (target.sourceRevision !== sourceRevision) {
         reject(
           target.source === 'database' ? 'server_changed' : 'config_changed',
@@ -1599,6 +1655,7 @@ export function createMCPAuthorityMethods(
           source: server.source,
           databaseId: server.databaseId,
           sourceRevision: server.sourceRevision,
+          configSourceRevision: proof.shared.configSourceRevision,
           expectedCredentialRevision: server.credentialRevision,
           expectedOAuthGrantGeneration: server.oauthGrantGeneration,
           resolvedConfigDigest: server.resolvedConfigDigest,

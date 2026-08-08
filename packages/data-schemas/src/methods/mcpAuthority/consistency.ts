@@ -17,6 +17,7 @@ export type MCPAuthorityConsistencyFailureReason =
   | 'invalid_owner'
   | 'malformed_fence'
   | 'mutation_failed'
+  | 'reconciliation_conflict'
   | 'uninitialized';
 
 export class MCPAuthorityConsistencyError extends Error {
@@ -47,8 +48,24 @@ export interface MCPAuthorityMutationGate {
   ): Promise<MCPAuthorityMutationResult<Result>>;
 }
 
+export interface MCPAuthorityConsistencyStatus extends MCPAuthorityGeneration {
+  readonly dirty: boolean;
+  readonly ownerId?: string;
+  readonly dirtyAt?: Date;
+  readonly updatedAt: Date;
+}
+
+export interface MCPAuthorityConsistencyReconciliation {
+  readonly expectedGeneration: number;
+  readonly expectedOwnerId: string;
+}
+
 export interface MCPAuthorityConsistencyModule extends MCPAuthorityMutationGate {
   initializeMCPAuthorityConsistency(): Promise<MCPAuthorityGeneration>;
+  getMCPAuthorityConsistencyStatus(): Promise<MCPAuthorityConsistencyStatus>;
+  reconcileMCPAuthorityConsistency(
+    reconciliation: MCPAuthorityConsistencyReconciliation,
+  ): Promise<MCPAuthorityGeneration>;
   readStableSnapshot<Snapshot>(
     read: (generation: number) => Promise<Snapshot>,
   ): Promise<MCPAuthorityStableSnapshot<Snapshot>>;
@@ -199,7 +216,10 @@ export function createMCPAuthorityConsistencyModule(
 
   async function readCleanFence(): Promise<MCPAuthorityConsistencyFence> {
     // eslint-disable-next-line no-restricted-syntax -- the global fence is intentionally a raw Mongo-wire document
-    const fence = await options.collection.findOne({ _id: GLOBAL_FENCE_ID });
+    const fence = await options.collection.findOne(
+      { _id: GLOBAL_FENCE_ID },
+      { readPreference: 'primary' },
+    );
     return requireCleanFence(fence);
   }
 
@@ -221,6 +241,77 @@ export function createMCPAuthorityConsistencyModule(
 
   async function initializeMCPAuthorityConsistency(): Promise<MCPAuthorityGeneration> {
     return Object.freeze({ generation: requireCleanFence(await initializeFence()).generation });
+  }
+
+  async function getMCPAuthorityConsistencyStatus(): Promise<MCPAuthorityConsistencyStatus> {
+    const fence = requireFence(await initializeFence());
+    return Object.freeze({
+      generation: fence.generation,
+      dirty: fence.dirty,
+      ...(fence.ownerId === undefined ? {} : { ownerId: fence.ownerId }),
+      ...(fence.dirtyAt === undefined ? {} : { dirtyAt: new Date(fence.dirtyAt.getTime()) }),
+      updatedAt: new Date(fence.updatedAt.getTime()),
+    });
+  }
+
+  async function reconcileMCPAuthorityConsistency(
+    reconciliation: MCPAuthorityConsistencyReconciliation,
+  ): Promise<MCPAuthorityGeneration> {
+    if (
+      !Number.isSafeInteger(reconciliation.expectedGeneration) ||
+      reconciliation.expectedGeneration < 0
+    ) {
+      throw new MCPAuthorityConsistencyError(
+        'invalid_generation',
+        'MCP authority reconciliation generation is malformed',
+      );
+    }
+    if (
+      typeof reconciliation.expectedOwnerId !== 'string' ||
+      !reconciliation.expectedOwnerId ||
+      reconciliation.expectedOwnerId.length > 256
+    ) {
+      throw new MCPAuthorityConsistencyError(
+        'invalid_owner',
+        'MCP authority reconciliation owner is malformed',
+      );
+    }
+    if (reconciliation.expectedGeneration === Number.MAX_SAFE_INTEGER) {
+      throw new MCPAuthorityConsistencyError(
+        'generation_exhausted',
+        'MCP authority generation is exhausted',
+      );
+    }
+    const updatedAt = currentTime(options.now);
+    // eslint-disable-next-line no-restricted-syntax -- operator recovery uses an exact owner-and-generation CAS
+    const reconciled = await options.collection.findOneAndUpdate(
+      {
+        _id: GLOBAL_FENCE_ID,
+        generation: reconciliation.expectedGeneration,
+        dirty: true,
+        ownerId: reconciliation.expectedOwnerId,
+      },
+      {
+        $inc: { generation: 1 },
+        $set: { dirty: false, updatedAt },
+        $unset: { ownerId: '', dirtyAt: '' },
+      },
+      { returnDocument: 'after' },
+    );
+    if (reconciled === null) {
+      throw new MCPAuthorityConsistencyError(
+        'reconciliation_conflict',
+        'MCP authority consistency fence no longer matches the observed dirty owner',
+      );
+    }
+    const clean = requireCleanFence(reconciled);
+    if (clean.generation !== reconciliation.expectedGeneration + 1) {
+      throw new MCPAuthorityConsistencyError(
+        'reconciliation_conflict',
+        'MCP authority consistency reconciliation published an unexpected generation',
+      );
+    }
+    return Object.freeze({ generation: clean.generation });
   }
 
   async function readStableSnapshot<Snapshot>(
@@ -307,7 +398,11 @@ export function createMCPAuthorityConsistencyModule(
         break;
       }
       // eslint-disable-next-line no-restricted-syntax -- the global fence is intentionally a raw Mongo-wire document
-      const currentFence = requireFence(await options.collection.findOne({ _id: GLOBAL_FENCE_ID }));
+      const currentFenceDocument = await options.collection.findOne(
+        { _id: GLOBAL_FENCE_ID },
+        { readPreference: 'primary' },
+      );
+      const currentFence = requireFence(currentFenceDocument);
       if (currentFence.generation === Number.MAX_SAFE_INTEGER) {
         throw new MCPAuthorityConsistencyError(
           'generation_exhausted',
@@ -384,6 +479,8 @@ export function createMCPAuthorityConsistencyModule(
 
   return Object.freeze({
     initializeMCPAuthorityConsistency,
+    getMCPAuthorityConsistencyStatus,
+    reconcileMCPAuthorityConsistency,
     readStableSnapshot,
     assertGeneration,
     mutateMCPAuthority,

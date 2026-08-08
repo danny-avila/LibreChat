@@ -88,6 +88,7 @@ test('migrates a fresh database before resolving and asserting a real proof', as
       serverName: SERVER_NAME,
       source: 'config',
       sourceRevision: createMCPAuthorityConfigSourceRevision(boot.digest, []),
+      configSourceRevision: createMCPAuthorityConfigSourceRevision(boot.digest, []),
       expectedCredentialRevision: createMCPAuthorityCredentialRevision([], []),
       expectedOAuthGrantGeneration: null,
       resolvedConfig: immutableConfig.mcpServers[SERVER_NAME],

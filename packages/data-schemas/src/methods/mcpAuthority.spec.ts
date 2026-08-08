@@ -37,6 +37,7 @@ let groupId: mongoose.Types.ObjectId;
 let serverId: mongoose.Types.ObjectId;
 let serverSourceRevision: string;
 let credentialSourceRevision: string;
+let configSourceRevision: string;
 
 const immutableConfig = {
   mcpServers: {
@@ -58,6 +59,7 @@ const target = (
   source: 'database' as const,
   databaseId,
   sourceRevision,
+  configSourceRevision,
   expectedCredentialRevision,
   expectedOAuthGrantGeneration,
   resolvedConfig: {
@@ -78,6 +80,7 @@ const configAuthorityTarget = (
   serverName,
   source: 'config',
   sourceRevision,
+  configSourceRevision: sourceRevision,
   expectedCredentialRevision: EMPTY_CREDENTIAL_REVISION,
   expectedOAuthGrantGeneration: null,
   resolvedConfig,
@@ -182,6 +185,7 @@ async function seedFixture(): Promise<void> {
     });
     credentialSourceRevision = createMCPAuthorityCredentialRevision(['API_KEY'], [credential]);
   });
+  configSourceRevision = await currentConfigSourceRevision();
 }
 
 async function currentConfigSourceRevision(): Promise<string> {
@@ -236,6 +240,56 @@ beforeEach(async () => {
 });
 
 describe('MCP authority proofs', () => {
+  test('rejects a database target parsed from stale shared MCP configuration', async () => {
+    const staleTarget = target();
+    await inTenant(() =>
+      models.Config.updateOne(
+        { principalType: PrincipalType.USER, principalId: userId.toHexString() },
+        { $set: { 'overrides.mcpSettings.allowedDomains': ['restricted.example'] } },
+      ),
+    );
+
+    await expect(resolve([staleTarget])).rejects.toEqual(expectReason('config_changed'));
+  });
+
+  test('rejects an ACL bitmask outside the canonical permission range', async () => {
+    await inTenant(() =>
+      models.AclEntry.collection.updateOne(
+        { resourceId: serverId },
+        { $set: { permBits: 2 ** 32 + PermissionBits.VIEW } },
+      ),
+    );
+
+    await expect(resolve()).rejects.toEqual(expectReason('proof_unavailable'));
+  });
+
+  test('rejects an ACL row whose principal identity is malformed', async () => {
+    await inTenant(() =>
+      models.AclEntry.collection.updateOne(
+        { resourceId: serverId },
+        {
+          $set: {
+            principalType: PrincipalType.PUBLIC,
+            principalId: new mongoose.Types.ObjectId(),
+          },
+        },
+      ),
+    );
+
+    await expect(resolve()).rejects.toEqual(expectReason('proof_unavailable'));
+  });
+
+  test('rejects a non-boolean MCP role permission from raw storage', async () => {
+    await inTenant(() =>
+      models.Role.collection.updateOne(
+        { name: USER_ROLE },
+        { $set: { [`permissions.${PermissionTypes.MCP_SERVERS}.${Permissions.USE}`]: 'false' } },
+      ),
+    );
+
+    await expect(resolve()).rejects.toEqual(expectReason('proof_unavailable'));
+  });
+
   test('creates one immutable shared snapshot and current per-server revisions', async () => {
     const proof = await resolve();
 

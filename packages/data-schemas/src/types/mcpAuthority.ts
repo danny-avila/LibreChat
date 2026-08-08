@@ -12,6 +12,7 @@ export interface MCPAuthorityBootRevision {
 interface MCPAuthorityTargetBase {
   readonly serverName: string;
   readonly sourceRevision: string;
+  readonly configSourceRevision: string;
   readonly expectedCredentialRevision: string;
   readonly expectedOAuthGrantGeneration: string | null;
   readonly resolvedConfig: MCPOptions;
@@ -75,6 +76,7 @@ export interface MCPAuthoritySharedProofV1 {
   readonly boot: MCPAuthorityBootRevision;
   readonly groupsRevision: string;
   readonly configsRevision: string;
+  readonly configSourceRevision: string;
   readonly revision: string;
 }
 

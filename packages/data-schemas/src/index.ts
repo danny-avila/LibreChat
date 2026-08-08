@@ -37,6 +37,7 @@ export {
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
   digestMCPAuthorityValue,
+  getMCPAuthorityConsistencyModule,
 } from './methods';
 export { FAVORITE_ITEM_TYPES } from './types/favorite';
 export type * from './types';

@@ -247,6 +247,10 @@ async function createMCPAuthorityTarget({
   oauthGrantGeneration,
 }) {
   const resolver = getMCPAuthorityResolver();
+  const configSourceRevision = createMCPAuthorityConfigSourceRevision(
+    resolver.bootRevision.digest,
+    snapshot.sourceDocuments,
+  );
   let source;
   let sourceRevision;
   let databaseId;
@@ -270,16 +274,14 @@ async function createMCPAuthorityTarget({
     });
   } else {
     source = 'config';
-    sourceRevision = createMCPAuthorityConfigSourceRevision(
-      resolver.bootRevision.digest,
-      snapshot.sourceDocuments,
-    );
+    sourceRevision = configSourceRevision;
   }
   return {
     serverName,
     source,
     ...(databaseId && { databaseId }),
     sourceRevision,
+    configSourceRevision,
     expectedCredentialRevision: createMCPAuthorityCredentialRevision(credentialFields, credentials),
     expectedOAuthGrantGeneration: oauthGrantGeneration,
     resolvedConfig: provenanceServerConfig,

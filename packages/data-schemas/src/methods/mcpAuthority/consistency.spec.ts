@@ -160,6 +160,41 @@ describe('Mongo-wire MCP authority consistency', () => {
     expect(wait).toHaveBeenCalledTimes(2);
   });
 
+  test('reports and reconciles a dirty fence only with its exact observed ownership', async () => {
+    const consistency = createMCPAuthorityConsistencyModule({
+      collection: client.db('authority').collection<MCPAuthorityConsistencyFence>('consistency'),
+      now: () => new Date('2026-08-07T12:00:00.000Z'),
+      createOwnerId: () => 'failed-writer',
+    });
+    await consistency.initializeMCPAuthorityConsistency();
+    await expect(
+      consistency.mutateMCPAuthority(async () => {
+        throw new Error('interrupted write');
+      }),
+    ).rejects.toThrow('interrupted write');
+
+    await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toEqual({
+      generation: 0,
+      dirty: true,
+      ownerId: 'failed-writer',
+      dirtyAt: new Date('2026-08-07T12:00:00.000Z'),
+      updatedAt: new Date('2026-08-07T12:00:00.000Z'),
+    });
+    await expect(
+      consistency.reconcileMCPAuthorityConsistency({
+        expectedGeneration: 0,
+        expectedOwnerId: 'another-writer',
+      }),
+    ).rejects.toEqual(expect.objectContaining({ reason: 'reconciliation_conflict' }));
+    await expect(
+      consistency.reconcileMCPAuthorityConsistency({
+        expectedGeneration: 0,
+        expectedOwnerId: 'failed-writer',
+      }),
+    ).resolves.toEqual({ generation: 1 });
+    await expect(consistency.assertGeneration(1)).resolves.toBeUndefined();
+  });
+
   test('blocks reads and serializes competing writers while a mutation is active', async () => {
     const database = client.db('authority');
     const consistency = createMCPAuthorityConsistencyModule({

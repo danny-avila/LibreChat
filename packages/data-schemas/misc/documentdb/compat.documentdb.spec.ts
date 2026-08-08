@@ -14,6 +14,7 @@ import type * as t from '~/types';
 import {
   createMCPAuthorityMethods,
   createMCPAuthorityBootRevision,
+  createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
 } from '~/methods/mcpAuthority';
@@ -280,6 +281,11 @@ describeLive('Amazon DocumentDB live compatibility', () => {
             createdAt: server.createdAt,
             updatedAt: server.updatedAt,
           });
+          const configs = await models.Config.find({
+            principalType: PrincipalType.USER,
+            principalId: userId.toHexString(),
+          }).lean();
+          const configSourceRevision = createMCPAuthorityConfigSourceRevision(boot.digest, configs);
           const proof = await methods.resolveMCPAuthorityProof({
             userId: userId.toHexString(),
             tenantId,
@@ -290,6 +296,7 @@ describeLive('Amazon DocumentDB live compatibility', () => {
                 source: 'database',
                 databaseId: serverId.toHexString(),
                 sourceRevision,
+                configSourceRevision,
                 expectedCredentialRevision: createMCPAuthorityCredentialRevision([], []),
                 expectedOAuthGrantGeneration: null,
                 resolvedConfig: server.config,

@@ -154,6 +154,7 @@ export class MCPAuthorityProofResolver {
           serverName: target.serverName,
           source: target.source,
           sourceRevision: target.sourceRevision,
+          configSourceRevision: target.configSourceRevision,
           expectedCredentialRevision: target.expectedCredentialRevision,
           expectedOAuthGrantGeneration: target.expectedOAuthGrantGeneration,
           databaseId: target.databaseId ?? null,

@@ -8,13 +8,13 @@ that resolver, verify its artifact revision, and pass that exact envelope to the
 binding, or execution callback. They do not accept a detached proof with arbitrary artifacts, and
 the resolver never freezes or otherwise mutates caller-owned config and schema objects.
 
-Every selected target must carry the source generation captured by the parser that produced its
-resolved config. Database targets use `createMCPAuthorityDatabaseSourceRevision`; config targets use
-`createMCPAuthorityConfigSourceRevision` with the boot digest and the parser's complete applicable
-Config document set, including inactive documents. Targets also carry the exact credential revision
-from `createMCPAuthorityCredentialRevision` and the expected OAuth `credential_set_id` generation
-(or `null`). The consistency-fenced resolve rejects when any generation is no longer current,
-closing
+Every selected target must carry both source generations captured by the parser that produced its
+resolved config. Database targets use `createMCPAuthorityDatabaseSourceRevision` for their database
+document, while every target uses `createMCPAuthorityConfigSourceRevision` with the boot digest and
+the parser's complete applicable Config document set, including inactive documents. Config targets
+use that Config revision for both fields. Targets also carry the exact credential revision from
+`createMCPAuthorityCredentialRevision` and the expected OAuth `credential_set_id` generation (or
+`null`). The consistency-fenced resolve rejects when any generation is no longer current, closing
 the parse-before-proof and credential-rotation windows. `calculateArtifactRevision` must canonically
 cover the actual parsed config and schema identities; the resolver combines it with target names,
 source generations, config digests, credential fields, and OAuth requirements, then checks it on
@@ -63,6 +63,18 @@ before retrying. Use `npm run migrate:mcp-authority:check` for a read-only readi
 performs the same schema check and leaves MCP unavailable with the migration command when normalized
 names or required indexes are not ready. Migration writes are offline rollout steps and are never
 invoked by a hot proof path or automatically at startup.
+
+If a writer fails after acquiring the fence, the command reports the exact dirty owner and
+generation and refuses to clear it. After verifying that the old process cannot resume and
+reconciling any partial write, recover with the exact values reported by the command:
+
+```sh
+npm run migrate:mcp-authority -- --reconcile-dirty \
+  --owner <owner-id> --generation <generation> --confirm-writer-stopped
+```
+
+Recovery uses one exact owner-and-generation compare-and-set and advances the generation. Never use
+the recovery option while the recorded writer might still be alive.
 
 ## Observability
 
