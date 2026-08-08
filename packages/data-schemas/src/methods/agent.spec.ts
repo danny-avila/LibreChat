@@ -1227,6 +1227,63 @@ describe('Agent Methods', () => {
       }
     });
 
+    test('invalidates a pruned user before a later favorite cleanup query fails', async () => {
+      const previousCacheMode = process.env.AUTH_USER_CACHE_MODE;
+      process.env.AUTH_USER_CACHE_MODE = 'on';
+      const agentId = `agent_${uuidv4()}`;
+      const userId = new mongoose.Types.ObjectId();
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId.toString()}`;
+      const cache = {
+        get: jest.fn(async (key: string) =>
+          key === indexKey ? ['cached-auth-user-document'] : undefined,
+        ),
+        set: jest.fn(async () => undefined),
+        delete: jest.fn(async () => undefined),
+      };
+      const originalFindOneAndUpdate = User.findOneAndUpdate.bind(User);
+      const findOneAndUpdateSpy = jest.spyOn(User, 'findOneAndUpdate');
+      findOneAndUpdateSpy
+        .mockImplementationOnce(originalFindOneAndUpdate)
+        .mockImplementationOnce(() => {
+          throw new Error('simulated later favorite cleanup failure');
+        });
+      const cachedMethods = createAgentMethods(mongoose, {
+        removeAllPermissions: async () => undefined,
+        getActions,
+        getSoleOwnedResourceIds: async () => [],
+        getCache: jest.fn((key) => (key === CacheKeys.AUTH_USER_DOC ? cache : undefined)),
+      });
+      await createAgent({
+        id: agentId,
+        name: 'Partially Pruned Favorite Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await User.create({
+        _id: userId,
+        name: 'Partially Pruned Favorite User',
+        email: `partially-pruned-${uuidv4()}@example.com`,
+        provider: 'openid',
+        favorites: [{ agentId }],
+      });
+
+      try {
+        await cachedMethods.deleteAgent({ id: agentId });
+        expect((await User.findById(userId).lean())?.favorites).toHaveLength(0);
+        expect(cache.get).toHaveBeenCalledWith(indexKey);
+        expect(cache.delete).toHaveBeenCalledWith('cached-auth-user-document');
+        expect(cache.delete).toHaveBeenCalledWith(indexKey);
+      } finally {
+        findOneAndUpdateSpy.mockRestore();
+        if (previousCacheMode === undefined) {
+          delete process.env.AUTH_USER_CACHE_MODE;
+        } else {
+          process.env.AUTH_USER_CACHE_MODE = previousCacheMode;
+        }
+      }
+    });
+
     test('should preserve other agents in database when one agent is deleted', async () => {
       const agentToDeleteId = `agent_${uuidv4()}`;
       const agentToKeep1Id = `agent_${uuidv4()}`;

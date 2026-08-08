@@ -26,6 +26,10 @@ const INVALIDATION_CLEAR_THRESHOLD = 1000;
 /** Fallback delay for the second invalidation pass when the store sets none. */
 const DEFAULT_STALE_EVICTION_DELAY_MS = 3000;
 
+function isDuplicateKeyError(error: unknown): error is Error & { code: 11000 } {
+  return error !== null && typeof error === 'object' && 'code' in error && error.code === 11000;
+}
+
 const isCachedGroupId = (value: unknown): value is string =>
   typeof value === 'string' && isValidObjectIdString(value);
 
@@ -599,11 +603,22 @@ export function createUserGroupMethods(
     const Group = mongoose.models.Group as Model<IGroup>;
     const group = new Group(groupData);
     await group.validate();
-    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
-      await group.save(session ? { session } : undefined);
-      await invalidateMemberGroupsCache(groupData.memberIds ?? []);
-      return group;
+    const mutation = await authorityMutationGate.mutateMCPAuthority(async () => {
+      try {
+        await group.save(session ? { session } : undefined);
+        await invalidateMemberGroupsCache(groupData.memberIds ?? []);
+        return { kind: 'created', group } as const;
+      } catch (error) {
+        if (!isDuplicateKeyError(error)) {
+          throw error;
+        }
+        return { kind: 'duplicate', error } as const;
+      }
     });
+    if (mutation.result.kind === 'duplicate') {
+      throw mutation.result.error;
+    }
+    return mutation.result.group;
   }
 
   /**
@@ -875,20 +890,33 @@ export function createUserGroupMethods(
         entraIdMap.set(entraGroup.id, true);
 
         let group = await findGroupByExternalId(entraGroup.id, 'entra', {}, session);
+        let created = false;
 
         if (!group) {
-          group = await createGroup(
-            {
-              name: entraGroup.name,
-              description: entraGroup.description,
-              email: entraGroup.email,
-              idOnTheSource: entraGroup.id,
-              source: 'entra',
-              memberIds: [userIdOnTheSource],
-            },
-            session,
-          );
-
+          try {
+            group = await createGroup(
+              {
+                name: entraGroup.name,
+                description: entraGroup.description,
+                email: entraGroup.email,
+                idOnTheSource: entraGroup.id,
+                source: 'entra',
+                memberIds: [userIdOnTheSource],
+              },
+              session,
+            );
+            created = true;
+          } catch (error) {
+            if (!isDuplicateKeyError(error)) {
+              throw error;
+            }
+            group = await findGroupByExternalId(entraGroup.id, 'entra', {}, session);
+            if (!group) {
+              return { duplicateConflict: error } as const;
+            }
+          }
+        }
+        if (created) {
           addedGroups.push(group);
         } else if (!group.memberIds?.includes(userIdOnTheSource)) {
           const { group: updatedGroup } = await addUserToGroup(userId, group._id, session);
@@ -941,6 +969,9 @@ export function createUserGroupMethods(
     });
     if ('userMissing' in mutation.result) {
       throw new Error(`User not found: ${userId}`);
+    }
+    if ('duplicateConflict' in mutation.result) {
+      throw mutation.result.duplicateConflict;
     }
     return mutation.result.value;
   }

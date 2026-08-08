@@ -508,8 +508,7 @@ export function createAgentMethods(
   async function pruneAgentFavorites(
     User: Model<{ _id: Types.ObjectId }>,
     agentIds: string[],
-  ): Promise<string[]> {
-    const affectedUserIds = new Set<string>();
+  ): Promise<void> {
     while (true) {
       const affectedUser = await User.findOneAndUpdate(
         { 'favorites.agentId': { $in: agentIds } },
@@ -517,9 +516,9 @@ export function createAgentMethods(
         { new: true, projection: { _id: 1 } },
       ).lean<{ _id: Types.ObjectId }>();
       if (!affectedUser) {
-        return Array.from(affectedUserIds);
+        return;
       }
-      affectedUserIds.add(affectedUser._id.toString());
+      await invalidateAuthUserDocCache([affectedUser._id.toString()]);
     }
   }
 
@@ -967,10 +966,7 @@ export function createAgentMethods(
           logger.error('[deleteAgent] Error removing agent from handoff edges', error);
         }
         try {
-          const affectedUserIds = await pruneAgentFavorites(User, [
-            (agent as unknown as { id: string }).id,
-          ]);
-          await invalidateAuthUserDocCache(affectedUserIds);
+          await pruneAgentFavorites(User, [(agent as unknown as { id: string }).id]);
         } catch (error) {
           logger.error('[deleteAgent] Error removing agent from user favorites', error);
         }
@@ -1041,7 +1037,7 @@ export function createAgentMethods(
       }
 
       try {
-        await invalidateAuthUserDocCache(await pruneAgentFavorites(User, agentIds));
+        await pruneAgentFavorites(User, agentIds);
       } catch (error) {
         logger.error('[deleteUserAgents] Error removing agents from user favorites', error);
       }

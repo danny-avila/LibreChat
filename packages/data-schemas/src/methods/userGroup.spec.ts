@@ -188,6 +188,29 @@ describe('userGroup methods', () => {
       expect(group.name).toBe('New Group');
       expect(group._id).toBeDefined();
     });
+
+    it('publishes the authority fence cleanly before reporting a duplicate identity', async () => {
+      await methods.createGroup({
+        name: 'Existing Entra Group',
+        source: 'entra',
+        idOnTheSource: 'duplicate-entra-group',
+      });
+
+      try {
+        await expect(
+          methods.createGroup({
+            name: 'Duplicate Entra Group',
+            source: 'entra',
+            idOnTheSource: 'duplicate-entra-group',
+          }),
+        ).rejects.toMatchObject({ code: 11000 });
+        await expect(
+          getMCPAuthorityConsistencyModule(mongoose).getMCPAuthorityConsistencyStatus(),
+        ).resolves.toMatchObject({ dirty: false });
+      } finally {
+        await mongoose.connection.collection('mcpAuthorityConsistency').deleteMany({});
+      }
+    });
   });
 
   describe('upsertGroupByExternalId', () => {
@@ -1305,6 +1328,33 @@ describe('userGroup methods', () => {
       const groups = await Group.find({ source: 'entra' });
       expect(groups).toHaveLength(2);
       expect(groups.every((g) => g.memberIds!.includes('user-ext-1'))).toBe(true);
+    });
+
+    it('adopts a concurrently created external group without dirtying the authority fence', async () => {
+      const user = await createTestUser({ idOnTheSource: 'race-user-ext' });
+      const saveSpy = jest.spyOn(Group.prototype, 'save').mockImplementationOnce(async () => {
+        await Group.collection.insertOne({
+          name: 'Concurrent Entra Group',
+          source: 'entra',
+          idOnTheSource: 'entra-race',
+          memberIds: [],
+        });
+        throw Object.assign(new Error('E11000 duplicate key error'), { code: 11000 });
+      });
+
+      try {
+        const { addedGroups } = await methods.syncUserEntraGroups(user._id, [
+          { id: 'entra-race', name: 'Concurrent Entra Group' },
+        ]);
+        expect(addedGroups).toHaveLength(1);
+        expect(addedGroups[0].memberIds).toContain('race-user-ext');
+        await expect(
+          getMCPAuthorityConsistencyModule(mongoose).getMCPAuthorityConsistencyStatus(),
+        ).resolves.toMatchObject({ dirty: false });
+      } finally {
+        saveSpy.mockRestore();
+        await mongoose.connection.collection('mcpAuthorityConsistency').deleteMany({});
+      }
     });
 
     it('adds user to existing group they are not a member of', async () => {
