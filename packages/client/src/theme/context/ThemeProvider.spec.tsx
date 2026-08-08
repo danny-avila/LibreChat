@@ -18,9 +18,10 @@ const matchMedia = (matches: boolean): MediaQueryList =>
   }) as MediaQueryList;
 
 function Controls() {
-  const { resetTheme, setTheme } = useTheme();
+  const { resetTheme, setTheme, themeName } = useTheme();
   return (
     <>
+      <output>{themeName}</output>
       <button onClick={() => setTheme('dark')}>Dark</button>
       <button onClick={resetTheme}>Reset</button>
     </>
@@ -50,6 +51,7 @@ describe('ThemeProvider', () => {
     await waitFor(() => {
       expect(document.documentElement.dataset.theme).toBe('legacy');
     });
+    expect(screen.getByText('legacy')).toBeInTheDocument();
     expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
     expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe(
       defaultTheme['rgb-text-primary'],

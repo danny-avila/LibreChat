@@ -167,7 +167,7 @@ export function ThemeProvider({
     return getStoredThemeDefinition();
   });
   const [themeName, setThemeNameState] = useState<string | undefined>(
-    propThemeName ?? getInitialThemeName,
+    propThemeName ?? themeDefinition?.name ?? getInitialThemeName,
   );
 
   const setTheme = useCallback((newTheme: string) => {
@@ -185,6 +185,8 @@ export function ThemeProvider({
     }
     setThemeDefinitionState(definition);
     writeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
+    setThemeNameState(definition?.name);
+    writeStorage(THEME_NAME_KEY, definition?.name);
   }, []);
 
   const setThemeRGB = useCallback(
