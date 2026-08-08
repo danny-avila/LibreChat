@@ -1,9 +1,8 @@
 import '@testing-library/jest-dom';
 import { act, render, screen, waitFor } from '@testing-library/react';
-
-import { darkTheme } from '../themes/dark';
-import { defaultTheme } from '../themes/default';
 import { ThemeProvider, useTheme } from './ThemeProvider';
+import { defaultTheme } from '../themes/default';
+import { darkTheme } from '../themes/dark';
 
 const matchMedia = (matches: boolean): MediaQueryList =>
   ({

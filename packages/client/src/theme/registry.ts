@@ -1,6 +1,3 @@
-import { darkTheme } from './themes/dark';
-import { defaultTheme } from './themes/default';
-
 import type {
   IThemeAppearance,
   IThemeRGB,
@@ -8,6 +5,8 @@ import type {
   ThemeDefinition,
   ThemeMode,
 } from './types';
+import { defaultTheme } from './themes/default';
+import { darkTheme } from './themes/dark';
 
 export const THEME_VERSION = 1 as const;
 

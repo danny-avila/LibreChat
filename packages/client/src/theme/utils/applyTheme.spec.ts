@@ -1,8 +1,7 @@
-import { defaultTheme } from '../themes/default';
 import type { ThemeDefinition } from '../types';
-
-import { resolveTheme } from '../registry';
 import applyTheme, { applyResolvedTheme, clearAppliedTheme } from './applyTheme';
+import { defaultTheme } from '../themes/default';
+import { resolveTheme } from '../registry';
 
 const semanticProperties = [
   '--link',

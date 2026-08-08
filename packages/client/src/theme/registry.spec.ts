@@ -1,14 +1,12 @@
-import { darkTheme } from './themes/dark';
-import { defaultTheme } from './themes/default';
-
 import type { ThemeDefinition } from './types';
-
 import {
   defaultAppearance,
   resolveTheme,
   themeColorTokens,
   validateThemeDefinition,
 } from './registry';
+import { defaultTheme } from './themes/default';
+import { darkTheme } from './themes/dark';
 
 const compactTheme: ThemeDefinition = {
   version: 1,

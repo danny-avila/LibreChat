@@ -1,6 +1,5 @@
-import { themeAppearanceProperties, themeColorTokens } from '../registry';
-
 import type { IThemeAppearance, IThemeRGB, ResolvedThemeDefinition } from '../types';
+import { themeAppearanceProperties, themeColorTokens } from '../registry';
 
 const colorProperty = (token: keyof IThemeRGB): `--${string}` => `--${token.slice(4)}`;
 
