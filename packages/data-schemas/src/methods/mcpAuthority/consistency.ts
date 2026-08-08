@@ -5,6 +5,11 @@ import type { Collection, Document } from 'mongodb';
 const GLOBAL_FENCE_ID = 'global';
 const DEFAULT_MUTATION_WAIT_TIMEOUT_MS = 30_000;
 const DEFAULT_MUTATION_RETRY_DELAY_MS = 25;
+const AUTHORITATIVE_FENCE_READ_OPTIONS = Object.freeze({
+  readPreference: 'primary' as const,
+  readConcern: Object.freeze({ level: 'majority' as const }),
+});
+const AUTHORITATIVE_FENCE_WRITE_CONCERN = Object.freeze({ w: 'majority' as const });
 const consistencyModules = new WeakMap<object, MCPAuthorityConsistencyModule>();
 
 export type MCPAuthorityConsistencyFailureReason =
@@ -78,6 +83,7 @@ export interface MCPAuthorityConsistencyFence extends Document {
   dirty: boolean;
   ownerId?: string;
   dirtyAt?: Date;
+  validationId?: string;
   updatedAt: Date;
 }
 
@@ -85,6 +91,7 @@ export interface MCPAuthorityConsistencyOptions {
   collection: Collection<MCPAuthorityConsistencyFence>;
   now: () => Date;
   createOwnerId: () => string;
+  createValidationId?: () => string;
   mutationWaitTimeoutMs?: number;
   mutationRetryDelayMs?: number;
   wait?: (milliseconds: number) => Promise<void>;
@@ -152,6 +159,8 @@ function isFence(value: Document | null): value is MCPAuthorityConsistencyFence 
     Number.isSafeInteger(value.generation) &&
     value.generation >= 0 &&
     typeof value.dirty === 'boolean' &&
+    (value.validationId === undefined ||
+      (typeof value.validationId === 'string' && value.validationId.length > 0)) &&
     value.updatedAt instanceof Date &&
     !Number.isNaN(value.updatedAt.getTime());
   if (!hasBaseShape) {
@@ -218,9 +227,55 @@ export function createMCPAuthorityConsistencyModule(
     // eslint-disable-next-line no-restricted-syntax -- the global fence is intentionally a raw Mongo-wire document
     const fence = await options.collection.findOne(
       { _id: GLOBAL_FENCE_ID },
-      { readPreference: 'primary' },
+      AUTHORITATIVE_FENCE_READ_OPTIONS,
     );
     return requireCleanFence(fence);
+  }
+
+  function requireIdentifier(value: string, purpose: string): string {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 256) {
+      throw new MCPAuthorityConsistencyError(
+        'invalid_owner',
+        `MCP authority ${purpose} identifier is malformed`,
+      );
+    }
+    return value;
+  }
+
+  async function linearizeGeneration(generation: number): Promise<void> {
+    const validationId = requireIdentifier(
+      (options.createValidationId ?? randomUUID)(),
+      'validation',
+    );
+    // eslint-disable-next-line no-restricted-syntax -- the final CAS is the cross-provider read linearization point
+    const validated = await options.collection.findOneAndUpdate(
+      { _id: GLOBAL_FENCE_ID, generation, dirty: false },
+      { $set: { validationId } },
+      {
+        returnDocument: 'after',
+        writeConcern: AUTHORITATIVE_FENCE_WRITE_CONCERN,
+      },
+    );
+    if (validated === null) {
+      const current = await readCleanFence();
+      if (current.generation !== generation) {
+        throw new MCPAuthorityConsistencyError(
+          'generation_changed',
+          'MCP authority generation is no longer current',
+        );
+      }
+      throw new MCPAuthorityConsistencyError(
+        'generation_changed',
+        'MCP authority generation could not be linearized',
+      );
+    }
+    const current = requireCleanFence(validated);
+    if (current.generation !== generation || current.validationId !== validationId) {
+      throw new MCPAuthorityConsistencyError(
+        'generation_changed',
+        'MCP authority generation changed during validation',
+      );
+    }
   }
 
   async function initializeFence(): Promise<MCPAuthorityConsistencyFence> {
@@ -234,7 +289,11 @@ export function createMCPAuthorityConsistencyModule(
           updatedAt: currentTime(options.now),
         },
       },
-      { upsert: true, returnDocument: 'after' },
+      {
+        upsert: true,
+        returnDocument: 'after',
+        writeConcern: AUTHORITATIVE_FENCE_WRITE_CONCERN,
+      },
     );
     return requireFence(fence);
   }
@@ -296,7 +355,10 @@ export function createMCPAuthorityConsistencyModule(
         $set: { dirty: false, updatedAt },
         $unset: { ownerId: '', dirtyAt: '' },
       },
-      { returnDocument: 'after' },
+      {
+        returnDocument: 'after',
+        writeConcern: AUTHORITATIVE_FENCE_WRITE_CONCERN,
+      },
     );
     if (reconciled === null) {
       throw new MCPAuthorityConsistencyError(
@@ -319,13 +381,7 @@ export function createMCPAuthorityConsistencyModule(
   ): Promise<MCPAuthorityStableSnapshot<Snapshot>> {
     const before = await readCleanFence();
     const snapshot = await read(before.generation);
-    const after = await readCleanFence();
-    if (after.generation !== before.generation) {
-      throw new MCPAuthorityConsistencyError(
-        'generation_changed',
-        'MCP authority generation changed during the snapshot read',
-      );
-    }
+    await linearizeGeneration(before.generation);
     return Object.freeze({ generation: before.generation, snapshot });
   }
 
@@ -336,24 +392,11 @@ export function createMCPAuthorityConsistencyModule(
         'MCP authority generation is malformed',
       );
     }
-    const current = await readCleanFence();
-    if (current.generation !== generation) {
-      throw new MCPAuthorityConsistencyError(
-        'generation_changed',
-        'MCP authority generation is no longer current',
-      );
-    }
+    await linearizeGeneration(generation);
   }
 
   function createOwnerId(): string {
-    const ownerId = options.createOwnerId();
-    if (typeof ownerId !== 'string' || ownerId.length === 0 || ownerId.length > 256) {
-      throw new MCPAuthorityConsistencyError(
-        'invalid_owner',
-        'MCP authority mutation owner is malformed',
-      );
-    }
-    return ownerId;
+    return requireIdentifier(options.createOwnerId(), 'mutation owner');
   }
 
   async function mutateMCPAuthority<Result>(
@@ -391,7 +434,10 @@ export function createMCPAuthorityConsistencyModule(
             updatedAt: dirtyAt,
           },
         },
-        { returnDocument: 'after' },
+        {
+          returnDocument: 'after',
+          writeConcern: AUTHORITATIVE_FENCE_WRITE_CONCERN,
+        },
       );
       if (candidate !== null) {
         acquired = requireFence(candidate);
@@ -400,7 +446,7 @@ export function createMCPAuthorityConsistencyModule(
       // eslint-disable-next-line no-restricted-syntax -- the global fence is intentionally a raw Mongo-wire document
       const currentFenceDocument = await options.collection.findOne(
         { _id: GLOBAL_FENCE_ID },
-        { readPreference: 'primary' },
+        AUTHORITATIVE_FENCE_READ_OPTIONS,
       );
       const currentFence = requireFence(currentFenceDocument);
       if (currentFence.generation === Number.MAX_SAFE_INTEGER) {
@@ -461,7 +507,10 @@ export function createMCPAuthorityConsistencyModule(
         $set: { dirty: false, updatedAt },
         $unset: { ownerId: '', dirtyAt: '' },
       },
-      { returnDocument: 'after' },
+      {
+        returnDocument: 'after',
+        writeConcern: AUTHORITATIVE_FENCE_WRITE_CONCERN,
+      },
     );
     if (
       published === null ||

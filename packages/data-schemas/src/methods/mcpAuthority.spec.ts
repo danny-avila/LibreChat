@@ -240,6 +240,30 @@ beforeEach(async () => {
 });
 
 describe('MCP authority proofs', () => {
+  test('does not use an ACL-backed proof after its authorization deadline', async () => {
+    let now = new Date('2030-01-01T00:00:00.000Z');
+    const expiresAt = new Date('2030-01-01T00:00:01.000Z');
+    const timeBoundMethods = createMCPAuthorityMethods(mongoose, { now: () => now });
+    await inTenant(() =>
+      models.AclEntry.updateOne({ resourceId: serverId }, { $set: { expiredAt: expiresAt } }),
+    );
+
+    const proof = await inTenant(() =>
+      timeBoundMethods.resolveMCPAuthorityProof({
+        userId: userId.toHexString(),
+        tenantId: TENANT_ID,
+        boot,
+        targets: [target()],
+      }),
+    );
+    expect(proof).toHaveProperty('validUntil', expiresAt.toISOString());
+    now = expiresAt;
+
+    await expect(
+      inTenant(() => timeBoundMethods.assertMCPAuthorityProofsCurrent({ proofs: proof, boot })),
+    ).rejects.toEqual(expectReason('access_revoked'));
+  });
+
   test('rejects a database target parsed from stale shared MCP configuration', async () => {
     const staleTarget = target();
     await inTenant(() =>
@@ -331,8 +355,10 @@ describe('MCP authority proofs', () => {
     const startSessionSpy = jest.spyOn(mongoose, 'startSession');
     const querySessionSpy = jest.spyOn(mongoose.Query.prototype, 'session');
     const aggregateSessionSpy = jest.spyOn(mongoose.Aggregate.prototype, 'session');
-    const readSpy = jest.spyOn(mongoose.Query.prototype, 'read');
-    const readConcernSpy = jest.spyOn(mongoose.Query.prototype, 'readConcern');
+    const queryReadSpy = jest.spyOn(mongoose.Query.prototype, 'read');
+    const queryReadConcernSpy = jest.spyOn(mongoose.Query.prototype, 'readConcern');
+    const aggregateReadSpy = jest.spyOn(mongoose.Aggregate.prototype, 'read');
+    const aggregateReadConcernSpy = jest.spyOn(mongoose.Aggregate.prototype, 'readConcern');
     const findSpy = jest.spyOn(mongoose.mongo.Collection.prototype, 'find');
 
     await resolve();
@@ -340,11 +366,17 @@ describe('MCP authority proofs', () => {
     expect(startSessionSpy).not.toHaveBeenCalled();
     expect(querySessionSpy).not.toHaveBeenCalled();
     expect(aggregateSessionSpy).not.toHaveBeenCalled();
-    expect(readSpy).not.toHaveBeenCalled();
-    expect(readConcernSpy).not.toHaveBeenCalled();
-    expect(findSpy).toHaveBeenCalledTimes(9);
+    expect(queryReadSpy).toHaveBeenCalledTimes(12);
+    expect(queryReadSpy).toHaveBeenCalledWith('primary');
+    expect(queryReadConcernSpy).toHaveBeenCalledTimes(12);
+    expect(queryReadConcernSpy).toHaveBeenCalledWith('majority');
+    expect(aggregateReadSpy).toHaveBeenCalledTimes(2);
+    expect(aggregateReadSpy).toHaveBeenCalledWith('primary');
+    expect(aggregateReadConcernSpy).toHaveBeenCalledTimes(2);
+    expect(aggregateReadConcernSpy).toHaveBeenCalledWith('majority');
+    expect(findSpy).toHaveBeenCalledTimes(8);
     const boundedReads = findSpy.mock.calls.filter(([, options]) => options?.singleBatch === true);
-    expect(boundedReads).toHaveLength(9);
+    expect(boundedReads).toHaveLength(8);
   });
 
   test('fails closed without an exact active tenant context', async () => {
@@ -564,7 +596,7 @@ describe('MCP authority proofs', () => {
 
     mongoose.set('debug', false);
     expect(proof.servers).toHaveLength(25);
-    expect(operations).toHaveLength(16);
+    expect(operations).toHaveLength(15);
     expect(new Set(operations)).toEqual(
       new Set([
         'mcpAuthorityConsistency.findOne',

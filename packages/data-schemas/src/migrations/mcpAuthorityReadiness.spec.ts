@@ -29,6 +29,28 @@ async function migratePrerequisites(): Promise<void> {
 }
 
 describe('assertMCPAuthorityReadiness', () => {
+  test('requires an explicit Strong-consistency confirmation for Azure Cosmos MongoDB', async () => {
+    await migratePrerequisites();
+
+    await expect(
+      assertMCPAuthorityReadiness(mongoose.connection, {
+        mongoHost: 'authority.mongo.cosmos.azure.com',
+        cosmosStrongConsistencyConfirmed: false,
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: MCPAuthorityReadinessError.name,
+        message: expect.stringContaining('Strong consistency'),
+      }),
+    );
+    await expect(
+      assertMCPAuthorityReadiness(mongoose.connection, {
+        mongoHost: 'authority.mongo.cosmos.azure.com',
+        cosmosStrongConsistencyConfirmed: true,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ scannedServers: 0 }));
+  });
+
   test('accepts a clean post-migration database and remains idempotent', async () => {
     await mongoose.connection.db!.collection('mcpservers').insertMany([
       { serverName: 'selected server', tenantId: 'tenant-a' },

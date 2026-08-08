@@ -19,6 +19,7 @@ export interface MCPAuthorityProofResolverOptions {
   bootRevision: string;
   immutableConfig: MCPAuthorityImmutableConfig;
   beforeExecute?: () => void | Promise<void>;
+  now?: () => Date;
 }
 
 export interface MCPAuthorityResolutionInput<TParsedConfig, TSchemas> {
@@ -106,6 +107,7 @@ export class MCPAuthorityProofResolver {
   private readonly methods: MCPAuthorityProofResolverOptions['methods'];
   private readonly boot: MCPAuthorityBootRevision;
   private readonly beforeExecute?: MCPAuthorityProofResolverOptions['beforeExecute'];
+  private readonly now: () => Date;
   private readonly issuedResolutions = new WeakMap<
     object,
     { revision: string; getCurrentRevision: () => string }
@@ -115,6 +117,7 @@ export class MCPAuthorityProofResolver {
     this.methods = options.methods;
     this.boot = createMCPAuthorityBootRevision(options.bootRevision, options.immutableConfig);
     this.beforeExecute = options.beforeExecute;
+    this.now = options.now ?? (() => new Date());
   }
 
   public get bootRevision(): MCPAuthorityBootRevision {
@@ -194,6 +197,29 @@ export class MCPAuthorityProofResolver {
     await this.methods.assertMCPAuthorityProofsCurrent({ proofs, boot: this.boot });
   }
 
+  private assertAuthorizationCurrent(
+    proofs: MCPAuthorityProofV1 | readonly MCPAuthorityProofV1[],
+  ): void {
+    const now = this.now();
+    if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+      throw new MCPAuthorityProofError(
+        'malformed_input',
+        'MCP authority resolver clock returned an invalid time',
+      );
+    }
+    const normalized = Array.isArray(proofs) ? proofs : [proofs];
+    if (
+      normalized.some(
+        (proof) => proof.validUntil !== null && Date.parse(proof.validUntil) <= now.getTime(),
+      )
+    ) {
+      throw new MCPAuthorityProofError(
+        'authorization_changed',
+        'MCP authority authorization expired before use',
+      );
+    }
+  }
+
   public async useIssuedResolution<TParsedConfig, TSchemas, Result>(
     resolution: MCPAuthorityResolution<TParsedConfig, TSchemas>,
     action: (current: MCPAuthorityResolution<TParsedConfig, TSchemas>) => Result | Promise<Result>,
@@ -214,8 +240,10 @@ export class MCPAuthorityProofResolver {
         );
       }
     };
+    this.assertAuthorizationCurrent(resolution.authorityProof);
     assertArtifactsCurrent();
     await this.assertCurrent(resolution.authorityProof);
+    this.assertAuthorizationCurrent(resolution.authorityProof);
     assertArtifactsCurrent();
     return await action(resolution);
   }
@@ -247,8 +275,11 @@ export class MCPAuthorityProofResolver {
         }
       }
     };
+    const proofs = resolutions.map((resolution) => resolution.authorityProof);
+    this.assertAuthorizationCurrent(proofs);
     assertArtifactsCurrent();
-    await this.assertCurrent(resolutions.map((resolution) => resolution.authorityProof));
+    await this.assertCurrent(proofs);
+    this.assertAuthorizationCurrent(proofs);
     assertArtifactsCurrent();
     return await action(resolutions);
   }

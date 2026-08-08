@@ -104,6 +104,7 @@ export interface MCPAuthorityServerProofV1 {
 export interface MCPAuthorityProofV1 {
   readonly version: typeof MCP_AUTHORITY_PROOF_VERSION;
   readonly generation: number;
+  readonly validUntil: string | null;
   readonly shared: MCPAuthoritySharedProofV1;
   readonly servers: readonly MCPAuthorityServerProofV1[];
   readonly revision: string;

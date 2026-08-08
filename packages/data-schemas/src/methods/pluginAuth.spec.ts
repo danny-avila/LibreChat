@@ -68,6 +68,28 @@ describe('plugin auth methods', () => {
     ]);
   });
 
+  test('rejects a single-field delete without an exact plugin identity', async () => {
+    await mongoose.models.PluginAuth.create([
+      {
+        userId: 'user-1',
+        pluginKey: 'mcp_database',
+        authField: 'API_KEY',
+        value: 'mcp-secret',
+      },
+      {
+        userId: 'user-1',
+        pluginKey: 'weather',
+        authField: 'API_KEY',
+        value: 'weather-secret',
+      },
+    ]);
+
+    await expect(
+      methods.deletePluginAuth({ userId: 'user-1', authField: 'API_KEY' }),
+    ).rejects.toThrow('pluginKey is required when all is false');
+    await expect(mongoose.models.PluginAuth.countDocuments({ userId: 'user-1' })).resolves.toBe(2);
+  });
+
   test('publishes generations only for MCP credential mutations', async () => {
     await consistency.initializeMCPAuthorityConsistency();
 

@@ -252,7 +252,12 @@ describe(`MCP authority Mongo-wire conformance (${PROVIDER})`, () => {
       expect.objectContaining({ normalizedServerName: `legacy_authority_${RUN_ID}` }),
     );
 
-    await expect(assertMCPAuthorityReadiness(mongoose.connection)).resolves.toEqual({
+    await expect(
+      assertMCPAuthorityReadiness(mongoose.connection, {
+        cosmosStrongConsistencyConfirmed:
+          process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED === 'true',
+      }),
+    ).resolves.toEqual({
       scannedServers: expect.any(Number),
       collections: MCP_AUTHORITY_PROOF_COLLECTIONS,
       indexes: expect.arrayContaining([

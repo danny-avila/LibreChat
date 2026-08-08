@@ -18,9 +18,9 @@ import type {
   UpdateQuery,
 } from 'mongoose';
 import type { IAgent, IAclEntry, IUser, IAccessRole } from '..';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { createAgentMethods, type AgentMethods } from './agent';
 import { createAclEntryMethods } from './aclEntry';
-import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { createModels } from '~/models';
 
 /** Version snapshot stored in `IAgent.versions[]`. Extends the base omit with runtime-only fields. */

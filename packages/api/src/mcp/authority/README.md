@@ -22,10 +22,17 @@ both sides of every awaited final assertion. This callback exists because real p
 artifacts can contain functions and class instances that a generic JSON hasher cannot safely
 canonicalize.
 
+Proofs also carry the earliest time at which an active ACL or OAuth row can change the authorization
+result. Fence helpers check that deadline both before and after the database assertion, so an action
+is never invoked with authority that expired while its final check was in flight.
+
 The boot digest is computed once by the resolver constructor. A current-authority assertion never
 reloads YAML, calls the MCP registry, scans Redis, initializes a server, or performs network I/O.
-Proof reads use bounded Mongo-wire queries bracketed by the global authority generation. A proof is
-accepted only when both fence reads observe the same clean generation. Every authority-effective
+Proof reads use bounded primary/majority Mongo-wire queries bracketed by the global authority
+generation. A proof is accepted only when its opening fence read is clean and a final
+majority-acknowledged compare-and-set validates that exact generation. That final write is the
+cross-provider linearization point, including during a primary failover; it means every proof read
+and final proof assertion performs one small write to the global fence. Every authority-effective
 writer owns that fence from before its first write until its last write completes; nested mutations
 coalesce under the same owner. Concurrent writers wait for a bounded interval. A failed or crashed
 writer deliberately leaves the fence dirty, which disables MCP authority reads and later writes

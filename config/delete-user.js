@@ -3,6 +3,7 @@
 // @ts-nocheck
 const path = require('path');
 const mongoose = require('mongoose');
+const dataSchemas = require('@librechat/data-schemas');
 const {
   Key,
   User,
@@ -27,7 +28,7 @@ const {
   Transaction,
   Conversation,
   ConversationTag,
-} = require('@librechat/data-schemas').createModels(mongoose);
+} = dataSchemas.createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
@@ -104,13 +105,16 @@ async function gracefulExit(code = 0) {
     tasks.push(Transaction.deleteMany({ user: uid }));
   }
 
-  await Promise.all(tasks);
+  const authorityConsistency = dataSchemas.getMCPAuthorityConsistencyModule(mongoose);
+  await authorityConsistency.mutateMCPAuthority(async () => {
+    await Promise.all(tasks);
 
-  // 6) Remove user from all groups
-  await Group.updateMany({ memberIds: uid }, { $pullAll: { memberIds: [uid] } });
+    // 6) Remove user from all groups
+    await Group.updateMany({ memberIds: uid }, { $pullAll: { memberIds: [uid] } });
 
-  // 7) Finally delete the user document itself
-  await User.deleteOne({ _id: uid });
+    // 7) Finally delete the user document itself
+    await User.deleteOne({ _id: uid });
+  });
 
   console.green(`✔ Successfully deleted user ${email} and all associated data.`);
   if (!deleteTx) {

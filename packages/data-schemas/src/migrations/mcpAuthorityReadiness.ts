@@ -20,6 +20,11 @@ export interface MCPAuthorityReadinessResult {
   indexes: readonly string[];
 }
 
+export interface MCPAuthorityReadinessOptions {
+  cosmosStrongConsistencyConfirmed?: boolean;
+  mongoHost?: string;
+}
+
 export class MCPAuthorityReadinessError extends Error {
   constructor(message: string) {
     super(message);
@@ -170,7 +175,18 @@ async function assertNormalizedServerNames(connection: Connection): Promise<{
 /** Verifies the read-only rollout prerequisites required before MCP authority proofs are used. */
 export async function assertMCPAuthorityReadiness(
   connection: Connection,
+  options: MCPAuthorityReadinessOptions = {},
 ): Promise<MCPAuthorityReadinessResult> {
+  const mongoHost = options.mongoHost ?? connection.host;
+  if (
+    /\.mongo\.cosmos\.azure\.com$/i.test(mongoHost) &&
+    options.cosmosStrongConsistencyConfirmed !== true
+  ) {
+    throw new MCPAuthorityReadinessError(
+      'Azure Cosmos DB MCP authority requires account-level Strong consistency and ' +
+        'MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED=true',
+    );
+  }
   const collections = await assertProofCollections(connection);
   const normalizedNames = await assertNormalizedServerNames(connection);
   const lookupIndexes = await assertLookupIndexes(connection);

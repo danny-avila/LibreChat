@@ -8,12 +8,12 @@ import {
 } from 'librechat-data-provider';
 import type { Model } from 'mongoose';
 import type { CacheStore, IRole, IUser } from '~/types';
-import { scopedCacheKey, getTenantId, runAsSystem, SYSTEM_TENANT_ID } from '~/config/tenantContext';
-import { escapeRegExp } from '~/utils/string';
 import {
   getMCPAuthorityConsistencyModule,
   runMCPAuthorityMutation,
 } from './mcpAuthority/consistency';
+import { scopedCacheKey, getTenantId, runAsSystem, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
 const systemRoleValues = new Set<string>(Object.values(SystemRoles));

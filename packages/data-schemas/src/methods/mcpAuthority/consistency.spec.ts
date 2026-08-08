@@ -54,7 +54,7 @@ describe('Mongo-wire MCP authority consistency', () => {
     });
   });
 
-  test('returns plain reads only when one clean generation brackets them', async () => {
+  test('returns reads only when one clean generation brackets and linearizes them', async () => {
     const database = client.db('authority');
     const consistency = createMCPAuthorityConsistencyModule({
       collection: database.collection<MCPAuthorityConsistencyFence>('consistency'),
@@ -71,6 +71,36 @@ describe('Mongo-wire MCP authority consistency', () => {
       generation: 0,
       snapshot: { _id: 'selected', value: 'before' },
     });
+  });
+
+  test('linearizes an accepted snapshot with a majority-acknowledged fence CAS', async () => {
+    const collection = client
+      .db('authority')
+      .collection<MCPAuthorityConsistencyFence>('consistency');
+    const findOneAndUpdateSpy = jest.spyOn(collection, 'findOneAndUpdate');
+    const consistency = createMCPAuthorityConsistencyModule({
+      collection,
+      now: () => new Date('2026-08-07T12:00:00.000Z'),
+      createOwnerId: () => 'validation-1',
+      createValidationId: () => 'validation-1',
+    });
+    await consistency.initializeMCPAuthorityConsistency();
+    findOneAndUpdateSpy.mockClear();
+
+    await expect(consistency.readStableSnapshot(async () => 'snapshot')).resolves.toEqual({
+      generation: 0,
+      snapshot: 'snapshot',
+    });
+
+    expect(findOneAndUpdateSpy).toHaveBeenCalledTimes(1);
+    expect(findOneAndUpdateSpy).toHaveBeenCalledWith(
+      { _id: 'global', generation: 0, dirty: false },
+      { $set: { validationId: 'validation-1' } },
+      expect.objectContaining({
+        returnDocument: 'after',
+        writeConcern: { w: 'majority' },
+      }),
+    );
   });
 
   test('asserts the exact clean authority generation', async () => {
@@ -113,6 +143,41 @@ describe('Mongo-wire MCP authority consistency', () => {
     await expect(consistency.assertGeneration(0)).rejects.toEqual(
       expect.objectContaining({ reason: 'generation_changed' }),
     );
+  });
+
+  test('pins fence reads to primary majority and publishes with majority acknowledgement', async () => {
+    const collection = client
+      .db('authority')
+      .collection<MCPAuthorityConsistencyFence>('consistency');
+    const findOneSpy = jest.spyOn(collection, 'findOne');
+    const findOneAndUpdateSpy = jest.spyOn(collection, 'findOneAndUpdate');
+    const consistency = createMCPAuthorityConsistencyModule({
+      collection,
+      now: () => new Date('2026-08-07T12:00:00.000Z'),
+      createOwnerId: () => 'owner-1',
+    });
+
+    await consistency.initializeMCPAuthorityConsistency();
+    await consistency.readStableSnapshot(async () => 'snapshot');
+    await consistency.assertGeneration(0);
+    await consistency.mutateMCPAuthority(async () => 'written');
+
+    expect(findOneSpy).toHaveBeenCalledWith(
+      { _id: 'global' },
+      expect.objectContaining({
+        readPreference: 'primary',
+        readConcern: { level: 'majority' },
+      }),
+    );
+    expect(findOneAndUpdateSpy).toHaveBeenCalledTimes(6);
+    for (let callIndex = 1; callIndex <= 6; callIndex++) {
+      expect(findOneAndUpdateSpy).toHaveBeenNthCalledWith(
+        callIndex,
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ writeConcern: { w: 'majority' } }),
+      );
+    }
   });
 
   test('initializes the authority generation when the first operation is a mutation', async () => {

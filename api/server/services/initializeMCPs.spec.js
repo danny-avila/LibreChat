@@ -77,6 +77,7 @@ const initializeMCPs = require('./initializeMCPs');
 describe('initializeMCPs', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED;
 
     // Default: successful initialization
     mockCreateMCPServersRegistry.mockReturnValue(undefined);
@@ -95,7 +96,9 @@ describe('initializeMCPs', () => {
 
       await expect(initializeMCPs({ validateAuthorityReadiness: true })).resolves.toBeUndefined();
 
-      expect(mockAssertMCPAuthorityReadiness).toHaveBeenCalledWith(require('mongoose').connection);
+      expect(mockAssertMCPAuthorityReadiness).toHaveBeenCalledWith(require('mongoose').connection, {
+        cosmosStrongConsistencyConfirmed: false,
+      });
       expect(mockInitializeMCPAuthorityConsistency).not.toHaveBeenCalled();
       expect(mockSetMCPAvailability).toHaveBeenCalledWith({
         available: false,
@@ -129,10 +132,28 @@ describe('initializeMCPs', () => {
 
       await initializeMCPs({ validateAuthorityReadiness: true });
 
-      expect(mockAssertMCPAuthorityReadiness).toHaveBeenCalledWith(require('mongoose').connection);
+      expect(mockAssertMCPAuthorityReadiness).toHaveBeenCalledWith(require('mongoose').connection, {
+        cosmosStrongConsistencyConfirmed: false,
+      });
       expect(mockAssertMCPAuthorityReadiness.mock.invocationCallOrder[0]).toBeLessThan(
         mockInitializeMCPAuthority.mock.invocationCallOrder[0],
       );
+    });
+
+    it('passes the explicit Cosmos Strong-consistency acknowledgement to readiness', async () => {
+      process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED = 'true';
+      mockGetAppConfig.mockResolvedValue({ config: { version: '1.3.0' }, mcpConfig: null });
+
+      try {
+        await initializeMCPs({ validateAuthorityReadiness: true });
+
+        expect(mockAssertMCPAuthorityReadiness).toHaveBeenCalledWith(
+          require('mongoose').connection,
+          { cosmosStrongConsistencyConfirmed: true },
+        );
+      } finally {
+        delete process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED;
+      }
     });
 
     it('records a stable unavailable state instead of stopping general startup', async () => {

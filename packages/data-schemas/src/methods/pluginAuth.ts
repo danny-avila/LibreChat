@@ -145,6 +145,9 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')): {
           throw new Error('authField is required when all is false');
         }
       }
+      if (!all && !pluginKey) {
+        throw new Error('pluginKey is required when all is false');
+      }
       const write = async (): Promise<DeleteResult> => {
         const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
         if (all) {
@@ -153,11 +156,7 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')): {
             ...(pluginKey && { pluginKey }),
           });
         }
-        return await PluginAuth.deleteOne({
-          userId,
-          authField,
-          ...(pluginKey && { pluginKey }),
-        });
+        return await PluginAuth.deleteOne({ userId, authField, pluginKey });
       };
       const affectsMCPAuthority = pluginKey === undefined || isMCPPluginKey(pluginKey);
       if (!affectsMCPAuthority) {

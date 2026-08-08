@@ -9,9 +9,9 @@ import {
   CacheKeys,
 } from 'librechat-data-provider';
 import type { IRole, IUser, RolePermissions } from '..';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { _resetStrictCache } from '../models/plugins/tenantIsolation';
 import { tenantStorage } from '~/config/tenantContext';
-import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { createRoleMethods } from './role';
 import { createModels } from '../models';
 

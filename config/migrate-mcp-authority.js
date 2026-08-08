@@ -15,7 +15,10 @@ async function migrateMCPAuthority({ checkOnly = false, reconciliation } = {}) {
     await backfillMCPServerNormalizedNames(mongoose.connection);
     await createMCPAuthorityLookupIndexes(mongoose.connection);
   }
-  const readiness = await assertMCPAuthorityReadiness(mongoose.connection);
+  const readiness = await assertMCPAuthorityReadiness(mongoose.connection, {
+    cosmosStrongConsistencyConfirmed:
+      process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED === 'true',
+  });
   const consistency = getMCPAuthorityConsistencyModule(mongoose);
   const status = await consistency.getMCPAuthorityConsistencyStatus();
   if (!status.dirty) {

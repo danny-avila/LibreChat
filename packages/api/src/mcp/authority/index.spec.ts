@@ -5,6 +5,7 @@ import { MCPAuthorityProofResolver } from './index';
 const proof: MCPAuthorityProofV1 = Object.freeze({
   version: 1,
   generation: 0,
+  validUntil: null,
   shared: {
     user: {
       userId: '64b64c13a1136b7f18a7e111',
@@ -150,6 +151,28 @@ async function resolveMutableAuthorityFixture(resolver: MCPAuthorityProofResolve
 }
 
 describe('MCPAuthorityProofResolver', () => {
+  test('does not invoke an action after an issued proof reaches its authorization deadline', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2030-01-01T00:00:00.000Z'));
+    const { resolver, resolveMCPAuthorityProof } = createResolver();
+    resolveMCPAuthorityProof.mockResolvedValue({
+      ...proof,
+      validUntil: '2030-01-01T00:00:01.000Z',
+    } as MCPAuthorityProofV1);
+    const resolution = await resolveFixture(resolver);
+    const action = jest.fn();
+    jest.setSystemTime(new Date('2030-01-01T00:00:01.000Z'));
+
+    try {
+      await expect(resolver.useIssuedResolution(resolution, action)).rejects.toEqual(
+        expect.objectContaining({ reason: 'authorization_changed' }),
+      );
+      expect(action).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test.each([
     ['Map', new Map([['allowedDomains', ['operator.example']]])],
     ['Date', new Date('2026-08-08T00:00:00.000Z')],

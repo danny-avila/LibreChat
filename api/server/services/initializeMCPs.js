@@ -50,7 +50,10 @@ async function initializeMCPs(options = {}) {
     process.env.NODE_ENV !== 'test' || options.validateAuthorityReadiness === true;
   if (validateAuthorityReadiness) {
     try {
-      await assertMCPAuthorityReadiness(mongoose.connection);
+      await assertMCPAuthorityReadiness(mongoose.connection, {
+        cosmosStrongConsistencyConfirmed:
+          process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED === 'true',
+      });
       await db.initializeMCPAuthorityConsistency();
     } catch (error) {
       const unavailable = setMCPAvailability(unavailableFromReadiness(error));

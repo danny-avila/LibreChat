@@ -280,7 +280,7 @@ const updateUserPluginsController = async (req, res) => {
         // 3. MCP tool uninstall if specific keys were provided in `auth` (not current frontend behavior).
         // If keys is empty for non-MCP tools (and not web_search), this loop won't run, and nothing is deleted.
         for (let i = 0; i < keys.length; i++) {
-          authService = await deleteUserPluginAuth(user.id, keys[i]); // Deletes by authField name
+          authService = await deleteUserPluginAuth(user.id, keys[i], false, pluginKey);
           if (authService instanceof Error) {
             logger.error('[authService] Error deleting specific auth key:', authService);
             ({ status, message } = normalizeHttpError(authService));
