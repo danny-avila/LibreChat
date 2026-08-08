@@ -1384,7 +1384,10 @@ export function createMCPAuthorityMethods(
         resources.push({ resourceType: ResourceType.MCPSERVER, resourceId: { $in: serverIds } });
       }
       if (agentIds.length > 0) {
-        resources.push({ resourceType: ResourceType.AGENT, resourceId: { $in: agentIds } });
+        resources.push({
+          resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
+          resourceId: { $in: agentIds },
+        });
       }
       const aclFilter = {
         $and: [tenantScope, { $or: principals }, { $or: resources }],
@@ -1475,7 +1478,10 @@ export function createMCPAuthorityMethods(
       const resourceId = entry.resourceId.toHexString();
       if (entry.resourceType === ResourceType.MCPSERVER) {
         appendIndexValue(directAclByServerId, resourceId, entry);
-      } else if (entry.resourceType === ResourceType.AGENT) {
+      } else if (
+        entry.resourceType === ResourceType.AGENT ||
+        entry.resourceType === ResourceType.REMOTE_AGENT
+      ) {
         appendIndexValue(agentAclByAgentId, resourceId, entry);
       } else {
         reject('proof_unavailable', 'MCP ACL proof is malformed');

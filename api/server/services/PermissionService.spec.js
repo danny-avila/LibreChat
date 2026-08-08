@@ -1,5 +1,10 @@
 const mongoose = require('mongoose');
-const { RoleBits, createModels, tenantStorage } = require('@librechat/data-schemas');
+const {
+  RoleBits,
+  createModels,
+  tenantStorage,
+  getMCPAuthorityConsistencyModule,
+} = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   ResourceType,
@@ -92,6 +97,33 @@ describe('PermissionService', () => {
   const resourceId = new mongoose.Types.ObjectId();
   const grantedById = new mongoose.Types.ObjectId();
   const roleResourceId = new mongoose.Types.ObjectId();
+
+  test('publishes remote-agent permission batches without dirtying on invalid input', async () => {
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    await consistency.initializeMCPAuthorityConsistency();
+    const before = await consistency.getMCPAuthorityConsistencyStatus();
+
+    await bulkUpdateResourcePermissions({
+      resourceType: ResourceType.REMOTE_AGENT,
+      resourceId,
+      updatedPrincipals: [],
+      revokedPrincipals: [],
+      grantedBy: grantedById,
+    });
+
+    await expect(consistency.assertGeneration(before.generation + 1)).resolves.toBeUndefined();
+
+    await expect(
+      bulkUpdateResourcePermissions({
+        resourceType: ResourceType.REMOTE_AGENT,
+        resourceId,
+        updatedPrincipals: null,
+        revokedPrincipals: [],
+        grantedBy: grantedById,
+      }),
+    ).rejects.toThrow('updatedPrincipals must be an array');
+    await expect(consistency.assertGeneration(before.generation + 1)).resolves.toBeUndefined();
+  });
 
   describe('grantPermission', () => {
     test('should grant permission to a user with a role', async () => {

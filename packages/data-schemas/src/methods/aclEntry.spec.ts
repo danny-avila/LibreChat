@@ -63,6 +63,16 @@ describe('AclEntry Model Tests', () => {
       grantedById,
     );
     await expect(consistency.assertGeneration(1)).resolves.toBeUndefined();
+
+    await methods.grantPermission(
+      PrincipalType.USER,
+      userId,
+      ResourceType.REMOTE_AGENT,
+      resourceId,
+      PermissionBits.VIEW,
+      grantedById,
+    );
+    await expect(consistency.assertGeneration(2)).resolves.toBeUndefined();
   });
 
   describe('Permission Grant and Query', () => {

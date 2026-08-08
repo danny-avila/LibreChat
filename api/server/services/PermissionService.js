@@ -717,6 +717,22 @@ const hasPublicPermission = async ({ resourceType, resourceId, requiredPermissio
  * @param {mongoose.ClientSession} [params.session] - Optional MongoDB session for transactions
  * @returns {Promise<Object>} Results object with granted, updated, revoked arrays and error details
  */
+const validateBulkUpdateResourcePermissionsInput = ({
+  updatedPrincipals,
+  revokedPrincipals,
+  resourceId,
+}) => {
+  if (updatedPrincipals !== undefined && !Array.isArray(updatedPrincipals)) {
+    throw new Error('updatedPrincipals must be an array');
+  }
+  if (revokedPrincipals !== undefined && !Array.isArray(revokedPrincipals)) {
+    throw new Error('revokedPrincipals must be an array');
+  }
+  if (!resourceId || !mongoose.Types.ObjectId.isValid(resourceId)) {
+    throw new Error(`Invalid resource ID: ${resourceId}`);
+  }
+};
+
 const bulkUpdateResourcePermissionsInternal = async ({
   resourceType,
   resourceId,
@@ -734,17 +750,11 @@ const bulkUpdateResourcePermissionsInternal = async ({
   let shouldEndSession = false;
 
   try {
-    if (!Array.isArray(updatedPrincipals)) {
-      throw new Error('updatedPrincipals must be an array');
-    }
-
-    if (!Array.isArray(revokedPrincipals)) {
-      throw new Error('revokedPrincipals must be an array');
-    }
-
-    if (!resourceId || !mongoose.Types.ObjectId.isValid(resourceId)) {
-      throw new Error(`Invalid resource ID: ${resourceId}`);
-    }
+    validateBulkUpdateResourcePermissionsInput({
+      updatedPrincipals,
+      revokedPrincipals,
+      resourceId,
+    });
 
     if (!localSession && supportsTransactions) {
       localSession = await mongoose.startSession();
@@ -955,9 +965,17 @@ const bulkUpdateResourcePermissionsInternal = async ({
 
 const bulkUpdateResourcePermissions = async (params) => {
   const affectsMCPAuthority =
-    params.resourceType === ResourceType.MCPSERVER || params.resourceType === ResourceType.AGENT;
+    params.resourceType === ResourceType.MCPSERVER ||
+    params.resourceType === ResourceType.AGENT ||
+    params.resourceType === ResourceType.REMOTE_AGENT;
   if (!affectsMCPAuthority) {
     return await bulkUpdateResourcePermissionsInternal(params);
+  }
+  try {
+    validateBulkUpdateResourcePermissionsInput(params);
+  } catch (error) {
+    logger.error(`[PermissionService.bulkUpdateResourcePermissions] Error: ${error.message}`);
+    throw error;
   }
   if (params.session?.inTransaction()) {
     throw new Error('MCP authority permission changes cannot join a caller-owned transaction');

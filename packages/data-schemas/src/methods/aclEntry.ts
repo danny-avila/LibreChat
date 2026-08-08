@@ -30,7 +30,11 @@ const EMPTY_SUPERSETS: readonly number[] = Object.freeze([]);
 const supersetCache = new Map<number, readonly number[]>();
 
 function isMCPAuthorityResourceType(resourceType: string): boolean {
-  return resourceType === ResourceType.MCPSERVER || resourceType === ResourceType.AGENT;
+  return (
+    resourceType === ResourceType.MCPSERVER ||
+    resourceType === ResourceType.AGENT ||
+    resourceType === ResourceType.REMOTE_AGENT
+  );
 }
 
 function resourceFilterCanAffectMCPAuthority(filter: Record<string, unknown>): boolean {

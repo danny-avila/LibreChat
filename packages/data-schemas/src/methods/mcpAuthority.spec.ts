@@ -1281,43 +1281,46 @@ describe('MCP authority proofs', () => {
     await expect(assertCurrent(proof)).resolves.toBeUndefined();
   });
 
-  test('rejects targeted Agent linkage revocation when Agent access was the only path', async () => {
-    const agentObjectId = new mongoose.Types.ObjectId();
-    await inTenant(async () => {
-      await models.AclEntry.deleteMany({
-        resourceType: ResourceType.MCPSERVER,
-        resourceId: serverId,
+  test.each([ResourceType.AGENT, ResourceType.REMOTE_AGENT])(
+    'rejects targeted Agent linkage revocation when %s access was the only path',
+    async (agentResourceType) => {
+      const agentObjectId = new mongoose.Types.ObjectId();
+      await inTenant(async () => {
+        await models.AclEntry.deleteMany({
+          resourceType: ResourceType.MCPSERVER,
+          resourceId: serverId,
+        });
+        await models.Agent.create({
+          _id: agentObjectId,
+          id: 'agent-with-selected-server',
+          name: 'MCP agent',
+          provider: 'openAI',
+          model: 'test-model',
+          author: userId,
+          mcpServerNames: [SERVER_NAME],
+        });
+        await models.AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          principalModel: PrincipalModel.USER,
+          resourceType: agentResourceType,
+          resourceId: agentObjectId,
+          permBits: PermissionBits.VIEW,
+          grantedBy: userId,
+        });
       });
-      await models.Agent.create({
-        _id: agentObjectId,
-        id: 'agent-with-selected-server',
-        name: 'MCP agent',
-        provider: 'openAI',
-        model: 'test-model',
-        author: userId,
-        mcpServerNames: [SERVER_NAME],
-      });
-      await models.AclEntry.create({
-        principalType: PrincipalType.USER,
-        principalId: userId,
-        principalModel: PrincipalModel.USER,
-        resourceType: ResourceType.AGENT,
-        resourceId: agentObjectId,
-        permBits: PermissionBits.VIEW,
-        grantedBy: userId,
-      });
-    });
-    const proof = await resolve();
-    expect(proof.servers[0]).toMatchObject({ directAccess: false, agentAccess: true });
+      const proof = await resolve();
+      expect(proof.servers[0]).toMatchObject({ directAccess: false, agentAccess: true });
 
-    await inTenant(() =>
-      models.Agent.updateOne({ _id: agentObjectId }, { $set: { mcpServerNames: [] } }).then(
-        () => undefined,
-      ),
-    );
+      await inTenant(() =>
+        models.Agent.updateOne({ _id: agentObjectId }, { $set: { mcpServerNames: [] } }).then(
+          () => undefined,
+        ),
+      );
 
-    await expect(assertCurrent(proof)).rejects.toEqual(expectReason('access_revoked'));
-  });
+      await expect(assertCurrent(proof)).rejects.toEqual(expectReason('access_revoked'));
+    },
+  );
 
   test('treats a post-snapshot primary mutation as authoritative despite secondaryPreferred default', async () => {
     const proof = await resolve();
