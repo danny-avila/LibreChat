@@ -1,9 +1,15 @@
 const mockSubmitAskAnswer = jest.fn();
 const mockResetComposer = jest.fn();
 const mockGetComposerText = jest.fn(() => 'answer from A');
+const mockSetComposerText = jest.fn();
+const mockSetCollapsedIds = jest.fn();
 const mockSetSelected = jest.fn();
 const mockSetChecked = jest.fn();
+const mockSetAnswerDraft = jest.fn();
+const mockSetDraft = jest.fn();
 let mockSaveDrafts = false;
+let mockCollapsedIds: string[] = [];
+let mockAnswerDraft = { actionId: null as string | null, text: '' };
 
 jest.mock('~/data-provider', () => ({ useGetMessagesByConvoId: jest.fn() }));
 jest.mock('~/components/Chat/Messages/Content/ApprovalContext', () => ({
@@ -14,17 +20,28 @@ jest.mock('~/Providers', () => ({
   useOptionalChatFormContext: () => ({
     reset: mockResetComposer,
     getValues: mockGetComposerText,
+    setValue: mockSetComposerText,
   }),
 }));
-jest.mock('~/utils', () => ({ getAskAnswerDraftId: (id: string) => `draft-${id}` }));
+jest.mock('~/utils', () => ({
+  getAskAnswerDraftId: (id: string) => `draft-${id}`,
+  morphTransition: (update: () => void) => update(),
+  setDraft: (...args: unknown[]) => mockSetDraft(...args),
+}));
 jest.mock('recoil', () => ({
   atom: (cfg: unknown) => cfg,
   useRecoilState: (state: { key?: string }) => {
+    if (state.key === 'askAnswerModeCollapsedActions') {
+      return [mockCollapsedIds, mockSetCollapsedIds];
+    }
     if (state.key === 'askAnswerModeSelection') {
       return [null, mockSetSelected];
     }
     if (state.key === 'askAnswerModeChecked') {
       return [[], mockSetChecked];
+    }
+    if (state.key === 'askAnswerModeText') {
+      return [mockAnswerDraft, mockSetAnswerDraft];
     }
     return [[], jest.fn()];
   },
@@ -32,7 +49,7 @@ jest.mock('recoil', () => ({
 }));
 jest.mock('~/store', () => ({ __esModule: true, default: { saveDrafts: 'saveDrafts' } }));
 
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { findLiveAskUserQuestion } from '~/utils/approval';
 import useAskAnswerMode from './useAskAnswerMode';
@@ -48,6 +65,8 @@ describe('useAskAnswerMode', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSaveDrafts = false;
+    mockCollapsedIds = [];
+    mockAnswerDraft = { actionId: null, text: '' };
     mockGetComposerText.mockReturnValue('answer from A');
   });
 
@@ -94,6 +113,57 @@ describe('useAskAnswerMode', () => {
     const { result } = renderHook(() => useAskAnswerMode(null));
 
     expect(result.current.liveAsk).toBeNull();
+  });
+
+  it('moves the composer answer into the card and clears it when drafts are disabled', () => {
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => result.current.collapse());
+
+    expect(mockSetAnswerDraft).toHaveBeenCalledWith({
+      actionId: 'a1',
+      text: 'answer from A',
+    });
+    expect(mockResetComposer).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets draft handoff restore the conversation composer when drafts are enabled', () => {
+    mockSaveDrafts = true;
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => result.current.collapse());
+
+    expect(mockResetComposer).not.toHaveBeenCalled();
+  });
+
+  it('restores the card answer into the composer when drafts are disabled', () => {
+    mockCollapsedIds = ['a1'];
+    mockAnswerDraft = { actionId: 'a1', text: 'answer edited in the card' };
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => result.current.expand());
+
+    expect(mockSetComposerText).toHaveBeenCalledWith('text', 'answer edited in the card');
+  });
+
+  it('keeps the ask-specific draft current while editing the card', () => {
+    mockSaveDrafts = true;
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => result.current.setAnswerText('answer edited in the card'));
+
+    expect(mockSetAnswerDraft).toHaveBeenCalledWith({
+      actionId: 'a1',
+      text: 'answer edited in the card',
+    });
+    expect(mockSetDraft).toHaveBeenCalledWith({
+      id: 'draft-a1',
+      value: 'answer edited in the card',
+    });
   });
 
   it('does not let a delayed answer success clear the composer or selection after navigation', () => {

@@ -10,11 +10,12 @@ import {
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
+import useOpenRightPanel from '~/hooks/useOpenRightPanel';
 import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { displayFilename } from './attachmentTypes';
 import { useAttachmentLink } from './LogLink';
-import { useLocalize } from '~/hooks';
 import { cn, getFileType } from '~/utils';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 interface ToolArtifactCardProps {
@@ -72,9 +73,9 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
   const claimKey = useId();
   const file = attachment as TFile & TAttachmentMetadata;
   const fileId = file.file_id;
+  const { openArtifact } = useOpenRightPanel();
   const setVisible = useSetRecoilState(store.artifactsVisibility);
   const setArtifacts = useSetRecoilState(store.artifactsState);
-  const setCurrentArtifactId = useSetRecoilState(store.currentArtifactId);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
   const existingEntry = useRecoilValue(store.artifactByIdSelector(artifact.id));
@@ -183,13 +184,13 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       return;
     }
     // Streaming arrival or just-resolved preview: focus the new artifact
-    // AND force the panel visible. Without `setVisible(true)`, a session
-    // where the user had previously closed the panel (visibility=false)
-    // would surface the selection in the chip ("click to close") but
-    // never actually open — `Presentation` gates rendering on visibility.
-    setCurrentArtifactId(artifact.id);
-    setVisible(true);
-  }, [artifact.id, artifact.type, fileId, consumeJustResolved, setCurrentArtifactId, setVisible]);
+    // AND force the panel visible. `openArtifact` also clears any open
+    // subagent run so the two panels never contend for the shared slot.
+    // Without the visibility bump, a session where the user had previously
+    // closed the panel would surface the selection in the chip but never
+    // actually open — `Presentation` gates rendering on visibility.
+    openArtifact(artifact.id);
+  }, [artifact.id, artifact.type, fileId, consumeJustResolved, openArtifact]);
 
   const { handleDownload } = useAttachmentLink({
     href: attachment.filepath ?? '',
@@ -206,9 +207,9 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
       return;
     }
     // Registration already happened in the mount effect; the click only
-    // needs to focus + reveal the panel for users who have closed it.
-    setCurrentArtifactId(artifact.id);
-    setVisible(true);
+    // needs to focus + reveal the panel (and clear any open subagent run)
+    // for users who have closed it.
+    openArtifact(artifact.id);
   };
 
   // Another card with the same artifact id has the active claim — render

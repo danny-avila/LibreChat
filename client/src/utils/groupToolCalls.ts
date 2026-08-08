@@ -23,6 +23,28 @@ function isGroupableToolCall(part: TMessageContentParts): boolean {
   return true;
 }
 
+/** Reasoning ("Thoughts") parts are transparent to grouping: a thought
+ *  interleaved between tool calls joins the run instead of splitting it, so
+ *  reasoning models that think between every call still collapse into a single
+ *  tool group. A run becomes a group once it holds >= 2 tool calls, OR a single
+ *  tool call accompanied by reasoning, so a lone tool wrapped in thinking
+ *  (a skill invocation, say) still gets the grouped chrome with its thoughts
+ *  folded in. A run of pure reasoning (no tool call) keeps rendering as its own
+ *  standalone card. */
+function isReasoningPart(part: TMessageContentParts): boolean {
+  return part.type === ContentTypes.THINK;
+}
+
+function countToolCalls(parts: PartWithIndex[]): number {
+  let count = 0;
+  for (const { part } of parts) {
+    if (isGroupableToolCall(part)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 /**
  * True when the label covers ANY `transfer_to_*` handoff call. Transfer
  * parts are never groupable, so the flush at the handoff card leaves such a
@@ -56,10 +78,9 @@ function coversTransferCall(labelPart: TMessageContentParts, allParts: PartWithI
  * calls) becomes one labeled group — the claude.ai-style hierarchy. Any
  * other part type breaks the block.
  *
- * Legacy behavior is preserved exactly when no ACTIVITY_LABEL part arrives
- * (feature off, older conversations): the tentative block is re-split so
- * THINK parts render standalone in their original positions and only runs
- * of >= 2 tool calls group.
+ * Without an ACTIVITY_LABEL part (feature off, older conversations), the
+ * block still groups: reasoning stays folded in with its tool calls, and a
+ * run groups at >= 2 tool calls or a single call accompanied by reasoning.
  */
 export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] {
   const result: GroupedPart[] = [];
@@ -70,26 +91,15 @@ export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] 
   let claimStart = 0;
 
   const flushWithoutLabel = () => {
-    let toolRun: PartWithIndex[] = [];
-    const flushToolRun = () => {
-      if (toolRun.length >= 2) {
-        result.push({ type: 'tool-group', parts: [...toolRun] });
-      } else {
-        for (const p of toolRun) {
-          result.push({ type: 'single', part: p });
-        }
-      }
-      toolRun = [];
-    };
-    for (const p of currentBlock) {
-      if (isGroupableToolCall(p.part)) {
-        toolRun.push(p);
-      } else {
-        flushToolRun();
+    const toolCallCount = countToolCalls(currentBlock);
+    const hasReasoning = currentBlock.some((p) => isReasoningPart(p.part));
+    if (toolCallCount >= 2 || (toolCallCount >= 1 && hasReasoning)) {
+      result.push({ type: 'tool-group', parts: [...currentBlock] });
+    } else {
+      for (const p of currentBlock) {
         result.push({ type: 'single', part: p });
       }
     }
-    flushToolRun();
     currentBlock = [];
     claimStart = 0;
   };

@@ -8,6 +8,7 @@ import {
   FileText,
   MessageCircleQuestion,
   ScrollText,
+  Brain,
   Zap,
   Wrench,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ export type ToolIconType =
   | 'read_file'
   | 'bash_tool'
   | 'ask_user_question'
+  | 'memory'
   | 'action'
   | 'generic';
 
@@ -43,6 +45,7 @@ const ICON_MAP: Record<ToolIconType, React.ComponentType<{ className?: string }>
   read_file: FileText,
   bash_tool: BashIcon,
   ask_user_question: MessageCircleQuestion,
+  memory: Brain,
   action: Zap,
   generic: Wrench,
 };
@@ -80,6 +83,9 @@ export function getToolIconType(name: string): ToolIconType {
   }
   if (name === 'ask_user_question') {
     return 'ask_user_question';
+  }
+  if (name === 'set_memory' || name === 'delete_memory') {
+    return 'memory';
   }
   if (name.startsWith(Constants.LC_TRANSFER_TO_)) {
     return 'agent_handoff';
