@@ -936,6 +936,12 @@ if (isEnabled(LIMIT_MESSAGE_USER)) {
   chatRouter.use(messageUserLimiter);
 }
 
+const chatStartMessageFilterPii = createMessageFilterPii({
+  getConfig: (req) => req.config?.messageFilter?.pii,
+});
+chatRouter.use((req, res, next) =>
+  req.path === '/resume' ? next() : chatStartMessageFilterPii(req, res, next),
+);
 chatRouter.use('/', chat);
 router.use('/chat', chatRouter);
 

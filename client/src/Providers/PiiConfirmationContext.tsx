@@ -58,6 +58,7 @@ export function PiiConfirmationProvider({ children }: { children: ReactNode }) {
         <OGDialogTemplate
           title={localize('com_ui_pii_confirmation_title')}
           showCloseButton={false}
+          showCancelButton={false}
           className="w-11/12 max-w-md bg-surface-primary text-text-primary"
           main={
             <div className="space-y-2 text-sm text-text-secondary">

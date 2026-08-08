@@ -71,8 +71,14 @@ const restoreResumeContext = async (req, res, next) => {
   next();
 };
 
+const resumeMessageFilterPii = createMessageFilterPii({
+  getConfig: (req) => req.config?.messageFilter?.pii,
+});
+
 router.use(restoreResumeContext);
-router.use(createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }));
+router.use((req, res, next) =>
+  req.path === '/resume' ? resumeMessageFilterPii(req, res, next) : next(),
+);
 router.use(moderateText);
 router.use(checkAgentAccess);
 router.use(checkAgentResourceAccess);
