@@ -20,7 +20,12 @@ jest.mock('@librechat/api', () => ({
     tenantId,
   }),
   getMCPToolCatalogRevision: (config) =>
-    JSON.stringify({ type: config.type, url: config.url, command: config.command }),
+    JSON.stringify({
+      type: config.type,
+      url: config.url,
+      command: config.command,
+      source: config.source,
+    }),
   normalizeServerName: (serverName) => serverName.replace(/[^a-zA-Z0-9_.-]/g, '_'),
 }));
 

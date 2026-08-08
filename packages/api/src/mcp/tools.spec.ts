@@ -225,6 +225,70 @@ describe('createMCPToolCacheService', () => {
       expect(setCachedAppServerTools).toHaveBeenCalledTimes(1);
       expect(setCachedAppServerTools).toHaveBeenCalledWith('complete', expect.any(String), {});
     });
+
+    it('rejects a scoped app catalog until it matches the current app publication', async () => {
+      const initialTools = {
+        [toolName('initial', 'dynamic')]: makeTool(toolName('initial', 'dynamic')),
+      };
+      const refreshedTools = {
+        [toolName('refreshed', 'dynamic')]: makeTool(toolName('refreshed', 'dynamic')),
+      };
+      let publishedTools: LCAvailableTools = initialTools;
+      let scopedTools: LCAvailableTools = initialTools;
+      const getCachedAppServerTools = jest.fn(async () => publishedTools);
+      const getMCPServerCatalog = jest.fn(async () =>
+        createMCPToolCatalogEnvelope(scopedTools, {
+          tenantId: null,
+          userId: 'u1',
+          serverName: 'dynamic',
+          serverConfig: cacheableConfig,
+          securityPolicyIdentity: testSecurityPolicyIdentity(),
+          authorizationIdentity: 'none',
+        }),
+      );
+      const deps = createMockDeps({
+        getAllServerConfigs: jest.fn().mockResolvedValue({ dynamic: cacheableConfig }),
+        getCachedAppServerTools,
+        getMCPServerCatalog,
+      });
+      const service = createMCPToolCacheService(deps);
+      const readCatalog = () =>
+        service.getMCPServerCatalog({
+          tenantId: null,
+          userId: 'u1',
+          serverName: 'dynamic',
+          serverConfig: cacheableConfig,
+          authorizationIdentity: 'none',
+        });
+
+      await expect(readCatalog()).resolves.toMatchObject({
+        status: 'ready',
+        tools: initialTools,
+      });
+
+      publishedTools = { invalid: makeTool('different-name') };
+
+      await expect(readCatalog()).resolves.toEqual({
+        status: 'pending_activation',
+        reason: 'schema_mismatch',
+      });
+
+      publishedTools = refreshedTools;
+
+      await expect(readCatalog()).resolves.toEqual({
+        status: 'pending_activation',
+        reason: 'schema_mismatch',
+      });
+
+      scopedTools = refreshedTools;
+
+      await expect(readCatalog()).resolves.toMatchObject({
+        status: 'ready',
+        tools: refreshedTools,
+      });
+      expect(getCachedAppServerTools).toHaveBeenCalledTimes(4);
+      expect(getMCPServerCatalog).toHaveBeenCalledTimes(4);
+    });
   });
 
   describe('publication generation fencing', () => {

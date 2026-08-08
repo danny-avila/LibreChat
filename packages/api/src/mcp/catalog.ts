@@ -101,6 +101,11 @@ function fingerprint(value: unknown): string {
   return protectedDigest(JSON.stringify(canonicalize(value)));
 }
 
+/** Returns a stable revision for comparing complete tool-schema snapshots. */
+export function getMCPToolCatalogToolsRevision(tools: LCAvailableTools): string {
+  return digest(JSON.stringify(canonicalize(tools)));
+}
+
 function hasOwn(config: ParsedServerConfig, key: keyof ParsedServerConfig): boolean {
   return Object.prototype.hasOwnProperty.call(config, key);
 }

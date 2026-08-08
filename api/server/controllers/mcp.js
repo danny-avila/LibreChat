@@ -657,6 +657,8 @@ const getMCPTools = async (req, res) => {
         schemas: serverToolsMap.get(serverName) ?? null,
         discoveryProvenance: liveDiscoveryProvenances.get(serverName),
         oauthRequiredHint: serverAuthorizationKinds.get(serverName) === 'oauth',
+        bounded: true,
+        expectedServerConfig: mcpConfig[serverName],
       });
       const currentParsedConfig = currentAuthority?.parsedConfig;
       if (

@@ -4,6 +4,8 @@ const http = require('http');
 const path = require('path');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
+const { prepareMCPAuthority } = require('./prepare-mcp-authority');
+
 const DEFAULT_BASE_URL = 'http://localhost:3080';
 const DEFAULT_RUNTIME_ENV_PATH = path.resolve(__dirname, '../specs/.test-results/runtime-env.json');
 const REPLICA_STARTUP_TIMEOUT_MS = 120_000;
@@ -40,6 +42,7 @@ function startReplica(port, index, mongoUri) {
     cwd: path.resolve(__dirname, '../..'),
     env: {
       ...process.env,
+      E2E_MCP_AUTHORITY_PREPARED: 'true',
       E2E_REPLICA_INDEX: String(index),
       E2E_USE_MEMORY_MONGO: 'false',
       HOST: process.env.E2E_HOST || '127.0.0.1',
@@ -149,6 +152,7 @@ async function startCluster() {
   const mongoUri = new URL('LibreChat-e2e', mongoServer.getUri()).toString();
   writeRuntimeEnv(mongoUri);
   console.log(`[e2e] Started shared memory MongoDB at ${mongoUri}`);
+  await prepareMCPAuthority(mongoUri);
   startReplica(replicaPorts[0], 1, mongoUri);
   await waitForReplica(replicaPorts[0]);
   startReplica(replicaPorts[1], 2, mongoUri);

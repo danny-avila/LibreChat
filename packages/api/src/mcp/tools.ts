@@ -16,8 +16,10 @@ import type {
 import {
   createMCPToolCatalogSecurityPolicyIdentity,
   createMCPToolCatalogEnvelope,
+  getMCPToolCatalogToolsRevision,
   isMCPToolCatalogEnvelope,
   isMCPToolCatalogFingerprintAvailable,
+  isValidMCPToolCatalogTools,
   matchesMCPConnectionProvenance,
   resolveMCPToolCatalog,
 } from './catalog';
@@ -1018,9 +1020,6 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     if (!isMCPToolCatalogFingerprintAvailable()) {
       return { status: 'pending_activation', reason: 'authorization_unavailable' };
     }
-    if (!getCachedMCPServerCatalog) {
-      return { status: 'pending_activation', reason: 'authorization_unavailable' };
-    }
     if (await isRequestScoped(userId, serverName, serverConfig)) {
       return { status: 'pending_activation', reason: 'request_scoped' };
     }
@@ -1036,24 +1035,50 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     if (!securityPolicyIdentity) {
       return { status: 'pending_activation', reason: 'authorization_unavailable' };
     }
+    const scopeInput = {
+      tenantId,
+      userId,
+      serverName,
+      serverConfig,
+      securityPolicyIdentity,
+      customUserVars,
+      authorizationIdentity,
+      authorizationKind,
+    };
+    if (!getCachedMCPServerCatalog) {
+      return { status: 'pending_activation', reason: 'authorization_unavailable' };
+    }
     try {
       const cached = await getCachedMCPServerCatalog({ userId, serverName, tenantId });
-      const result = resolveMCPToolCatalog(cached, {
-        tenantId,
-        userId,
-        serverName,
-        serverConfig,
-        securityPolicyIdentity,
-        customUserVars,
-        authorizationIdentity,
-        authorizationKind,
-      });
+      const result = resolveMCPToolCatalog(cached, scopeInput);
       if (result.status !== 'ready') {
         return result;
       }
+      let tools = normalizeCachedToolKeys(result.tools, serverName) ?? {};
+      if (await isAppSharedConfig(serverName, serverConfig)) {
+        if (!getCachedAppServerTools) {
+          return { status: 'pending_activation', reason: 'authorization_unavailable' };
+        }
+        const configGeneration = getMCPAppToolsPublicationGeneration(serverConfig);
+        const currentAppTools = await getCachedAppServerTools(serverName, configGeneration);
+        if (currentAppTools == null) {
+          return { status: 'pending_activation', reason: 'cold' };
+        }
+        const normalizedAppTools = normalizeCachedToolKeys(currentAppTools, serverName) ?? {};
+        if (!isValidMCPToolCatalogTools(normalizedAppTools)) {
+          return { status: 'pending_activation', reason: 'schema_mismatch' };
+        }
+        if (
+          getMCPToolCatalogToolsRevision(tools) !==
+          getMCPToolCatalogToolsRevision(normalizedAppTools)
+        ) {
+          return { status: 'pending_activation', reason: 'schema_mismatch' };
+        }
+        tools = normalizedAppTools;
+      }
       return {
         ...result,
-        tools: normalizeCachedToolKeys(result.tools, serverName) ?? {},
+        tools,
       };
     } catch (error) {
       logger.error(`[getMCPServerCatalog] Error fetching cached tools for ${serverName}:`, error);

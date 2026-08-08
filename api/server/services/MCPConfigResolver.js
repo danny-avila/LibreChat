@@ -89,8 +89,17 @@ async function resolveMCPDiscoveryConfigSnapshot(userId, user, options = {}) {
       if (!expectedConfig || !rawConfig) {
         continue;
       }
+      if (expectedConfig.source === 'user') {
+        continue;
+      }
+      const rawConfigWithSource = ['yaml', 'config'].includes(expectedConfig.source)
+        ? { ...rawConfig, source: expectedConfig.source }
+        : rawConfig;
       try {
-        if (getMCPToolCatalogRevision(expectedConfig) === getMCPToolCatalogRevision(rawConfig)) {
+        if (
+          getMCPToolCatalogRevision(expectedConfig) ===
+          getMCPToolCatalogRevision(rawConfigWithSource)
+        ) {
           configs[lookupName] = expectedConfig;
         }
       } catch {

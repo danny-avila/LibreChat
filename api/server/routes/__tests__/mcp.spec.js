@@ -5117,6 +5117,15 @@ describe('MCP Routes', () => {
           discoveryProvenance,
         }),
       );
+      const schemaBoundCalls = mockResolveCurrentMCPToolAuthority.mock.calls.filter(
+        ([options]) => options.serverName === 'schema-server' && options.schemas === serverTools,
+      );
+      expect(schemaBoundCalls.length).toBeGreaterThan(0);
+      expect(
+        schemaBoundCalls.every(
+          ([options]) => options.bounded === true && options.expectedServerConfig === serverConfig,
+        ),
+      ).toBe(true);
     });
 
     it('does not publish live schemas when schema-bound authority changes before caching', async () => {
