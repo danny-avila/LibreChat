@@ -1004,6 +1004,23 @@ describe('updateRoleByName - cache on rename', () => {
       dirty: false,
     });
   });
+
+  it('keeps the authority fence clean when cache publication fails after a role update', async () => {
+    await createRoleByName({ name: 'editor', description: 'Before' });
+    mockCache.set.mockRejectedValueOnce(new Error('redis unavailable'));
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+
+    await expect(updateRoleByName('editor', { description: 'After' })).resolves.toMatchObject({
+      name: 'editor',
+      description: 'After',
+    });
+    await expect(Role.findOne({ name: 'editor' }).lean()).resolves.toMatchObject({
+      description: 'After',
+    });
+    await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+      dirty: false,
+    });
+  });
 });
 
 describe('listUsersByRole', () => {

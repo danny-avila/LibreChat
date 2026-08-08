@@ -54,6 +54,22 @@ describe('Mongo-wire MCP authority consistency', () => {
     });
   });
 
+  test('inspects an uninitialized authority fence without creating it', async () => {
+    const collection = client
+      .db('authority')
+      .collection<MCPAuthorityConsistencyFence>('consistency');
+    const findOneAndUpdateSpy = jest.spyOn(collection, 'findOneAndUpdate');
+    const consistency = createMCPAuthorityConsistencyModule({
+      collection,
+      now: () => new Date('2026-08-07T12:00:00.000Z'),
+      createOwnerId: () => 'owner-1',
+    });
+
+    await expect(consistency.inspectMCPAuthorityConsistencyStatus()).resolves.toBeNull();
+    expect(findOneAndUpdateSpy).not.toHaveBeenCalled();
+    await expect(collection.findOne({ _id: 'global' })).resolves.toBeNull();
+  });
+
   test('returns reads only when one clean generation brackets and linearizes them', async () => {
     const database = client.db('authority');
     const consistency = createMCPAuthorityConsistencyModule({

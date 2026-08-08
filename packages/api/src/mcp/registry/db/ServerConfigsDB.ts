@@ -188,6 +188,16 @@ function getChangedOAuthSecretBindingFields(
   return fields.filter(([, existing, updated]) => existing !== updated).map(([field]) => field);
 }
 
+function mergeObjectIds(...idGroups: readonly Types.ObjectId[][]): Types.ObjectId[] {
+  const idsByValue = new Map<string, Types.ObjectId>();
+  for (const idGroup of idGroups) {
+    for (const id of idGroup) {
+      idsByValue.set(id.toString(), id);
+    }
+  }
+  return Array.from(idsByValue.values());
+}
+
 /**
  * DB backed config storage
  * Handles CRUD Methods of dynamic mcp servers
@@ -219,19 +229,31 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     let accessibleAgentIds: Types.ObjectId[];
 
     if (!userId) {
-      /** Publicly accessible agents */
-      accessibleAgentIds = await this._aclService.findPubliclyAccessibleResources({
-        resourceType: ResourceType.AGENT,
-        requiredPermissions: PermissionBits.VIEW,
-      });
+      accessibleAgentIds = mergeObjectIds(
+        ...(await Promise.all(
+          [ResourceType.AGENT, ResourceType.REMOTE_AGENT].map(
+            async (resourceType) =>
+              await this._aclService.findPubliclyAccessibleResources({
+                resourceType,
+                requiredPermissions: PermissionBits.VIEW,
+              }),
+          ),
+        )),
+      );
     } else {
-      /** User-accessible agents */
-      accessibleAgentIds = await this._aclService.findAccessibleResources({
-        userId,
-        fresh,
-        requiredPermissions: PermissionBits.VIEW,
-        resourceType: ResourceType.AGENT,
-      });
+      const principalsList = await this._aclService.getUserPrincipals({ userId, fresh });
+      accessibleAgentIds = mergeObjectIds(
+        ...(await Promise.all(
+          [ResourceType.AGENT, ResourceType.REMOTE_AGENT].map(
+            async (resourceType) =>
+              await this._aclService.findAccessibleResourcesForPrincipals({
+                principalsList,
+                requiredPermissions: PermissionBits.VIEW,
+                resourceType,
+              }),
+          ),
+        )),
+      );
     }
 
     if (accessibleAgentIds.length === 0) {
@@ -499,7 +521,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     let directlyAccessibleMCPIds: Types.ObjectId[] = [];
     let accessibleAgentIds: Types.ObjectId[] = [];
     if (!userId) {
-      [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
+      const [directIds, agentIds, remoteAgentIds] = await Promise.all([
         this._aclService.findPubliclyAccessibleResources({
           resourceType: ResourceType.MCPSERVER,
           requiredPermissions: PermissionBits.VIEW,
@@ -508,14 +530,20 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           resourceType: ResourceType.AGENT,
           requiredPermissions: PermissionBits.VIEW,
         }),
+        this._aclService.findPubliclyAccessibleResources({
+          resourceType: ResourceType.REMOTE_AGENT,
+          requiredPermissions: PermissionBits.VIEW,
+        }),
       ]);
+      directlyAccessibleMCPIds = directIds;
+      accessibleAgentIds = mergeObjectIds(agentIds, remoteAgentIds);
     } else {
       const principalsList = await this._aclService.getUserPrincipals({
         userId,
         role,
         fresh: true,
       });
-      [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
+      const [directIds, agentIds, remoteAgentIds] = await Promise.all([
         this._aclService.findAccessibleResourcesForPrincipals({
           principalsList,
           requiredPermissions: PermissionBits.VIEW,
@@ -526,13 +554,20 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           requiredPermissions: PermissionBits.VIEW,
           resourceType: ResourceType.AGENT,
         }),
+        this._aclService.findAccessibleResourcesForPrincipals({
+          principalsList,
+          requiredPermissions: PermissionBits.VIEW,
+          resourceType: ResourceType.REMOTE_AGENT,
+        }),
       ]);
+      directlyAccessibleMCPIds = directIds;
+      accessibleAgentIds = mergeObjectIds(agentIds, remoteAgentIds);
     }
     const [agentNames, directResults] = await Promise.all([
       accessibleAgentIds.length > 0
         ? this._dbMethods.getMCPServerNamesByAgentIds(accessibleAgentIds)
         : Promise.resolve([]),
-      this._dbMethods.getListMCPServersByIds({ ids: directlyAccessibleMCPIds }),
+      this._dbMethods.getListMCPServersByIds({ ids: directlyAccessibleMCPIds, limit: null }),
     ]);
     return [
       ...new Set([
@@ -553,7 +588,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
     if (!userId) {
       logger.debug(`[ServerConfigsDB.getAll] fetching all publicly shared mcp servers`);
-      [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
+      const [directIds, agentIds, remoteAgentIds] = await Promise.all([
         this._aclService.findPubliclyAccessibleResources({
           resourceType: ResourceType.MCPSERVER,
           requiredPermissions: PermissionBits.VIEW,
@@ -562,13 +597,19 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           resourceType: ResourceType.AGENT,
           requiredPermissions: PermissionBits.VIEW,
         }),
+        this._aclService.findPubliclyAccessibleResources({
+          resourceType: ResourceType.REMOTE_AGENT,
+          requiredPermissions: PermissionBits.VIEW,
+        }),
       ]);
+      directlyAccessibleMCPIds = directIds;
+      accessibleAgentIds = mergeObjectIds(agentIds, remoteAgentIds);
     } else {
       logger.debug(
         `[ServerConfigsDB.getAll] fetching mcp servers directly shared with the user with ID: ${userId}`,
       );
       const principalsList = await this._aclService.getUserPrincipals({ userId, role });
-      [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
+      const [directIds, agentIds, remoteAgentIds] = await Promise.all([
         this._aclService.findAccessibleResourcesForPrincipals({
           principalsList,
           requiredPermissions: PermissionBits.VIEW,
@@ -579,7 +620,14 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           requiredPermissions: PermissionBits.VIEW,
           resourceType: ResourceType.AGENT,
         }),
+        this._aclService.findAccessibleResourcesForPrincipals({
+          principalsList,
+          requiredPermissions: PermissionBits.VIEW,
+          resourceType: ResourceType.REMOTE_AGENT,
+        }),
       ]);
+      directlyAccessibleMCPIds = directIds;
+      accessibleAgentIds = mergeObjectIds(agentIds, remoteAgentIds);
     }
 
     const agentMCPServerNamesPromise: Promise<string[]> =
@@ -588,6 +636,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
         : Promise.resolve([]);
     const directResultsPromise = this._dbMethods.getListMCPServersByIds({
       ids: directlyAccessibleMCPIds,
+      limit: null,
     });
     const [agentMCPServerNames, directResults] = await Promise.all([
       agentMCPServerNamesPromise,

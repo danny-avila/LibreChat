@@ -1088,6 +1088,40 @@ describe('ServerConfigsDB', () => {
         expect(result).toBeDefined();
         expect(result?.consumeOnly).toBe(true);
       });
+
+      it('should return server with consumeOnly when accessible via public remote agent', async () => {
+        const created = await serverConfigsDB.add(
+          'temp-name',
+          createSSEConfig('Remote Agent MCP Server'),
+          userId,
+        );
+        const agent = await mongoose.models.Agent.create({
+          id: 'public-remote-agent-id',
+          name: 'Public Remote Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(userId),
+          mcpServerNames: [created.serverName],
+        });
+        await mongoose.models.AclEntry.create({
+          principalType: PrincipalType.PUBLIC,
+          resourceType: ResourceType.REMOTE_AGENT,
+          resourceId: agent._id,
+          permBits: PermissionBits.VIEW,
+          grantedBy: new mongoose.Types.ObjectId(userId),
+        });
+
+        await expect(serverConfigsDB.get(created.serverName)).resolves.toMatchObject({
+          title: 'Remote Agent MCP Server',
+          consumeOnly: true,
+        });
+        await expect(serverConfigsDB.getAccessibleServerNamesFresh()).resolves.toContain(
+          created.serverName,
+        );
+        await expect(serverConfigsDB.getAll()).resolves.toMatchObject({
+          [created.serverName]: { consumeOnly: true },
+        });
+      });
     });
 
     describe('user direct access', () => {
@@ -1171,6 +1205,46 @@ describe('ServerConfigsDB', () => {
         expect(result).toBeDefined();
         expect(result?.consumeOnly).toBe(true);
         expect(result?.title).toBe('Agent Accessible Server');
+      });
+
+      it('should return server when user has access via a remote agent', async () => {
+        const created = await serverConfigsDB.add(
+          'temp-name',
+          createSSEConfig('Remote Agent Accessible Server'),
+          userId,
+        );
+        const agent = await mongoose.models.Agent.create({
+          id: 'remote-agent-for-user2',
+          name: 'Remote Agent for User 2',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(userId),
+          mcpServerNames: [created.serverName],
+        });
+        const remoteAgentRole = await mongoose.models.AccessRole.findOne({
+          accessRoleId: AccessRoleIds.REMOTE_AGENT_VIEWER,
+        });
+        await mongoose.models.AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalModel: PrincipalModel.USER,
+          principalId: new mongoose.Types.ObjectId(userId2),
+          resourceType: ResourceType.REMOTE_AGENT,
+          resourceId: agent._id,
+          permBits: PermissionBits.VIEW,
+          roleId: remoteAgentRole!._id,
+          grantedBy: new mongoose.Types.ObjectId(userId),
+        });
+
+        await expect(serverConfigsDB.getFresh(created.serverName, userId2)).resolves.toMatchObject({
+          title: 'Remote Agent Accessible Server',
+          consumeOnly: true,
+        });
+        await expect(serverConfigsDB.getAccessibleServerNamesFresh(userId2)).resolves.toContain(
+          created.serverName,
+        );
+        await expect(serverConfigsDB.getAll(userId2)).resolves.toMatchObject({
+          [created.serverName]: { consumeOnly: true },
+        });
       });
 
       it('should prefer direct access over agent access (no consumeOnly)', async () => {
@@ -1570,6 +1644,26 @@ describe('ServerConfigsDB', () => {
       const result = await serverConfigsDB.get(created.serverName, userId2);
       expect(result).toBeDefined();
       expect(result?.consumeOnly).toBe(true);
+    });
+  });
+
+  describe('getAccessibleServerNamesFresh()', () => {
+    it('returns every directly accessible server without applying repository pagination', async () => {
+      const serverNames = await Promise.all(
+        Array.from({ length: 21 }, async (_value, index) => {
+          const created = await serverConfigsDB.add(
+            `temp-${index}`,
+            createSSEConfig(`Fresh Direct Server ${index}`),
+            userId,
+          );
+          return created.serverName;
+        }),
+      );
+
+      const result = await serverConfigsDB.getAccessibleServerNamesFresh(userId);
+
+      expect(result).toHaveLength(21);
+      expect(new Set(result)).toEqual(new Set(serverNames));
     });
   });
 

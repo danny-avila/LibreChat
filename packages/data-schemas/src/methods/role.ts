@@ -79,6 +79,17 @@ export function createRoleMethods(
 } {
   const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
 
+  async function publishRoleCache(roleName: string, role: IRole | null): Promise<void> {
+    try {
+      const cache = deps.getCache?.(CacheKeys.ROLES);
+      if (cache) {
+        await cache.set(scopedCacheKey(roleName), role);
+      }
+    } catch (cacheError) {
+      logger.error(`[role] cache publication failed for "${roleName}":`, cacheError);
+    }
+  }
+
   /**
    * Initialize default roles in the system.
    * Creates the default roles (ADMIN, USER) if they don't exist in the database.
@@ -212,23 +223,19 @@ export function createRoleMethods(
       const role = await query.lean().exec();
 
       if (!role && systemRoleValues.has(roleName)) {
-        return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+        const createdRole = await runMCPAuthorityMutation(authorityMutationGate, async () => {
           const currentRole = await Role.findOne({ name: roleName }).lean().exec();
           if (currentRole) {
             return currentRole as unknown as IRole;
           }
-          const newRole = await new Role(
-            roleDefaults[roleName as keyof typeof roleDefaults],
-          ).save();
-          if (cache) {
-            await cache.set(scopedCacheKey(roleName), newRole);
-          }
-          return newRole.toObject() as IRole;
+          return (
+            await new Role(roleDefaults[roleName as keyof typeof roleDefaults]).save()
+          ).toObject() as IRole;
         });
+        await publishRoleCache(roleName, createdRole);
+        return createdRole;
       }
-      if (cache) {
-        await cache.set(scopedCacheKey(roleName), role);
-      }
+      await publishRoleCache(roleName, role as unknown as IRole | null);
       return role as unknown as IRole;
     } catch (error) {
       throw new Error(`Failed to retrieve or create role: ${(error as Error).message}`);
@@ -289,7 +296,6 @@ export function createRoleMethods(
    * Update role values by name.
    */
   async function updateRoleByName(roleName: string, updates: Partial<IRole>): Promise<IRole> {
-    const cache = deps.getCache?.(CacheKeys.ROLES);
     try {
       const mutation = await authorityMutationGate.mutateMCPAuthority(async () => {
         const Role = mongoose.models.Role;
@@ -308,22 +314,18 @@ export function createRoleMethods(
           }
           throw error;
         }
-        if (cache) {
-          if (updates.name && updates.name !== roleName) {
-            await Promise.all([
-              cache.set(scopedCacheKey(roleName), null),
-              cache.set(scopedCacheKey(updates.name), role),
-            ]);
-          } else {
-            await cache.set(scopedCacheKey(roleName), role);
-          }
-        }
         return { role: role as IRole } as const;
       });
       if ('conflict' in mutation.result) {
         throw mutation.result.conflict;
       }
-      return mutation.result.role;
+      const role = mutation.result.role;
+      if (updates.name && updates.name !== roleName) {
+        await Promise.all([publishRoleCache(roleName, null), publishRoleCache(updates.name, role)]);
+      } else {
+        await publishRoleCache(roleName, role);
+      }
+      return role;
     } catch (error) {
       if (error instanceof RoleConflictError) {
         throw error;
@@ -471,7 +473,7 @@ export function createRoleMethods(
           );
 
           try {
-            await runMCPAuthorityMutation(authorityMutationGate, async () => {
+            const updatedRole = await runMCPAuthorityMutation(authorityMutationGate, async () => {
               await Role.updateOne(
                 { name: roleName },
                 {
@@ -480,15 +482,9 @@ export function createRoleMethods(
                 },
               );
 
-              const cache = deps.getCache?.(CacheKeys.ROLES);
-              const updatedRole = await Role.findOne({ name: roleName })
-                .select('-__v')
-                .lean()
-                .exec();
-              if (cache) {
-                await cache.set(scopedCacheKey(roleName), updatedRole);
-              }
+              return await Role.findOne({ name: roleName }).select('-__v').lean().exec();
             });
+            await publishRoleCache(roleName, updatedRole as unknown as IRole | null);
 
             logger.info(`Updated role '${roleName}' and removed old schema fields`);
           } catch (updateError) {
@@ -546,7 +542,7 @@ export function createRoleMethods(
           try {
             logger.info(`Migrating role '${role.name}' from old schema structure`);
 
-            await runMCPAuthorityMutation(authorityMutationGate, async () => {
+            const updatedRole = await runMCPAuthorityMutation(authorityMutationGate, async () => {
               await Role.updateOne(
                 { _id: role._id },
                 {
@@ -555,12 +551,9 @@ export function createRoleMethods(
                 },
               );
 
-              const cache = deps.getCache?.(CacheKeys.ROLES);
-              if (cache) {
-                const updatedRole = await Role.findById(role._id).lean().exec();
-                await cache.set(scopedCacheKey(role.name), updatedRole);
-              }
+              return await Role.findById(role._id).lean().exec();
             });
+            await publishRoleCache(role.name, updatedRole as unknown as IRole | null);
 
             migratedCount++;
             logger.info(`Migrated role '${role.name}'`);
@@ -607,22 +600,9 @@ export function createRoleMethods(
     if ('conflict' in mutation.result) {
       throw mutation.result.conflict;
     }
-    const role = mutation.result.role;
-    try {
-      /**
-       * The compound unique index `{ name: 1, tenantId: 1 }` on the role schema
-       * (roleSchema.index in schema/role.ts) triggers error 11000 when a concurrent
-       * request races past the findOne check above. This catch converts it into
-       * the same user-facing message as the application-level duplicate check.
-       */
-      const cache = deps.getCache?.(CacheKeys.ROLES);
-      if (cache) {
-        await cache.set(scopedCacheKey(role.name), role.toObject());
-      }
-    } catch (cacheError) {
-      logger.error(`[createRoleByName] cache set failed for "${role.name}":`, cacheError);
-    }
-    return role.toObject() as IRole;
+    const role = mutation.result.role.toObject() as IRole;
+    await publishRoleCache(role.name, role);
+    return role;
   }
 
   /**
@@ -643,23 +623,16 @@ export function createRoleMethods(
     if (isSystemRoleName(roleName)) {
       throw new Error(`Cannot delete system role: ${roleName}`);
     }
-    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+    const deleted = await runMCPAuthorityMutation(authorityMutationGate, async () => {
       const Role = mongoose.models.Role;
       const User = mongoose.models.User as Model<IUser>;
       const affectedUserIds = await findUserIdsByRole(roleName);
       await User.updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
       await invalidateAuthUserDocCache(affectedUserIds);
-      const deleted = await Role.findOneAndDelete({ name: roleName }).lean();
-      try {
-        const cache = deps.getCache?.(CacheKeys.ROLES);
-        if (cache) {
-          await cache.set(scopedCacheKey(roleName), null);
-        }
-      } catch (cacheError) {
-        logger.error(`[deleteRoleByName] cache invalidation failed for "${roleName}":`, cacheError);
-      }
-      return deleted as IRole | null;
+      return (await Role.findOneAndDelete({ name: roleName }).lean()) as IRole | null;
     });
+    await publishRoleCache(roleName, null);
+    return deleted;
   }
 
   async function updateUsersByRole(oldRole: string, newRole: string): Promise<void> {

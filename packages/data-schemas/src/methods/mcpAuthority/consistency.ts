@@ -67,6 +67,7 @@ export interface MCPAuthorityConsistencyReconciliation {
 
 export interface MCPAuthorityConsistencyModule extends MCPAuthorityMutationGate {
   initializeMCPAuthorityConsistency(): Promise<MCPAuthorityGeneration>;
+  inspectMCPAuthorityConsistencyStatus(): Promise<MCPAuthorityConsistencyStatus | null>;
   getMCPAuthorityConsistencyStatus(): Promise<MCPAuthorityConsistencyStatus>;
   reconcileMCPAuthorityConsistency(
     reconciliation: MCPAuthorityConsistencyReconciliation,
@@ -302,8 +303,7 @@ export function createMCPAuthorityConsistencyModule(
     return Object.freeze({ generation: requireCleanFence(await initializeFence()).generation });
   }
 
-  async function getMCPAuthorityConsistencyStatus(): Promise<MCPAuthorityConsistencyStatus> {
-    const fence = requireFence(await initializeFence());
+  function toConsistencyStatus(fence: MCPAuthorityConsistencyFence): MCPAuthorityConsistencyStatus {
     return Object.freeze({
       generation: fence.generation,
       dirty: fence.dirty,
@@ -311,6 +311,19 @@ export function createMCPAuthorityConsistencyModule(
       ...(fence.dirtyAt === undefined ? {} : { dirtyAt: new Date(fence.dirtyAt.getTime()) }),
       updatedAt: new Date(fence.updatedAt.getTime()),
     });
+  }
+
+  async function inspectMCPAuthorityConsistencyStatus(): Promise<MCPAuthorityConsistencyStatus | null> {
+    // eslint-disable-next-line no-restricted-syntax -- inspection must not initialize the global fence
+    const fence = await options.collection.findOne(
+      { _id: GLOBAL_FENCE_ID },
+      AUTHORITATIVE_FENCE_READ_OPTIONS,
+    );
+    return fence === null ? null : toConsistencyStatus(requireFence(fence));
+  }
+
+  async function getMCPAuthorityConsistencyStatus(): Promise<MCPAuthorityConsistencyStatus> {
+    return toConsistencyStatus(requireFence(await initializeFence()));
   }
 
   async function reconcileMCPAuthorityConsistency(
@@ -528,6 +541,7 @@ export function createMCPAuthorityConsistencyModule(
 
   return Object.freeze({
     initializeMCPAuthorityConsistency,
+    inspectMCPAuthorityConsistencyStatus,
     getMCPAuthorityConsistencyStatus,
     reconcileMCPAuthorityConsistency,
     readStableSnapshot,

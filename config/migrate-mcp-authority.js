@@ -20,7 +20,12 @@ async function migrateMCPAuthority({ checkOnly = false, reconciliation } = {}) {
       process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED === 'true',
   });
   const consistency = getMCPAuthorityConsistencyModule(mongoose);
-  const status = await consistency.getMCPAuthorityConsistencyStatus();
+  const status = checkOnly
+    ? await consistency.inspectMCPAuthorityConsistencyStatus()
+    : await consistency.getMCPAuthorityConsistencyStatus();
+  if (status == null) {
+    throw new Error('MCP authority consistency fence is not initialized');
+  }
   if (!status.dirty) {
     if (reconciliation) {
       throw new Error('MCP authority consistency fence is already clean');
