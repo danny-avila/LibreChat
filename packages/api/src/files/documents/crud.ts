@@ -5,6 +5,7 @@ import { parseWithPdfInspector } from '~/files/pdfInspector';
 import { parseWithAnydoc } from '~/files/anydoc';
 
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
+const GENERIC_BINARY_MIME_TYPES = new Set(['application/octet-stream', 'binary/octet-stream']);
 /** Cap on pages named in the omission notice, so a mostly-scanned document cannot
  * turn the notice itself into hundreds of KB of text persisted on every turn. */
 const MAX_LISTED_MISSING_PAGES = 20;
@@ -58,11 +59,15 @@ export async function parseDocument({
     );
   }
 
-  const mimetype = (file.mimetype ?? '').split(';')[0].trim().toLowerCase();
+  const declaredMimeType = (file.mimetype ?? '').split(';')[0].trim().toLowerCase();
+  const isGenericPdf =
+    GENERIC_BINARY_MIME_TYPES.has(declaredMimeType) && /\.pdf$/i.test(file.originalname);
+  const mimetype = isGenericPdf ? 'application/pdf' : declaredMimeType;
+  const parserFile = mimetype === file.mimetype ? file : { ...file, mimetype };
   const result =
     mimetype === 'application/pdf'
-      ? await parseWithPdfInspector(file)
-      : await parseWithAnydoc(file);
+      ? await parseWithPdfInspector(parserFile)
+      : await parseWithAnydoc(parserFile);
 
   if (!result.text?.trim()) {
     throw new Error('No text found in document');

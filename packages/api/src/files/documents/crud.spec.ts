@@ -102,6 +102,17 @@ describe('Document Parser', () => {
     expect(document.pagesNeedingOcr).toBeUndefined();
   });
 
+  test.each(['application/octet-stream', 'binary/octet-stream'])(
+    'routes a PDF with generic MIME %s through the direct pdf-inspector adapter',
+    async (mimetype) => {
+      const document = await parseDocument({ file: fixture('sample.pdf', mimetype) });
+
+      expect(document.filepath).toBe('pdf_inspector');
+      expect(document.filename).toBe('sample.pdf');
+      expect(document.text).toContain('# Quarterly Report');
+    },
+  );
+
   test('reports pages that still need OCR after local PDF extraction', async () => {
     const document = await parseDocument({
       file: fixture('sample-mixed.pdf', 'application/pdf'),
