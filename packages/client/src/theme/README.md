@@ -14,7 +14,9 @@ const compactTheme: ThemeDefinition = {
     light: {
       appearance: {
         controlRadius: '0.25rem',
+        roundControlRadius: '9999px',
         surfaceRadius: '0.5rem',
+        largeSurfaceRadius: '0.75rem',
         controlHeight: '2rem',
       },
     },

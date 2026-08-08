@@ -30,7 +30,7 @@ const iconButtonVariants: (props?: IconButtonVariantProps & ClassProp) => string
       shape: {
         round: 'rounded-full',
         square: 'rounded-lg',
-        theme: 'rounded-theme-control',
+        theme: 'rounded-theme-control-round',
       },
     },
     defaultVariants: {

@@ -18,7 +18,9 @@ const compactTheme: ThemeDefinition = {
       colors: { 'rgb-accent-primary': '1 2 3' },
       appearance: {
         controlRadius: '0.25rem',
+        roundControlRadius: '0.25rem',
         surfaceRadius: '0.5rem',
+        largeSurfaceRadius: '0.5rem',
         controlHeight: '2rem',
         spaceCompact: '0.25rem',
         spaceNormal: '0.5rem',

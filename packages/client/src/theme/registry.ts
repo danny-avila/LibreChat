@@ -19,7 +19,9 @@ export const themeAppearanceProperties: Readonly<
   Record<keyof IThemeAppearance, `--theme-${string}`>
 > = Object.freeze({
   controlRadius: '--theme-control-radius',
+  roundControlRadius: '--theme-round-control-radius',
   surfaceRadius: '--theme-surface-radius',
+  largeSurfaceRadius: '--theme-large-surface-radius',
   controlHeight: '--theme-control-height',
   spaceCompact: '--theme-space-compact',
   spaceNormal: '--theme-space-normal',
@@ -30,8 +32,10 @@ export const themeAppearanceProperties: Readonly<
 });
 
 export const defaultAppearance: IThemeAppearance = Object.freeze({
-  controlRadius: '9999px',
-  surfaceRadius: '1.5rem',
+  controlRadius: '0.75rem',
+  roundControlRadius: '9999px',
+  surfaceRadius: '1rem',
+  largeSurfaceRadius: '1.5rem',
   controlHeight: '2.25rem',
   spaceCompact: '0.375rem',
   spaceNormal: '0.75rem',
@@ -64,7 +68,9 @@ const isDuration = (value: string): boolean => cssDurationPattern.test(value);
 
 const appearanceValidators: Record<keyof IThemeAppearance, (value: string) => boolean> = {
   controlRadius: isLength,
+  roundControlRadius: isLength,
   surfaceRadius: isLength,
+  largeSurfaceRadius: isLength,
   controlHeight: isLength,
   spaceCompact: isLength,
   spaceNormal: isLength,

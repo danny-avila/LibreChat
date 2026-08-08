@@ -29,7 +29,7 @@ describe('IconButton', () => {
 
     expect(screen.getByRole('button', { name: 'Theme control' })).toHaveClass(
       'size-theme-control',
-      'rounded-theme-control',
+      'rounded-theme-control-round',
     );
   });
 });

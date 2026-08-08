@@ -90,7 +90,9 @@ describe('applyTheme', () => {
         light: {
           appearance: {
             controlRadius: '0.25rem',
+            roundControlRadius: '0.25rem',
             surfaceRadius: '0.5rem',
+            largeSurfaceRadius: '0.5rem',
             motionFast: '80ms',
           },
         },

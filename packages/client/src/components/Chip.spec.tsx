@@ -43,7 +43,7 @@ describe('Chip', () => {
       'gap-theme-compact',
     );
     expect(screen.getByRole('button', { name: 'Remove theme' })).toHaveClass(
-      'rounded-theme-control',
+      'rounded-theme-control-round',
     );
   });
 });

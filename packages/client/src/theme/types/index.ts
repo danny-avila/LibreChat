@@ -254,7 +254,9 @@ export type ThemeMode = 'light' | 'dark';
 
 export interface IThemeAppearance {
   controlRadius: string;
+  roundControlRadius: string;
   surfaceRadius: string;
+  largeSurfaceRadius: string;
   controlHeight: string;
   spaceCompact: string;
   spaceNormal: string;
