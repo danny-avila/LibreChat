@@ -56,6 +56,31 @@ export interface PasskeyChallengeStore {
   get: (key: string) => Promise<string | undefined>;
   set: (key: string, value: string, ttl?: number) => Promise<unknown>;
   delete: (key: string) => Promise<unknown>;
+  /** Optional atomic get-and-delete (Redis GETDEL). Prefer when available. */
+  getDel?: (key: string) => Promise<string | undefined>;
+}
+
+/** Upper bound on the ceremony error text copied into a log line. */
+const MAX_LOGGED_REASON_LENGTH = 200;
+
+/** Line breaks, ANSI escapes and other control characters that could forge log records. */
+// eslint-disable-next-line no-control-regex
+const LOG_UNSAFE_CHARACTERS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g;
+
+/**
+ * Ceremony errors interpolate attacker-supplied `clientDataJSON` fields into
+ * their message, so the text is flattened to a single bounded line before it
+ * reaches the logger and cannot fabricate additional log records.
+ */
+function logSafeReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const flattened = message.replace(LOG_UNSAFE_CHARACTERS, ' ').trim();
+  if (!flattened) {
+    return 'unknown error';
+  }
+  return flattened.length > MAX_LOGGED_REASON_LENGTH
+    ? `${flattened.slice(0, MAX_LOGGED_REASON_LENGTH)}... [truncated]`
+    : flattened;
 }
 
 function hostnameOf(value?: string): string | undefined {
@@ -131,16 +156,25 @@ export const authenticationChallengeKey = (sessionId: string): string =>
 /**
  * Reads a challenge and immediately invalidates it, so a challenge can back at
  * most one ceremony even if the client replays the verification request.
+ *
+ * Prefers atomic get-and-delete when the store implements `getDel` (e.g. Redis
+ * GETDEL). Falls back to get-then-delete for stores that do not.
  */
 export async function consumeChallenge(
   store: PasskeyChallengeStore,
   key: string,
 ): Promise<string | undefined> {
-  const challenge = await store.get(key);
-  if (challenge) {
-    await store.delete(key);
+  if (typeof store.getDel === 'function') {
+    const value = await store.getDel(key);
+    return value ?? undefined;
   }
-  return challenge ?? undefined;
+
+  const challenge = await store.get(key);
+  if (challenge == null) {
+    return undefined;
+  }
+  await store.delete(key);
+  return challenge;
 }
 
 /**
@@ -172,7 +206,7 @@ export async function createPasskeyRegistrationOptions({
     })),
     authenticatorSelection: {
       residentKey: 'required',
-      userVerification: 'preferred',
+      userVerification: 'required',
     },
   });
 
@@ -207,10 +241,10 @@ export async function verifyPasskeyRegistration({
       expectedChallenge,
       expectedOrigin: config.origins,
       expectedRPID: config.rpID,
-      requireUserVerification: false,
+      requireUserVerification: true,
     });
   } catch (error) {
-    logger.warn('[passkey] Registration verification failed', error);
+    logger.warn(`[passkey] Registration verification failed: ${logSafeReason(error)}`);
     return null;
   }
 
@@ -237,6 +271,9 @@ export async function verifyPasskeyRegistration({
  *
  * The returned `sessionId` is the opaque handle the client must send back with
  * the assertion; it is the only thing tying the assertion to its challenge.
+ *
+ * User verification is requested as `required` so the authenticator collects the
+ * PIN or biometric during the ceremony, matching what verification enforces.
  */
 export async function createPasskeyAuthenticationOptions({
   config,
@@ -248,7 +285,7 @@ export async function createPasskeyAuthenticationOptions({
   const options = await generateAuthenticationOptions({
     rpID: config.rpID,
     timeout: CEREMONY_TIMEOUT,
-    userVerification: 'preferred',
+    userVerification: 'required',
   });
 
   const sessionId = randomUUID();
@@ -260,6 +297,10 @@ export async function createPasskeyAuthenticationOptions({
 /**
  * Verifies an assertion against the challenge issued for `sessionId`.
  * Returns the authenticator's new signature counter on success, `null` otherwise.
+ *
+ * A passkey assertion is a complete single-factor login here, so user
+ * verification is required: an assertion carrying only the user-present flag,
+ * which mere possession of the authenticator produces, is rejected.
  */
 export async function verifyPasskeyAuthentication({
   config,
@@ -286,7 +327,7 @@ export async function verifyPasskeyAuthentication({
       expectedChallenge,
       expectedOrigin: config.origins,
       expectedRPID: config.rpID,
-      requireUserVerification: false,
+      requireUserVerification: true,
       credential: {
         id: credential.credentialId,
         publicKey: new Uint8Array(credential.publicKey),
@@ -295,7 +336,7 @@ export async function verifyPasskeyAuthentication({
       },
     });
   } catch (error) {
-    logger.warn('[passkey] Authentication verification failed', error);
+    logger.warn(`[passkey] Authentication verification failed: ${logSafeReason(error)}`);
     return null;
   }
 

@@ -20,6 +20,7 @@ const {
   math,
 } = require('@librechat/api');
 const { updateUser, findUser, isAgentTriggerPrincipalActive } = require('~/models');
+const { isTokenIssuedBeforeCredentialChange } = require('./credentials');
 const getLogStores = require('~/cache/getLogStores');
 
 function decodeJwtExpiry(token) {
@@ -195,6 +196,14 @@ const openIdJwtLogin = (openIdConfig) => {
         }
 
         if (user) {
+          if (isTokenIssuedBeforeCredentialChange(payload, user)) {
+            logger.warn(
+              '[openIdJwtLogin] openId JwtStrategy => token predates the last credential change: ' +
+                payload?.sub,
+            );
+            done(null, false);
+            return;
+          }
           user.id = user._id.toString();
           if (!(await runAsSystem(() => isAgentTriggerPrincipalActive(user.id)))) {
             done(null, false, {

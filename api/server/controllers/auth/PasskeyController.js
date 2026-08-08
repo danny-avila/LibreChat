@@ -1,6 +1,9 @@
+const bcrypt = require('bcryptjs');
 const { CacheKeys } = require('librechat-data-provider');
 const { logger, MAX_PASSKEYS_PER_USER } = require('@librechat/data-schemas');
 const {
+  isEnabled,
+  comparePassword,
   getPasskeyConfig,
   isPasskeyEnabled,
   defaultPasskeyName,
@@ -14,16 +17,131 @@ const {
   deletePasskey,
   renamePasskey,
   getUserById,
+  updateUser,
   recordPasskeyUse,
   findPasskeysByUser,
   countPasskeysByUser,
   findPasskeyByCredentialId,
 } = require('~/models');
+const { checkBan } = require('~/server/middleware');
 const { getLogStores } = require('~/cache');
 
 const MAX_PASSKEY_NAME_LENGTH = 60;
+const LOCAL_PROVIDER = 'local';
+/** Single answer for every step-up failure so the endpoint reveals nothing extra. */
+const INCORRECT_PASSWORD = 'Incorrect password';
+/** Log tags keep the two step-up sites distinguishable in the audit trail. */
+const REGISTRATION_STEP_UP = 'Registration step-up failed';
+const DELETION_STEP_UP = 'Deletion step-up failed';
 
-const getChallengeStore = () => getLogStores(CacheKeys.PASSKEY_CHALLENGE);
+/**
+ * Challenge store with getDel so consumeChallenge prefers an atomic pop path.
+ * Keyv itself is get-then-delete under the hood unless the adapter exposes getDel;
+ * wrapping here keeps the ceremony helpers on the preferred API surface.
+ */
+const getChallengeStore = () => {
+  const cache = getLogStores(CacheKeys.PASSKEY_CHALLENGE);
+  return {
+    get: (key) => cache.get(key),
+    set: (key, value, ttl) => cache.set(key, value, ttl),
+    delete: (key) => cache.delete(key),
+    getDel: async (key) => {
+      if (typeof cache.getDel === 'function') {
+        return cache.getDel(key);
+      }
+      const value = await cache.get(key);
+      if (value === undefined || value === null) {
+        return undefined;
+      }
+      await cache.delete(key);
+      return value;
+    },
+  };
+};
+
+/**
+ * Passkeys are a local-account credential. An account provisioned by an identity
+ * provider must keep authenticating through it, otherwise the passkey becomes a
+ * login path that bypasses IdP-side MFA, conditional access and deprovisioning.
+ */
+const isLocalAccount = (user) => user?.provider === LOCAL_PROVIDER;
+
+/** Responds 403 when the authenticated account is not a local one. */
+const requireLocalAccount = (req, res) => {
+  if (isLocalAccount(req.user)) {
+    return true;
+  }
+  res.status(403).json({ message: 'Passkeys are only available for local accounts' });
+  return false;
+};
+
+/**
+ * Answers a failed step-up. The rejection is logged because these endpoints would
+ * otherwise be a silent password oracle for a stolen access token: they are keyed
+ * by user id rather than by IP, so the login ban system never sees these attempts.
+ */
+const denyPasswordConfirmation = (req, res, tag) => {
+  logger.warn(`[Passkey] [${tag}] [User: ${req.user?.id}] [Request-IP: ${req.ip}]`);
+  res.status(403).json({ message: INCORRECT_PASSWORD });
+  return false;
+};
+
+/**
+ * Step-up gate shared by the passkey endpoints that add or remove a login factor.
+ * A passkey is a durable single-factor login that outlives session revocation, so
+ * minting one, or stripping one the account relies on, takes the account password
+ * and not merely a bearer token.
+ *
+ * Answers 403 rather than 401 on failure: the client turns a 401 into a token
+ * refresh followed by a redirect to the login page, so a mistyped password would
+ * sign the user out instead of showing an error.
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {object} options
+ * @param {string} options.tag Log tag naming the step-up site.
+ * @param {boolean} [options.allowPasswordless] Pass when an account carrying no
+ * password hash should be waved through instead of refused.
+ * @returns {Promise<boolean>} true when the caller may continue
+ */
+const requirePasswordConfirmation = async (req, res, { tag, allowPasswordless = false }) => {
+  const password = req.body?.password;
+  const submitted = typeof password === 'string' && password.length > 0;
+
+  if (!submitted && !allowPasswordless) {
+    return denyPasswordConfirmation(req, res, tag);
+  }
+
+  let account;
+  try {
+    account = await getUserById(req.user.id, '+password');
+  } catch (err) {
+    logger.error('[requirePasswordConfirmation]', err);
+    res.status(500).json({ message: 'Something went wrong' });
+    return false;
+  }
+
+  if (!account?.password) {
+    return allowPasswordless ? true : denyPasswordConfirmation(req, res, tag);
+  }
+
+  if (!submitted) {
+    return denyPasswordConfirmation(req, res, tag);
+  }
+
+  const isMatch = await comparePassword(account, password, { compare: bcrypt.compare }).catch(
+    (err) => {
+      logger.error('[requirePasswordConfirmation]', err);
+      return false;
+    },
+  );
+
+  if (!isMatch) {
+    return denyPasswordConfirmation(req, res, tag);
+  }
+
+  return true;
+};
 
 /** Shapes a stored credential into the safe summary the client renders. */
 const serializePasskey = (passkey) => ({
@@ -71,6 +189,14 @@ const registerPasskeyOptions = async (req, res) => {
     return;
   }
 
+  if (!requireLocalAccount(req, res)) {
+    return;
+  }
+
+  if (!(await requirePasswordConfirmation(req, res, { tag: REGISTRATION_STEP_UP }))) {
+    return;
+  }
+
   try {
     const existingCredentials = await findPasskeysByUser(req.user.id);
     if (existingCredentials.length >= MAX_PASSKEYS_PER_USER) {
@@ -96,10 +222,24 @@ const registerPasskeyOptions = async (req, res) => {
   }
 };
 
-/** Verifies an attestation and stores the credential against the authenticated user. */
+/**
+ * Verifies an attestation and stores the credential against the authenticated user.
+ *
+ * The step-up is repeated here rather than only on the options step because
+ * `createPasskey` is the durable write, and gating only the challenge would leave
+ * the write path itself uncontrolled.
+ */
 const registerPasskeyVerify = async (req, res) => {
   const config = requirePasskeysEnabled(res);
   if (!config) {
+    return;
+  }
+
+  if (!requireLocalAccount(req, res)) {
+    return;
+  }
+
+  if (!(await requirePasswordConfirmation(req, res, { tag: REGISTRATION_STEP_UP }))) {
     return;
   }
 
@@ -143,6 +283,9 @@ const registerPasskeyVerify = async (req, res) => {
 
     return res.status(201).json({ passkey: serializePasskey(passkey) });
   } catch (err) {
+    if (err?.code === 11000 || err?.code === 'E11000') {
+      return res.status(409).json({ message: 'This passkey is already registered' });
+    }
     logger.error('[registerPasskeyVerify]', err);
     return res.status(500).json({ message: 'Something went wrong' });
   }
@@ -177,9 +320,30 @@ const updatePasskey = async (req, res) => {
   }
 };
 
-/** Removes one of the authenticated user's passkeys. */
+/**
+ * Removes one of the authenticated user's passkeys.
+ *
+ * Password-confirmed for the same reason enrollment is: a stolen access token
+ * must not be able to strip a login factor the account still depends on.
+ *
+ * The gate is skipped for an account carrying no password hash. That looks like a
+ * hole and is not one. An SSO or LDAP account can never satisfy a password gate,
+ * and a passkey enrolled on one before the provider check existed would otherwise
+ * be stranded with no UI or API able to remove it. Allowing the removal grants an
+ * attacker nothing either: `authenticatePasskey` already refuses a credential
+ * whose owner is not a local account, so it is not a usable sign-in factor.
+ */
 const removePasskey = async (req, res) => {
   if (!requirePasskeysEnabled(res)) {
+    return;
+  }
+
+  if (
+    !(await requirePasswordConfirmation(req, res, {
+      tag: DELETION_STEP_UP,
+      allowPasswordless: true,
+    }))
+  ) {
     return;
   }
 
@@ -281,9 +445,31 @@ const authenticatePasskey = async (req, res, next) => {
       return failure();
     }
 
+    if (!isLocalAccount(user)) {
+      logger.warn(
+        '[authenticatePasskey] Rejected a passkey belonging to a non-local account; the identity provider must be used',
+      );
+      return failure();
+    }
+
+    const unverifiedAllowed = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
+    if (user.expiresAt && unverifiedAllowed) {
+      await updateUser(user._id || user.id, {});
+    }
+    if (!user.emailVerified && !unverifiedAllowed) {
+      logger.warn('[authenticatePasskey] Rejected unverified email login');
+      return failure();
+    }
+
     await recordPasskeyUse(passkey.credentialId, result.newCounter);
 
     req.user = user;
+
+    await checkBan(req, res);
+    if (req.banned) {
+      return;
+    }
+
     return next();
   } catch (err) {
     logger.error('[authenticatePasskey]', err);

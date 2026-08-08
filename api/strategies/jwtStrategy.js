@@ -3,6 +3,7 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { getUserById, updateUser } = require('~/models');
+const { isTokenIssuedBeforeCredentialChange } = require('./credentials');
 
 const AGENT_TRIGGER_ADMISSION_PATHS = ['/api/agents/chat/agents', '/api/agents/chat/steer/deliver'];
 
@@ -48,6 +49,13 @@ const jwtLogin = () =>
           return;
         }
         if (user) {
+          if (isTokenIssuedBeforeCredentialChange(payload, user)) {
+            logger.warn(
+              '[jwtLogin] JwtStrategy => token predates the last credential change: ' + payload?.id,
+            );
+            done(null, false);
+            return;
+          }
           user.id = user._id.toString();
           /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
           user.idOnTheSource ??= null;

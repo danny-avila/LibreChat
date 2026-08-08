@@ -69,6 +69,35 @@ describe('isSafeRedirect', () => {
   it('accepts the root path', () => {
     expect(isSafeRedirect('/')).toBe(true);
   });
+
+  /**
+   * The URL parser strips ASCII tab and newline before resolving, so these clear the
+   * prefix checks as written but navigate to `//evil.com`.
+   */
+  it('rejects a tab-smuggled protocol-relative URL', () => {
+    expect(isSafeRedirect(decodeURIComponent('/%09/evil.com'))).toBe(false);
+  });
+
+  it('rejects a newline-smuggled protocol-relative URL', () => {
+    expect(isSafeRedirect(decodeURIComponent('/%0A/evil.com'))).toBe(false);
+  });
+
+  it('rejects a carriage-return-smuggled protocol-relative URL', () => {
+    expect(isSafeRedirect(decodeURIComponent('/%0D/evil.com'))).toBe(false);
+  });
+
+  it('rejects a control character anywhere in the path', () => {
+    expect(isSafeRedirect(decodeURIComponent('/c/new%09x'))).toBe(false);
+  });
+
+  /** The login guard reads the raw path, so a target that only normalizes onto /login stays rejected */
+  it('rejects a path that reaches /login before normalization', () => {
+    expect(isSafeRedirect('/login/../c/new')).toBe(false);
+  });
+
+  it('accepts a same-origin path containing dot segments', () => {
+    expect(isSafeRedirect('/c/../dashboard')).toBe(true);
+  });
 });
 
 describe('getPostLoginRedirect', () => {
