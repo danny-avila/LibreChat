@@ -11,6 +11,33 @@ export interface PluginHooksResult {
 }
 
 /**
+ * Reports a package that declares hooks when the host has registered no hook
+ * capabilities. Nothing executes plugin hooks yet, and silently ignoring the
+ * document would leave an operator believing it runs.
+ */
+export async function reportUnexecutedHooks(realRoot: string): Promise<PluginDiagnostic[]> {
+  const location = `${LIBRECHAT_EXTENSION_NAMESPACE}/${EXTENSION_HOOKS_FILE}`;
+  const hooksPath = await resolveWithinRoot(realRoot, location);
+  if (hooksPath === null) {
+    return [];
+  }
+  try {
+    await fs.promises.access(hooksPath);
+  } catch {
+    return [];
+  }
+  return [
+    {
+      code: 'hooks_unsupported',
+      severity: 'warning',
+      message:
+        'This plugin declares hooks, but LibreChat does not execute plugin hooks yet; the document was ignored',
+      location,
+    },
+  ];
+}
+
+/**
  * Hooks are outside the portable Agent Plugins v1 format, so LibreChat reads
  * them from its own extension directory (§8.2). Absence is normal; a malformed
  * document disables only this plugin's hooks.

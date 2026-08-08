@@ -5,10 +5,10 @@ import type { PluginHookCapabilities } from '~/agents/hooks';
 import type { PluginHooksResult } from './hooks';
 import { realpathAllowingMissing, resolveWithinRoot } from './paths';
 import { PLUGIN_MANIFEST_FILE, PLUGIN_MCP_FILE } from './constants';
+import { loadPluginHooks, reportUnexecutedHooks } from './hooks';
 import { readMcpConfig, schemaVersion } from './mcp';
 import { validateManifest } from './manifest';
 import { loadPluginSkills } from './skills';
-import { loadPluginHooks } from './hooks';
 
 export interface LoadPluginOptions {
   /** Root under which each plugin's persistent `PLUGIN_DATA` directory is created. */
@@ -183,7 +183,7 @@ export async function loadPlugin(
     loadPluginSkills(realRoot, manifest.name),
     readMcpDocument(realRoot),
     options.hookCapabilities === undefined
-      ? Promise.resolve<PluginHooksResult>({ diagnostics: [] })
+      ? reportUnexecutedHooks(realRoot).then<PluginHooksResult>((diagnostics) => ({ diagnostics }))
       : loadPluginHooks(realRoot, options.hookCapabilities),
   ]);
 

@@ -168,6 +168,29 @@ describe('loadPlugin', () => {
       expect(result.plugin.diagnostics.map((issue) => issue.code)).toContain('mcp_invalid_json');
     });
 
+    it('reports declared hooks as unexecuted when the host registers no capabilities', async () => {
+      await writeManifest();
+      await write(
+        'ai.librechat/hooks/hooks.json',
+        JSON.stringify({
+          hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'echo' }] }] },
+        }),
+      );
+      const result = await loadPlugin(root, { dataRoot });
+      expect(result.status).toBe('loaded');
+      if (result.status !== 'loaded') {
+        return;
+      }
+      expect(result.plugin.hooks).toBeUndefined();
+      expect(result.plugin.diagnostics.map((issue) => issue.code)).toContain('hooks_unsupported');
+    });
+
+    it('stays silent about hooks when a plugin declares none', async () => {
+      await writeManifest();
+      const result = await loadPlugin(root, { dataRoot });
+      expect(result.status === 'loaded' && result.plugin.diagnostics).toHaveLength(0);
+    });
+
     it('reports a matcher the host cannot translate instead of running it', async () => {
       await writeManifest();
       await write(
