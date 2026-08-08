@@ -6,6 +6,26 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE SCHEMA IF NOT EXISTS chat_search;
 
+-- Neither extension is guaranteed to live in `public`: the compose bootstrap in
+-- `search/init` installs both into `chat_search`, and a managed service commonly
+-- puts them in a dedicated `extensions` schema. The `vector` type and the
+-- `gin_trgm_ops` / `vector_cosine_ops` operator classes used below are resolved
+-- only through `search_path` — USAGE on the schema is not enough — so it is
+-- pointed at wherever the two actually landed, and reset at the end of the file.
+-- `pg_catalog` is listed first so an extension schema cannot shadow a built-in.
+DO $$
+DECLARE
+  extension_schemas text;
+BEGIN
+  SELECT string_agg(DISTINCT quote_ident(n.nspname), ', ')
+    INTO extension_schemas
+    FROM pg_extension e
+    JOIN pg_namespace n ON n.oid = e.extnamespace
+   WHERE e.extname IN ('pg_trgm', 'vector');
+  EXECUTE 'SET search_path = ' || concat_ws(', ', 'pg_catalog', extension_schemas, 'public');
+END
+$$;
+
 -- Projector-assigned, monotonically increasing projection version.
 -- The source store has no per-record monotonic version (findOneAndUpdate never
 -- bumps __v, bulk paths skip timestamps), so the lease holder assigns it here.
@@ -23,8 +43,22 @@ CREATE TABLE IF NOT EXISTS chat_search.documents (
   is_archived           boolean     NOT NULL DEFAULT false,
   project_id            text,
   is_temporary          boolean     NOT NULL DEFAULT false,
-  source_created_at     timestamptz,
-  source_updated_at     timestamptz,
+  -- Sort keys, and the reason they are NOT NULL with a sentinel rather than
+  -- nullable.
+  --
+  -- Both are sorted DESC by the keyset indexes below. Under DESC, PostgreSQL's
+  -- default is NULLS FIRST, so nullable columns put every timestamp-less row at
+  -- the head of page 1; the tuple comparison that resumes the next page from that
+  -- boundary is then `(col, record_id) < (NULL, ...)`, which is NULL, which
+  -- matches nothing — pagination silently stops after one page. `NULLS LAST` on
+  -- the index would fix the ordering, but only for a query that also spells out
+  -- `NULLS LAST` and coalesces its cursor, and nothing makes a query written later
+  -- do either. The sentinel cannot be forgotten: there is no NULL to mishandle,
+  -- and a projector that tries to write one fails loudly at the constraint instead
+  -- of quietly truncating a result page. `-infinity` sorts last under DESC, which
+  -- is where a record with no known source timestamp belongs.
+  source_created_at     timestamptz NOT NULL DEFAULT '-infinity',
+  source_updated_at     timestamptz NOT NULL DEFAULT '-infinity',
   expires_at            timestamptz,
   projection_version    bigint      NOT NULL,
   -- When the source state this row was built from was read.
@@ -43,9 +77,24 @@ CREATE TABLE IF NOT EXISTS chat_search.documents (
   embedding_input_hash  text        NOT NULL DEFAULT '',
   deleted_at            timestamptz,
   updated_at            timestamptz NOT NULL DEFAULT now(),
+  -- Full-text vector over a *bounded* prefix of the indexed text.
+  --
+  -- A tsvector addresses its lexeme buffer with a 20-bit offset, so the distinct
+  -- lexemes of one value must fit in 1,048,575 bytes; past that `to_tsvector`
+  -- raises `string is too long for tsvector`. In a STORED generated column that
+  -- error aborts the whole INSERT/UPDATE, so a single oversized document would
+  -- stop being *stored* rather than merely stop being *indexed* — a 2.2 MB body of
+  -- distinct words is enough, and nothing upstream caps body length.
+  --
+  -- 8,192 + 192,000 = 200,192 characters. Lexemes are substrings of the input, so
+  -- the buffer is bounded by the input's byte length, and the widest UTF-8
+  -- encoding is 4 bytes per character: 800,768 bytes worst case, ~76% of the
+  -- limit, with the remaining quarter as headroom. The title share is eight times
+  -- the application's 1,024-character title cap. `body` itself is stored and
+  -- returned in full; only the text handed to the ranker is clipped.
   search_vector         tsvector    GENERATED ALWAYS AS (
-    setweight(to_tsvector('simple'::regconfig, coalesce(title, '')), 'A') ||
-    setweight(to_tsvector('simple'::regconfig, coalesce(body, '')), 'B')
+    setweight(to_tsvector('simple'::regconfig, left(coalesce(title, ''), 8192)), 'A') ||
+    setweight(to_tsvector('simple'::regconfig, left(coalesce(body, ''), 192000)), 'B')
   ) STORED,
   CONSTRAINT documents_pkey PRIMARY KEY (tenant_id, user_id, kind, record_id),
   CONSTRAINT documents_kind_check CHECK (kind IN ('message', 'conversation', 'shared-link'))
@@ -62,8 +111,21 @@ CREATE INDEX IF NOT EXISTS documents_scope_created_idx
   ON chat_search.documents (tenant_id, user_id, kind, source_created_at DESC, record_id DESC)
   WHERE deleted_at IS NULL;
 
+-- Title sort, over a bounded prefix rather than the column.
+--
+-- A B-tree index tuple may be compressed but is never moved out of line, so it
+-- has to fit a page: ~2704 bytes. An unbounded `title` therefore makes writing the
+-- row fail, not just sorting it — around 900 CJK characters is enough, which is
+-- inside the 1,024-character cap the rename path already allows and unbounded on
+-- the conversation import path. 512 characters is at most 2,048 bytes in UTF-8,
+-- leaving room for the scope columns and tuple overhead.
+--
+-- Sorting is unaffected in practice: two titles only compare equal here if their
+-- first 512 characters are identical, and `record_id` remains the unique final
+-- tiebreak, so the order is still total and stable. Queries must sort by the same
+-- `left(title, 512)` expression for the planner to use this index.
 CREATE INDEX IF NOT EXISTS documents_scope_title_idx
-  ON chat_search.documents (tenant_id, user_id, kind, title, record_id)
+  ON chat_search.documents (tenant_id, user_id, kind, left(title, 512), record_id)
   WHERE deleted_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS documents_conversation_idx
@@ -85,12 +147,28 @@ CREATE INDEX IF NOT EXISTS documents_expires_idx
   ON chat_search.documents (expires_at)
   WHERE expires_at IS NOT NULL;
 
--- Tombstone retention scan (rule 11: retained until the ClickHouse key collapses).
+-- Tombstone retention scan.
+--
+-- A deletion is projected as a tombstone row, not a physical delete: the
+-- reconciliation anti-join needs something that says "this record is gone" rather
+-- than merely absent, and the analytics target only learns of the deletion once
+-- the tombstone has propagated and its key has collapsed. Dropping the tombstone
+-- before that leaves an older content-bearing row downstream with nothing left to
+-- contradict it, so the retention pass repeatedly asks for tombstones by age. The
+-- partial predicate keeps that scan proportional to the tombstones rather than to
+-- the live rows, which outnumber them by orders of magnitude.
 CREATE INDEX IF NOT EXISTS documents_deleted_idx
   ON chat_search.documents (deleted_at)
   WHERE deleted_at IS NOT NULL;
 
--- Version-fenced sweep (rule 9) scans by (kind, projection_version).
+-- Version-fenced reconciliation sweep.
+--
+-- The sweep tombstones rows the source no longer has, but only those whose
+-- projection version is below the value the counter held when the scan began: a
+-- row upserted mid-scan behind the cursor carries a higher version and must
+-- survive, or an ordinary edit during an hourly sweep is buried by it. That makes
+-- the sweep a bounded range scan per kind, which is why the index leads with
+-- `kind` and carries the version.
 CREATE INDEX IF NOT EXISTS documents_version_idx
   ON chat_search.documents (kind, projection_version);
 
@@ -199,3 +277,8 @@ CREATE TABLE IF NOT EXISTS chat_search.failures (
 CREATE INDEX IF NOT EXISTS failures_quarantined_idx
   ON chat_search.failures (quarantined, updated_at)
   WHERE quarantined;
+
+-- Every object above is schema-qualified and every expression was resolved at DDL
+-- time, so the extension lookup path is no longer needed; the connection is
+-- handed back to whatever it was configured with.
+RESET search_path;

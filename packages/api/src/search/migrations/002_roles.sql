@@ -26,11 +26,22 @@ BEGIN
 END
 $$;
 
--- Enforce the invariant on every run: a hand-granted BYPASSRLS or SUPERUSER is
--- stripped back off the moment migrations are re-applied.
-ALTER ROLE chat_search_owner  NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-ALTER ROLE chat_search_writer NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-ALTER ROLE chat_search_reader NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+-- The attributes are asserted here, not left to the CREATE ROLE statements above,
+-- because those are skipped whenever the role already exists — which is the
+-- ordinary case, not the exceptional one. `search/init/chat-search-roles.sh`
+-- creates all three when the compose stack initialises, and so does any earlier
+-- installation on the same server. On every one of those databases these three
+-- statements are the only thing that actually establishes the invariant, and they
+-- strip a hand-granted SUPERUSER or BYPASSRLS back off rather than merely
+-- declining to add it.
+--
+-- LOGIN is reasserted for the same reason: a pre-existing role left NOLOGIN by
+-- whatever created it would otherwise be adopted in that state and never repaired
+-- here. All three are login roles by definition — there is no state in which one
+-- of them should be unable to connect.
+ALTER ROLE chat_search_owner  LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+ALTER ROLE chat_search_writer LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+ALTER ROLE chat_search_reader LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
 
 ALTER SCHEMA chat_search OWNER TO chat_search_owner;
 -- The runner creates chat_search.migrations before any file runs, so it lands
@@ -63,14 +74,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   TO chat_search_writer;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA chat_search TO chat_search_writer;
 
--- Request reader: SELECT on the two serving tables and nothing else. Explicit
--- REVOKEs make a re-run repair an accidental grant rather than merely not add one.
-REVOKE ALL ON
-  chat_search.outbox,
-  chat_search.watermark,
-  chat_search.lease,
-  chat_search.failures,
-  chat_search.migrations
-  FROM chat_search_reader;
+-- Request reader: SELECT on the two serving tables and nothing else. The revoke
+-- is a blanket one rather than a list of the tables the reader must stay off,
+-- for the same reason the separation gate in `roles.ts` derives its check from
+-- the schema: a list only repairs an accidental grant on a table someone
+-- remembered to add to it, and the tables that matter are the ones a later
+-- migration introduces. Sweeping everything and granting back the two is
+-- self-maintaining, and it makes a re-run repair the grant rather than merely
+-- not issue it.
+REVOKE ALL ON ALL TABLES IN SCHEMA chat_search FROM chat_search_reader;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA chat_search FROM chat_search_reader;
 GRANT SELECT ON chat_search.documents, chat_search.embeddings TO chat_search_reader;

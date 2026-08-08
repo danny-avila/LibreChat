@@ -6,14 +6,13 @@ export const READER_ROLE = 'chat_search_reader';
 
 const APPLICATION_ROLES = [OWNER_ROLE, WRITER_ROLE, READER_ROLE] as const;
 
-/** Tables the request reader must not reach at all. */
-const READER_FORBIDDEN_TABLES = [
-  'chat_search.outbox',
-  'chat_search.watermark',
-  'chat_search.lease',
-  'chat_search.failures',
-  'chat_search.migrations',
-] as const;
+/**
+ * The reader's entire allowance, stated as an allow-list because the complement
+ * is what has to be checked and a deny-list cannot know about a table added by a
+ * migration written later. Anything else in `chat_search`, and any privilege
+ * beyond `SELECT` even on these two, is a violation by derivation.
+ */
+const READER_SERVING_TABLES = ['documents', 'embeddings'] as const;
 
 const TABLE_PRIVILEGES = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'REFERENCES', 'TRIGGER'] as const;
 
@@ -27,8 +26,12 @@ export type RoleViolation = {
 /**
  * The role-separation gate, expressed as a query rather than a checklist: no
  * application role is superuser or BYPASSRLS, the request reader owns no table
- * and holds no privilege on the projector-only tables, and the two serving
+ * and holds nothing beyond `SELECT` on the two serving tables, and those two
  * tables have RLS both enabled and forced.
+ *
+ * The reader check enumerates `chat_search` live rather than naming the tables
+ * it must stay off, so a table introduced by a later migration is forbidden the
+ * moment it exists instead of when someone remembers to list it here.
  */
 export async function findRoleViolations(pool: SearchPool): Promise<readonly RoleViolation[]> {
   const violations: RoleViolation[] = [];
@@ -71,16 +74,21 @@ export async function findRoleViolations(pool: SearchPool): Promise<readonly Rol
   }
 
   if (seen.has(READER_ROLE)) {
-    for (const table of READER_FORBIDDEN_TABLES) {
-      for (const privilege of TABLE_PRIVILEGES) {
-        const { rows } = await pool.query<{ granted: boolean }>(
-          'SELECT has_table_privilege($1, $2, $3) AS granted',
-          [READER_ROLE, table, privilege],
-        );
-        if (rows[0]?.granted) {
-          violations.push({ role: READER_ROLE, problem: `has ${privilege} on ${table}` });
-        }
-      }
+    const { rows: grantRows } = await pool.query<{ tablename: string; privilege: string }>(
+      `SELECT t.tablename, p.privilege
+         FROM pg_tables t
+         CROSS JOIN unnest($2::text[]) AS p(privilege)
+        WHERE t.schemaname = 'chat_search'
+          AND NOT (p.privilege = 'SELECT' AND t.tablename = ANY($3::text[]))
+          AND has_table_privilege($1, format('chat_search.%I', t.tablename), p.privilege)
+        ORDER BY t.tablename, p.privilege`,
+      [READER_ROLE, [...TABLE_PRIVILEGES], [...READER_SERVING_TABLES]],
+    );
+    for (const row of grantRows) {
+      violations.push({
+        role: READER_ROLE,
+        problem: `has ${row.privilege} on chat_search.${row.tablename}`,
+      });
     }
   }
 
