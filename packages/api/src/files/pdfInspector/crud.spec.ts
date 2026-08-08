@@ -181,6 +181,30 @@ describe('pdf-inspector local parser', () => {
     }
   });
 
+  test('bounds the whole-document pdfjs fallback on a page-flooded document', async () => {
+    mockPdfjs.numPages = 4000;
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => {
+            throw new Error('native parser rejected the document');
+          },
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+
+        await expect(uploadIsolated(context(pdfFile('sample.pdf')))).rejects.toThrow(
+          'PDF contains 4000 pages, exceeding the 250-page fallback limit',
+        );
+        expect(mockPdfjs.requestedPages).toHaveLength(0);
+        expect(mockPdfjs.destroy).toHaveBeenCalled();
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
   test('bounds the pdfjs recovery walk on a page-flooded document', async () => {
     /* Recovery is one sequential pdfjs read per dropped page (~20ms), while a page
      * object costs an attacker ~110 bytes, so an unbounded walk turns a single

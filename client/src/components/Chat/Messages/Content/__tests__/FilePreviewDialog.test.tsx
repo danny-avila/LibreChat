@@ -69,12 +69,14 @@ describe('FilePreviewDialog', () => {
     expect(screen.queryByText(EXTRACTED_TEXT)).not.toBeInTheDocument();
   });
 
-  test('falls back to the extracted text when a parsed PDF has no binary to fetch', async () => {
-    /* A parsed record stores its text and no file, so the download is expected to
-     * fail. Its text is the whole point of the record and must still be shown. */
+  test('shows parsed PDF text without probing or offering a nonexistent binary', async () => {
+    /* A parsed record stores its text and no file, so the text panel must be the
+     * initial view rather than a fallback after a binary request fails. */
     renderDialog('application/pdf', 'paper.pdf', FileSources.text);
 
     expect(await screen.findByText(EXTRACTED_TEXT)).toBeInTheDocument();
+    expect(mockDownload).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
   });
 
   test('does not promise extracted text when the caller cannot supply the source', async () => {

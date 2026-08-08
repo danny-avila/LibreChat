@@ -3,14 +3,14 @@ import * as fs from 'fs';
 import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
 
 /**
- * Exercises the real worker against the real native binding. Nothing is mocked
- * here on purpose: the point of this module is what happens at the thread
+ * Exercises the real child process against the real native binding. Nothing is mocked
+ * here on purpose: the point of this module is what happens at the process
  * boundary, which a stubbed binding cannot demonstrate.
  */
 describe('pdfInspector native', () => {
   const fixture = (name: string) => path.join(__dirname, '..', 'documents', name);
 
-  test('extracts per-page markdown off the main thread', async () => {
+  test('extracts per-page markdown outside the API process', async () => {
     const pages = await extractPagesMarkdownIsolated(fixture('sample.pdf'));
 
     expect(pages.length).toBeGreaterThan(0);
@@ -20,7 +20,7 @@ describe('pdfInspector native', () => {
     expect(markdown).toContain('|Region|Units|Revenue|');
   });
 
-  test('extracts whole-document plain text off the main thread', async () => {
+  test('extracts whole-document plain text outside the API process', async () => {
     const text = await extractTextIsolated(fixture('sample.pdf'));
 
     expect(text).toContain('Quarterly Report');
@@ -28,7 +28,7 @@ describe('pdfInspector native', () => {
 
   test('surfaces a native parse failure as a rejection rather than a crash', async () => {
     /* pdf-inspector refuses a damaged xref table that pdfjs would rebuild. In-process
-     * this arrived as a thrown napi error; across the thread boundary it has to
+     * this arrived as a thrown napi error; across the child boundary it has to
      * arrive as a rejection, because that is what routes the caller to pdfjs. */
     await expect(extractPagesMarkdownIsolated(fixture('sample-badxref.pdf'))).rejects.toThrow(
       /Invalid PDF structure/,
@@ -40,10 +40,10 @@ describe('pdfInspector native', () => {
   });
 
   test('the event loop stays responsive while a parse runs', async () => {
-    /* The whole point of the worker. `extractPagesMarkdown` is a synchronous napi
+    /* The whole point of the child. `extractPagesMarkdown` is a synchronous napi
      * call, so inline it pins the loop for the entire parse: measured on this shape
      * of document, 1152ms of wall time produced 1152ms of event-loop lag, versus 5ms
-     * across the thread boundary. The assertion is on the longest gap between timer
+     * across the process boundary. The assertion is on the longest gap between timer
      * ticks, which tracks the whole blocked interval when the loop is pinned and
      * stays near the tick period when it is not. */
     const wide = path.join(__dirname, 'sample-wide.pdf');
@@ -70,7 +70,7 @@ describe('pdfInspector native', () => {
 
       expect(elapsed).toBeGreaterThan(50);
       /* Generous against a loaded CI box while still failing outright if the parse
-       * ever moves back onto the main thread, where the gap equals the wall time. */
+       * ever moves back into the API process, where the gap equals the wall time. */
       expect(longestGap).toBeLessThan(elapsed / 2);
     } finally {
       fs.unlinkSync(wide);

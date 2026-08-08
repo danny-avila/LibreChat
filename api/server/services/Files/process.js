@@ -37,6 +37,7 @@ const {
   getStorageMetadata,
   contentFilterBlockResponse,
   annotateMissingPages,
+  summarizeMissingPages,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -82,6 +83,18 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
 
 const hasCodeEnvRef = (file) =>
   file?.metadata?.codeEnvRef != null || file?.metadata?.codeEnvRefs != null;
+
+const genericMimeTypes = new Set(['application/octet-stream', 'binary/octet-stream']);
+
+const resolveEffectiveMimeType = (file) => {
+  const declared = (file?.mimetype ?? '').split(';')[0].trim().toLowerCase();
+  if (!genericMimeTypes.has(declared)) {
+    return declared;
+  }
+  return mime.getType(file?.originalname ?? '') ?? declared;
+};
+
+const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';
 
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -852,20 +865,21 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     };
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
+    const effectiveMimeType = resolveEffectiveMimeType(file);
     const extractedTextPlan = getUploadExtractedTextPlan({
       endpoint: metadata.endpoint,
       toolResource: tool_resource,
-      mimeType: file.mimetype,
+      mimeType: effectiveMimeType,
       fileConfig,
       ocrConfigured: appConfig?.ocr != null,
       ragConfigured: !!process.env.RAG_API_URL,
     });
     const shouldUseConfiguredOCR = extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
     const shouldUseConfiguredText = extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
-    const isDocumentParserEligible = fileConfig.checkType(
-      file.mimetype,
-      fileConfig.documentParser?.supportedMimeTypes || documentParserMimeTypes,
-    );
+    const parserMimeTypes =
+      fileConfig.documentParser?.supportedMimeTypes || documentParserMimeTypes;
+    const isKnownDocumentType = fileConfig.checkType(effectiveMimeType, documentParserMimeTypes);
+    const isDocumentParserEligible = fileConfig.checkType(effectiveMimeType, parserMimeTypes);
     const shouldUseDocumentParser = !shouldUseConfiguredText && isDocumentParserEligible;
 
     const resolveDocumentText = async () => {
@@ -876,6 +890,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
         return await handleFileUpload({ req, file, loadAuthValues });
       } catch (err) {
+        if (isZipBombError(err)) {
+          throw err;
+        }
         const { errorMetadata } = getExtractionLogDetails(err);
         logger.error(
           `[processAgentFileUpload] Document parser failed for ${extractionFileLabel}:`,
@@ -884,12 +901,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       }
     };
 
-    const resolveConfiguredOCR = async () => {
+    const resolveConfiguredOCR = async ({ throwOnMissingCapability = true } = {}) => {
       if (!shouldUseConfiguredOCR) {
         return;
       }
       if (!(await checkCapability(req, AgentCapabilities.ocr))) {
-        throw new Error('OCR capability is not enabled for Agents');
+        if (throwOnMissingCapability) {
+          throw new Error('OCR capability is not enabled for Agents');
+        }
+        return;
       }
       try {
         const ocrStrategy = appConfig?.ocr?.strategy ?? FileSources.mistral_ocr;
@@ -925,8 +945,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      */
     const createDocumentTextFile = async ({ text, bytes, filepath, pagesNeedingOcr }) => {
       if (pagesNeedingOcr?.length) {
+        const pageSummary = summarizeMissingPages(pagesNeedingOcr);
         logger.warn(
-          `[processAgentFileUpload] "${file.originalname}" has no extractable text on page(s) ${pagesNeedingOcr.join(', ')}; those pages were omitted.`,
+          `[processAgentFileUpload] "${file.originalname}" has no extractable text on page(s) ${pageSummary}; those pages were omitted.`,
         );
       }
       const annotated = annotateMissingPages(text, pagesNeedingOcr);
@@ -934,7 +955,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         text: annotated,
         bytes: annotated === text ? bytes : Buffer.byteLength(annotated, 'utf8'),
         filepath,
-        type: documentParserSources.has(filepath) ? file.mimetype : undefined,
+        type: documentParserSources.has(filepath) ? effectiveMimeType : undefined,
       });
     };
 
@@ -951,7 +972,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           }
 
           if (localNeedsOCR && shouldUseConfiguredOCR) {
-            const ocrResult = await resolveConfiguredOCR();
+            const ocrResult = await resolveConfiguredOCR({
+              throwOnMissingCapability: !hasLocalText,
+            });
             if (ocrResult?.text?.trim()) {
               return ocrResult;
             }
@@ -983,8 +1006,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       );
     }
 
+    if (isKnownDocumentType && !shouldUseConfiguredText) {
+      throw new Error(`File type ${effectiveMimeType} is not enabled for document parsing.`);
+    }
+
     const shouldUseSTT = fileConfig.checkType(
-      file.mimetype,
+      effectiveMimeType,
       fileConfig.stt?.supportedMimeTypes || [],
     );
 
@@ -995,12 +1022,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     }
 
     const shouldUseText = fileConfig.checkType(
-      file.mimetype,
+      effectiveMimeType,
       fileConfig.text?.supportedMimeTypes || [],
     );
 
     if (!shouldUseText) {
-      throw new Error(`File type ${file.mimetype} is not supported for text parsing.`);
+      throw new Error(`File type ${effectiveMimeType} is not supported for text parsing.`);
     }
 
     /**
