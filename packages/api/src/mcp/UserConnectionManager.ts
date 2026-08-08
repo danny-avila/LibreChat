@@ -857,9 +857,10 @@ export abstract class UserConnectionManager {
     const userMap = this.userConnections.get(userId);
     const connection = userMap?.get(serverName);
     if (connection) {
-      logger.info(`[MCP][User: ${userId}][${serverName}] Disconnecting...`);
-      await connection.disconnect();
+      const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
+      logger.info(`${logPrefix} Disconnecting...`);
       this.removeUserConnection(userId, serverName);
+      await this.disposeEvictedConnection(connection, logPrefix);
     }
   }
 

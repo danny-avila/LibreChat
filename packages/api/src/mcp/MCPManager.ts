@@ -435,7 +435,7 @@ Please follow these instructions when using tools from the respective MCP server
     error: unknown,
     serverName: string,
     userId: string,
-    attachRequestOAuthHandler: () => () => void,
+    attachSharedOAuthHandler: () => () => void,
     signal?: AbortSignal,
     allowsTakeover = true,
   ): Promise<void> {
@@ -458,7 +458,7 @@ Please follow these instructions when using tools from the respective MCP server
     }
 
     const recovery = (async () => {
-      const cleanupRequestOAuthHandler = attachRequestOAuthHandler();
+      const cleanupRequestOAuthHandler = attachSharedOAuthHandler();
       try {
         await this.waitForOAuthRecovery(connection, () =>
           connection.emit('oauthReauthenticationRequired', {
@@ -643,7 +643,7 @@ Please follow these instructions when using tools from the respective MCP server
       let connection: MCPConnection | undefined;
       let connectionRetained = false;
       let deferredDisposalHeld = false;
-      let attachRequestOAuthHandler: (() => () => void) | undefined;
+      let attachSharedOAuthHandler: (() => () => void) | undefined;
       let disconnectAfterCall = false;
       const retainConnectionLease = () => {
         if (!connection || connectionRetained) {
@@ -820,7 +820,7 @@ Please follow these instructions when using tools from the respective MCP server
         ) {
           const { allowedDomains, allowedAddresses, useSSRFProtection } =
             await registry.resolveAllowlists({ userId, role: user?.role });
-          attachRequestOAuthHandler = () =>
+          attachSharedOAuthHandler = () =>
             MCPConnectionFactory.attachRequestOAuthHandler(
               {
                 serverName,
@@ -836,7 +836,6 @@ Please follow these instructions when using tools from the respective MCP server
                 user,
                 flowManager,
                 tokenMethods,
-                signal: options?.signal,
                 oauthStart,
                 oauthEnd,
                 customUserVars,
@@ -849,7 +848,7 @@ Please follow these instructions when using tools from the respective MCP server
         connection.setRequestHeaders(resolvedHeaders);
 
         if (!connectionIsActive) {
-          const requestOAuthHandler = attachRequestOAuthHandler;
+          const requestOAuthHandler = attachSharedOAuthHandler;
           if (!requestOAuthHandler || !userId) {
             throw new McpError(
               ErrorCode.InternalError,
@@ -905,7 +904,7 @@ Please follow these instructions when using tools from the respective MCP server
         try {
           result = await requestTool();
         } catch (error) {
-          const requestOAuthHandler = attachRequestOAuthHandler;
+          const requestOAuthHandler = attachSharedOAuthHandler;
           if (!requestOAuthHandler || !userId) {
             throw error;
           }

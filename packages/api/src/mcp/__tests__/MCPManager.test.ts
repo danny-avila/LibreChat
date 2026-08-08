@@ -1587,7 +1587,37 @@ describe('MCPManager', () => {
 
       await expect(waiterCall).resolves.toBeDefined();
       expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledTimes(1);
+      expect(
+        (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mock.calls[0][1].signal,
+      ).toBeUndefined();
       expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
+    });
+
+    it('disposes a recovered connection explicitly disconnected during recovery', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValueOnce(authError).mockResolvedValueOnce(toolResult);
+      const connection = createConnection(request);
+      attachOAuthHandler(() => undefined);
+      const manager = await createManager(connection);
+      const internals = manager as unknown as {
+        userConnections: Map<string, Map<string, MCPConnection>>;
+      };
+      internals.userConnections.set(mockUser.id, new Map([[serverName, connection]]));
+
+      const toolPromise = callTool(manager);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      await manager.disconnectUserConnection(mockUser.id, serverName);
+      expect(internals.userConnections.get(mockUser.id)).toBeUndefined();
+      expect(connection.disconnect).not.toHaveBeenCalled();
+
+      connection.emit('oauthHandled');
+
+      await expect(toolPromise).resolves.toBeDefined();
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(connection.disconnect).toHaveBeenCalledTimes(1);
       expect(request).toHaveBeenCalledTimes(2);
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });

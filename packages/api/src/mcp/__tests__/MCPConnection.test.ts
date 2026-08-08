@@ -118,6 +118,7 @@ describe('MCPConnection Error Detection', () => {
       { message: 'Customer 401 not found' },
       { message: 'Order 403 is unavailable' },
       { message: 'User is unauthorized to delete this record' },
+      { message: 'No authorization to delete this record' },
       { code: 400, message: 'Bad request: missing required field' },
     ])('should ignore non-authentication error %#', (error) => {
       expect(isOAuthAuthenticationError(error)).toBe(false);

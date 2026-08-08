@@ -19,6 +19,7 @@ interface OAuthErrorLike {
 
 const OAUTH_HTTP_STATUS_PATTERN =
   /(?:\bhttp\s+(?:401|403)\b|\bnon-2\d\d\s+status\s+code\s*\((?:401|403)\)|^(?:error:\s*)?(?:401|403)\b|\bunauthorized\s*\(\s*401\s*\)|\bforbidden\s*\(\s*403\s*\))/i;
+const MISSING_AUTHORIZATION_PATTERN = /\bno authorization (?:headers?|values?)\b/i;
 
 /** Detects HTTP authentication failures and OAuth protocol errors without matching unrelated IDs. */
 export function isOAuthAuthenticationError(error: unknown): boolean {
@@ -46,7 +47,7 @@ export function isOAuthAuthenticationError(error: unknown): boolean {
     message.includes('invalid_grant') ||
     message.includes('insufficient_scope') ||
     message.includes('authentication required') ||
-    message.includes('no authorization')
+    MISSING_AUTHORIZATION_PATTERN.test(message)
   );
 }
 
