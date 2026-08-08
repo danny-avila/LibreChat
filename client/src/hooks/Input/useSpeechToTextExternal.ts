@@ -5,6 +5,16 @@ import { useSpeechToTextMutation } from '~/data-provider';
 import useGetAudioSettings from './useGetAudioSettings';
 import store from '~/store';
 
+/** How long to wait for the user to START speaking before giving up. Generous:
+ * in conversation mode the microphone opens by itself and the user may still
+ * be thinking. Closing early here looks like the microphone is broken. */
+const INITIAL_SILENCE_MS = 15000;
+
+/** How long a pause must last, once speech has begun, before the utterance is
+ * treated as finished. Felt on every single turn, so it stays short - but not
+ * so short that a breath mid-sentence submits half a thought. */
+const TRAILING_SILENCE_MS = 3000;
+
 const useSpeechToTextExternal = (
   setText: (text: string) => void,
   onTranscriptionComplete: (text: string) => void,
@@ -18,6 +28,11 @@ const useSpeechToTextExternal = (
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   const audioChunksRef = useRef<Blob[]>([]);
+  /** Whether any sound crossed minDecibels during this recording, and whether
+   * the silence monitor ran at all. Together they let handleStop discard a
+   * recording that captured nothing but room tone. */
+  const soundDetectedRef = useRef(false);
+  const silenceMonitorRanRef = useRef(false);
   const [permission, setPermission] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isRequestBeingMade, setIsRequestBeingMade] = useState(false);
@@ -110,6 +125,23 @@ const useSpeechToTextExternal = (
   };
 
   const handleStop = () => {
+    /** Discard a recording in which no sound ever crossed the threshold.
+     *
+     * Silence is not harmless: Whisper hallucinates confident phrases from
+     * near-silent audio - "Thank you." is the classic one - so submitting it
+     * produces a real-looking message the user never said. With conversation
+     * mode on, that reply is spoken aloud, the microphone re-arms, and it
+     * loops indefinitely.
+     *
+     * Applied only when the silence monitor actually ran (autoTranscribeAudio).
+     * A manual stop has no sound history to judge by, and pressing stop is
+     * explicit intent to submit whatever was captured. */
+    if (silenceMonitorRanRef.current && !soundDetectedRef.current) {
+      audioChunksRef.current = [];
+      cleanup();
+      return;
+    }
+
     if (audioChunksRef.current.length > 0) {
       const audioBlob = new Blob(audioChunksRef.current, { type: audioMimeType });
       const fileExtension = getFileExtension(audioMimeType);
@@ -139,6 +171,8 @@ const useSpeechToTextExternal = (
     const bufferLength = analyser.frequencyBinCount;
     const domainData = new Uint8Array(bufferLength);
     let lastSoundTime = Date.now();
+    silenceMonitorRanRef.current = true;
+    soundDetectedRef.current = false;
 
     const detectSound = () => {
       analyser.getByteFrequencyData(domainData);
@@ -146,12 +180,26 @@ const useSpeechToTextExternal = (
 
       if (isSoundDetected) {
         lastSoundTime = Date.now();
+        soundDetectedRef.current = true;
       }
 
+      /** Two different questions, two different timeouts.
+       *
+       * Before any speech: "is the user going to say anything?" - which needs
+       * to be patient, especially in conversation mode where the microphone
+       * opened on its own and the user is still deciding what to say.
+       *
+       * After speech has started: "has the user finished?" - which should be
+       * short, because that delay is felt on every single utterance.
+       *
+       * A single threshold cannot serve both. Using the trailing value for
+       * both is what made the microphone close before the user began. */
       const timeSinceLastSound = Date.now() - lastSoundTime;
-      const isOverSilenceThreshold = timeSinceLastSound > 3000;
+      const threshold = soundDetectedRef.current
+        ? TRAILING_SILENCE_MS
+        : INITIAL_SILENCE_MS;
 
-      if (isOverSilenceThreshold) {
+      if (timeSinceLastSound > threshold) {
         stopRecording();
         return;
       }
@@ -175,6 +223,10 @@ const useSpeechToTextExternal = (
     if (audioStream.current) {
       try {
         audioChunksRef.current = [];
+        /** Reset per recording. monitorSilence sets these when it runs; leaving
+         * them stale would let one recording's result decide the next one. */
+        soundDetectedRef.current = false;
+        silenceMonitorRanRef.current = false;
         const bestMimeType = getBestSupportedMimeType();
         setAudioMimeType(bestMimeType);
 

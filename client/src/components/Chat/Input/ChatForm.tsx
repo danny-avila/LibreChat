@@ -672,6 +672,7 @@ const ChatForm = memo(function ChatForm({
                     ask={submitMessage}
                     disabled={disableInputs || isNotAppendable}
                     isSubmitting={isSubmitting}
+                    index={index}
                   />
                 )}
                 {steering.duringRunActive &&
