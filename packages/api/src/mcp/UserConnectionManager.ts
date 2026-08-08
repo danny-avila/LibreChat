@@ -42,7 +42,10 @@ type PendingOAuthState = {
 type PendingConnection = {
   promise: Promise<MCPConnection>;
   oauth: PendingOAuthState;
+  guard: ConnectionCreationGuard;
 };
+
+type ConnectionCreationGuard = { cancelled: boolean };
 
 /**
  * Abstract base class for managing user-specific MCP connections with lifecycle management.
@@ -266,6 +269,7 @@ export abstract class UserConnectionManager {
     }
 
     const pendingOAuth = this.createPendingOAuthState(opts.oauthStart);
+    const creationGuard: ConnectionCreationGuard = { cancelled: false };
     const createConnection = () =>
       this.createUserConnectionInternal(
         {
@@ -277,6 +281,7 @@ export abstract class UserConnectionManager {
         },
         userId,
         clearCooldown,
+        creationGuard,
       );
     const connectionPromise =
       forceNew === true && !ephemeralConnection
@@ -298,7 +303,11 @@ export abstract class UserConnectionManager {
         : createConnection();
 
     if (!forceNewConnection) {
-      this.pendingConnections.set(lockKey, { promise: connectionPromise, oauth: pendingOAuth });
+      this.pendingConnections.set(lockKey, {
+        promise: connectionPromise,
+        oauth: pendingOAuth,
+        guard: creationGuard,
+      });
     }
 
     try {
@@ -499,6 +508,7 @@ export abstract class UserConnectionManager {
     }: t.UserMCPConnectionOptions,
     userId: string,
     clearCooldown: boolean,
+    creationGuard?: ConnectionCreationGuard,
   ): Promise<MCPConnection> {
     if (await this.appConnections!.has(serverName)) {
       throw new McpError(
@@ -523,7 +533,7 @@ export abstract class UserConnectionManager {
       logger.info(
         `[MCP][User: ${userId}][${serverName}] Disposing existing connection before forced replacement`,
       );
-      await this.disconnectUserConnection(userId, serverName);
+      await this.disconnectUserConnection(userId, serverName, creationGuard);
       connection = undefined;
     } else if (forceNew) {
       connection = undefined;
@@ -545,7 +555,7 @@ export abstract class UserConnectionManager {
       logger.info(
         `[MCP][User: ${userId}][${serverName}] Cache generation changed, disconnecting stale connection`,
       );
-      await this.disconnectUserConnection(userId, serverName);
+      await this.disconnectUserConnection(userId, serverName, creationGuard);
       connection = undefined;
     }
 
@@ -555,7 +565,7 @@ export abstract class UserConnectionManager {
       logger.info(`[MCP][User: ${userId}] User idle for too long. Disconnecting all connections.`);
       // Disconnect all user connections
       try {
-        await this.disconnectUserConnections(userId);
+        await this.disconnectUserConnections(userId, creationGuard);
       } catch (err) {
         logger.error(`[MCP][User: ${userId}] Error disconnecting idle connections:`, err);
       }
@@ -567,7 +577,7 @@ export abstract class UserConnectionManager {
             `[MCP][User: ${userId}][${serverName}] Config was updated, disconnecting stale connection`,
           );
         }
-        await this.disconnectUserConnection(userId, serverName);
+        await this.disconnectUserConnection(userId, serverName, creationGuard);
         connection = undefined;
       } else if (await connection.isConnected()) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
@@ -577,7 +587,7 @@ export abstract class UserConnectionManager {
         logger.warn(
           `[MCP][User: ${userId}][${serverName}] Found existing but disconnected connection object. Cleaning up.`,
         );
-        await this.disconnectUserConnection(userId, serverName);
+        await this.disconnectUserConnection(userId, serverName, creationGuard);
         connection = undefined;
       }
     }
@@ -662,6 +672,12 @@ export abstract class UserConnectionManager {
 
       connection = await MCPConnectionFactory.create(basic, connectionOptions);
 
+      if (creationGuard?.cancelled) {
+        throw new Error(
+          `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
+        );
+      }
+
       if (publicationGeneration) {
         this.toolPublicationGenerations.set(connection, publicationGeneration);
       }
@@ -682,6 +698,11 @@ export abstract class UserConnectionManager {
 
       if (!ephemeralConnection) {
         await connection.refreshToolList();
+        if (creationGuard?.cancelled) {
+          throw new Error(
+            `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
+          );
+        }
         if (!this.userConnections.has(userId)) {
           this.userConnections.set(userId, new Map());
         }
@@ -692,18 +713,26 @@ export abstract class UserConnectionManager {
       if (!ephemeralConnection) {
         await this.updateUserLastActivity(userId);
       }
+      if (creationGuard?.cancelled) {
+        throw new Error(
+          `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
+        );
+      }
       return connection;
     } catch (error) {
       logger.error(`[MCP][User: ${userId}][${serverName}] Failed to establish connection`, error);
       // Ensure partial connection state is cleaned up if initialization fails
-      await connection?.disconnect().catch((disconnectError) => {
+      connection?.removeAllListeners?.('toolsChanged');
+      await connection?.dispose().catch((disconnectError) => {
         logger.error(
           `[MCP][User: ${userId}][${serverName}] Error during cleanup after failed connection`,
           disconnectError,
         );
       });
       // Ensure cleanup even if connection attempt fails
-      this.removeUserConnection(userId, serverName);
+      if (connection && this.userConnections.get(userId)?.get(serverName) === connection) {
+        this.removeUserConnection(userId, serverName);
+      }
       throw error; // Re-throw the error to the caller
     }
   }
@@ -876,8 +905,17 @@ export abstract class UserConnectionManager {
   }
 
   /** Disconnects and removes a specific user connection */
-  public async disconnectUserConnection(userId: string, serverName: string): Promise<void> {
-    this.pendingConnections.delete(`${userId}:${serverName}`);
+  public async disconnectUserConnection(
+    userId: string,
+    serverName: string,
+    preservedCreation?: ConnectionCreationGuard,
+  ): Promise<void> {
+    const pendingKey = `${userId}:${serverName}`;
+    const pending = this.pendingConnections.get(pendingKey);
+    if (pending && pending.guard !== preservedCreation) {
+      pending.guard.cancelled = true;
+      this.pendingConnections.delete(pendingKey);
+    }
     const userMap = this.userConnections.get(userId);
     const connection = userMap?.get(serverName);
     try {
@@ -893,7 +931,16 @@ export abstract class UserConnectionManager {
   }
 
   /** Disconnects and removes all connections for a specific user */
-  public async disconnectUserConnections(userId: string): Promise<void> {
+  public async disconnectUserConnections(
+    userId: string,
+    preservedCreation?: ConnectionCreationGuard,
+  ): Promise<void> {
+    for (const [key, pending] of this.pendingConnections) {
+      if (key.startsWith(`${userId}:`) && pending.guard !== preservedCreation) {
+        pending.guard.cancelled = true;
+        this.pendingConnections.delete(key);
+      }
+    }
     const userMap = this.userConnections.get(userId);
     const disconnectPromises: Promise<void>[] = [];
     if (userMap) {
@@ -901,7 +948,7 @@ export abstract class UserConnectionManager {
       const userServers = Array.from(userMap.keys());
       for (const serverName of userServers) {
         disconnectPromises.push(
-          this.disconnectUserConnection(userId, serverName).catch((error) => {
+          this.disconnectUserConnection(userId, serverName, preservedCreation).catch((error) => {
             logger.error(
               `[MCP][User: ${userId}][${serverName}] Error during disconnection:`,
               error,
@@ -910,12 +957,6 @@ export abstract class UserConnectionManager {
         );
       }
       await Promise.allSettled(disconnectPromises);
-      // Clean up any pending connection promises for this user
-      for (const key of this.pendingConnections.keys()) {
-        if (key.startsWith(`${userId}:`)) {
-          this.pendingConnections.delete(key);
-        }
-      }
       logger.info(`[MCP][User: ${userId}] All connections processed for disconnection.`);
     }
     /**

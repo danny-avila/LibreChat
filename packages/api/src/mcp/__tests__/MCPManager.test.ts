@@ -1809,6 +1809,43 @@ describe('MCPManager', () => {
       expect(mockConnection.refreshToolList).toHaveBeenCalledTimes(1);
     });
 
+    it('cancels and disposes a pending connection during mutation teardown', async () => {
+      const pendingConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        isStale: jest.fn().mockReturnValue(false),
+        refreshToolList: jest.fn().mockResolvedValue(undefined),
+        on: jest.fn(),
+        removeAllListeners: jest.fn(),
+        dispose: jest.fn().mockResolvedValue(undefined),
+      } as unknown as MCPConnection;
+      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
+      const factoryResult = new Promise<MCPConnection>((resolve) => {
+        resolveConnection = resolve;
+      });
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/old',
+        source: 'user',
+        dbId: 'server-1',
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockReturnValue(factoryResult);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const creation = manager.getUserConnection({ serverName, user: mockUser });
+      while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      await manager.disconnectUserConnection(userId, serverName);
+      resolveConnection?.(pendingConnection);
+
+      await expect(creation).rejects.toThrow('Connection creation was cancelled during teardown');
+      expect(pendingConnection.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
+      expect(pendingConnection.dispose).toHaveBeenCalledTimes(1);
+      expect(manager.getUserConnections(userId)?.has(serverName) ?? false).toBe(false);
+    });
+
     it('disposes the tracked durable connection before a forced replacement', async () => {
       const createConnection = () =>
         ({

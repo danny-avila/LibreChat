@@ -269,10 +269,14 @@ async function reinitMCPServer({
     if (connection && !oauthRequired) {
       publicationGeneration =
         mcpManager.getToolPublicationGeneration(connection) ?? publicationGeneration;
-      const snapshot =
-        typeof connection.fetchToolsSnapshot === 'function'
-          ? await connection.fetchToolsSnapshot()
-          : { tools: await connection.fetchTools(), complete: true };
+      let snapshot;
+      if (typeof connection.fetchOrderedToolsSnapshot === 'function') {
+        snapshot = await connection.fetchOrderedToolsSnapshot();
+      } else if (typeof connection.fetchToolsSnapshot === 'function') {
+        snapshot = await connection.fetchToolsSnapshot();
+      } else {
+        snapshot = { tools: await connection.fetchTools(), complete: true };
+      }
       if (snapshot.complete) {
         tools = snapshot.tools;
       } else {
