@@ -213,6 +213,7 @@ export interface UserConnectionContext {
 export interface RequestScopedMCPConnectionStore {
   connections: Map<string, unknown>;
   pending: Map<string, Promise<unknown>>;
+  disposeConnection?: (connectionKey: string, connection: unknown) => Promise<void>;
 }
 
 export interface OAuthStartOptions {

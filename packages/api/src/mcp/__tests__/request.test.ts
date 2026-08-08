@@ -79,4 +79,22 @@ describe('MCP request context', () => {
     expect(context?.connections.size).toBe(0);
     expect(context?.pending.size).toBe(0);
   });
+
+  it('uses the lifecycle disposer supplied by the connection manager', async () => {
+    const req = {};
+    const res = createResponse();
+    const context = getMCPRequestContext(req, res);
+    const connection = { disconnect: jest.fn().mockResolvedValue(undefined) };
+    const disposeConnection = jest.fn().mockResolvedValue(undefined);
+    if (context) {
+      context.disposeConnection = disposeConnection;
+      context.connections.set('user:server', connection);
+    }
+
+    res.emit('close');
+    await nextTick();
+
+    expect(disposeConnection).toHaveBeenCalledWith('user:server', connection);
+    expect(connection.disconnect).not.toHaveBeenCalled();
+  });
 });

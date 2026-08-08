@@ -25,6 +25,7 @@ import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
+import { OAuthPromptRelay } from './oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
@@ -49,6 +50,18 @@ function createOboToolCallErrorMessage(
 
 class OAuthRecoveryTakeoverRequired extends Error {}
 
+type OAuthReconnectResult =
+  | { connected: true }
+  | {
+      connected: false;
+      error: unknown;
+      oauthHandled: boolean;
+      source?: t.OAuthHandledSource;
+    };
+
+const OAUTH_RECOVERY_RECONNECT_ATTEMPTS = 3;
+const OAUTH_RECOVERY_RECONNECT_DELAY_MS = 2000;
+
 /**
  * Centralized manager for MCP server connections and tool execution.
  * Extends UserConnectionManager to handle both app-level and user-specific connections.
@@ -57,7 +70,12 @@ export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
   private readonly oauthRecoveries = new WeakMap<
     MCPConnection,
-    { promise: Promise<void>; allowsTakeover: boolean; takeoverClaimed?: boolean }
+    {
+      promise: Promise<void>;
+      prompts: OAuthPromptRelay;
+      allowsTakeover: boolean;
+      takeoverClaimed?: boolean;
+    }
   >();
 
   /** Creates and initializes the singleton MCPManager instance */
@@ -99,6 +117,14 @@ export class MCPManager extends UserConnectionManager {
       opts.serverConfig?.updatedAt != null &&
       connection.isStale(opts.serverConfig.updatedAt);
     if (recovery && !providedConfigIsNewer) {
+      if (recovery.prompts) {
+        await recovery.prompts.add({
+          oauthStart: opts.oauthStart,
+          flowManager: opts.flowManager,
+          userId,
+          serverName: opts.serverName,
+        });
+      }
       await this.waitForActiveRecovery(recovery.promise, opts.signal);
     }
 
@@ -435,12 +461,17 @@ Please follow these instructions when using tools from the respective MCP server
     error: unknown,
     serverName: string,
     userId: string,
-    attachSharedOAuthHandler: () => () => void,
+    attachSharedOAuthHandler: (oauthStart: t.OAuthStartHandler) => () => void,
+    oauthStart: t.OAuthStartHandler | undefined,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
     signal?: AbortSignal,
     allowsTakeover = true,
   ): Promise<void> {
     const existingRecovery = this.oauthRecoveries.get(connection);
     if (existingRecovery) {
+      if (existingRecovery.prompts) {
+        await existingRecovery.prompts.add({ oauthStart, flowManager, userId, serverName });
+      }
       try {
         return await this.waitForActiveRecovery(existingRecovery.promise, signal);
       } catch (recoveryError) {
@@ -457,8 +488,9 @@ Please follow these instructions when using tools from the respective MCP server
       }
     }
 
-    const recovery = (async () => {
-      const cleanupRequestOAuthHandler = attachSharedOAuthHandler();
+    const prompts = new OAuthPromptRelay(oauthStart, `[MCP][User: ${userId}][${serverName}]`);
+    const recovery = Promise.resolve().then(async () => {
+      const cleanupRequestOAuthHandler = attachSharedOAuthHandler(prompts.start);
       try {
         await this.waitForOAuthRecovery(connection, () =>
           connection.emit('oauthReauthenticationRequired', {
@@ -482,9 +514,9 @@ Please follow these instructions when using tools from the respective MCP server
       } finally {
         cleanupRequestOAuthHandler();
       }
-    })();
+    });
 
-    const recoveryEntry = { promise: recovery, allowsTakeover, takeoverClaimed: false };
+    const recoveryEntry = { promise: recovery, prompts, allowsTakeover, takeoverClaimed: false };
     this.oauthRecoveries.set(connection, recoveryEntry);
     this.holdDeferredConnectionDisposal(connection);
     const clearRecovery = () => {
@@ -503,7 +535,7 @@ Please follow these instructions when using tools from the respective MCP server
     requestInteractiveRecovery: (error: unknown) => Promise<void>,
   ): Promise<void> {
     await this.waitForConnectionBorrowersToDrain(connection);
-    const firstAttempt = await this.connectOnceAfterOAuth(connection);
+    const firstAttempt = await this.connectWithTransientRetries(connection);
     if (firstAttempt.connected) {
       return;
     }
@@ -514,21 +546,38 @@ Please follow these instructions when using tools from the respective MCP server
       await requestInteractiveRecovery(firstAttempt.error);
     }
 
-    const secondAttempt = await this.connectOnceAfterOAuth(connection);
+    const secondAttempt = await this.connectWithTransientRetries(connection);
     if (!secondAttempt.connected) {
       throw secondAttempt.error;
     }
   }
 
-  private async connectOnceAfterOAuth(connection: MCPConnection): Promise<
-    | { connected: true }
-    | {
-        connected: false;
-        error: unknown;
-        oauthHandled: boolean;
-        source?: t.OAuthHandledSource;
+  private async connectWithTransientRetries(
+    connection: MCPConnection,
+  ): Promise<OAuthReconnectResult> {
+    let result: OAuthReconnectResult | undefined;
+    for (let attempt = 1; attempt <= OAUTH_RECOVERY_RECONNECT_ATTEMPTS; attempt++) {
+      result = await this.connectOnceAfterOAuth(connection);
+      if (
+        result.connected ||
+        result.oauthHandled ||
+        connection.isOAuthAuthenticationError(result.error) ||
+        attempt === OAUTH_RECOVERY_RECONNECT_ATTEMPTS
+      ) {
+        return result;
       }
-  > {
+      await this.waitForOAuthReconnectRetry(attempt);
+    }
+    return result!;
+  }
+
+  private waitForOAuthReconnectRetry(attempt: number): Promise<void> {
+    return new Promise((resolve) => {
+      setTimeout(resolve, OAUTH_RECOVERY_RECONNECT_DELAY_MS * attempt);
+    });
+  }
+
+  private async connectOnceAfterOAuth(connection: MCPConnection): Promise<OAuthReconnectResult> {
     let oauthHandled = false;
     let source: t.OAuthHandledSource | undefined;
     const handleOAuth = (handledSource?: t.OAuthHandledSource) => {
@@ -637,13 +686,14 @@ Please follow these instructions when using tools from the respective MCP server
   }): Promise<t.FormattedToolResponse> {
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
+    this.bindRequestScopedConnectionStore(requestScopedConnections);
     let recoveryTakeoverConsumed = false;
     while (true) {
       /** User-specific connection */
       let connection: MCPConnection | undefined;
       let connectionRetained = false;
       let deferredDisposalHeld = false;
-      let attachSharedOAuthHandler: (() => () => void) | undefined;
+      let attachSharedOAuthHandler: ((oauthStart: t.OAuthStartHandler) => () => void) | undefined;
       let disconnectAfterCall = false;
       const retainConnectionLease = () => {
         if (!connection || connectionRetained) {
@@ -703,6 +753,14 @@ Please follow these instructions when using tools from the respective MCP server
           const checkoutRecovery = this.oauthRecoveries.get(connection);
           if (!checkoutRecovery || checkoutRecovery.promise === awaitedCheckoutRecovery) {
             break;
+          }
+          if (checkoutRecovery.prompts) {
+            await checkoutRecovery.prompts.add({
+              oauthStart,
+              flowManager,
+              userId: userId!,
+              serverName,
+            });
           }
           awaitedCheckoutRecovery = checkoutRecovery.promise;
           await releaseConnectionLease();
@@ -820,7 +878,7 @@ Please follow these instructions when using tools from the respective MCP server
         ) {
           const { allowedDomains, allowedAddresses, useSSRFProtection } =
             await registry.resolveAllowlists({ userId, role: user?.role });
-          attachSharedOAuthHandler = () =>
+          attachSharedOAuthHandler = (sharedOAuthStart) =>
             MCPConnectionFactory.attachRequestOAuthHandler(
               {
                 serverName,
@@ -836,7 +894,7 @@ Please follow these instructions when using tools from the respective MCP server
                 user,
                 flowManager,
                 tokenMethods,
-                oauthStart,
+                oauthStart: sharedOAuthStart,
                 oauthEnd,
                 customUserVars,
                 requestBody,
@@ -864,6 +922,8 @@ Please follow these instructions when using tools from the respective MCP server
                 serverName,
                 userId,
                 requestOAuthHandler,
+                oauthStart,
+                flowManager,
                 options?.signal,
                 !recoveryTakeoverConsumed,
               ),
@@ -921,6 +981,8 @@ Please follow these instructions when using tools from the respective MCP server
                 serverName,
                 userId,
                 requestOAuthHandler,
+                oauthStart,
+                flowManager,
                 options?.signal,
                 !recoveryTakeoverConsumed,
               ),

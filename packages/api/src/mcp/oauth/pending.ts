@@ -68,3 +68,84 @@ export async function getReplayablePendingMCPOAuthStart({
     return undefined;
   }
 }
+
+export class OAuthPromptRelay {
+  private readonly oauthStarts = new Set<t.OAuthStartHandler>();
+  private readonly emittedAuthUrls = new WeakMap<t.OAuthStartHandler, string>();
+  private lastOAuthStart?: PendingOAuthStart;
+
+  constructor(
+    oauthStart: t.OAuthStartHandler | undefined,
+    private readonly logPrefix: string,
+  ) {
+    if (oauthStart) {
+      this.oauthStarts.add(oauthStart);
+    }
+  }
+
+  public readonly start: t.OAuthStartHandler = async (authURL, options) => {
+    this.lastOAuthStart = { authURL, options };
+    const errors: unknown[] = [];
+    let delivered = false;
+
+    for (const oauthStart of Array.from(this.oauthStarts)) {
+      try {
+        await this.emit(oauthStart, authURL, options);
+        delivered = true;
+      } catch (error) {
+        errors.push(error);
+        logger.warn(`${this.logPrefix} Failed to notify OAuth prompt listener`, error);
+      }
+    }
+
+    if (!delivered && errors.length > 0) {
+      throw errors[0];
+    }
+  };
+
+  public async add({
+    oauthStart,
+    flowManager,
+    userId,
+    serverName,
+  }: ReplayablePendingMCPOAuthStartOptions & {
+    oauthStart?: t.OAuthStartHandler;
+  }): Promise<void> {
+    if (!oauthStart) {
+      return;
+    }
+
+    this.oauthStarts.add(oauthStart);
+    const lastOAuthStart = this.lastOAuthStart;
+    const storedOAuthStart =
+      !lastOAuthStart || lastOAuthStart.options?.expiresAt == null
+        ? await getReplayablePendingMCPOAuthStart({ flowManager, userId, serverName })
+        : undefined;
+    const replayOAuthStart =
+      storedOAuthStart && (!lastOAuthStart || storedOAuthStart.authURL === lastOAuthStart.authURL)
+        ? storedOAuthStart
+        : lastOAuthStart;
+    if (!replayOAuthStart) {
+      return;
+    }
+
+    this.lastOAuthStart = replayOAuthStart;
+    try {
+      await this.emit(oauthStart, replayOAuthStart.authURL, replayOAuthStart.options);
+    } catch (error) {
+      logger.warn(`${this.logPrefix} Failed to re-issue pending OAuth URL`, error);
+    }
+  }
+
+  private async emit(
+    oauthStart: t.OAuthStartHandler,
+    authURL: string,
+    options?: t.OAuthStartOptions,
+  ): Promise<void> {
+    if (this.emittedAuthUrls.get(oauthStart) === authURL) {
+      return;
+    }
+    this.emittedAuthUrls.set(oauthStart, authURL);
+    await oauthStart(authURL, options);
+  }
+}

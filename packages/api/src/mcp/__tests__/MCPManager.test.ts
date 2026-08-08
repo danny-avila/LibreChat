@@ -8,6 +8,7 @@ import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { createMCPRequestContext, cleanupMCPRequestContext } from '~/mcp/request';
 import { isMCPDomainAllowed } from '~/auth/domain';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
@@ -804,7 +805,7 @@ describe('MCPManager', () => {
           skipEnvProcessing: true,
         }),
         expect.objectContaining({
-          oauthStart,
+          oauthStart: expect.any(Function),
           user: mockUser,
         }),
         connection,
@@ -1157,14 +1158,20 @@ describe('MCPManager', () => {
       );
     }
 
-    async function callTool(manager: MCPManager, signal?: AbortSignal) {
+    async function callTool(
+      manager: MCPManager,
+      signal?: AbortSignal,
+      oauthStart: t.OAuthStartHandler = jest.fn(),
+      requestScopedConnections?: t.RequestScopedMCPConnectionStore,
+    ) {
       return manager.callTool({
         user: mockUser,
         serverName,
         toolName: 'oauth_tool',
         provider: 'openai',
-        oauthStart: jest.fn(),
+        oauthStart,
         flowManager: mockFlowManager,
+        requestScopedConnections,
         options: signal ? { signal } : undefined,
       });
     }
@@ -1593,6 +1600,87 @@ describe('MCPManager', () => {
       expect(connection.connect).toHaveBeenCalledTimes(1);
       expect(request).toHaveBeenCalledTimes(2);
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
+    });
+
+    it('relays an active recovery prompt to a joining request', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValueOnce(authError).mockResolvedValue(toolResult);
+      const connection = createConnection(request);
+      const ownerOAuthStart = jest.fn().mockResolvedValue(undefined);
+      const waiterOAuthStart = jest.fn().mockResolvedValue(undefined);
+      (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mockImplementation(
+        (_basic, oauth: { oauthStart?: t.OAuthStartHandler }, currentConnection: MCPConnection) => {
+          const listener = () => {
+            void oauth.oauthStart?.('https://auth.example.com/pending');
+          };
+          currentConnection.on('oauthReauthenticationRequired', listener);
+          return () => currentConnection.off('oauthReauthenticationRequired', listener);
+        },
+      );
+      const manager = await createManager(connection);
+
+      const ownerCall = callTool(manager, undefined, ownerOAuthStart);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(ownerOAuthStart).toHaveBeenCalledWith('https://auth.example.com/pending', undefined);
+
+      const waiterCall = callTool(manager, undefined, waiterOAuthStart);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(waiterOAuthStart).toHaveBeenCalledWith('https://auth.example.com/pending', undefined);
+
+      connection.emit('oauthHandled');
+
+      await expect(Promise.all([ownerCall, waiterCall])).resolves.toHaveLength(2);
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledTimes(1);
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(3);
+    });
+
+    it('defers request-context cleanup until shared recovery settles', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValueOnce(authError).mockResolvedValueOnce(toolResult);
+      const connection = createConnection(request);
+      attachOAuthHandler(() => undefined);
+      const manager = await createManager(connection);
+      const requestContext = createMCPRequestContext();
+      requestContext.connections.set(`${mockUser.id}:${serverName}`, connection);
+
+      const toolPromise = callTool(manager, undefined, jest.fn(), requestContext);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      await cleanupMCPRequestContext(requestContext);
+      expect(connection.disconnect).not.toHaveBeenCalled();
+      expect(requestContext.connections.size).toBe(0);
+
+      connection.emit('oauthHandled');
+
+      await expect(toolPromise).resolves.toBeDefined();
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(connection.disconnect).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries transient reconnect failures within the recovery budget', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const transientError = new Error('Connection reset');
+      const request = jest.fn().mockRejectedValueOnce(authError).mockResolvedValueOnce(toolResult);
+      const connection = createConnection(request);
+      (connection.connect as jest.Mock)
+        .mockRejectedValueOnce(transientError)
+        .mockResolvedValueOnce(undefined);
+      attachOAuthHandler();
+      const manager = await createManager(connection);
+      const retryPolicy = manager as unknown as {
+        waitForOAuthReconnectRetry: (attempt: number) => Promise<void>;
+      };
+      const waitForRetry = jest
+        .spyOn(retryPolicy, 'waitForOAuthReconnectRetry')
+        .mockResolvedValue(undefined);
+
+      await expect(callTool(manager)).resolves.toBeDefined();
+
+      expect(waitForRetry).toHaveBeenCalledWith(1);
+      expect(connection.connect).toHaveBeenCalledTimes(2);
+      expect(request).toHaveBeenCalledTimes(2);
     });
 
     it('disposes a recovered connection explicitly disconnected during recovery', async () => {
