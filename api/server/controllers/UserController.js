@@ -65,7 +65,8 @@ const emailChangeService = createEmailChangeService({
     withTenant(tenantId, () => db.updateUser(userId, update, expectedState)),
   findToken: (query, tenantId) =>
     withTenant(tenantId, () => db.findToken(query, { sort: { createdAt: -1 } })),
-  upsertToken: (scope, data, tenantId) => withTenant(tenantId, () => db.upsertToken(scope, data)),
+  replaceTokenIfCurrent: (scope, expectedToken, data, tenantId) =>
+    withTenant(tenantId, () => db.replaceTokenIfCurrent(scope, expectedToken, data)),
   deleteTokens: (query, tenantId) => withTenant(tenantId, () => db.deleteTokens(query)),
   verifyPassword: (user, password) => comparePassword(user, password, { compare: bcrypt.compare }),
   resolveAllowedDomains: async (user) =>

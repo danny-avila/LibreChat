@@ -673,6 +673,7 @@ export type EmailChangeErrorCode =
   | 'invalid_request'
   | 'invalid_token'
   | 'local_account_required'
+  | 'request_in_progress'
   | 'same_email';
 
 export type TRequestEmailChange = {

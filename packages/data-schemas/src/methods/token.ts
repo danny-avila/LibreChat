@@ -2,11 +2,25 @@ import type { QueryOptions } from 'mongoose';
 import { IToken, TokenCreateData, TokenQuery, TokenUpdateData, TokenDeleteResult } from '~/types';
 import logger from '~/config/winston';
 
+function isDuplicateKeyError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: number }).code === 11000
+  );
+}
+
 // Factory function that takes mongoose instance and returns the methods
 export function createTokenMethods(mongoose: typeof import('mongoose')): {
   findToken: (query: TokenQuery, options?: QueryOptions) => Promise<IToken | null>;
   createToken: (tokenData: TokenCreateData) => Promise<IToken>;
   upsertToken: (scope: string, tokenData: TokenCreateData) => Promise<IToken>;
+  replaceTokenIfCurrent: (
+    scope: string,
+    expectedToken: string | null,
+    tokenData: TokenCreateData,
+  ) => Promise<boolean>;
   updateToken: (query: TokenQuery, updateData: TokenUpdateData) => Promise<IToken | null>;
   deleteTokens: (query: TokenQuery) => Promise<TokenDeleteResult>;
 } {
@@ -70,12 +84,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
         }
         return upsertedToken as IToken;
       } catch (error) {
-        if (
-          typeof error !== 'object' ||
-          error === null ||
-          !('code' in error) ||
-          (error as { code?: number }).code !== 11000
-        ) {
+        if (!isDuplicateKeyError(error)) {
           throw error;
         }
 
@@ -94,6 +103,55 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
       }
     } catch (error) {
       logger.debug('An error occurred while upserting token:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Atomically replaces the scoped token only when it still matches the token
+   * observed by the caller. A null expectation succeeds only when the scope is absent.
+   */
+  async function replaceTokenIfCurrent(
+    scope: string,
+    expectedToken: string | null,
+    tokenData: TokenCreateData,
+  ): Promise<boolean> {
+    try {
+      const Token = mongoose.models.Token;
+      await ensureIndexes();
+      const currentTime = new Date();
+      const { expiresIn, ...storedTokenData } = tokenData;
+      const replacement = {
+        ...storedTokenData,
+        scope,
+        createdAt: currentTime,
+        expiresAt: new Date(currentTime.getTime() + expiresIn * 1000),
+      };
+      const query = {
+        scope,
+        token: expectedToken ?? tokenData.token,
+      };
+
+      try {
+        const replacedToken = await Token.findOneAndUpdate(
+          query,
+          expectedToken === null ? { $setOnInsert: replacement } : { $set: replacement },
+          {
+            new: true,
+            upsert: expectedToken === null,
+            runValidators: true,
+            setDefaultsOnInsert: true,
+          },
+        );
+        return replacedToken !== null;
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return false;
+        }
+        throw error;
+      }
+    } catch (error) {
+      logger.debug('An error occurred while conditionally replacing token:', error);
       throw error;
     }
   }
@@ -213,6 +271,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
     findToken,
     createToken,
     upsertToken,
+    replaceTokenIfCurrent,
     updateToken,
     deleteTokens,
   };

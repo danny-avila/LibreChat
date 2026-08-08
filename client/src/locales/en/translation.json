@@ -1848,6 +1848,7 @@
   "com_ui_email_change_error_delivery": "The verification email could not be sent. Please try again.",
   "com_ui_email_change_error_disabled": "Email changes are disabled by the administrator.",
   "com_ui_email_change_error_domain": "That email domain is not allowed.",
+  "com_ui_email_change_error_in_progress": "Another email change request completed first. Please use its verification email or try again.",
   "com_ui_email_change_error_in_use": "That email address is already linked to another account.",
   "com_ui_email_change_error_invalid": "Enter a valid email address and your current password.",
   "com_ui_email_change_error_local": "Email changes are only available for local accounts.",
