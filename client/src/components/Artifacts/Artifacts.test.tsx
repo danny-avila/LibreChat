@@ -110,6 +110,58 @@ describe('Artifacts panel accessibility', () => {
     });
   });
 
+  it('hides the Sandpack refresh action for Mermaid previews', async () => {
+    mockUseArtifacts.mockReturnValue({
+      activeTab: 'preview',
+      setActiveTab: jest.fn(),
+      currentIndex: 0,
+      currentArtifact: {
+        id: 'mermaid-artifact-1',
+        type: 'application/vnd.mermaid',
+        title: 'Diagram',
+        content: 'graph TD\nA-->B',
+        lastUpdateTime: 1,
+      },
+      orderedArtifactIds: ['mermaid-artifact-1'],
+      setCurrentArtifactId: jest.fn(),
+    });
+
+    render(
+      <RecoilRoot>
+        <Artifacts />
+      </RecoilRoot>,
+    );
+
+    await screen.findByRole('region', { name: 'Diagram' });
+    expect(screen.queryByRole('button', { name: 'com_ui_refresh' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the refresh action for sandboxed previews', async () => {
+    mockUseArtifacts.mockReturnValue({
+      activeTab: 'preview',
+      setActiveTab: jest.fn(),
+      currentIndex: 0,
+      currentArtifact: {
+        id: 'html-artifact-1',
+        type: 'text/html',
+        title: 'Page',
+        content: '<h1>Hi</h1>',
+        lastUpdateTime: 1,
+      },
+      orderedArtifactIds: ['html-artifact-1'],
+      setCurrentArtifactId: jest.fn(),
+    });
+
+    render(
+      <RecoilRoot>
+        <Artifacts />
+      </RecoilRoot>,
+    );
+
+    await screen.findByRole('region', { name: 'Page' });
+    expect(screen.getByRole('button', { name: 'com_ui_refresh' })).toBeInTheDocument();
+  });
+
   it('keeps the resizable layout ID distinct from the controlled Artifact region', async () => {
     const { container } = render(
       <RecoilRoot>

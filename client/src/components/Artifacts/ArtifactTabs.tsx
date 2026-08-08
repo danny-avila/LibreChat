@@ -69,7 +69,11 @@ function MermaidArtifactTabs({
         className="min-h-0 w-full flex-1 overflow-hidden p-4"
         tabIndex={-1}
       >
+        {/* Keyed by artifact so switching between two diagrams cannot carry the
+            previous render, its dimensions, or its export payload across the
+            boundary while the new source debounces. */}
         <MermaidRenderer
+          key={artifact.id}
           exportFilename={artifact.title ?? localize('com_ui_mermaid_diagram')}
           fillContainer
           onExportReady={onMermaidExportReady}

@@ -31,7 +31,19 @@ jest.mock('./ArtifactPreview', () => {
 });
 
 jest.mock('~/components/Messages/Content/Mermaid/Mermaid', () => {
-  const nativeRenderer = jest.fn(() => null);
+  const ReactModule = jest.requireActual<typeof import('react')>('react');
+  let mounts = 0;
+  /** Renders the mount ordinal so a remount (new key) is observable. */
+  const nativeRenderer = jest.fn(() => {
+    const [instance] = ReactModule.useState(() => {
+      mounts += 1;
+      return mounts;
+    });
+    return ReactModule.createElement('div', {
+      'data-testid': 'mermaid-renderer',
+      'data-instance': String(instance),
+    });
+  });
   const testGlobal = globalThis as typeof globalThis & {
     nativeMermaidRenderer?: typeof nativeRenderer;
   };
@@ -153,6 +165,65 @@ describe('ArtifactTabs Mermaid editing', () => {
     });
 
     expect(mockEditor).toHaveBeenCalledWith(expect.objectContaining({ readOnly: false }));
+  });
+
+  it('remounts the renderer when switching between Mermaid Artifacts', () => {
+    const first: Artifact = {
+      id: 'mermaid-a',
+      type: 'application/vnd.mermaid',
+      title: 'First',
+      content: 'graph TD\nA-->B',
+      lastUpdateTime: 1,
+    };
+    const second: Artifact = {
+      id: 'mermaid-b',
+      type: 'application/vnd.mermaid',
+      title: 'Second',
+      content: 'graph TD\nC-->D',
+      lastUpdateTime: 2,
+    };
+
+    const { rerender, getByTestId } = render(
+      <Tabs.Root value="preview">
+        <ArtifactTabs artifact={first} previewRef={previewRef} />
+      </Tabs.Root>,
+    );
+    const initialInstance = getByTestId('mermaid-renderer').getAttribute('data-instance');
+
+    rerender(
+      <Tabs.Root value="preview">
+        <ArtifactTabs artifact={second} previewRef={previewRef} />
+      </Tabs.Root>,
+    );
+
+    expect(getByTestId('mermaid-renderer').getAttribute('data-instance')).not.toBe(initialInstance);
+  });
+
+  it('does not remount the renderer while the same Artifact is edited', () => {
+    const artifact: Artifact = {
+      id: 'mermaid-a',
+      type: 'application/vnd.mermaid',
+      title: 'First',
+      content: 'graph TD\nA-->B',
+      index: 0,
+      lastUpdateTime: 1,
+    };
+
+    const { rerender, getByTestId } = render(
+      <Tabs.Root value="preview">
+        <ArtifactTabs artifact={artifact} previewRef={previewRef} />
+      </Tabs.Root>,
+    );
+    const initialInstance = getByTestId('mermaid-renderer').getAttribute('data-instance');
+
+    mockCurrentCode = 'graph TD\nA-->C';
+    rerender(
+      <Tabs.Root value="preview">
+        <ArtifactTabs artifact={{ ...artifact, lastUpdateTime: 2 }} previewRef={previewRef} />
+      </Tabs.Root>,
+    );
+
+    expect(getByTestId('mermaid-renderer').getAttribute('data-instance')).toBe(initialInstance);
   });
 
   it('keeps non-Mermaid Artifacts on the startup-config and sandbox preview path', async () => {

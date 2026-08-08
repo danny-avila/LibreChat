@@ -149,6 +149,7 @@ export default function Artifacts() {
     mermaidExportState != null && mermaidExportState.artifactId === currentArtifact?.id
       ? mermaidExportState.data
       : null;
+  const isMermaidArtifact = currentArtifact?.type === TOOL_ARTIFACT_TYPES.MERMAID;
 
   const closeArtifacts = useCallback(() => {
     if (isMobile) {
@@ -419,7 +420,10 @@ export default function Artifacts() {
                 isVisible && !isClosing ? 'translate-x-0 opacity-100' : 'translate-x-2 opacity-0',
               )}
             >
-              {displayedTab === 'preview' && (
+              {/* Refresh drives the Sandpack preview client; the Mermaid
+                  renderer has no such client and offers its own retry, so the
+                  action would spin over an unchanged diagram. */}
+              {displayedTab === 'preview' && !isMermaidArtifact && (
                 <Button
                   size="icon"
                   variant="ghost"
@@ -478,7 +482,7 @@ export default function Artifacts() {
                 portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
                 onClick={handleCopyArtifact}
               />
-              {currentArtifact.type === TOOL_ARTIFACT_TYPES.MERMAID && (
+              {isMermaidArtifact && (
                 <MermaidExport artifact={currentArtifact} exportData={mermaidExportData} />
               )}
               <DownloadArtifact artifact={currentArtifact} />
