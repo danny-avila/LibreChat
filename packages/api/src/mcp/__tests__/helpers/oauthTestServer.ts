@@ -6,7 +6,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { Socket } from 'net';
+import type { MCPRefreshAuthorityLifecycle } from '~/mcp/types';
 import type { FlowState } from '~/flow/types';
+
+export const passthroughRefreshAuthorityLifecycle: MCPRefreshAuthorityLifecycle = {
+  exchange: async (action) => await action(),
+  store: async (_tokens, action) => await action(),
+  accept: async () => undefined,
+};
 
 export class MockKeyv<T = unknown> {
   private store: Map<string, FlowState<T>>;

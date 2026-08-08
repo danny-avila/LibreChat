@@ -15,7 +15,12 @@ import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
-import { MockKeyv, InMemoryTokenStore, createOAuthMCPServer } from './helpers/oauthTestServer';
+import {
+  MockKeyv,
+  InMemoryTokenStore,
+  createOAuthMCPServer,
+  passthroughRefreshAuthorityLifecycle,
+} from './helpers/oauthTestServer';
 import { MCPTokenStorage, ReauthenticationRequiredError } from '~/mcp/oauth';
 import { FlowStateManager, PENDING_STALE_MS } from '~/flow/manager';
 
@@ -139,6 +144,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         createToken: tokenStore.createToken,
         updateToken: tokenStore.updateToken,
         refreshTokens: refreshCallback,
+        refreshAuthorityLifecycle: passthroughRefreshAuthorityLifecycle,
       });
 
       expect(result).not.toBeNull();
@@ -237,6 +243,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
           createToken: tokenStore.createToken,
           updateToken: tokenStore.updateToken,
           refreshTokens: refreshCallback,
+          refreshAuthorityLifecycle: passthroughRefreshAuthorityLifecycle,
         });
 
         expect(result).toBeNull();
@@ -279,6 +286,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         createToken: tokenStore.createToken,
         updateToken: tokenStore.updateToken,
         refreshTokens: refreshCallback,
+        refreshAuthorityLifecycle: passthroughRefreshAuthorityLifecycle,
       });
 
       expect(result).toBeNull();
@@ -620,6 +628,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
             createToken: tokenStore.createToken,
             updateToken: tokenStore.updateToken,
             refreshTokens: refreshCallback,
+            refreshAuthorityLifecycle: passthroughRefreshAuthorityLifecycle,
           });
         });
 
