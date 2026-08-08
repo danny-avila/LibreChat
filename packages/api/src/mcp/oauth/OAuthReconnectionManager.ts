@@ -19,8 +19,23 @@ export interface OAuthReconnectAuthority {
   bind<Result>(action: () => Promise<Result>): Promise<Result>;
 }
 
+export interface OAuthReconnectActor {
+  userId: string;
+  tenantId?: string;
+  user: IUser;
+}
+
+export type OAuthReconnectActorInput = string | OAuthReconnectActor;
+
+function normalizeReconnectActor(input: OAuthReconnectActorInput): OAuthReconnectActor {
+  if (typeof input !== 'string') {
+    return input;
+  }
+  return { userId: input, user: { id: input } as IUser };
+}
+
 export type ResolveOAuthReconnectAuthority = (
-  userId: string,
+  actor: OAuthReconnectActor,
   serverName: string,
 ) => Promise<OAuthReconnectAuthority | null>;
 
@@ -86,7 +101,9 @@ export class OAuthReconnectionManager {
     return this.reconnectionsTracker.isStillReconnecting(userId, serverName);
   }
 
-  public async reconnectServers(userId: string): Promise<void> {
+  public async reconnectServers(actorInput: OAuthReconnectActorInput): Promise<void> {
+    const actor = normalizeReconnectActor(actorInput);
+    const { userId } = actor;
     // Check if MCPManager is available
     if (this.mcpManager == null) {
       logger.warn(
@@ -113,9 +130,9 @@ export class OAuthReconnectionManager {
     for (let i = 0; i < serversToReconnect.length; i++) {
       const serverName = serversToReconnect[i];
       if (i === 0) {
-        this.safeTryReconnect(userId, serverName);
+        this.safeTryReconnect(actor, serverName);
       } else {
-        setTimeout(() => this.safeTryReconnect(userId, serverName), i * RECONNECT_STAGGER_MS);
+        setTimeout(() => this.safeTryReconnect(actor, serverName), i * RECONNECT_STAGGER_MS);
       }
     }
   }
@@ -128,8 +145,9 @@ export class OAuthReconnectionManager {
    * `RECONNECTION_TIMEOUT_MS` window if an error escapes
    * {@link tryReconnect}'s internal try/catch.
    */
-  private safeTryReconnect(userId: string, serverName: string): void {
-    this.tryReconnect(userId, serverName).catch((error) => {
+  private safeTryReconnect(actor: OAuthReconnectActor, serverName: string): void {
+    this.tryReconnect(actor, serverName).catch((error) => {
+      const { userId } = actor;
       logger.error(
         `[OAuthReconnectionManager][User: ${userId}][${serverName}] Unexpected reconnect error`,
         error,
@@ -147,14 +165,19 @@ export class OAuthReconnectionManager {
    * Attempts to reconnect a single OAuth MCP server.
    * @returns true if reconnection succeeded, false otherwise.
    */
-  public async reconnectServer(userId: string, serverName: string): Promise<boolean> {
+  public async reconnectServer(
+    actorInput: OAuthReconnectActorInput,
+    serverName: string,
+  ): Promise<boolean> {
     if (this.mcpManager == null) {
       return false;
     }
 
+    const actor = normalizeReconnectActor(actorInput);
+    const { userId } = actor;
     this.reconnectionsTracker.setActive(userId, serverName);
     try {
-      await this.tryReconnect(userId, serverName);
+      await this.tryReconnect(actor, serverName);
       return !this.reconnectionsTracker.isFailed(userId, serverName);
     } catch {
       return false;
@@ -166,11 +189,12 @@ export class OAuthReconnectionManager {
     this.reconnectionsTracker.removeActive(userId, serverName);
   }
 
-  private async tryReconnect(userId: string, serverName: string) {
+  private async tryReconnect(actor: OAuthReconnectActor, serverName: string) {
     if (this.mcpManager == null) {
       return;
     }
 
+    const { userId } = actor;
     const logPrefix = `[tryReconnectOAuthMCPServer][User: ${userId}][${serverName}]`;
 
     logger.info(`${logPrefix} Attempting reconnection`);
@@ -179,7 +203,7 @@ export class OAuthReconnectionManager {
     let connected = false;
     try {
       const authority = this.resolveAuthority
-        ? await this.resolveAuthority(userId, serverName)
+        ? await this.resolveAuthority(actor, serverName)
         : null;
       if (this.resolveAuthority && !authority) {
         throw new Error('Current MCP reconnect authority is unavailable');
@@ -192,7 +216,7 @@ export class OAuthReconnectionManager {
       const reconnect = async () =>
         await this.mcpManager!.getUserConnection({
           serverName,
-          user: authority?.user ?? ({ id: userId } as IUser),
+          user: authority?.user ?? actor.user,
           flowManager: this.flowManager,
           tokenMethods: this.tokenMethods,
           serverConfig: authority?.serverConfig,

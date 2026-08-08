@@ -39,6 +39,69 @@ export interface MCPAuthorityResolution<TParsedConfig, TSchemas> {
   readonly authorityProof: MCPAuthorityProofV1;
 }
 
+function assertPlainAuthorityValue(value: unknown, seen: WeakSet<object>): void {
+  if (
+    value == null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  ) {
+    return;
+  }
+  if (typeof value !== 'object') {
+    throw new MCPAuthorityProofError(
+      'malformed_input',
+      'MCP authority parsed config must contain only plain data',
+    );
+  }
+  if (seen.has(value)) {
+    throw new MCPAuthorityProofError(
+      'malformed_input',
+      'MCP authority parsed config must not contain cycles',
+    );
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) {
+    throw new MCPAuthorityProofError(
+      'malformed_input',
+      'MCP authority parsed config must contain only plain objects and arrays',
+    );
+  }
+  seen.add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== 'string') {
+      throw new MCPAuthorityProofError(
+        'malformed_input',
+        'MCP authority parsed config must not contain symbol properties',
+      );
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !('value' in descriptor)) {
+      throw new MCPAuthorityProofError(
+        'malformed_input',
+        'MCP authority parsed config must not contain accessors',
+      );
+    }
+    assertPlainAuthorityValue(descriptor.value, seen);
+  }
+  seen.delete(value);
+}
+
+function deepFreezePlainAuthorityValue<Value>(value: Value): Value {
+  if (value == null || typeof value !== 'object' || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const key of Object.keys(value)) {
+    deepFreezePlainAuthorityValue(value[key as keyof Value]);
+  }
+  return Object.freeze(value);
+}
+
+function cloneIssuedParsedConfig<Value>(value: Value): Value {
+  assertPlainAuthorityValue(value, new WeakSet());
+  return deepFreezePlainAuthorityValue(structuredClone(value));
+}
+
 export class MCPAuthorityProofResolver {
   private readonly methods: MCPAuthorityProofResolverOptions['methods'];
   private readonly boot: MCPAuthorityBootRevision;
@@ -68,6 +131,7 @@ export class MCPAuthorityProofResolver {
   }: MCPAuthorityResolutionInput<TParsedConfig, TSchemas>): Promise<
     MCPAuthorityResolution<TParsedConfig, TSchemas>
   > {
+    const issuedParsedConfig = cloneIssuedParsedConfig(parsedConfig);
     const getCurrentRevision = (): string => {
       let artifactRevision: string;
       try {
@@ -97,6 +161,7 @@ export class MCPAuthorityProofResolver {
           credentialFields: target.credentialFields ?? null,
           requiresOAuth: target.requiresOAuth ?? null,
         })),
+        parsedConfigRevision: digestMCPAuthorityValue(parsedConfig),
         artifactRevision,
       });
     };
@@ -113,7 +178,11 @@ export class MCPAuthorityProofResolver {
         'MCP authority artifacts changed while resolving authority',
       );
     }
-    const resolution = Object.freeze({ parsedConfig, schemas, authorityProof });
+    const resolution = Object.freeze({
+      parsedConfig: issuedParsedConfig,
+      schemas,
+      authorityProof,
+    });
     this.issuedResolutions.set(resolution, { revision: artifactRevision, getCurrentRevision });
     return resolution;
   }

@@ -57,11 +57,24 @@ const {
   resolveCurrentMCPDiscoveryScope,
   resolveCurrentMCPToolAuthority,
 } = require('~/server/services/MCPDiscoveryScope');
-const { getMCPAuthorityResolver } = require('~/server/services/MCPAuthority');
+const { getMCPAvailability, getMCPAuthorityResolver } = require('~/server/services/MCPAuthority');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
 const router = Router();
+
+router.use((req, res, next) => {
+  const availability = getMCPAvailability();
+  if (availability.available) {
+    return next();
+  }
+  return res.status(503).json({
+    error: 'MCP_UNAVAILABLE',
+    reason: availability.reason,
+    message: availability.message,
+    retryable: availability.retryable,
+  });
+});
 
 const OAUTH_CSRF_COOKIE_PATH = '/api/mcp';
 

@@ -92,16 +92,48 @@ jest.mock('~/server/services/MCPDiscoveryScope', () => ({
     if (authority == null) {
       return authority;
     }
+    if (authority.parsedConfig) {
+      return authority;
+    }
+    const request = args[0] ?? {};
+    const sourceConfig = authority.serverConfig ?? request.expectedServerConfig ?? {};
+    const catalogScope =
+      authority.catalogScope ??
+      (request.schemas != null
+        ? {
+            tenant: 'tenant-revision',
+            principal: 'principal-revision',
+            server: 'server-revision',
+            policy: 'policy-revision',
+            config: 'config-revision',
+            credentials: 'credential-revision',
+          }
+        : null);
     return {
-      ...authority,
-      ...(args[0]?.schemas != null && {
-        user: { ...authority.user, role: authority.user?.role ?? 'USER' },
-        catalogScope: authority.catalogScope ?? {
-          serverName: authority.serverName,
-          proof: 'test-proof',
+      parsedConfig: {
+        actor: {
+          userId: authority.user?.id,
+          tenantId: 'tenant-1',
+          user: { ...authority.user, role: authority.user?.role ?? 'USER' },
         },
-      }),
-      resolution: authority.resolution ?? { artifactRevision: 'test-artifact' },
+        serverName: authority.serverName,
+        sourceConfig,
+        effectiveConfig: sourceConfig,
+        securityPolicy: authority.securityPolicy ?? {
+          allowedDomains: null,
+          allowedAddresses: null,
+        },
+        customUserVars: authority.customUserVars,
+        authorization: {
+          kind: authority.authorizationIdentity === 'none' ? 'none' : 'oauth',
+          identity: authority.authorizationIdentity ?? 'none',
+          credentialSetId: null,
+          generation: null,
+        },
+        catalogScope,
+      },
+      schemas: request.schemas ?? null,
+      authorityProof: { revision: 'test-proof' },
     };
   },
 }));
@@ -109,6 +141,7 @@ jest.mock('~/server/services/MCPAuthority', () => ({
   getMCPAuthorityResolver: () => ({
     bindWithCurrentAuthority: async (_resolution, action) => await action(),
     executeWithCurrentAuthority: async (_resolution, action) => await action(),
+    useIssuedResolution: async (resolution, action) => await action(resolution),
   }),
 }));
 

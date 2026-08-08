@@ -50,7 +50,7 @@ beforeEach(async () => {
 describe('Token Methods - Detailed Tests', () => {
   test('publishes generations only for operations that can affect MCP OAuth tokens', async () => {
     const userId = new mongoose.Types.ObjectId();
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
 
     await methods.createToken({
       token: 'reset-secret',

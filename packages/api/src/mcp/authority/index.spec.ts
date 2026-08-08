@@ -140,7 +140,8 @@ async function resolveMutableAuthorityFixture(resolver: MCPAuthorityProofResolve
     ],
     parsedConfig,
     schemas,
-    calculateArtifactRevision: () => 'caller-artifact-revision',
+    calculateArtifactRevision: ({ parsedConfig: currentParsedConfig, schemas: currentSchemas }) =>
+      JSON.stringify({ parsedConfig: currentParsedConfig, schemas: currentSchemas }),
   });
   return { parsedConfig, schemas, resolution };
 }
@@ -230,7 +231,7 @@ describe('MCPAuthorityProofResolver', () => {
 
     await resolver.useIssuedResolution(fixture.resolution, (current) => {
       expect(current.parsedConfig).not.toBe(fixture.parsedConfig);
-      expect(current.schemas).not.toBe(fixture.schemas);
+      expect(current.schemas).toBe(fixture.schemas);
       expect(current.parsedConfig).toEqual(fixture.parsedConfig);
       expect(current.schemas).toEqual(fixture.schemas);
       expect(Object.isFrozen(current)).toBe(true);
@@ -242,11 +243,7 @@ describe('MCPAuthorityProofResolver', () => {
       expect(Object.isFrozen(current.parsedConfig.securityPolicy.allowedDomains)).toBe(true);
       expect(Object.isFrozen(current.parsedConfig.securityPolicy.allowedAddresses)).toBe(true);
       expect(Object.isFrozen(current.parsedConfig.customUserVars)).toBe(true);
-      expect(Object.isFrozen(current.schemas)).toBe(true);
-      expect(Object.isFrozen(current.schemas[0])).toBe(true);
-      expect(Object.isFrozen(current.schemas[0].inputSchema)).toBe(true);
-      expect(Object.isFrozen(current.schemas[0].inputSchema.properties)).toBe(true);
-      expect(Object.isFrozen(current.schemas[0].inputSchema.properties.query)).toBe(true);
+      expect(Object.isFrozen(current.schemas)).toBe(false);
     });
   });
 

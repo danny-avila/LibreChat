@@ -118,7 +118,7 @@ describe('User Methods - Database Tests', () => {
       provider: 'local',
       role: 'USER',
     });
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
 
     await methods.updateUser(user._id.toString(), { avatar: 'avatar.png' });
     await expect(consistency.assertGeneration(0)).resolves.toBeUndefined();

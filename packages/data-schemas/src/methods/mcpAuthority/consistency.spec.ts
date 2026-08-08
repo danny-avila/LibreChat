@@ -46,8 +46,12 @@ describe('Mongo-wire MCP authority consistency', () => {
       createOwnerId: () => 'owner-1',
     });
 
-    await expect(consistency.initialize()).resolves.toEqual({ generation: 0 });
-    await expect(consistency.initialize()).resolves.toEqual({ generation: 0 });
+    await expect(consistency.initializeMCPAuthorityConsistency()).resolves.toEqual({
+      generation: 0,
+    });
+    await expect(consistency.initializeMCPAuthorityConsistency()).resolves.toEqual({
+      generation: 0,
+    });
   });
 
   test('returns plain reads only when one clean generation brackets them', async () => {
@@ -59,7 +63,7 @@ describe('Mongo-wire MCP authority consistency', () => {
     });
     const values = database.collection<{ _id: string; value: string }>('values');
     await values.insertOne({ _id: 'selected', value: 'before' });
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
 
     await expect(
       consistency.readStableSnapshot(async () => await values.findOne({ _id: 'selected' })),
@@ -75,7 +79,7 @@ describe('Mongo-wire MCP authority consistency', () => {
       now: () => new Date('2026-08-07T12:00:00.000Z'),
       createOwnerId: () => 'owner-1',
     });
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
 
     await expect(consistency.assertGeneration(0)).resolves.toBeUndefined();
     await expect(consistency.assertGeneration(1)).rejects.toEqual(
@@ -92,7 +96,7 @@ describe('Mongo-wire MCP authority consistency', () => {
     });
     const values = database.collection<{ _id: string; value: string }>('values');
     await values.insertOne({ _id: 'selected', value: 'before' });
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
 
     await expect(
       consistency.mutateMCPAuthority(async () => {
@@ -135,7 +139,7 @@ describe('Mongo-wire MCP authority consistency', () => {
       mutationRetryDelayMs: 1,
       wait,
     });
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
 
     await expect(
       consistency.mutateMCPAuthority(async () => {
@@ -145,7 +149,7 @@ describe('Mongo-wire MCP authority consistency', () => {
     await expect(consistency.assertGeneration(0)).rejects.toEqual(
       expect.objectContaining({ reason: 'dirty' }),
     );
-    await expect(consistency.initialize()).rejects.toEqual(
+    await expect(consistency.initializeMCPAuthorityConsistency()).rejects.toEqual(
       expect.objectContaining({ reason: 'dirty' }),
     );
     const blockedAction = jest.fn(async () => 'must not run');
@@ -166,7 +170,7 @@ describe('Mongo-wire MCP authority consistency', () => {
     const entered = createDeferred();
     const release = createDeferred();
     let competingEntered = false;
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
 
     const mutation = consistency.mutateMCPAuthority(async () => {
       entered.resolve();
@@ -200,7 +204,7 @@ describe('Mongo-wire MCP authority consistency', () => {
     });
     const values = database.collection<{ _id: string; value: string }>('values');
     await values.insertOne({ _id: 'selected', value: 'before' });
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
 
     await expect(
       consistency.mutateMCPAuthority(async () => {
@@ -222,7 +226,7 @@ describe('Mongo-wire MCP authority consistency', () => {
       now: () => new Date('2026-08-07T12:00:00.000Z'),
       createOwnerId: () => 'owner-1',
     });
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
 
     await expect(
       consistency.mutateMCPAuthority(async () => {
@@ -280,7 +284,7 @@ describe('Mongo-wire MCP authority consistency', () => {
       updatedAt: new Date('2026-08-07T12:00:00.000Z'),
     });
 
-    await expect(consistency.initialize()).rejects.toEqual(
+    await expect(consistency.initializeMCPAuthorityConsistency()).rejects.toEqual(
       expect.objectContaining({ reason: 'malformed_fence' }),
     );
   });

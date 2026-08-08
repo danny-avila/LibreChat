@@ -1,8 +1,21 @@
 const mongoose = require('mongoose');
 const { logger, tenantStorage, assertMCPAuthorityReadiness } = require('@librechat/data-schemas');
 const { mergeAppTools, getAppConfig } = require('./Config');
-const { initializeMCPAuthority } = require('./MCPAuthority');
+const { initializeMCPAuthority, setMCPAvailability } = require('./MCPAuthority');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
+const db = require('~/models');
+
+function unavailableFromReadiness(error) {
+  return {
+    available: false,
+    reason:
+      error && typeof error === 'object' && typeof error.reason === 'string'
+        ? error.reason
+        : 'prerequisite_missing',
+    message: error instanceof Error ? error.message : 'MCP authority prerequisites are unavailable',
+    retryable: error && typeof error === 'object' && error.retryable === true,
+  };
+}
 
 /**
  * Resolves the current request's effective MCP allowlists from the merged (tenant-scoped)
@@ -38,12 +51,13 @@ async function initializeMCPs(options = {}) {
   if (validateAuthorityReadiness) {
     try {
       await assertMCPAuthorityReadiness(mongoose.connection);
+      await db.initializeMCPAuthorityConsistency();
     } catch (error) {
-      const reason = error instanceof Error ? error.message : 'unknown readiness failure';
-      throw new Error(
-        `MCP authority prerequisites are not ready: ${reason}. Run \`npm run migrate:mcp-authority\` before starting LibreChat.`,
-        { cause: error },
+      const unavailable = setMCPAvailability(unavailableFromReadiness(error));
+      logger.error(
+        `[MCP] Authority unavailable (${unavailable.reason}): ${unavailable.message}. Run \`npm run migrate:mcp-authority\` after reconciling any interrupted authority mutation.`,
       );
+      return;
     }
   }
   const appConfig = await getAppConfig({ baseOnly: true });

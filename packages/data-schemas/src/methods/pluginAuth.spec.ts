@@ -69,7 +69,7 @@ describe('plugin auth methods', () => {
   });
 
   test('publishes generations only for MCP credential mutations', async () => {
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
 
     await methods.updatePluginAuth({
       userId: 'user-1',

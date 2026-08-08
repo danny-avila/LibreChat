@@ -41,7 +41,7 @@ beforeEach(async () => {
 });
 
 test('publishes one authority generation for each Config mutation', async () => {
-  await consistency.initialize();
+  await consistency.initializeMCPAuthorityConsistency();
 
   await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 10);
   await expect(consistency.assertGeneration(1)).resolves.toBeUndefined();

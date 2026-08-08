@@ -50,7 +50,7 @@ describe('MCPServer Model Tests', () => {
   });
 
   test('publishes one authority generation for each MCP server mutation', async () => {
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
 
     const server = await methods.createMCPServer({
       config: createSSEConfig('Generation Test'),

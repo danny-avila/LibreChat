@@ -1561,7 +1561,7 @@ export function createMCPAuthorityMethods(
     if ((getTenantId() ?? null) !== (tenantId ?? null)) {
       reject('proof_unavailable', 'MCP authority tenant context does not match its principal');
     }
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
     const stable = await consistency.readStableSnapshot(async (generation) =>
       loadCurrentProof(userId, tenantId, boot, targets, generation),
     );

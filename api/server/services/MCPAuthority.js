@@ -4,6 +4,51 @@ const { Constants } = require('librechat-data-provider');
 const db = require('~/models');
 
 let resolver;
+const MCP_AVAILABLE = Object.freeze({ available: true });
+let availability = MCP_AVAILABLE;
+
+class MCPUnavailableError extends Error {
+  constructor(current) {
+    super(current.message);
+    this.name = 'MCPUnavailableError';
+    this.code = 'MCP_UNAVAILABLE';
+    this.reason = current.reason;
+    this.status = 503;
+    this.statusCode = 503;
+    this.retryable = current.retryable;
+  }
+}
+
+function setMCPAvailability(next) {
+  if (next?.available === true) {
+    availability = MCP_AVAILABLE;
+    return availability;
+  }
+  const reason =
+    typeof next?.reason === 'string' && next.reason ? next.reason : 'proof_unavailable';
+  const message =
+    typeof next?.message === 'string' && next.message
+      ? next.message
+      : 'MCP authority is unavailable';
+  availability = Object.freeze({
+    available: false,
+    reason,
+    message,
+    retryable: next?.retryable === true,
+  });
+  resolver = undefined;
+  return availability;
+}
+
+function getMCPAvailability() {
+  return availability;
+}
+
+function assertMCPAvailable() {
+  if (!availability.available) {
+    throw new MCPUnavailableError(availability);
+  }
+}
 
 function initializeMCPAuthority(appConfig) {
   const immutableConfig = appConfig?.config ?? {};
@@ -20,10 +65,12 @@ function initializeMCPAuthority(appConfig) {
       mcpSettings: immutableConfig.mcpSettings,
     },
   });
+  availability = MCP_AVAILABLE;
   return resolver;
 }
 
 function getMCPAuthorityResolver() {
+  assertMCPAvailable();
   if (!resolver) {
     throw new Error('MCP authority resolver has not been initialized.');
   }
@@ -79,12 +126,15 @@ function calculateMCPAuthorityArtifactRevision({ parsedConfig, schemas }) {
       }))
       .sort((left, right) => left.serverName.localeCompare(right.serverName)),
     schemas: canonicalSchemas(schemas),
-    exactSchemasRevision: digestMCPAuthorityValue(schemas ?? null),
   });
 }
 
 module.exports = {
+  MCPUnavailableError,
+  assertMCPAvailable,
   calculateMCPAuthorityArtifactRevision,
+  getMCPAvailability,
   getMCPAuthorityResolver,
   initializeMCPAuthority,
+  setMCPAvailability,
 };

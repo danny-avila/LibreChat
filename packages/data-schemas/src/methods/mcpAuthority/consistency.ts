@@ -48,7 +48,7 @@ export interface MCPAuthorityMutationGate {
 }
 
 export interface MCPAuthorityConsistencyModule extends MCPAuthorityMutationGate {
-  initialize(): Promise<MCPAuthorityGeneration>;
+  initializeMCPAuthorityConsistency(): Promise<MCPAuthorityGeneration>;
   readStableSnapshot<Snapshot>(
     read: (generation: number) => Promise<Snapshot>,
   ): Promise<MCPAuthorityStableSnapshot<Snapshot>>;
@@ -219,7 +219,7 @@ export function createMCPAuthorityConsistencyModule(
     return requireFence(fence);
   }
 
-  async function initialize(): Promise<MCPAuthorityGeneration> {
+  async function initializeMCPAuthorityConsistency(): Promise<MCPAuthorityGeneration> {
     return Object.freeze({ generation: requireCleanFence(await initializeFence()).generation });
   }
 
@@ -383,7 +383,7 @@ export function createMCPAuthorityConsistencyModule(
   }
 
   return Object.freeze({
-    initialize,
+    initializeMCPAuthorityConsistency,
     readStableSnapshot,
     assertGeneration,
     mutateMCPAuthority,

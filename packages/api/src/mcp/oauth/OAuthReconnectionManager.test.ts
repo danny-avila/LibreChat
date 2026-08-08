@@ -550,7 +550,7 @@ describe('OAuthReconnectionManager', () => {
 
       await expect(authorityManager.reconnectServer(userId, serverName)).resolves.toBe(true);
 
-      expect(resolveAuthority).toHaveBeenCalledWith(userId, serverName);
+      expect(resolveAuthority).toHaveBeenCalledWith({ userId, user: { id: userId } }, serverName);
       expect(bind).toHaveBeenCalledTimes(1);
       expect(mockRegistryInstance.getServerConfig).not.toHaveBeenCalled();
       expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith({

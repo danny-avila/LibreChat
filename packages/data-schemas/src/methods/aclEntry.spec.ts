@@ -43,7 +43,7 @@ describe('AclEntry Model Tests', () => {
   const grantedById = new mongoose.Types.ObjectId();
 
   test('publishes generations only for ACL resources used by MCP authority', async () => {
-    await consistency.initialize();
+    await consistency.initializeMCPAuthorityConsistency();
     await methods.grantPermission(
       PrincipalType.USER,
       userId,

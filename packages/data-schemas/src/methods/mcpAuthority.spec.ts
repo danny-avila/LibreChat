@@ -360,7 +360,7 @@ describe('MCP authority proofs', () => {
   });
 
   test('exposes the same mutation gate used by authority proof reads', async () => {
-    await expect(methods.initialize()).resolves.toEqual({ generation: 0 });
+    await expect(methods.initializeMCPAuthorityConsistency()).resolves.toEqual({ generation: 0 });
     await expect(methods.mutateMCPAuthority(async () => 'published')).resolves.toEqual({
       generation: 1,
       result: 'published',
@@ -384,7 +384,7 @@ describe('MCP authority proofs', () => {
         mutationPublished = true;
       },
     });
-    await snapshotMethods.initialize();
+    await snapshotMethods.initializeMCPAuthorityConsistency();
 
     await expect(
       inTenant(() =>
