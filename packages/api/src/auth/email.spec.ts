@@ -168,20 +168,14 @@ describe('email change service', () => {
       });
 
       expect(response).toMatchObject({ status: 409, code: 'account_modified' });
-      expect(deps.deleteTokens).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: '507f1f77bcf86cd799439011',
-          email: 'new@example.com',
-          type: EMAIL_CHANGE_TOKEN_TYPE,
-        }),
-        'tenant-1',
-      );
+      expect(deps.upsertToken).not.toHaveBeenCalled();
+      expect(deps.deleteTokens).not.toHaveBeenCalled();
       expect(deps.sendEmail).not.toHaveBeenCalledWith(
         expect.objectContaining({ template: 'verifyEmailChange.handlebars' }),
       );
     });
 
-    it('removes the pending token if verification delivery fails', async () => {
+    it('does not replace the pending token if verification delivery fails', async () => {
       const sendEmail = jest
         .fn()
         .mockResolvedValueOnce(undefined)
@@ -196,15 +190,72 @@ describe('email change service', () => {
       });
 
       expect(response).toMatchObject({ status: 500, code: 'email_delivery_failed' });
-      expect(deps.deleteTokens).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          userId: '507f1f77bcf86cd799439011',
-          email: 'new@example.com',
-          type: EMAIL_CHANGE_TOKEN_TYPE,
-          token: expect.any(String),
-        }),
-        'tenant-1',
-      );
+      expect(deps.upsertToken).not.toHaveBeenCalled();
+      expect(deps.deleteTokens).not.toHaveBeenCalled();
+    });
+
+    it('preserves a successful overlapping request when the replacing delivery fails', async () => {
+      type StoredToken = Pick<Parameters<EmailChangeDeps['upsertToken']>[1], 'email' | 'token'>;
+      let storedToken: StoredToken | undefined = {
+        email: 'existing@example.com',
+        token: 'existing-token',
+      };
+      const upsertToken: EmailChangeDeps['upsertToken'] = jest.fn(async (_scope, data) => {
+        storedToken = { email: data.email, token: data.token };
+      });
+      const deleteTokens: EmailChangeDeps['deleteTokens'] = jest.fn(async (query) => {
+        if (storedToken?.token === query.token) {
+          storedToken = undefined;
+        }
+        return { deletedCount: 1 };
+      });
+      let markFirstDeliveryStarted: () => void = () => undefined;
+      const firstDeliveryStarted = new Promise<void>((resolve) => {
+        markFirstDeliveryStarted = resolve;
+      });
+      let completeFirstDelivery: () => void = () => undefined;
+      const firstDelivery = new Promise<void>((resolve) => {
+        completeFirstDelivery = resolve;
+      });
+      const sendEmail: EmailChangeDeps['sendEmail'] = jest.fn((data) => {
+        if (data.template !== 'verifyEmailChange.handlebars') {
+          return Promise.resolve();
+        }
+        if (data.email === 'first@example.com') {
+          markFirstDeliveryStarted();
+          return firstDelivery;
+        }
+        return Promise.reject(new Error('SMTP unavailable'));
+      });
+      const { service } = createDeps({ upsertToken, deleteTokens, sendEmail });
+
+      const firstRequest = service.requestEmailChange({
+        body: { currentPassword: 'correct-password', newEmail: 'first@example.com' },
+        userId: '507f1f77bcf86cd799439011',
+        tenantId: 'tenant-1',
+        emailEnabled: true,
+      });
+      await firstDeliveryStarted;
+
+      const secondResponse = await service.requestEmailChange({
+        body: { currentPassword: 'correct-password', newEmail: 'second@example.com' },
+        userId: '507f1f77bcf86cd799439011',
+        tenantId: 'tenant-1',
+        emailEnabled: true,
+      });
+
+      expect(secondResponse).toMatchObject({ status: 500, code: 'email_delivery_failed' });
+      expect(storedToken).toEqual({
+        email: 'existing@example.com',
+        token: 'existing-token',
+      });
+
+      completeFirstDelivery();
+      await expect(firstRequest).resolves.toMatchObject({ status: 200 });
+      expect(storedToken).toEqual({
+        email: 'first@example.com',
+        token: expect.any(String),
+      });
     });
 
     it('keeps only the newest pending token when requests overlap', async () => {

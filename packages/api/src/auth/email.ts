@@ -124,6 +124,21 @@ function userIdOf(user: EmailChangeUser): string | undefined {
   return userId?.toString();
 }
 
+function accountMatchesRequest(
+  user: EmailChangeUser | null,
+  userId: string,
+  email: string,
+  password: string,
+): boolean {
+  return (
+    !!user &&
+    userIdOf(user) === userId &&
+    user.provider === 'local' &&
+    user.password === password &&
+    normalizeEmail(user.email) === email
+  );
+}
+
 function displayName(user: EmailChangeUser): string {
   return user.name || user.username || user.email;
 }
@@ -304,32 +319,10 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       token: tokenHash,
     };
 
-    await deps.upsertToken(
-      tokenScope,
-      {
-        userId,
-        email: newEmail,
-        scope: tokenScope,
-        identifier: oldEmail,
-        type: EMAIL_CHANGE_TOKEN_TYPE,
-        token: tokenHash,
-        expiresIn: EMAIL_CHANGE_TOKEN_TTL_SECONDS,
-        metadata: { requestIp: ip, passwordFingerprint },
-      },
-      user.tenantId,
-    );
-
-    /** Re-read after the write: a confirmation that landed mid-request would leave this
-     * token bound to an obsolete address, so drop it before a dead link is delivered. */
+    /** Re-read before delivery so an account change during request validation does not
+     * result in a verification message whose link can never be used. */
     const latestUser = await deps.getUserById(input.userId, input.tenantId);
-    if (
-      !latestUser ||
-      userIdOf(latestUser) !== userId ||
-      latestUser.provider !== 'local' ||
-      latestUser.password !== user.password ||
-      normalizeEmail(latestUser.email) !== oldEmail
-    ) {
-      await deleteTokensOrLog(deps, tokenQuery, user.tenantId, 'token bound to a stale address');
+    if (!accountMatchesRequest(latestUser, userId, oldEmail, user.password)) {
       logger.warn(
         `[emailChange] Account changed while issuing [User ID: ${userId}] [New Email: ${newEmail}] [IP: ${ip}]`,
       );
@@ -350,12 +343,37 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
         template: 'verifyEmailChange.handlebars',
       });
     } catch (error) {
-      await deps.deleteTokens(tokenQuery, user.tenantId);
       logger.error(
         `[emailChange] Verification delivery failed [User ID: ${userId}] [New Email: ${newEmail}] [IP: ${ip}]`,
         error,
       );
       return result(500, 'Failed to send verification email', 'email_delivery_failed');
+    }
+
+    await deps.upsertToken(
+      tokenScope,
+      {
+        userId,
+        email: newEmail,
+        scope: tokenScope,
+        identifier: oldEmail,
+        type: EMAIL_CHANGE_TOKEN_TYPE,
+        token: tokenHash,
+        expiresIn: EMAIL_CHANGE_TOKEN_TTL_SECONDS,
+        metadata: { requestIp: ip, passwordFingerprint },
+      },
+      user.tenantId,
+    );
+
+    /** Re-read after replacement: the prior token remains valid during delivery, so a
+     * confirmation can move the account before the new token becomes active. */
+    const committedUser = await deps.getUserById(input.userId, input.tenantId);
+    if (!accountMatchesRequest(committedUser, userId, oldEmail, user.password)) {
+      await deleteTokensOrLog(deps, tokenQuery, user.tenantId, 'token bound to a stale address');
+      logger.warn(
+        `[emailChange] Account changed while issuing [User ID: ${userId}] [New Email: ${newEmail}] [IP: ${ip}]`,
+      );
+      return result(409, 'Account was modified during the request', 'account_modified');
     }
 
     logger.info(
