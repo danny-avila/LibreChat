@@ -36,6 +36,7 @@ import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
 
 jest.mock('@librechat/data-schemas', () => ({
+  getTenantId: jest.fn(() => null),
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -428,11 +429,22 @@ describe('MCP reinitialize recovery – integration (issue #12143)', () => {
         }
       }
 
+      const currentConfig = await registry.getServerConfig(serverName, user.id);
+      if (!currentConfig) {
+        return { success: false, tools: 0 };
+      }
       const connection = await mcpManager.getConnection({
         serverName,
         user,
         flowManager,
         forceNew: true,
+        serverConfig: currentConfig,
+        effectiveServerConfig: currentConfig,
+        securityPolicy: {
+          allowedDomains: null,
+          allowedAddresses: null,
+          useSSRFProtection: false,
+        },
       });
 
       const tools = await connection.fetchTools();
@@ -444,10 +456,12 @@ describe('MCP reinitialize recovery – integration (issue #12143)', () => {
       Array.from({ length: n }, () => simulateReinitMCPServer()),
     );
 
-    // All promises should resolve (no unhandled throws)
-    for (const r of results) {
-      expect(r.status).toBe('fulfilled');
-    }
+    const rejectionMessages = results
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) =>
+        result.reason instanceof Error ? result.reason.message : String(result.reason),
+      );
+    expect(rejectionMessages).toEqual([]);
 
     const values = (results as PromiseFulfilledResult<{ success: boolean; tools: number }>[]).map(
       (r) => r.value,

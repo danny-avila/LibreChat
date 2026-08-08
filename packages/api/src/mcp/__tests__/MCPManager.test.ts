@@ -54,6 +54,7 @@ const mockGetAllowedDomains = jest.fn().mockReturnValue(null);
 const mockGetAllowedAddresses = jest.fn().mockReturnValue(null);
 const mockRegistryInstance = {
   getServerConfig: jest.fn(),
+  isAppServerConfig: jest.fn(),
   getAllServerConfigs: jest.fn(),
   getOAuthServers: jest.fn(),
   shouldEnableSSRFProtection: mockShouldEnableSSRFProtection,
@@ -132,6 +133,13 @@ describe('MCPManager', () => {
     // Set up default mock implementations
     (MCPServersInitializer.initialize as jest.Mock).mockResolvedValue(undefined);
     (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({});
+    (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+      type: 'stdio',
+      command: 'test',
+      args: [],
+      source: 'yaml',
+    });
+    (mockRegistryInstance.isAppServerConfig as jest.Mock).mockResolvedValue(true);
     (mockRegistryInstance.shouldEnableSSRFProtection as jest.Mock).mockReturnValue(false);
     (mockRegistryInstance.getAllowedDomains as jest.Mock).mockReturnValue(null);
     (mockRegistryInstance.getAllowedAddresses as jest.Mock).mockReturnValue(null);
@@ -184,6 +192,17 @@ describe('MCPManager', () => {
       const result = await manager.getAppToolFunctions();
 
       expect(result).toEqual({});
+    });
+
+    it('does not open live connections while collecting the startup snapshot', async () => {
+      const getAll = jest.fn().mockResolvedValue(new Map());
+      mockAppConnections({ getAll });
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({});
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getAppToolFunctions();
+
+      expect(getAll).not.toHaveBeenCalled();
     });
 
     it('should collect tool functions from multiple servers', async () => {
@@ -269,6 +288,81 @@ describe('MCPManager', () => {
       const result = await manager.getAppToolFunctions();
 
       expect(result).toEqual(toolFunctions1);
+    });
+
+    it('excludes public user-managed servers from the app catalog', async () => {
+      const operatorKey = 'operator_tool_mcp_operator';
+      const publicKey = 'public_tool_mcp_public';
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        operator: {
+          type: 'stdio',
+          command: 'operator',
+          source: 'yaml',
+          toolFunctions: {
+            [operatorKey]: { type: 'function', function: { name: operatorKey } },
+          },
+        },
+        public: {
+          type: 'streamable-http',
+          url: 'https://public.example.com/mcp',
+          source: 'user',
+          toolFunctions: {
+            [publicKey]: { type: 'function', function: { name: publicKey } },
+          },
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await expect(manager.getAppToolFunctions()).resolves.toEqual({
+        [operatorKey]: { type: 'function', function: { name: operatorKey } },
+      });
+    });
+  });
+
+  describe('connectAppServers', () => {
+    it('opens only operator app connections and refreshes their current catalogs', async () => {
+      const connection = new MCPConnection({
+        serverName: 'dynamic',
+        serverConfig: { type: 'streamable-http', url: 'http://localhost/mcp' },
+        useSSRFProtection: false,
+      });
+      const refreshToolList = jest.spyOn(connection, 'refreshToolList').mockResolvedValue();
+      const getMany = jest.fn().mockResolvedValue(new Map([['dynamic', connection]]));
+      mockAppConnections({ getMany });
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        dynamic: {
+          type: 'streamable-http',
+          url: 'http://localhost/mcp',
+          source: 'yaml',
+        },
+        public: {
+          type: 'streamable-http',
+          url: 'https://public.example.com/mcp',
+          source: 'user',
+        },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.connectAppServers();
+
+      expect(getMany).toHaveBeenCalledWith(['dynamic'], {
+        continueOnError: true,
+        refreshTools: false,
+      });
+      expect(refreshToolList).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('disconnectAppServers', () => {
+    it('waits for every loaded app connection to disconnect', async () => {
+      const disconnectAll = jest.fn().mockReturnValue([Promise.resolve(), Promise.resolve()]);
+      mockAppConnections({ disconnectAll });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.disconnectAppServers();
+
+      expect(disconnectAll).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -483,6 +577,45 @@ describe('MCPManager', () => {
       expect(mockLogger.warn).toHaveBeenCalledWith(
         `[getServerToolFunctions] Error getting tool functions for server ${specificServerName}`,
         expect.any(Error),
+      );
+    });
+
+    it('uses a user connection when an effective overlay shadows an app server', async () => {
+      const overlayConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://tenant.example.com/mcp',
+        source: 'yaml',
+        startup: false,
+      };
+      const overlayConnection = {} as MCPConnection;
+      const expectedTools: t.LCAvailableTools = {
+        overlay_mcp_test_server: {
+          type: 'function',
+          function: {
+            name: 'overlay_mcp_test_server',
+            description: 'Overlay tool',
+            parameters: { type: 'object' },
+          },
+        },
+      };
+      const appGet = jest.fn().mockResolvedValue({} as MCPConnection);
+      mockAppConnections({ get: appGet });
+      (mockRegistryInstance.isAppServerConfig as jest.Mock).mockResolvedValue(false);
+      (MCPServerInspector.getToolFunctions as jest.Mock).mockResolvedValue(expectedTools);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const internals = manager as unknown as {
+        userConnections: Map<string, Map<string, MCPConnection>>;
+      };
+      internals.userConnections.set(userId, new Map([[serverName, overlayConnection]]));
+
+      await expect(
+        manager.getServerToolFunctionsSnapshot(userId, serverName, overlayConfig),
+      ).resolves.toEqual({ tools: expectedTools, publicationGeneration: undefined });
+      expect(appGet).not.toHaveBeenCalled();
+      expect(MCPServerInspector.getToolFunctions).toHaveBeenCalledWith(
+        serverName,
+        overlayConnection,
       );
     });
   });
@@ -763,6 +896,9 @@ describe('MCPManager', () => {
 
     const mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
+      refreshToolList: jest.fn().mockResolvedValue(undefined),
+      disconnect: jest.fn().mockResolvedValue(undefined),
+      on: jest.fn(),
       setRequestHeaders: jest.fn(),
       timeout: 30000,
       client: {
@@ -1838,7 +1974,10 @@ describe('MCPManager', () => {
     const mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
       fetchTools: jest.fn().mockResolvedValue(mockTools),
+      fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: mockTools, complete: true }),
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({ tools: mockTools, complete: true }),
       disconnect: jest.fn().mockResolvedValue(undefined),
+      dispose: jest.fn().mockResolvedValue(undefined),
     } as unknown as MCPConnection;
 
     beforeEach(() => {
@@ -1971,6 +2110,7 @@ describe('MCPManager', () => {
     it('should use MCPConnectionFactory.discoverTools when no app connection available', async () => {
       const discoveryConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as MCPConnection;
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
@@ -1999,7 +2139,7 @@ describe('MCPManager', () => {
       expect(result.tools).toEqual(mockTools);
       expect(result.oauthRequired).toBe(false);
       expect(MCPConnectionFactory.discoverTools).toHaveBeenCalled();
-      expect(discoveryConnection.disconnect).toHaveBeenCalledTimes(1);
+      expect(discoveryConnection.dispose).toHaveBeenCalledTimes(1);
     });
 
     it('should forward runtime context to discoverTools in the non-OAuth path', async () => {
@@ -2220,7 +2360,9 @@ describe('MCPManager', () => {
     const mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
       isStale: jest.fn().mockReturnValue(false),
-      disconnect: jest.fn(),
+      disconnect: jest.fn().mockResolvedValue(undefined),
+      refreshToolList: jest.fn().mockResolvedValue(undefined),
+      on: jest.fn(),
     } as unknown as MCPConnection;
 
     it('should pass useOAuth for servers with configured oauth and no requiresOAuth value', async () => {
@@ -2549,7 +2691,7 @@ describe('MCPManager', () => {
       }
     });
 
-    it('releases detached losers across repeated force-new races', async () => {
+    it('serializes repeated same-scope force-new replacements', async () => {
       const config = {
         type: 'streamable-http',
         url: 'https://private.example.com/mcp',
@@ -2559,69 +2701,55 @@ describe('MCPManager', () => {
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(config);
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const trackedWinners: MCPConnection[] = [];
-      for (let round = 0; round < 3; round++) {
-        const disconnectDetached = jest.fn().mockResolvedValue(undefined);
-        if (round === 0) {
-          disconnectDetached.mockRejectedValueOnce(new Error('transport close failed'));
-        }
-        const detachedConnection = {
-          isConnected: jest.fn().mockResolvedValue(true),
-          disconnect: disconnectDetached,
-        } as unknown as MCPConnection;
-        const winningConnection = {
+      const createConnection = () =>
+        ({
           isConnected: jest.fn().mockResolvedValue(true),
           disconnect: jest.fn().mockResolvedValue(undefined),
-        } as unknown as MCPConnection;
-        let resolveDetached: (connection: MCPConnection) => void = () => undefined;
-        const delayedConnection = new Promise<MCPConnection>((resolve) => {
-          resolveDetached = resolve;
-        });
-        (MCPConnectionFactory.create as jest.Mock)
-          .mockImplementationOnce(async () => await delayedConnection)
-          .mockResolvedValueOnce(winningConnection);
+          dispose: jest.fn().mockResolvedValue(undefined),
+          removeAllListeners: jest.fn(),
+          on: jest.fn(),
+        }) as unknown as MCPConnection;
+      const firstConnection = createConnection();
+      const secondConnection = createConnection();
+      let releaseFirst: (connection: MCPConnection) => void = () => undefined;
+      const delayedFirst = new Promise<MCPConnection>((resolve) => {
+        releaseFirst = resolve;
+      });
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockReturnValueOnce(delayedFirst)
+        .mockResolvedValueOnce(secondConnection);
 
-        const options = {
-          forceNew: true,
-          serverName,
-          serverConfig: config,
-          user,
-        };
-        const detachedPromise = manager.getUserConnection(options);
-        const winningPromise = manager.getUserConnection(options);
-        const expectedCreateCount = (round + 1) * 2;
-        for (
-          let i = 0;
-          i < 20 &&
-          (MCPConnectionFactory.create as jest.Mock).mock.calls.length < expectedCreateCount;
-          i++
-        ) {
-          await new Promise((resolve) => setTimeout(resolve, 1));
-        }
-
-        await expect(winningPromise).resolves.toBe(winningConnection);
-        resolveDetached(detachedConnection);
-        await expect(detachedPromise).resolves.toBe(detachedConnection);
-        expect(manager.getConnectionStats().totalConnections).toBe(2);
-        if (round === 0) {
-          await expect(
-            manager.releaseDetachedUserConnection(userId, serverName, detachedConnection),
-          ).rejects.toThrow('transport close failed');
-          expect(manager.getConnectionStats().totalConnections).toBe(2);
-        }
-        await expect(
-          manager.releaseDetachedUserConnection(userId, serverName, detachedConnection),
-        ).resolves.toBe(true);
-        expect(disconnectDetached).toHaveBeenCalledTimes(round === 0 ? 2 : 1);
-        expect(manager.getConnectionStats().totalConnections).toBe(1);
-        trackedWinners.push(winningConnection);
+      const options = {
+        forceNew: true,
+        serverName,
+        serverConfig: config,
+        user,
+      };
+      const firstPromise = manager.getUserConnection(options);
+      const secondPromise = manager.getUserConnection(options);
+      for (
+        let i = 0;
+        i < 20 && (MCPConnectionFactory.create as jest.Mock).mock.calls.length < 1;
+        i++
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
       }
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
 
-      expect(trackedWinners[0].disconnect).toHaveBeenCalledTimes(1);
-      expect(trackedWinners[1].disconnect).toHaveBeenCalledTimes(1);
-      expect(trackedWinners[2].disconnect).not.toHaveBeenCalled();
+      releaseFirst(firstConnection);
+      await expect(firstPromise).resolves.toBe(firstConnection);
+      await expect(secondPromise).resolves.toBe(secondConnection);
+
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
+      expect(firstConnection.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
+      expect(firstConnection.dispose).toHaveBeenCalledTimes(1);
+      expect(manager.getUserConnections(userId)?.get(serverName)).toBe(secondConnection);
+      await expect(
+        manager.releaseDetachedUserConnection(userId, serverName, firstConnection),
+      ).resolves.toBe(false);
+      expect(manager.getConnectionStats().totalConnections).toBe(1);
       await manager.disconnectUserConnection(userId, serverName);
-      expect(trackedWinners[2].disconnect).toHaveBeenCalledTimes(1);
+      expect(secondConnection.dispose).toHaveBeenCalledTimes(1);
       expect(manager.getConnectionStats().totalConnections).toBe(0);
     });
 
@@ -3201,9 +3329,11 @@ describe('MCPManager', () => {
       };
       const firstConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
+        on: jest.fn(),
       } as unknown as MCPConnection;
       const secondConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
+        on: jest.fn(),
       } as unknown as MCPConnection;
 
       mockAppConnections({
@@ -3246,6 +3376,7 @@ describe('MCPManager', () => {
       };
       const requestScopedConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
+        on: jest.fn(),
       } as unknown as MCPConnection;
       const requestScopedConnections: t.RequestScopedMCPConnectionStore = {
         connections: new Map(),

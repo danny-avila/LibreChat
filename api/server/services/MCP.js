@@ -13,6 +13,7 @@ const {
   normalizeMCPToolKey,
   buildServerNameAliases,
   findShadowedServerNames,
+  getAssistantToolDefinitions: loadAssistantToolDefinitions,
   resolveMCPServerContext,
   normalizeJsonSchema,
   GenerationJobManager,
@@ -31,6 +32,7 @@ const {
   matchesMCPConnectionProvenance,
   getMCPToolCatalogRevision,
   getMissingCustomUserVars,
+  getUserMCPAuthMap,
   getServerCustomUserVars,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
@@ -54,13 +56,19 @@ const {
   getMCPManager,
 } = require('~/config');
 const db = require('~/models');
-const { findToken, createToken, updateToken, deleteTokens } = db;
+const { findToken, createToken, updateToken, deleteTokens, findPluginAuthsByKeys } = db;
 const { getGraphApiToken } = require('./GraphTokenService');
 const { getMCPAuthorityResolver } = require('./MCPAuthority');
 const { exchangeOboToken } = require('./OboTokenService');
 const { createOboTrustChecker } = require('./OboPolicyService');
 const { reinitMCPServer } = require('./Tools/mcp');
-const { getAppConfig, getMCPServerCatalog } = require('./Config');
+const {
+  getAppConfig,
+  getCachedTools,
+  getMCPServerTools,
+  getMCPServerCatalog,
+  cacheMCPServerTools,
+} = require('./Config');
 const {
   createMCPRefreshAuthorityLifecycle,
   matchesMCPToolAuthorityScope,
@@ -447,6 +455,57 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
     healedList.push(healedTool);
   }
   return healedList;
+}
+
+/**
+ * Loads static and MCP function definitions used by assistant create/update writes. MCP catalogs
+ * are stored per server and effective config, so assistant writers must resolve the referenced
+ * server slices instead of relying on the static aggregate cache.
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {Array<string | object>} [params.tools]
+ * @returns {Promise<object>}
+ */
+async function getAssistantToolDefinitions({ req, tools }) {
+  const registry = getMCPServersRegistry();
+  const appConfig = await getAppConfigForRequest(req);
+  return await loadAssistantToolDefinitions(
+    {
+      user: req.user,
+      tools,
+      staticTools: (await getCachedTools()) ?? {},
+      mcpConfig: appConfig?.mcpConfig ?? {},
+    },
+    {
+      ensureConfigServers: (mcpConfig) => registry.ensureConfigServers(mcpConfig),
+      getAllServerConfigs: (userId, configServers, role) =>
+        registry.getAllServerConfigs(userId, configServers, role),
+      getMCPServerTools,
+      getServerToolFunctionsSnapshot: async (userId, serverName, serverConfig) =>
+        (await getMCPManager()?.getServerToolFunctionsSnapshot(
+          userId,
+          serverName,
+          serverConfig,
+        )) ?? {
+          tools: null,
+        },
+      recoverServerTools: async (serverName, serverConfig) => {
+        const userMCPAuthMap = await getUserMCPAuthMap({
+          userId: req.user.id,
+          servers: [serverName],
+          findPluginAuthsByKeys,
+        });
+        const result = await reinitMCPServer({
+          user: req.user,
+          serverName,
+          serverConfig,
+          userMCPAuthMap,
+        });
+        return result?.availableTools ?? null;
+      },
+      cacheMCPServerTools,
+    },
+  );
 }
 
 /**
@@ -1754,6 +1813,7 @@ module.exports = {
   resolveMcpServerContext,
   getAccessibleMcpServerNames,
   healMcpToolNames,
+  getAssistantToolDefinitions,
   resolveCollisionAuditNames,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,

@@ -51,6 +51,7 @@ const {
 } = require('~/server/services/MCP');
 const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { invalidateCachedTools } = require('~/server/services/Config');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const {
@@ -867,45 +868,59 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
 
           const catalogAuthority = await validateStoredOAuthAuthority(user);
-          const tools = await runStoredAuthorityFence(async () =>
-            getMCPAuthorityResolver().useIssuedResolution(
-              catalogAuthority,
-              async () => await userConnection.fetchTools(),
-            ),
+          const snapshot = await runStoredAuthorityFence(async () =>
+            getMCPAuthorityResolver().useIssuedResolution(catalogAuthority, async () => {
+              if (typeof userConnection.fetchOrderedToolsSnapshot === 'function') {
+                return await userConnection.fetchOrderedToolsSnapshot();
+              }
+              if (typeof userConnection.fetchToolsSnapshot === 'function') {
+                return await userConnection.fetchToolsSnapshot();
+              }
+              return { tools: await userConnection.fetchTools(), complete: true };
+            }),
           );
-          const discoveryProvenance = userConnection.getDiscoveryProvenance?.() ?? null;
-          const currentScope = await resolveCurrentMCPDiscoveryScope({
-            user,
-            serverName,
-            serverConfig: reconnectAuthority.parsedConfig.sourceConfig,
-            schemas: tools,
-            discoveryProvenance,
-            oauthRequiredHint: true,
-          });
-          if (currentScope) {
-            await runStoredAuthorityFence(async () =>
-              getMCPAuthorityResolver().useIssuedResolution(currentScope, async (current) => {
-                const parsedConfig = current.parsedConfig;
-                return await updateMCPServerTools({
-                  tenantId: parsedConfig.actor.tenantId,
-                  userId: parsedConfig.actor.userId,
-                  serverName: parsedConfig.serverName,
-                  tools: current.schemas,
-                  serverConfig: parsedConfig.sourceConfig,
-                  customUserVars: parsedConfig.customUserVars,
-                  role: parsedConfig.actor.user.role,
-                  authorizationIdentity: parsedConfig.authorization.identity,
-                  authorizationKind: parsedConfig.authorization.kind,
-                  discoveryProvenance: parsedConfig.discoveryProvenance,
-                });
-              }),
+          if (!snapshot.complete) {
+            logger.warn(
+              `[MCP OAuth] Preserving cached tools for ${serverName} because tools/list returned an incomplete snapshot`,
             );
           } else {
-            logger.warn(
-              `[MCP OAuth] Skipping stale discovery result for ${serverName} after callback`,
-            );
-            if (typeof mcpManager.disconnectUserConnection === 'function') {
-              await mcpManager.disconnectUserConnection(user.id, serverName, userConnection);
+            const tools = snapshot.tools;
+            const publicationGeneration = mcpManager.getToolPublicationGeneration?.(userConnection);
+            const discoveryProvenance = userConnection.getDiscoveryProvenance?.() ?? null;
+            const currentScope = await resolveCurrentMCPDiscoveryScope({
+              user,
+              serverName,
+              serverConfig: reconnectAuthority.parsedConfig.sourceConfig,
+              schemas: tools,
+              discoveryProvenance,
+              oauthRequiredHint: true,
+            });
+            if (currentScope) {
+              await runStoredAuthorityFence(async () =>
+                getMCPAuthorityResolver().useIssuedResolution(currentScope, async (current) => {
+                  const parsedConfig = current.parsedConfig;
+                  return await updateMCPServerTools({
+                    tenantId: parsedConfig.actor.tenantId,
+                    userId: parsedConfig.actor.userId,
+                    serverName: parsedConfig.serverName,
+                    tools: current.schemas,
+                    serverConfig: parsedConfig.sourceConfig,
+                    customUserVars: parsedConfig.customUserVars,
+                    role: parsedConfig.actor.user.role,
+                    authorizationIdentity: parsedConfig.authorization.identity,
+                    authorizationKind: parsedConfig.authorization.kind,
+                    discoveryProvenance: parsedConfig.discoveryProvenance,
+                    ...(publicationGeneration && { publicationGeneration }),
+                  });
+                }),
+              );
+            } else {
+              logger.warn(
+                `[MCP OAuth] Skipping stale discovery result for ${serverName} after callback`,
+              );
+              if (typeof mcpManager.disconnectUserConnection === 'function') {
+                await mcpManager.disconnectUserConnection(user.id, serverName, userConnection);
+              }
             }
           }
         } else {
@@ -1169,10 +1184,17 @@ router.post(
 
       await getMCPAuthorityResolver().useIssuedResolution(authority, async (current) => {
         const currentParsedConfig = current.parsedConfig;
-        await mcpManager.disconnectUserConnection(
-          currentParsedConfig.actor.userId,
-          currentParsedConfig.serverName,
-        );
+        try {
+          await invalidateCachedTools({
+            userId: currentParsedConfig.actor.userId,
+            serverName: currentParsedConfig.serverName,
+          });
+        } finally {
+          await mcpManager.disconnectUserConnection(
+            currentParsedConfig.actor.userId,
+            currentParsedConfig.serverName,
+          );
+        }
       });
       logger.info(
         `[MCP Reinitialize] Disconnected existing user connection for server: ${serverName}`,

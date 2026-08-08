@@ -1,6 +1,19 @@
 const mongoose = require('mongoose');
 const { logger, tenantStorage, assertMCPAuthorityReadiness } = require('@librechat/data-schemas');
-const { mergeAppTools, getAppConfig } = require('./Config');
+const {
+  registerShutdownTask,
+  setMCPToolsChangedHandler,
+  setMCPToolsChangedGenerationHandler,
+  setMCPToolsChangedGenerationRenewalHandler,
+  setMCPToolsChangedRevisionHandler,
+} = require('@librechat/api');
+const { syncStaticTools, mergeAppTools, getAppConfig } = require('./Config');
+const {
+  getMCPToolsCacheGeneration,
+  renewMCPToolsCacheGeneration,
+  getNextAppToolsPublicationRevision,
+  updateMCPServerTools,
+} = require('./Config/mcp');
 const { initializeMCPAuthority, setMCPAvailability } = require('./MCPAuthority');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
 const db = require('~/models');
@@ -48,6 +61,36 @@ async function resolveMCPAllowlists(ctx) {
 }
 
 /**
+ * Refreshes one server's tools after it reported `notifications/tools/list_changed`.
+ *
+ * A server that builds tools at runtime is the case this exists for: without it the tool list
+ * stayed frozen at connection time and only a restart picked up the change (#7117). The list is
+ * re-fetched from the live connection and written over that server's cache entry, so tools that
+ * disappeared stop being advertised too.
+ */
+async function refreshChangedServerTools({
+  serverName,
+  userId,
+  tools,
+  serverConfig,
+  publicationGeneration,
+  publicationRevision,
+}) {
+  await updateMCPServerTools({
+    userId,
+    serverName,
+    tools,
+    serverConfig,
+    ...(publicationGeneration && { publicationGeneration }),
+    ...(publicationRevision && { publicationRevision }),
+  });
+  const toolCount = tools.length;
+  logger.info(
+    `[MCP][${serverName}] Tool list changed; refreshed ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}${userId ? ` for user ${userId}` : ''}`,
+  );
+}
+
+/**
  * Initialize MCP servers
  */
 async function initializeMCPs(options = {}) {
@@ -87,16 +130,28 @@ async function initializeMCPs(options = {}) {
 
   try {
     const mcpManager = await createMCPManager(mcpServers || {});
+    setMCPToolsChangedHandler(refreshChangedServerTools);
+    setMCPToolsChangedGenerationHandler(getMCPToolsCacheGeneration);
+    setMCPToolsChangedGenerationRenewalHandler(renewMCPToolsCacheGeneration);
+    setMCPToolsChangedRevisionHandler(({ serverName, configGeneration }) =>
+      getNextAppToolsPublicationRevision(serverName, configGeneration),
+    );
+    registerShutdownTask('MCP app connections', () => mcpManager.disconnectAppServers());
 
     if (mcpServers && Object.keys(mcpServers).length > 0) {
       const mcpTools = (await mcpManager.getAppToolFunctions()) || {};
-      await mergeAppTools(mcpTools);
+      try {
+        await mergeAppTools(mcpTools, appConfig.availableTools || {});
+      } finally {
+        await mcpManager.connectAppServers();
+      }
       const serverCount = Object.keys(mcpServers).length;
       const toolCount = Object.keys(mcpTools).length;
       logger.info(
         `[MCP] Initialized with ${serverCount} configured ${serverCount === 1 ? 'server' : 'servers'} and ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}.`,
       );
     } else {
+      await syncStaticTools(appConfig.availableTools || {});
       logger.debug('[MCP] No servers configured. MCPManager ready for UI-based servers.');
     }
   } catch (error) {
@@ -106,3 +161,4 @@ async function initializeMCPs(options = {}) {
 }
 
 module.exports = initializeMCPs;
+module.exports.refreshChangedServerTools = refreshChangedServerTools;

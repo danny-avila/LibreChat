@@ -229,10 +229,10 @@ export class MCPConnectionFactory {
       );
 
       if (await connection.isConnected()) {
-        const tools = await connection.fetchTools();
+        const snapshot = await connection.fetchOrderedToolsSnapshot();
         connection.removeListener('oauthRequired', oauthHandler);
         return {
-          tools,
+          tools: snapshot.complete ? snapshot.tools : null,
           connection,
           oauthRequired: false,
           oauthUrl: null,
@@ -254,7 +254,7 @@ export class MCPConnectionFactory {
           `${this.logPrefix} [Discovery] Successfully discovered ${tools.length} tools without auth`,
         );
         try {
-          await connection.disconnect();
+          await connection.dispose();
         } catch {
           // Ignore cleanup errors
         }
@@ -275,7 +275,7 @@ export class MCPConnectionFactory {
     connection.removeListener('oauthRequired', oauthHandler);
 
     try {
-      await connection.disconnect();
+      await connection.dispose();
     } catch {
       // Ignore cleanup errors
     }
@@ -309,16 +309,16 @@ export class MCPConnectionFactory {
       await withTimeout(unauthConnection.connect(), connectTimeout, `Unauth connection timeout`);
 
       if (await unauthConnection.isConnected()) {
-        const tools = await unauthConnection.fetchTools();
-        await unauthConnection.disconnect();
-        return tools;
+        const snapshot = await unauthConnection.fetchOrderedToolsSnapshot();
+        await unauthConnection.dispose();
+        return snapshot.complete ? snapshot.tools : null;
       }
     } catch {
       logger.debug(`${this.logPrefix} [Discovery] Unauthenticated connection attempt failed`);
     }
 
     try {
-      await unauthConnection.disconnect();
+      await unauthConnection.dispose();
     } catch {
       // Ignore cleanup errors
     }

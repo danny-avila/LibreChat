@@ -12,7 +12,7 @@ const { findToken, findTokens, createToken, updateToken, deleteTokens } = requir
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { exchangeOboToken } = require('~/server/services/OboTokenService');
 const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
-const { updateMCPServerTools } = require('~/server/services/Config');
+const { getMCPToolsCacheGeneration, updateMCPServerTools } = require('~/server/services/Config');
 const {
   createMCPRefreshAuthorityLifecycle,
   resolveCurrentMCPDiscoveryScope,
@@ -75,6 +75,7 @@ async function reinitMCPServer({
   let discoveryProvenance = null;
   let authorityScope = null;
   let discoveryScopeRejected = false;
+  let publicationGeneration;
   let mcpManager;
   let bindAuthority;
 
@@ -237,6 +238,12 @@ async function reinitMCPServer({
     const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
     mcpManager = getMCPManager();
     const tokenMethods = { findToken, findTokens, updateToken, createToken, deleteTokens };
+    if (!ephemeralServer) {
+      publicationGeneration = await getMCPToolsCacheGeneration({
+        userId: user.id,
+        serverName,
+      });
+    }
     const oauthStart =
       _oauthStart ??
       (async (authURL, options) => {
@@ -361,11 +368,41 @@ async function reinitMCPServer({
     }
 
     if (connection && !oauthRequired) {
-      tools = await getMCPAuthorityResolver().useIssuedResolution(
+      publicationGeneration =
+        mcpManager.getToolPublicationGeneration?.(connection) ?? publicationGeneration;
+      const snapshot = await getMCPAuthorityResolver().useIssuedResolution(
         bindAuthority,
-        async () => await connection.fetchTools(),
+        async () => {
+          if (typeof connection.fetchOrderedToolsSnapshot === 'function') {
+            return await connection.fetchOrderedToolsSnapshot();
+          }
+          if (typeof connection.fetchToolsSnapshot === 'function') {
+            return await connection.fetchToolsSnapshot();
+          }
+          return { tools: await connection.fetchTools(), complete: true };
+        },
       );
+      if (snapshot.complete) {
+        tools = snapshot.tools;
+      } else {
+        logger.warn(
+          `[MCP Reinitialize] Preserving cached tools for ${serverName} because tools/list returned an incomplete snapshot`,
+        );
+      }
       discoveryProvenance = connection.getDiscoveryProvenance?.() ?? null;
+    }
+
+    if (tools && !ephemeralServer && publicationGeneration) {
+      const currentGeneration = await getMCPToolsCacheGeneration({
+        userId: user.id,
+        serverName,
+      });
+      if (currentGeneration !== publicationGeneration) {
+        logger.warn(
+          `[MCP Reinitialize] Discarding stale tools for ${serverName} because its publication generation changed during discovery`,
+        );
+        tools = null;
+      }
     }
 
     if (tools) {
@@ -414,9 +451,13 @@ async function reinitMCPServer({
               authorizationKind: parsedConfig.authorization.kind,
               persistCatalog: parsedConfig.authorization.identity != null,
               discoveryProvenance: parsedConfig.discoveryProvenance,
+              ...(publicationGeneration && { publicationGeneration }),
             });
           },
         );
+        if (availableTools == null) {
+          tools = null;
+        }
       }
     }
 
@@ -483,12 +524,9 @@ async function reinitMCPServer({
   } finally {
     if (connection && ephemeralServer && !requestScopedConnections) {
       try {
-        await connection.disconnect();
+        await connection.dispose();
       } catch (error) {
-        logger.warn(
-          `[MCP Reinitialize] Failed to disconnect ephemeral server ${serverName}`,
-          error,
-        );
+        logger.warn(`[MCP Reinitialize] Failed to dispose ephemeral server ${serverName}`, error);
       }
     } else if (connection && typeof mcpManager?.releaseDetachedUserConnection === 'function') {
       try {

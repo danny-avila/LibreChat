@@ -4,6 +4,7 @@ import {
   createMCPConnectionProvenance,
   createMCPToolCatalogSecurityPolicyIdentity,
 } from '~/mcp/catalog';
+import { getMCPAppToolsPublicationGeneration, setMCPToolsChangedHandler } from '~/mcp/toolsChanged';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from '~/mcp/connection';
@@ -11,8 +12,10 @@ import { MCPConnection } from '~/mcp/connection';
 // Mock external dependencies
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
+    debug: jest.fn(),
     error: jest.fn(),
     info: jest.fn(),
+    warn: jest.fn(),
   },
 }));
 
@@ -58,6 +61,7 @@ describe('ConnectionsRepository', () => {
   let mockConnection: jest.Mocked<MCPConnection>;
 
   beforeEach(() => {
+    setMCPToolsChangedHandler(null);
     mockServerConfigs = {
       server1: { url: 'http://localhost:3001', type: 'sse' },
       server2: { command: 'test-command', args: ['--test'], type: 'stdio' },
@@ -76,10 +80,36 @@ describe('ConnectionsRepository', () => {
     ) as jest.Mock;
 
     mockConnection = {
+      client: {
+        getServerCapabilities: jest.fn().mockReturnValue({ tools: {} }),
+      },
       isConnected: jest.fn().mockResolvedValue(true),
       disconnect: jest.fn().mockResolvedValue(undefined),
+      dispose: jest.fn().mockResolvedValue(undefined),
+      fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
+      refreshToolList: jest.fn().mockResolvedValue(undefined),
       createdAt: Date.now(),
       isStale: jest.fn().mockReturnValue(false),
+      getDiscoveryProvenance: jest.fn(() =>
+        createMCPConnectionProvenance(
+          {
+            tenantId: null,
+            userId: '__app__',
+            serverName: 'server1',
+            serverConfig: mockServerConfigs.server1,
+            effectiveServerConfig: mockServerConfigs.server1,
+            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+              allowedDomains: mockGetAllowedDomains(),
+              allowedAddresses: mockGetAllowedAddresses(),
+            }),
+            authorizationIdentity: 'none',
+          },
+          'app',
+        ),
+      ),
+      /* A real connection is an EventEmitter and the repository subscribes to it. */
+      on: jest.fn(),
+      removeAllListeners: jest.fn(),
     } as unknown as jest.Mocked<MCPConnection>;
 
     (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
@@ -91,6 +121,7 @@ describe('ConnectionsRepository', () => {
   });
 
   afterEach(() => {
+    setMCPToolsChangedHandler(null);
     jest.clearAllMocks();
   });
 
@@ -131,19 +162,126 @@ describe('ConnectionsRepository', () => {
         undefined,
       );
       expect(repository['connections'].get('server1')).toBe(mockConnection);
+      expect(mockConnection.fetchToolsSnapshot).toHaveBeenCalledTimes(1);
+      expect(mockConnection.refreshToolList).not.toHaveBeenCalled();
+    });
+
+    it('serializes concurrent creation so only one connection is retained', async () => {
+      const [first, second] = await Promise.all([
+        repository.get('server1'),
+        repository.get('server1'),
+      ]);
+
+      expect(first).toBe(mockConnection);
+      expect(second).toBe(mockConnection);
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+      expect(mockConnection.on).toHaveBeenCalledTimes(1);
+    });
+
+    it('awaits initial app tool publication before returning a new connection', async () => {
+      let releasePublication: (() => void) | undefined;
+      const publication = new Promise<void>((resolve) => {
+        releasePublication = resolve;
+      });
+      const handler = jest.fn(() => publication);
+      setMCPToolsChangedHandler(handler);
+
+      let loaded = false;
+      const load = repository.get('server1').then((connection) => {
+        loaded = true;
+        return connection;
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'server1',
+          tools: [],
+          publicationGeneration: getMCPAppToolsPublicationGeneration(mockServerConfigs.server1),
+        }),
+      );
+      expect(loaded).toBe(false);
+
+      releasePublication?.();
+      await expect(load).resolves.toBe(mockConnection);
+    });
+
+    it('can defer the initial app tool refresh for startup synchronization', async () => {
+      await repository.get('server1', { refreshTools: false });
+
+      expect(mockConnection.fetchToolsSnapshot).not.toHaveBeenCalled();
+      expect(mockConnection.refreshToolList).not.toHaveBeenCalled();
+    });
+
+    it('queues the connection retry path when the initial app snapshot is incomplete', async () => {
+      mockConnection.fetchToolsSnapshot.mockResolvedValue({ tools: [], complete: false });
+
+      await repository.get('server1');
+
+      expect(mockConnection.refreshToolList).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not publish an initial snapshot superseded by a list-changed refresh', async () => {
+      let toolsChanged: ((tools: t.MCPTool[]) => void) | undefined;
+      mockConnection.on.mockImplementation((event, listener) => {
+        if (event === 'toolsChanged') {
+          toolsChanged = listener as (tools: t.MCPTool[]) => void;
+        }
+        return mockConnection;
+      });
+      let releaseInitialSnapshot:
+        | ((snapshot: { tools: t.MCPTool[]; complete: boolean }) => void)
+        | undefined;
+      mockConnection.fetchToolsSnapshot.mockReturnValue(
+        new Promise((resolve) => {
+          releaseInitialSnapshot = resolve;
+        }),
+      );
+      const handler = jest.fn().mockResolvedValue(undefined);
+      setMCPToolsChangedHandler(handler);
+
+      const load = repository.get('server1');
+      await new Promise((resolve) => setImmediate(resolve));
+      toolsChanged?.([{ name: 'current', inputSchema: { type: 'object' } } as t.MCPTool]);
+      releaseInitialSnapshot?.({
+        tools: [{ name: 'stale', inputSchema: { type: 'object' } } as t.MCPTool],
+        complete: true,
+      });
+      await load;
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ tools: [expect.objectContaining({ name: 'current' })] }),
+      );
+      expect(handler).not.toHaveBeenCalledWith(
+        expect.objectContaining({ tools: [expect.objectContaining({ name: 'stale' })] }),
+      );
+    });
+
+    it('publishes an empty snapshot without listing tools when the server lacks the capability', async () => {
+      const handler = jest.fn().mockResolvedValue(undefined);
+      setMCPToolsChangedHandler(handler);
+      (mockConnection.client.getServerCapabilities as jest.Mock).mockReturnValue({ resources: {} });
+
+      await repository.get('server1');
+
+      expect(mockConnection.fetchToolsSnapshot).not.toHaveBeenCalled();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName: 'server1', tools: [] }),
+      );
     });
 
     it('should create new connection if existing connection is not connected', async () => {
       const oldConnection = {
         isConnected: jest.fn().mockResolvedValue(false),
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as jest.Mocked<MCPConnection>;
       repository['connections'].set('server1', oldConnection);
 
       const result = await repository.get('server1');
 
       expect(result).toBe(mockConnection);
-      expect(oldConnection.disconnect).toHaveBeenCalled();
+      expect(oldConnection.dispose).toHaveBeenCalled();
       expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
         {
           serverName: 'server1',
@@ -164,6 +302,7 @@ describe('ConnectionsRepository', () => {
       const staleConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
         createdAt: connectionCreatedAt,
         isStale: jest.fn().mockReturnValue(true),
       } as unknown as jest.Mocked<MCPConnection>;
@@ -183,7 +322,7 @@ describe('ConnectionsRepository', () => {
       expect(staleConnection.isStale).toHaveBeenCalledWith(configCachedAt);
 
       // Verify old connection was disconnected
-      expect(staleConnection.disconnect).toHaveBeenCalled();
+      expect(staleConnection.dispose).toHaveBeenCalled();
 
       // Verify new connection was created
       expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
@@ -213,6 +352,7 @@ describe('ConnectionsRepository', () => {
       const freshConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
         createdAt: connectionCreatedAt,
         isStale: jest.fn().mockReturnValue(false),
       } as unknown as jest.Mocked<MCPConnection>;
@@ -232,7 +372,7 @@ describe('ConnectionsRepository', () => {
       expect(freshConnection.isStale).toHaveBeenCalledWith(configCachedAt);
 
       // Verify connection was not disconnected
-      expect(freshConnection.disconnect).not.toHaveBeenCalled();
+      expect(freshConnection.dispose).not.toHaveBeenCalled();
 
       // Verify no new connection was created
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
@@ -242,6 +382,17 @@ describe('ConnectionsRepository', () => {
 
       // Verify repository still has the same connection
       expect(repository['connections'].get('server1')).toBe(freshConnection);
+    });
+
+    it('uses the repository cleanup path when a loaded server config is removed', async () => {
+      repository['connections'].set('server1', mockConnection);
+      delete mockServerConfigs.server1;
+
+      await expect(repository.get('server1')).resolves.toBeNull();
+
+      expect(mockConnection.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
+      expect(mockConnection.dispose).toHaveBeenCalled();
+      expect(repository['connections'].has('server1')).toBe(false);
     });
 
     it.each(['policy tightening', 'environment secret rotation'])(
@@ -276,6 +427,7 @@ describe('ConnectionsRepository', () => {
         const staleConnection = {
           isConnected: jest.fn().mockResolvedValue(true),
           disconnect: jest.fn().mockResolvedValue(undefined),
+          dispose: jest.fn().mockResolvedValue(undefined),
           isStale: jest.fn().mockReturnValue(false),
           getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
         } as unknown as jest.Mocked<MCPConnection>;
@@ -289,7 +441,7 @@ describe('ConnectionsRepository', () => {
 
         await repository.get('server1');
 
-        expect(staleConnection.disconnect).toHaveBeenCalled();
+        expect(staleConnection.dispose).toHaveBeenCalled();
         expect(MCPConnectionFactory.create).toHaveBeenCalled();
         mockGetAllowedDomains.mockReturnValue(null);
         if (originalCredsKey == null) {
@@ -327,6 +479,7 @@ describe('ConnectionsRepository', () => {
       const sharedConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
         isStale: jest.fn().mockReturnValue(false),
         getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
       } as unknown as jest.Mocked<MCPConnection>;
@@ -405,6 +558,27 @@ describe('ConnectionsRepository', () => {
       expect(result.get('server2')).toBe(mockConnection);
       expect(result.get('server3')).toBe(mockConnection);
     });
+
+    it('continues loading later servers when one connection fails', async () => {
+      (MCPConnectionFactory.create as jest.Mock).mockImplementation(
+        ({ serverName }: { serverName: string }) => {
+          if (serverName === 'server1') {
+            return Promise.reject(new Error('server unavailable'));
+          }
+          return Promise.resolve(mockConnection);
+        },
+      );
+
+      const result = await repository.getAll({ continueOnError: true });
+
+      expect(result.has('server1')).toBe(false);
+      expect(result.get('server2')).toBe(mockConnection);
+      expect(result.get('server3')).toBe(mockConnection);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[MCP][server1] Failed to establish connection',
+        expect.any(Error),
+      );
+    });
   });
 
   describe('disconnect', () => {
@@ -413,36 +587,39 @@ describe('ConnectionsRepository', () => {
 
       await repository.disconnect('server1');
 
-      expect(mockConnection.disconnect).toHaveBeenCalled();
+      expect(mockConnection.dispose).toHaveBeenCalled();
       expect(repository['connections'].has('server1')).toBe(false);
     });
 
     it('should handle disconnect error gracefully', async () => {
       const disconnectError = new Error('Disconnect failed');
-      mockConnection.disconnect.mockRejectedValue(disconnectError);
+      mockConnection.dispose.mockRejectedValue(disconnectError);
       repository['connections'].set('server1', mockConnection);
 
       await repository.disconnect('server1');
 
-      expect(mockConnection.disconnect).toHaveBeenCalled();
+      expect(mockConnection.dispose).toHaveBeenCalled();
       expect(repository['connections'].has('server1')).toBe(false);
       expect(mockLogger.error).toHaveBeenCalledWith(
-        '[MCP][server1] Error disconnecting',
+        '[MCP][server1] Error disposing',
         disconnectError,
       );
     });
   });
 
   describe('disconnectAll', () => {
-    it('should disconnect all active connections', () => {
+    it('should disconnect all active connections', async () => {
       const mockConnection1 = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as jest.Mocked<MCPConnection>;
       const mockConnection2 = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as jest.Mocked<MCPConnection>;
       const mockConnection3 = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as jest.Mocked<MCPConnection>;
 
       repository['connections'].set('server1', mockConnection1);
@@ -451,8 +628,32 @@ describe('ConnectionsRepository', () => {
 
       const promises = repository.disconnectAll();
 
-      expect(promises).toHaveLength(3);
+      expect(promises).toHaveLength(1);
       expect(Array.isArray(promises)).toBe(true);
+      await Promise.all(promises);
+      expect(mockConnection1.dispose).toHaveBeenCalledTimes(1);
+      expect(mockConnection2.dispose).toHaveBeenCalledTimes(1);
+      expect(mockConnection3.dispose).toHaveBeenCalledTimes(1);
+    });
+
+    it('drains and disposes a connection whose creation finishes during shutdown', async () => {
+      let releaseCreation: ((connection: MCPConnection) => void) | undefined;
+      (MCPConnectionFactory.create as jest.Mock).mockReturnValue(
+        new Promise((resolve) => {
+          releaseCreation = resolve;
+        }),
+      );
+
+      const load = repository.get('server1');
+      await new Promise((resolve) => setImmediate(resolve));
+      const shutdown = Promise.all(repository.disconnectAll());
+      releaseCreation?.(mockConnection);
+
+      await expect(load).resolves.toBeNull();
+      await shutdown;
+      expect(mockConnection.dispose).toHaveBeenCalledTimes(1);
+      await expect(repository.get('server1')).resolves.toBeNull();
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -483,6 +684,17 @@ describe('ConnectionsRepository', () => {
         };
 
         expect(await repository.has('defaultServer')).toBe(true);
+      });
+
+      it('should NOT allow app connections to public user-managed servers', async () => {
+        mockServerConfigs.publicServer = {
+          type: 'streamable-http',
+          url: 'https://public.example.com/mcp',
+          source: 'user',
+          requiresOAuth: false,
+        };
+
+        expect(await repository.has('publicServer')).toBe(false);
       });
 
       it('should NOT allow connection to OAuth servers', async () => {
@@ -585,7 +797,7 @@ describe('ConnectionsRepository', () => {
         const allowed = await repository.has('changingServer');
 
         expect(allowed).toBe(false);
-        expect(mockConnection.disconnect).toHaveBeenCalled();
+        expect(mockConnection.dispose).toHaveBeenCalled();
       });
     });
 
@@ -604,6 +816,17 @@ describe('ConnectionsRepository', () => {
         };
 
         expect(await repository.has('regularServer')).toBe(true);
+      });
+
+      it('should lazily allow user connections to public user-managed servers', async () => {
+        mockServerConfigs.publicServer = {
+          type: 'streamable-http',
+          url: 'https://public.example.com/mcp',
+          source: 'user',
+          requiresOAuth: false,
+        };
+
+        expect(await repository.has('publicServer')).toBe(true);
       });
 
       it('should allow connection to OAuth servers', async () => {

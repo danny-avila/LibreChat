@@ -13,6 +13,7 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
+  canUseAppConnection,
   isOAuthServer,
   isUserSourced,
   requiresEphemeralUserConnection,
@@ -25,6 +26,7 @@ import {
   isMCPToolCatalogFingerprintAvailable,
   matchesMCPConnectionProvenance,
 } from './catalog';
+import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerInspector } from './registry/MCPServerInspector';
@@ -264,9 +266,9 @@ export class MCPManager extends UserConnectionManager {
     ): Promise<t.ToolDiscoveryResult> => {
       if (result.connection) {
         try {
-          await result.connection.disconnect();
+          await result.connection.dispose();
         } catch (error) {
-          logger.warn(`${logPrefix} [Discovery] Failed to disconnect discovery connection`, error);
+          logger.warn(`${logPrefix} [Discovery] Failed to dispose discovery connection`, error);
         }
       }
       return {
@@ -323,20 +325,55 @@ export class MCPManager extends UserConnectionManager {
     const toolFunctions: t.LCAvailableTools = {};
     const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
     for (const config of Object.values(configs)) {
-      if (config.toolFunctions != null) {
+      if (canUseAppConnection(config) && config.toolFunctions != null) {
         Object.assign(toolFunctions, config.toolFunctions);
       }
     }
     return toolFunctions;
   }
 
-  /** Returns all available tool functions from all connections available to user */
-  public async getServerToolFunctions(
+  /** Opens eligible app-shared sessions after the inspected startup catalog has been cached. */
+  public async connectAppServers(): Promise<void> {
+    try {
+      const configs = await MCPServersRegistry.getInstance().getAllServerConfigs();
+      const serverNames = Object.entries(configs)
+        .filter(([, config]) => canUseAppConnection(config))
+        .map(([serverName]) => serverName);
+      const connections = await this.appConnections?.getMany(serverNames, {
+        continueOnError: true,
+        refreshTools: false,
+      });
+      if (!connections) {
+        return;
+      }
+      await Promise.all(
+        Array.from(connections.values(), (connection) => connection.refreshToolList()),
+      );
+    } catch (error) {
+      logger.warn('[MCP] Failed to establish one or more app connections after inspection', error);
+    }
+  }
+
+  /** Closes app-shared MCP sessions during graceful process shutdown. */
+  public async disconnectAppServers(): Promise<void> {
+    await Promise.all(this.appConnections?.disconnectAll() ?? []);
+  }
+
+  /** Returns tool functions with the generation bound to their originating user connection. */
+  public async getServerToolFunctionsSnapshot(
     userId: string,
     serverName: string,
-  ): Promise<t.LCAvailableTools | null> {
-    const result = await this.getServerToolFunctionsResult(userId, serverName);
-    return result?.tools ?? null;
+    serverConfig?: t.ParsedServerConfig,
+  ): Promise<{ tools: t.LCAvailableTools | null; publicationGeneration?: string }> {
+    const result = await this.getServerToolFunctionsResult(
+      userId,
+      serverName,
+      undefined,
+      serverConfig,
+    );
+    return result
+      ? { tools: result.tools, publicationGeneration: result.publicationGeneration }
+      : { tools: null };
   }
 
   public async getServerToolFunctionsWithProvenance(
@@ -347,20 +384,38 @@ export class MCPManager extends UserConnectionManager {
     tools: t.LCAvailableTools;
     provenance: ReturnType<MCPConnection['getDiscoveryProvenance']>;
   } | null> {
-    return this.getServerToolFunctionsResult(userId, serverName, expectedScope);
+    const result = await this.getServerToolFunctionsResult(
+      userId,
+      serverName,
+      expectedScope,
+      expectedScope.serverConfig,
+    );
+    return result ? { tools: result.tools, provenance: result.provenance } : null;
   }
 
   private async getServerToolFunctionsResult(
     userId: string,
     serverName: string,
     expectedScope?: MCPToolCatalogScopeInput,
+    serverConfig?: t.ParsedServerConfig,
   ): Promise<{
     tools: t.LCAvailableTools;
     provenance: ReturnType<MCPConnection['getDiscoveryProvenance']>;
+    publicationGeneration?: string;
   } | null> {
     try {
-      //try get the appConnection (if the config is not in the app level anymore any existing connection will disconnect and get will return null)
-      const existingAppConnection = await this.appConnections?.get(serverName);
+      const registry = MCPServersRegistry.getInstance();
+      const effectiveConfig =
+        serverConfig ??
+        expectedScope?.serverConfig ??
+        (await registry.getServerConfig(serverName, userId));
+      const useAppConnection =
+        effectiveConfig != null &&
+        canUseAppConnection(effectiveConfig) &&
+        (await registry.isAppServerConfig(serverName, effectiveConfig));
+      const existingAppConnection = useAppConnection
+        ? await this.appConnections?.get(serverName)
+        : null;
       if (existingAppConnection) {
         const provenance = existingAppConnection.getDiscoveryProvenance?.() ?? null;
         const runtimeOAuthRequiresPostValidation =
@@ -389,6 +444,32 @@ export class MCPManager extends UserConnectionManager {
       }
 
       const connection = userConnections.get(serverName)!;
+      if (!effectiveConfig) {
+        await this.disconnectUserConnection(userId, serverName, connection);
+        return null;
+      }
+      const connectionConfigGeneration = this.getToolConfigGeneration(connection);
+      const effectiveConfigGeneration = getMCPAppToolsPublicationGeneration(
+        effectiveConfig,
+        effectiveConfig,
+      );
+      if (
+        connectionConfigGeneration != null &&
+        connectionConfigGeneration !== effectiveConfigGeneration
+      ) {
+        await this.disconnectUserConnection(userId, serverName, connection);
+        return null;
+      }
+      const publicationGeneration = this.getToolPublicationGeneration(connection);
+      const currentGeneration = await getMCPToolsChangedGeneration({ userId, serverName });
+      if (
+        publicationGeneration != null &&
+        currentGeneration != null &&
+        publicationGeneration !== currentGeneration
+      ) {
+        await this.disconnectUserConnection(userId, serverName, connection);
+        return null;
+      }
       const provenance = connection.getDiscoveryProvenance?.() ?? null;
       const runtimeOAuthRequiresPostValidation =
         expectedScope != null &&
@@ -402,10 +483,17 @@ export class MCPManager extends UserConnectionManager {
         await this.disconnectUserConnection(userId, serverName, connection);
         return null;
       }
-      return {
-        tools: await MCPServerInspector.getToolFunctions(serverName, connection),
-        provenance,
-      };
+      const tools = await MCPServerInspector.getToolFunctions(serverName, connection);
+      const generationAfterFetch = await getMCPToolsChangedGeneration({ userId, serverName });
+      if (
+        publicationGeneration != null &&
+        generationAfterFetch != null &&
+        publicationGeneration !== generationAfterFetch
+      ) {
+        await this.disconnectUserConnection(userId, serverName, connection);
+        return null;
+      }
+      return { tools, provenance, publicationGeneration };
     } catch (error) {
       logger.warn(
         `[getServerToolFunctions] Error getting tool functions for server ${serverName}`,
@@ -413,6 +501,14 @@ export class MCPManager extends UserConnectionManager {
       );
       return null;
     }
+  }
+
+  /** Returns all available tool functions from all connections available to user. */
+  public async getServerToolFunctions(
+    userId: string,
+    serverName: string,
+  ): Promise<t.LCAvailableTools | null> {
+    return (await this.getServerToolFunctionsSnapshot(userId, serverName)).tools;
   }
 
   /**
@@ -749,7 +845,7 @@ Please follow these instructions when using tools from the respective MCP server
       const hasPersistentUserConnections =
         !!userId && (this.userConnections.get(userId)?.size ?? 0) > 0;
       if (!ephemeralConnection && hasPersistentUserConnections) {
-        this.updateUserLastActivity(userId);
+        await this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
       return formatToolContent(result, provider);

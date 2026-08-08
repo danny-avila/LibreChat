@@ -9,12 +9,20 @@ const {
 const { Constants } = require('librechat-data-provider');
 const {
   getCachedTools,
-  setCachedTools,
+  updateCachedGlobalTools,
+  setCachedToolsWithinGlobalLock,
+  setCachedToolsIfCurrent,
+  getCachedAppServerTools,
+  setCachedAppServerTools,
   getCachedMCPServerCatalog,
   setCachedMCPServerCatalog,
+  getMCPToolsCacheGeneration,
+  renewMCPToolsCacheGeneration,
+  getNextAppToolsPublicationRevision,
 } = require('./getCachedTools');
 
 const {
+  syncStaticTools,
   mergeAppTools,
   cacheMCPServerTools,
   cacheScopedMCPServerTools,
@@ -24,11 +32,18 @@ const {
   getMCPServerCatalog,
 } = createMCPToolCacheService({
   getCachedTools,
-  setCachedTools,
+  updateCachedGlobalTools,
+  setCachedTools: setCachedToolsWithinGlobalLock,
+  setCachedToolsIfCurrent,
+  getCachedAppServerTools,
+  setCachedAppServerTools,
   getMCPServerCatalog: getCachedMCPServerCatalog,
   setMCPServerCatalog: setCachedMCPServerCatalog,
   getServerConfig: (serverName, userId) =>
     MCPServersRegistry.getInstance().getServerConfig(serverName, userId),
+  getAllServerConfigs: () => MCPServersRegistry.getInstance().getAllServerConfigs(),
+  isAppServerConfig: (serverName, effectiveConfig) =>
+    MCPServersRegistry.getInstance().isAppServerConfig(serverName, effectiveConfig),
   getScopedSecurityPolicy: (principal) =>
     MCPServersRegistry.getInstance().resolveCatalogSecurityPolicy(principal),
 });
@@ -86,6 +101,7 @@ async function getScopedMCPServerTools({
 }
 
 module.exports = {
+  syncStaticTools,
   mergeAppTools,
   getMCPServerTools,
   getScopedCachedMCPServerTools,
@@ -94,4 +110,7 @@ module.exports = {
   cacheMCPServerTools,
   cacheScopedMCPServerTools,
   updateMCPServerTools,
+  getMCPToolsCacheGeneration,
+  renewMCPToolsCacheGeneration,
+  getNextAppToolsPublicationRevision,
 };
