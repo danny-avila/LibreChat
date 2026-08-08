@@ -70,6 +70,8 @@ describe('generateShortLivedToken', () => {
     delete process.env.RAG_JWT_ALGORITHM;
     delete process.env.RAG_JWT_ISSUER;
     delete process.env.RAG_JWT_AUDIENCE;
+    delete process.env.RAG_JWT_KID;
+    delete process.env.RAG_JWT_TTL_SECONDS;
     delete process.env.RAG_AUTH_ACCEPT_LEGACY;
     process.env.JWT_SECRET = APP_SECRET;
   });
@@ -293,6 +295,173 @@ describe('generateShortLivedToken', () => {
       process.env.RAG_JWT_ALGORITHM = 'Ed25519';
 
       expect(mint).toThrow(/RAG_JWT_ALGORITHM 'Ed25519' is not supported/);
+    });
+  });
+
+  describe('key id', () => {
+    const mint = (userId: string) =>
+      generateShortLivedToken({
+        userId,
+        tenantId: 'tenant-a',
+        entityIds: [],
+        scopes: [RagScopes.documents],
+      });
+
+    it('stamps a default key id so the service can hold more than one key', () => {
+      process.env.RAG_JWT_SECRET = RAG_SECRET;
+
+      const header = jwt.decode(mint('kid-user-1'), { complete: true })?.header;
+      expect(header?.kid).toBe('lc-rag-2026-08');
+    });
+
+    it('uses a configured key id', () => {
+      process.env.RAG_JWT_SECRET = RAG_SECRET;
+      process.env.RAG_JWT_KID = 'rag-2027-01';
+
+      expect(jwt.decode(mint('kid-user-2'), { complete: true })?.header.kid).toBe('rag-2027-01');
+    });
+
+    it('falls back to the default rather than emitting a blank key id', () => {
+      process.env.RAG_JWT_SECRET = RAG_SECRET;
+      process.env.RAG_JWT_KID = '   ';
+
+      expect(jwt.decode(mint('kid-user-3'), { complete: true })?.header.kid).toBe('lc-rag-2026-08');
+    });
+
+    it('stamps the key id for asymmetric algorithms too', () => {
+      process.env.RAG_JWT_ALGORITHM = 'ES256';
+      process.env.RAG_JWT_PRIVATE_KEY = keyPairFor('ES256').privateKey;
+
+      expect(jwt.decode(mint('kid-user-4'), { complete: true })?.header.kid).toBe('lc-rag-2026-08');
+    });
+  });
+
+  describe('replay and validity claims', () => {
+    const mint = (userId: string, scope: string = RagScopes.documents) =>
+      generateShortLivedToken({
+        userId,
+        tenantId: 'tenant-a',
+        entityIds: [],
+        scopes: [scope as (typeof RagScopes)[keyof typeof RagScopes]],
+      });
+
+    beforeEach(() => {
+      process.env.RAG_JWT_SECRET = RAG_SECRET;
+    });
+
+    it('carries a token id the service can use as a replay handle', () => {
+      const claims = decodeWithRagKey(mint('jti-user-1'));
+      expect(typeof claims.jti).toBe('string');
+      expect(claims.jti).not.toBe('');
+    });
+
+    it('gives distinct claim sets distinct token ids', () => {
+      const first = decodeWithRagKey(mint('jti-user-2', RagScopes.documents));
+      const second = decodeWithRagKey(mint('jti-user-2', RagScopes.embed));
+      expect(first.jti).not.toBe(second.jti);
+    });
+
+    it('is valid from the moment it is issued', () => {
+      const claims = decodeWithRagKey(mint('nbf-user-1'));
+      expect(claims.nbf).toBe(claims.iat);
+    });
+
+    it('expires five minutes after issue by default', () => {
+      const claims = decodeWithRagKey(mint('ttl-user-1'));
+      expect(claims.exp! - claims.iat!).toBe(300);
+    });
+
+    it('honours a shorter configured lifetime', () => {
+      process.env.RAG_JWT_TTL_SECONDS = '60';
+
+      const claims = decodeWithRagKey(mint('ttl-user-2'));
+      expect(claims.exp! - claims.iat!).toBe(60);
+    });
+
+    it('refuses to be configured beyond the maximum lifetime', () => {
+      process.env.RAG_JWT_TTL_SECONDS = '86400';
+
+      const claims = decodeWithRagKey(mint('ttl-user-3'));
+      expect(claims.exp! - claims.iat!).toBe(300);
+    });
+
+    it('ignores a lifetime that is not a positive number', () => {
+      process.env.RAG_JWT_TTL_SECONDS = 'soon';
+
+      const claims = decodeWithRagKey(mint('ttl-user-4'));
+      expect(claims.exp! - claims.iat!).toBe(300);
+    });
+  });
+
+  describe('mint caching', () => {
+    const mint = (overrides: {
+      userId?: string;
+      tenantId?: string;
+      entityIds?: string[];
+      scopes?: Array<(typeof RagScopes)[keyof typeof RagScopes]>;
+    }) =>
+      generateShortLivedToken({
+        userId: 'cache-user',
+        tenantId: 'tenant-a',
+        entityIds: [],
+        scopes: [RagScopes.documents],
+        ...overrides,
+      });
+
+    let now: jest.SpyInstance<number, []>;
+
+    beforeEach(() => {
+      process.env.RAG_JWT_SECRET = RAG_SECRET;
+      now = jest.spyOn(Date, 'now').mockReturnValue(1_778_250_000_000);
+    });
+
+    afterEach(() => {
+      now.mockRestore();
+    });
+
+    it('reuses a token rather than re-signing for an identical call', () => {
+      const first = mint({ userId: 'cache-identical' });
+      expect(mint({ userId: 'cache-identical' })).toBe(first);
+    });
+
+    it('re-signs once the reuse window has passed', () => {
+      const first = mint({ userId: 'cache-window' });
+      now.mockReturnValue(1_778_250_031_000);
+      expect(mint({ userId: 'cache-window' })).not.toBe(first);
+    });
+
+    it.each([
+      ['user', { userId: 'cache-other-user' }],
+      ['tenant', { tenantId: 'tenant-b' }],
+      ['scope', { scopes: [RagScopes.embed] }],
+      ['entity', { entityIds: ['agent_abc'] }],
+    ])('never reuses a token across a different %s', (_label, overrides) => {
+      const base = mint({ userId: 'cache-distinct' });
+      const other = mint({ userId: 'cache-distinct', ...overrides });
+      expect(other).not.toBe(base);
+    });
+
+    /**
+     * The reused token carries its original `jti`, so the id identifies a token
+     * rather than an individual call for as long as it is reused. A fresh mint
+     * after the window gets a fresh id.
+     */
+    it('shares one token id for the reuse window and takes a new one after it', () => {
+      const cached = decodeWithRagKey(mint({ userId: 'cache-jti' }));
+      const reused = decodeWithRagKey(mint({ userId: 'cache-jti' }));
+      expect(reused.jti).toBe(cached.jti);
+
+      now.mockReturnValue(1_778_250_031_000);
+      expect(decodeWithRagKey(mint({ userId: 'cache-jti' })).jti).not.toBe(cached.jti);
+    });
+
+    it('discards cached tokens when the signing key is rotated', () => {
+      const first = mint({ userId: 'cache-rotation' });
+      process.env.RAG_JWT_SECRET = `${RAG_SECRET}-rotated`;
+
+      const afterRotation = mint({ userId: 'cache-rotation' });
+      expect(afterRotation).not.toBe(first);
+      expect(() => decodeWithRagKey(afterRotation)).toThrow();
     });
   });
 

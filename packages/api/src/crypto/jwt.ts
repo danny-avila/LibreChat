@@ -1,6 +1,8 @@
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import { SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Algorithm } from 'jsonwebtoken';
+import { createTokenMintCache, TOKEN_MINT_CACHE_SECONDS } from '~/crypto/cache';
 import { normalizePem } from '~/crypto/keys';
 
 /**
@@ -39,7 +41,6 @@ export interface RagTokenParams {
   entityIds: Array<string | null | undefined>;
   /** Tenant the call acts within. Falls back to the base tenant. */
   tenantId?: string | null;
-  expireIn?: string;
 }
 
 interface RagSigningConfig {
@@ -47,11 +48,32 @@ interface RagSigningConfig {
   algorithm: Algorithm;
   issuer: string;
   audience: string;
+  kid: string;
+  ttlSeconds: number;
+}
+
+/**
+ * The claims this side authors. `entities` is omitted rather than sent empty:
+ * absent means the call carries no entity context and stays scoped to the
+ * user's own documents, which is a narrower statement than an empty list.
+ */
+interface RagPayload {
+  tenant: string;
+  scopes: string[];
+  entities?: string[];
 }
 
 const DEFAULT_ISSUER = 'librechat';
 const DEFAULT_AUDIENCE = 'rag_api';
-const DEFAULT_EXPIRY = '5m';
+const DEFAULT_KID = 'lc-rag-2026-08';
+const DEFAULT_TTL_SECONDS = 300;
+/**
+ * Ceiling on a minted token's lifetime. `RAG_JWT_TTL_SECONDS` can only lower
+ * it: the lifetime is a property of the deployment rather than of the caller,
+ * so no call path can widen its own token past what the operator allows.
+ */
+const MAX_TTL_SECONDS = 300;
+const LEGACY_EXPIRY = '5m';
 const MIN_HMAC_SECRET_LENGTH = 32;
 
 const TRUTHY_VALUES: ReadonlySet<string> = new Set(['true', '1', 'yes', 'on', 'y']);
@@ -103,6 +125,22 @@ const configuredIssuer = (): string => (process.env.RAG_JWT_ISSUER ?? DEFAULT_IS
 const configuredAudience = (): string => (process.env.RAG_JWT_AUDIENCE ?? DEFAULT_AUDIENCE).trim();
 
 /**
+ * Key id stamped into every token header so the RAG service can hold more than
+ * one trusted key at a time. Rotation is then additive on the verifying side —
+ * publish the new key alongside the old, move the minter, retire the old one —
+ * instead of a synchronised restart of both services.
+ */
+const configuredKid = (): string => (process.env.RAG_JWT_KID ?? '').trim() || DEFAULT_KID;
+
+const parseCappedSeconds = (value: string | undefined, fallback: number, max: number): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(Math.floor(parsed), max);
+};
+
+/**
  * The audience RAG tokens carry. Blank configuration falls back to the default
  * so the audience rejection in the application's own JWT strategy can never be
  * silently disabled by an empty environment variable.
@@ -134,7 +172,7 @@ export const isRagAudience = (audience?: string | string[] | null): boolean => {
  * key would make every RAG token a full application session token and vice
  * versa, which is the whole reason the dedicated key exists.
  */
-function resolveSigningConfig(): RagSigningConfig | null {
+function buildSigningConfig(): RagSigningConfig | null {
   const configured = (process.env.RAG_JWT_ALGORITHM ?? 'HS256').trim();
   const algorithm = ALGORITHMS_BY_UPPERCASE.get(configured.toUpperCase());
 
@@ -191,17 +229,72 @@ function resolveSigningConfig(): RagSigningConfig | null {
     throw new Error('[generateShortLivedToken] RAG_JWT_AUDIENCE must not be empty');
   }
 
-  return { key: signingKey, algorithm, issuer, audience };
+  return {
+    key: signingKey,
+    algorithm,
+    issuer,
+    audience,
+    kid: configuredKid(),
+    ttlSeconds: parseCappedSeconds(
+      process.env.RAG_JWT_TTL_SECONDS,
+      DEFAULT_TTL_SECONDS,
+      MAX_TTL_SECONDS,
+    ),
+  };
 }
 
-function signLegacyToken(userId: string, expireIn: string): string {
+/**
+ * The environment values the signing configuration is derived from. Comparing
+ * this against the cached copy is what makes rebuilding cheap while still
+ * reacting to a rotated key or a changed algorithm within the process.
+ */
+const signingConfigFingerprint = (): string =>
+  JSON.stringify([
+    process.env.RAG_JWT_ALGORITHM,
+    process.env.RAG_JWT_SECRET,
+    process.env.RAG_JWT_PRIVATE_KEY,
+    process.env.RAG_JWT_ISSUER,
+    process.env.RAG_JWT_AUDIENCE,
+    process.env.RAG_JWT_KID,
+    process.env.RAG_JWT_TTL_SECONDS,
+    process.env.RAG_AUTH_ACCEPT_LEGACY,
+    process.env.JWT_SECRET,
+  ]);
+
+let cachedFingerprint: string | null = null;
+let cachedSigningConfig: RagSigningConfig | null = null;
+const tokenCache = createTokenMintCache();
+
+/**
+ * Resolves the dedicated signing configuration, or `null` when the deployment
+ * has not adopted one yet and legacy tokens are still accepted.
+ *
+ * The result is memoised against the environment it came from, so validation
+ * runs once per configuration rather than once per mint. Any change invalidates
+ * the minted-token cache as well — a token signed with a retired key must never
+ * outlive the key itself.
+ */
+function resolveSigningConfig(): RagSigningConfig | null {
+  const fingerprint = signingConfigFingerprint();
+  if (fingerprint === cachedFingerprint) {
+    return cachedSigningConfig;
+  }
+
+  const config = buildSigningConfig();
+  cachedFingerprint = fingerprint;
+  cachedSigningConfig = config;
+  tokenCache.clear();
+  return config;
+}
+
+function signLegacyToken(userId: string): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     throw new Error(
       '[generateShortLivedToken] Neither RAG_JWT_SECRET nor JWT_SECRET is set; refusing to mint an unsigned token',
     );
   }
-  return jwt.sign({ id: userId }, secret, { expiresIn: expireIn, algorithm: 'HS256' });
+  return jwt.sign({ id: userId }, secret, { expiresIn: LEGACY_EXPIRY, algorithm: 'HS256' });
 }
 
 const uniqueValues = (values: Array<string | null | undefined>): string[] => {
@@ -215,20 +308,42 @@ const uniqueValues = (values: Array<string | null | undefined>): string[] => {
 };
 
 /**
+ * Identifies a token by everything that distinguishes what it may do, so a
+ * cached token is only ever handed back to a call that would have minted the
+ * same claims. The signing material is deliberately absent: a change there
+ * empties the cache outright rather than partitioning it.
+ */
+const mintCacheKey = (config: RagSigningConfig, subject: string, payload: RagPayload): string =>
+  JSON.stringify([
+    config.algorithm,
+    config.kid,
+    config.issuer,
+    config.audience,
+    subject,
+    payload.tenant,
+    payload.scopes,
+    payload.entities ?? [],
+  ]);
+
+/**
  * Mints a short-lived bearer token for the RAG service.
  *
  * With a dedicated signing key configured the token carries the strict claim
- * set — issuer, audience, subject, expiry, tenant, scopes and the entity ids
- * the call may act for. Without one it keeps minting the `{ id }` shape older
- * RAG deployments accept, so an upgrade can be staged: point both sides at the
- * dedicated key first, then stop accepting the legacy shape.
+ * set — issuer, audience, subject, expiry, key id, token id, tenant, scopes and
+ * the entity ids the call may act for. Without one it keeps minting the
+ * `{ id }` shape older RAG deployments accept, so an upgrade can be staged:
+ * point both sides at the dedicated key first, then stop accepting the legacy
+ * shape.
+ *
+ * Tokens are reused for a bounded window. Paths that mint per file — reading
+ * attachment context, deleting a file's chunks — would otherwise pay for a
+ * signature per file, which is far from free under the RSA and PSS algorithms.
  */
 export const generateShortLivedToken = ({
   userId,
   scopes,
   entityIds,
   tenantId,
-  expireIn = DEFAULT_EXPIRY,
 }: RagTokenParams): string => {
   if (!userId) {
     throw new Error('[generateShortLivedToken] A user id is required');
@@ -236,7 +351,7 @@ export const generateShortLivedToken = ({
 
   const config = resolveSigningConfig();
   if (!config) {
-    return signLegacyToken(userId, expireIn);
+    return signLegacyToken(userId);
   }
 
   const grantedScopes = uniqueValues(scopes);
@@ -250,16 +365,32 @@ export const generateShortLivedToken = ({
   }
 
   const entities = uniqueValues(entityIds);
-  const payload =
+  const payload: RagPayload =
     entities.length > 0
       ? { tenant, scopes: grantedScopes, entities }
       : { tenant, scopes: grantedScopes };
 
+  const now = Math.floor(Date.now() / 1000);
+  const cacheKey = mintCacheKey(config, userId, payload);
+  const cached = tokenCache.get(cacheKey, now);
+  if (cached) {
+    return cached;
+  }
+
+  const token = signRagToken(config, userId, payload);
+  tokenCache.set(cacheKey, token, now + config.ttlSeconds, now, TOKEN_MINT_CACHE_SECONDS);
+  return token;
+};
+
+function signRagToken(config: RagSigningConfig, subject: string, payload: RagPayload): string {
   return jwt.sign(payload, config.key, {
     algorithm: config.algorithm,
-    expiresIn: expireIn,
+    expiresIn: config.ttlSeconds,
     issuer: config.issuer,
     audience: config.audience,
-    subject: userId,
+    subject,
+    keyid: config.kid,
+    jwtid: randomUUID(),
+    notBefore: 0,
   });
-};
+}
