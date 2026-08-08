@@ -13,7 +13,9 @@ const mockGetServerConfig = jest.fn();
 const mockGetAccessibleMcpServerNames = jest.fn(async () => []);
 
 const mockCreateSearchTool = jest.fn(() => ({ name: 'web_search' }));
-const mockLoadWebSearchAuth = jest.fn(async () => ({ authResult: { searchProvider: 'serper' } }));
+const mockLoadWebSearchAuth = jest.fn(async () => ({
+  authResult: { searchProvider: 'serper', searxngInstanceUrl: 'http://searxng.internal:8080' },
+}));
 
 jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),

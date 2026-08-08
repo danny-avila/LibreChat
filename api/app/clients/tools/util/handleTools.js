@@ -397,7 +397,10 @@ const loadTools = async ({
         webSearchConfig: webSearch,
       });
       const { onSearchResults, onGetHighlights } = options?.[Tools.web_search] ?? {};
-      const { httpAgent, httpsAgent } = resolveWebSearchSSRFAgents(webSearch?.allowedAddresses);
+      const { httpAgent, httpsAgent } = resolveWebSearchSSRFAgents(
+        result.authResult,
+        webSearch?.allowedAddresses,
+      );
       requestedTools[tool] = async () => {
         toolContextMap[tool] = buildWebSearchContext();
         dynamicToolContextMap[tool] = buildWebSearchDynamicContext(

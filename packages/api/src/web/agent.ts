@@ -1,4 +1,5 @@
 import { getProxyForUrl } from 'proxy-from-env';
+import type { TWebSearchConfig } from 'librechat-data-provider';
 import type https from 'node:https';
 import type http from 'node:http';
 import { createSSRFSafeAgents } from '../auth';
@@ -8,28 +9,42 @@ export interface WebSearchSSRFAgents {
   httpsAgent: https.Agent;
 }
 
-/**
- * Probe hosts used only to ask which proxy would carry an http and an https request. A public
- * placeholder keeps the answer independent of any real destination.
- */
-const HTTP_PROBE_URL = 'http://proxy-probe.example.com/';
-const HTTPS_PROBE_URL = 'https://proxy-probe.example.com/';
+/** Resolved web-search fields that carry an outbound destination. */
+const WEB_SEARCH_URL_KEYS = [
+  'searxngInstanceUrl',
+  'firecrawlApiUrl',
+  'jinaApiUrl',
+  'tavilySearchUrl',
+  'tavilyExtractUrl',
+] as const;
 
 /**
- * For a plaintext http target Axios repoints the caller's agent at the proxy host, so the
- * connect-time check would resolve the proxy itself and reject a private one. Exempting the
- * proxy endpoint keeps that hop reachable while every direct destination stays guarded.
- * Https targets are unaffected either way: Axios swaps in its own CONNECT tunnel.
+ * For a plaintext http destination Axios repoints the caller's agent at the proxy host, so the
+ * connect-time check would resolve the proxy itself and reject a private one. Exempting that
+ * endpoint keeps the hop reachable while every direct destination stays guarded.
  *
- * Resolution goes through `getProxyForUrl`, the same `proxy-from-env` entry point Axios uses, so
- * variable precedence (`<protocol>_proxy` before `all_proxy`, lowercase before uppercase),
- * scheme-less normalization, and `NO_PROXY` all match exactly. Deriving the endpoints any other
- * way risks exempting an address that never carries a request, which grants a bypass.
+ * Resolution runs per destination through `getProxyForUrl`, the same `proxy-from-env` entry point
+ * Axios uses, so variable precedence, scheme-less normalization, and `NO_PROXY` all match for the
+ * host actually being dialed. Only http destinations are considered: for an https destination
+ * Axios substitutes its own CONNECT tunnel and never uses the injected agent for the proxy
+ * connection, so no exemption is owed. Provider defaults are all https for the same reason.
  */
-function getProxyExemptions(): string[] {
+function getProxyExemptions(authResult: Partial<TWebSearchConfig>): string[] {
   const entries = new Set<string>();
-  for (const probeUrl of [HTTP_PROBE_URL, HTTPS_PROBE_URL]) {
-    const proxyUrl = getProxyForUrl(probeUrl);
+  for (const key of WEB_SEARCH_URL_KEYS) {
+    const destination = authResult[key];
+    if (typeof destination !== 'string' || destination.length === 0) {
+      continue;
+    }
+    try {
+      if (new URL(destination).protocol !== 'http:') {
+        continue;
+      }
+    } catch {
+      continue;
+    }
+
+    const proxyUrl = getProxyForUrl(destination);
     if (!proxyUrl) {
       continue;
     }
@@ -69,10 +84,11 @@ const MAX_CACHED_AGENT_PAIRS = 32;
  * sends direct therefore also carries that exemption.
  */
 export function resolveWebSearchSSRFAgents(
+  authResult: Partial<TWebSearchConfig>,
   allowedAddresses?: string[] | null,
 ): WebSearchSSRFAgents {
   const configured = Array.isArray(allowedAddresses) ? allowedAddresses : [];
-  const exemptions = [...configured, ...getProxyExemptions()];
+  const exemptions = [...configured, ...getProxyExemptions(authResult ?? {})];
   const cacheKey = exemptions.join('\0');
 
   const cached = agentsByExemptions.get(cacheKey);
