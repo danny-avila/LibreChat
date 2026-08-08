@@ -258,6 +258,80 @@ describe('processAgentFileUpload', () => {
   });
 
   describe('local document extraction and OCR selection', () => {
+    /**
+     * AnyDoc has no page numbers to report, so a DOCX whose content is a scanned image
+     * comes back looking complete. Embedded artwork is the signal that its Markdown may
+     * be missing something, and a configured OCR service is exactly what recovers it.
+     */
+    test('escalates to configured OCR when the local parser reports embedded media', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [DOCX_MIME] }));
+      const localUpload = jest.fn().mockResolvedValue({
+        text: 'text layer only',
+        bytes: 15,
+        filepath: FileSources.anydoc,
+        hasEmbeddedMedia: true,
+      });
+      const remoteOCR = jest.fn().mockResolvedValue({
+        text: 'text layer plus the scanned page',
+        bytes: 31,
+        filepath: FileSources.mistral_ocr,
+      });
+      getStrategyFunctions.mockImplementation((source) => ({
+        handleFileUpload: source === FileSources.document_parser ? localUpload : remoteOCR,
+      }));
+      const req = makeReq({
+        mimetype: DOCX_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(localUpload).toHaveBeenCalledTimes(1);
+      expect(remoteOCR).toHaveBeenCalledTimes(1);
+      expect(db.createFile.mock.calls[0][0].text).toBe('text layer plus the scanned page');
+    });
+
+    test('keeps the local text when embedded media is reported and no OCR is configured', async () => {
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockResolvedValue({
+          text: 'text layer only',
+          bytes: 15,
+          filepath: FileSources.anydoc,
+          hasEmbeddedMedia: true,
+        }),
+      });
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(checkCapability).not.toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
+      expect(db.createFile.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ text: 'text layer only', filepath: FileSources.anydoc }),
+      );
+    });
+
+    test('does not escalate a document that embeds no media', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [DOCX_MIME] }));
+      const localUpload = jest.fn().mockResolvedValue({
+        text: 'the whole document',
+        bytes: 18,
+        filepath: FileSources.anydoc,
+      });
+      const remoteOCR = jest.fn();
+      getStrategyFunctions.mockImplementation((source) => ({
+        handleFileUpload: source === FileSources.document_parser ? localUpload : remoteOCR,
+      }));
+      const req = makeReq({
+        mimetype: DOCX_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(remoteOCR).not.toHaveBeenCalled();
+      expect(db.createFile.mock.calls[0][0].text).toBe('the whole document');
+    });
+
     test.each([
       ['PDF', PDF_MIME],
       ['DOCX', DOCX_MIME],

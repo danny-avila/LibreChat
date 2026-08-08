@@ -941,7 +941,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     if (shouldUseDocumentParser) {
       const localResult = await resolveDocumentText();
       const hasLocalText = !!localResult?.text?.trim();
-      const localNeedsOCR = !hasLocalText || !!localResult?.pagesNeedingOcr?.length;
+      /* Two ways a local result can be incomplete. pdf-inspector names the pages it
+       * could not read; AnyDoc has no page numbers to name, so it reports whether the
+       * document embeds artwork it converted nothing from. Either way the answer is the
+       * same: consult OCR when one is configured, and keep the local text when it is
+       * not. A document with no images and text on every page is complete as it is. */
+      const localNeedsOCR =
+        !hasLocalText ||
+        !!localResult?.pagesNeedingOcr?.length ||
+        localResult?.hasEmbeddedMedia === true;
 
       if (hasLocalText && !localNeedsOCR) {
         return await createDocumentTextFile(localResult);

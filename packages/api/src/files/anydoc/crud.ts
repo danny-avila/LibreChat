@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { excelFileTypes, FileSources } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
 import { assertSafeZipSizeIfArchive } from '../documents/zipSafety';
+import { hasEmbeddedMedia } from '../documents/media';
 import { extractMarkdownIsolated } from './native';
 
 /**
@@ -140,7 +141,12 @@ export async function parseWithAnydoc(
   const format = formatFromPath(name);
   assertSupportedType(name, type, format);
 
-  await assertSafeZipSizeIfArchive(await fs.promises.readFile(file.path), { name });
+  const buffer = await fs.promises.readFile(file.path);
+  await assertSafeZipSizeIfArchive(buffer, { name });
+  /* Read from the buffer already in hand, before extraction: anydoc converts artwork
+   * to nothing at all, so this is the only record that the Markdown below may be
+   * missing what an embedded scan holds. */
+  const embedsMedia = await hasEmbeddedMedia(buffer);
 
   let markdown: string;
   try {
@@ -160,5 +166,6 @@ export async function parseWithAnydoc(
     filepath: FileSources.anydoc,
     text: markdown,
     images: [],
+    ...(embedsMedia && { hasEmbeddedMedia: true }),
   };
 }
