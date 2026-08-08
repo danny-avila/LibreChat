@@ -2,7 +2,10 @@ import mongoose, { Types } from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type * as t from '~/types';
-import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
+import {
+  getMCPAuthorityConsistencyModule,
+  type MCPAuthorityConsistencyFence,
+} from './mcpAuthority/consistency';
 import { tenantStorage } from '~/config/tenantContext';
 import { createUserGroupMethods } from './userGroup';
 import groupSchema from '~/schema/group';
@@ -1255,6 +1258,39 @@ describe('userGroup methods', () => {
   });
 
   describe('syncUserEntraGroups', () => {
+    it('reads the current external identity only after entering the authority fence', async () => {
+      const user = await createTestUser({ idOnTheSource: 'superseded-user-ext' });
+      const consistency = getMCPAuthorityConsistencyModule(mongoose);
+      await consistency.initializeMCPAuthorityConsistency();
+      const fenceCollection =
+        mongoose.connection.collection<MCPAuthorityConsistencyFence>('mcpAuthorityConsistency');
+      const acquireFence = fenceCollection.findOneAndUpdate.bind(fenceCollection);
+      const acquisitionSpy = jest
+        .spyOn(fenceCollection, 'findOneAndUpdate')
+        .mockImplementationOnce(async (filter, update) => {
+          await User.collection.updateOne(
+            { _id: user._id },
+            { $set: { idOnTheSource: 'current-user-ext' } },
+          );
+          return await acquireFence(filter, update, {
+            returnDocument: 'after',
+            writeConcern: { w: 'majority' },
+          });
+        });
+
+      try {
+        await methods.syncUserEntraGroups(user._id, [
+          { id: 'entra-current', name: 'Current Entra Group' },
+        ]);
+      } finally {
+        acquisitionSpy.mockRestore();
+      }
+
+      const group = await Group.findOne({ idOnTheSource: 'entra-current' }).lean();
+      expect(group?.memberIds).toContain('current-user-ext');
+      expect(group?.memberIds).not.toContain('superseded-user-ext');
+    });
+
     it('creates new groups and adds user as member', async () => {
       const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
 

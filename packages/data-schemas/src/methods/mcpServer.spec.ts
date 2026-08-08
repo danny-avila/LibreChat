@@ -670,6 +670,28 @@ describe('MCPServer Model Tests', () => {
   });
 
   describe('deleteMCPServer', () => {
+    test('deletes a batch under one authority generation', async () => {
+      const first = await methods.createMCPServer({
+        config: createSSEConfig('Batch Delete One'),
+        author: authorId,
+      });
+      const second = await methods.createMCPServer({
+        config: createSSEConfig('Batch Delete Two'),
+        author: authorId,
+      });
+      const before = await consistency.getMCPAuthorityConsistencyStatus();
+
+      await expect(methods.deleteMCPServers([first.serverName, second.serverName])).resolves.toBe(
+        2,
+      );
+
+      const after = await consistency.getMCPAuthorityConsistencyStatus();
+      expect(after.generation).toBe(before.generation + 1);
+      await expect(
+        MCPServer.countDocuments({ _id: { $in: [first._id, second._id] } }),
+      ).resolves.toBe(0);
+    });
+
     test('should delete existing server', async () => {
       const created = await methods.createMCPServer({
         config: createSSEConfig('Delete Test'),

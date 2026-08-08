@@ -190,7 +190,7 @@ const deleteUserMcpServers = async (userId) => {
       resourceType: ResourceType.MCPSERVER,
       resourceId: { $in: allServerIdsToDelete },
     });
-    await Promise.all(allServersToDelete.map((server) => db.deleteMCPServer(server.serverName)));
+    await db.deleteMCPServers(allServersToDelete.map((server) => server.serverName));
   } catch (error) {
     logger.error('[deleteUserMcpServers] General error:', error);
   }

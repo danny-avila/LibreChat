@@ -853,17 +853,17 @@ export function createUserGroupMethods(
     const User = mongoose.models.User as Model<IUser>;
     const Group = mongoose.models.Group as Model<IGroup>;
 
-    const query = User.findById(userId, { idOnTheSource: 1 });
-    if (session) {
-      query.session(session);
-    }
-    const user = await query.lean<{ idOnTheSource?: string; _id: Types.ObjectId }>();
+    const mutation = await authorityMutationGate.mutateMCPAuthority(async () => {
+      const query = User.findById(userId, { idOnTheSource: 1 });
+      if (session) {
+        query.session(session);
+      }
+      const user = await query.lean<{ idOnTheSource?: string; _id: Types.ObjectId }>();
 
-    if (!user) {
-      throw new Error(`User not found: ${userId}`);
-    }
+      if (!user) {
+        return { userMissing: true } as const;
+      }
 
-    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
       /** Get user's idOnTheSource for storing in group.memberIds */
       const userIdOnTheSource = user.idOnTheSource || userId.toString();
 
@@ -932,11 +932,17 @@ export function createUserGroupMethods(
       }
 
       return {
-        user: updatedUser,
-        addedGroups,
-        removedGroups,
-      };
+        value: {
+          user: updatedUser,
+          addedGroups,
+          removedGroups,
+        },
+      } as const;
     });
+    if ('userMissing' in mutation.result) {
+      throw new Error(`User not found: ${userId}`);
+    }
+    return mutation.result.value;
   }
 
   /**

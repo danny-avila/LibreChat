@@ -81,6 +81,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
     updateData: { config?: MCPOptions },
   ) => Promise<MCPServerDocument | null>;
   deleteMCPServer: (serverName: string) => Promise<MCPServerDocument | null>;
+  deleteMCPServers: (serverNames: readonly string[]) => Promise<number>;
 } {
   const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
   /**
@@ -349,6 +350,15 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
     return await MCPServer.findOneAndDelete({ serverName }).lean<MCPServerDocument>();
   }
 
+  async function deleteMCPServers(serverNames: readonly string[]): Promise<number> {
+    if (serverNames.length === 0) {
+      return 0;
+    }
+    const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
+    const result = await MCPServer.deleteMany({ serverName: { $in: serverNames } });
+    return result.deletedCount;
+  }
+
   /**
    * Get MCP servers by their serverName strings
    * @param names - Array of serverName strings to fetch
@@ -379,6 +389,8 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
       await runMCPAuthorityMutation(authorityMutationGate, () => updateMCPServer(...args)),
     deleteMCPServer: async (...args) =>
       await runMCPAuthorityMutation(authorityMutationGate, () => deleteMCPServer(...args)),
+    deleteMCPServers: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, () => deleteMCPServers(...args)),
   };
 }
 
