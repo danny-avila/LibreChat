@@ -206,6 +206,24 @@ jobs:
       BAN_VIOLATIONS: ${{ secrets.BAN_VIOLATIONS }}
       BAN_DURATION: ${{ secrets.BAN_DURATION }}
       BAN_INTERVAL: ${{ secrets.BAN_INTERVAL }}
+      # The chat-search route wiring spec talks to a real PostgreSQL. Without
+      # this it skips, and a skip that reports green is indistinguishable from a
+      # feature that works.
+      CHAT_SEARCH_TEST_URL: postgres://postgres:postgres@localhost:5432/postgres
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v5
 
@@ -354,6 +372,24 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
+    env:
+      # The chat-search suites run against a real server; `describePg` fails
+      # rather than skips when CI has not provided one.
+      CHAT_SEARCH_TEST_URL: postgres://postgres:postgres@localhost:5432/postgres
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v5
 
