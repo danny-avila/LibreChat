@@ -52,7 +52,7 @@ class TTSService {
       );
     }
     const providers = Object.entries(ttsSchema).filter(
-      ([, value]) => Object.keys(value).length > 0,
+      ([key, value]) => key !== 'allowedAddresses' && Object.keys(value).length > 0,
     );
 
     if (providers.length !== 1) {

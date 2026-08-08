@@ -102,6 +102,24 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     );
   });
 
+  it('updates the cache with an empty catalog after a successful connection', async () => {
+    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      userMCPAuthMap: undefined,
+    });
+
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith({
+      userId: user.id,
+      serverName,
+      tools: [],
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+  });
+
   it('passes request body and Graph resolver into connection creation', async () => {
     mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
     const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };
@@ -290,5 +308,42 @@ describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)'
     expect(result.success).toBe(false);
     expect(result.failureReason).toBe('initialization_failed');
     expect(result.message).toBe(`Failed to reinitialize MCP server '${serverName}'`);
+  });
+});
+
+describe('reinitMCPServer — OAuth attempt lifetime', () => {
+  const user = { id: 'user-123' };
+  const serverName = 'Thingy';
+  const serverConfig = {
+    type: 'streamable-http',
+    url: 'https://thingy.example.com/mcp',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUpdateMCPServerTools.mockResolvedValue({});
+  });
+
+  it('returns the expiry supplied when a pending OAuth URL is replayed', async () => {
+    const expiresAt = Date.now() + 45_000;
+    mockGetConnection.mockImplementation(async ({ oauthStart }) => {
+      await oauthStart('https://oauth.example.com/authorize', { expiresAt });
+      await oauthStart('https://oauth.example.com/authorize');
+      throw new Error('OAuth flow initiated - return early');
+    });
+    mockDiscoverServerTools.mockResolvedValue({ tools: [], oauthRequired: true, oauthUrl: null });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig,
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      oauthRequired: true,
+      oauthUrl: 'https://oauth.example.com/authorize',
+      oauthExpiresAt: expiresAt,
+    });
   });
 });

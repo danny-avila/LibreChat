@@ -5,6 +5,7 @@ const {
   sendEvent,
   PENDING_STALE_MS,
   MCPOAuthHandler,
+  MCPTokenStorage,
   isMCPDomainAllowed,
   splitMCPToolKey,
   normalizeServerName,
@@ -19,14 +20,19 @@ const {
   buildMCPAuthStepId,
   buildMCPAuthToolCall,
   processMCPEnv,
+  preProcessGraphTokens,
   buildMCPAuthRunStepEvent,
   buildMCPAuthRunStepDeltaEvent,
   buildMCPAuthRunStepEndDeltaEvent,
   isUserSourced,
   checkAccessWithRequestCache,
+  getMissingCustomUserVars,
   getServerCustomUserVars,
   requiresEphemeralUserConnection,
+  requiresOAuthMachinery,
+  hasRuntimeUrlPlaceholders,
   containsGraphTokenPlaceholder,
+  isOAuthServer,
 } = require('@librechat/api');
 const {
   Time,
@@ -1119,8 +1125,20 @@ function createToolInstance({
         error.message?.includes('OAuth') ||
         error.message?.includes('authentication') ||
         error.message?.includes('Non-200 status code (401)');
+      const isOAuthFlowSignal =
+        error.message === 'OAuth flow initiated - return early' ||
+        error.message === 'Pending OAuth flow reused - return early';
 
       if (isOAuthError) {
+        if (
+          capturedServerConfig &&
+          !requiresOAuthMachinery(capturedServerConfig) &&
+          !isOAuthFlowSignal
+        ) {
+          throw new Error(
+            `[MCP][${serverName}][${toolName}] upstream authentication failed; MCP OAuth is not configured for this server.`,
+          );
+        }
         throw new Error(
           `[MCP][${serverName}][${toolName}] OAuth authentication required. Please check the server logs for the authentication URL.`,
         );
@@ -1189,7 +1207,7 @@ async function getMCPSetupData(userId, options = {}) {
   const userConnections = mcpManager.getUserConnections(userId) || new Map();
   const oauthServers = new Set(
     Object.entries(mcpConfig)
-      .filter(([, config]) => config.requiresOAuth)
+      .filter(([, config]) => isOAuthServer(config))
       .map(([name]) => name),
   );
 
@@ -1206,7 +1224,7 @@ async function getMCPSetupData(userId, options = {}) {
  * @param {string} userId - The user ID
  * @param {string} serverName - The server name
  * @param {string} [tenantId] - The tenant ID for the current request.
- * @returns {Object} Object containing hasActiveFlow and hasFailedFlow flags
+ * @returns {Object} Object containing active and failed flow flags
  */
 async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()) {
   const flowsCache = getLogStores(CacheKeys.FLOWS);
@@ -1225,8 +1243,8 @@ async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()
     // flow the initiate/callback paths already reject, hiding the connect button.
     const flowTTL = flowState.ttl || PENDING_STALE_MS;
 
-    if (flowState.status === 'FAILED' || flowAge > flowTTL) {
-      const wasCancelled = flowState.error && flowState.error.includes('cancelled');
+    if (flowState.status === 'FAILED' || (flowState.status === 'PENDING' && flowAge > flowTTL)) {
+      const wasCancelled = /abort|cancel/i.test(flowState.error ?? '');
 
       if (wasCancelled) {
         logger.debug(`[MCP Connection Status] Found cancelled OAuth flow for ${serverName}`, {
@@ -1264,6 +1282,69 @@ async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()
   }
 }
 
+async function hasDurableMCPAuthorization(userId, serverName, config, runtimeContext = {}) {
+  const userMCPAuthMap =
+    runtimeContext.userMCPAuthMap ?? (await runtimeContext.loadUserMCPAuthMap?.());
+  const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
+  if (getMissingCustomUserVars(config, customUserVars).length > 0) {
+    return false;
+  }
+
+  const dbSourced = isUserSourced(config);
+  const bindingConfig = {
+    ...config,
+    args: undefined,
+    env: undefined,
+    headers: undefined,
+    oauth_headers: undefined,
+  };
+  const graphProcessedConfig = dbSourced
+    ? bindingConfig
+    : await preProcessGraphTokens(bindingConfig, {
+        user: runtimeContext.user,
+        graphTokenResolver: getGraphApiToken,
+        scopes: process.env.GRAPH_API_SCOPES,
+      });
+  const runtimeConfig = processMCPEnv({
+    user: runtimeContext.user,
+    options: graphProcessedConfig,
+    dbSourced,
+    customUserVars,
+  });
+  const allowlists = await (runtimeContext.loadMCPAllowlists?.() ??
+    getMCPServersRegistry().resolveAllowlists({
+      userId,
+      role: runtimeContext.user?.role,
+    }));
+  if (
+    runtimeConfig.url &&
+    !(await isMCPDomainAllowed(
+      runtimeConfig,
+      allowlists.allowedDomains,
+      allowlists.allowedAddresses,
+    ))
+  ) {
+    return false;
+  }
+  return MCPTokenStorage.hasStoredAuthorization({
+    userId,
+    serverName,
+    findToken,
+    validateClientBinding: (clientInfo, storedMetadata) =>
+      MCPOAuthHandler.assertStoredClientBinding(
+        serverName,
+        runtimeConfig.url,
+        clientInfo,
+        storedMetadata,
+        runtimeConfig.oauth,
+      ),
+  });
+}
+
+function canDetectMCPRuntimeOAuth(config) {
+  return config.requiresOAuth == null && config.apiKey == null && hasRuntimeUrlPlaceholders(config);
+}
+
 /**
  * Get connection status for a specific MCP server
  * @param {string} userId - The user ID
@@ -1272,6 +1353,7 @@ async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()
  * @param {Map<string, import('@librechat/api').MCPConnection>} appConnections - App-level connections
  * @param {Map<string, import('@librechat/api').MCPConnection>} userConnections - User-level connections
  * @param {Set} oauthServers - Set of OAuth servers
+ * @param {{ user?: Partial<IUser>, userMCPAuthMap?: Record<string, Record<string, string>>, loadUserMCPAuthMap?: () => Promise<Record<string, Record<string, string>> | undefined>, loadMCPAllowlists?: () => Promise<{ allowedDomains?: string[] | null, allowedAddresses?: string[] | null }> }} [runtimeContext]
  * @returns {Object} Object containing requiresOAuth and connectionState
  */
 async function getServerConnectionStatus(
@@ -1281,35 +1363,60 @@ async function getServerConnectionStatus(
   appConnections,
   userConnections,
   oauthServers,
+  runtimeContext = {},
 ) {
   const connection = appConnections.get(serverName) || userConnections.get(serverName);
   const isStaleOrDoNotExist = connection ? connection?.isStale(config.updatedAt) : true;
+  const configuredOAuth = oauthServers.has(serverName);
+  const liveConnectionOAuth = connection?.usesOAuth?.() === true;
+  const runtimeOAuthCandidate = canDetectMCPRuntimeOAuth(config);
+  const effectiveOAuth = configuredOAuth || liveConnectionOAuth;
 
   const baseConnectionState = isStaleOrDoNotExist
     ? 'disconnected'
     : connection?.connectionState || 'disconnected';
   let finalConnectionState = baseConnectionState;
+  let requiresOAuth = effectiveOAuth;
+  let authorizationState = effectiveOAuth ? 'needs_authorization' : 'not_required';
 
   // connection state overrides specific to OAuth servers
-  if (baseConnectionState === 'disconnected' && oauthServers.has(serverName)) {
+  if (effectiveOAuth && baseConnectionState === 'connected') {
+    authorizationState = 'authorized';
+  } else if (effectiveOAuth && baseConnectionState === 'connecting') {
+    authorizationState = 'authorizing';
+  } else if (effectiveOAuth && baseConnectionState === 'error') {
+    authorizationState = 'error';
+  } else if (baseConnectionState === 'disconnected' && (effectiveOAuth || runtimeOAuthCandidate)) {
     // check if server is actively being reconnected
     const oauthReconnectionManager = getOAuthReconnectionManager();
     if (oauthReconnectionManager.isReconnecting(userId, serverName)) {
+      requiresOAuth = true;
       finalConnectionState = 'connecting';
+      authorizationState = 'authorizing';
     } else {
       const { hasActiveFlow, hasFailedFlow } = await checkOAuthFlowStatus(userId, serverName);
 
       if (hasFailedFlow) {
+        requiresOAuth = true;
         finalConnectionState = 'error';
+        authorizationState = 'error';
       } else if (hasActiveFlow) {
+        requiresOAuth = true;
         finalConnectionState = 'connecting';
+        authorizationState = 'authorizing';
+      } else if (await hasDurableMCPAuthorization(userId, serverName, config, runtimeContext)) {
+        /** OAuth readiness is durable even when this pod has no live connection. */
+        requiresOAuth = true;
+        finalConnectionState = 'connected';
+        authorizationState = 'authorized';
       }
     }
   }
 
   return {
-    requiresOAuth: oauthServers.has(serverName),
+    requiresOAuth,
     connectionState: finalConnectionState,
+    authorizationState,
   };
 }
 

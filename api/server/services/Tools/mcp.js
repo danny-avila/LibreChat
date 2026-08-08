@@ -63,6 +63,7 @@ async function reinitMCPServer({
   let tools = null;
   let oauthRequired = false;
   let oauthUrl = null;
+  let oauthExpiresAt;
   let ephemeralServer = false;
 
   try {
@@ -168,9 +169,15 @@ async function reinitMCPServer({
 
     const oauthStart =
       _oauthStart ??
-      (async (authURL) => {
+      (async (authURL, options) => {
         logger.info(`[MCP Reinitialize] OAuth URL received for ${serverName}`);
+        if (authURL !== oauthUrl) {
+          oauthExpiresAt = undefined;
+        }
         oauthUrl = authURL;
+        if (typeof options?.expiresAt === 'number' && Number.isFinite(options.expiresAt)) {
+          oauthExpiresAt = options.expiresAt;
+        }
         oauthRequired = true;
       });
 
@@ -255,7 +262,7 @@ async function reinitMCPServer({
       tools = await connection.fetchTools();
     }
 
-    if (tools && tools.length > 0) {
+    if (tools) {
       availableTools = await updateMCPServerTools({
         userId: user.id,
         serverName,
@@ -298,6 +305,7 @@ async function reinitMCPServer({
       oauthRequired,
       serverName,
       oauthUrl,
+      oauthExpiresAt,
       tools,
     };
 

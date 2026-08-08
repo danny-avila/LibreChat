@@ -524,6 +524,29 @@ const nativeTools = new Set([
   Tools.memory,
 ]);
 
+const mcpServerPinPrefix = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
+const isExpectedMCPTool = (toolName) =>
+  toolName?.includes(Constants.mcp_delimiter) &&
+  !toolName.startsWith(mcpServerPinPrefix) &&
+  !isActionTool(toolName);
+const expectedMCPToolsUnavailableCode = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
+const isExpectedMCPToolsUnavailableError = (error) =>
+  error?.code === expectedMCPToolsUnavailableCode;
+const createExpectedMCPToolsUnavailableError = (agentName, cause) => {
+  const subject = agentName ? `Agent "${agentName}"` : 'The agent';
+  const error = new Error(
+    `${subject} is configured to use MCP tools, but none are available. Verify that the MCP server is connected and this agent can access its selected tools, then try again.`,
+  );
+  error.name = 'AgentToolInitializationError';
+  error.code = expectedMCPToolsUnavailableCode;
+  error.status = 503;
+  error.statusCode = 503;
+  if (cause != null) {
+    error.cause = cause;
+  }
+  return error;
+};
+
 /** Checks if a tool name is a known built-in tool */
 const isBuiltInTool = (toolName) =>
   Boolean(
@@ -573,6 +596,7 @@ async function loadToolDefinitionsWrapper({
   }
 
   const appConfig = req.config;
+  const hasExpectedMCPTools = agent.tools.some(isExpectedMCPTool);
   const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent.id);
 
   const checkCapability = (capability) => enabledCapabilities.has(capability);
@@ -616,6 +640,9 @@ async function loadToolDefinitionsWrapper({
   });
 
   if (!filteredTools || filteredTools.length === 0) {
+    if (hasExpectedMCPTools) {
+      throw createExpectedMCPToolsUnavailableError(agent.name);
+    }
     return { toolDefinitions: [] };
   }
 
@@ -893,6 +920,33 @@ async function loadToolDefinitionsWrapper({
     return result?.availableTools || null;
   };
 
+  const refreshMCPServerTools = async (_userId, serverName) => {
+    if (pendingOAuthServers.has(serverName)) {
+      return null;
+    }
+
+    const oauthStart = async (authURL, options) => {
+      pendingOAuthServers.add(serverName);
+      if (typeof authURL === 'string' && authURL.length > 0) {
+        pendingOAuthStarts.set(serverName, { authURL, options });
+      }
+    };
+    const result = await reinitMCPServer({
+      user: req.user,
+      forceNew: true,
+      oauthStart,
+      flowManager,
+      serverName,
+      configServers,
+      userMCPAuthMap,
+      requestBody: req.body,
+      requestScopedConnections,
+    });
+
+    rememberMCPAvailableTools(serverName, result?.availableTools);
+    return result?.availableTools || null;
+  };
+
   const getActionToolDefinitions = async (agentId, actionToolNames) => {
     const actionSets = (await loadActionSets({ agent_id: agentId })) ?? [];
     if (actionSets.length === 0) {
@@ -952,26 +1006,28 @@ async function loadToolDefinitionsWrapper({
     return definitions;
   };
 
-  let { toolDefinitions, toolRegistry, hasDeferredTools } = await loadToolDefinitions(
-    {
-      userId: req.user.id,
-      agentId: agent.id,
-      tools: defsFilteredTools,
-      toolOptions: agent.tool_options,
-      deferredToolsEnabled,
-      programmaticToolsEnabled,
-      codeExecutionEnabled,
-      provider: agent.provider,
-      mcpServerNames,
-      rawServerNames: mcpRawServerNames,
-      accessibleServerNames: defsAccessibleServerNames,
-    },
-    {
-      isBuiltInTool,
-      getOrFetchMCPServerTools,
-      getActionToolDefinitions,
-    },
-  );
+  let { toolDefinitions, toolRegistry, hasDeferredTools, mcpResolution } =
+    await loadToolDefinitions(
+      {
+        userId: req.user.id,
+        agentId: agent.id,
+        tools: defsFilteredTools,
+        toolOptions: agent.tool_options,
+        deferredToolsEnabled,
+        programmaticToolsEnabled,
+        codeExecutionEnabled,
+        provider: agent.provider,
+        mcpServerNames,
+        rawServerNames: mcpRawServerNames,
+        accessibleServerNames: defsAccessibleServerNames,
+      },
+      {
+        isBuiltInTool,
+        getOrFetchMCPServerTools,
+        refreshMCPServerTools,
+        getActionToolDefinitions,
+      },
+    );
 
   /** OAuth discovery must not reconnect (or prompt for) a server whose
    *  definitions the collision filter deliberately rejected. */
@@ -1056,13 +1112,19 @@ async function loadToolDefinitionsWrapper({
         {
           isBuiltInTool,
           getOrFetchMCPServerTools,
+          refreshMCPServerTools,
           getActionToolDefinitions,
         },
       );
       toolDefinitions = reloadResult.toolDefinitions;
       toolRegistry = reloadResult.toolRegistry;
       hasDeferredTools = reloadResult.hasDeferredTools;
+      mcpResolution = reloadResult.mcpResolution;
     }
+  }
+
+  if (hasExpectedMCPTools && mcpResolution?.resolvedToolCount === 0) {
+    throw createExpectedMCPToolsUnavailableError(agent.name);
   }
 
   /** @type {Record<string, string>} */
@@ -1195,16 +1257,23 @@ async function loadAgentTools({
   accessibleMcpServerNames,
 }) {
   if (definitionsOnly) {
-    return loadToolDefinitionsWrapper({
-      req,
-      res,
-      agent,
-      agentResourceType,
-      streamId,
-      jobCreatedAt,
-      tool_resources,
-      accessibleMcpServerNames,
-    });
+    try {
+      return await loadToolDefinitionsWrapper({
+        req,
+        res,
+        agent,
+        agentResourceType,
+        streamId,
+        jobCreatedAt,
+        tool_resources,
+        accessibleMcpServerNames,
+      });
+    } catch (error) {
+      if (isExpectedMCPToolsUnavailableError(error) || !agent.tools?.some(isExpectedMCPTool)) {
+        throw error;
+      }
+      throw createExpectedMCPToolsUnavailableError(agent.name, error);
+    }
   }
 
   if (!agent.tools || agent.tools.length === 0) {
@@ -1971,6 +2040,7 @@ module.exports = {
   loadToolsForExecution,
   processRequiredActions,
   resolveAgentCapabilities,
+  isExpectedMCPToolsUnavailableError,
   /** Re-exported for controllers that already depend on (and mock) this
    *  module, avoiding a fresh heavy `services/MCP` require chain there. */
   getAccessibleMcpServerNames,

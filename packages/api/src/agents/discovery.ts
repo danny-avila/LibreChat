@@ -14,6 +14,17 @@ import { initializeAgent as defaultInitializeAgent } from './initialize';
 import { createEdgeCollector, filterOrphanedEdges } from './edges';
 import { createSequentialChainEdges } from './chain';
 
+const expectedMCPToolsUnavailableCode = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
+
+function isExpectedMCPToolsUnavailableError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === expectedMCPToolsUnavailableCode
+  );
+}
+
 /**
  * Callback invoked after a sub-agent is successfully initialized.
  * Used by callers that need to track per-agent tool context (e.g., for
@@ -327,6 +338,9 @@ export async function discoverConnectedAgents(
         collectEdges(agent.edges);
       }
     } catch (err) {
+      if (isExpectedMCPToolsUnavailableError(err)) {
+        throw err;
+      }
       logger.error(`[discoverConnectedAgents] Error processing agent ${agentId}:`, err);
       markSkipped(agentId);
     }
@@ -341,6 +355,9 @@ export async function discoverConnectedAgents(
       try {
         await processAgent(agentId);
       } catch (err) {
+        if (isExpectedMCPToolsUnavailableError(err)) {
+          throw err;
+        }
         logger.error(`[discoverConnectedAgents] Error processing chain agent ${agentId}:`, err);
         markSkipped(agentId);
       }
