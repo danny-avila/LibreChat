@@ -11,7 +11,9 @@ export type MockMorphIconProps = {
  * Build a MorphIcon mock that maps lucide IconNode identity to a stable
  * `data-icon` / optional `data-testid` so tests can assert icon selection.
  */
-export function createMorphIconMock(iconNames: Map<unknown, string> | Array<[unknown, string]>) {
+export function createMorphIconMock(
+  iconNames: Map<unknown, string> | Array<[unknown, string]>,
+): React.FC<MockMorphIconProps> {
   const names = iconNames instanceof Map ? iconNames : new Map(iconNames);
 
   return function MockMorphIcon({ icon, className, size }: MockMorphIconProps) {
