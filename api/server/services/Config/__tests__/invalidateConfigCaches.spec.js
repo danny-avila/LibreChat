@@ -48,10 +48,10 @@ describe('invalidateConfigCaches', () => {
     jest.clearAllMocks();
   });
 
-  it('clears all caches', async () => {
+  it('clears mutable caches without replacing the boot config snapshot', async () => {
     await invalidateConfigCaches();
 
-    expect(mockClearAppConfigCache).toHaveBeenCalledTimes(1);
+    expect(mockClearAppConfigCache).not.toHaveBeenCalled();
     expect(mockClearOverrideCache).toHaveBeenCalledTimes(1);
     expect(mockInvalidateCachedTools).toHaveBeenCalledWith({ invalidateGlobal: true });
     expect(mockClearMcpConfigCache).toHaveBeenCalledTimes(1);
@@ -61,22 +61,13 @@ describe('invalidateConfigCaches', () => {
     await invalidateConfigCaches('tenant-a');
 
     expect(mockClearOverrideCache).toHaveBeenCalledWith('tenant-a');
-    expect(mockClearAppConfigCache).toHaveBeenCalledTimes(1);
+    expect(mockClearAppConfigCache).not.toHaveBeenCalled();
     expect(mockInvalidateCachedTools).toHaveBeenCalledWith({ invalidateGlobal: true });
   });
 
   it('all operations run in parallel (not sequentially)', async () => {
     const order = [];
 
-    mockClearAppConfigCache.mockImplementation(
-      () =>
-        new Promise((r) =>
-          setTimeout(() => {
-            order.push('base');
-            r();
-          }, 10),
-        ),
-    );
     mockClearOverrideCache.mockImplementation(
       () =>
         new Promise((r) =>
@@ -107,16 +98,18 @@ describe('invalidateConfigCaches', () => {
 
     await invalidateConfigCaches();
 
-    expect(order).toHaveLength(4);
-    expect(new Set(order)).toEqual(new Set(['base', 'override', 'tools', 'mcp']));
+    expect(order).toHaveLength(3);
+    expect(new Set(order)).toEqual(new Set(['override', 'tools', 'mcp']));
+    expect(mockClearAppConfigCache).not.toHaveBeenCalled();
   });
 
-  it('resolves even when clearAppConfigCache throws (partial failure)', async () => {
-    mockClearAppConfigCache.mockRejectedValueOnce(new Error('cache connection lost'));
+  it('resolves even when one mutable cache invalidation throws', async () => {
+    mockClearOverrideCache.mockRejectedValueOnce(new Error('cache connection lost'));
 
     await expect(invalidateConfigCaches()).resolves.not.toThrow();
 
-    expect(mockClearOverrideCache).toHaveBeenCalledTimes(1);
+    expect(mockClearAppConfigCache).not.toHaveBeenCalled();
     expect(mockInvalidateCachedTools).toHaveBeenCalledWith({ invalidateGlobal: true });
+    expect(mockClearMcpConfigCache).toHaveBeenCalledTimes(1);
   });
 });
