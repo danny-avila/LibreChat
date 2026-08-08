@@ -1,11 +1,67 @@
-import { chipsFitInline, formatElapsed } from '../Bar';
+import type { PaletteEntry } from '~/hooks/Input/usePaletteEntries';
+import { chipsFitInline, formatElapsed, projectBarEntries } from '../Bar';
 
-/**
- * The two pure decisions behind the bar's layout: whether the chips share the
- * button row, and how long a recording has been running.
- */
+/** Pure decisions behind the bar's tool projection, layout and elapsed time. */
 
 const chip = (key: string) => ({ key });
+const entry = (key: string, overrides: Partial<PaletteEntry> = {}): PaletteEntry => ({
+  key,
+  itemType: 'builtin',
+  itemId: key,
+  label: key,
+  icon: null,
+  section: 'tool',
+  active: false,
+  pinned: false,
+  onSelect: jest.fn(),
+  ...overrides,
+});
+
+describe('projectBarEntries', () => {
+  it('keeps active and pinned tools but excludes staged skills', () => {
+    const active = entry('active', { active: true });
+    const pinned = entry('pinned', { pinned: true });
+    const inactive = entry('inactive');
+    const skill = entry('skill', { section: 'skill', active: true, pinned: true });
+
+    expect(projectBarEntries([active, pinned, inactive, skill])).toEqual([active, pinned]);
+  });
+
+  it('keeps a pinned MCP menu alongside selected server chips', () => {
+    const github = entry('mcp:github', {
+      itemType: 'mcp',
+      itemId: 'github',
+      section: 'mcp',
+    });
+    const pinnedMcp = entry('mcp:pinned', {
+      itemType: 'mcp',
+      itemId: 'mcp',
+      section: 'mcp',
+      active: true,
+      pinned: true,
+    });
+
+    const projected = projectBarEntries([github], pinnedMcp);
+    expect(projected).toHaveLength(1);
+    expect(projected[0]).toEqual(
+      expect.objectContaining({
+        key: 'mcp:pinned',
+        modes: [expect.objectContaining({ id: 'github', label: 'mcp:github', active: false })],
+      }),
+    );
+
+    const selected = { ...github, active: true };
+    const selectedProjection = projectBarEntries([selected], pinnedMcp);
+    expect(selectedProjection).toHaveLength(2);
+    expect(selectedProjection[0]).toBe(selected);
+    expect(selectedProjection[1]).toEqual(
+      expect.objectContaining({
+        key: 'mcp:pinned',
+        modes: [expect.objectContaining({ id: 'github', active: true })],
+      }),
+    );
+  });
+});
 
 describe('chipsFitInline', () => {
   const widths = { a: 40, b: 60, c: 100 };
