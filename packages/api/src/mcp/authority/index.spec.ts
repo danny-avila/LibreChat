@@ -151,6 +151,40 @@ async function resolveMutableAuthorityFixture(resolver: MCPAuthorityProofResolve
 
 describe('MCPAuthorityProofResolver', () => {
   test.each([
+    ['Map', new Map([['allowedDomains', ['operator.example']]])],
+    ['Date', new Date('2026-08-08T00:00:00.000Z')],
+    [
+      'custom class',
+      new (class ParsedAuthorityConfig {
+        public readonly serverName = 'operator';
+      })(),
+    ],
+  ])('rejects a %s in parsed authority config before resolving a proof', async (_name, value) => {
+    const { resolver, resolveMCPAuthorityProof } = createResolver();
+
+    await expect(
+      resolver.resolve({
+        userId: '64b64c13a1136b7f18a7e111',
+        targets: [
+          {
+            serverName: 'operator',
+            source: 'config',
+            sourceRevision: 'config-source-revision',
+            configSourceRevision: 'config-source-revision',
+            expectedCredentialRevision: 'credential-revision',
+            expectedOAuthGrantGeneration: null,
+            resolvedConfig: { type: 'sse', url: 'https://operator.example/mcp' },
+          },
+        ],
+        parsedConfig: { value },
+        schemas: [],
+        calculateArtifactRevision: () => 'artifact-revision',
+      }),
+    ).rejects.toEqual(expect.objectContaining({ reason: 'malformed_input' }));
+    expect(resolveMCPAuthorityProof).not.toHaveBeenCalled();
+  });
+
+  test.each([
     {
       name: 'raw security policy',
       mutate: ({ parsedConfig }: MutableAuthorityFixture) => {

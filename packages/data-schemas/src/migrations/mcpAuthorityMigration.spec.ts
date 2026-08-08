@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { MCPAuthorityTargetInput } from '~/types';
 import {
@@ -22,10 +22,10 @@ const TENANT_ID = 'migration-tenant';
 const ROLE_NAME = 'MCP_MIGRATION_USER';
 const SERVER_NAME = 'migration-server';
 
-let mongoServer: MongoMemoryReplSet;
+let mongoServer: MongoMemoryServer;
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  mongoServer = await MongoMemoryServer.create({ instance: { ip: '127.0.0.1' } });
   mongoose.set('autoCreate', false);
   mongoose.set('autoIndex', false);
   await mongoose.connect(mongoServer.getUri(), { autoCreate: false, autoIndex: false });

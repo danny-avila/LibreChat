@@ -66,15 +66,17 @@ describe('backfillMCPServerNormalizedNames', () => {
     expect(await collection.indexExists('normalizedServerName_1_tenantId_1')).toBe(false);
   });
 
-  test('pins both migration scans to primary with majority read concern', async () => {
+  test('uses portable updateOne writes after one primary majority scan', async () => {
     const collection = mongoose.connection.db!.collection('mcpservers');
     await collection.insertOne({ serverName: 'selected server', tenantId: 'tenant-a' });
     const findSpy = jest.spyOn(mongoose.mongo.Collection.prototype, 'find');
+    const updateOneSpy = jest.spyOn(mongoose.mongo.Collection.prototype, 'updateOne');
+    const bulkWriteSpy = jest.spyOn(mongoose.mongo.Collection.prototype, 'bulkWrite');
 
     try {
       await backfillMCPServerNormalizedNames(mongoose.connection);
 
-      expect(findSpy).toHaveBeenCalledTimes(2);
+      expect(findSpy).toHaveBeenCalledTimes(1);
       expect(
         findSpy.mock.calls.every(
           ([, options]) =>
@@ -83,8 +85,12 @@ describe('backfillMCPServerNormalizedNames', () => {
             options.readConcern.level === 'majority',
         ),
       ).toBe(true);
+      expect(updateOneSpy).toHaveBeenCalledTimes(1);
+      expect(bulkWriteSpy).not.toHaveBeenCalled();
     } finally {
       findSpy.mockRestore();
+      updateOneSpy.mockRestore();
+      bulkWriteSpy.mockRestore();
     }
   });
 });

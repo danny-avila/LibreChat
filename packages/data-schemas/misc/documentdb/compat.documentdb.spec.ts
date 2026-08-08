@@ -208,7 +208,7 @@ describeLive('Amazon DocumentDB live compatibility', () => {
       expect(typeof supported).toBe('boolean');
     });
 
-    it('executes the bounded MCP authority snapshot transaction', async () => {
+    it('executes the generation-fenced MCP authority proof', async () => {
       const tenantId = `authority-tenant-${runId}`;
       const roleName = `AUTHORITY_${runId}`;
       const serverName = `authority-server-${runId}`;
@@ -306,7 +306,7 @@ describeLive('Amazon DocumentDB live compatibility', () => {
           expect(proof.servers[0].linkedAgentIds).toHaveLength(agentIds.length);
           await methods.assertMCPAuthorityProofsCurrent({ proofs: proof, boot });
         });
-        capabilities['MCP authority snapshot'] = 'supported';
+        capabilities['MCP authority generation fence'] = 'supported';
       } finally {
         await Promise.all([
           getDb().collection('aclentries').deleteMany({ resourceId: serverId }),
