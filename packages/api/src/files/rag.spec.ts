@@ -48,9 +48,8 @@ describe('deleteRagFile', () => {
       const file = { file_id: 'file-123', embedded: true };
       mockedAxios.delete.mockResolvedValueOnce({ status: 200 });
 
-      const result = await deleteRagFile({ userId: 'user123', file });
+      await expect(deleteRagFile({ userId: 'user123', file })).resolves.toBeUndefined();
 
-      expect(result).toBe(true);
       expect(mockedGenerateShortLivedToken).toHaveBeenCalledWith({
         userId: 'user123',
         tenantId: undefined,
@@ -75,9 +74,10 @@ describe('deleteRagFile', () => {
       const file = { file_id: 'file-123', embedded: true, entity_id: 'agent_abc' };
       mockedAxios.delete.mockResolvedValueOnce({ status: 200 });
 
-      const result = await deleteRagFile({ userId: 'user123', file, tenantId: 'tenant-1' });
+      await expect(
+        deleteRagFile({ userId: 'user123', file, tenantId: 'tenant-1' }),
+      ).resolves.toBeUndefined();
 
-      expect(result).toBe(true);
       expect(mockedGenerateShortLivedToken).toHaveBeenCalledWith({
         userId: 'user123',
         tenantId: 'tenant-1',
@@ -90,15 +90,16 @@ describe('deleteRagFile', () => {
       );
     });
 
-    it('returns false without calling the RAG API when the token cannot be minted', async () => {
+    it('throws without calling the RAG API when the token cannot be minted', async () => {
       const file = { file_id: 'file-123', embedded: true };
       mockedGenerateShortLivedToken.mockImplementationOnce(() => {
         throw new Error('RAG_AUTH_ACCEPT_LEGACY=false requires RAG_JWT_SECRET');
       });
 
-      const result = await deleteRagFile({ userId: 'user123', file });
+      await expect(deleteRagFile({ userId: 'user123', file })).rejects.toThrow(
+        /Unable to mint a RAG API token/,
+      );
 
-      expect(result).toBe(false);
       expect(mockedAxios.delete).not.toHaveBeenCalled();
       expect(mockedLogger.error).toHaveBeenCalledWith(
         '[deleteRagFile] Unable to mint a RAG API token:',
@@ -106,43 +107,49 @@ describe('deleteRagFile', () => {
       );
     });
 
-    it('should return true and log warning when document is not found (404)', async () => {
+    it('treats a 404 as already deleted and resolves', async () => {
       const file = { file_id: 'file-not-found', embedded: true };
       const error = new Error('Not Found') as Error & { response?: { status?: number } };
       error.response = { status: 404 };
       mockedAxios.delete.mockRejectedValueOnce(error);
 
-      const result = await deleteRagFile({ userId: 'user123', file });
+      await expect(deleteRagFile({ userId: 'user123', file })).resolves.toBeUndefined();
 
-      expect(result).toBe(true);
       expect(mockedLogger.warn).toHaveBeenCalledWith(
         '[deleteRagFile] Document file-not-found not found in RAG API, may have been deleted already',
       );
     });
 
-    it('should return false and log error on other errors', async () => {
+    it('throws so the caller keeps the metadata when the RAG API rejects the delete', async () => {
       const file = { file_id: 'file-error', embedded: true };
       const error = new Error('Server Error') as Error & { response?: { status?: number } };
       error.response = { status: 500 };
       mockedAxios.delete.mockRejectedValueOnce(error);
 
-      const result = await deleteRagFile({ userId: 'user123', file });
+      await expect(deleteRagFile({ userId: 'user123', file })).rejects.toThrow(/Server Error/);
 
-      expect(result).toBe(false);
       expect(mockedLogger.error).toHaveBeenCalledWith(
         '[deleteRagFile] Error deleting document from RAG API:',
         'Server Error',
       );
     });
+
+    it('throws when the RAG API is unreachable and no response ever arrives', async () => {
+      const file = { file_id: 'file-error', embedded: true };
+      mockedAxios.delete.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+
+      await expect(deleteRagFile({ userId: 'user123', file })).rejects.toThrow(
+        /connect ECONNREFUSED/,
+      );
+    });
   });
 
   describe('when file is not embedded', () => {
-    it('should skip RAG deletion and return true', async () => {
+    it('should skip RAG deletion', async () => {
       const file = { file_id: 'file-123', embedded: false };
 
-      const result = await deleteRagFile({ userId: 'user123', file });
+      await expect(deleteRagFile({ userId: 'user123', file })).resolves.toBeUndefined();
 
-      expect(result).toBe(true);
       expect(mockedAxios.delete).not.toHaveBeenCalled();
       expect(mockedGenerateShortLivedToken).not.toHaveBeenCalled();
     });
@@ -150,43 +157,38 @@ describe('deleteRagFile', () => {
     it('should skip RAG deletion when embedded is undefined', async () => {
       const file = { file_id: 'file-123' };
 
-      const result = await deleteRagFile({ userId: 'user123', file });
+      await expect(deleteRagFile({ userId: 'user123', file })).resolves.toBeUndefined();
 
-      expect(result).toBe(true);
       expect(mockedAxios.delete).not.toHaveBeenCalled();
     });
   });
 
   describe('when RAG_API_URL is not configured', () => {
-    it('should skip RAG deletion and return true', async () => {
+    it('should skip RAG deletion', async () => {
       delete process.env.RAG_API_URL;
       const file = { file_id: 'file-123', embedded: true };
 
-      const result = await deleteRagFile({ userId: 'user123', file });
+      await expect(deleteRagFile({ userId: 'user123', file })).resolves.toBeUndefined();
 
-      expect(result).toBe(true);
       expect(mockedAxios.delete).not.toHaveBeenCalled();
     });
   });
 
   describe('userId handling', () => {
-    it('should return false when no userId is provided', async () => {
+    it('throws when no userId is provided', async () => {
       const file = { file_id: 'file-123', embedded: true };
 
-      const result = await deleteRagFile({ userId: '', file });
+      await expect(deleteRagFile({ userId: '', file })).rejects.toThrow(/No user ID provided/);
 
-      expect(result).toBe(false);
-      expect(mockedLogger.error).toHaveBeenCalledWith('[deleteRagFile] No user ID provided');
       expect(mockedAxios.delete).not.toHaveBeenCalled();
     });
 
-    it('should return false when userId is undefined', async () => {
+    it('throws when userId is undefined', async () => {
       const file = { file_id: 'file-123', embedded: true };
 
-      const result = await deleteRagFile({ userId: undefined as unknown as string, file });
-
-      expect(result).toBe(false);
-      expect(mockedLogger.error).toHaveBeenCalledWith('[deleteRagFile] No user ID provided');
+      await expect(deleteRagFile({ userId: undefined as unknown as string, file })).rejects.toThrow(
+        /No user ID provided/,
+      );
     });
   });
 });

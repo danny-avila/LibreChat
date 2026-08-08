@@ -17,8 +17,11 @@ const { RagScopes, logAxiosError, generateShortLivedToken } = require('@librecha
  *                           by the user.
  *
  * @returns {Promise<void>}
- *          A promise that resolves when the file has been successfully deleted, or throws an error if the
- *          file path is invalid or if there is an error in deletion.
+ *          A promise that resolves only once the chunks are gone — a 404 counts, since the file
+ *          the caller is about to forget about is already absent. Every other failure throws,
+ *          including one raised before the request is even sent (an unmintable token), so the
+ *          caller keeps the file's metadata instead of reporting a delete that left its chunks
+ *          behind with nothing left to reference them.
  */
 const deleteVectors = async (req, file) => {
   if (!file.embedded || !process.env.RAG_API_URL) {
@@ -46,14 +49,11 @@ const deleteVectors = async (req, file) => {
       error,
       message: 'Error deleting vectors',
     });
-    if (
-      error.response &&
-      error.response.status !== 404 &&
-      (error.response.status < 200 || error.response.status >= 300)
-    ) {
-      logger.warn('Error deleting vectors, file will not be deleted');
-      throw new Error(error.message || 'An error occurred during file deletion.');
+    if (error.response?.status === 404) {
+      return;
     }
+    logger.warn('Error deleting vectors, file will not be deleted');
+    throw new Error(error.message || 'An error occurred during file deletion.');
   }
 };
 

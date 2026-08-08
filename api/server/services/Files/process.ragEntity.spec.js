@@ -238,6 +238,65 @@ describe('processDeleteRequest — agent knowledge-base scoping', () => {
     expect(paramsByFileId.get(ownFileId)).toBeUndefined();
   });
 
+  describe('a vector delete that never happened is never reported as done', () => {
+    const runDelete = async (fileId) => {
+      const userId = new mongoose.Types.ObjectId();
+      const file = await seedFile(fileId, userId);
+      const result = await processDeleteRequest({
+        req: buildReq([file.toObject()], { id: userId.toString() }),
+        files: [file.toObject()],
+      });
+      return { result, record: await File.findOne({ file_id: fileId }) };
+    };
+
+    test('keeps the file record when the RAG token cannot be minted', async () => {
+      generateShortLivedToken.mockImplementation(() => {
+        throw new Error('RAG_AUTH_ACCEPT_LEGACY=false requires RAG_JWT_SECRET');
+      });
+
+      const { result, record } = await runDelete('file_mint_failure');
+
+      expect(axios.delete).not.toHaveBeenCalled();
+      expect(result.deletedFileIds).not.toContain('file_mint_failure');
+      expect(result.failedFileIds).toContain('file_mint_failure');
+      expect(record).not.toBeNull();
+    });
+
+    test('keeps the file record when the RAG API rejects the delete', async () => {
+      const error = new Error('Internal Server Error');
+      error.response = { status: 500 };
+      axios.delete.mockRejectedValue(error);
+
+      const { result, record } = await runDelete('file_rag_rejected');
+
+      expect(result.deletedFileIds).not.toContain('file_rag_rejected');
+      expect(result.failedFileIds).toContain('file_rag_rejected');
+      expect(record).not.toBeNull();
+    });
+
+    test('keeps the file record when the RAG API is unreachable', async () => {
+      axios.delete.mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:8000'));
+
+      const { result, record } = await runDelete('file_rag_unreachable');
+
+      expect(result.deletedFileIds).not.toContain('file_rag_unreachable');
+      expect(result.failedFileIds).toContain('file_rag_unreachable');
+      expect(record).not.toBeNull();
+    });
+
+    test('removes the file record once the RAG API has forgotten the chunks', async () => {
+      const error = new Error('Not Found');
+      error.response = { status: 404 };
+      axios.delete.mockRejectedValue(error);
+
+      const { result, record } = await runDelete('file_rag_absent');
+
+      expect(result.deletedFileIds).toContain('file_rag_absent');
+      expect(result.failedFileIds).not.toContain('file_rag_absent');
+      expect(record).toBeNull();
+    });
+  });
+
   test('deletes the file record even when the entity lookup fails', async () => {
     const userId = new mongoose.Types.ObjectId();
     const fileId = 'file_lookup_failure';

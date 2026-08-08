@@ -995,6 +995,67 @@ describe('S3 CRUD', () => {
       });
     });
 
+    /**
+     * A RAG cleanup that failed leaves the chunks in place. Reporting the
+     * delete as done would strip the file's metadata and leave nothing able to
+     * reference them again, so every path through this function has to surface
+     * the failure rather than absorb it into its own error handling.
+     */
+    describe('RAG cleanup failures', () => {
+      const ragFailure = () => new Error('[deleteRagFile] Unable to mint a RAG API token: no key');
+
+      it('surfaces the failure after the object was deleted', async () => {
+        const mockFile = {
+          filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
+          file_id: 'file123',
+          user: 'user123',
+        } as TFile;
+
+        s3Mock.on(HeadObjectCommand).resolvesOnce({});
+        (deleteRagFile as jest.Mock).mockRejectedValueOnce(ragFailure());
+
+        const { deleteFileFromS3 } = await import('../crud');
+        await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow(
+          /Unable to mint a RAG API token/,
+        );
+      });
+
+      it('surfaces the failure when the object was already missing', async () => {
+        const mockFile = {
+          filepath: 'https://bucket.s3.amazonaws.com/images/user123/nonexistent.jpg',
+          file_id: 'file123',
+          user: 'user123',
+        } as TFile;
+
+        s3Mock.on(HeadObjectCommand).rejects({ name: 'NotFound' });
+        (deleteRagFile as jest.Mock).mockRejectedValueOnce(ragFailure());
+
+        const { deleteFileFromS3 } = await import('../crud');
+        await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow(
+          /Unable to mint a RAG API token/,
+        );
+      });
+
+      it('surfaces the failure on the NoSuchKey path', async () => {
+        const mockFile = {
+          filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
+          file_id: 'file123',
+          user: 'user123',
+        } as TFile;
+
+        s3Mock.on(HeadObjectCommand).resolvesOnce({});
+        s3Mock
+          .on(DeleteObjectCommand)
+          .rejects(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' }));
+        (deleteRagFile as jest.Mock).mockRejectedValueOnce(ragFailure());
+
+        const { deleteFileFromS3 } = await import('../crud');
+        await expect(deleteFileFromS3(mockReq, mockFile)).rejects.toThrow(
+          /Unable to mint a RAG API token/,
+        );
+      });
+    });
+
     it('rejects tenant-prefixed keys when the file record lacks tenantId', async () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/t/tenantA/images/user123/file.jpg',
