@@ -8,6 +8,7 @@ export * from './contact';
 export * from './context';
 export * from './conversation';
 export * from './discovery';
+export * from './subagents';
 export * from './edges';
 export * from './envelope';
 export * from './handlers';
