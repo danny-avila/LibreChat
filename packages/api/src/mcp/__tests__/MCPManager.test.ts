@@ -1745,7 +1745,7 @@ describe('MCPManager', () => {
         allowsTakeover: true,
       });
       (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(replacementConnection);
-      const updatedConfig = { ...serverConfig, updatedAt: new Date() };
+      const updatedConfig = { ...serverConfig, updatedAt: Date.now() };
 
       await expect(
         manager.getUserConnection({
