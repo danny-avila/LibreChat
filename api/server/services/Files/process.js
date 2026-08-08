@@ -985,7 +985,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         extract: async () => {
           const localResult = await resolveDocumentText();
           const hasLocalText = !!localResult?.text?.trim();
-          const localNeedsOCR = !hasLocalText || !!localResult?.pagesNeedingOcr?.length;
+          /* pdf-inspector names unreadable pages. AnyDoc cannot, so it reports whether
+           * the document embeds artwork that may carry content it converted to nothing. */
+          const localNeedsOCR =
+            !hasLocalText ||
+            !!localResult?.pagesNeedingOcr?.length ||
+            localResult?.hasEmbeddedMedia === true;
 
           if (hasLocalText && !localNeedsOCR) {
             return localResult;

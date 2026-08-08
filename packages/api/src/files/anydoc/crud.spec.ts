@@ -1,5 +1,6 @@
 import path from 'path';
 import * as fs from 'fs';
+import JSZip from 'jszip';
 import { logger } from '@librechat/data-schemas';
 import { parseWithAnydoc } from './crud';
 
@@ -70,6 +71,43 @@ describe('parseWithAnydoc', () => {
     const result = await parse(docxFile('structured.docx'));
 
     expect(result.pagesNeedingOcr).toBeUndefined();
+  });
+
+  /**
+   * anydoc converts artwork to nothing, so a document whose content is a scanned page
+   * comes back looking as complete as one with no images at all. This flag is what the
+   * upload path escalates on, and it is only meaningful if a text-only document stays
+   * silent: reporting it everywhere would send every office upload to a paid OCR
+   * service.
+   */
+  describe('embedded media reporting', () => {
+    test('reports nothing for a document with no artwork', async () => {
+      const result = await parse(docxFile('structured.docx'));
+
+      expect(result.hasEmbeddedMedia).toBeUndefined();
+    });
+
+    test('reports media a document embeds', async () => {
+      const zip = await JSZip.loadAsync(
+        await fs.promises.readFile(path.join(fixtures, 'structured.docx')),
+      );
+      zip.file('word/media/image1.png', Buffer.from('not really a png'));
+      const withMediaPath = path.join(fixtures, 'anydoc-with-media.docx');
+      await fs.promises.writeFile(withMediaPath, await zip.generateAsync({ type: 'nodebuffer' }));
+
+      try {
+        const result = await parse({
+          originalname: 'anydoc-with-media.docx',
+          path: withMediaPath,
+          mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+
+        expect(result.hasEmbeddedMedia).toBe(true);
+        expect(result.text).toContain('# Quarterly Report');
+      } finally {
+        await fs.promises.unlink(withMediaPath);
+      }
+    });
   });
 
   describe('zip decompression guard', () => {
