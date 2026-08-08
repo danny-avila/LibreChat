@@ -10,23 +10,15 @@ import {
   getMCPAuthorityConsistencyModule,
   runMCPAuthorityMutation,
 } from './mcpAuthority/consistency';
+import { MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS } from './mcpAuthority/classification';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
 
 const MCP_AUTHORITY_USER_FIELDS = new Set<keyof IUser>([
+  ...MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS,
   'tenantId',
-  'role',
-  'provider',
   'idOnTheSource',
   'openidIssuer',
-  'googleId',
-  'facebookId',
-  'openidId',
-  'samlId',
-  'ldapId',
-  'githubId',
-  'discordId',
-  'appleId',
 ]);
 
 function userUpdateAffectsMCPAuthority(updateData: Partial<IUser>): boolean {
@@ -632,7 +624,8 @@ export function createUserMethods(
       }
       return await runMCPAuthorityMutation(authorityMutationGate, () => updateUser(...args));
     },
-    acceptTerms,
+    acceptTerms: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, () => acceptTerms(...args)),
     searchUsers,
     getUserById,
     generateToken,

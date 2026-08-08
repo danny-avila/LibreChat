@@ -111,7 +111,7 @@ describe('User schema indexes', () => {
 });
 
 describe('User Methods - Database Tests', () => {
-  test('publishes generations only for user identity and role mutations', async () => {
+  test('publishes generations for user placeholders, identity, and role mutations', async () => {
     const user = await User.create({
       name: 'Authority User',
       email: 'authority@example.com',
@@ -123,11 +123,20 @@ describe('User Methods - Database Tests', () => {
     await methods.updateUser(user._id.toString(), { avatar: 'avatar.png' });
     await expect(consistency.assertGeneration(0)).resolves.toBeUndefined();
 
-    await methods.updateUser(user._id.toString(), { role: 'ADMIN' });
+    await methods.updateUser(user._id.toString(), { email: 'updated-authority@example.com' });
     await expect(consistency.assertGeneration(1)).resolves.toBeUndefined();
 
-    await methods.deleteUserById(user._id.toString());
+    await methods.updateUser(user._id.toString(), { name: 'Updated Authority User' });
     await expect(consistency.assertGeneration(2)).resolves.toBeUndefined();
+
+    await methods.updateUser(user._id.toString(), { role: 'ADMIN' });
+    await expect(consistency.assertGeneration(3)).resolves.toBeUndefined();
+
+    await methods.acceptTerms(user._id.toString());
+    await expect(consistency.assertGeneration(4)).resolves.toBeUndefined();
+
+    await methods.deleteUserById(user._id.toString());
+    await expect(consistency.assertGeneration(5)).resolves.toBeUndefined();
   });
 
   describe('findUser', () => {

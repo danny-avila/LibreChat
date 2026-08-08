@@ -1,4 +1,5 @@
 import { extractEnvVariable } from 'librechat-data-provider';
+import { MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS } from '@librechat/data-schemas';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody } from '~/types';
@@ -13,26 +14,8 @@ import {
  * List of allowed user fields that can be used in MCP environment variables.
  * These are non-sensitive string/boolean fields from the IUser interface.
  */
-const ALLOWED_USER_FIELDS = [
-  'id',
-  'name',
-  'username',
-  'email',
-  'provider',
-  'role',
-  'googleId',
-  'facebookId',
-  'openidId',
-  'samlId',
-  'ldapId',
-  'githubId',
-  'discordId',
-  'appleId',
-  'emailVerified',
-  'twoFactorEnabled',
-  'termsAccepted',
-  'termsAcceptedAt',
-] as const;
+const ALLOWED_USER_FIELDS: typeof MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS =
+  MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS;
 
 type AllowedUserField = (typeof ALLOWED_USER_FIELDS)[number];
 type SafeUser = Pick<IUser, AllowedUserField>;

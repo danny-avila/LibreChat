@@ -117,6 +117,7 @@ import {
   type MCPAuthorityCredentialSourceDocument,
 } from './mcpAuthority';
 export { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
+export { MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS } from './mcpAuthority/classification';
 export type {
   MCPAuthorityConsistencyReconciliation,
   MCPAuthorityConsistencyStatus,

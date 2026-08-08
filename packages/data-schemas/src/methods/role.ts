@@ -60,6 +60,7 @@ export function createRoleMethods(
     fieldsToSelect?: string | string[] | null,
   ) => Promise<IRole[]>;
   updateRoleByName: (roleName: string, updates: Partial<IRole>) => Promise<IRole>;
+  renameRoleByName: (roleName: string, updates: Partial<IRole>) => Promise<IRole | null>;
   updateAccessPermissions: (
     roleName: string,
     permissionsUpdate: Record<string, Record<string, boolean>>,
@@ -296,6 +297,9 @@ export function createRoleMethods(
    * Update role values by name.
    */
   async function updateRoleByName(roleName: string, updates: Partial<IRole>): Promise<IRole> {
+    if (updates.name && updates.name !== roleName) {
+      return (await renameRoleByName(roleName, updates)) as IRole;
+    }
     try {
       const mutation = await authorityMutationGate.mutateMCPAuthority(async () => {
         const Role = mongoose.models.Role;
@@ -342,6 +346,50 @@ export function createRoleMethods(
       updateError.cause = error;
       throw updateError;
     }
+  }
+
+  async function renameRoleByName(
+    roleName: string,
+    updates: Partial<IRole>,
+  ): Promise<IRole | null> {
+    const newRoleName = updates.name;
+    if (!newRoleName || newRoleName === roleName) {
+      return await updateRoleByName(roleName, updates);
+    }
+    const mutation = await authorityMutationGate.mutateMCPAuthority(async () => {
+      const Role = mongoose.models.Role;
+      const User = mongoose.models.User as Model<IUser>;
+      let role: IRole | null;
+      try {
+        role = await Role.findOneAndUpdate({ name: roleName }, { $set: updates }, { new: true })
+          .select('-__v')
+          .lean<IRole>()
+          .exec();
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return {
+            conflict: new RoleConflictError(`Role "${newRoleName}" already exists`),
+          } as const;
+        }
+        throw error;
+      }
+      if (!role) {
+        return { role: null, affectedUserIds: [] as string[] } as const;
+      }
+      const affectedUserIds = await findUserIdsByRole(roleName);
+      await User.updateMany({ role: roleName }, { $set: { role: newRoleName } });
+      return { role, affectedUserIds } as const;
+    });
+    if ('conflict' in mutation.result) {
+      throw mutation.result.conflict;
+    }
+    const role = mutation.result.role;
+    await Promise.all([
+      publishRoleCache(roleName, null),
+      publishRoleCache(newRoleName, role),
+      invalidateAuthUserDocCache(mutation.result.affectedUserIds),
+    ]);
+    return role;
   }
 
   /**
@@ -715,6 +763,7 @@ export function createRoleMethods(
     getRoleByName,
     findRolesByNames,
     updateRoleByName,
+    renameRoleByName,
     updateAccessPermissions,
     migrateRoleSchema,
     createRoleByName,

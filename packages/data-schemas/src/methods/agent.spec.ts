@@ -1284,6 +1284,66 @@ describe('Agent Methods', () => {
       }
     });
 
+    test('publishes the authority deletion before pruning user favorites', async () => {
+      const previousCacheMode = process.env.AUTH_USER_CACHE_MODE;
+      process.env.AUTH_USER_CACHE_MODE = 'on';
+      const agentId = `agent_${uuidv4()}`;
+      const userId = new mongoose.Types.ObjectId();
+      let releaseCacheRead!: () => void;
+      let cacheReadStarted!: () => void;
+      const cacheRead = new Promise<void>((resolve) => {
+        cacheReadStarted = resolve;
+      });
+      const cacheRelease = new Promise<void>((resolve) => {
+        releaseCacheRead = resolve;
+      });
+      const cache = {
+        get: jest.fn(async () => {
+          cacheReadStarted();
+          await cacheRelease;
+          return [];
+        }),
+        set: jest.fn(async () => undefined),
+        delete: jest.fn(async () => undefined),
+      };
+      const cachedMethods = createAgentMethods(mongoose, {
+        removeAllPermissions: async () => undefined,
+        getActions,
+        getSoleOwnedResourceIds: async () => [],
+        getCache: jest.fn((key) => (key === CacheKeys.AUTH_USER_DOC ? cache : undefined)),
+      });
+      await createAgent({
+        id: agentId,
+        name: 'Post-Publish Favorite Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await User.create({
+        _id: userId,
+        name: 'Post-Publish Favorite User',
+        email: `post-publish-${uuidv4()}@example.com`,
+        provider: 'openid',
+        favorites: [{ agentId }],
+      });
+
+      const pendingDelete = cachedMethods.deleteAgent({ id: agentId });
+      try {
+        await cacheRead;
+        await expect(
+          getMCPAuthorityConsistencyModule(mongoose).getMCPAuthorityConsistencyStatus(),
+        ).resolves.toMatchObject({ dirty: false });
+      } finally {
+        releaseCacheRead();
+        await pendingDelete;
+        if (previousCacheMode === undefined) {
+          delete process.env.AUTH_USER_CACHE_MODE;
+        } else {
+          process.env.AUTH_USER_CACHE_MODE = previousCacheMode;
+        }
+      }
+    });
+
     test('should preserve other agents in database when one agent is deleted', async () => {
       const agentToDeleteId = `agent_${uuidv4()}`;
       const agentToKeep1Id = `agent_${uuidv4()}`;

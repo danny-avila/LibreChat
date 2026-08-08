@@ -1,6 +1,7 @@
 const path = require('path');
 const mongoose = require('mongoose');
-const { User } = require('@librechat/data-schemas').createModels(mongoose);
+const { createModels, getMCPAuthorityConsistencyModule } = require('@librechat/data-schemas');
+const { User } = createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
@@ -21,9 +22,9 @@ const connect = require('./connect');
   }
 
   try {
-    const result = await User.updateMany(
-      {},
-      { $set: { termsAccepted: false, termsAcceptedAt: null } },
+    const authority = getMCPAuthorityConsistencyModule(mongoose);
+    const { result } = await authority.mutateMCPAuthority(() =>
+      User.updateMany({}, { $set: { termsAccepted: false, termsAcceptedAt: null } }),
     );
     console.green(`Updated ${result.modifiedCount} user(s).`);
   } catch (error) {

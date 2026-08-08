@@ -31,6 +31,7 @@ export {
   MAX_TOOL_FAVORITES,
   MCPAuthorityProofError,
   MCP_AUTHORITY_PROOF_COLLECTIONS,
+  MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS,
   MAX_MCP_AUTHORITY_TARGETS,
   createMCPAuthorityBootRevision,
   createMCPAuthorityConfigSourceRevision,

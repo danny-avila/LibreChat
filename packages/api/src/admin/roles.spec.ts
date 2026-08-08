@@ -64,13 +64,11 @@ function createDeps(overrides: Partial<AdminRolesDeps> = {}): AdminRolesDeps {
     getRoleByName: jest.fn().mockResolvedValue(null),
     createRoleByName: jest.fn().mockResolvedValue(mockRole()),
     updateRoleByName: jest.fn().mockResolvedValue(mockRole()),
+    renameRoleByName: jest.fn().mockResolvedValue(mockRole()),
     updateAccessPermissions: jest.fn().mockResolvedValue(undefined),
     deleteRoleByName: jest.fn().mockResolvedValue(mockRole()),
     findUser: jest.fn().mockResolvedValue(null),
     updateUser: jest.fn().mockResolvedValue(mockUser()),
-    updateUsersByRole: jest.fn().mockResolvedValue(undefined),
-    findUserIdsByRole: jest.fn().mockResolvedValue(['uid-1', 'uid-2']),
-    updateUsersRoleByIds: jest.fn().mockResolvedValue(undefined),
     listUsersByRole: jest.fn().mockResolvedValue([]),
     countUsersByRole: jest.fn().mockResolvedValue(0),
     deleteConfig: jest.fn().mockResolvedValue(null),
@@ -425,7 +423,7 @@ describe('createAdminRolesHandlers', () => {
       const role = mockRole({ name: 'senior-editor' });
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
-        updateRoleByName: jest.fn().mockResolvedValue(role),
+        renameRoleByName: jest.fn().mockResolvedValue(role),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -437,14 +435,14 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ role });
-      expect(deps.updateRoleByName).toHaveBeenCalledWith('editor', { name: 'senior-editor' });
+      expect(deps.renameRoleByName).toHaveBeenCalledWith('editor', { name: 'senior-editor' });
     });
 
     it('trims name before storage', async () => {
       const role = mockRole({ name: 'trimmed' });
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
-        updateRoleByName: jest.fn().mockResolvedValue(role),
+        renameRoleByName: jest.fn().mockResolvedValue(role),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res } = createReqRes({
@@ -454,26 +452,14 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.updateRole(req, res);
 
-      expect(deps.updateRoleByName).toHaveBeenCalledWith('editor', { name: 'trimmed' });
+      expect(deps.renameRoleByName).toHaveBeenCalledWith('editor', { name: 'trimmed' });
     });
 
-    it('migrates users before renaming role', async () => {
+    it('delegates the complete rename to one atomic dependency', async () => {
       const role = mockRole({ name: 'new-name' });
-      const callOrder: string[] = [];
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
-        findUserIdsByRole: jest.fn().mockImplementation(() => {
-          callOrder.push('findUserIdsByRole');
-          return Promise.resolve(['uid-1']);
-        }),
-        updateUsersByRole: jest.fn().mockImplementation(() => {
-          callOrder.push('updateUsersByRole');
-          return Promise.resolve();
-        }),
-        updateRoleByName: jest.fn().mockImplementation(() => {
-          callOrder.push('updateRoleByName');
-          return Promise.resolve(role);
-        }),
+        renameRoleByName: jest.fn().mockResolvedValue(role),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status } = createReqRes({
@@ -484,15 +470,14 @@ describe('createAdminRolesHandlers', () => {
       await handlers.updateRole(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.findUserIdsByRole).toHaveBeenCalledWith('editor');
-      expect(deps.updateUsersByRole).toHaveBeenCalledWith('editor', 'new-name');
-      expect(callOrder).toEqual(['findUserIdsByRole', 'updateUsersByRole', 'updateRoleByName']);
+      expect(deps.renameRoleByName).toHaveBeenCalledWith('editor', { name: 'new-name' });
+      expect(deps.updateRoleByName).not.toHaveBeenCalled();
     });
 
-    it('does not rename role when user migration fails', async () => {
+    it('returns 500 when the atomic rename fails', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
-        updateUsersByRole: jest.fn().mockRejectedValue(new Error('migration failed')),
+        renameRoleByName: jest.fn().mockRejectedValue(new Error('migration failed')),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status } = createReqRes({
@@ -506,7 +491,7 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.updateRoleByName).not.toHaveBeenCalled();
     });
 
-    it('does not migrate users when name unchanged', async () => {
+    it('does not invoke atomic rename when name is unchanged', async () => {
       const role = mockRole({ description: 'updated' });
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
@@ -520,14 +505,14 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.updateRole(req, res);
 
-      expect(deps.updateUsersByRole).not.toHaveBeenCalled();
+      expect(deps.renameRoleByName).not.toHaveBeenCalled();
     });
 
     it('renames and updates description in a single request', async () => {
       const role = mockRole({ name: 'senior-editor', description: 'Updated desc' });
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
-        updateRoleByName: jest.fn().mockResolvedValue(role),
+        renameRoleByName: jest.fn().mockResolvedValue(role),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -539,8 +524,7 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ role });
-      expect(deps.updateUsersByRole).toHaveBeenCalledWith('editor', 'senior-editor');
-      expect(deps.updateRoleByName).toHaveBeenCalledWith('editor', {
+      expect(deps.renameRoleByName).toHaveBeenCalledWith('editor', {
         name: 'senior-editor',
         description: 'Updated desc',
       });
@@ -666,12 +650,10 @@ describe('createAdminRolesHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Role not found' });
     });
 
-    it('rolls back user migration when rename fails', async () => {
-      const ids = ['uid-1', 'uid-2'];
+    it('returns 404 when the atomic rename finds no role', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
-        findUserIdsByRole: jest.fn().mockResolvedValue(ids),
-        updateRoleByName: jest.fn().mockResolvedValue(null),
+        renameRoleByName: jest.fn().mockResolvedValue(null),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -683,17 +665,13 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(404);
       expect(json).toHaveBeenCalledWith({ error: 'Role not found' });
-      expect(deps.updateUsersByRole).toHaveBeenCalledTimes(1);
-      expect(deps.updateUsersByRole).toHaveBeenCalledWith('editor', 'new-name');
-      expect(deps.updateUsersRoleByIds).toHaveBeenCalledWith(ids, 'editor');
+      expect(deps.renameRoleByName).toHaveBeenCalledWith('editor', { name: 'new-name' });
     });
 
-    it('rolls back user migration when rename throws', async () => {
-      const ids = ['uid-1', 'uid-2'];
+    it('returns 500 when the atomic rename throws', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
-        findUserIdsByRole: jest.fn().mockResolvedValue(ids),
-        updateRoleByName: jest.fn().mockRejectedValue(new Error('db crash')),
+        renameRoleByName: jest.fn().mockRejectedValue(new Error('db crash')),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status } = createReqRes({
@@ -704,29 +682,7 @@ describe('createAdminRolesHandlers', () => {
       await handlers.updateRole(req, res);
 
       expect(status).toHaveBeenCalledWith(500);
-      expect(deps.updateUsersByRole).toHaveBeenCalledTimes(1);
-      expect(deps.updateUsersByRole).toHaveBeenCalledWith('editor', 'new-name');
-      expect(deps.updateUsersRoleByIds).toHaveBeenCalledWith(ids, 'editor');
-    });
-
-    it('logs rollback failure and still returns 500', async () => {
-      const deps = createDeps({
-        getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
-        findUserIdsByRole: jest.fn().mockResolvedValue(['uid-1']),
-        updateUsersRoleByIds: jest.fn().mockRejectedValue(new Error('rollback failed')),
-        updateRoleByName: jest.fn().mockRejectedValue(new Error('rename failed')),
-      });
-      const handlers = createAdminRolesHandlers(deps);
-      const { req, res, status } = createReqRes({
-        params: { name: 'editor' },
-        body: { name: 'new-name' },
-      });
-
-      await handlers.updateRole(req, res);
-
-      expect(status).toHaveBeenCalledWith(500);
-      expect(deps.updateUsersByRole).toHaveBeenCalledTimes(1);
-      expect(deps.updateUsersRoleByIds).toHaveBeenCalledTimes(1);
+      expect(deps.renameRoleByName).toHaveBeenCalledTimes(1);
     });
 
     it('returns 400 when description exceeds max length', async () => {
@@ -763,7 +719,7 @@ describe('createAdminRolesHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Failed to update role' });
     });
 
-    it('does not roll back when error occurs before user migration', async () => {
+    it('does not invoke atomic rename when validation lookup fails', async () => {
       const deps = createDeps({
         getRoleByName: jest
           .fn()
@@ -779,25 +735,7 @@ describe('createAdminRolesHandlers', () => {
       await handlers.updateRole(req, res);
 
       expect(status).toHaveBeenCalledWith(500);
-      expect(deps.updateUsersByRole).not.toHaveBeenCalled();
-    });
-
-    it('does not migrate users when findUserIdsByRole throws', async () => {
-      const deps = createDeps({
-        getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValueOnce(null),
-        findUserIdsByRole: jest.fn().mockRejectedValue(new Error('db crash')),
-      });
-      const handlers = createAdminRolesHandlers(deps);
-      const { req, res, status } = createReqRes({
-        params: { name: 'editor' },
-        body: { name: 'new-name' },
-      });
-
-      await handlers.updateRole(req, res);
-
-      expect(status).toHaveBeenCalledWith(500);
-      expect(deps.updateUsersByRole).not.toHaveBeenCalled();
-      expect(deps.updateUsersRoleByIds).not.toHaveBeenCalled();
+      expect(deps.renameRoleByName).not.toHaveBeenCalled();
     });
 
     it('returns existing role early when update body has no changes', async () => {

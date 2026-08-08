@@ -945,9 +945,8 @@ export function createAgentMethods(
    * Deletes an agent based on the provided search parameter.
    */
   async function deleteAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
-    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+    const deletedAgent = await runMCPAuthorityMutation(authorityMutationGate, async () => {
       const Agent = mongoose.models.Agent as Model<IAgent>;
-      const User = mongoose.models.User as Model<{ _id: Types.ObjectId }>;
       const agent = await Agent.findOneAndDelete(searchParameter);
       if (agent) {
         await Promise.all([
@@ -965,14 +964,19 @@ export function createAgentMethods(
         } catch (error) {
           logger.error('[deleteAgent] Error removing agent from handoff edges', error);
         }
-        try {
-          await pruneAgentFavorites(User, [(agent as unknown as { id: string }).id]);
-        } catch (error) {
-          logger.error('[deleteAgent] Error removing agent from user favorites', error);
-        }
       }
       return agent ? (agent.toObject() as IAgent) : null;
     });
+    if (!deletedAgent) {
+      return null;
+    }
+    try {
+      const User = mongoose.models.User as Model<{ _id: Types.ObjectId }>;
+      await pruneAgentFavorites(User, [(deletedAgent as unknown as { id: string }).id]);
+    } catch (error) {
+      logger.error('[deleteAgent] Error removing agent from user favorites', error);
+    }
+    return deletedAgent;
   }
 
   /**
@@ -984,67 +988,69 @@ export function createAgentMethods(
    * ensuring they are not orphaned if no permission migration has been run.
    */
   async function deleteUserAgents(userId: string): Promise<void> {
-    const Agent = mongoose.models.Agent as Model<IAgent>;
-    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const User = mongoose.models.User as Model<{ _id: Types.ObjectId }>;
-
+    let agentIds: string[];
     try {
-      const userObjectId = new mongoose.Types.ObjectId(userId);
-      const soleOwnedObjectIds = await getSoleOwnedResourceIds(userObjectId, [
-        ResourceType.AGENT,
-        ResourceType.REMOTE_AGENT,
-      ]);
+      agentIds = await runMCPAuthorityMutation(authorityMutationGate, async () => {
+        const Agent = mongoose.models.Agent as Model<IAgent>;
+        const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
+        const userObjectId = new mongoose.Types.ObjectId(userId);
+        const soleOwnedObjectIds = await getSoleOwnedResourceIds(userObjectId, [
+          ResourceType.AGENT,
+          ResourceType.REMOTE_AGENT,
+        ]);
 
-      const authoredAgents = await Agent.find({ author: userObjectId }).select('id _id').lean();
+        const authoredAgents = await Agent.find({ author: userObjectId }).select('id _id').lean();
 
-      const migratedEntries =
-        authoredAgents.length > 0
-          ? await AclEntry.find({
-              resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
-              resourceId: { $in: authoredAgents.map((a) => a._id) },
-            })
-              .select('resourceId')
-              .lean()
-          : [];
-      const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
-      const legacyAgents = authoredAgents.filter((a) => !migratedIds.has(a._id.toString()));
+        const migratedEntries =
+          authoredAgents.length > 0
+            ? await AclEntry.find({
+                resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
+                resourceId: { $in: authoredAgents.map((a) => a._id) },
+              })
+                .select('resourceId')
+                .lean()
+            : [];
+        const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
+        const legacyAgents = authoredAgents.filter((a) => !migratedIds.has(a._id.toString()));
 
-      const soleOwnedAgents =
-        soleOwnedObjectIds.length > 0
-          ? await Agent.find({ _id: { $in: soleOwnedObjectIds } })
-              .select('id _id')
-              .lean()
-          : [];
+        const soleOwnedAgents =
+          soleOwnedObjectIds.length > 0
+            ? await Agent.find({ _id: { $in: soleOwnedObjectIds } })
+                .select('id _id')
+                .lean()
+            : [];
 
-      const allAgents = [...soleOwnedAgents, ...legacyAgents];
+        const allAgents = [...soleOwnedAgents, ...legacyAgents];
+        if (allAgents.length === 0) {
+          return [];
+        }
 
-      if (allAgents.length === 0) {
-        return;
-      }
+        const deletedAgentIds = allAgents.map((agent) => agent.id);
+        const agentObjectIds = allAgents.map((agent) => agent._id);
 
-      const agentIds = allAgents.map((agent) => agent.id);
-      const agentObjectIds = allAgents.map((agent) => agent._id);
+        await AclEntry.deleteMany({
+          resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
+          resourceId: { $in: agentObjectIds },
+        });
 
-      await AclEntry.deleteMany({
-        resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
-        resourceId: { $in: agentObjectIds },
+        try {
+          await removeAgentIdsFromEdges(Agent, deletedAgentIds);
+        } catch (error) {
+          logger.error('[deleteUserAgents] Error removing agents from handoff edges', error);
+        }
+
+        await Agent.deleteMany({ _id: { $in: agentObjectIds } });
+        return deletedAgentIds;
       });
-
-      try {
-        await removeAgentIdsFromEdges(Agent, agentIds);
-      } catch (error) {
-        logger.error('[deleteUserAgents] Error removing agents from handoff edges', error);
-      }
-
-      try {
-        await pruneAgentFavorites(User, agentIds);
-      } catch (error) {
-        logger.error('[deleteUserAgents] Error removing agents from user favorites', error);
-      }
-
-      await Agent.deleteMany({ _id: { $in: agentObjectIds } });
     } catch (error) {
       logger.error('[deleteUserAgents] General error:', error);
+      return;
+    }
+    try {
+      await pruneAgentFavorites(User, agentIds);
+    } catch (error) {
+      logger.error('[deleteUserAgents] Error removing agents from user favorites', error);
     }
   }
 
@@ -1257,8 +1263,7 @@ export function createAgentMethods(
     getMCPServerNamesByAgentIds,
     updateAgent,
     deleteAgent,
-    deleteUserAgents: async (...args) =>
-      await runMCPAuthorityMutation(authorityMutationGate, () => deleteUserAgents(...args)),
+    deleteUserAgents,
     revertAgentVersion,
     countPromotedAgents,
     addAgentResourceFile,

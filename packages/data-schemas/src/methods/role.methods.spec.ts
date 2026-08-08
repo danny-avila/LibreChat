@@ -43,6 +43,7 @@ let updateUsersRoleByIds: ReturnType<typeof createRoleMethods>['updateUsersRoleB
 let listUsersByRole: ReturnType<typeof createRoleMethods>['listUsersByRole'];
 let countUsersByRole: ReturnType<typeof createRoleMethods>['countUsersByRole'];
 let updateRoleByName: ReturnType<typeof createRoleMethods>['updateRoleByName'];
+let renameRoleByName: ReturnType<typeof createRoleMethods>['renameRoleByName'];
 let listRoles: ReturnType<typeof createRoleMethods>['listRoles'];
 let countRoles: ReturnType<typeof createRoleMethods>['countRoles'];
 let mongoServer: MongoMemoryServer;
@@ -62,6 +63,7 @@ beforeAll(async () => {
   createRoleByName = methods.createRoleByName;
   deleteRoleByName = methods.deleteRoleByName;
   updateRoleByName = methods.updateRoleByName;
+  renameRoleByName = methods.renameRoleByName;
   updateUsersByRole = methods.updateUsersByRole;
   updateUsersRoleByIds = methods.updateUsersRoleByIds;
   listUsersByRole = methods.listUsersByRole;
@@ -1020,6 +1022,34 @@ describe('updateRoleByName - cache on rename', () => {
     await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
       dirty: false,
     });
+  });
+});
+
+describe('renameRoleByName', () => {
+  it('publishes the role document and every member migration in one generation', async () => {
+    await Role.create({ name: 'editor', permissions: {} });
+    const user = await User.create({
+      name: 'Role Member',
+      email: 'role-member@test.com',
+      role: 'editor',
+    });
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    const before = await consistency.initializeMCPAuthorityConsistency();
+
+    const renamed = await renameRoleByName('editor', {
+      name: 'senior-editor',
+      description: 'Renamed atomically',
+    });
+
+    expect(renamed).toMatchObject({
+      name: 'senior-editor',
+      description: 'Renamed atomically',
+    });
+    await expect(Role.findOne({ name: 'editor' })).resolves.toBeNull();
+    await expect(User.findById(user._id).lean()).resolves.toMatchObject({
+      role: 'senior-editor',
+    });
+    await expect(consistency.assertGeneration(before.generation + 1)).resolves.toBeUndefined();
   });
 });
 
