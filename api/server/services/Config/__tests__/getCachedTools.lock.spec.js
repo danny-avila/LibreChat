@@ -257,8 +257,11 @@ describe('global tool cache write lock', () => {
     const [writeScript, writeOptions] = mockKeyvRedisClient.eval.mock.calls[2];
     expect(reserveScript).toContain("redis.call('INCR', KEYS[1])");
     expect(writeScript).toContain('tonumber(current) > tonumber(ARGV[1])');
+    expect(writeScript).toContain("currentEntry['value']['publicationRevision']");
     expect(calculateSlot(reserveOptions.keys[0])).toBe(calculateSlot(writeOptions.keys[1]));
     expect(calculateSlot(writeOptions.keys[0])).toBe(calculateSlot(writeOptions.keys[1]));
+    expect(writeOptions.keys[0]).toContain('app-committed-revision');
+    expect(writeOptions.keys[0]).not.toBe(reserveOptions.keys[0]);
     expect(mockCache.set).not.toHaveBeenCalled();
   });
 

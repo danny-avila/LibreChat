@@ -94,9 +94,18 @@ return tostring(revision)
 const WRITE_APP_TOOLS_IF_CURRENT_SCRIPT = `
 local current = redis.call('GET', KEYS[1])
 if current and tonumber(current) > tonumber(ARGV[1]) then return 0 end
-redis.call('PSETEX', KEYS[1], ARGV[5], ARGV[1])
+local rawCurrentEntry = redis.call('GET', KEYS[2])
+if rawCurrentEntry then
+  local decodedCurrent, currentEntry = pcall(cjson.decode, rawCurrentEntry)
+  if decodedCurrent and type(currentEntry) == 'table' and type(currentEntry['value']) == 'table' then
+    local storedRevision = currentEntry['value']['publicationRevision']
+    local storedRevisionNumber = tonumber(storedRevision)
+    if storedRevisionNumber and storedRevisionNumber > tonumber(ARGV[1]) then return 0 end
+  end
+end
 local decodedEntry, entry = pcall(cjson.decode, ARGV[2])
 if not decodedEntry then return redis.error_reply('Invalid MCP app tools cache entry') end
+redis.call('PSETEX', KEYS[1], ARGV[5], ARGV[1])
 redis.call('PSETEX', KEYS[2], ARGV[4], cjson.encode({value=entry, expires=tonumber(ARGV[3])}))
 return 1
 `;
@@ -267,8 +276,10 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
       : 0,
   );
   const userQueues = new Map<string, Promise<void>>();
-  const appRevisions = new Map<string, number>();
+  const appRevisionCounters = new Map<string, number>();
+  const appCommittedRevisions = new Map<string, number>();
   const appRevisionExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const appWriteQueues = new Map<string, Promise<void>>();
   let globalQueue = Promise.resolve();
   let globalLockToken: string | undefined;
 
@@ -283,21 +294,37 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
       ? `${deps.cacheConfig.REDIS_KEY_PREFIX}${deps.cacheConfig.GLOBAL_PREFIX_SEPARATOR ?? '::'}${namespaced}`
       : namespaced;
   };
-  const rememberAppRevision = (scope: string, revision: number): void => {
-    appRevisions.set(scope, revision);
-    const previousTimer = appRevisionExpiryTimers.get(scope);
+  const rememberAppRevision = (
+    revisions: Map<string, number>,
+    scope: string,
+    revision: number,
+  ): void => {
+    revisions.set(scope, revision);
+    const timerKey = `${revisions === appRevisionCounters ? 'allocated' : 'committed'}:${scope}`;
+    const previousTimer = appRevisionExpiryTimers.get(timerKey);
     if (previousTimer) {
       clearTimeout(previousTimer);
     }
     const timer = setTimeout(() => {
-      if (appRevisions.get(scope) === revision) {
-        appRevisions.delete(scope);
+      if (revisions.get(scope) === revision) {
+        revisions.delete(scope);
       }
-      appRevisionExpiryTimers.delete(scope);
+      appRevisionExpiryTimers.delete(timerKey);
     }, Time.TWELVE_HOURS);
     timer.unref?.();
-    appRevisionExpiryTimers.set(scope, timer);
+    appRevisionExpiryTimers.set(timerKey, timer);
   };
+  function withAppWriteQueue<T>(scope: string, operation: () => Promise<T>): Promise<T> {
+    const previous = appWriteQueues.get(scope) ?? Promise.resolve();
+    const result = previous.then(operation, operation);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    appWriteQueues.set(scope, tail);
+    void tail.then(() => appWriteQueues.get(scope) === tail && appWriteQueues.delete(scope));
+    return result;
+  }
   const redisHashTag = (key: string): string => {
     const openingBrace = key.indexOf('{');
     const closingBrace = openingBrace >= 0 ? key.indexOf('}', openingBrace + 1) : -1;
@@ -742,8 +769,8 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
       ? parseAppToolsRevision(cached.publicationRevision)
       : 0;
     if (!sharedRedis()) {
-      const revision = Math.max(appRevisions.get(scope) ?? 0, cachedRevision) + 1;
-      rememberAppRevision(scope, revision);
+      const revision = Math.max(appRevisionCounters.get(scope) ?? 0, cachedRevision) + 1;
+      rememberAppRevision(appRevisionCounters, scope, revision);
       return String(revision);
     }
     const toolsRawKey = rawKey(toolsKey);
@@ -772,24 +799,28 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     };
     const scope = JSON.stringify([serverName, configGeneration]);
     if (!sharedRedis()) {
-      const cached = await deps.getCache().get(toolsKey);
-      const cachedRevision = isAppToolsEntry(cached)
-        ? parseAppToolsRevision(cached.publicationRevision)
-        : 0;
-      const currentRevision = Math.max(appRevisions.get(scope) ?? 0, cachedRevision);
-      if (currentRevision > nextRevision) {
-        return false;
-      }
-      rememberAppRevision(scope, nextRevision);
-      if ((await deps.getCache().set(toolsKey, entry, ttl)) === false) {
-        throw new Error('App tool cache rejected the write');
-      }
-      return true;
+      return withAppWriteQueue(scope, async () => {
+        const cached = await deps.getCache().get(toolsKey);
+        const cachedRevision = isAppToolsEntry(cached)
+          ? parseAppToolsRevision(cached.publicationRevision)
+          : 0;
+        const currentRevision = Math.max(appCommittedRevisions.get(scope) ?? 0, cachedRevision);
+        if (currentRevision > nextRevision) {
+          return false;
+        }
+        if ((await deps.getCache().set(toolsKey, entry, ttl)) === false) {
+          throw new Error('App tool cache rejected the write');
+        }
+        rememberAppRevision(appCommittedRevisions, scope, nextRevision);
+        return true;
+      });
     }
     const toolsRawKey = rawKey(toolsKey);
-    const revisionKey = rawKey(`tools:mcp:app-revision:{${redisHashTag(toolsRawKey)}}`);
+    const committedRevisionKey = rawKey(
+      `tools:mcp:app-committed-revision:{${redisHashTag(toolsRawKey)}}`,
+    );
     const written = await deps.keyvRedisClient!.eval(WRITE_APP_TOOLS_IF_CURRENT_SCRIPT, {
-      keys: [revisionKey, toolsRawKey],
+      keys: [committedRevisionKey, toolsRawKey],
       arguments: [
         publicationRevision,
         JSON.stringify(entry),

@@ -136,6 +136,30 @@ describe('MCP tool cache', () => {
     await expect(getCachedAppServerTools('github', 'config-v2')).resolves.toEqual(currentTools);
   });
 
+  it('allows a completed snapshot when a later reserved request aborts', async () => {
+    const key = ToolCacheKeys.MCP_APP_SERVER('github', 'config-v2');
+    let cached = null;
+    mockCache.get.mockImplementation(async (requestedKey) =>
+      requestedKey === key ? cached : null,
+    );
+    mockCache.set.mockImplementation(async (requestedKey, value) => {
+      if (requestedKey === key) {
+        cached = value;
+      }
+      return true;
+    });
+
+    const completed = await getNextAppToolsPublicationRevision('github', 'config-v2');
+    await getNextAppToolsPublicationRevision('github', 'config-v2');
+
+    await expect(
+      setCachedAppServerTools('github', 'config-v2', { completed: {} }, completed),
+    ).resolves.toBe(true);
+    await expect(getCachedAppServerTools('github', 'config-v2')).resolves.toEqual({
+      completed: {},
+    });
+  });
+
   it('stores unguarded user tools under the supplied config generation', async () => {
     const tools = { search: { type: 'function' } };
     mockCache.set.mockResolvedValue(true);
