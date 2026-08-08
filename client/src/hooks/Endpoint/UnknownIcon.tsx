@@ -23,6 +23,7 @@ const knownEndpointAssets: Record<string, string> = {
   qwen: 'assets/qwen.svg',
   [KnownEndpoints.shuttleai]: 'assets/shuttleai.png',
   [KnownEndpoints['together.ai']]: 'assets/together.png',
+  [KnownEndpoints.trustedrouter]: 'assets/trustedrouter.png',
   [KnownEndpoints.unify]: 'assets/unify.webp',
 };
 
