@@ -15,12 +15,15 @@ export * from './mcp/authority';
 export * from './mcp/registry/MCPServersRegistry';
 export * from './mcp/MCPManager';
 export * from './mcp/connection';
+export * from './mcp/toolsChanged';
 export * from './mcp/oauth';
 export * from './mcp/auth';
 export * from './mcp/zod';
 export * from './mcp/errors';
 export * from './mcp/cache';
 export * from './mcp/tools';
+export * from './mcp/catalog/store';
+export * from './mcp/assistants';
 export * from './mcp/request';
 /* Utilities */
 export * from './mcp/utils';

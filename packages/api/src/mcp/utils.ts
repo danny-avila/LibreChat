@@ -1,5 +1,6 @@
 import {
   Constants,
+  MCPOptionsSchema,
   normalizeServerName,
   normalizeMCPToolKey,
   buildServerNameAliases,
@@ -9,6 +10,18 @@ import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
 
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
+
+function isMCPServerConfig(config: unknown): config is ParsedServerConfig {
+  return MCPOptionsSchema.safeParse(config).success;
+}
+
+/** Validates an effective MCP config without stripping its server-managed metadata. */
+export function validateMCPServerConfig(config: unknown): ParsedServerConfig {
+  if (!isMCPServerConfig(config)) {
+    throw new Error('Invalid effective MCP server configuration');
+  }
+  return config;
+}
 
 /**
  * Prefix of the lazily-expanded MCP placeholder `mcp_all<delim><server>`,
@@ -184,7 +197,10 @@ type PlaceholderValue =
   | readonly PlaceholderValue[]
   | { readonly [key: string]: PlaceholderValue };
 
-type UserScopedConnectionConfig = Pick<ParsedServerConfig, 'requiresOAuth' | 'source' | 'dbId'> & {
+type UserScopedConnectionConfig = Pick<
+  ParsedServerConfig,
+  'requiresOAuth' | 'source' | 'dbId' | 'startup'
+> & {
   args?: string[];
   /** Loosened from the parsed shapes so raw (pre-inspection) configs qualify;
    *  scoping predicates only check key presence */
@@ -369,6 +385,13 @@ export function requiresUserScopedConnection(config: UserScopedConnectionConfig)
     config.obo != null ||
     hasCustomUserVars(config) ||
     hasRuntimeContextPlaceholders(config)
+  );
+}
+
+/** Whether a server can share one operator-owned connection across all users. */
+export function canUseAppConnection(config: UserScopedConnectionConfig): boolean {
+  return (
+    config.startup !== false && !isUserSourced(config) && !requiresUserScopedConnection(config)
   );
 }
 

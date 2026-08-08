@@ -20,6 +20,7 @@ jest.mock('~/server/services/Config', () => ({
   setCachedTools: jest.fn(),
   getCachedTools: jest.fn(),
   getMCPServerTools: jest.fn(),
+  cacheMCPServerTools: jest.fn(),
   loadCustomConfig: jest.fn(),
 }));
 
@@ -32,6 +33,7 @@ jest.mock('@librechat/api', () => ({
   isMCPDomainAllowed: jest.fn(),
   GenerationJobManager: jest.fn(),
   buildOAuthToolCallName: jest.fn((name) => name),
+  getUserMCPAuthMap: jest.fn(),
   /** Mirrors the real resolver so these tests still exercise the wrapper's own
    *  plumbing - loading the request config and degrading on failure - rather than
    *  the resolution logic, which is unit-tested in packages/api. Like the real
@@ -53,6 +55,7 @@ jest.mock('~/models', () => ({
   findToken: jest.fn(),
   createToken: jest.fn(),
   updateToken: jest.fn(),
+  findPluginAuthsByKeys: jest.fn(),
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
@@ -69,17 +72,123 @@ jest.mock('~/server/services/Tools/mcp', () => ({
 
 const { Constants } = require('librechat-data-provider');
 
-const { getAppConfig } = require('~/server/services/Config');
+const {
+  getAppConfig,
+  getCachedTools,
+  getMCPServerTools,
+  cacheMCPServerTools,
+} = require('~/server/services/Config');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { getUserMCPAuthMap } = require('@librechat/api');
 const {
   createMCPTool,
   healMcpToolNames,
+  getAssistantToolDefinitions,
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
   resolveMcpServerContext,
   resolveCollisionAuditNames,
 } = require('../MCP');
+
+describe('getAssistantToolDefinitions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    require('~/config').getMCPManager.mockReset();
+  });
+
+  const req = { user: { id: 'u1', role: 'user' } };
+  const serverConfig = { type: 'streamable-http', url: 'https://app.example.com/mcp' };
+  const toolKey = `search${Constants.mcp_delimiter}app-server`;
+  const mcpDefinition = { type: 'function', function: { name: toolKey } };
+
+  it('combines static definitions with referenced configuration-addressed MCP slices', async () => {
+    getCachedTools.mockResolvedValue({ code_interpreter: { type: 'code_interpreter' } });
+    getAppConfig.mockResolvedValue({ mcpConfig: {} });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'app-server': serverConfig });
+    getMCPServerTools.mockResolvedValue({ [toolKey]: mcpDefinition });
+
+    const definitions = await getAssistantToolDefinitions({
+      req,
+      tools: ['code_interpreter', toolKey],
+    });
+
+    expect(definitions).toEqual({
+      code_interpreter: { type: 'code_interpreter' },
+      [toolKey]: mcpDefinition,
+    });
+    expect(getMCPServerTools).toHaveBeenCalledWith('u1', 'app-server', serverConfig);
+  });
+
+  it('recovers and re-caches a referenced server when its slice is missing', async () => {
+    getCachedTools.mockResolvedValue({});
+    getAppConfig.mockResolvedValue({ mcpConfig: {} });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'app-server': serverConfig });
+    getMCPServerTools.mockResolvedValue(null);
+    cacheMCPServerTools.mockResolvedValue(undefined);
+    const getServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({
+      tools: { [toolKey]: mcpDefinition },
+      publicationGeneration: 'connection-generation',
+    });
+    require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctionsSnapshot });
+
+    await expect(getAssistantToolDefinitions({ req, tools: [toolKey] })).resolves.toEqual({
+      [toolKey]: mcpDefinition,
+    });
+    expect(cacheMCPServerTools).toHaveBeenCalledWith({
+      userId: 'u1',
+      serverName: 'app-server',
+      serverTools: { [toolKey]: mcpDefinition },
+      serverConfig,
+      publicationGeneration: 'connection-generation',
+    });
+  });
+
+  it('reinitializes a referenced server when its cache and local snapshot are missing', async () => {
+    getCachedTools.mockResolvedValue({});
+    getAppConfig.mockResolvedValue({ mcpConfig: {} });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'app-server': serverConfig });
+    getMCPServerTools.mockResolvedValue(null);
+    const getServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({ tools: null });
+    require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctionsSnapshot });
+    const userMCPAuthMap = { 'mcp_app-server': { API_KEY: 'saved' } };
+    getUserMCPAuthMap.mockResolvedValue(userMCPAuthMap);
+    reinitMCPServer.mockResolvedValue({ availableTools: { [toolKey]: mcpDefinition } });
+
+    await expect(getAssistantToolDefinitions({ req, tools: [toolKey] })).resolves.toEqual({
+      [toolKey]: mcpDefinition,
+    });
+    expect(reinitMCPServer).toHaveBeenCalledWith({
+      user: req.user,
+      serverName: 'app-server',
+      serverConfig,
+      userMCPAuthMap,
+    });
+    expect(getUserMCPAuthMap).toHaveBeenCalledWith({
+      userId: 'u1',
+      servers: ['app-server'],
+      findPluginAuthsByKeys: expect.any(Function),
+    });
+  });
+
+  it('propagates config-server resolution failures through the assistant write bridge', async () => {
+    const resolutionError = new Error('config resolution failed');
+    getCachedTools.mockResolvedValue({});
+    getAppConfig.mockResolvedValue({
+      mcpConfig: { 'app-server': { type: 'streamable-http', url: 'https://example.com/mcp' } },
+    });
+    mockRegistry.ensureConfigServers.mockRejectedValue(resolutionError);
+
+    await expect(getAssistantToolDefinitions({ req, tools: [toolKey] })).rejects.toBe(
+      resolutionError,
+    );
+    expect(mockRegistry.getAllServerConfigs).not.toHaveBeenCalled();
+    expect(getMCPServerTools).not.toHaveBeenCalled();
+  });
+});
 
 describe('resolveConfigServers', () => {
   beforeEach(() => jest.clearAllMocks());
