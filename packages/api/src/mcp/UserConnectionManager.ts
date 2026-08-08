@@ -255,6 +255,14 @@ export abstract class UserConnectionManager {
         await this.addPendingOAuthStart(pending.oauth, opts, userId);
         return pending.promise;
       }
+
+      const forcedReplacement = this.forceNewConnectionQueues.get(lockKey);
+      if (forcedReplacement) {
+        logger.debug(
+          `[MCP][User: ${userId}][${serverName}] Waiting for an in-flight forced replacement`,
+        );
+        await forcedReplacement;
+      }
     }
 
     const pendingOAuth = this.createPendingOAuthState(opts.oauthStart);

@@ -500,6 +500,82 @@ describe('MCP OAuth Race Condition Fixes', () => {
         registrySpy.mockRestore();
       }
     });
+
+    it('waits for an in-flight forced replacement before creating an ordinary connection', async () => {
+      const { UserConnectionManager } = await import('~/mcp/UserConnectionManager');
+
+      class TestManager extends UserConnectionManager {}
+
+      const manager = new TestManager();
+      const replacementConnection = {
+        on: jest.fn(),
+        isConnected: jest.fn().mockResolvedValue(true),
+        refreshToolList: jest.fn().mockResolvedValue(undefined),
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        removeAllListeners: jest.fn(),
+        dispose: jest.fn().mockResolvedValue(undefined),
+        isStale: jest.fn().mockReturnValue(false),
+      };
+      manager.appConnections = { has: jest.fn().mockResolvedValue(false) } as never;
+
+      const registrySpy = jest
+        .spyOn(
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry,
+          'getInstance',
+        )
+        .mockReturnValue({
+          getServerConfig: jest.fn().mockResolvedValue({
+            type: 'streamable-http',
+            url: 'http://localhost:9999/',
+          }),
+          resolveAllowlists: jest.fn().mockResolvedValue({
+            allowedDomains: null,
+            allowedAddresses: null,
+            useSSRFProtection: false,
+          }),
+        });
+      const { MCPConnectionFactory } = await import('~/mcp/MCPConnectionFactory');
+      let releaseReplacement: () => void = () => undefined;
+      const replacementStarted = new Promise<void>((resolve) => {
+        releaseReplacement = resolve;
+      });
+      const createSpy = jest.spyOn(MCPConnectionFactory, 'create').mockImplementation(async () => {
+        await replacementStarted;
+        return replacementConnection as never;
+      });
+      const user = { id: 'force-new-before-ordinary-user' };
+
+      try {
+        const forced = manager.getUserConnection({
+          serverName: 'test-server',
+          forceNew: true,
+          user: user as never,
+        });
+        for (let attempt = 0; attempt < 20 && createSpy.mock.calls.length === 0; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        expect(createSpy).toHaveBeenCalledTimes(1);
+
+        const ordinary = manager.getUserConnection({
+          serverName: 'test-server',
+          user: user as never,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(createSpy).toHaveBeenCalledTimes(1);
+
+        releaseReplacement();
+        const [forcedConnection, ordinaryConnection] = await Promise.all([forced, ordinary]);
+
+        expect(forcedConnection).toBe(replacementConnection);
+        expect(ordinaryConnection).toBe(replacementConnection);
+        expect(createSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        releaseReplacement();
+        createSpy.mockRestore();
+        registrySpy.mockRestore();
+      }
+    });
   });
 
   describe('Fix 2: PENDING flow is reused, not deleted', () => {
