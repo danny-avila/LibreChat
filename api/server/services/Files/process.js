@@ -18,6 +18,7 @@ const {
   isAssistantsEndpoint,
   getEndpointFileConfig,
   documentParserSources,
+  documentParserMimeTypes,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -861,24 +862,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     });
     const shouldUseConfiguredOCR = extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
     const shouldUseConfiguredText = extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
-    const shouldUseDocumentParser =
-      extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.documentParser;
-
-    const shouldUseOCR = shouldUseConfiguredOCR || shouldUseDocumentParser;
+    const isDocumentParserEligible = fileConfig.checkType(
+      file.mimetype,
+      fileConfig.documentParser?.supportedMimeTypes || documentParserMimeTypes,
+    );
+    const shouldUseDocumentParser = !shouldUseConfiguredText && isDocumentParserEligible;
 
     const resolveDocumentText = async () => {
-      if (shouldUseConfiguredOCR) {
-        try {
-          const ocrStrategy = appConfig?.ocr?.strategy ?? FileSources.document_parser;
-          const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
-          return await handleFileUpload({ req, file, loadAuthValues });
-        } catch (err) {
-          const { errorMetadata } = getExtractionLogDetails(err);
-          logger.error(
-            `[processAgentFileUpload] Configured OCR failed for ${extractionFileLabel}, falling back to document_parser:`,
-            errorMetadata,
-          );
-        }
+      if (!isDocumentParserEligible) {
+        return;
       }
       try {
         const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
@@ -892,13 +884,33 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       }
     };
 
+    const resolveConfiguredOCR = async () => {
+      if (!shouldUseConfiguredOCR) {
+        return;
+      }
+      if (!(await checkCapability(req, AgentCapabilities.ocr))) {
+        throw new Error('OCR capability is not enabled for Agents');
+      }
+      try {
+        const ocrStrategy = appConfig?.ocr?.strategy ?? FileSources.mistral_ocr;
+        const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
+        return await handleFileUpload({ req, file, loadAuthValues });
+      } catch (err) {
+        const { errorMetadata } = getExtractionLogDetails(err);
+        logger.error(
+          `[processAgentFileUpload] Configured OCR failed for ${extractionFileLabel}:`,
+          errorMetadata,
+        );
+      }
+    };
+
     /**
      * Single entry point for every extraction result, so the OCR branch and the RAG
      * fallback below store the same shape: omitted pages are always logged, annotated
      * into the text and reflected in the byte count.
      *
-     * Only built-in parser output keeps the document's real MIME type. Storing the
-     * default `text/plain` there would discard what kind of file this was, and every
+     * Local parser output keeps the document's real MIME type. Storing the default
+     * `text/plain` there would discard what kind of file this was, and every
      * extracted-text affordance in the client keys on that type. Configured OCR keeps
      * `text/plain`: its supported types include images, and an `image/*` record whose
      * `filepath` is a marker string, not a URL, renders as a broken thumbnail.
@@ -926,24 +938,48 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       });
     };
 
-    if (shouldUseConfiguredOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
-      throw new Error('OCR capability is not enabled for Agents');
+    if (shouldUseDocumentParser) {
+      const documentResult = await extractInspectableFileText({
+        filters: appConfig?.filters,
+        extract: async () => {
+          const localResult = await resolveDocumentText();
+          const hasLocalText = !!localResult?.text?.trim();
+          const localNeedsOCR = !hasLocalText || !!localResult?.pagesNeedingOcr?.length;
+
+          if (hasLocalText && !localNeedsOCR) {
+            return localResult;
+          }
+
+          if (localNeedsOCR && shouldUseConfiguredOCR) {
+            const ocrResult = await resolveConfiguredOCR();
+            if (ocrResult?.text?.trim()) {
+              return ocrResult;
+            }
+          }
+
+          return hasLocalText ? localResult : undefined;
+        },
+      });
+
+      if (documentResult?.text?.trim()) {
+        return await createDocumentTextFile(documentResult);
+      }
+
+      throw new Error(
+        `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
+      );
     }
 
-    if (shouldUseOCR) {
+    if (shouldUseConfiguredOCR) {
       const ocrResult = await extractInspectableFileText({
         filters: appConfig?.filters,
-        extract: resolveDocumentText,
+        extract: resolveConfiguredOCR,
       });
-      /* Checked before annotation: a fully image-based document can come back with no
-       * text but a full `pagesNeedingOcr` list, and annotating that first would store a
-       * file whose entire content is the omission notice. Providers report emptiness
-       * rather than throwing, so this rule stays with the caller and applies to all. */
       if (ocrResult?.text?.trim()) {
         return await createDocumentTextFile(ocrResult);
       }
       throw new Error(
-        `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
+        `Unable to extract text from "${file.originalname}" with the configured OCR service.`,
       );
     }
 

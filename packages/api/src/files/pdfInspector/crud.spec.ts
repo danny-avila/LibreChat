@@ -1,7 +1,6 @@
 import path from 'path';
 import * as fs from 'fs';
-import type { ServerRequest } from '~/types';
-import { uploadPdfInspector, pdfInspectorSupportedMimeTypes } from './crud';
+import { parseWithPdfInspector, pdfInspectorSupportedMimeTypes } from './crud';
 
 /**
  * pdfjs ships ESM this Jest setup cannot load, so the suite stubs it wholesale.
@@ -44,7 +43,7 @@ jest.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
   }),
 }));
 
-describe('pdf-inspector provider', () => {
+describe('pdf-inspector local parser', () => {
   const pdfFile = (name: string, mimetype = 'application/pdf'): Express.Multer.File =>
     ({
       originalname: name,
@@ -52,11 +51,7 @@ describe('pdf-inspector provider', () => {
       mimetype,
     }) as Express.Multer.File;
 
-  const context = (file: Express.Multer.File) => ({
-    req: {} as ServerRequest,
-    file,
-    loadAuthValues: async () => ({}),
-  });
+  const context = (file: Express.Multer.File) => file;
 
   beforeEach(() => {
     mockPdfjs.numPages = 1;
@@ -73,14 +68,14 @@ describe('pdf-inspector provider', () => {
     });
 
     test('rejects a non-PDF with a message naming the provider and the type', async () => {
-      /* An admin can select this provider and then upload a DOCX, so the refusal has
-       * to say which engine refused and what it was handed. */
+      /* Direct callers can still pass a DOCX, so the refusal has to say which engine
+       * refused and what it was handed. */
       const file = pdfFile(
         'sample.docx',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       );
 
-      await expect(uploadPdfInspector(context(file))).rejects.toThrow(
+      await expect(parseWithPdfInspector(context(file))).rejects.toThrow(
         /pdf-inspector only extracts PDF files, but received "application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document"/,
       );
     });
@@ -88,14 +83,14 @@ describe('pdf-inspector provider', () => {
     test('rejects a missing mimetype rather than attempting a parse', async () => {
       const file = pdfFile('sample.pdf', '');
 
-      await expect(uploadPdfInspector(context(file))).rejects.toThrow(
+      await expect(parseWithPdfInspector(context(file))).rejects.toThrow(
         'pdf-inspector only extracts PDF files, but received "unknown".',
       );
     });
   });
 
   test('recovers layout structure from a text-based pdf', async () => {
-    const result = await uploadPdfInspector(context(pdfFile('sample.pdf')));
+    const result = await parseWithPdfInspector(context(pdfFile('sample.pdf')));
 
     expect(result.filepath).toBe('pdf_inspector');
     expect(result.filename).toBe('sample.pdf');
@@ -109,7 +104,7 @@ describe('pdf-inspector provider', () => {
   });
 
   test('reports the scanned pages of a part-scanned pdf', async () => {
-    const result = await uploadPdfInspector(context(pdfFile('sample-mixed.pdf')));
+    const result = await parseWithPdfInspector(context(pdfFile('sample-mixed.pdf')));
 
     /** Page 1 is real text; page 2 has no text layer in either engine and must be
      * called out, not dropped silently. */
@@ -124,7 +119,7 @@ describe('pdf-inspector provider', () => {
      * pages where both engines find nothing belong in the omission notice. */
     mockPdfjs.pageText = { 2: 'garbled but present ocr layer text' };
 
-    const result = await uploadPdfInspector(context(pdfFile('sample-mixed.pdf')));
+    const result = await parseWithPdfInspector(context(pdfFile('sample-mixed.pdf')));
 
     expect(result.text).toContain('Quarterly Report');
     expect(result.text).toContain('garbled but present ocr layer text');
@@ -142,7 +137,7 @@ describe('pdf-inspector provider', () => {
 
     expect(reasons).not.toContain('scanned');
 
-    const result = await uploadPdfInspector(context(pdfFile('sample.pdf')));
+    const result = await parseWithPdfInspector(context(pdfFile('sample.pdf')));
 
     expect(result.pagesNeedingOcr).toBeUndefined();
   });
@@ -150,25 +145,24 @@ describe('pdf-inspector provider', () => {
   test('returns no text and reports every page for a fully scanned pdf', async () => {
     /* Neither engine finds a text layer, so the document is empty and every page is
      * accounted for. Deciding what an empty extraction means belongs to the caller. */
-    const result = await uploadPdfInspector(context(pdfFile('sample-scanned.pdf')));
+    const result = await parseWithPdfInspector(context(pdfFile('sample-scanned.pdf')));
 
     expect(result.text).toBe('');
     expect(result.pagesNeedingOcr).toEqual([1]);
   });
 
-  test('rejects a document with a corrupted xref table so the caller can fall back', async () => {
-    /* The reason the caller's pdfjs fallback has to survive: pdfjs rebuilds a damaged
-     * xref table, pdf-inspector does not. Without the fallback these documents, which
-     * parse today, would start failing. */
-    await expect(uploadPdfInspector(context(pdfFile('sample-badxref.pdf')))).rejects.toThrow(
-      /Invalid PDF structure/,
-    );
+  test('falls back to pdfjs for a document with a corrupted xref table', async () => {
+    mockPdfjs.pageText = { 1: 'Quarterly Report' };
+
+    const result = await parseWithPdfInspector(context(pdfFile('sample-badxref.pdf')));
+
+    expect(result.filepath).toBe('pdf_inspector');
+    expect(result.text).toBe('Quarterly Report\n');
+    expect(mockPdfjs.destroy).toHaveBeenCalled();
   });
 
-  test('rejects when pdf-inspector reports no pages', async () => {
-    /* An empty page list is not an empty document: joining zero pages yields '',
-     * which the caller would surface as a parse of nothing instead of falling back
-     * to pdfjs. A PDF that parses on the flat extractor has to keep parsing. */
+  test('falls back to pdfjs when pdf-inspector reports no pages', async () => {
+    mockPdfjs.pageText = { 1: 'Recovered flat text' };
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
@@ -176,11 +170,11 @@ describe('pdf-inspector provider', () => {
           extractTextIsolated: async () => '',
         }));
 
-        const { uploadPdfInspector: uploadIsolated } = await import('./crud');
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
 
-        await expect(uploadIsolated(context(pdfFile('sample.pdf')))).rejects.toThrow(
-          'pdf-inspector returned no pages',
-        );
+        const result = await uploadIsolated(context(pdfFile('sample.pdf')));
+
+        expect(result.text).toBe('Recovered flat text\n');
       });
     } finally {
       jest.dontMock('./native');
@@ -205,7 +199,7 @@ describe('pdf-inspector provider', () => {
           extractTextIsolated: async () => '',
         }));
 
-        const { uploadPdfInspector: uploadIsolated } = await import('./crud');
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
         const result = await uploadIsolated(context(pdfFile('sample.pdf')));
 
         expect(mockPdfjs.requestedPages).toHaveLength(250);
@@ -238,7 +232,7 @@ describe('pdf-inspector provider', () => {
         }));
         mockPdfjs.pageText = { 2: 'm u s h y r e c o v e r y' };
 
-        const { uploadPdfInspector: uploadIsolated } = await import('./crud');
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
         const result = await uploadIsolated(context(pdfFile('sample.pdf')));
 
         expect(result.text).toBe('clean whole document text');
@@ -266,7 +260,7 @@ describe('pdf-inspector provider', () => {
         }));
         mockPdfjs.pageText = { 2: 'recovered second page' };
 
-        const { uploadPdfInspector: uploadIsolated } = await import('./crud');
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
         const result = await uploadIsolated(context(pdfFile('sample.pdf')));
 
         expect(result.text).not.toContain('WHOLE_DOCUMENT_SENTINEL');
@@ -294,7 +288,7 @@ describe('pdf-inspector provider', () => {
         }));
         mockPdfjs.pageText = { 2: 'recovered second page' };
 
-        const { uploadPdfInspector: uploadIsolated } = await import('./crud');
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
         const result = await uploadIsolated(context(pdfFile('sample.pdf')));
 
         expect(result.text).toBe('# Only structured page\n\nrecovered second page');
@@ -309,7 +303,7 @@ describe('pdf-inspector provider', () => {
   test('releases the pdfjs document after page recovery', async () => {
     /* pdfjs pins the decoded document and its worker until the loading task is
      * destroyed, so an undestroyed task holds the buffer for the whole request. */
-    await uploadPdfInspector(context(pdfFile('sample-mixed.pdf')));
+    await parseWithPdfInspector(context(pdfFile('sample-mixed.pdf')));
 
     expect(mockPdfjs.destroy).toHaveBeenCalled();
   });

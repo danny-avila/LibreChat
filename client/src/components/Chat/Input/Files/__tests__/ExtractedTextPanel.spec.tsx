@@ -67,7 +67,7 @@ describe('ExtractedTextPanel', () => {
 
     render(<ExtractedTextPanel fileId="f1" enabled={true} />);
 
-    expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/could not be loaded/i);
     expect(screen.queryByText(/No extracted text/i)).not.toBeInTheDocument();
   });
 

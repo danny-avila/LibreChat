@@ -1,32 +1,18 @@
 import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
-import type { ParsedDocumentUploadResult, ServerRequest } from '~/types';
+import type { ParsedDocumentUploadResult } from '~/types';
 import { assertSafeZipSizeIfArchive } from '../documents/zipSafety';
 
 /**
- * Extraction context, identical to the Mistral OCR providers so every strategy is
- * called the same way. anydoc runs in-process against the uploaded bytes, so `req`
- * and `loadAuthValues` are accepted and ignored.
- */
-interface OCRContext {
-  req: ServerRequest;
-  file: Express.Multer.File;
-  loadAuthValues: (params: {
-    userId: string;
-    authFields: string[];
-    optional?: Set<string>;
-  }) => Promise<Record<string, string | undefined>>;
-}
-
-/**
- * MIME types this provider declares support for.
+ * MIME types the local AnyDoc path declares support for.
  *
  * Hand-written because neither side can enumerate itself: anydoc's `Format` is a napi
  * `const enum` that resolves to `{}` at runtime, and the platform has no MIME table for
  * the container variants (`.docm`, `.xlsb`, `.ppsx`) that collapse onto those formats.
- * Mirrors the twelve members declared in `@firecrawl/anydoc`'s type definitions and the
- * extension table in its README.
+ * PDF is deliberately excluded even though the upstream library accepts it. LibreChat
+ * routes PDFs directly through its richer pdf-inspector adapter, which preserves page
+ * accounting and bounded pdfjs recovery.
  */
 export const anydocMimeTypes: ReadonlySet<string> = new Set<string>([
   'application/msword',
@@ -35,12 +21,12 @@ export const anydocMimeTypes: ReadonlySet<string> = new Set<string>([
   'application/vnd.oasis.opendocument.text',
   'application/rtf',
   'text/rtf',
-  'application/pdf',
   'application/epub+zip',
   'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
   'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
+  'application/vnd.ms-powerpoint.slideshow.macroEnabled.12',
   'application/vnd.oasis.opendocument.presentation',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -56,12 +42,6 @@ const foldedMimeTypes: ReadonlySet<string> = new Set<string>(
   [...anydocMimeTypes].map((type) => type.toLowerCase()),
 );
 
-/**
- * anydoc's refusal for a PDF whose pages carry no text layer. Observed verbatim as
- * `unsupported input: PDF has no extractable text (Scanned, 1 pages): OCR is required`.
- */
-const SCANNED_PDF_PATTERN = /OCR is required|no extractable text/i;
-
 /** Strips any `; charset=` parameter and folds case, so lookups match the table. */
 function normalizeType(mimetype?: string): string {
   return (mimetype ?? '').split(';')[0].trim().toLowerCase();
@@ -69,13 +49,6 @@ function normalizeType(mimetype?: string): string {
 
 function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/** Kept in step with the sentence `processAgentFileUpload` shows for the same situation. */
-function imageBasedError(name: string): Error {
-  return new Error(
-    `Unable to extract text from "${name}" with anydoc. The document is image-based and requires an OCR service to process.`,
-  );
 }
 
 /**
@@ -91,17 +64,20 @@ function imageBasedError(name: string): Error {
  * @throws {Error} when neither the MIME type nor the extension names a supported format.
  */
 function assertSupportedType(name: string, type: string, extensionFormat: string | null): void {
+  if (type === 'application/pdf' || extensionFormat === 'pdf') {
+    throw new Error(`PDF files are handled by pdf-inspector, not anydoc ("${name}").`);
+  }
   if (foldedMimeTypes.has(type)) {
     if (extensionFormat == null) {
       logger.warn(
-        `[uploadAnydoc] "${name}" has no extension anydoc recognizes; falling back to content detection.`,
+        `[parseWithAnydoc] "${name}" has no extension anydoc recognizes; falling back to content detection.`,
       );
     }
     return;
   }
   if (extensionFormat != null) {
     logger.warn(
-      `[uploadAnydoc] "${name}" arrived as "${type || 'no MIME type'}", which anydoc does not declare support for; its extension names "${extensionFormat}", so extraction is attempted anyway.`,
+      `[parseWithAnydoc] "${name}" arrived as "${type || 'no MIME type'}", which anydoc does not declare support for; its extension names "${extensionFormat}", so extraction is attempted anyway.`,
     );
     return;
   }
@@ -122,19 +98,12 @@ function assertSupportedType(name: string, type: string, extensionFormat: string
  * "anydoc failed" would let the shared parser's fallback chain hand the very file the
  * guard exists to stop to another inflating parser.
  *
- * PDFs go through pdf-inspector inside anydoc, which emits Markdown directly and errors
- * as unsupported on scanned or image-only pages. That refusal is translated here into
- * the same actionable sentence the rest of the upload path uses, rather than leaking a
- * library-internal message. Note that this provider cannot report `pagesNeedingOcr`:
- * anydoc returns one Markdown string with no page accounting, and on a part-scanned PDF
- * it silently omits the unreadable pages. The field is left undefined rather than
- * guessed, so a document whose pages were dropped carries no omission notice.
- *
  * @throws {Error} when the type is unsupported, the archive fails the zip guard, anydoc
  * throws, or extraction yields nothing.
  */
-export async function uploadAnydoc(context: OCRContext): Promise<ParsedDocumentUploadResult> {
-  const { file } = context;
+export async function parseWithAnydoc(
+  file: Express.Multer.File,
+): Promise<ParsedDocumentUploadResult> {
   const name = file.originalname ?? file.path;
   const type = normalizeType(file.mimetype);
 
@@ -150,16 +119,10 @@ export async function uploadAnydoc(context: OCRContext): Promise<ParsedDocumentU
     markdown = await toMarkdownBytes(new Uint8Array(buffer), format);
   } catch (error) {
     const message = toMessage(error);
-    if (SCANNED_PDF_PATTERN.test(message)) {
-      throw imageBasedError(name);
-    }
     throw new Error(`anydoc failed to extract text from "${name}": ${message}`);
   }
 
   if (!markdown.trim()) {
-    if (type === 'application/pdf' || /\.pdf$/i.test(name)) {
-      throw imageBasedError(name);
-    }
     throw new Error(`anydoc extracted no text from "${name}".`);
   }
 

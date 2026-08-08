@@ -8,7 +8,7 @@ import type {
 
 /**
  * Flat text extraction with pdfjs, shared by the two callers that need it: the
- * pdf-inspector provider, which repairs the pages that engine drops, and the
+ * pdf-inspector parser, which repairs the pages that engine drops, and the
  * document parser, whose fallback chain ends here because pdfjs reconstructs
  * damaged xref tables that pdf-inspector rejects outright.
  */

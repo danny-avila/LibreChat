@@ -1,21 +1,9 @@
 import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
-import type { ParsedDocumentUploadResult, ServerRequest } from '~/types';
+import type { ParsedDocumentUploadResult } from '~/types';
 import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
-import { extractPageText } from '../documents/pdfjs';
-
-/** Extraction context shared with the other providers; this one reads the file from
- * disk itself, so `req` and `loadAuthValues` go unused. */
-interface OCRContext {
-  req: ServerRequest;
-  file: Express.Multer.File;
-  loadAuthValues: (params: {
-    userId: string;
-    authFields: string[];
-    optional?: Set<string>;
-  }) => Promise<Record<string, string | undefined>>;
-}
+import { extractDocumentText, extractPageText } from '../documents/pdfjs';
 
 type ParsedDocument = Pick<ParsedDocumentUploadResult, 'text' | 'pagesNeedingOcr'>;
 
@@ -26,9 +14,9 @@ const MAX_RECOVERED_PAGES = 250;
 
 /**
  * pdf-inspector reads PDF and nothing else: every export and type in its typings is
- * shaped around a PDF page, and no other format exists in the library. An admin can
- * still select this provider and then upload a DOCX, so the type is checked here and
- * refused by name rather than surfacing as an obscure native error.
+ * shaped around a PDF page, and no other format exists in the library. The type is
+ * still checked here so direct callers receive a named error rather than an obscure
+ * native failure.
  */
 export const pdfInspectorSupportedMimeTypes: RegExp[] = [/^application\/pdf$/];
 
@@ -36,16 +24,29 @@ export const pdfInspectorSupportedMimeTypes: RegExp[] = [/^application\/pdf$/];
  * Extracts an uploaded PDF with pdf-inspector, recovering layout (headings, tables,
  * reading order across columns) and reporting which pages are image-based.
  *
- * @throws {Error} when the file is not a PDF, or when pdf-inspector cannot read it.
- * A rejection is the caller's signal to fall back to the flat pdfjs extractor, which
- * rebuilds damaged xref tables that pdf-inspector rejects outright.
+ * If pdf-inspector cannot read the structure, the adapter falls back to the flat
+ * pdfjs extractor, which rebuilds damaged xref tables that the native engine rejects.
+ * This recovery stays inside the PDF module so callers see one local parser contract.
+ *
+ * @throws {Error} when the file is not a PDF or neither engine can read it.
  */
-export async function uploadPdfInspector(context: OCRContext): Promise<ParsedDocumentUploadResult> {
-  const { file } = context;
+export async function parseWithPdfInspector(
+  file: Express.Multer.File,
+): Promise<ParsedDocumentUploadResult> {
   assertSupportedMimeType(file);
 
   const data = await fs.promises.readFile(file.path);
-  const { text, pagesNeedingOcr } = await extractPdf(file.path, data);
+  let parsed: ParsedDocument;
+  try {
+    parsed = await extractPdf(file.path, data);
+  } catch (error) {
+    logger.warn(
+      `[pdfInspector] Native extraction failed for "${file.originalname}", falling back to pdfjs:`,
+      error,
+    );
+    parsed = { text: await extractDocumentText(data) };
+  }
+  const { text, pagesNeedingOcr } = parsed;
 
   return {
     filename: file.originalname,

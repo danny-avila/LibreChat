@@ -60,7 +60,7 @@ const FileContainer = ({
         className={cn(
           'relative overflow-hidden rounded-2xl border border-border-light bg-surface-hover-alt',
           isInteractive &&
-            'group/chip cursor-pointer transition-colors hover:border-border-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'group/chip cursor-pointer transition-colors hover:border-border-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2',
           buttonClassName,
         )}
       >
