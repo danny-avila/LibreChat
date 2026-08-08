@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { getVerificationURL, waitForMessage } from '../../setup/mailbox';
+import { clearMailbox, getVerificationURL, waitForMessage } from '../../setup/mailbox';
 import { getEmailChangeTarget, getEmailChangeUser } from '../../setup/users.email';
 
 test.describe('account settings · registered email', () => {
@@ -15,6 +15,7 @@ test.describe('account settings · registered email', () => {
 
     const user = getEmailChangeUser();
     const newEmail = getEmailChangeTarget();
+    await clearMailbox();
 
     await page.goto('/c/new');
     await page.getByTestId('nav-user').click();
@@ -51,7 +52,7 @@ test.describe('account settings · registered email', () => {
     const response = await responsePromise;
     expect(response.status()).toBe(200);
     await expect(
-      page.getByText('Check your new email address for a verification link.'),
+      page.getByText('Check your new email address for a verification link.', { exact: true }),
     ).toBeVisible();
 
     const attemptEmail = await waitForMessage({

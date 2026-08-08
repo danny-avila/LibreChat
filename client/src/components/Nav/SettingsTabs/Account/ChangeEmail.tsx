@@ -31,6 +31,7 @@ const errorKeys: Partial<Record<EmailChangeErrorCode, TranslationKeys>> = {
   email_service_unavailable: 'com_ui_email_change_error_unavailable',
   invalid_request: 'com_ui_email_change_error_invalid',
   local_account_required: 'com_ui_email_change_error_local',
+  request_in_progress: 'com_ui_email_change_error_in_progress',
   same_email: 'com_ui_email_change_error_same',
 };
 

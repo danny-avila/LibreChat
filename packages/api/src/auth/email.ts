@@ -72,7 +72,12 @@ export interface EmailChangeDeps {
     tenantId?: string,
   ) => Promise<EmailChangeUser | null>;
   findToken: (query: TokenQuery, tenantId?: string) => Promise<EmailChangeToken | null>;
-  upsertToken: (scope: string, data: TokenCreateData, tenantId?: string) => Promise<void>;
+  replaceTokenIfCurrent: (
+    scope: string,
+    expectedToken: string | null,
+    data: TokenCreateData,
+    tenantId?: string,
+  ) => Promise<boolean>;
   deleteTokens: (query: TokenQuery, tenantId?: string) => Promise<{ deletedCount?: number }>;
   verifyPassword: (user: EmailChangeUser, password: string) => Promise<boolean>;
   /** Resolves the tenant's current registration allowlist so confirmation cannot
@@ -312,6 +317,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
     const tokenHash = await hashToken(rawToken);
     const passwordFingerprint = await hashToken(user.password);
     const tokenScope = emailChangeTokenScope(userId);
+    const previousToken = await deps.findToken({ scope: tokenScope }, user.tenantId);
     const tokenQuery = {
       userId,
       email: newEmail,
@@ -350,8 +356,9 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(500, 'Failed to send verification email', 'email_delivery_failed');
     }
 
-    await deps.upsertToken(
+    const replacedToken = await deps.replaceTokenIfCurrent(
       tokenScope,
+      previousToken?.token ?? null,
       {
         userId,
         email: newEmail,
@@ -364,6 +371,12 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       },
       user.tenantId,
     );
+    if (!replacedToken) {
+      logger.warn(
+        `[emailChange] Competing request completed first [User ID: ${userId}] [New Email: ${newEmail}] [IP: ${ip}]`,
+      );
+      return result(409, 'Another email change request completed first', 'request_in_progress');
+    }
 
     /** Re-read after replacement: the prior token remains valid during delivery, so a
      * confirmation can move the account before the new token becomes active. */

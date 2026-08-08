@@ -22,7 +22,7 @@ function createDeps(overrides: Partial<EmailChangeDeps> = {}) {
     getUserById: jest.fn().mockResolvedValue(user),
     updateUser: jest.fn().mockResolvedValue({ ...user, email: 'new@example.com' }),
     findToken: jest.fn().mockResolvedValue(null),
-    upsertToken: jest.fn().mockResolvedValue(undefined),
+    replaceTokenIfCurrent: jest.fn().mockResolvedValue(true),
     deleteTokens: jest.fn().mockResolvedValue({ deletedCount: 1 }),
     verifyPassword: jest.fn().mockResolvedValue(true),
     resolveAllowedDomains: jest.fn().mockResolvedValue(null),
@@ -75,8 +75,9 @@ describe('email change service', () => {
         message: 'Verification link sent to your new email address',
       });
       expect(deps.verifyPassword).toHaveBeenCalledWith(user, 'correct-password');
-      expect(deps.upsertToken).toHaveBeenCalledWith(
+      expect(deps.replaceTokenIfCurrent).toHaveBeenCalledWith(
         'email_change:507f1f77bcf86cd799439011',
+        null,
         expect.objectContaining({
           userId: '507f1f77bcf86cd799439011',
           email: 'new@example.com',
@@ -129,7 +130,7 @@ describe('email change service', () => {
       expect(response).toMatchObject({ status: 403, code: 'current_password_invalid' });
       expect(deps.sendEmail).toHaveBeenCalledTimes(1);
       expect(deps.findUserByEmail).not.toHaveBeenCalled();
-      expect(deps.upsertToken).not.toHaveBeenCalled();
+      expect(deps.replaceTokenIfCurrent).not.toHaveBeenCalled();
     });
 
     it('returns an explicit conflict when the verified new address belongs to another account', async () => {
@@ -149,7 +150,7 @@ describe('email change service', () => {
       });
 
       expect(response).toMatchObject({ status: 409, code: 'email_in_use' });
-      expect(deps.upsertToken).not.toHaveBeenCalled();
+      expect(deps.replaceTokenIfCurrent).not.toHaveBeenCalled();
     });
 
     it('does not issue a link when a concurrent confirmation moves the account', async () => {
@@ -168,7 +169,7 @@ describe('email change service', () => {
       });
 
       expect(response).toMatchObject({ status: 409, code: 'account_modified' });
-      expect(deps.upsertToken).not.toHaveBeenCalled();
+      expect(deps.replaceTokenIfCurrent).not.toHaveBeenCalled();
       expect(deps.deleteTokens).not.toHaveBeenCalled();
       expect(deps.sendEmail).not.toHaveBeenCalledWith(
         expect.objectContaining({ template: 'verifyEmailChange.handlebars' }),
@@ -190,19 +191,37 @@ describe('email change service', () => {
       });
 
       expect(response).toMatchObject({ status: 500, code: 'email_delivery_failed' });
-      expect(deps.upsertToken).not.toHaveBeenCalled();
+      expect(deps.replaceTokenIfCurrent).not.toHaveBeenCalled();
       expect(deps.deleteTokens).not.toHaveBeenCalled();
     });
 
     it('preserves a successful overlapping request when the replacing delivery fails', async () => {
-      type StoredToken = Pick<Parameters<EmailChangeDeps['upsertToken']>[1], 'email' | 'token'>;
+      type StoredToken = Pick<
+        Parameters<EmailChangeDeps['replaceTokenIfCurrent']>[2],
+        'email' | 'token'
+      >;
       let storedToken: StoredToken | undefined = {
         email: 'existing@example.com',
         token: 'existing-token',
       };
-      const upsertToken: EmailChangeDeps['upsertToken'] = jest.fn(async (_scope, data) => {
-        storedToken = { email: data.email, token: data.token };
-      });
+      const findToken: EmailChangeDeps['findToken'] = jest.fn(async () =>
+        storedToken
+          ? {
+              userId: '507f1f77bcf86cd799439011',
+              email: storedToken.email,
+              token: storedToken.token,
+            }
+          : null,
+      );
+      const replaceTokenIfCurrent: EmailChangeDeps['replaceTokenIfCurrent'] = jest.fn(
+        async (_scope, expectedToken, data) => {
+          if ((storedToken?.token ?? null) !== expectedToken) {
+            return false;
+          }
+          storedToken = { email: data.email, token: data.token };
+          return true;
+        },
+      );
       const deleteTokens: EmailChangeDeps['deleteTokens'] = jest.fn(async (query) => {
         if (storedToken?.token === query.token) {
           storedToken = undefined;
@@ -227,7 +246,12 @@ describe('email change service', () => {
         }
         return Promise.reject(new Error('SMTP unavailable'));
       });
-      const { service } = createDeps({ upsertToken, deleteTokens, sendEmail });
+      const { service } = createDeps({
+        findToken,
+        replaceTokenIfCurrent,
+        deleteTokens,
+        sendEmail,
+      });
 
       const firstRequest = service.requestEmailChange({
         body: { currentPassword: 'correct-password', newEmail: 'first@example.com' },
@@ -258,20 +282,41 @@ describe('email change service', () => {
       });
     });
 
-    it('keeps only the newest pending token when requests overlap', async () => {
-      const storedTokens: Array<{ email?: string; token: string }> = [];
-      const deleteTokens = jest.fn(async () => {
-        storedTokens.splice(0);
-        return { deletedCount: 1 };
+    it('returns success only for the token that wins an overlapping replacement', async () => {
+      type StoredToken = { email?: string; token: string };
+      let storedToken: StoredToken | undefined;
+      let releaseReads: () => void = () => undefined;
+      const bothPredecessorsRead = new Promise<void>((resolve) => {
+        releaseReads = resolve;
       });
-      const upsertToken = jest.fn(
-        async (_scope: string, data: { email?: string; token: string }) => {
-          storedTokens.splice(0, storedTokens.length, data);
+      let reads = 0;
+      const findToken: EmailChangeDeps['findToken'] = jest.fn(async () => {
+        const snapshot = storedToken;
+        reads += 1;
+        if (reads === 2) {
+          releaseReads();
+        }
+        await bothPredecessorsRead;
+        return snapshot
+          ? {
+              userId: '507f1f77bcf86cd799439011',
+              email: snapshot.email,
+              token: snapshot.token,
+            }
+          : null;
+      });
+      const replaceTokenIfCurrent: EmailChangeDeps['replaceTokenIfCurrent'] = jest.fn(
+        async (_scope, expectedToken, data) => {
+          if ((storedToken?.token ?? null) !== expectedToken) {
+            return false;
+          }
+          storedToken = { email: data.email, token: data.token };
+          return true;
         },
       );
       const { service } = createDeps({
-        upsertToken: upsertToken as EmailChangeDeps['upsertToken'],
-        deleteTokens,
+        findToken,
+        replaceTokenIfCurrent,
       });
 
       const responses = await Promise.all([
@@ -289,9 +334,14 @@ describe('email change service', () => {
         }),
       ]);
 
-      expect(responses.map(({ status }) => status)).toEqual([200, 200]);
-      expect(storedTokens).toHaveLength(1);
-      expect(deleteTokens).not.toHaveBeenCalled();
+      expect(
+        responses.map(({ status, code }) => ({ status, code })).sort((a, b) => a.status - b.status),
+      ).toEqual([
+        { status: 200, code: undefined },
+        { status: 409, code: 'request_in_progress' },
+      ]);
+      const winningEmail = responses[0].status === 200 ? 'first@example.com' : 'second@example.com';
+      expect(storedToken).toEqual({ email: winningEmail, token: expect.any(String) });
     });
   });
 
