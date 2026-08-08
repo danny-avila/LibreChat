@@ -227,6 +227,9 @@ export function createPluginHookPayload(
         ...payload,
         tool_calls: input.entries.map((entry) => toPluginBatchToolCall(entry, state)),
       };
+    /** LibreChat steering seal; no Claude counterpart, so it is never mapped to a declaration. */
+    case 'PreemptBoundary':
+      return payload;
     case 'PermissionDenied':
       return {
         ...payload,
