@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { MongoClient } from 'mongodb';
 import type { Collection, ObjectId } from 'mongodb';
 import { applyRuntimeEnv } from '../../setup/runtimeEnv';
@@ -34,7 +35,66 @@ type AclEntryDoc = {
   resourceId: ObjectId;
 };
 
+type UploadFixture = {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+};
+
+type PublicSharedFile = {
+  file_id?: string;
+  filename?: string;
+  filepath?: string;
+};
+
+type PublicSharedPayload = {
+  messages?: Array<{
+    files?: PublicSharedFile[];
+    attachments?: PublicSharedFile[];
+  }>;
+};
+
 const randomSuffix = () => `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+async function uploadProviderFile(page: Page, fixture: UploadFixture) {
+  await page.getByRole('button', { name: 'Attach File Options' }).click();
+  const uploadOption = page.getByText('Upload to Provider', { exact: true });
+  await expect(uploadOption).toBeVisible();
+
+  const fileChooserPromise = page.waitForEvent('filechooser');
+  await uploadOption.click();
+  const fileChooser = await fileChooserPromise;
+  expect(await fileChooser.element().getAttribute('type')).toBe('file');
+
+  const uploadResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/files') &&
+      response.status() === 200,
+    { timeout: 30000 },
+  );
+  await fileChooser.setFiles(fixture);
+  const uploadResponse = await uploadResponsePromise;
+  expect(uploadResponse.ok()).toBeTruthy();
+}
+
+async function openPublicSharedLink(
+  page: Page,
+  pathname: string,
+  shareId: string,
+): Promise<PublicSharedPayload> {
+  const payloadResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === `/api/share/${shareId}` &&
+      response.status() === 200,
+    { timeout: 30000 },
+  );
+  await page.goto(pathname, { timeout: 10000 });
+  const payloadResponse = await payloadResponsePromise;
+  expect(payloadResponse.ok()).toBeTruthy();
+  return (await payloadResponse.json()) as PublicSharedPayload;
+}
 
 async function connectToE2EDb() {
   applyRuntimeEnv();
@@ -79,14 +139,27 @@ test.describe('shared links', () => {
     const suffix = randomSuffix();
     const userMessage = `Shared link e2e ${suffix}`;
     const updatedMessage = `Updated shared link e2e ${suffix}`;
+    const fileFixture: UploadFixture = {
+      name: `shared-link-${suffix}.txt`,
+      mimeType: 'text/plain',
+      buffer: Buffer.from(`Shared link file fixture ${suffix}\n`),
+    };
 
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    await uploadProviderFile(page, fileFixture);
+    await expect(page.getByRole('button', { name: fileFixture.name, exact: true })).toBeVisible();
 
     const response = await sendMessage(page, userMessage);
     expect(response.ok()).toBeTruthy();
     await expect(page.getByText(userMessage, { exact: true })).toBeVisible();
     await expect(mockReply(page)).toBeVisible();
+    await expect(
+      page.getByTestId('messages-view').getByRole('button', {
+        name: fileFixture.name,
+        exact: true,
+      }),
+    ).toBeVisible();
 
     await expect(page).toHaveURL(/\/c\/(?!new)[0-9a-fA-F-]{36}$/);
     const conversationUrl = new URL(page.url());
@@ -97,7 +170,14 @@ test.describe('shared links', () => {
 
     await page.getByRole('button', { name: 'Export/Share' }).click();
     await page.getByTestId('share-conversation-menu-item').click();
-    await expect(page.getByRole('dialog', { name: 'Share link to chat' })).toBeVisible();
+    const shareDialog = page.getByRole('dialog', { name: 'Share link to chat' });
+    await expect(shareDialog).toBeVisible();
+    const shareFilesSwitch = shareDialog.getByRole('switch', {
+      name: 'Share files in this conversation',
+    });
+    await expect(shareFilesSwitch).toBeChecked();
+    await shareFilesSwitch.click();
+    await expect(shareFilesSwitch).not.toBeChecked();
 
     const [shareResponse] = await Promise.all([
       page.waitForResponse(
@@ -110,6 +190,8 @@ test.describe('shared links', () => {
       page.getByRole('button', { name: 'Create a shared link' }).click(),
     ]);
     expect(shareResponse.ok()).toBeTruthy();
+    const createBody = shareResponse.request().postDataJSON() as { snapshotFiles?: boolean };
+    expect(createBody.snapshotFiles).toBe(false);
     const sharePayload = (await shareResponse.json()) as { shareId?: string };
     if (!sharePayload.shareId) {
       throw new Error('Expected create-share response to include a shareId');
@@ -127,12 +209,24 @@ test.describe('shared links', () => {
     /** The header trigger flips to the "link active" label once a share exists. */
     await expect(page.getByTestId('header-shared-link-indicator')).toBeVisible();
 
-    await page.goto(new URL(sharedLinkUrl, baseURL).pathname, { timeout: 10000 });
+    const publicSharePath = new URL(sharedLinkUrl, baseURL).pathname;
+    const optedOutPayload = await openPublicSharedLink(page, publicSharePath, sharePayload.shareId);
     await expect(page).toHaveURL(/\/share\/.+/);
     await expect(
       page.getByTestId('messages-view').getByText(userMessage, { exact: true }),
     ).toBeVisible();
     await expect(mockReply(page)).toHaveCount(1);
+    const optedOutFiles = (optedOutPayload.messages ?? []).flatMap((message) => [
+      ...(message.files ?? []),
+      ...(message.attachments ?? []),
+    ]);
+    expect(optedOutFiles).toHaveLength(0);
+    await expect(
+      page.getByTestId('messages-view').getByRole('button', {
+        name: fileFixture.name,
+        exact: true,
+      }),
+    ).toHaveCount(0);
 
     await page.goto(conversationUrl.pathname, { timeout: 10000 });
     const updateResponse = await sendMessage(page, updatedMessage);
@@ -140,15 +234,17 @@ test.describe('shared links', () => {
     await expect(page.getByText(updatedMessage)).toBeVisible();
 
     /** A shared link remains a snapshot until its owner explicitly updates it. */
-    await page.goto(new URL(sharedLinkUrl, baseURL).pathname, { timeout: 10000 });
+    await page.goto(publicSharePath, { timeout: 10000 });
     await expect(page.getByTestId('messages-view').getByText(updatedMessage)).toHaveCount(0);
     await expect(mockReply(page)).toHaveCount(1);
 
     await page.goto(conversationUrl.pathname, { timeout: 10000 });
     await page.getByRole('button', { name: 'Export/Share' }).click();
     await page.getByTestId('share-conversation-menu-item').click();
-    const shareDialog = page.getByRole('dialog', { name: 'Share link to chat' });
     await expect(shareDialog).toBeVisible();
+    await expect(shareFilesSwitch).not.toBeChecked();
+    await shareFilesSwitch.click();
+    await expect(shareFilesSwitch).toBeChecked();
     await shareDialog.getByRole('button', { name: 'Update link', exact: true }).click();
 
     const updateDialog = page.getByRole('dialog', { name: 'Update shared link?' });
@@ -168,12 +264,32 @@ test.describe('shared links', () => {
       updateDialog.getByRole('button', { name: 'Update link', exact: true }).click(),
     ]);
     expect(refreshResponse.ok()).toBeTruthy();
+    const updateBody = refreshResponse.request().postDataJSON() as { snapshotFiles?: boolean };
+    expect(updateBody.snapshotFiles).toBe(true);
     await expect(updateDialog).toBeHidden();
     await expect(sharedLinkInput).toHaveValue(sharedLinkUrl);
 
-    await page.goto(new URL(sharedLinkUrl, baseURL).pathname, { timeout: 10000 });
+    const optedInPayload = await openPublicSharedLink(page, publicSharePath, sharePayload.shareId);
     await expect(page.getByTestId('messages-view').getByText(updatedMessage)).toBeVisible();
     await expect(mockReply(page)).toHaveCount(2);
+    const sharedFiles = (optedInPayload.messages ?? []).flatMap((message) => [
+      ...(message.files ?? []),
+      ...(message.attachments ?? []),
+    ]);
+    const sharedFile = sharedFiles.find((file) => file.filename === fileFixture.name);
+    expect(sharedFile).toBeDefined();
+    if (!sharedFile?.file_id) {
+      throw new Error(`Expected shared file ${fileFixture.name} to include a file_id`);
+    }
+    expect(sharedFile.filepath).toBe(
+      `/api/share/${sharePayload.shareId}/files/${sharedFile.file_id}`,
+    );
+    await expect(
+      page.getByTestId('messages-view').getByRole('button', {
+        name: fileFixture.name,
+        exact: true,
+      }),
+    ).toBeVisible();
 
     const { client, db } = await connectToE2EDb();
     const aclEntries = db.collection<AclEntryDoc>('aclentries');
