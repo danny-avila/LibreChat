@@ -12,6 +12,7 @@ const {
   normalizeMCPToolKey,
   buildServerNameAliases,
   findShadowedServerNames,
+  getAssistantToolDefinitions: loadAssistantToolDefinitions,
   resolveMCPServerContext,
   normalizeJsonSchema,
   GenerationJobManager,
@@ -318,58 +319,31 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
  * @returns {Promise<object>}
  */
 async function getAssistantToolDefinitions({ req, tools }) {
-  const toolDefinitions = (await getCachedTools()) ?? {};
-  const mcpToolNames = (tools ?? []).filter(
-    (tool) => typeof tool === 'string' && tool.includes(Constants.mcp_delimiter),
+  const registry = getMCPServersRegistry();
+  const appConfig = await getAppConfigForRequest(req);
+  return await loadAssistantToolDefinitions(
+    {
+      user: req.user,
+      tools,
+      staticTools: (await getCachedTools()) ?? {},
+      mcpConfig: appConfig?.mcpConfig ?? {},
+    },
+    {
+      ensureConfigServers: (mcpConfig) => registry.ensureConfigServers(mcpConfig),
+      getAllServerConfigs: (userId, configServers, role) =>
+        registry.getAllServerConfigs(userId, configServers, role),
+      getMCPServerTools,
+      getServerToolFunctionsSnapshot: async (userId, serverName) =>
+        (await getMCPManager()?.getServerToolFunctionsSnapshot(userId, serverName)) ?? {
+          tools: null,
+        },
+      recoverServerTools: async (serverName, serverConfig) => {
+        const result = await reinitMCPServer({ user: req.user, serverName, serverConfig });
+        return result?.availableTools ?? null;
+      },
+      cacheMCPServerTools,
+    },
   );
-  if (mcpToolNames.length === 0) {
-    return toolDefinitions;
-  }
-
-  const userId = req.user?.id;
-  const configs = await resolveAllMcpConfigs(userId, req.user);
-  const serverNames = Object.keys(configs);
-  const aliases = buildServerNameAliases(serverNames);
-  const knownNames = [...new Set([...serverNames, ...aliases.keys()])];
-  const shadowed = findShadowedServerNames(serverNames);
-  const selectedServers = new Set();
-
-  for (const toolName of mcpToolNames) {
-    const [, parsedServerName] = splitMCPToolKey(toolName, knownNames);
-    const serverName = Object.hasOwn(configs, parsedServerName)
-      ? parsedServerName
-      : aliases.get(parsedServerName);
-    if (serverName && !shadowed.has(serverName)) {
-      selectedServers.add(serverName);
-    }
-  }
-
-  const serverCatalogs = await Promise.all(
-    Array.from(selectedServers, async (serverName) => {
-      const serverConfig = configs[serverName];
-      const cached = await getMCPServerTools(userId, serverName, serverConfig);
-      if (cached != null) {
-        return cached;
-      }
-
-      const snapshot = await getMCPManager()?.getServerToolFunctionsSnapshot(userId, serverName);
-      if (snapshot?.tools == null) {
-        throw new Error(`MCP tool definitions unavailable for assistant server "${serverName}"`);
-      }
-      cacheMCPServerTools({
-        userId,
-        serverName,
-        serverTools: snapshot.tools,
-        serverConfig,
-        publicationGeneration: snapshot.publicationGeneration,
-      }).catch((error) =>
-        logger.error(`[MCP] Failed to cache assistant tool definitions for ${serverName}:`, error),
-      );
-      return snapshot.tools;
-    }),
-  );
-
-  return Object.assign({}, toolDefinitions, ...serverCatalogs);
 }
 
 /**

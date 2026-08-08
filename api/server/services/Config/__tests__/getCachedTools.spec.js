@@ -30,10 +30,13 @@ describe('MCP tool cache', () => {
       'tools:mcp:app:server%3Aname:config%2Fa',
     );
     expect(ToolCacheKeys.MCP_SERVER('tenant:user', 'server:name', 'config/a')).toBe(
-      'tools:mcp:user:tenant%3Auser:server%3Aname:config%2Fa',
+      'tools:mcp:user:{tenant%3Auser:server%3Aname}:config%2Fa',
     );
     expect(ToolCacheKeys.MCP_SERVER('tenant:user', 'server:name', 'config/a')).not.toBe(
       ToolCacheKeys.MCP_SERVER('tenant', 'user:server:name', 'config/a'),
+    );
+    expect(ToolCacheKeys.MCP_SERVER_GENERATION('tenant:user', 'server:name')).toBe(
+      'tools:metadata:mcp:user-generation:{tenant%3Auser:server%3Aname}',
     );
     expect(ToolCacheKeys.MCP_SERVER_GENERATION('tenant:user', 'server:name')).not.toBe(
       ToolCacheKeys.MCP_SERVER_GENERATION('tenant', 'user:server:name'),

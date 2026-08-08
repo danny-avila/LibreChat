@@ -39,6 +39,27 @@ value['expires'] = tonumber(ARGV[2])
 redis.call('PSETEX', KEYS[1], ARGV[3], cjson.encode(value))
 return 1
 `;
+const WRITE_MCP_SERVER_TOOLS_IF_CURRENT_SCRIPT = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+  return 0
+end
+local decoded, value = pcall(cjson.decode, raw)
+if not decoded or type(value) ~= 'table' or value['value'] ~= ARGV[1] then
+  return 0
+end
+value['expires'] = tonumber(ARGV[2])
+redis.call('PSETEX', KEYS[1], ARGV[3], cjson.encode(value))
+local decodedEntry, entry = pcall(cjson.decode, ARGV[4])
+if not decodedEntry then
+  return redis.error_reply('Invalid MCP tools cache entry')
+end
+redis.call('PSETEX', KEYS[2], ARGV[6], cjson.encode({
+  value = entry,
+  expires = tonumber(ARGV[5]),
+}))
+return 1
+`;
 
 /**
  * Cache key generators for different tool access patterns
@@ -52,11 +73,11 @@ const ToolCacheKeys = {
   /** MCP tools cached by user ID and server name */
   MCP_SERVER: (userId, serverName, configGeneration) =>
     configGeneration
-      ? `tools:mcp:user:${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}:${encodeURIComponent(configGeneration)}`
+      ? `tools:mcp:user:{${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}}:${encodeURIComponent(configGeneration)}`
       : `tools:mcp:${userId}:${serverName}`,
   /** Leased generation fencing stale publications from replaced user connections */
   MCP_SERVER_GENERATION: (userId, serverName) =>
-    `tools:metadata:mcp:user-generation:${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}`,
+    `tools:metadata:mcp:user-generation:{${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}}`,
 };
 
 function usesSharedRedisToolCache() {
@@ -106,6 +127,42 @@ async function renewGenerationIfCurrent(cache, key, publicationGeneration) {
     throw new Error('Tool publication generation cache rejected the lease refresh');
   }
   return true;
+}
+
+/** Atomically renews a generation lease and stores its catalog in the same Redis slot. */
+async function writeMCPServerToolsIfCurrent({
+  cache,
+  generationKey,
+  toolsKey,
+  guardedEntry,
+  publicationGeneration,
+  ttl,
+}) {
+  if (!usesSharedRedisToolCache()) {
+    if (!(await renewGenerationIfCurrent(cache, generationKey, publicationGeneration))) {
+      return false;
+    }
+    const written = await cache.set(toolsKey, guardedEntry, ttl);
+    if (written === false) {
+      throw new Error('Tool cache rejected the generation-guarded write');
+    }
+    return true;
+  }
+
+  const generationExpiresAt = Date.now() + MCP_SERVER_GENERATION_TTL_MS;
+  const toolsExpiresAt = Date.now() + ttl;
+  const written = await keyvRedisClient.eval(WRITE_MCP_SERVER_TOOLS_IF_CURRENT_SCRIPT, {
+    keys: [getRawRedisToolCacheKey(generationKey), getRawRedisToolCacheKey(toolsKey)],
+    arguments: [
+      publicationGeneration,
+      String(generationExpiresAt),
+      String(MCP_SERVER_GENERATION_TTL_MS),
+      JSON.stringify(guardedEntry),
+      String(toolsExpiresAt),
+      String(ttl),
+    ],
+  });
+  return Number(written) === 1;
 }
 
 async function runWithRedisCacheLock(lockKey, ttl, wait, operation) {
@@ -268,23 +325,19 @@ async function setCachedToolsIfCurrent(tools, options) {
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
   return runWithUserToolsQueue(userId, serverName, async () => {
     const generationKey = ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName);
-    if (!(await renewGenerationIfCurrent(cache, generationKey, publicationGeneration))) {
-      return false;
-    }
     const guardedEntry = {
       version: MCP_SERVER_CACHE_ENTRY_VERSION,
       publicationGeneration,
       tools,
     };
-    const written = await cache.set(
-      ToolCacheKeys.MCP_SERVER(userId, serverName, configGeneration),
+    return await writeMCPServerToolsIfCurrent({
+      cache,
+      generationKey,
+      toolsKey: ToolCacheKeys.MCP_SERVER(userId, serverName, configGeneration),
       guardedEntry,
+      publicationGeneration,
       ttl,
-    );
-    if (written === false) {
-      throw new Error('Tool cache rejected the generation-guarded write');
-    }
-    return true;
+    });
   });
 }
 

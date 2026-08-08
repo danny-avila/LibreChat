@@ -92,7 +92,7 @@ describe('global tool cache write lock', () => {
     expect(mockCache.set).toHaveBeenCalledTimes(1);
   });
 
-  it('uses an atomic generation check for generation-guarded user publications', async () => {
+  it('atomically checks the generation and writes a generation-guarded user catalog', async () => {
     await expect(
       setCachedToolsIfCurrent(
         { current: {} },
@@ -114,21 +114,23 @@ describe('global tool cache write lock', () => {
     );
     expect(mockRedisClient.eval).toHaveBeenCalledTimes(1);
     expect(mockKeyvRedisClient.eval).toHaveBeenCalledWith(
-      expect.stringContaining("value['value'] ~= ARGV[1]"),
+      expect.stringContaining("redis.call('PSETEX', KEYS[2]"),
       expect.objectContaining({
-        keys: [`${CacheKeys.TOOL_CACHE}:tools:metadata:mcp:user-generation:user-1:server-1`],
-        arguments: ['generation-current', expect.any(String), expect.any(String)],
+        keys: [
+          `${CacheKeys.TOOL_CACHE}:tools:metadata:mcp:user-generation:{user-1:server-1}`,
+          `${CacheKeys.TOOL_CACHE}:tools:mcp:user:{user-1:server-1}:config-current`,
+        ],
+        arguments: [
+          'generation-current',
+          expect.any(String),
+          expect.any(String),
+          expect.stringContaining('"publicationGeneration":"generation-current"'),
+          expect.any(String),
+          expect.any(String),
+        ],
       }),
     );
-    expect(mockCache.set).toHaveBeenCalledWith(
-      'tools:mcp:user:user-1:server-1:config-current',
-      {
-        version: 1,
-        publicationGeneration: 'generation-current',
-        tools: { current: {} },
-      },
-      expect.any(Number),
-    );
+    expect(mockCache.set).not.toHaveBeenCalled();
   });
 
   it('does not write tools when the atomic generation check observes a replacement', async () => {

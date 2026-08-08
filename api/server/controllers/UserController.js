@@ -177,12 +177,21 @@ const deleteUserMcpServers = async (userId) => {
     const allServersToDelete = [...aclOwnedServers, ...legacyServers];
 
     const mcpManager = getMCPManager();
-    await Promise.all(
+    await Promise.allSettled(
       allServersToDelete.map(async (s) => {
         try {
           await invalidateCachedTools({ userId, serverName: s.serverName });
+        } catch (error) {
+          logger.warn(
+            `[deleteUserMcpServers] Failed to invalidate tools for ${s.serverName}:`,
+            error,
+          );
         } finally {
-          await mcpManager?.disconnectUserConnection(userId, s.serverName);
+          try {
+            await mcpManager?.disconnectUserConnection(userId, s.serverName);
+          } catch (error) {
+            logger.warn(`[deleteUserMcpServers] Failed to disconnect ${s.serverName}:`, error);
+          }
         }
       }),
     );

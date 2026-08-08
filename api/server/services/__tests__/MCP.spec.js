@@ -142,6 +142,26 @@ describe('getAssistantToolDefinitions', () => {
       publicationGeneration: 'connection-generation',
     });
   });
+
+  it('reinitializes a referenced server when its cache and local snapshot are missing', async () => {
+    getCachedTools.mockResolvedValue({});
+    getAppConfig.mockResolvedValue({ mcpConfig: {} });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'app-server': serverConfig });
+    getMCPServerTools.mockResolvedValue(null);
+    const getServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({ tools: null });
+    require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctionsSnapshot });
+    reinitMCPServer.mockResolvedValue({ availableTools: { [toolKey]: mcpDefinition } });
+
+    await expect(getAssistantToolDefinitions({ req, tools: [toolKey] })).resolves.toEqual({
+      [toolKey]: mcpDefinition,
+    });
+    expect(reinitMCPServer).toHaveBeenCalledWith({
+      user: req.user,
+      serverName: 'app-server',
+      serverConfig,
+    });
+  });
 });
 
 describe('resolveConfigServers', () => {
