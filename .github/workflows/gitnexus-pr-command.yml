@@ -56,7 +56,7 @@ jobs:
     steps:
       - name: Parse command and resolve PR head ref
         id: parse
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const body = context.payload.comment.body.trim();
@@ -93,7 +93,7 @@ jobs:
             );
 
       - name: Dispatch gitnexus-index workflow
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           EMBEDDINGS: ${{ steps.parse.outputs.embeddings }}
           PR_NUMBER: ${{ steps.parse.outputs.pr_number }}
@@ -130,7 +130,7 @@ jobs:
             });
 
       - name: React to the comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             await github.rest.reactions.createForIssueComment({

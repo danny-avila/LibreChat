@@ -3,7 +3,7 @@
  * Tests that recordCollectedUsage is called correctly for token spending
  */
 
-const { ResourceType } = require('librechat-data-provider');
+const { ErrorTypes, ResourceType } = require('librechat-data-provider');
 
 const mockProcessStream = jest.fn().mockResolvedValue(undefined);
 const mockSpendTokens = jest.fn().mockResolvedValue({});
@@ -196,8 +196,8 @@ jest.mock('~/cache', () => ({
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn().mockResolvedValue([]),
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
-  isExpectedMCPToolsUnavailableError: (error) =>
-    error?.code === 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+  isFatalAgentInitializationError: (error) =>
+    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
 }));
 
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
@@ -419,6 +419,36 @@ describe('OpenAIChatCompletionController', () => {
       await OpenAIChatCompletionController(req, res);
 
       expect(res.status).toHaveBeenCalledWith(503);
+    });
+
+    it('returns the resource recovery status and code before model invocation', async () => {
+      const { createErrorResponse, initializeAgent } = require('@librechat/api');
+      const { loadAgentTools } = require('~/server/services/ToolService');
+      const toolError = Object.assign(new Error('resource recovery required'), {
+        code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+        status: 409,
+        statusCode: 409,
+      });
+      loadAgentTools.mockRejectedValueOnce(toolError);
+      initializeAgent.mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+        await loadTools({
+          req,
+          res,
+          tools: ['execute_code'],
+          model: agent.model,
+          agentId: agent.id,
+          provider: agent.provider,
+        });
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(createErrorResponse).toHaveBeenCalledWith(
+        'resource recovery required',
+        'invalid_request_error',
+        ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      );
     });
   });
 

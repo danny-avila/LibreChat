@@ -1,6 +1,6 @@
 import { logger, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
-import { buildTenantContext, runWithTenantContext } from './tenant';
+import { buildRequestContext, runWithTenantContext } from './tenant';
 
 /**
  * Pre-authentication tenant context middleware for unauthenticated routes.
@@ -35,7 +35,7 @@ const VALID_TENANT_ID = /^[-a-zA-Z0-9_.]+$/;
 
 export function preAuthTenantMiddleware(req: Request, res: Response, next: NextFunction): void {
   const raw = req.headers['x-tenant-id'];
-  const requestContext = buildTenantContext({ headers: req.headers });
+  const requestContext = buildRequestContext(req);
 
   if (!raw || typeof raw !== 'string') {
     runWithTenantContext(requestContext, next);
@@ -72,5 +72,5 @@ export function preAuthTenantMiddleware(req: Request, res: Response, next: NextF
     return;
   }
 
-  runWithTenantContext(buildTenantContext({ headers: req.headers }, tenantId), next);
+  runWithTenantContext({ ...requestContext, tenantId }, next);
 }

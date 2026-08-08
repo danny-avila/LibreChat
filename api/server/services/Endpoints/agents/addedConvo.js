@@ -11,7 +11,7 @@ const { isEphemeralAgentId } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getAccessibleMcpServerNames } = require('~/server/services/MCP');
-const { isExpectedMCPToolsUnavailableError } = require('~/server/services/ToolService');
+const { isFatalAgentInitializationError } = require('~/server/services/ToolService');
 const { getSkillDbMethods, canAuthorSkillFiles } = require('./skillDeps');
 const db = require('~/models');
 
@@ -227,7 +227,7 @@ const processAddedConvo = async ({
 
     return { userMCPAuthMap };
   } catch (err) {
-    if (isExpectedMCPToolsUnavailableError(err)) {
+    if (isFatalAgentInitializationError(err)) {
       throw err;
     }
     logger.error('[processAddedConvo] Error processing addedConvo for parallel agent', err);

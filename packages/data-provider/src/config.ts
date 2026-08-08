@@ -591,7 +591,14 @@ export const defaultAssistantsVersion = {
 };
 
 export const baseEndpointSchema = z.object({
-  streamRate: z.number().optional(),
+  /**
+   * Milliseconds between visible streamed chunks. Agents SDK-backed
+   * providers (openAI, custom, anthropic, google, bedrock, agents) smooth
+   * adaptively at 25ms by default; set to override the cadence, 0 to
+   * disable smoothing. Legacy Assistants and Ollama paths instead sleep
+   * this long per provider chunk (default 1ms), with no adaptive smoothing.
+   */
+  streamRate: z.number().min(0).optional(),
   baseURL: z.string().optional(),
   /**
    * Custom request headers forwarded to the provider on every request. Values
@@ -1590,6 +1597,8 @@ export type TStartupConfig = {
   emailEnabled: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
+  /** Admin panel link, only present for users with admin access */
+  adminPanelURL?: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
   modelDescriptions?: Record<string, Record<string, string>>;
@@ -2627,6 +2636,10 @@ export enum ErrorTypes {
    * Google provider could not process a linked video (most often longer than the model accepts)
    */
   GOOGLE_VIDEO_UNPROCESSABLE = 'google_video_unprocessable',
+  /**
+   * Required CodeAPI resources could not be restored before model invocation.
+   */
+  RESOURCE_RECOVERY_REQUIRED = 'resource_recovery_required',
   /**
    * Invalid Agent Provider (excluded by Admin)
    */

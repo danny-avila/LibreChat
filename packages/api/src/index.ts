@@ -1,4 +1,5 @@
 export * from './app';
+export * from './credentials';
 /* Artifacts */
 export * from './artifacts';
 /* Admin */
@@ -10,6 +11,7 @@ export * from './auth';
 export * from './apiKeys';
 /* MCP */
 export * from './mcp/mcpConfig';
+export * from './mcp/authority';
 export * from './mcp/registry/MCPServersRegistry';
 export * from './mcp/MCPManager';
 export * from './mcp/connection';

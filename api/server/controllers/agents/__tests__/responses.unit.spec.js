@@ -3,7 +3,7 @@
  * Tests that recordCollectedUsage is called correctly for token spending
  */
 
-const { ResourceType } = require('librechat-data-provider');
+const { ErrorTypes, ResourceType } = require('librechat-data-provider');
 
 const mockSpendTokens = jest.fn().mockResolvedValue({});
 const mockSpendStructuredTokens = jest.fn().mockResolvedValue({});
@@ -211,8 +211,8 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn().mockResolvedValue([]),
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
-  isExpectedMCPToolsUnavailableError: (error) =>
-    error?.code === 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+  isFatalAgentInitializationError: (error) =>
+    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
 }));
 
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
@@ -372,6 +372,38 @@ describe('createResponse controller', () => {
       503,
       'Expected MCP tools are unavailable',
       'server_error',
+      'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+    );
+  });
+
+  it('returns the resource recovery status and code before model invocation', async () => {
+    const { initializeAgent, sendResponsesErrorResponse } = require('@librechat/api');
+    const { loadAgentTools } = require('~/server/services/ToolService');
+    const toolError = Object.assign(new Error('resource recovery required'), {
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      status: 409,
+      statusCode: 409,
+    });
+    loadAgentTools.mockRejectedValueOnce(toolError);
+    initializeAgent.mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+      await loadTools({
+        req,
+        res,
+        tools: ['execute_code'],
+        model: agent.model,
+        agentId: agent.id,
+        provider: agent.provider,
+      });
+    });
+
+    await createResponse(req, res);
+
+    expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+      res,
+      409,
+      'resource recovery required',
+      'invalid_request',
+      ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
     );
   });
 

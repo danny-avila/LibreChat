@@ -33,6 +33,8 @@ const {
   buildServerNameAliases,
   findShadowedServerNames,
   isNormalizationSensitiveName,
+  AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
+  isFatalAgentInitializationError,
 } = require('@librechat/api');
 const {
   Time,
@@ -529,16 +531,15 @@ const isExpectedMCPTool = (toolName) =>
   toolName?.includes(Constants.mcp_delimiter) &&
   !toolName.startsWith(mcpServerPinPrefix) &&
   !isActionTool(toolName);
-const expectedMCPToolsUnavailableCode = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
 const isExpectedMCPToolsUnavailableError = (error) =>
-  error?.code === expectedMCPToolsUnavailableCode;
+  error?.code === AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE;
 const createExpectedMCPToolsUnavailableError = (agentName, cause) => {
   const subject = agentName ? `Agent "${agentName}"` : 'The agent';
   const error = new Error(
     `${subject} is configured to use MCP tools, but none are available. Verify that the MCP server is connected and this agent can access its selected tools, then try again.`,
   );
   error.name = 'AgentToolInitializationError';
-  error.code = expectedMCPToolsUnavailableCode;
+  error.code = AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE;
   error.status = 503;
   error.statusCode = 503;
   if (cause != null) {
@@ -1165,6 +1166,9 @@ async function loadToolDefinitionsWrapper({
         primedCodeFiles = files;
       }
     } catch (error) {
+      if (isFatalAgentInitializationError(error)) {
+        throw error;
+      }
       logger.error('[loadToolDefinitionsWrapper] Error priming code files:', error);
     }
   }
@@ -1269,7 +1273,7 @@ async function loadAgentTools({
         accessibleMcpServerNames,
       });
     } catch (error) {
-      if (isExpectedMCPToolsUnavailableError(error) || !agent.tools?.some(isExpectedMCPTool)) {
+      if (isFatalAgentInitializationError(error) || !agent.tools?.some(isExpectedMCPTool)) {
         throw error;
       }
       throw createExpectedMCPToolsUnavailableError(agent.name, error);
@@ -2040,6 +2044,7 @@ module.exports = {
   loadToolsForExecution,
   processRequiredActions,
   resolveAgentCapabilities,
+  isFatalAgentInitializationError,
   isExpectedMCPToolsUnavailableError,
   /** Re-exported for controllers that already depend on (and mock) this
    *  module, avoiding a fresh heavy `services/MCP` require chain there. */

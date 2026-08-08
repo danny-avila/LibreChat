@@ -17,6 +17,12 @@
         "types": "./dist/telemetry.d.cts",
         "default": "./dist/telemetry.cjs"
       }
+    },
+    "./credentials": {
+      "require": {
+        "types": "./dist/credentials.d.cts",
+        "default": "./dist/credentials.cjs"
+      }
     }
   },
   "scripts": {

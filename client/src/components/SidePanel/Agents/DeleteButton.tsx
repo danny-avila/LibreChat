@@ -94,7 +94,7 @@ function DeleteButton({
           title={localize('com_ui_delete_agent')}
           type="button"
         >
-          <div className="flex w-full items-center justify-center gap-2 text-red-500">
+          <div className="flex w-full items-center justify-center gap-2 text-text-destructive">
             <TrashIcon />
           </div>
         </Button>
@@ -115,7 +115,7 @@ function DeleteButton({
         }
         selection={{
           selectHandler: () => deleteAgent.mutate({ agent_id }),
-          selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
+          selectClasses: 'bg-surface-destructive hover:bg-surface-destructive-hover text-white',
           selectText: localize('com_ui_delete'),
         }}
       />
