@@ -1841,6 +1841,20 @@ export enum OCRStrategy {
   VERTEXAI_MISTRAL_OCR = 'vertexai_mistral_ocr',
 }
 
+/**
+ * `ocr.strategy: document_parser` selected the built-in local extractor back when it
+ * was an OCR strategy (v0.8.3 through v0.8.6). Local parsing is automatic now, so the
+ * value is no longer an OCR service, but configs written against those releases must
+ * still validate: dropping it outright makes `loadCustomConfig` exit(1) on startup.
+ * `loadOCRConfig` reads it as "no OCR provider configured", which is what it now means.
+ */
+export const LEGACY_LOCAL_OCR_STRATEGY = 'document_parser';
+
+export const ocrStrategySchema = z.union([
+  z.nativeEnum(OCRStrategy),
+  z.literal(LEGACY_LOCAL_OCR_STRATEGY),
+]);
+
 export enum SearchCategories {
   PROVIDERS = 'providers',
   SCRAPERS = 'scrapers',
@@ -1993,7 +2007,7 @@ export const ocrSchema = z.object({
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
   apiKeyPreview: apiKeyPreviewSchema,
   baseURL: z.string().optional().default('${OCR_BASEURL}'),
-  strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
+  strategy: ocrStrategySchema.default(OCRStrategy.MISTRAL_OCR),
 });
 
 export const balanceSchema = z.object({
