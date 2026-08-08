@@ -66,25 +66,26 @@ async function waitForSharedLink(
 }
 
 test.describe('shared links', () => {
-  test.setTimeout(120000);
-
-  test('creates a shared link and preserves legacy public links through runtime migration', async ({
+  test('manages a shared-link snapshot and preserves legacy public links through runtime migration', async ({
     page,
     baseURL,
   }) => {
+    test.setTimeout(120000);
+
     if (typeof baseURL !== 'string') {
       throw new Error('baseURL must be configured for shared-link mock e2e tests');
     }
 
     const suffix = randomSuffix();
     const userMessage = `Shared link e2e ${suffix}`;
+    const updatedMessage = `Updated shared link e2e ${suffix}`;
 
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
 
     const response = await sendMessage(page, userMessage);
     expect(response.ok()).toBeTruthy();
-    await expect(page.getByText(userMessage)).toBeVisible();
+    await expect(page.getByText(userMessage, { exact: true })).toBeVisible();
     await expect(mockReply(page)).toBeVisible();
 
     await expect(page).toHaveURL(/\/c\/(?!new)[0-9a-fA-F-]{36}$/);
@@ -106,7 +107,7 @@ test.describe('shared links', () => {
           res.status() === 200,
         { timeout: 30000 },
       ),
-      page.getByRole('button', { name: 'Create link' }).click(),
+      page.getByRole('button', { name: 'Create a shared link' }).click(),
     ]);
     expect(shareResponse.ok()).toBeTruthy();
     const sharePayload = (await shareResponse.json()) as { shareId?: string };
@@ -128,8 +129,51 @@ test.describe('shared links', () => {
 
     await page.goto(new URL(sharedLinkUrl, baseURL).pathname, { timeout: 10000 });
     await expect(page).toHaveURL(/\/share\/.+/);
-    await expect(page.getByTestId('messages-view').getByText(userMessage)).toBeVisible();
-    await expect(mockReply(page)).toBeVisible();
+    await expect(
+      page.getByTestId('messages-view').getByText(userMessage, { exact: true }),
+    ).toBeVisible();
+    await expect(mockReply(page)).toHaveCount(1);
+
+    await page.goto(conversationUrl.pathname, { timeout: 10000 });
+    const updateResponse = await sendMessage(page, updatedMessage);
+    expect(updateResponse.ok()).toBeTruthy();
+    await expect(page.getByText(updatedMessage)).toBeVisible();
+
+    /** A shared link remains a snapshot until its owner explicitly updates it. */
+    await page.goto(new URL(sharedLinkUrl, baseURL).pathname, { timeout: 10000 });
+    await expect(page.getByTestId('messages-view').getByText(updatedMessage)).toHaveCount(0);
+    await expect(mockReply(page)).toHaveCount(1);
+
+    await page.goto(conversationUrl.pathname, { timeout: 10000 });
+    await page.getByRole('button', { name: 'Export/Share' }).click();
+    await page.getByTestId('share-conversation-menu-item').click();
+    const shareDialog = page.getByRole('dialog', { name: 'Share link to chat' });
+    await expect(shareDialog).toBeVisible();
+    await shareDialog.getByRole('button', { name: 'Update link', exact: true }).click();
+
+    const updateDialog = page.getByRole('dialog', { name: 'Update shared link?' });
+    await expect(updateDialog).toBeVisible();
+    await expect(
+      updateDialog.getByText(/This publishes the latest messages.+The URL stays the same/),
+    ).toBeVisible();
+
+    const [refreshResponse] = await Promise.all([
+      page.waitForResponse(
+        (res) =>
+          res.request().method() === 'PATCH' &&
+          res.url().includes(`/api/share/${sharePayload.shareId}`) &&
+          res.status() === 200,
+        { timeout: 30000 },
+      ),
+      updateDialog.getByRole('button', { name: 'Update link', exact: true }).click(),
+    ]);
+    expect(refreshResponse.ok()).toBeTruthy();
+    await expect(updateDialog).toBeHidden();
+    await expect(sharedLinkInput).toHaveValue(sharedLinkUrl);
+
+    await page.goto(new URL(sharedLinkUrl, baseURL).pathname, { timeout: 10000 });
+    await expect(page.getByTestId('messages-view').getByText(updatedMessage)).toBeVisible();
+    await expect(mockReply(page)).toHaveCount(2);
 
     const { client, db } = await connectToE2EDb();
     const aclEntries = db.collection<AclEntryDoc>('aclentries');
@@ -154,8 +198,10 @@ test.describe('shared links', () => {
       legacyResourceId = resourceId;
 
       await page.goto(`/share/${legacyShareId}`, { timeout: 10000 });
-      await expect(page.getByTestId('messages-view').getByText(userMessage)).toBeVisible();
-      await expect(mockReply(page)).toBeVisible();
+      await expect(
+        page.getByTestId('messages-view').getByText(userMessage, { exact: true }),
+      ).toBeVisible();
+      await expect(mockReply(page).first()).toBeVisible();
 
       await expect
         .poll(
@@ -187,5 +233,30 @@ test.describe('shared links', () => {
       }
       await client.close();
     }
+
+    await page.goto(conversationUrl.pathname, { timeout: 10000 });
+    await page.getByRole('button', { name: 'Export/Share' }).click();
+    await page.getByTestId('share-conversation-menu-item').click();
+    await expect(shareDialog).toBeVisible();
+    await shareDialog.getByRole('button', { name: 'Delete Link' }).click();
+
+    const deleteDialog = page.getByRole('alertdialog', { name: 'Delete Shared Link' });
+    await expect(deleteDialog).toBeVisible();
+    const [deleteResponse] = await Promise.all([
+      page.waitForResponse(
+        (res) =>
+          res.request().method() === 'DELETE' &&
+          res.url().includes(`/api/share/${sharePayload.shareId}`) &&
+          res.status() === 200,
+        { timeout: 30000 },
+      ),
+      deleteDialog.getByRole('button', { name: 'Delete Link' }).click(),
+    ]);
+    expect(deleteResponse.ok()).toBeTruthy();
+    await expect(deleteDialog).toBeHidden();
+    await expect(shareDialog).toBeVisible();
+    await expect(shareDialog.getByRole('button', { name: 'Create a shared link' })).toBeVisible();
+    await expect(sharedLinkInput).toHaveCount(0);
+    await expect(page.getByTestId('header-shared-link-indicator')).toHaveCount(0);
   });
 });
