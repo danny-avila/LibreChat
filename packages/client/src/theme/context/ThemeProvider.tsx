@@ -1,35 +1,36 @@
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useCallback,
-  useState,
-  useRef,
-} from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { JSX } from 'react/jsx-runtime';
-import applyTheme from '../utils/applyTheme';
-import { IThemeRGB } from '../types';
+
+import type { IThemeRGB, ThemeDefinition, ThemeMode } from '../types';
+
+import { fromLegacyTheme, resolveTheme, validateThemeDefinition } from '../registry';
+import { applyResolvedTheme, clearAppliedTheme } from '../utils/applyTheme';
 
 const THEME_KEY = 'color-theme';
 const THEME_COLORS_KEY = 'theme-colors';
 const THEME_NAME_KEY = 'theme-name';
+const THEME_DEFINITION_KEY = 'theme-definition';
+const themeModes = ['light', 'dark', 'system'] as const;
+
+type AppearanceMode = (typeof themeModes)[number];
 
 type ThemeContextType = {
-  theme: string; // 'light' | 'dark' | 'system'
+  theme: AppearanceMode;
   setTheme: (theme: string) => void;
   themeRGB?: IThemeRGB;
   setThemeRGB: (colors?: IThemeRGB) => void;
+  themeDefinition?: ThemeDefinition;
+  setThemeDefinition: (definition?: ThemeDefinition) => void;
   themeName?: string;
   setThemeName: (name?: string) => void;
   resetTheme: () => void;
 };
 
-// Export ThemeContext so it can be imported from hooks
 export const ThemeContext: React.Context<ThemeContextType> = createContext<ThemeContextType>({
   theme: 'system',
   setTheme: () => undefined,
   setThemeRGB: () => undefined,
+  setThemeDefinition: () => undefined,
   setThemeName: () => undefined,
   resetTheme: () => undefined,
 });
@@ -37,13 +38,11 @@ export const ThemeContext: React.Context<ThemeContextType> = createContext<Theme
 export interface ThemeProviderProps {
   children: React.ReactNode;
   themeRGB?: IThemeRGB;
+  themeDefinition?: ThemeDefinition;
   themeName?: string;
   initialTheme?: string;
 }
 
-/**
- * Check if theme is dark
- */
 export const isDark = (theme: string): boolean => {
   if (theme === 'system') {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -51,216 +50,234 @@ export const isDark = (theme: string): boolean => {
   return theme === 'dark';
 };
 
-/**
- * Validate that a parsed value looks like an IThemeRGB object
- */
+const isAppearanceMode = (value: string): value is AppearanceMode =>
+  themeModes.includes(value as AppearanceMode);
+
 const isValidThemeColors = (value: unknown): value is IThemeRGB => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
   }
-  for (const key of Object.keys(value)) {
-    const val = (value as Record<string, unknown>)[key];
-    if (val !== undefined && typeof val !== 'string') {
-      return false;
-    }
-  }
-  return true;
-};
 
-/**
- * Get initial theme from localStorage or default to 'system'
- */
-const getInitialTheme = (): string => {
-  if (typeof window === 'undefined') return 'system';
   try {
-    const stored = localStorage.getItem(THEME_KEY);
-    if (stored && ['light', 'dark', 'system'].includes(stored)) {
-      return stored;
-    }
+    return validateThemeDefinition(fromLegacyTheme(value as IThemeRGB)).length === 0;
   } catch {
-    // localStorage not available
+    return false;
   }
-  return 'system';
 };
 
-/**
- * Get initial theme colors from localStorage
- */
-const getInitialThemeColors = (): IThemeRGB | undefined => {
-  if (typeof window === 'undefined') return undefined;
+const isValidThemeDefinition = (value: unknown): value is ThemeDefinition => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const definition = value as ThemeDefinition;
+  if (
+    definition.version !== 1 ||
+    typeof definition.name !== 'string' ||
+    typeof definition.modes !== 'object' ||
+    definition.modes === null
+  ) {
+    return false;
+  }
+
+  return validateThemeDefinition(definition).length === 0;
+};
+
+const readStorage = (key: string): string | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
   try {
-    const stored = localStorage.getItem(THEME_COLORS_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (isValidThemeColors(parsed)) {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const writeStorage = (key: string, value?: string): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    if (value === undefined) {
+      localStorage.removeItem(key);
+      return;
+    }
+    localStorage.setItem(key, value);
+  } catch {
+    // Storage is an optional persistence adapter.
+  }
+};
+
+const getInitialTheme = (): AppearanceMode => {
+  const stored = readStorage(THEME_KEY);
+  return stored && isAppearanceMode(stored) ? stored : 'system';
+};
+
+const getStoredThemeDefinition = (): ThemeDefinition | undefined => {
+  const storedDefinition = readStorage(THEME_DEFINITION_KEY);
+  if (storedDefinition) {
+    try {
+      const parsed: unknown = JSON.parse(storedDefinition);
+      if (isValidThemeDefinition(parsed)) {
         return parsed;
       }
+    } catch {
+      // Fall through to the legacy storage adapter.
+    }
+  }
+
+  const storedColors = readStorage(THEME_COLORS_KEY);
+  if (!storedColors) {
+    return undefined;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(storedColors);
+    if (isValidThemeColors(parsed)) {
+      return fromLegacyTheme(parsed, readStorage(THEME_NAME_KEY) ?? 'custom');
     }
   } catch {
-    // localStorage not available or invalid JSON
+    // Invalid legacy data is ignored.
   }
   return undefined;
 };
 
-/**
- * Get initial theme name from localStorage
- */
-const getInitialThemeName = (): string | undefined => {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    return localStorage.getItem(THEME_NAME_KEY) || undefined;
-  } catch {
-    // localStorage not available
-  }
-  return undefined;
-};
+const getInitialThemeName = (): string | undefined => readStorage(THEME_NAME_KEY) ?? undefined;
 
-/**
- * ThemeProvider component that handles both dark/light mode switching
- * and dynamic color themes via CSS variables with localStorage persistence
- */
 export function ThemeProvider({
   children,
   themeRGB: propThemeRGB,
+  themeDefinition: propThemeDefinition,
   themeName: propThemeName,
   initialTheme,
 }: ThemeProviderProps): JSX.Element {
-  const [theme, setThemeState] = useState<string>(getInitialTheme);
-  const [themeRGB, setThemeRGBState] = useState<IThemeRGB | undefined>(getInitialThemeColors);
-  const [themeName, setThemeNameState] = useState<string | undefined>(getInitialThemeName);
-
-  // Track if props have been initialized
-  const initialized = useRef(false);
+  const [theme, setThemeState] = useState<AppearanceMode>(() =>
+    initialTheme && isAppearanceMode(initialTheme) ? initialTheme : getInitialTheme(),
+  );
+  const [themeDefinition, setThemeDefinitionState] = useState<ThemeDefinition | undefined>(() => {
+    if (propThemeDefinition) {
+      return propThemeDefinition;
+    }
+    if (propThemeRGB) {
+      return fromLegacyTheme(propThemeRGB, propThemeName);
+    }
+    return getStoredThemeDefinition();
+  });
+  const [themeName, setThemeNameState] = useState<string | undefined>(
+    propThemeName ?? getInitialThemeName,
+  );
 
   const setTheme = useCallback((newTheme: string) => {
-    setThemeState(newTheme);
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(THEME_KEY, newTheme);
-    } catch {
-      // localStorage not available
+    if (!isAppearanceMode(newTheme)) {
+      return;
     }
+    setThemeState(newTheme);
+    writeStorage(THEME_KEY, newTheme);
   }, []);
 
-  const setThemeRGB = useCallback((colors?: IThemeRGB) => {
-    setThemeRGBState(colors);
-    if (typeof window === 'undefined') return;
-    try {
-      if (colors) {
-        localStorage.setItem(THEME_COLORS_KEY, JSON.stringify(colors));
-      } else {
-        localStorage.removeItem(THEME_COLORS_KEY);
-      }
-    } catch {
-      // localStorage not available
+  const setThemeDefinition = useCallback((definition?: ThemeDefinition) => {
+    const errors = definition ? validateThemeDefinition(definition) : [];
+    if (errors.length > 0) {
+      throw new TypeError(errors.join('\n'));
     }
+    setThemeDefinitionState(definition);
+    writeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
   }, []);
+
+  const setThemeRGB = useCallback(
+    (colors?: IThemeRGB) => {
+      const definition = colors ? fromLegacyTheme(colors, themeName) : undefined;
+      setThemeDefinition(definition);
+      writeStorage(THEME_COLORS_KEY, colors ? JSON.stringify(colors) : undefined);
+    },
+    [setThemeDefinition, themeName],
+  );
 
   const setThemeName = useCallback((name?: string) => {
     setThemeNameState(name);
-    if (typeof window === 'undefined') return;
-    try {
-      if (name) {
-        localStorage.setItem(THEME_NAME_KEY, name);
-      } else {
-        localStorage.removeItem(THEME_NAME_KEY);
+    writeStorage(THEME_NAME_KEY, name);
+  }, []);
+
+  const applyThemeMode = useCallback(
+    (currentTheme: AppearanceMode) => {
+      const root = window.document.documentElement;
+      const mode: ThemeMode = isDark(currentTheme) ? 'dark' : 'light';
+
+      root.classList.toggle('dark', mode === 'dark');
+      root.classList.toggle('light', mode === 'light');
+
+      if (!themeDefinition) {
+        clearAppliedTheme(root);
+        return;
       }
-    } catch {
-      // localStorage not available
-    }
-  }, []);
 
-  // Initialize from props only once on mount
-  useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
+      try {
+        applyResolvedTheme(resolveTheme(themeDefinition, mode), root);
+      } catch (error) {
+        clearAppliedTheme(root);
+        console.error('Unable to apply theme definition', error);
+      }
+    },
+    [themeDefinition],
+  );
 
-    // Set initial theme if provided
-    if (initialTheme) {
-      setTheme(initialTheme);
-    }
-
-    // Set initial theme colors if provided
-    if (propThemeRGB) {
-      setThemeRGB(propThemeRGB);
-    }
-
-    // Set initial theme name if provided
-    if (propThemeName) {
-      setThemeName(propThemeName);
-    }
-  }, [initialTheme, propThemeRGB, propThemeName, setTheme, setThemeRGB, setThemeName]);
-
-  // Apply class-based dark mode
-  const applyThemeMode = useCallback((currentTheme: string) => {
-    const root = window.document.documentElement;
-    const darkMode = isDark(currentTheme);
-
-    root.classList.remove(darkMode ? 'light' : 'dark');
-    root.classList.add(darkMode ? 'dark' : 'light');
-  }, []);
-
-  // Apply theme mode whenever theme changes
   useEffect(() => {
     applyThemeMode(theme);
-  }, [theme, applyThemeMode]);
+  }, [applyThemeMode, theme]);
 
-  // Listen for system theme changes when theme is 'system'
   useEffect(() => {
-    if (theme !== 'system') return;
+    if (theme !== 'system') {
+      return;
+    }
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = () => {
-      applyThemeMode('system');
-    };
-
+    const handleChange = () => applyThemeMode('system');
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [theme, applyThemeMode]);
+  }, [applyThemeMode, theme]);
 
-  // Apply dynamic color theme
-  useEffect(() => {
-    if (themeRGB) {
-      applyTheme(themeRGB);
-    }
-  }, [themeRGB]);
-
-  // Reset theme function
   const resetTheme = useCallback(() => {
     setTheme('system');
-    setThemeRGB(undefined);
+    setThemeDefinition(undefined);
     setThemeName(undefined);
-    // Remove any custom CSS variables
-    const root = document.documentElement;
-    const customProps = Array.from(root.style).filter((prop) => prop.startsWith('--'));
-    customProps.forEach((prop) => root.style.removeProperty(prop));
-  }, [setTheme, setThemeRGB, setThemeName]);
+    writeStorage(THEME_COLORS_KEY);
+    clearAppliedTheme();
+  }, [setTheme, setThemeDefinition, setThemeName]);
 
+  const themeRGB = themeDefinition?.modes.light?.colors;
   const value = useMemo(
     () => ({
       theme,
       setTheme,
       themeRGB,
       setThemeRGB,
+      themeDefinition,
+      setThemeDefinition,
       themeName,
       setThemeName,
       resetTheme,
     }),
-    [theme, setTheme, themeRGB, setThemeRGB, themeName, setThemeName, resetTheme],
+    [
+      resetTheme,
+      setTheme,
+      setThemeDefinition,
+      setThemeName,
+      setThemeRGB,
+      theme,
+      themeDefinition,
+      themeName,
+      themeRGB,
+    ],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
-/**
- * Hook to access the current theme context
- */
 export function useTheme(): ThemeContextType {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider');
-  }
-  return context;
+  return useContext(ThemeContext);
 }
 
 export default ThemeProvider;

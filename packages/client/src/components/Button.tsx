@@ -18,11 +18,12 @@ const buttonVariants: (
           | 'ghost'
           | null
           | undefined;
-        size?: 'default' | 'icon' | 'sm' | 'lg' | null | undefined;
+        size?: 'default' | 'icon' | 'sm' | 'lg' | 'theme' | null | undefined;
+        shape?: 'default' | 'theme' | null | undefined;
       } & ClassProp)
     | undefined,
 ) => string = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium ring-offset-surface-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-surface-primary transition-colors duration-theme-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
@@ -43,11 +44,17 @@ const buttonVariants: (
         sm: 'h-9 rounded-lg px-3',
         lg: 'h-11 rounded-lg px-8',
         icon: 'size-10',
+        theme: 'h-theme-control gap-theme-compact px-theme-normal',
+      },
+      shape: {
+        default: 'rounded-lg',
+        theme: 'rounded-theme-control',
       },
     },
     defaultVariants: {
       variant: 'default',
       size: 'default',
+      shape: 'default',
     },
   },
 );
@@ -61,12 +68,12 @@ export interface ButtonProps
 const Button: React.ForwardRefExoticComponent<
   ButtonProps & React.RefAttributes<HTMLButtonElement>
 > = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, type = 'button', ...props }, ref) => {
+  ({ className, variant, size, shape, asChild = false, type = 'button', ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
     return (
       <Comp
         type={asChild ? undefined : type}
-        className={cn(buttonVariants({ variant, size, className }))}
+        className={cn(buttonVariants({ variant, size, shape, className }))}
         ref={ref}
         {...props}
       />

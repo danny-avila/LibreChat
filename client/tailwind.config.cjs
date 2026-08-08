@@ -16,6 +16,7 @@ module.exports = {
     fontFamily: {
       sans: ['Inter', 'sans-serif'],
       mono: ['Roboto Mono', 'monospace'],
+      'theme-ui': ['var(--theme-font-family, Inter, sans-serif)'],
     },
     // fontFamily: {
     //   sans: ['Söhne', 'sans-serif'],
@@ -24,6 +25,21 @@ module.exports = {
     extend: {
       width: {
         authPageWidth: '370px',
+      },
+      height: {
+        'theme-control': 'var(--theme-control-height, 2.25rem)',
+      },
+      spacing: {
+        'theme-compact': 'var(--theme-space-compact, 0.375rem)',
+        'theme-normal': 'var(--theme-space-normal, 0.75rem)',
+        'theme-control': 'var(--theme-control-height, 2.25rem)',
+      },
+      boxShadow: {
+        'theme-surface': 'var(--theme-elevation-surface, 0 10px 15px -3px rgb(0 0 0 / 0.1))',
+      },
+      transitionDuration: {
+        'theme-fast': 'var(--theme-motion-fast, 150ms)',
+        'theme-normal': 'var(--theme-motion-normal, 200ms)',
       },
       keyframes: {
         'accordion-down': {
@@ -87,6 +103,8 @@ module.exports = {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        'theme-control': 'var(--theme-control-radius, 9999px)',
+        'theme-surface': 'var(--theme-surface-radius, 1.5rem)',
       },
     },
   },

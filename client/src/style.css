@@ -219,6 +219,15 @@ html {
   --surface-fixed-hover: var(--gray-100);
   --text-fixed: var(--gray-800);
   --radius: 0.5rem;
+  --theme-control-radius: 9999px;
+  --theme-surface-radius: 1.5rem;
+  --theme-control-height: 2.25rem;
+  --theme-space-compact: 0.375rem;
+  --theme-space-normal: 0.75rem;
+  --theme-font-family: Inter, sans-serif;
+  --theme-elevation-surface: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --theme-motion-fast: 150ms;
+  --theme-motion-normal: 200ms;
   --switch-unchecked: 0 0% 58%;
 }
 .dark {

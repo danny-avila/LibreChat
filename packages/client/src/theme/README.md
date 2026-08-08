@@ -1,5 +1,34 @@
 # Dynamic Theme System for @librechat/client
 
+## Versioned theme definitions
+
+New themes should use the versioned `ThemeDefinition` interface. Definitions are data-only, may
+provide separate light and dark overrides, and resolve missing values against LibreChat's bundled
+defaults before any CSS variables are applied.
+
+```tsx
+const compactTheme: ThemeDefinition = {
+  version: 1,
+  name: 'compact',
+  modes: {
+    light: {
+      appearance: {
+        controlRadius: '0.25rem',
+        surfaceRadius: '0.5rem',
+        controlHeight: '2rem',
+      },
+    },
+  },
+};
+
+<ThemeProvider themeDefinition={compactTheme}>{children}</ThemeProvider>;
+```
+
+The initial appearance registry intentionally covers only shared control shape, surface shape,
+control height, compact/normal spacing, UI typography, surface elevation, and fast/normal motion.
+`themeRGB`, `REACT_APP_THEME_*`, and the existing localStorage keys remain supported through legacy
+adapters. Theme application removes only variables owned by the theme module when a theme is reset.
+
 This theme system allows you to dynamically change colors in your React application using CSS variables and Tailwind CSS. It combines dark/light mode switching with dynamic color theming capabilities.
 
 ## Table of Contents
