@@ -83,10 +83,10 @@ async function initializeMCPs() {
     setMCPToolsChangedGenerationRenewalHandler(renewMCPToolsCacheGeneration);
     registerShutdownTask('MCP app connections', () => mcpManager.disconnectAppServers());
 
-    const mcpTools = (await mcpManager.getAppToolFunctions()) || {};
     if (mcpServers && Object.keys(mcpServers).length > 0) {
+      const mcpTools = (await mcpManager.getAppToolFunctions()) || {};
       try {
-        await mergeAppTools(mcpTools);
+        await mergeAppTools(mcpTools, appConfig.availableTools || {});
       } finally {
         await mcpManager.connectAppServers();
       }
@@ -96,7 +96,6 @@ async function initializeMCPs() {
         `[MCP] Initialized with ${serverCount} configured ${serverCount === 1 ? 'server' : 'servers'} and ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}.`,
       );
     } else {
-      await mergeAppTools(mcpTools);
       logger.debug('[MCP] No servers configured. MCPManager ready for UI-based servers.');
     }
   } catch (error) {

@@ -15,6 +15,9 @@ export interface MCPToolCacheDeps {
     serverName?: string;
     configGeneration?: string;
   }) => Promise<LCAvailableTools | null>;
+  updateCachedGlobalTools?: (
+    update: (tools: LCAvailableTools) => LCAvailableTools,
+  ) => Promise<void>;
   setCachedTools: (
     tools: LCAvailableTools,
     options?: { userId?: string; serverName?: string; configGeneration?: string },
@@ -50,7 +53,7 @@ export interface MCPToolCacheService {
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
   }) => Promise<LCAvailableTools | null>;
-  mergeAppTools: (appTools: LCAvailableTools) => Promise<void>;
+  mergeAppTools: (appTools: LCAvailableTools, staticTools: LCAvailableTools) => Promise<void>;
   replaceAppServerTools: (params: {
     serverName: string;
     serverTools: LCAvailableTools;
@@ -78,6 +81,7 @@ interface AppServerBoundary {
 export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheService {
   const {
     getCachedTools,
+    updateCachedGlobalTools,
     setCachedTools,
     setCachedToolsIfCurrent,
     getCachedAppServerTools,
@@ -299,7 +303,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     }
   }
 
-  async function mergeAppTools(appTools: LCAvailableTools): Promise<void> {
+  async function mergeAppTools(
+    appTools: LCAvailableTools,
+    staticTools: LCAvailableTools,
+  ): Promise<void> {
     try {
       const count = Object.keys(appTools).length;
       const appConfigs = getAllServerConfigs
@@ -308,6 +315,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           )
         : [];
       const boundaries = buildAppServerBoundaries(appConfigs.map(([serverName]) => serverName));
+      await updateCachedGlobalTools?.(() => staticTools);
       await Promise.all(
         appConfigs
           .filter(([, config]) => config.toolFunctions != null)

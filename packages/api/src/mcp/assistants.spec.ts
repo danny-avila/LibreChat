@@ -70,6 +70,43 @@ describe('getAssistantToolDefinitions', () => {
     expect(recoverServerTools).toHaveBeenCalledWith('app-server', serverConfig);
   });
 
+  it('limits concurrent cold catalog recovery across referenced servers', async () => {
+    const serverNames = ['one', 'two', 'three', 'four', 'five'];
+    const configs = Object.fromEntries(
+      serverNames.map((name) => [
+        name,
+        { ...serverConfig, url: `https://${name}.example.com/mcp` },
+      ]),
+    );
+    let active = 0;
+    let peak = 0;
+    const recoverServerTools = jest.fn(async (name: string) => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setImmediate(resolve));
+      active--;
+      const key = `search${Constants.mcp_delimiter}${name}`;
+      return { [key]: { type: 'function' as const, ['function']: { name: key } } };
+    });
+    const deps = createDeps({
+      getAllServerConfigs: jest.fn().mockResolvedValue(configs),
+      getMCPServerTools: jest.fn().mockResolvedValue(null),
+      getServerToolFunctionsSnapshot: jest.fn().mockResolvedValue({ tools: null }),
+      recoverServerTools,
+    });
+
+    await getAssistantToolDefinitions(
+      {
+        ...params,
+        tools: serverNames.map((name) => `search${Constants.mcp_delimiter}${name}`),
+      },
+      deps,
+    );
+
+    expect(recoverServerTools).toHaveBeenCalledTimes(serverNames.length);
+    expect(peak).toBe(3);
+  });
+
   it('re-caches an authoritative empty local snapshot after a cache miss', async () => {
     const cacheMCPServerTools = jest.fn().mockResolvedValue(undefined);
     const deps = createDeps({

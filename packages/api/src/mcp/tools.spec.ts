@@ -86,6 +86,28 @@ function createSharedCacheDeps(params: {
 
 describe('createMCPToolCacheService', () => {
   describe('configuration-addressed app catalogs', () => {
+    it('removes legacy MCP entries from the shared global catalog during rollout', async () => {
+      const alphaConfig = { ...cacheableConfig, toolFunctions: {} };
+      const builtin = 'code_interpreter';
+      const staticDelimiterTool = `get${Constants.mcp_delimiter}status`;
+      let globalTools: LCAvailableTools = {};
+      const staticTools = {
+        [builtin]: makeTool(builtin),
+        [staticDelimiterTool]: makeTool(staticDelimiterTool),
+      };
+      const deps = createMockDeps({
+        getAllServerConfigs: jest.fn().mockResolvedValue({ alpha: alphaConfig }),
+        updateCachedGlobalTools: jest.fn(async (update) => {
+          globalTools = update(globalTools);
+        }),
+      });
+
+      await createMCPToolCacheService(deps).mergeAppTools({}, staticTools);
+
+      expect(globalTools).toEqual(staticTools);
+      expect(deps.updateCachedGlobalTools).toHaveBeenCalledTimes(1);
+    });
+
     it('writes an authoritative empty snapshot under the publishing config generation', async () => {
       const setCachedAppServerTools = jest.fn().mockResolvedValue(true);
       const deps = createMockDeps({ setCachedAppServerTools });
@@ -207,10 +229,13 @@ describe('createMCPToolCacheService', () => {
       const alpha = toolName('one', 'alpha');
       const beta = toolName('two', 'beta');
 
-      await createMCPToolCacheService(deps).mergeAppTools({
-        [alpha]: makeTool(alpha),
-        [beta]: makeTool(beta),
-      });
+      await createMCPToolCacheService(deps).mergeAppTools(
+        {
+          [alpha]: makeTool(alpha),
+          [beta]: makeTool(beta),
+        },
+        {},
+      );
 
       expect(setCachedAppServerTools).toHaveBeenCalledWith(
         'alpha',
@@ -235,7 +260,7 @@ describe('createMCPToolCacheService', () => {
         setCachedAppServerTools,
       });
 
-      await createMCPToolCacheService(deps).mergeAppTools({});
+      await createMCPToolCacheService(deps).mergeAppTools({}, {});
 
       expect(setCachedAppServerTools).toHaveBeenCalledTimes(1);
       expect(setCachedAppServerTools).toHaveBeenCalledWith('complete', expect.any(String), {});

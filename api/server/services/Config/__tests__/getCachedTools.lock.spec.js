@@ -29,6 +29,7 @@ getLogStores.mockReturnValue(mockCache);
 
 const {
   getCachedTools,
+  updateCachedGlobalTools,
   getMCPToolsCacheGeneration,
   setCachedTools,
   setCachedToolsIfCurrent,
@@ -103,6 +104,35 @@ describe('global tool cache write lock', () => {
           `${CacheKeys.TOOL_CACHE}:tools:global`,
         ],
       }),
+    );
+    expect(mockCache.set).not.toHaveBeenCalled();
+  });
+
+  it('atomically replaces a legacy global catalog while holding its Redis fence', async () => {
+    mockCache.get.mockResolvedValue({ old_mcp_server: {}, builtin: {} });
+
+    await updateCachedGlobalTools(() => ({ builtin: {} }));
+
+    expect(mockRedisClient.set).toHaveBeenCalledTimes(1);
+    expect(mockKeyvRedisClient.eval).toHaveBeenCalledTimes(3);
+    expect(mockKeyvRedisClient.eval.mock.calls).toEqual(
+      expect.arrayContaining([
+        [
+          expect.stringContaining("redis.call('PSETEX', KEYS[2]"),
+          expect.objectContaining({
+            keys: [
+              `tools:global:write-fence:{${CacheKeys.TOOL_CACHE}:tools:global}`,
+              `${CacheKeys.TOOL_CACHE}:tools:global`,
+            ],
+            arguments: [
+              expect.any(String),
+              JSON.stringify({ builtin: {} }),
+              expect.any(String),
+              expect.any(String),
+            ],
+          }),
+        ],
+      ]),
     );
     expect(mockCache.set).not.toHaveBeenCalled();
   });

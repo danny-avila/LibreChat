@@ -9,6 +9,7 @@ getLogStores.mockReturnValue(mockCache);
 const {
   ToolCacheKeys,
   getCachedTools,
+  updateCachedGlobalTools,
   setCachedTools,
   setCachedToolsIfCurrent,
   getMCPToolsCacheGeneration,
@@ -61,6 +62,21 @@ describe('MCP tool cache', () => {
     expect(mockCache.get).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL);
     expect(mockCache.set).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL, tools, expect.any(Number));
     expect(mockCache.delete).not.toHaveBeenCalled();
+  });
+
+  it('updates the global catalog atomically through the catalog store', async () => {
+    const current = { builtin: { type: 'function' }, old_mcp_server: { type: 'function' } };
+    mockCache.get.mockResolvedValue(current);
+    mockCache.set.mockResolvedValue(true);
+
+    await updateCachedGlobalTools(({ old_mcp_server: _removed, ...staticTools }) => staticTools);
+
+    expect(mockCache.get).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL);
+    expect(mockCache.set).toHaveBeenCalledWith(
+      ToolCacheKeys.GLOBAL,
+      { builtin: { type: 'function' } },
+      Time.TWELVE_HOURS,
+    );
   });
 
   it('gets and sets an authoritative app slice, including an empty catalog', async () => {
@@ -330,7 +346,9 @@ describe('MCP tool cache', () => {
       1,
       ToolCacheKeys.MCP_SERVER_LEGACY_FENCE('user1', 'github'),
       true,
+      expect.any(Number),
     );
+    expect(mockCache.set.mock.calls[0][2]).toBeGreaterThanOrEqual(Time.ONE_DAY);
     expect(mockCache.set).toHaveBeenNthCalledWith(
       2,
       ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),

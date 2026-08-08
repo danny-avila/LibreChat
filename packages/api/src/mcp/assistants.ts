@@ -8,6 +8,9 @@ import {
 import type { MCPOptions } from 'librechat-data-provider';
 import type { LCAvailableTools, ParsedServerConfig } from '~/mcp/types';
 import { findShadowedServerNames } from '~/mcp/utils';
+import { createConcurrencyLimiter } from '~/utils/promise';
+
+const RECOVERY_CONCURRENCY = 3;
 
 export interface AssistantMCPUser {
   id?: string;
@@ -115,6 +118,7 @@ async function loadServerCatalog(
   serverName: string,
   serverConfig: ParsedServerConfig,
   deps: AssistantToolDefinitionsDeps,
+  recover: <T>(task: () => Promise<T>) => Promise<T>,
 ): Promise<LCAvailableTools> {
   const cached = await deps.getMCPServerTools(userId, serverName, serverConfig);
   if (cached != null) {
@@ -140,7 +144,7 @@ async function loadServerCatalog(
     return snapshot.tools;
   }
 
-  const recovered = await deps.recoverServerTools(serverName, serverConfig);
+  const recovered = await recover(() => deps.recoverServerTools(serverName, serverConfig));
   if (recovered != null) {
     return recovered;
   }
@@ -168,10 +172,11 @@ export async function getAssistantToolDefinitions(
     params.mcpConfig,
     deps,
   );
+  const recover = createConcurrencyLimiter(RECOVERY_CONCURRENCY);
   const serverCatalogs = await Promise.all(
     Array.from(
       selectReferencedServers(mcpToolNames, configs, Object.keys(params.mcpConfig)),
-      (serverName) => loadServerCatalog(userId, serverName, configs[serverName], deps),
+      (serverName) => loadServerCatalog(userId, serverName, configs[serverName], deps, recover),
     ),
   );
   return Object.assign({}, params.staticTools, ...serverCatalogs);

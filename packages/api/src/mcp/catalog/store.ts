@@ -155,6 +155,7 @@ interface OwnershipFence {
 
 export interface MCPCatalogStore {
   getCachedTools: (options?: CachedToolsOptions) => Promise<LCAvailableTools | null>;
+  updateCachedGlobalTools: (update: (tools: LCAvailableTools) => LCAvailableTools) => Promise<void>;
   setCachedTools: (tools: LCAvailableTools, options?: CachedToolsOptions) => Promise<boolean>;
   setCachedToolsWithinGlobalLock: (
     tools: LCAvailableTools,
@@ -493,6 +494,25 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     return generation === cached.publicationGeneration ? cached.tools : null;
   }
 
+  async function updateCachedGlobalTools(
+    update: (tools: LCAvailableTools) => LCAvailableTools,
+  ): Promise<void> {
+    await runWithGlobalCacheLock(async () => {
+      const cache = deps.getCache();
+      const current = await cache.get(ToolCacheKeys.GLOBAL);
+      if (!isTools(current)) {
+        return;
+      }
+      const next = update(current);
+      if (next === current) {
+        return;
+      }
+      if (!(await setGlobalWithinLock(cache, next, Time.TWELVE_HOURS))) {
+        throw new Error('Global tool cache rejected the migration write');
+      }
+    });
+  }
+
   async function setCachedToolsWithinGlobalLock(
     tools: LCAvailableTools,
     options: CachedToolsOptions = {},
@@ -670,8 +690,11 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     if (userId && serverName) {
       await withUserQueue(userId, serverName, async () => {
         if (
-          (await cache.set(ToolCacheKeys.MCP_SERVER_LEGACY_FENCE(userId, serverName), true)) ===
-          false
+          (await cache.set(
+            ToolCacheKeys.MCP_SERVER_LEGACY_FENCE(userId, serverName),
+            true,
+            generationTtl,
+          )) === false
         ) {
           throw new Error('Tool cache rejected the legacy migration fence');
         }
@@ -691,6 +714,7 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
 
   return {
     getCachedTools,
+    updateCachedGlobalTools,
     setCachedTools,
     setCachedToolsIfCurrent,
     getMCPToolsCacheGeneration,

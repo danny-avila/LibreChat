@@ -289,14 +289,6 @@ export abstract class UserConnectionManager {
         await this.addPendingOAuthStart(pending.oauth, opts, userId);
         return pending.promise;
       }
-
-      const forcedReplacement = this.forceNewConnectionQueues.get(lockKey);
-      if (forcedReplacement) {
-        logger.debug(
-          `[MCP][User: ${userId}][${serverName}] Waiting for an in-flight forced replacement`,
-        );
-        await forcedReplacement;
-      }
     }
 
     const pendingOAuth = this.createPendingOAuthState(opts.oauthStart);
@@ -315,24 +307,9 @@ export abstract class UserConnectionManager {
         clearCooldown,
         creationGuard,
       );
-    const connectionPromise =
-      forceNew === true && !ephemeralConnection
-        ? this.runWithForceNewConnectionQueue(lockKey, async () => {
-            const pending = this.pendingConnections.get(lockKey);
-            if (pending) {
-              logger.debug(
-                `[MCP][User: ${userId}][${serverName}] Waiting for an in-flight connection before forced replacement`,
-              );
-              await pending.promise.catch((error) => {
-                logger.debug(
-                  `[MCP][User: ${userId}][${serverName}] In-flight connection failed before forced replacement`,
-                  error,
-                );
-              });
-            }
-            return createConnection();
-          })
-        : createConnection();
+    const connectionPromise = !ephemeralConnection
+      ? this.runWithForceNewConnectionQueue(lockKey, createConnection)
+      : createConnection();
 
     if (!forceNewConnection) {
       this.pendingConnections.set(lockKey, {
@@ -635,6 +612,11 @@ export abstract class UserConnectionManager {
       } else if (await connection.isConnected()) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
         await this.updateUserLastActivity(userId);
+        if (creationGuard?.cancelled) {
+          throw new Error(
+            `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
+          );
+        }
         return connection;
       } else {
         logger.warn(

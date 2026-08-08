@@ -1,6 +1,7 @@
 const { createMCPToolCacheService, MCPServersRegistry } = require('@librechat/api');
 const {
   getCachedTools,
+  updateCachedGlobalTools,
   setCachedToolsWithinGlobalLock,
   getCachedAppServerTools,
   setCachedAppServerTools,
@@ -12,6 +13,7 @@ const {
 const { mergeAppTools, cacheMCPServerTools, updateMCPServerTools, getMCPServerTools } =
   createMCPToolCacheService({
     getCachedTools,
+    updateCachedGlobalTools,
     setCachedTools: setCachedToolsWithinGlobalLock,
     setCachedToolsIfCurrent,
     getCachedAppServerTools,
