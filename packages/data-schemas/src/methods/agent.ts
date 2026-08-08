@@ -5,10 +5,12 @@ import {
   ResourceType,
   actionDelimiter,
   isActionTool,
+  AUTH_USER_DOC_BY_ID_PREFIX,
+  CacheKeys,
 } from 'librechat-data-provider';
 import type { FilterQuery, Model, PipelineStage, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
-import type { IAgent, IAclEntry } from '~/types';
+import type { CacheStore, IAgent, IAclEntry } from '~/types';
 import {
   getMCPAuthorityConsistencyModule,
   runMCPAuthorityMutation,
@@ -141,6 +143,8 @@ export interface AgentDeps {
   ) => Promise<Types.ObjectId[]>;
   /** Recognizes skill IDs supplied by an external, non-database registry. */
   isExternalSkillId?: (id: string) => boolean;
+  /** Returns a cache store for auth-user document invalidation. */
+  getCache?: (key: string) => CacheStore | undefined;
 }
 
 /**
@@ -473,6 +477,33 @@ export function createAgentMethods(
 } {
   const { removeAllPermissions, getActions, getSoleOwnedResourceIds, isExternalSkillId } = deps;
   const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
+
+  async function invalidateAuthUserDocCache(userIds: string[]): Promise<void> {
+    if (process.env.AUTH_USER_CACHE_MODE !== 'on' || userIds.length === 0) {
+      return;
+    }
+    const cache = deps.getCache?.(CacheKeys.AUTH_USER_DOC);
+    if (!cache?.get || !cache?.delete) {
+      return;
+    }
+    try {
+      const uniqueUserIds = [...new Set(userIds)];
+      await Promise.all(
+        uniqueUserIds.map(async (userId) => {
+          const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+          const cachedKeys = await cache.get(indexKey);
+          if (Array.isArray(cachedKeys)) {
+            await Promise.all(
+              cachedKeys.map((key) => (typeof key === 'string' ? cache.delete?.(key) : undefined)),
+            );
+          }
+          await cache.delete?.(indexKey);
+        }),
+      );
+    } catch (error) {
+      logger.error('[agentMethods] auth user doc cache invalidation failed:', error);
+    }
+  }
 
   /**
    * Create an agent with the provided data.
@@ -899,7 +930,7 @@ export function createAgentMethods(
   async function deleteAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
     return await runMCPAuthorityMutation(authorityMutationGate, async () => {
       const Agent = mongoose.models.Agent as Model<IAgent>;
-      const User = mongoose.models.User as Model<unknown>;
+      const User = mongoose.models.User as Model<{ _id: Types.ObjectId }>;
       const agent = await Agent.findOneAndDelete(searchParameter);
       if (agent) {
         await Promise.all([
@@ -918,10 +949,16 @@ export function createAgentMethods(
           logger.error('[deleteAgent] Error removing agent from handoff edges', error);
         }
         try {
+          const affectedUsers = await User.find({
+            'favorites.agentId': (agent as unknown as { id: string }).id,
+          })
+            .select('_id')
+            .lean<Array<{ _id: Types.ObjectId }>>();
           await User.updateMany(
             { 'favorites.agentId': (agent as unknown as { id: string }).id },
             { $pull: { favorites: { agentId: (agent as unknown as { id: string }).id } } },
           );
+          await invalidateAuthUserDocCache(affectedUsers.map((user) => user._id.toString()));
         } catch (error) {
           logger.error('[deleteAgent] Error removing agent from user favorites', error);
         }
@@ -941,7 +978,7 @@ export function createAgentMethods(
   async function deleteUserAgents(userId: string): Promise<void> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    const User = mongoose.models.User as Model<unknown>;
+    const User = mongoose.models.User as Model<{ _id: Types.ObjectId }>;
 
     try {
       const userObjectId = new mongoose.Types.ObjectId(userId);
@@ -992,10 +1029,14 @@ export function createAgentMethods(
       }
 
       try {
+        const affectedUsers = await User.find({ 'favorites.agentId': { $in: agentIds } })
+          .select('_id')
+          .lean<Array<{ _id: Types.ObjectId }>>();
         await User.updateMany(
           { 'favorites.agentId': { $in: agentIds } },
           { $pull: { favorites: { agentId: { $in: agentIds } } } },
         );
+        await invalidateAuthUserDocCache(affectedUsers.map((user) => user._id.toString()));
       } catch (error) {
         logger.error('[deleteUserAgents] Error removing agents from user favorites', error);
       }

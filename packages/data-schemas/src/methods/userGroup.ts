@@ -668,18 +668,16 @@ export function createUserGroupMethods(
     const User = mongoose.models.User as Model<IUser>;
     const Group = mongoose.models.Group as Model<IGroup>;
 
-    const options = { new: true, ...(session ? { session } : {}) };
-
-    const user = await User.findById(userId, 'idOnTheSource', options).lean<{
-      idOnTheSource?: string;
-      _id: Types.ObjectId;
-    }>();
-    if (!user) {
-      throw new Error(`User not found: ${userId}`);
-    }
-
-    const userIdOnTheSource = user.idOnTheSource || userId.toString();
-    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+    const result = await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const options = { new: true, ...(session ? { session } : {}) };
+      const user = await User.findById(userId, 'idOnTheSource', options).lean<{
+        idOnTheSource?: string;
+        _id: Types.ObjectId;
+      }>();
+      if (!user) {
+        return null;
+      }
+      const userIdOnTheSource = user.idOnTheSource || userId.toString();
       const updatedGroup = await Group.findByIdAndUpdate(
         groupId,
         { $addToSet: { memberIds: userIdOnTheSource } },
@@ -688,6 +686,10 @@ export function createUserGroupMethods(
       await invalidateMemberGroupsCache([userIdOnTheSource]);
       return { user: user as IUser, group: updatedGroup };
     });
+    if (!result) {
+      throw new Error(`User not found: ${userId}`);
+    }
+    return result;
   }
 
   /**
@@ -709,18 +711,16 @@ export function createUserGroupMethods(
     const User = mongoose.models.User as Model<IUser>;
     const Group = mongoose.models.Group as Model<IGroup>;
 
-    const options = { new: true, ...(session ? { session } : {}) };
-
-    const user = await User.findById(userId, 'idOnTheSource', options).lean<{
-      idOnTheSource?: string;
-      _id: Types.ObjectId;
-    }>();
-    if (!user) {
-      throw new Error(`User not found: ${userId}`);
-    }
-
-    const userIdOnTheSource = user.idOnTheSource || userId.toString();
-    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+    const result = await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const options = { new: true, ...(session ? { session } : {}) };
+      const user = await User.findById(userId, 'idOnTheSource', options).lean<{
+        idOnTheSource?: string;
+        _id: Types.ObjectId;
+      }>();
+      if (!user) {
+        return null;
+      }
+      const userIdOnTheSource = user.idOnTheSource || userId.toString();
       const updatedGroup = await Group.findByIdAndUpdate(
         groupId,
         { $pullAll: { memberIds: [userIdOnTheSource] } },
@@ -729,6 +729,10 @@ export function createUserGroupMethods(
       await invalidateMemberGroupsCache([userIdOnTheSource]);
       return { user: user as IUser, group: updatedGroup };
     });
+    if (!result) {
+      throw new Error(`User not found: ${userId}`);
+    }
+    return result;
   }
 
   /**

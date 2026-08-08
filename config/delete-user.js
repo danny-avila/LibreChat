@@ -4,6 +4,8 @@
 const path = require('path');
 const mongoose = require('mongoose');
 const dataSchemas = require('@librechat/data-schemas');
+const { invalidateCachedAuthUserDoc } = require('@librechat/api');
+const { CacheKeys } = require('librechat-data-provider');
 const {
   Key,
   User,
@@ -32,6 +34,7 @@ const {
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
+const { getLogStores } = require('../api/cache');
 
 async function gracefulExit(code = 0) {
   try {
@@ -114,6 +117,7 @@ async function gracefulExit(code = 0) {
 
     // 7) Finally delete the user document itself
     await User.deleteOne({ _id: uid });
+    await invalidateCachedAuthUserDoc(getLogStores(CacheKeys.AUTH_USER_DOC), { userId: uid });
   });
 
   console.green(`✔ Successfully deleted user ${email} and all associated data.`);

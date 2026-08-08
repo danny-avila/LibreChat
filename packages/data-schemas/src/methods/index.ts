@@ -279,6 +279,7 @@ export function createMethods(
     getActions: actionMethods.getActions,
     getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
     isExternalSkillId: deps.isExternalSkillId,
+    getCache: deps.getCache,
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
   const mcpAuthorityMethods = createMCPAuthorityMethods(mongoose);

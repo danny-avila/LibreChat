@@ -2,6 +2,7 @@ import mongoose, { Types } from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type * as t from '~/types';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { tenantStorage } from '~/config/tenantContext';
 import { createUserGroupMethods } from './userGroup';
 import groupSchema from '~/schema/group';
@@ -238,6 +239,44 @@ describe('userGroup methods', () => {
       await expect(methods.addUserToGroup(new Types.ObjectId(), group._id)).rejects.toThrow(
         /User not found/,
       );
+      await expect(
+        getMCPAuthorityConsistencyModule(mongoose).getMCPAuthorityConsistencyStatus(),
+      ).resolves.toMatchObject({ dirty: false });
+    });
+
+    it('resolves the current external identity after waiting for an authority writer', async () => {
+      const user = await createTestUser({ idOnTheSource: 'identity-before-wait' });
+      const group = await Group.create({
+        name: 'Identity Race Team',
+        source: 'entra',
+        idOnTheSource: 'identity-race-group',
+        memberIds: [],
+      });
+      const authority = getMCPAuthorityConsistencyModule(mongoose);
+      let releaseWriter!: () => void;
+      let writerEntered!: () => void;
+      const writerReady = new Promise<void>((resolve) => {
+        writerEntered = resolve;
+      });
+      const writerRelease = new Promise<void>((resolve) => {
+        releaseWriter = resolve;
+      });
+      const writer = authority.mutateMCPAuthority(async () => {
+        writerEntered();
+        await writerRelease;
+        await User.updateOne({ _id: user._id }, { $set: { idOnTheSource: 'identity-after-wait' } });
+      });
+      await writerReady;
+
+      const pendingMembership = methods.addUserToGroup(user._id, group._id);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      releaseWriter();
+      await writer;
+      await pendingMembership;
+
+      const updatedGroup = await Group.findById(group._id).lean();
+      expect(updatedGroup?.memberIds).toContain('identity-after-wait');
+      expect(updatedGroup?.memberIds).not.toContain('identity-before-wait');
     });
   });
 
@@ -271,6 +310,40 @@ describe('userGroup methods', () => {
 
       const { group: updatedGroup } = await methods.removeUserFromGroup(user._id, group._id);
       expect(updatedGroup!.memberIds).toEqual(['other-user']);
+    });
+
+    it('resolves the current external identity after waiting for an authority writer', async () => {
+      const user = await createTestUser({ idOnTheSource: 'identity-before-wait' });
+      const group = await Group.create({
+        name: 'Identity Removal Race Team',
+        source: 'entra',
+        idOnTheSource: 'identity-removal-race-group',
+        memberIds: ['identity-after-wait'],
+      });
+      const authority = getMCPAuthorityConsistencyModule(mongoose);
+      let releaseWriter!: () => void;
+      let writerEntered!: () => void;
+      const writerReady = new Promise<void>((resolve) => {
+        writerEntered = resolve;
+      });
+      const writerRelease = new Promise<void>((resolve) => {
+        releaseWriter = resolve;
+      });
+      const writer = authority.mutateMCPAuthority(async () => {
+        writerEntered();
+        await writerRelease;
+        await User.updateOne({ _id: user._id }, { $set: { idOnTheSource: 'identity-after-wait' } });
+      });
+      await writerReady;
+
+      const pendingRemoval = methods.removeUserFromGroup(user._id, group._id);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      releaseWriter();
+      await writer;
+      await pendingRemoval;
+
+      const updatedGroup = await Group.findById(group._id).lean();
+      expect(updatedGroup?.memberIds).not.toContain('identity-after-wait');
     });
   });
 

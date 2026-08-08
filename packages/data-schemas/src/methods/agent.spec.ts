@@ -10,6 +10,8 @@ import {
   EToolResources,
   Constants,
   actionDelimiter,
+  AUTH_USER_DOC_BY_ID_PREFIX,
+  CacheKeys,
 } from 'librechat-data-provider';
 import type {
   UpdateWithAggregationPipeline,
@@ -1124,6 +1126,55 @@ describe('Agent Methods', () => {
       expect(
         user2After!.favorites!.some((f: Record<string, unknown>) => f.agentId === agentId),
       ).toBe(false);
+    });
+
+    test('invalidates cached auth-user documents after pruning favorites', async () => {
+      const previousCacheMode = process.env.AUTH_USER_CACHE_MODE;
+      process.env.AUTH_USER_CACHE_MODE = 'on';
+      const agentId = `agent_${uuidv4()}`;
+      const userId = new mongoose.Types.ObjectId();
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId.toString()}`;
+      const cache = {
+        get: jest.fn(async (key: string) =>
+          key === indexKey ? ['cached-auth-user-document'] : undefined,
+        ),
+        set: jest.fn(async () => undefined),
+        delete: jest.fn(async () => undefined),
+      };
+      const cachedMethods = createAgentMethods(mongoose, {
+        removeAllPermissions: async () => undefined,
+        getActions,
+        getSoleOwnedResourceIds: async () => [],
+        getCache: jest.fn((key) => (key === CacheKeys.AUTH_USER_DOC ? cache : undefined)),
+      });
+      await createAgent({
+        id: agentId,
+        name: 'Cached Favorite Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await User.create({
+        _id: userId,
+        name: 'Cached User',
+        email: `cached-${uuidv4()}@example.com`,
+        provider: 'openid',
+        favorites: [{ agentId }],
+      });
+
+      try {
+        await cachedMethods.deleteAgent({ id: agentId });
+      } finally {
+        if (previousCacheMode === undefined) {
+          delete process.env.AUTH_USER_CACHE_MODE;
+        } else {
+          process.env.AUTH_USER_CACHE_MODE = previousCacheMode;
+        }
+      }
+
+      expect(cache.get).toHaveBeenCalledWith(indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('cached-auth-user-document');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
     });
 
     test('should preserve other agents in database when one agent is deleted', async () => {
