@@ -272,7 +272,21 @@ export abstract class UserConnectionManager {
       );
     const connectionPromise =
       forceNew === true && !ephemeralConnection
-        ? this.runWithForceNewConnectionQueue(lockKey, createConnection)
+        ? this.runWithForceNewConnectionQueue(lockKey, async () => {
+            const pending = this.pendingConnections.get(lockKey);
+            if (pending) {
+              logger.debug(
+                `[MCP][User: ${userId}][${serverName}] Waiting for an in-flight connection before forced replacement`,
+              );
+              await pending.promise.catch((error) => {
+                logger.debug(
+                  `[MCP][User: ${userId}][${serverName}] In-flight connection failed before forced replacement`,
+                  error,
+                );
+              });
+            }
+            return createConnection();
+          })
         : createConnection();
 
     if (!forceNewConnection) {
