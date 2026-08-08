@@ -1,7 +1,7 @@
 import React, { memo, useMemo, useState, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { Mic, Check, Square, ChevronDown } from 'lucide-react';
-import { IconButton, TooltipAnchor, SendIcon } from '@librechat/client';
+import { Mic, Plus, Check, Square, ChevronDown } from 'lucide-react';
+import { MCPIcon, IconButton, TooltipAnchor, SendIcon } from '@librechat/client';
 import type { TConversation, EModelEndpoint, EndpointFileConfig } from 'librechat-data-provider';
 import type { PaletteEntry, PaletteMode } from '~/hooks/Input/usePaletteEntries';
 import type { Dictation } from '~/hooks/Input/useDictation';
@@ -23,6 +23,7 @@ const EMPTY_ENTRIES: PaletteEntry[] = [];
 
 /** Matches the rows' `gap-1.5`, which the split arithmetic has to account for. */
 const CHIP_GAP = 6;
+const PINNED_MCP_KEY = 'mcp:pinned';
 
 /**
  * Whether every chip fits on the button row beside the `+` and the controls.
@@ -61,6 +62,38 @@ export function chipsFitInline<T extends { key: string }>(
 
 export function formatElapsed(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/** Projects palette state into the persistent quick controls in one pass. */
+export function projectBarEntries(
+  entries: PaletteEntry[],
+  pinnedMcpEntry?: PaletteEntry,
+): PaletteEntry[] {
+  const projected: PaletteEntry[] = [];
+  const mcpModes: PaletteMode[] = [];
+
+  for (const entry of entries) {
+    if (entry.section === 'skill') {
+      continue;
+    }
+    if (entry.section === 'mcp') {
+      mcpModes.push({
+        id: entry.itemId,
+        label: entry.label,
+        active: entry.active,
+        onSelect: entry.onSelect,
+      });
+    }
+    if (entry.active || entry.pinned) {
+      projected.push(entry);
+    }
+  }
+
+  if (pinnedMcpEntry != null && mcpModes.length > 0) {
+    projected.push({ ...pinnedMcpEntry, modes: mcpModes });
+  }
+
+  return projected;
 }
 
 interface RoundButtonProps {
@@ -105,9 +138,10 @@ function RoundButton({
  */
 interface ChipModesProps {
   modes: PaletteMode[];
+  menuLabel?: string;
 }
 
-function ChipModes({ modes }: ChipModesProps) {
+function ChipModes({ modes, menuLabel }: ChipModesProps) {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
   const active = modes.find((mode) => mode.active);
@@ -118,7 +152,7 @@ function ChipModes({ modes }: ChipModesProps) {
         aria-label={
           active != null
             ? localize('com_ui_mode_value', { 0: active.label })
-            : localize('com_ui_mode')
+            : (menuLabel ?? localize('com_ui_mode'))
         }
         onClick={(e) => e.stopPropagation()}
         className="-mr-0.5 flex shrink-0 items-center gap-0.5 rounded px-1 text-xs text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
@@ -188,8 +222,7 @@ interface BarProps {
 /**
  * The composer's action bar. The palette and the chips for whatever tools are
  * currently on sit left; model/effort, context, speech and send sit right.
- * Inactive tools never appear here, which is what removes the old row's
- * overflow as a class of bug.
+ * Inactive tools appear only when pinned as persistent quick controls.
  */
 function Bar({
   index,
@@ -234,16 +267,36 @@ function Bar({
   const mcpConfigProps = context?.mcpServerManager?.getConfigDialogProps();
   const entries = showTools ? allEntries : EMPTY_ENTRIES;
 
-  /* Skills are excluded: a picked skill is staged context for the next turn, so
-     it belongs in the tray above the textarea with the files and quotes, not in
-     the row of things that stay switched on across turns. */
-  const activeEntries = useMemo(
-    () => entries.filter((entry) => entry.active && entry.section !== 'skill'),
-    [entries],
+  const manager = context?.mcpServerManager;
+  const pinnedMcpEntry = useMemo<PaletteEntry | undefined>(() => {
+    if (manager?.isPinned !== true) {
+      return undefined;
+    }
+    const { placeholderText, setIsPinned } = manager;
+    return {
+      key: PINNED_MCP_KEY,
+      itemType: 'mcp',
+      itemId: 'mcp',
+      label: placeholderText || localize('com_ui_mcp_servers'),
+      icon: <MCPIcon className="h-4 w-4" aria-hidden="true" />,
+      section: 'mcp',
+      active: true,
+      pinned: true,
+      onSelect: () => setIsPinned(false),
+    };
+  }, [manager, localize]);
+
+  /* Catalog skills are excluded: a picked skill is staged context for the next
+     turn, so it belongs in the tray above the textarea with files and quotes.
+     Built-in tool pins remain visible while off. The legacy aggregate MCP pin
+     remains one server menu alongside any selected server chips. */
+  const barEntries = useMemo(
+    () => projectBarEntries(entries, pinnedMcpEntry),
+    [entries, pinnedMcpEntry],
   );
   /* Catalog order puts long skill and MCP names mid-row, stranding the rest of
      that row; packing widest-first fills the rows instead. */
-  const { ordered: packedEntries, rootRef, widths } = useChipPacking(activeEntries);
+  const { ordered: packedEntries, rootRef, widths } = useChipPacking(barEntries);
 
   const { ref: rowRef, width: rowWidth } = useElementSize<HTMLDivElement>();
   const { ref: plusRef, width: plusWidth } = useElementSize<HTMLSpanElement>();
@@ -289,17 +342,45 @@ function Bar({
   );
   const barClass = cn('@container flex flex-col gap-1.5 px-2 pb-2');
 
-  const renderChip = (entry: PaletteEntry) => (
-    <Chip
-      key={entry.key}
-      label={entry.label}
-      icon={entry.icon}
-      trailing={entry.modes != null ? <ChipModes modes={entry.modes} /> : undefined}
-      onRemove={entry.onSelect}
-      removeLabel={localize('com_ui_remove_var', { 0: entry.label })}
-      data-testid={`composer-active-${entry.itemType}`}
-    />
-  );
+  const renderChip = (entry: PaletteEntry) => {
+    const pinnedInactive = entry.pinned && !entry.active;
+    const isPinnedMcp = entry.key === PINNED_MCP_KEY;
+    const modeMenu =
+      entry.modes != null ? (
+        <ChipModes modes={entry.modes} menuLabel={isPinnedMcp ? entry.label : undefined} />
+      ) : null;
+    const activate = pinnedInactive ? (
+      <IconButton
+        label={localize('com_ui_select_var', { 0: entry.label })}
+        size="xs"
+        className="-mr-1 text-current hover:bg-surface-hover/50"
+        onClick={entry.onSelect}
+      >
+        <Plus className="size-3" aria-hidden="true" />
+      </IconButton>
+    ) : null;
+
+    return (
+      <Chip
+        key={entry.key}
+        label={entry.label}
+        icon={entry.icon}
+        trailing={
+          modeMenu != null || activate != null ? (
+            <span className="flex items-center gap-0.5">
+              {modeMenu}
+              {activate}
+            </span>
+          ) : undefined
+        }
+        onRemove={pinnedInactive ? undefined : entry.onSelect}
+        removeLabel={
+          isPinnedMcp ? localize('com_ui_unpin') : localize('com_ui_remove_var', { 0: entry.label })
+        }
+        data-testid={`composer-active-${entry.itemType}`}
+      />
+    );
+  };
 
   return (
     <div ref={rootRef} className={barClass}>
@@ -440,7 +521,10 @@ function Bar({
                  how a take that has already been committed gets spent. Cancel,
                  on the `+`, stays live: an external transcription in flight can
                  still be thrown away. */
-              disabled={(speechDisabled && !dictating) || dictation.transcribing}
+              disabled={
+                dictation.transcribing ||
+                (!dictating && (speechDisabled || dictation.startDisabled))
+              }
             >
               {dictating ? (
                 <Square className="size-4 fill-current" aria-hidden="true" />

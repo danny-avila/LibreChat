@@ -51,8 +51,9 @@ jest.mock('~/data-provider', () => ({
   }),
 }));
 
-const toggle = (state: unknown): ToggleFixture => ({
+const toggle = (state: unknown, isPinned = false): ToggleFixture => ({
   toggleState: state,
+  isPinned,
   debouncedChange: jest.fn(),
 });
 
@@ -63,6 +64,7 @@ interface ServerFixture {
 
 interface ToggleFixture {
   toggleState: unknown;
+  isPinned: boolean;
   debouncedChange: jest.Mock;
 }
 
@@ -153,6 +155,14 @@ describe('usePaletteEntries', () => {
       'mcp:github',
       'mcp:spotify',
     ]);
+  });
+
+  it('exposes an inactive built-in tool that is pinned to the prompt bar', () => {
+    mockContext = { ...fullContext(), codeInterpreter: toggle(false, true) };
+
+    expect(entries().result.current.find((item) => item.key === 'builtin:execute_code')).toEqual(
+      expect.objectContaining({ active: false, pinned: true }),
+    );
   });
 
   describe('the two gates on every tool', () => {

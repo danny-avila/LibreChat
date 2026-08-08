@@ -58,6 +58,8 @@ export interface PaletteEntry {
   icon: React.ReactNode;
   section: PaletteSection;
   active: boolean;
+  /** Keeps an inactive built-in available as a prompt-bar quick control. */
+  pinned: boolean;
   onSelect: () => void;
   /** Refinements of this tool, rendered as inline pills on the row while it is
    *  on. Not separately favouritable: they only exist within the parent. */
@@ -226,6 +228,7 @@ export default function usePaletteEntries({
       label: string,
       icon: React.ReactNode,
       active: boolean,
+      pinned: boolean,
       onSelect: () => void,
       modes?: PaletteMode[],
     ) => {
@@ -237,6 +240,7 @@ export default function usePaletteEntries({
         icon,
         section: 'tool',
         active,
+        pinned,
         onSelect,
         modes,
       });
@@ -256,6 +260,7 @@ export default function usePaletteEntries({
         localize('com_ui_web_search'),
         <Globe className="icon-md" aria-hidden="true" />,
         webSearch.toggleState === true,
+        webSearch.isPinned === true,
         () => webSearch.debouncedChange({ value: !webSearch.toggleState }),
         searchConfigurable && searchApiKeyForm != null
           ? [
@@ -277,6 +282,7 @@ export default function usePaletteEntries({
         localize('com_ui_run_code'),
         <SquareChevronRight className="icon-md" aria-hidden="true" />,
         codeInterpreter.toggleState === true,
+        codeInterpreter.isPinned === true,
         () => codeInterpreter.debouncedChange({ value: !codeInterpreter.toggleState }),
       );
     }
@@ -287,6 +293,7 @@ export default function usePaletteEntries({
         localize('com_assistants_file_search'),
         <FolderSearch className="icon-md" aria-hidden="true" />,
         fileSearch.toggleState === true,
+        fileSearch.isPinned === true,
         () => fileSearch.debouncedChange({ value: !fileSearch.toggleState }),
       );
     }
@@ -297,6 +304,7 @@ export default function usePaletteEntries({
         localize('com_ui_skills'),
         <WandSparkles className="icon-md" aria-hidden="true" />,
         skills.toggleState === true,
+        skills.isPinned === true,
         () => skills.debouncedChange({ value: !skills.toggleState }),
       );
     }
@@ -307,6 +315,7 @@ export default function usePaletteEntries({
         localize('com_ui_memory'),
         <Brain className="icon-md" aria-hidden="true" />,
         memory.toggleState === true,
+        memory.isPinned === true,
         () => memory.debouncedChange({ value: !memory.toggleState }),
       );
     }
@@ -335,6 +344,7 @@ export default function usePaletteEntries({
         localize('com_ui_artifacts'),
         <Layers className="icon-md" aria-hidden="true" />,
         artifactsOn,
+        artifacts.isPinned === true,
         () => artifacts.debouncedChange({ value: artifactsOn ? '' : ArtifactModes.DEFAULT }),
         artifactsOn
           ? [
@@ -372,6 +382,7 @@ export default function usePaletteEntries({
           icon: <WandSparkles className="icon-md" aria-hidden="true" />,
           section: 'skill',
           active: staged.has(skill.name),
+          pinned: false,
           onSelect: () => toggleSkill(skill.name),
         });
       }
@@ -391,6 +402,7 @@ export default function usePaletteEntries({
           icon: <WandSparkles className="icon-md" aria-hidden="true" />,
           section: 'skill',
           active: true,
+          pinned: false,
           onSelect: () => toggleSkill(name),
         });
       }
@@ -462,6 +474,7 @@ export default function usePaletteEntries({
             ),
           section: 'mcp',
           active: selected.has(server.serverName),
+          pinned: false,
           onSelect: selectServer,
         });
       }

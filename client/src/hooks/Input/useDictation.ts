@@ -21,6 +21,8 @@ type StopMode = 'compose' | 'send' | 'cancel';
 export interface Dictation {
   active: boolean;
   transcribing: boolean;
+  /** The composer is free, but a discarded external request still owns STT. */
+  startDisabled: boolean;
   elapsed: number;
   start: () => void;
   /** Drop the take and restore whatever draft was there before. */
@@ -221,14 +223,23 @@ export default function useDictation({
     submit(getValues('text') || '');
   }, [pendingSend, active, isLoading, settling, submit, getValues]);
 
+  /* A discarded request can remain in React Query's loading state until the
+     network settles. It no longer owns the composer once cancel is pressed. */
+  const [discarded, setDiscarded] = useState(false);
+
   const start = useCallback(() => {
+    if (isLoading === true) {
+      /* Do not re-arm the canceled take before its late callback arrives. */
+      return;
+    }
     modeRef.current = 'compose';
     spentRef.current = false;
     heardRef.current = false;
+    setDiscarded(false);
     setPendingSend(false);
     existingTextRef.current = getValues('text') || '';
     startRecording();
-  }, [getValues, startRecording]);
+  }, [getValues, isLoading, startRecording]);
 
   /* Only a running take can be stopped. The bar disables these controls once a
      transcription is in flight, and this is the same rule stated where the mode
@@ -258,6 +269,7 @@ export default function useDictation({
   const cancel = useCallback(() => {
     modeRef.current = 'cancel';
     spentRef.current = true;
+    setDiscarded(true);
     setSettling(false);
     setPendingSend(false);
     abortRecording();
@@ -272,13 +284,14 @@ export default function useDictation({
   return useMemo(
     () => ({
       active,
-      transcribing: isLoading === true || settling,
+      transcribing: !discarded && (isLoading === true || settling),
+      startDisabled: isLoading === true,
       elapsed,
       start,
       cancel,
       stopToComposer,
       stopAndSend,
     }),
-    [active, isLoading, settling, elapsed, start, cancel, stopToComposer, stopAndSend],
+    [active, discarded, isLoading, settling, elapsed, start, cancel, stopToComposer, stopAndSend],
   );
 }
