@@ -38,7 +38,7 @@ const {
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
 } = require('@librechat/api');
-const { connectDb, indexSync, startSearchSync } = require('~/db');
+const { connectDb, indexSync } = require('~/db');
 const {
   updateAccessPermissions,
   sweepOrphanedPreviews,
@@ -130,14 +130,13 @@ const startServer = async () => {
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
   });
-  /* Serving and projecting are independent: a pod that loses the projector
-   * election still answers every search, so the reader is installed here rather
-   * than behind the lease. */
-  initializeChatSearch();
-  registerShutdownTask('chat search', () => shutdownChatSearch());
-  startSearchSync().catch((err) => {
-    logger.error('[searchSync] Failed to start the chat-search projector:', err);
+  /* Schema, reader and projector, in that order, from the one composition root
+   * both entry points share. Serving and projecting are independent: a pod that
+   * loses the projector election still answers every search. */
+  initializeChatSearch().catch((err) => {
+    logger.error('[chatSearch] Failed to install chat search:', err);
   });
+  registerShutdownTask('chat search', () => shutdownChatSearch());
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);

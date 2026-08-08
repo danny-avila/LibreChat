@@ -82,9 +82,9 @@ export type DrainOutcome = Readonly<{
   failed: number;
 }>;
 
-type EventQueue = {
+export type EventQueue = {
   readSearchEvents(limit: number): Promise<readonly DrainedSearchEvent[]>;
-  deleteSearchEvents(ids: readonly unknown[]): Promise<void>;
+  deleteSearchEvents(ids: readonly DrainedSearchEvent['_id'][]): Promise<void>;
   dedupeSearchEvents(events: readonly DrainedSearchEvent[]): readonly DrainedSearchEvent[];
 };
 

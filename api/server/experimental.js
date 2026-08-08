@@ -297,10 +297,14 @@ if (cluster.isMaster) {
       logger.error(`[Worker ${process.pid}][indexSync] Background sync failed:`, err);
     });
 
-    /* This entry mounts the same search routes, so it needs the same backend
-     * installed; every worker serves, and projection stays wherever its lease
-     * is held. */
-    initializeChatSearch();
+    /* Same composition root as `server/index.js`: this entry mounts the same
+     * routes, so it needs the same stack. Every worker serves; exactly one wins
+     * the projector lease and the rest stand by for it. The lease rides a
+     * session-scoped advisory lock, so a worker the master terminates releases
+     * it without a shutdown hook of its own. */
+    initializeChatSearch().catch((err) => {
+      logger.error(`[Worker ${process.pid}][chatSearch] Failed to install chat search:`, err);
+    });
 
     app.disable('x-powered-by');
     app.set('trust proxy', trusted_proxy);

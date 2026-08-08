@@ -9,6 +9,5 @@ const { connectDb } = require('./connect');
 createModels(mongoose);
 
 const indexSync = require('./indexSync');
-const { startSearchSync, stopSearchSync } = require('./searchSync');
 
-module.exports = { connectDb, indexSync, startSearchSync, stopSearchSync };
+module.exports = { connectDb, indexSync };

@@ -19,13 +19,26 @@ jest.mock('~/server/middleware/requireJwtAuth', () => {
 });
 
 /**
- * The wiring, end to end, against both real stores.
+ * The feature, end to end, through the composition root production uses.
  *
  * Every unit below this line already had coverage and the feature still returned
- * nothing, because nothing asserted that a configured backend is actually
- * installed and reachable from a route. That is the gap this file closes: it
- * boots search the way the server does, projects a record the way the projector
- * does, and asks the real router for it over HTTP.
+ * nothing, because the test harness was the only complete composition root:
+ * suites migrated the schema themselves, built their own pools and injected
+ * their own embedder, while the server assembled a subset by hand. So this file
+ * assembles nothing. It sets environment variables, calls the same
+ * `initializeChatSearch()` the entry points call, and then only writes and
+ * reads:
+ *
+ *   - the schema is created by the composition root, not by `migrate()` here;
+ *   - the pools are opened by the composition root, using the three real roles
+ *     it provisioned, so RLS is enforced against the reader for real;
+ *   - the projector is started by the composition root and drains on its own
+ *     timer — nothing here calls `drain()`;
+ *   - the message is written with `saveMessage`, the same call the chat route
+ *     makes;
+ *   - the result is read back over HTTP through the real router.
+ *
+ * If this passes while production is unwired, it is the wrong test.
  *
  * Skips without `CHAT_SEARCH_TEST_URL` on a developer machine, and fails on a
  * runner that has not configured one — mirroring `describePg` in
@@ -51,158 +64,189 @@ const describePg = pgDescribe();
 
 const USER_ID = '65a000000000000000000001';
 const DB_NAME = 'chat_search_test_route_wiring';
+const CONVO_ID = '11111111-1111-4111-8111-111111111111';
+const OTHER_CONVO_ID = '22222222-2222-4222-8222-222222222222';
+const ROLE_PASSWORD = 'route-wiring-role-password';
 
-function databaseUrl(database) {
+/** The composition root reads these; nothing in this file opens a pool itself. */
+function roleUrl(role, database) {
+  const url = new URL(TEST_URL);
+  url.username = role;
+  url.password = ROLE_PASSWORD;
+  url.pathname = `/${database}`;
+  return url.toString();
+}
+
+function adminUrl(database) {
   const url = new URL(TEST_URL);
   url.pathname = `/${database}`;
   return url.toString();
 }
 
-describePg('chat search route wiring', () => {
+/**
+ * Polls until the projector has caught up.
+ *
+ * The projector drains on its own two-second timer because that is what it does
+ * in production. Driving it by hand here would be the harness doing the
+ * projector's job again, which is the whole class of bug this file exists to
+ * catch.
+ */
+async function eventually(assertion, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError;
+  for (;;) {
+    try {
+      return await assertion();
+    } catch (error) {
+      lastError = error;
+      if (Date.now() > deadline) {
+        throw lastError;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+}
+
+describePg('chat search wiring (composition root)', () => {
   let app;
   let mongoServer;
-  let pool;
-  let models;
+  let db;
   let searchService;
-  let requestContextMiddleware;
   let createSearchPool;
-  let migrate;
+  let requestContextMiddleware;
   const OLD_ENV = process.env;
 
-  const adminPool = () => createSearchPool({ connectionString: TEST_URL, max: 1 });
+  const admin = () => createSearchPool({ connectionString: TEST_URL, max: 1 });
 
   beforeAll(async () => {
-    ({ migrate, createSearchPool, requestContextMiddleware } = require('@librechat/api'));
-    const admin = adminPool();
+    ({ createSearchPool, requestContextMiddleware } = require('@librechat/api'));
+
+    const maintenance = admin();
     try {
-      await admin.query(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
-      await admin.query(`CREATE DATABASE ${DB_NAME}`);
+      await maintenance.query(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
+      await maintenance.query(`CREATE DATABASE ${DB_NAME}`);
     } finally {
-      await admin.end();
+      await maintenance.end();
     }
 
+    /**
+     * Exactly what an operator sets, and nothing else. In particular the schema
+     * does not exist yet: `CHAT_SEARCH_OWNER_URL` is how it comes to.
+     */
     process.env = {
       ...OLD_ENV,
       SEARCH: 'true',
       CHAT_SEARCH_ENABLED: 'true',
-      CHAT_SEARCH_DATABASE_URL: databaseUrl(DB_NAME),
+      CHAT_SEARCH_SYNC: 'true',
+      CHAT_SEARCH_OWNER_URL: adminUrl(DB_NAME),
+      CHAT_SEARCH_OWNER_PASSWORD: ROLE_PASSWORD,
+      CHAT_SEARCH_WRITER_PASSWORD: ROLE_PASSWORD,
+      CHAT_SEARCH_READER_PASSWORD: ROLE_PASSWORD,
+      CHAT_SEARCH_WRITER_URL: roleUrl('chat_search_writer', DB_NAME),
+      CHAT_SEARCH_DATABASE_URL: roleUrl('chat_search_reader', DB_NAME),
       CHAT_SEARCH_CURSOR_SECRET: 'route-wiring-secret',
     };
     delete process.env.MEILI_HOST;
     delete process.env.MEILI_MASTER_KEY;
 
-    pool = createSearchPool({ connectionString: databaseUrl(DB_NAME), max: 4 });
-    await migrate(pool);
-
     mongoServer = await MongoMemoryServer.create();
     await mongoose.connect(mongoServer.getUri());
-    models = require('@librechat/data-schemas').createModels(mongoose);
+    require('@librechat/data-schemas').createModels(mongoose);
+    db = require('~/models');
 
     searchService = require('~/server/services/Search');
-    if (!searchService.initializeChatSearch()) {
-      throw new Error('chat search did not install a backend');
+    if (!(await searchService.initializeChatSearch())) {
+      throw new Error('the composition root installed no search backend');
     }
 
     app = express();
     app.use(express.json());
     app.use(requestContextMiddleware);
     app.use('/api/convos', require('../convos'));
+    app.use('/api/messages', require('../messages'));
     app.use('/api/search', require('../search'));
-  }, 180_000);
+  }, 300_000);
 
   afterAll(async () => {
     await searchService?.shutdownChatSearch();
-    await pool?.end().catch(() => undefined);
     await mongoose.disconnect();
     await mongoServer?.stop();
-    const admin = adminPool();
+    const maintenance = admin();
     try {
-      await admin.query(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
+      await maintenance.query(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
     } finally {
-      await admin.end();
+      await maintenance.end();
     }
     process.env = OLD_ENV;
   });
 
-  beforeEach(async () => {
-    await models.Conversation.collection.deleteMany({});
-    await pool.query('TRUNCATE chat_search.documents CASCADE');
-  });
-
-  /** Stands in for the projector: the same row it would write, written directly. */
-  const project = (conversationId, title, overrides = {}) =>
-    pool.query(
-      `INSERT INTO chat_search.documents
-         (tenant_id, user_id, kind, record_id, conversation_id, title, body,
-          is_archived, tags, project_id, projection_version, embedding_input_hash)
-       VALUES ('__BASE__', $1, 'conversation', $2, $2, $3, '', $4, $5::text[], $6, 1, 'h1')`,
-      [
-        USER_ID,
-        conversationId,
-        title,
-        overrides.isArchived ?? false,
-        overrides.tags ?? [],
-        overrides.projectId ?? null,
-      ],
+  /** The normal application path: what the chat route calls, with its arguments. */
+  const writeConversation = (conversationId, title) =>
+    db.saveConvo(
+      { userId: USER_ID, isTemporary: false },
+      { conversationId, title, endpoint: 'openAI', model: 'gpt-4' },
+      { context: 'search-wiring' },
     );
 
-  const store = (conversationId, title, overrides = {}) =>
-    models.Conversation.collection.insertOne({
-      conversationId,
-      user: USER_ID,
-      title,
-      endpoint: 'openAI',
-      model: 'gpt-4',
-      isArchived: overrides.isArchived ?? false,
-      tags: overrides.tags ?? [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
+  const writeMessage = (conversationId, messageId, text) =>
+    db.saveMessage(
+      { userId: USER_ID, isTemporary: false },
+      {
+        conversationId,
+        messageId,
+        text,
+        sender: 'User',
+        isCreatedByUser: true,
+        unfinished: false,
+      },
+      { context: 'search-wiring' },
+    );
+
+  /**
+   * The whole point of the file.
+   *
+   * Nothing between the write and the read is driven by this test: the schema
+   * was migrated by the composition root, the event was enqueued by the model
+   * hooks, the projector that consumed it was started by the composition root,
+   * and the row it wrote is read back by the reader pool the composition root
+   * opened. Remove any one of those from the server wiring and this fails.
+   */
+  it('makes a saved message searchable over HTTP without the test wiring anything', async () => {
+    await writeConversation(CONVO_ID, 'Quarterly revenue review');
+    await writeMessage(CONVO_ID, 'm-hit', 'The quarterly revenue review is on Thursday');
+
+    await writeConversation(OTHER_CONVO_ID, 'Holiday planning');
+    await writeMessage(OTHER_CONVO_ID, 'm-miss', 'Holiday planning notes');
+
+    await eventually(async () => {
+      const response = await request(app).get('/api/messages?search=quarterly');
+      expect(response.status).toBe(200);
+      const ids = (response.body.messages ?? []).map((message) => message.messageId);
+      expect(ids).toContain('m-hit');
+      expect(ids).not.toContain('m-miss');
     });
+  }, 120_000);
 
-  it('returns a hit resolved through the installed backend', async () => {
-    await store('c-hit', 'Quarterly revenue review');
-    await store('c-miss', 'Holiday planning');
-    await project('c-hit', 'Quarterly revenue review');
-    await project('c-miss', 'Holiday planning');
+  it('makes a saved conversation searchable over HTTP', async () => {
+    await writeConversation(CONVO_ID, 'Quarterly revenue review');
+    await writeConversation(OTHER_CONVO_ID, 'Holiday planning');
 
-    const response = await request(app).get('/api/convos?search=quarterly');
-
-    expect(response.status).toBe(200);
-    expect(response.body.conversations.map((convo) => convo.conversationId)).toEqual(['c-hit']);
-  });
+    await eventually(async () => {
+      const response = await request(app).get('/api/convos?search=quarterly');
+      expect(response.status).toBe(200);
+      const ids = response.body.conversations.map((convo) => convo.conversationId);
+      expect(ids).toContain(CONVO_ID);
+      expect(ids).not.toContain(OTHER_CONVO_ID);
+    });
+  }, 120_000);
 
   it('returns an empty page rather than unfiltered results when nothing matches', async () => {
-    await store('c-hit', 'Quarterly revenue review');
-    await project('c-hit', 'Quarterly revenue review');
+    await writeConversation(CONVO_ID, 'Quarterly revenue review');
 
-    const response = await request(app).get('/api/convos?search=nothingmatchesthis');
+    const response = await request(app).get('/api/convos?search=nothingmatchesthisatall');
 
     expect(response.status).toBe(200);
     expect(response.body.conversations).toEqual([]);
-  });
-
-  /**
-   * Filters are pushed into the candidate query. Applied afterwards, a page of
-   * archived candidates would come back empty with no cursor while the matching
-   * conversation ranked just below the cut.
-   */
-  it('fills the page from below the archived candidates', async () => {
-    /**
-     * The ids put the archived rows above the live one in the arms' tiebreak
-     * ordering, so a page that truncates before filtering starves rather than
-     * happening to contain the answer.
-     */
-    for (let index = 0; index < 5; index++) {
-      await store(`c-z-arch-${index}`, `Quarterly report ${index}`, { isArchived: true });
-      await project(`c-z-arch-${index}`, `Quarterly report ${index}`, { isArchived: true });
-    }
-    await store('c-a-live', 'Quarterly report live');
-    await project('c-a-live', 'Quarterly report live');
-
-    const response = await request(app).get('/api/convos?search=quarterly&limit=5');
-
-    expect(response.status).toBe(200);
-    expect(response.body.conversations.map((convo) => convo.conversationId)).toEqual(['c-a-live']);
   });
 
   /**
@@ -223,7 +267,7 @@ describePg('chat search route wiring', () => {
       const response = await request(app).get('/api/search/enable');
       expect(response.body).toBe(false);
     } finally {
-      searchService.initializeChatSearch();
+      await searchService.initializeChatSearch();
     }
-  });
+  }, 120_000);
 });

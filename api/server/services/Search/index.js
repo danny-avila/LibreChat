@@ -1,41 +1,37 @@
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { createChatSearch } = require('@librechat/api');
+const { startChatSearch } = require('@librechat/api');
 const { setChatSearch, getChatSearch } = require('./candidates');
 
-let runtime = null;
+let stack = null;
 
 /**
- * Installs the search backend the routes resolve candidates through.
+ * Installs chat search: schema, reader backend, projector.
  *
- * Called once at boot. Returns whether a backend was installed: a deployment
- * that has configured neither PostgreSQL chat search nor Meilisearch simply has
- * no search, which the capability probe then reports so the client hides the UI
- * rather than offering a box that always comes back empty.
+ * The thin half of the composition root — every decision and every ordering
+ * constraint lives in `startChatSearch`, so both server entry points get an
+ * identical stack from one call and neither is able to assemble a partial one.
  *
- * @returns {boolean} whether a search backend is now serving.
+ * @returns {Promise<boolean>} whether a search backend is now serving.
  */
-function initializeChatSearch() {
+async function initializeChatSearch() {
   try {
-    runtime = createChatSearch({ mongoose });
+    stack = await startChatSearch({ mongoose });
   } catch (error) {
     /** A misconfigured backend must not take the server down with it. */
     logger.error('[chatSearch] failed to initialize; search will be unavailable', error);
-    runtime = null;
+    stack = null;
   }
 
-  setChatSearch(runtime?.chatSearch ?? null);
-  if (!runtime) {
-    logger.info('[chatSearch] no search backend is configured');
-  }
-  return runtime != null;
+  setChatSearch(stack?.chatSearch ?? null);
+  return stack?.chatSearch != null;
 }
 
 async function shutdownChatSearch() {
-  const current = runtime;
-  runtime = null;
+  const current = stack;
+  stack = null;
   setChatSearch(null);
-  await current?.close();
+  await current?.stop();
 }
 
 /**
