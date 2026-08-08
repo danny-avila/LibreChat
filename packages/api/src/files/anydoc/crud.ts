@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { excelFileTypes, FileSources } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
 import { assertSafeZipSizeIfArchive } from '../documents/zipSafety';
+import { extractMarkdownIsolated } from './native';
 
 /**
  * MIME types the local AnyDoc path declares support for.
@@ -41,6 +42,30 @@ const foldedMimeTypes: ReadonlySet<string> = new Set<string>(
   [...anydocMimeTypes].map((type) => type.toLowerCase()),
 );
 
+const ANYDOC_EXTENSION_FORMATS: Readonly<Record<string, string>> = {
+  doc: 'doc',
+  docx: 'docx',
+  docm: 'docx',
+  odt: 'odt',
+  rtf: 'rtf',
+  epub: 'epub',
+  ppt: 'ppt',
+  pps: 'ppt',
+  pot: 'ppt',
+  pptx: 'pptx',
+  pptm: 'pptx',
+  ppsx: 'pptx',
+  ppsm: 'pptx',
+  odp: 'odp',
+  xls: 'xlsx',
+  xlsx: 'xlsx',
+  xlsm: 'xlsx',
+  xlsb: 'xlsx',
+  ods: 'ods',
+  csv: 'csv',
+  pdf: 'pdf',
+};
+
 /** Strips any `; charset=` parameter and folds case, so lookups match the table. */
 function normalizeType(mimetype?: string): string {
   return (mimetype ?? '').split(';')[0].trim().toLowerCase();
@@ -48,6 +73,12 @@ function normalizeType(mimetype?: string): string {
 
 function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Pure extension mapping, so loading AnyDoc's native binding stays inside the child. */
+function formatFromPath(name: string): string | null {
+  const extension = name.split(/[\\/]/).pop()?.split('.').pop()?.toLowerCase();
+  return extension ? (ANYDOC_EXTENSION_FORMATS[extension] ?? null) : null;
 }
 
 /**
@@ -106,16 +137,14 @@ export async function parseWithAnydoc(
   const name = file.originalname ?? file.path;
   const type = normalizeType(file.mimetype);
 
-  const { toMarkdownBytes, formatFromPath } = await import('@firecrawl/anydoc');
   const format = formatFromPath(name);
   assertSupportedType(name, type, format);
 
-  const buffer = await fs.promises.readFile(file.path);
-  await assertSafeZipSizeIfArchive(buffer, { name });
+  await assertSafeZipSizeIfArchive(await fs.promises.readFile(file.path), { name });
 
   let markdown: string;
   try {
-    markdown = await toMarkdownBytes(new Uint8Array(buffer), format);
+    markdown = await extractMarkdownIsolated(file.path, format);
   } catch (error) {
     const message = toMessage(error);
     throw new Error(`anydoc failed to extract text from "${name}": ${message}`);

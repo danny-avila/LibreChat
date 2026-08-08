@@ -51,4 +51,27 @@ describe('pdfInspector child isolation', () => {
     expect(await failure).toEqual(new Error('pdf-inspector text timed out after 30000ms'));
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
   });
+
+  test('limits native parser children across a concurrent burst', async () => {
+    const children = [new TestChild(), new TestChild(), new TestChild()];
+    children.forEach((child) => mockSpawn.mockReturnValueOnce(child));
+
+    const extractions = [
+      extractTextIsolated('/tmp/one.pdf'),
+      extractTextIsolated('/tmp/two.pdf'),
+      extractTextIsolated('/tmp/three.pdf'),
+    ];
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+
+    children[0].emit('message', { ok: true, result: { text: 'one' } });
+    await expect(extractions[0]).resolves.toBe('one');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockSpawn).toHaveBeenCalledTimes(3);
+
+    children[1].emit('message', { ok: true, result: { text: 'two' } });
+    children[2].emit('message', { ok: true, result: { text: 'three' } });
+    await expect(Promise.all(extractions.slice(1))).resolves.toEqual(['two', 'three']);
+  });
 });

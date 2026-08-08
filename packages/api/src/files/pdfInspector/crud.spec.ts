@@ -217,9 +217,11 @@ describe('pdf-inspector local parser', () => {
 
         const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
 
-        await expect(uploadIsolated(context(pdfFile('sample.pdf')))).rejects.toThrow(
-          'PDF contains 4000 pages, exceeding the 250-page fallback limit',
-        );
+        await expect(uploadIsolated(context(pdfFile('sample.pdf')))).rejects.toMatchObject({
+          name: 'PdfPageLimitError',
+          code: 'PDF_PAGE_LIMIT',
+          message: 'PDF contains 4000 pages, exceeding the 250-page fallback limit',
+        });
         expect(mockPdfjs.requestedPages).toHaveLength(0);
         expect(mockPdfjs.destroy).toHaveBeenCalled();
       });

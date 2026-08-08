@@ -34,6 +34,7 @@ const fileSnapshotSchema = new Schema<SharedFileSnapshot>(
     width: { type: Number },
     height: { type: Number },
     model: { type: String },
+    hasTextPreview: { type: Boolean },
     previewRevision: { type: String },
     sourceDispatchedAt: { type: Number },
     tenantId: { type: String },

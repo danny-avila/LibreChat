@@ -31,6 +31,8 @@ interface FilePreviewDialogProps {
    * cannot supply it rather than promising text that was never stored.
    */
   source?: FileSources;
+  /** Share-safe replacement for `source`, which shared-message sanitization removes. */
+  hasTextPreview?: boolean;
 }
 
 /** Formats bytes with unit suffix (differs from ~/utils/formatBytes which returns a raw number). */
@@ -87,6 +89,7 @@ export default function FilePreviewDialog({
   fileSource,
   fileSize,
   source,
+  hasTextPreview,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
@@ -96,7 +99,9 @@ export default function FilePreviewDialog({
    * parsed record, and offering its "extracted text" hides the real "preview
    * unavailable" outcome behind an empty state.
    */
-  const showParsedText = source === FileSources.text && isParsedDocument(fileType, fileName);
+  const showParsedText =
+    (source === FileSources.text || hasTextPreview === true) &&
+    isParsedDocument(fileType, fileName);
   const { shareId } = useShareContext();
   // Preview reads revoke their blob after consumption, so they need a separate
   // query identity from user-triggered downloads that may be in flight concurrently.

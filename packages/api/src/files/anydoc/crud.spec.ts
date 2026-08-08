@@ -24,26 +24,23 @@ const pdfFile = (name: string): Partial<Express.Multer.File> => ({
 });
 
 /**
- * Runs `body` with `toMarkdownBytes` stubbed by a spy, in a scoped module registry.
+ * Runs `body` with the isolated parser stubbed by a spy, in a scoped module registry.
  * Format detection stays real, so the spy exercises the same routing production does.
  * The finally is load-bearing: `doMock` outlives `isolateModulesAsync`, so a failing
  * assertion would otherwise leak the stub into every later test.
  */
 const withAnydocSpy = async (
-  toMarkdownBytes: jest.Mock,
+  extractMarkdown: jest.Mock,
   body: (run: typeof parse) => Promise<void>,
 ): Promise<void> => {
   try {
     await jest.isolateModulesAsync(async () => {
-      jest.doMock('@firecrawl/anydoc', () => ({
-        ...jest.requireActual('@firecrawl/anydoc'),
-        toMarkdownBytes,
-      }));
+      jest.doMock('./native', () => ({ extractMarkdownIsolated: extractMarkdown }));
       const { parseWithAnydoc: parseWithSpy } = await import('./crud');
       await body((file) => parseWithSpy(file as Express.Multer.File));
     });
   } finally {
-    jest.dontMock('@firecrawl/anydoc');
+    jest.dontMock('./native');
   }
 };
 

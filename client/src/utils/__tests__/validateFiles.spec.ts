@@ -144,7 +144,29 @@ describe('validateFiles', () => {
     expect(setError).not.toHaveBeenCalled();
   });
 
-  it('rejects a known document excluded by the document-parser allowlist', () => {
+  it('accepts configured OCR when the document-parser allowlist excludes the type', () => {
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] },
+      ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)], enabled: true },
+      documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('report.docx', DOCX, 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig,
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+    });
+
+    expect(result).toBe(true);
+    expect(setError).not.toHaveBeenCalled();
+  });
+
+  it('rejects a locally excluded document when OCR only has default type metadata', () => {
     const contextFileConfig = {
       text: { supportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] },
       ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)] },

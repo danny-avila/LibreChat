@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { Constants, ContentTypes, Tools } from 'librechat-data-provider';
+import { Constants, ContentTypes, FileSources, Tools } from 'librechat-data-provider';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import {
@@ -1032,7 +1032,7 @@ describe('Share Methods', () => {
         newConvoId: 'convo_anon',
         newMessageId: 'msg_anon',
         shareId: 'share_ref',
-        snapshotIds: new Set<string>(),
+        snapshots: new Map<string, t.SharedFileSnapshot>(),
         includeFiles: true,
       };
 
@@ -2795,6 +2795,47 @@ describe('Share Methods', () => {
       expect(byId.get(docId)?.filename).toBe('report.pdf');
       expect(byId.get(docId)?.filepath).toBe(`/uploads/${userId}/${docId}`);
       expect(byId.get(docId)?.sourceDispatchedAt).toBe(sourceDispatchedAt);
+    });
+
+    test('snapshots parsed document text without retaining its parser marker as a path', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId, {
+        source: FileSources.text,
+        filepath: FileSources.anydoc,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'report.docx',
+        text: '# Parsed report',
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'parsed document',
+        isCreatedByUser: true,
+        files: [
+          {
+            file_id: docId,
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename: 'report.docx',
+            filepath: FileSources.anydoc,
+          },
+        ],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.fileSnapshots?.[0]).toEqual(
+        expect.objectContaining({ file_id: docId, hasTextPreview: true }),
+      );
+      expect(saved?.fileSnapshots?.[0].filepath).toBeUndefined();
+
+      const shared = await shareMethods.getSharedMessages(shareId);
+      const file = shared?.messages[0].files?.[0];
+      expect(file?.hasTextPreview).toBe(true);
+      expect(file?.filepath).toBeUndefined();
+      expect(file?.source).toBeUndefined();
     });
 
     test('createSharedLink with snapshotFiles=false stores no snapshots', async () => {

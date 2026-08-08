@@ -1,5 +1,5 @@
-import { spawn } from 'child_process';
 import type { PageMarkdownResult } from '@firecrawl/pdf-inspector';
+import { runNativeParserChild } from '../documents/nativeProcess';
 
 /**
  * Runs pdf-inspector's native bindings in a child process.
@@ -51,59 +51,11 @@ type PdfChildOp = 'pages' | 'text';
 
 function runPdfChild(op: PdfChildOp, filePath: string): Promise<PdfChildResult> {
   const modulePath = require.resolve('@firecrawl/pdf-inspector');
-
-  return new Promise<PdfChildResult>((resolve, reject) => {
-    const child = spawn(process.execPath, ['-e', CHILD_SOURCE], {
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-    });
-
-    let settled = false;
-    const finish = (error: Error | null, value?: PdfChildResult) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      if (!child.killed) {
-        child.kill('SIGKILL');
-      }
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(value as PdfChildResult);
-    };
-
-    const timer = setTimeout(
-      () => finish(new Error(`pdf-inspector ${op} timed out after ${PDF_CHILD_TIMEOUT_MS}ms`)),
-      PDF_CHILD_TIMEOUT_MS,
-    );
-    /* The parse holds the child; without this the timer alone would keep an idle
-     * process alive for the full timeout. */
-    timer.unref?.();
-
-    child.on('message', (message: { ok: boolean; result?: PdfChildResult; message?: string }) => {
-      if (message.ok) {
-        finish(null, message.result);
-        return;
-      }
-      finish(new Error(message.message ?? `pdf-inspector ${op} failed`));
-    });
-    child.on('error', (error: Error) => finish(error));
-    child.on('exit', (code: number | null, signal: NodeJS.Signals | null) =>
-      finish(
-        new Error(
-          signal
-            ? `pdf-inspector ${op} child exited from signal ${signal}`
-            : `pdf-inspector ${op} child exited with code ${code}`,
-        ),
-      ),
-    );
-    child.send({ op, path: filePath, modulePath }, (error) => {
-      if (error) {
-        finish(error);
-      }
-    });
+  return runNativeParserChild<PdfChildResult>({
+    childSource: CHILD_SOURCE,
+    parserName: `pdf-inspector ${op}`,
+    request: { op, path: filePath, modulePath },
+    timeoutMs: PDF_CHILD_TIMEOUT_MS,
   });
 }
 
