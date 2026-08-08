@@ -403,6 +403,29 @@ describe('MCPServersRegistry', () => {
         }
       });
 
+      it('separates update inspection from persistence', async () => {
+        await registry.addServer('cache_server', testParsedConfig, 'CACHE');
+        const updatedConfig = { ...testParsedConfig, command: 'python' } as t.ParsedServerConfig;
+
+        const inspected = await registry.inspectServerUpdate(
+          'cache_server',
+          updatedConfig,
+          'CACHE',
+        );
+
+        const beforeCommit = await registry['cacheConfigsRepo'].get('cache_server');
+        expect(beforeCommit && 'command' in beforeCommit ? beforeCommit.command : undefined).toBe(
+          'node',
+        );
+
+        await registry.commitServerUpdate('cache_server', inspected, 'CACHE');
+
+        const afterCommit = await registry['cacheConfigsRepo'].get('cache_server');
+        expect(afterCommit && 'command' in afterCommit ? afterCommit.command : undefined).toBe(
+          'python',
+        );
+      });
+
       it('should route removeServer to cache repository', async () => {
         await registry.addServer('cache_server', testParsedConfig, 'CACHE');
         // Verify server exists in underlying cache repository (not via getServerConfig to avoid populating read-through cache)

@@ -20,6 +20,8 @@ const mockRegistryInstance = {
   getAllServerConfigs: jest.fn(),
   ensureConfigServers: jest.fn().mockResolvedValue({}),
   addServer: jest.fn(),
+  inspectServerUpdate: jest.fn(),
+  commitServerUpdate: jest.fn(),
   updateServer: jest.fn(),
   removeServer: jest.fn(),
   getAllowedDomains: jest.fn().mockReturnValue(null),
@@ -275,8 +277,15 @@ describe('MCP Routes', () => {
      */
     mockRegistryInstance.getServerConfig.mockReset().mockResolvedValue(undefined);
     mockRegistryInstance.addServer.mockReset();
+    mockRegistryInstance.inspectServerUpdate.mockReset();
+    mockRegistryInstance.commitServerUpdate.mockReset();
     mockRegistryInstance.updateServer.mockReset();
     mockRegistryInstance.removeServer.mockReset();
+    const cacheService = require('~/server/services/Config');
+    cacheService.getMCPServerTools.mockReset().mockResolvedValue(null);
+    cacheService.getMCPToolsCacheGeneration.mockReset().mockResolvedValue('test-generation');
+    cacheService.cacheMCPServerTools.mockReset().mockResolvedValue(undefined);
+    cacheService.invalidateCachedTools.mockReset().mockResolvedValue(undefined);
   });
 
   describe('GET /:serverName/oauth/initiate', () => {
@@ -3713,7 +3722,7 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(403);
         expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
-        expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+        expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
       });
 
       it('allows PATCH without CONFIGURE_OBO when OBO is unchanged', async () => {
@@ -3735,10 +3744,11 @@ describe('MCP Routes', () => {
           ...oboConfig,
           obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
         });
-        mockRegistryInstance.updateServer.mockResolvedValue({
+        mockRegistryInstance.inspectServerUpdate.mockResolvedValue({
           ...oboConfig,
           title: 'Renamed OBO Server',
         });
+        mockRegistryInstance.commitServerUpdate.mockResolvedValue(undefined);
 
         const response = await request(app)
           .patch('/api/mcp/servers/obo-server')
@@ -3751,7 +3761,7 @@ describe('MCP Routes', () => {
           });
 
         expect(response.status).toBe(200);
-        expect(mockRegistryInstance.updateServer).toHaveBeenCalled();
+        expect(mockRegistryInstance.commitServerUpdate).toHaveBeenCalled();
       });
 
       it('rejects PATCH that removes OBO from an existing OBO server without CONFIGURE_OBO', async () => {
@@ -3785,7 +3795,7 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(403);
         expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
-        expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+        expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
       });
 
       it('rejects PATCH that redirects the URL of an existing OBO server without CONFIGURE_OBO', async () => {
@@ -3822,7 +3832,7 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(403);
         expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
-        expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+        expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
       });
     });
 
@@ -3918,7 +3928,11 @@ describe('MCP Routes', () => {
         description: 'Updated description',
       };
 
-      mockRegistryInstance.updateServer.mockResolvedValue({ ...updatedConfig, source: 'user' });
+      mockRegistryInstance.inspectServerUpdate.mockResolvedValue({
+        ...updatedConfig,
+        source: 'user',
+      });
+      mockRegistryInstance.commitServerUpdate.mockResolvedValue(undefined);
 
       const response = await request(app)
         .patch('/api/mcp/servers/test-server')
@@ -3928,7 +3942,7 @@ describe('MCP Routes', () => {
       expect(response.body.type).toBe('sse');
       expect(response.body.url).toBe('https://updated-mcp-server.example.com/sse');
       expect(response.body.title).toBe('Updated Server');
-      expect(mockRegistryInstance.updateServer).toHaveBeenCalledWith(
+      expect(mockRegistryInstance.inspectServerUpdate).toHaveBeenCalledWith(
         'test-server',
         expect.objectContaining({
           type: 'sse',
@@ -3946,13 +3960,14 @@ describe('MCP Routes', () => {
         title: 'Updated Server',
       };
 
-      mockRegistryInstance.updateServer.mockResolvedValue({
+      mockRegistryInstance.inspectServerUpdate.mockResolvedValue({
         ...validConfig,
         apiKey: { source: 'admin', authorization_type: 'bearer', key: 'preserved-admin-key' },
         oauth: { client_id: 'cid', client_secret: 'preserved-oauth-secret' },
         headers: { Authorization: 'Bearer internal-token' },
         env: { DATABASE_URL: 'postgres://admin:pass@localhost/db' },
       });
+      mockRegistryInstance.commitServerUpdate.mockResolvedValue(undefined);
 
       const response = await request(app)
         .patch('/api/mcp/servers/test-server')
@@ -3978,7 +3993,7 @@ describe('MCP Routes', () => {
           statusCode: 400,
         },
       );
-      mockRegistryInstance.updateServer.mockRejectedValue(error);
+      mockRegistryInstance.inspectServerUpdate.mockRejectedValue(error);
 
       const response = await request(app)
         .patch('/api/mcp/servers/test-server')
@@ -4030,7 +4045,7 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toBe('Invalid configuration');
-      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+      expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
     });
 
     it('should reject streamable-http URL containing env variable references', async () => {
@@ -4045,7 +4060,7 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toBe('Invalid configuration');
-      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+      expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
     });
 
     it('should reject websocket URL containing env variable references', async () => {
@@ -4060,7 +4075,7 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toBe('Invalid configuration');
-      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+      expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
     });
 
     it('should return 500 when registry throws error', async () => {
@@ -4070,7 +4085,7 @@ describe('MCP Routes', () => {
         title: 'Test Server',
       };
 
-      mockRegistryInstance.updateServer.mockRejectedValue(new Error('Update failed'));
+      mockRegistryInstance.inspectServerUpdate.mockRejectedValue(new Error('Update failed'));
 
       const response = await request(app)
         .patch('/api/mcp/servers/test-server')

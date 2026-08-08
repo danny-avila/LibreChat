@@ -24,6 +24,8 @@ jest.mock('~/server/services/GraphApiService', () => ({
 
 const mockRegistryInstance = {
   getServerConfig: jest.fn(),
+  inspectServerUpdate: jest.fn(),
+  commitServerUpdate: jest.fn(),
   updateServer: jest.fn(),
   removeServer: jest.fn(),
 };
@@ -118,12 +120,16 @@ beforeEach(async () => {
   await User.deleteMany({});
   mockResolveAllMcpConfigs.mockReset();
   mockRegistryInstance.getServerConfig.mockReset();
+  mockRegistryInstance.inspectServerUpdate.mockReset();
+  mockRegistryInstance.commitServerUpdate.mockReset();
   mockRegistryInstance.updateServer.mockReset();
   mockRegistryInstance.removeServer.mockReset();
   mockMcpManager.disconnectUserConnection.mockReset().mockResolvedValue(undefined);
-  require('~/server/services/Config')
-    .invalidateCachedTools.mockReset()
-    .mockResolvedValue(undefined);
+  const cacheService = require('~/server/services/Config');
+  cacheService.invalidateCachedTools.mockReset().mockResolvedValue(undefined);
+  cacheService.getMCPServerTools.mockReset().mockResolvedValue({ retained: {} });
+  cacheService.getMCPToolsCacheGeneration.mockReset().mockResolvedValue('restored-generation');
+  cacheService.cacheMCPServerTools.mockReset().mockResolvedValue(undefined);
   existsSpy = jest.spyOn(SystemGrant, 'exists');
 });
 
@@ -280,12 +286,13 @@ describe('DB-backed server mutation fencing', () => {
     source: 'user',
   };
 
-  it('commits the inspected update before fencing and disconnecting old connections', async () => {
+  it('inspects, fences, commits, and then disconnects old connections', async () => {
     const user = await createUser();
     mockRegistryInstance.getServerConfig.mockResolvedValue(
       createDbConfig(new mongoose.Types.ObjectId()),
     );
-    mockRegistryInstance.updateServer.mockResolvedValue(updatedConfig);
+    mockRegistryInstance.inspectServerUpdate.mockResolvedValue(updatedConfig);
+    mockRegistryInstance.commitServerUpdate.mockResolvedValue(updatedConfig);
     const res = createRes();
 
     await updateMCPServerController(
@@ -296,10 +303,13 @@ describe('DB-backed server mutation fencing', () => {
     const { invalidateCachedTools } = require('~/server/services/Config');
     expect(invalidateCachedTools).toHaveBeenCalledWith({ userId: user.id, serverName: 'github' });
     expect(mockMcpManager.disconnectUserConnection).toHaveBeenCalledWith(user.id, 'github');
-    expect(mockRegistryInstance.updateServer.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockRegistryInstance.inspectServerUpdate.mock.invocationCallOrder[0]).toBeLessThan(
       invalidateCachedTools.mock.invocationCallOrder[0],
     );
     expect(invalidateCachedTools.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRegistryInstance.commitServerUpdate.mock.invocationCallOrder[0],
+    );
+    expect(mockRegistryInstance.commitServerUpdate.mock.invocationCallOrder[0]).toBeLessThan(
       mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0],
     );
     expect(res.status).toHaveBeenCalledWith(200);
@@ -311,7 +321,7 @@ describe('DB-backed server mutation fencing', () => {
     mockRegistryInstance.getServerConfig.mockResolvedValue(
       createDbConfig(new mongoose.Types.ObjectId()),
     );
-    mockRegistryInstance.updateServer.mockRejectedValue(updateError);
+    mockRegistryInstance.inspectServerUpdate.mockRejectedValue(updateError);
     const res = createRes();
 
     await updateMCPServerController(
@@ -320,15 +330,17 @@ describe('DB-backed server mutation fencing', () => {
     );
 
     expect(require('~/server/services/Config').invalidateCachedTools).not.toHaveBeenCalled();
+    expect(mockRegistryInstance.commitServerUpdate).not.toHaveBeenCalled();
     expect(mockMcpManager.disconnectUserConnection).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
-  it('reports a fence failure after the registry update commits', async () => {
+  it('does not commit an inspected update when the distributed fence fails', async () => {
     const user = await createUser();
     mockRegistryInstance.getServerConfig.mockResolvedValue(
       createDbConfig(new mongoose.Types.ObjectId()),
     );
+    mockRegistryInstance.inspectServerUpdate.mockResolvedValue(updatedConfig);
     require('~/server/services/Config').invalidateCachedTools.mockRejectedValue(
       new Error('Redis unavailable'),
     );
@@ -340,7 +352,33 @@ describe('DB-backed server mutation fencing', () => {
     );
 
     expect(mockMcpManager.disconnectUserConnection).not.toHaveBeenCalled();
-    expect(mockRegistryInstance.updateServer).toHaveBeenCalled();
+    expect(mockRegistryInstance.commitServerUpdate).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it('restores the retained catalog when update persistence fails after fencing', async () => {
+    const user = await createUser();
+    const existingConfig = createDbConfig(new mongoose.Types.ObjectId());
+    const retainedTools = { retained: { function: { name: 'retained' } } };
+    mockRegistryInstance.getServerConfig.mockResolvedValue(existingConfig);
+    mockRegistryInstance.inspectServerUpdate.mockResolvedValue(updatedConfig);
+    mockRegistryInstance.commitServerUpdate.mockRejectedValue(new Error('database unavailable'));
+    require('~/server/services/Config').getMCPServerTools.mockResolvedValue(retainedTools);
+    const res = createRes();
+
+    await updateMCPServerController(
+      { user, params: { serverName: 'github' }, body: { config: updatedConfig } },
+      res,
+    );
+
+    expect(require('~/server/services/Config').cacheMCPServerTools).toHaveBeenCalledWith({
+      userId: user.id,
+      serverName: 'github',
+      serverConfig: existingConfig,
+      serverTools: retainedTools,
+      publicationGeneration: 'restored-generation',
+    });
+    expect(mockMcpManager.disconnectUserConnection).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
@@ -350,7 +388,8 @@ describe('DB-backed server mutation fencing', () => {
       createDbConfig(new mongoose.Types.ObjectId()),
     );
     mockMcpManager.disconnectUserConnection.mockRejectedValue(new Error('dispose failed'));
-    mockRegistryInstance.updateServer.mockResolvedValue(updatedConfig);
+    mockRegistryInstance.inspectServerUpdate.mockResolvedValue(updatedConfig);
+    mockRegistryInstance.commitServerUpdate.mockResolvedValue(updatedConfig);
     const res = createRes();
 
     await updateMCPServerController(
@@ -358,7 +397,7 @@ describe('DB-backed server mutation fencing', () => {
       res,
     );
 
-    expect(mockRegistryInstance.updateServer).toHaveBeenCalled();
+    expect(mockRegistryInstance.commitServerUpdate).toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -372,8 +411,8 @@ describe('DB-backed server mutation fencing', () => {
     const { invalidateCachedTools } = require('~/server/services/Config');
     expect(invalidateCachedTools).toHaveBeenCalledWith({ userId: user.id, serverName: 'github' });
     expect(mockMcpManager.disconnectUserConnection).toHaveBeenCalledWith(user.id, 'github');
-    expect(mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0]).toBeLessThan(
-      mockRegistryInstance.removeServer.mock.invocationCallOrder[0],
+    expect(mockRegistryInstance.removeServer.mock.invocationCallOrder[0]).toBeLessThan(
+      mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0],
     );
     expect(res.status).toHaveBeenCalledWith(200);
   });
@@ -389,6 +428,28 @@ describe('DB-backed server mutation fencing', () => {
 
     expect(mockMcpManager.disconnectUserConnection).not.toHaveBeenCalled();
     expect(mockRegistryInstance.removeServer).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it('restores the retained catalog when deletion persistence fails after fencing', async () => {
+    const user = await createUser();
+    const existingConfig = createDbConfig(new mongoose.Types.ObjectId());
+    const retainedTools = { retained: { function: { name: 'retained' } } };
+    mockRegistryInstance.getServerConfig.mockResolvedValue(existingConfig);
+    mockRegistryInstance.removeServer.mockRejectedValue(new Error('Deletion failed'));
+    require('~/server/services/Config').getMCPServerTools.mockResolvedValue(retainedTools);
+    const res = createRes();
+
+    await deleteMCPServerController({ user, params: { serverName: 'github' } }, res);
+
+    expect(require('~/server/services/Config').cacheMCPServerTools).toHaveBeenCalledWith({
+      userId: user.id,
+      serverName: 'github',
+      serverConfig: existingConfig,
+      serverTools: retainedTools,
+      publicationGeneration: 'restored-generation',
+    });
+    expect(mockMcpManager.disconnectUserConnection).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
   });
 });

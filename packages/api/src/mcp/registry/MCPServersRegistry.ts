@@ -500,7 +500,12 @@ export class MCPServersRegistry {
     return { serverName, config: updatedConfig };
   }
 
-  public async updateServer(
+  /**
+   * Inspects an update without mutating its backing repository. Callers that must
+   * coordinate an external fence with persistence can prepare first, fence, and
+   * then commit the returned config.
+   */
+  public async inspectServerUpdate(
     serverName: string,
     config: t.MCPOptions,
     storageLocation: 'CACHE' | 'DB',
@@ -541,9 +546,35 @@ export class MCPServersRegistry {
       }
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
+    return parsedConfig;
+  }
+
+  /** Persists a previously inspected update without opening a second MCP connection. */
+  public async commitServerUpdate(
+    serverName: string,
+    parsedConfig: t.ParsedServerConfig,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<t.ParsedServerConfig> {
+    const configRepo = this.getConfigRepository(storageLocation);
     await configRepo.update(serverName, parsedConfig, userId);
     await this.invalidateServerReadCaches(serverName, userId);
     return parsedConfig;
+  }
+
+  public async updateServer(
+    serverName: string,
+    config: t.MCPOptions,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<t.ParsedServerConfig> {
+    const parsedConfig = await this.inspectServerUpdate(
+      serverName,
+      config,
+      storageLocation,
+      userId,
+    );
+    return await this.commitServerUpdate(serverName, parsedConfig, storageLocation, userId);
   }
 
   /**
