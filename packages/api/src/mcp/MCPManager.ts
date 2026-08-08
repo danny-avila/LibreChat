@@ -310,6 +310,7 @@ export class MCPManager extends UserConnectionManager {
       connectionTimeout: args.connectionTimeout,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
+      refreshAuthorityLifecycle: args.refreshAuthorityLifecycle,
       oauthAuthorityScope: args.oauthAuthorityScope,
       authorityAuthorizationKind: authorizationKind,
     });
@@ -629,102 +630,100 @@ Please follow these instructions when using tools from the respective MCP server
         }) as t.ParsedServerConfig;
       }
 
-      const resolvedHeaders: Record<string, string> =
-        'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
-
-      /** Refresh OBO token on each tool call to ensure it's current */
-      const oboConfig = rawConfig.obo;
-      if (oboConfig && oboTokenResolver && user) {
-        if (isDbSourced && !oboTrustChecker) {
-          throw new McpError(
-            ErrorCode.InvalidRequest,
-            `${logPrefix} OBO author trust proof is required for user-authored server "${serverName}".`,
-          );
-        }
-        const oboTrusted = oboTrustChecker
-          ? await oboTrustChecker({
-              source: rawConfig.source,
-              author: rawConfig.author,
-              dbId: rawConfig.dbId,
-            })
-          : true;
-        if (!oboTrusted) {
-          logger.warn(
-            `${logPrefix} OBO config not trusted (author lacks ${PermissionTypes.MCP_SERVERS}.${Permissions.CONFIGURE_OBO}); refusing to mint a downstream token`,
-          );
-          throw new McpError(
-            ErrorCode.InternalError,
-            `${logPrefix} OBO is not permitted for server "${serverName}". The user who configured it no longer has permission to use OBO.`,
-          );
-        }
-        let oboTokens: MCPOAuthTokens;
-        try {
-          oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
-        } catch (error) {
-          if (error instanceof OboTokenResolutionError) {
-            throw new McpError(
-              ErrorCode.InternalError,
-              createOboToolCallErrorMessage(logPrefix, toolName, error),
-            );
-          }
-          throw error;
-        }
-
-        if (!oboTokens.access_token) {
-          throw new McpError(
-            ErrorCode.InternalError,
-            `${logPrefix} OBO token refresh failed. Cannot execute tool ${toolName}. Re-authenticate the user and retry.`,
-          );
-        }
-        resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
-      }
-      if (userId && user && oauthStart && flowManager && isOAuthServer(currentOptions)) {
-        const resolvedPolicy = proofBound
-          ? securityPolicy!
-          : await registry.resolveAllowlists({
-              userId,
-              role: user?.role,
-              tenantId: user?.tenantId ?? null,
-            });
-        cleanupRequestOAuthHandler = MCPConnectionFactory.attachRequestOAuthHandler(
-          {
-            serverName,
-            serverConfig: currentOptions,
-            declarativeServerConfig: rawConfig,
-            dbSourced: isDbSourced,
-            skipEnvProcessing: true,
-            useSSRFProtection: resolvedPolicy.useSSRFProtection,
-            allowedDomains: resolvedPolicy.allowedDomains,
-            allowedAddresses: resolvedPolicy.allowedAddresses,
-          },
-          {
-            useOAuth: true,
-            user,
-            flowManager,
-            tokenMethods,
-            signal: options?.signal,
-            oauthStart,
-            oauthEnd,
-            customUserVars,
-            requestBody,
-            effectiveServerConfig,
-            securityPolicy,
-            oauthAuthorityScope,
-            authorityAuthorizationKind,
-            refreshAuthorityLifecycle,
-          },
-          activeConnection,
-        );
-      }
-
-      activeConnection.setRequestHeaders(resolvedHeaders);
-
       const executionContext = {
         connectionProvenance: activeConnection.getDiscoveryProvenance?.() ?? null,
         serverConfig: rawConfig,
       };
-      const execute = async () =>
-        await activeConnection.client.request(
+      const execute = async () => {
+        const resolvedHeaders: Record<string, string> =
+          'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
+
+        const oboConfig = rawConfig.obo;
+        if (oboConfig && oboTokenResolver && user) {
+          if (isDbSourced && !oboTrustChecker) {
+            throw new McpError(
+              ErrorCode.InvalidRequest,
+              `${logPrefix} OBO author trust proof is required for user-authored server "${serverName}".`,
+            );
+          }
+          const oboTrusted = oboTrustChecker
+            ? await oboTrustChecker({
+                source: rawConfig.source,
+                author: rawConfig.author,
+                dbId: rawConfig.dbId,
+              })
+            : true;
+          if (!oboTrusted) {
+            logger.warn(
+              `${logPrefix} OBO config not trusted (author lacks ${PermissionTypes.MCP_SERVERS}.${Permissions.CONFIGURE_OBO}); refusing to mint a downstream token`,
+            );
+            throw new McpError(
+              ErrorCode.InternalError,
+              `${logPrefix} OBO is not permitted for server "${serverName}". The user who configured it no longer has permission to use OBO.`,
+            );
+          }
+          let oboTokens: MCPOAuthTokens;
+          try {
+            oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
+          } catch (error) {
+            if (error instanceof OboTokenResolutionError) {
+              throw new McpError(
+                ErrorCode.InternalError,
+                createOboToolCallErrorMessage(logPrefix, toolName, error),
+              );
+            }
+            throw error;
+          }
+
+          if (!oboTokens.access_token) {
+            throw new McpError(
+              ErrorCode.InternalError,
+              `${logPrefix} OBO token refresh failed. Cannot execute tool ${toolName}. Re-authenticate the user and retry.`,
+            );
+          }
+          resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
+        }
+        if (userId && user && oauthStart && flowManager && isOAuthServer(currentOptions)) {
+          const resolvedPolicy = proofBound
+            ? securityPolicy!
+            : await registry.resolveAllowlists({
+                userId,
+                role: user?.role,
+                tenantId: user?.tenantId ?? null,
+              });
+          cleanupRequestOAuthHandler = MCPConnectionFactory.attachRequestOAuthHandler(
+            {
+              serverName,
+              serverConfig: currentOptions,
+              declarativeServerConfig: rawConfig,
+              dbSourced: isDbSourced,
+              skipEnvProcessing: true,
+              useSSRFProtection: resolvedPolicy.useSSRFProtection,
+              allowedDomains: resolvedPolicy.allowedDomains,
+              allowedAddresses: resolvedPolicy.allowedAddresses,
+            },
+            {
+              useOAuth: true,
+              user,
+              flowManager,
+              tokenMethods,
+              signal: options?.signal,
+              oauthStart,
+              oauthEnd,
+              customUserVars,
+              requestBody,
+              effectiveServerConfig,
+              securityPolicy,
+              oauthAuthorityScope,
+              authorityAuthorizationKind,
+              refreshAuthorityLifecycle,
+            },
+            activeConnection,
+          );
+        }
+
+        activeConnection.setRequestHeaders(resolvedHeaders);
+        return await activeConnection.client.request(
           {
             method: 'tools/call',
             params: {
@@ -739,6 +738,7 @@ Please follow these instructions when using tools from the respective MCP server
             ...options,
           },
         );
+      };
       let result: Awaited<ReturnType<typeof execute>>;
       if (executeWithCurrentAuthority) {
         result = await executeWithCurrentAuthority(execute, executionContext);

@@ -15,6 +15,7 @@ import {
   createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
+  createMCPAuthorityUserSourceRevision,
   createMCPAuthorityMethods,
   createMCPAuthorityBootRevision,
 } from './mcpAuthority';
@@ -38,6 +39,7 @@ let serverId: mongoose.Types.ObjectId;
 let serverSourceRevision: string;
 let credentialSourceRevision: string;
 let configSourceRevision: string;
+let userSourceRevision: string;
 
 const immutableConfig = {
   mcpServers: {
@@ -168,11 +170,12 @@ async function seedFixture(): Promise<void> {
         })),
       ),
     ]);
-    const [server, credential] = await Promise.all([
+    const [server, credential, user] = await Promise.all([
       models.MCPServer.findById(serverId).lean(),
       models.PluginAuth.findOne({ userId: userId.toHexString(), pluginKey: PLUGIN_KEY }).lean(),
+      models.User.findById(userId).lean(),
     ]);
-    if (!server || !credential) {
+    if (!server || !credential || !user) {
       throw new Error('MCP authority fixture source records were not created');
     }
     serverSourceRevision = createMCPAuthorityDatabaseSourceRevision({
@@ -184,6 +187,10 @@ async function seedFixture(): Promise<void> {
       updatedAt: server.updatedAt,
     });
     credentialSourceRevision = createMCPAuthorityCredentialRevision(['API_KEY'], [credential]);
+    userSourceRevision = createMCPAuthorityUserSourceRevision({
+      ...user,
+      id: userId.toHexString(),
+    });
   });
   configSourceRevision = await currentConfigSourceRevision();
 }
@@ -202,11 +209,15 @@ async function currentConfigSourceRevision(): Promise<string> {
   return createMCPAuthorityConfigSourceRevision(boot.digest, configs);
 }
 
-async function resolve(targets: readonly MCPAuthorityTargetInput[] = [target()]) {
+async function resolve(
+  targets: readonly MCPAuthorityTargetInput[] = [target()],
+  expectedUserSourceRevision = userSourceRevision,
+) {
   return await inTenant(() =>
     methods.resolveMCPAuthorityProof({
       userId: userId.toHexString(),
       tenantId: TENANT_ID,
+      expectedUserSourceRevision,
       boot,
       targets,
     }),
@@ -252,6 +263,7 @@ describe('MCP authority proofs', () => {
       timeBoundMethods.resolveMCPAuthorityProof({
         userId: userId.toHexString(),
         tenantId: TENANT_ID,
+        expectedUserSourceRevision: userSourceRevision,
         boot,
         targets: [target()],
       }),
@@ -274,6 +286,20 @@ describe('MCP authority proofs', () => {
     );
 
     await expect(resolve([staleTarget])).rejects.toEqual(expectReason('config_changed'));
+  });
+
+  test('rejects MCP config parsed from stale user placeholder values', async () => {
+    const parsedUserSourceRevision = userSourceRevision;
+    await inTenant(() =>
+      models.User.collection.updateOne(
+        { _id: userId },
+        { $set: { email: 'changed-authority@example.com' } },
+      ),
+    );
+
+    await expect(resolve([target()], parsedUserSourceRevision)).rejects.toEqual(
+      expectReason('principal_changed'),
+    );
   });
 
   test('rejects an ACL bitmask outside the canonical permission range', async () => {
@@ -383,6 +409,7 @@ describe('MCP authority proofs', () => {
     const input = {
       userId: userId.toHexString(),
       tenantId: TENANT_ID,
+      expectedUserSourceRevision: userSourceRevision,
       boot,
       targets: [target()],
     };
@@ -406,6 +433,10 @@ describe('MCP authority proofs', () => {
       provider: 'local',
       role: roleName,
     });
+    const tenantlessUser = await models.User.findById(tenantlessUserId).lean();
+    if (!tenantlessUser) {
+      throw new Error('Tenantless authority user was not created');
+    }
     await tenantStorage.run({ tenantId: 'foreign-tenant' }, async () => {
       await models.Role.create({
         name: roleName,
@@ -418,6 +449,10 @@ describe('MCP authority proofs', () => {
     await expect(
       methods.resolveMCPAuthorityProof({
         userId: tenantlessUserId.toHexString(),
+        expectedUserSourceRevision: createMCPAuthorityUserSourceRevision({
+          ...tenantlessUser,
+          id: tenantlessUserId.toHexString(),
+        }),
         boot,
         targets: [configAuthorityTarget('tenantless-config', 'tenantless-source-revision')],
       }),
@@ -434,6 +469,7 @@ describe('MCP authority proofs', () => {
           methods.resolveMCPAuthorityProof({
             userId: userId.toHexString(),
             tenantId: TENANT_ID,
+            expectedUserSourceRevision: userSourceRevision,
             boot,
             targets: [target()],
           }),
@@ -477,6 +513,7 @@ describe('MCP authority proofs', () => {
         snapshotMethods.resolveMCPAuthorityProof({
           userId: userId.toHexString(),
           tenantId: TENANT_ID,
+          expectedUserSourceRevision: userSourceRevision,
           boot,
           targets: [target()],
         }),
@@ -516,6 +553,7 @@ describe('MCP authority proofs', () => {
         snapshotMethods.resolveMCPAuthorityProof({
           userId: userId.toHexString(),
           tenantId: TENANT_ID,
+          expectedUserSourceRevision: userSourceRevision,
           boot,
           targets: [target()],
         }),
@@ -1067,7 +1105,7 @@ describe('MCP authority proofs', () => {
     },
     {
       name: 'role reassignment',
-      reason: 'role_changed' as const,
+      reason: 'principal_changed' as const,
       mutate: () =>
         inTenant(() =>
           models.User.updateOne({ _id: userId }, { $set: { role: 'REASSIGNED_ROLE' } }).then(

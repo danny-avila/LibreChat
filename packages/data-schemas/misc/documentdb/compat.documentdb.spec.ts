@@ -17,6 +17,7 @@ import {
   createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
+  createMCPAuthorityUserSourceRevision,
 } from '~/methods/mcpAuthority';
 import { decrementTagCounts } from '~/methods/conversationTag';
 import { tenantStorage } from '~/config/tenantContext';
@@ -220,7 +221,7 @@ describeLive('Amazon DocumentDB live compatibility', () => {
       const agentIds = Array.from({ length: 3 }, () => new mongoose.Types.ObjectId());
       try {
         await tenantStorage.run({ tenantId, userId: userId.toHexString() }, async () => {
-          await models.User.create({
+          const authorityUser = await models.User.create({
             _id: userId,
             name: 'DocumentDB authority probe',
             email: testEmail('authority'),
@@ -289,6 +290,10 @@ describeLive('Amazon DocumentDB live compatibility', () => {
           const proof = await methods.resolveMCPAuthorityProof({
             userId: userId.toHexString(),
             tenantId,
+            expectedUserSourceRevision: createMCPAuthorityUserSourceRevision({
+              ...authorityUser.toObject(),
+              id: userId.toHexString(),
+            }),
             boot,
             targets: [
               {

@@ -10,16 +10,11 @@ import {
   getMCPAuthorityConsistencyModule,
   runMCPAuthorityMutation,
 } from './mcpAuthority/consistency';
-import { MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS } from './mcpAuthority/classification';
+import { MCP_AUTHORITY_USER_SOURCE_FIELDS } from './mcpAuthority/classification';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
 
-const MCP_AUTHORITY_USER_FIELDS = new Set<keyof IUser>([
-  ...MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS,
-  'tenantId',
-  'idOnTheSource',
-  'openidIssuer',
-]);
+const MCP_AUTHORITY_USER_FIELDS = new Set<keyof IUser>([...MCP_AUTHORITY_USER_SOURCE_FIELDS]);
 
 function userUpdateAffectsMCPAuthority(updateData: Partial<IUser>): boolean {
   return Object.keys(updateData).some((field) =>

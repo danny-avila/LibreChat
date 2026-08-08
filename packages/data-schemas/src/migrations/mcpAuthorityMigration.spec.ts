@@ -8,6 +8,7 @@ import {
   createMCPAuthorityBootRevision,
   createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
+  createMCPAuthorityUserSourceRevision,
 } from '../methods/mcpAuthority';
 import { createMCPAuthorityProofCollections } from './mcpAuthorityCollections';
 import { createMCPAuthorityLookupIndexes } from './mcpAuthorityIndexes';
@@ -63,7 +64,7 @@ test('migrates a fresh database before resolving and asserting a real proof', as
 
   const userId = new mongoose.Types.ObjectId();
   await tenantStorage.run({ tenantId: TENANT_ID, userId: userId.toHexString() }, async () => {
-    await models.User.create({
+    const user = await models.User.create({
       _id: userId,
       email: 'migration-authority@example.com',
       emailVerified: true,
@@ -97,6 +98,10 @@ test('migrates a fresh database before resolving and asserting a real proof', as
     const proof = await methods.resolveMCPAuthorityProof({
       userId: userId.toHexString(),
       tenantId: TENANT_ID,
+      expectedUserSourceRevision: createMCPAuthorityUserSourceRevision({
+        ...user.toObject(),
+        id: userId.toHexString(),
+      }),
       boot,
       targets: [target],
     });

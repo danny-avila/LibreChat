@@ -50,9 +50,12 @@ The application uses the substrate at these final side-effect boundaries:
 
 - Use `publishWithCurrentAuthority` immediately around catalog, schema, HTTP response, and binding
   publication callbacks.
-- Use `executeWithCurrentAuthority` around the remote `tools/call` callback, after connection,
-  OAuth, Graph, and OBO work. The optional `beforeExecute` hook exists for deterministic race tests;
-  the authoritative assertion runs after the hook and immediately before the callback.
+- Open or reuse the connection inside `bindWithCurrentAuthority`. Use
+  `executeWithCurrentAuthority` around request-scoped OAuth/OBO preparation, request-header
+  publication, and the remote `tools/call` as one effect. Graph credentials are materialized into
+  the issued effective config before that final fence. The optional `beforeExecute` hook exists for
+  deterministic race tests; the authoritative assertion runs after the hook and immediately before
+  the complete execution callback.
 - OAuth callback integration must assert before token exchange. After exact-generation storage,
   re-resolve a new proof bound to that stored generation, then assert the new proof immediately
   before waking waiters. The pre-store proof is expected to reject once the grant exists and must

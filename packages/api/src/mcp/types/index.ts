@@ -260,6 +260,7 @@ export interface ToolDiscoveryOptions {
   configServers?: Record<string, ParsedServerConfig>;
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
+  refreshAuthorityLifecycle?: MCPRefreshAuthorityLifecycle;
   oauthAuthorityScope?: MCPToolCatalogScope;
   authorityAuthorizationKind?: MCPConnectionProvenance['authorizationKind'];
 }

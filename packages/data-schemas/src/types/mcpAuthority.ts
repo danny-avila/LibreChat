@@ -29,6 +29,7 @@ export type MCPAuthorityTargetInput = MCPAuthorityTargetBase &
 export interface MCPAuthorityResolveInput {
   readonly userId: string;
   readonly tenantId?: string;
+  readonly expectedUserSourceRevision: string;
   readonly boot: MCPAuthorityBootRevision;
   readonly targets: readonly MCPAuthorityTargetInput[];
 }
@@ -39,6 +40,7 @@ export interface MCPAuthorityUserProof {
   readonly role: string;
   readonly provider: string;
   readonly sourceIdentityDigest: string;
+  readonly sourceRevision: string;
   readonly revision: string;
 }
 

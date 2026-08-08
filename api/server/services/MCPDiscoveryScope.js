@@ -1,9 +1,11 @@
 const {
   logger,
   getTenantId,
+  MCP_AUTHORITY_USER_SOURCE_FIELDS,
   createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
+  createMCPAuthorityUserSourceRevision,
 } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
 const {
@@ -35,27 +37,10 @@ const {
 } = require('~/server/services/MCPAuthority');
 
 const MCP_DISCOVERY_USER_FIELDS = [
-  '_id',
-  'name',
-  'username',
-  'email',
-  'provider',
-  'role',
-  'googleId',
-  'facebookId',
-  'openidId',
-  'samlId',
-  'ldapId',
-  'githubId',
-  'discordId',
-  'appleId',
-  'emailVerified',
-  'twoFactorEnabled',
-  'termsAccepted',
-  'termsAcceptedAt',
-  'tenantId',
-  'idOnTheSource',
-  'federatedTokens',
+  ...new Set([
+    ...MCP_AUTHORITY_USER_SOURCE_FIELDS.map((field) => (field === 'id' ? '_id' : field)),
+    'federatedTokens',
+  ]),
 ].join(' ');
 
 async function resolveDiscoveryAuthorizationScope({
@@ -136,11 +121,16 @@ async function resolveCurrentMCPPrincipal(user, serverName) {
   ) {
     return null;
   }
+  const safeUser = createSafeUser(storedUser);
+  if (safeUser.termsAcceptedAt instanceof Date) {
+    safeUser.termsAcceptedAt = String(safeUser.termsAcceptedAt);
+  }
   const currentUser = {
-    ...createSafeUser(storedUser),
+    ...safeUser,
     id: user.id,
     tenantId: tenantId ?? undefined,
     idOnTheSource: storedUser.idOnTheSource == null ? null : String(storedUser.idOnTheSource),
+    openidIssuer: storedUser.openidIssuer == null ? null : String(storedUser.openidIssuer),
     ...(user.federatedTokens && { federatedTokens: { ...user.federatedTokens } }),
   };
   return currentUser;
@@ -441,6 +431,7 @@ async function resolveCurrentMCPToolAuthority({
     const resolution = await resolver.resolve({
       userId: currentSnapshot.user.id,
       ...(currentSnapshot.tenantId != null && { tenantId: currentSnapshot.tenantId }),
+      expectedUserSourceRevision: createMCPAuthorityUserSourceRevision(currentSnapshot.user),
       targets: [target],
       parsedConfig,
       schemas,

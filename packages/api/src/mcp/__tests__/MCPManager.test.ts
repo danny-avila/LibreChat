@@ -651,7 +651,7 @@ describe('MCPManager', () => {
       expect(mockResolveOboToken).not.toHaveBeenCalled();
     });
 
-    it('runs the host authority fence immediately before the remote tool request', async () => {
+    it('runs the host authority fence before request preparation and the remote tool call', async () => {
       const manager = new MCPManager();
       const connection = createConnection();
       const beforeExecute = jest.fn().mockResolvedValue(undefined);
@@ -669,7 +669,7 @@ describe('MCPManager', () => {
 
       expect(beforeExecute).toHaveBeenCalledTimes(1);
       expect(connection.setRequestHeaders).toHaveBeenCalledTimes(1);
-      expect(beforeExecute.mock.invocationCallOrder[0]).toBeGreaterThan(
+      expect(beforeExecute.mock.invocationCallOrder[0]).toBeLessThan(
         (connection.setRequestHeaders as jest.Mock).mock.invocationCallOrder[0],
       );
       expect(beforeExecute.mock.invocationCallOrder[0]).toBeLessThan(
@@ -1408,6 +1408,48 @@ describe('MCPManager', () => {
       expect(mockConnection.client.request).toHaveBeenCalled();
     });
 
+    it('mints the OBO token inside the final authority execution fence', async () => {
+      const order: string[] = [];
+      mockResolveOboToken.mockImplementation(async () => {
+        order.push('mint');
+        return {
+          access_token: 'fenced-obo-token',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+          expires_at: Date.now() + 3600_000,
+        };
+      });
+      (mockConnection.client.request as jest.Mock).mockImplementationOnce(async () => {
+        order.push('remote-call');
+        return {
+          content: [{ type: 'text', text: 'Tool result' }],
+          isError: false,
+        };
+      });
+      const executeWithCurrentAuthority = jest.fn(async (execute) => {
+        order.push('authority-fence');
+        return await execute();
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getUserConnection').mockResolvedValue(mockConnection);
+
+      await manager.callTool({
+        ...issuedConnectionInput(serverConfig, serverConfig, 'obo'),
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        oboTokenResolver: mockOboTokenResolver,
+        executeWithCurrentAuthority,
+      });
+
+      expect(order).toEqual(['authority-fence', 'mint', 'remote-call']);
+    });
+
     it('fails closed before minting OBO for a user-authored server without author trust proof', async () => {
       const userAuthoredServerConfig = {
         ...serverConfig,
@@ -2116,6 +2158,11 @@ describe('MCPManager', () => {
         getFlowState: jest.fn(),
         deleteFlow: jest.fn(),
       };
+      const refreshAuthorityLifecycle = {
+        exchange: jest.fn(async (action) => await action()),
+        store: jest.fn(async (_tokens, action) => await action()),
+        accept: jest.fn(async () => undefined),
+      } as t.MCPRefreshAuthorityLifecycle;
 
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
@@ -2142,6 +2189,7 @@ describe('MCPManager', () => {
         user: mockUser,
         flowManager: mockFlowManager as unknown as t.ToolDiscoveryOptions['flowManager'],
         graphTokenResolver: jest.fn(),
+        refreshAuthorityLifecycle,
       });
 
       expect(result.tools).toEqual(mockTools);
@@ -2152,6 +2200,7 @@ describe('MCPManager', () => {
         expect.objectContaining({
           user: mockUser,
           useOAuth: true,
+          refreshAuthorityLifecycle,
         }),
       );
       expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalledWith(

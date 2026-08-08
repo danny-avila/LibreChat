@@ -88,7 +88,7 @@ describe('assertMCPAuthorityReadiness', () => {
     );
   });
 
-  test('rejects normalized-name collisions before relying on an index', async () => {
+  test('rejects normalized-name collisions during the provider-neutral readiness scan', async () => {
     await createMCPAuthorityProofCollections(mongoose.connection);
     await mongoose.connection.db!.collection('mcpservers').insertMany([
       {
@@ -103,10 +103,15 @@ describe('assertMCPAuthorityReadiness', () => {
       },
     ]);
 
+    await mongoose.connection.db!.collection('mcpservers').createIndex({
+      normalizedServerName: 1,
+      tenantId: 1,
+    });
+
     await expect(assertMCPAuthorityReadiness(mongoose.connection)).rejects.toEqual(
       expect.objectContaining({
         name: MCPAuthorityReadinessError.name,
-        message: expect.stringContaining('collision'),
+        message: expect.stringContaining('normalized identity collision'),
       }),
     );
   });
@@ -138,7 +143,7 @@ describe('assertMCPAuthorityReadiness', () => {
     },
   );
 
-  test('pins server scans to primary with majority read concern and bounded batches', async () => {
+  test('pins the portable server scan to primary with majority read concern', async () => {
     await migratePrerequisites();
     const findSpy = jest.spyOn(mongoose.mongo.Collection.prototype, 'find');
     const aggregateSpy = jest.spyOn(mongoose.mongo.Collection.prototype, 'aggregate');
@@ -154,13 +159,7 @@ describe('assertMCPAuthorityReadiness', () => {
           readConcern: { level: 'majority' },
         }),
       );
-      expect(aggregateSpy).toHaveBeenCalledWith(
-        expect.any(Array),
-        expect.objectContaining({
-          readPreference: 'primary',
-          readConcern: { level: 'majority' },
-        }),
-      );
+      expect(aggregateSpy).not.toHaveBeenCalled();
     } finally {
       findSpy.mockRestore();
       aggregateSpy.mockRestore();

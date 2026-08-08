@@ -549,6 +549,7 @@ export function createRoleMethods(
       }
     } catch (error) {
       logger.error(`Failed to update ${roleName} role permissions:`, error);
+      throw error;
     }
   }
 

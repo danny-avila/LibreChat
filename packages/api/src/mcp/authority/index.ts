@@ -25,6 +25,7 @@ export interface MCPAuthorityProofResolverOptions {
 export interface MCPAuthorityResolutionInput<TParsedConfig, TSchemas> {
   userId: string;
   tenantId?: string;
+  expectedUserSourceRevision: string;
   targets: readonly MCPAuthorityTargetInput[];
   parsedConfig: TParsedConfig;
   schemas: TSchemas;
@@ -127,6 +128,7 @@ export class MCPAuthorityProofResolver {
   public async resolve<TParsedConfig, TSchemas>({
     userId,
     tenantId,
+    expectedUserSourceRevision,
     targets,
     parsedConfig,
     schemas,
@@ -153,6 +155,7 @@ export class MCPAuthorityProofResolver {
       }
       artifactRevision = artifactRevision.trim();
       return digestMCPAuthorityValue({
+        expectedUserSourceRevision,
         targets: targets.map((target) => ({
           serverName: target.serverName,
           source: target.source,
@@ -173,6 +176,7 @@ export class MCPAuthorityProofResolver {
     const authorityProof = await this.methods.resolveMCPAuthorityProof({
       userId,
       tenantId,
+      expectedUserSourceRevision,
       targets,
       boot: this.boot,
     });

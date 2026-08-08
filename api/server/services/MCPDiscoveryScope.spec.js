@@ -101,6 +101,24 @@ describe('MCPDiscoveryScope', () => {
     expect(result.federatedTokens).not.toBe(federatedTokens);
   });
 
+  it('normalizes date placeholders and retains the identity fields bound by the proof', async () => {
+    const termsAcceptedAt = new Date('2026-08-08T12:00:00.000Z');
+    mockFindUser.mockResolvedValueOnce({
+      ...storedUser,
+      termsAcceptedAt,
+      openidIssuer: 'https://issuer.example',
+    });
+
+    const result = await resolveCurrentMCPPrincipal({ id: userId, role: 'USER' }, 'date-server');
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        termsAcceptedAt: String(termsAcceptedAt),
+        openidIssuer: 'https://issuer.example',
+      }),
+    );
+  });
+
   it('resolves Graph runtime config and ignores stale undeclared credential rows', async () => {
     const serverName = 'graph-server';
     const serverConfig = {
@@ -152,9 +170,15 @@ describe('MCPDiscoveryScope', () => {
       true,
     );
     expect(mockObservedCredentialRows).toEqual([currentCredential]);
-    const { createMCPAuthorityCredentialRevision } = require('@librechat/data-schemas');
+    const {
+      createMCPAuthorityCredentialRevision,
+      createMCPAuthorityUserSourceRevision,
+    } = require('@librechat/data-schemas');
     expect(mockResolveAuthority).toHaveBeenCalledWith(
       expect.objectContaining({
+        expectedUserSourceRevision: createMCPAuthorityUserSourceRevision(
+          result.parsedConfig.actor.user,
+        ),
         targets: [
           expect.objectContaining({
             credentialFields: ['API_KEY'],

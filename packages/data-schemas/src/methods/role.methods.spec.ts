@@ -237,6 +237,17 @@ describe('updateAccessPermissions', () => {
     expect(role).toBeNull();
   });
 
+  it('propagates storage failures to the caller', async () => {
+    const storageError = new Error('role store unavailable');
+    mockCache.get.mockRejectedValueOnce(storageError);
+
+    await expect(
+      updateAccessPermissions(SystemRoles.USER, {
+        [PermissionTypes.PROMPTS]: { CREATE: true },
+      }),
+    ).rejects.toThrow('role store unavailable');
+  });
+
   it('should update only specified permissions', async () => {
     await new Role({
       name: SystemRoles.USER,

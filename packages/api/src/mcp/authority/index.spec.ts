@@ -13,6 +13,7 @@ const proof: MCPAuthorityProofV1 = Object.freeze({
       role: 'USER',
       provider: 'local',
       sourceIdentityDigest: 'source',
+      sourceRevision: 'user-source-revision',
       revision: 'user',
     },
     groups: [],
@@ -53,6 +54,7 @@ function createResolver(beforeExecute?: () => void | Promise<void>) {
 async function resolveFixture(resolver: MCPAuthorityProofResolver) {
   return await resolver.resolve({
     userId: '64b64c13a1136b7f18a7e111',
+    expectedUserSourceRevision: 'user-source-revision',
     targets: [
       {
         serverName: 'operator',
@@ -131,6 +133,7 @@ async function resolveMutableAuthorityFixture(resolver: MCPAuthorityProofResolve
   const resolution = await resolver.resolve({
     userId: parsedConfig.actor.userId,
     tenantId: parsedConfig.actor.tenantId,
+    expectedUserSourceRevision: 'user-source-revision',
     targets: [
       {
         serverName: 'operator',
@@ -188,6 +191,7 @@ describe('MCPAuthorityProofResolver', () => {
     await expect(
       resolver.resolve({
         userId: '64b64c13a1136b7f18a7e111',
+        expectedUserSourceRevision: 'user-source-revision',
         targets: [
           {
             serverName: 'operator',
@@ -318,7 +322,10 @@ describe('MCPAuthorityProofResolver', () => {
       authorityProof: proof,
     });
     expect(resolveMCPAuthorityProof).toHaveBeenCalledWith(
-      expect.objectContaining({ boot: resolver.bootRevision }),
+      expect.objectContaining({
+        boot: resolver.bootRevision,
+        expectedUserSourceRevision: 'user-source-revision',
+      }),
     );
   });
 
@@ -482,6 +489,7 @@ describe('MCPAuthorityProofResolver', () => {
     let revisionCalls = 0;
     const resolution = await resolver.resolve({
       userId: '64b64c13a1136b7f18a7e111',
+      expectedUserSourceRevision: 'user-source-revision',
       targets: [
         {
           serverName: 'operator',

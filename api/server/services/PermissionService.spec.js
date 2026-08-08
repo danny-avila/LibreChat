@@ -2325,7 +2325,12 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
       },
     ]);
 
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    const before = await consistency.getMCPAuthorityConsistencyStatus();
+
     await syncUserEntraGroupMemberships(user, 'fake-token');
+
+    const after = await consistency.getMCPAuthorityConsistencyStatus();
 
     // Verify ALL three groups now have the user as member
     const groupA = await Group.findOne({ idOnTheSource: 'entra-group-a' }).lean();
@@ -2337,6 +2342,7 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
     expect(groupC).toBeTruthy();
     expect(groupC.memberIds).toContain(userEntraId);
     expect(groupC.name).toBe('Group C');
+    expect(after.generation).toBe(before.generation + 1);
 
     // Reset mock
     getEntraGroupDetailsBatch.mockResolvedValue([]);

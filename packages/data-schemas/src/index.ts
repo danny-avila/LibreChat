@@ -32,11 +32,13 @@ export {
   MCPAuthorityProofError,
   MCP_AUTHORITY_PROOF_COLLECTIONS,
   MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS,
+  MCP_AUTHORITY_USER_SOURCE_FIELDS,
   MAX_MCP_AUTHORITY_TARGETS,
   createMCPAuthorityBootRevision,
   createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
+  createMCPAuthorityUserSourceRevision,
   digestMCPAuthorityValue,
   getMCPAuthorityConsistencyModule,
 } from './methods';

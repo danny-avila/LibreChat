@@ -1,11 +1,19 @@
 const path = require('path');
 const mongoose = require('mongoose');
-const { runAsSystem } = require('@librechat/data-schemas');
-const { User } = require('@librechat/data-schemas').createModels(mongoose);
-const { countUsers } = require('@librechat/data-schemas').createMethods(mongoose);
+const { CacheKeys } = require('librechat-data-provider');
+const {
+  createMethods,
+  createModels,
+  getMCPAuthorityConsistencyModule,
+  runAsSystem,
+} = require('@librechat/data-schemas');
+const { User } = createModels(mongoose);
+const { countUsers } = createMethods(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const getLogStores = require('~/cache/getLogStores');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
+const migrateTermsTimestamps = require('./migrate-terms-timestamp-operation');
 
 /**
  * Migration script for Terms Acceptance Timestamp Tracking
@@ -57,63 +65,42 @@ const connect = require('./connect');
     // Scan and update across every tenant under system context, matching the
     // other cross-tenant migrations, so the tenant isolation plugin does not
     // throw or scope queries to a non-existent tenant.
-    await runAsSystem(async () => {
-      const cursor = User.find({
+    const result = await runAsSystem(async () => {
+      const users = User.find({
         termsAccepted: true,
         $or: [{ termsAcceptedAt: null }, { termsAcceptedAt: { $exists: false } }],
       }).cursor();
-
-      let migratedCount = 0;
-      let skippedCount = 0;
-      let errorCount = 0;
-
-      for await (const user of cursor) {
-        try {
-          // Use createdAt as fallback for termsAcceptedAt
-          const termsAcceptedAt = user.createdAt || new Date();
-          if (!user.createdAt) {
-            console.yellow(
-              `Warning: User ${user._id} has no createdAt, using current date for termsAcceptedAt`,
-            );
+      return await migrateTermsTimestamps({
+        users,
+        userModel: User,
+        authority: getMCPAuthorityConsistencyModule(mongoose),
+        authUserCache: getLogStores(CacheKeys.AUTH_USER_DOC),
+        onMissingCreatedAt: (userId) =>
+          console.yellow(
+            `Warning: User ${userId} has no createdAt, using current date for termsAcceptedAt`,
+          ),
+        onProgress: (migratedCount) => {
+          if (migratedCount % 100 === 0) {
+            console.yellow(`Migrated ${migratedCount} users...`);
           }
-          // Only backfill users who are still accepted and have no timestamp.
-          // If they accept through the API or get reset between the cursor read
-          // and this write, the filter no longer matches and their state is kept.
-          const result = await User.updateOne(
-            {
-              _id: user._id,
-              termsAccepted: true,
-              $or: [{ termsAcceptedAt: null }, { termsAcceptedAt: { $exists: false } }],
-            },
-            { $set: { termsAcceptedAt } },
-          );
-
-          if (result.modifiedCount > 0) {
-            migratedCount++;
-            if (migratedCount % 100 === 0) {
-              console.yellow(`Migrated ${migratedCount} users...`);
-            }
-          } else {
-            skippedCount++;
-          }
-        } catch (error) {
-          console.red(`Error migrating user ${user._id}: ${error.message}`);
-          errorCount++;
-        }
-      }
-
-      console.green(`Migration complete!`);
-      console.green(`Successfully migrated: ${migratedCount} user(s)`);
-      if (skippedCount > 0) {
-        console.yellow(
-          `Skipped ${skippedCount} user(s) whose terms state changed during migration.`,
-        );
-      }
-      if (errorCount > 0) {
-        console.red(`Errors encountered: ${errorCount}`);
-        silentExit(1);
-      }
+        },
+      });
     });
+
+    console.green(`Migration complete!`);
+    console.green(`Successfully migrated: ${result.migratedCount} user(s)`);
+    if (result.skippedCount > 0) {
+      console.yellow(
+        `Skipped ${result.skippedCount} user(s) whose terms state changed during migration.`,
+      );
+    }
+    for (const { userId, error } of result.errors) {
+      console.red(`Error migrating user ${userId}: ${error.message}`);
+    }
+    if (result.errors.length > 0) {
+      console.red(`Errors encountered: ${result.errors.length}`);
+      silentExit(1);
+    }
   } catch (error) {
     console.red('Error during migration:', error);
     silentExit(1);

@@ -13,6 +13,7 @@ const AUTHORITATIVE_FIND_OPTIONS = {
   readPreference: 'primary' as const,
   readConcern: { level: 'majority' as const },
 };
+const NORMALIZED_NAME_INDEX = 'normalizedServerName_1_tenantId_1';
 
 export interface MCPServerNameMigrationResult {
   scanned: number;
@@ -76,12 +77,18 @@ export async function backfillMCPServerNormalizedNames(
       { $set: { normalizedServerName: update.normalizedServerName } },
     );
   }
+  const legacyIndex = (await collection.listIndexes().toArray()).find(
+    (index) =>
+      index.name === NORMALIZED_NAME_INDEX &&
+      (index.partialFilterExpression !== undefined || index.unique === true),
+  );
+  if (legacyIndex) {
+    await collection.dropIndex(NORMALIZED_NAME_INDEX);
+  }
   await collection.createIndex(
     { normalizedServerName: 1, tenantId: 1 },
     {
-      name: 'normalizedServerName_1_tenantId_1',
-      unique: true,
-      partialFilterExpression: { normalizedServerName: { $exists: true } },
+      name: NORMALIZED_NAME_INDEX,
     },
   );
   return { scanned, updated };

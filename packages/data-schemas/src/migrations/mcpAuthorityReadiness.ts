@@ -107,32 +107,8 @@ async function assertNormalizedServerNames(connection: Connection): Promise<{
     normalizedServerName?: string;
     tenantId?: string;
   }>('mcpservers');
-  const collision = await collection
-    .aggregate<{ _id: { tenantId: string | null; normalizedServerName: string } }>(
-      [
-        { $match: { normalizedServerName: { $type: 'string' } } },
-        {
-          $group: {
-            _id: {
-              tenantId: { $ifNull: ['$tenantId', null] },
-              normalizedServerName: '$normalizedServerName',
-            },
-            count: { $sum: 1 },
-          },
-        },
-        { $match: { count: { $gt: 1 } } },
-        { $limit: 1 },
-      ],
-      PRIMARY_MAJORITY_OPTIONS,
-    )
-    .next();
-  if (collision) {
-    throw new MCPAuthorityReadinessError(
-      'MCP server names contain a normalized identity collision',
-    );
-  }
-
   let scannedServers = 0;
+  const identities = new Set<string>();
   const cursor = collection.find(
     {},
     {
@@ -152,18 +128,24 @@ async function assertNormalizedServerNames(connection: Connection): Promise<{
     ) {
       throw new MCPAuthorityReadinessError('MCP server normalized names are missing or stale');
     }
+    const identity = JSON.stringify([server.tenantId ?? null, server.normalizedServerName]);
+    if (identities.has(identity)) {
+      throw new MCPAuthorityReadinessError(
+        'MCP server names contain a normalized identity collision',
+      );
+    }
+    identities.add(identity);
   }
 
   const indexes = await findIndexes(connection, 'mcpservers');
   const normalizedIndex = indexes.find(
     (index) =>
       indexKeysMatch(index.key, NORMALIZED_NAME_INDEX_KEYS) &&
-      index.unique === true &&
-      index.partialFilterExpression?.normalizedServerName?.$exists === true,
+      index.partialFilterExpression === undefined,
   );
   if (!normalizedIndex) {
     throw new MCPAuthorityReadinessError(
-      'The unique MCP normalized-server-name index is missing or malformed',
+      'The MCP normalized-server-name lookup index is missing or malformed',
     );
   }
   return {

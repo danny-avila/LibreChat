@@ -10,37 +10,42 @@ const connect = require('./connect');
 
 async function migrateMCPAuthority({ checkOnly = false, reconciliation } = {}) {
   await connect();
-  if (!checkOnly) {
-    await createMCPAuthorityProofCollections(mongoose.connection);
-    await backfillMCPServerNormalizedNames(mongoose.connection);
-    await createMCPAuthorityLookupIndexes(mongoose.connection);
-  }
-  const readiness = await assertMCPAuthorityReadiness(mongoose.connection, {
+  const consistency = getMCPAuthorityConsistencyModule(mongoose);
+  const readinessOptions = {
     cosmosStrongConsistencyConfirmed:
       process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED === 'true',
-  });
-  const consistency = getMCPAuthorityConsistencyModule(mongoose);
-  const status = checkOnly
+  };
+  let status = checkOnly
     ? await consistency.inspectMCPAuthorityConsistencyStatus()
     : await consistency.getMCPAuthorityConsistencyStatus();
   if (status == null) {
     throw new Error('MCP authority consistency fence is not initialized');
   }
-  if (!status.dirty) {
+  if (status.dirty) {
+    if (!reconciliation || checkOnly) {
+      throw new Error(
+        `MCP authority consistency fence is dirty at generation ${status.generation} for owner ${status.ownerId}. ` +
+          'Verify that writer is permanently stopped, then rerun with --reconcile-dirty ' +
+          `--owner ${status.ownerId} --generation ${status.generation} --confirm-writer-stopped.`,
+      );
+    }
+    await consistency.reconcileMCPAuthorityConsistency(reconciliation);
+  } else {
     if (reconciliation) {
       throw new Error('MCP authority consistency fence is already clean');
     }
-    return { ...readiness, consistencyGeneration: status.generation };
   }
-  if (!reconciliation) {
-    throw new Error(
-      `MCP authority consistency fence is dirty at generation ${status.generation} for owner ${status.ownerId}. ` +
-        'Verify that writer is permanently stopped, then rerun with --reconcile-dirty ' +
-        `--owner ${status.ownerId} --generation ${status.generation} --confirm-writer-stopped.`,
+
+  if (!checkOnly) {
+    await createMCPAuthorityProofCollections(mongoose.connection);
+    await consistency.mutateMCPAuthority(() =>
+      backfillMCPServerNormalizedNames(mongoose.connection),
     );
+    await createMCPAuthorityLookupIndexes(mongoose.connection);
+    status = await consistency.getMCPAuthorityConsistencyStatus();
   }
-  const reconciled = await consistency.reconcileMCPAuthorityConsistency(reconciliation);
-  return { ...readiness, consistencyGeneration: reconciled.generation };
+  const readiness = await assertMCPAuthorityReadiness(mongoose.connection, readinessOptions);
+  return { ...readiness, consistencyGeneration: status.generation };
 }
 
 function readArgument(name) {

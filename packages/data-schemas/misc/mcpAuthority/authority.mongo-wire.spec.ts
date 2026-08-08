@@ -19,6 +19,7 @@ import {
   createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
+  createMCPAuthorityUserSourceRevision,
 } from '~/methods/mcpAuthority';
 import { createMCPAuthorityProofCollections } from '~/migrations/mcpAuthorityCollections';
 import { createMCPAuthorityLookupIndexes } from '~/migrations/mcpAuthorityIndexes';
@@ -91,6 +92,14 @@ async function createTarget(): Promise<MCPAuthorityTargetInput> {
     },
     requiresOAuth: true,
   };
+}
+
+async function currentUserSourceRevision(): Promise<string> {
+  const user = await inTenant(() => models.User.findById(userId).lean());
+  if (!user) {
+    throw new Error('Mongo-wire conformance user was not created');
+  }
+  return createMCPAuthorityUserSourceRevision({ ...user, id: userId.toHexString() });
 }
 
 async function seedAuthorityFixture(): Promise<void> {
@@ -273,10 +282,12 @@ describe(`MCP authority Mongo-wire conformance (${PROVIDER})`, () => {
   test('resolves all nine sources and invalidates the proof after a fenced write', async () => {
     await seedAuthorityFixture();
     const target = await createTarget();
+    const expectedUserSourceRevision = await currentUserSourceRevision();
     const proof = await inTenant(() =>
       methods.resolveMCPAuthorityProof({
         userId: userId.toHexString(),
         tenantId: TENANT_ID,
+        expectedUserSourceRevision,
         boot,
         targets: [target],
       }),
@@ -315,6 +326,7 @@ describe(`MCP authority Mongo-wire conformance (${PROVIDER})`, () => {
   });
 
   test('rejects reads while an authority writer owns the fence', async () => {
+    const expectedUserSourceRevision = await currentUserSourceRevision();
     let releaseWriter: (() => void) | undefined;
     let writerEntered: (() => void) | undefined;
     const entered = new Promise<void>((resolve) => {
@@ -335,6 +347,7 @@ describe(`MCP authority Mongo-wire conformance (${PROVIDER})`, () => {
         methods.resolveMCPAuthorityProof({
           userId: userId.toHexString(),
           tenantId: TENANT_ID,
+          expectedUserSourceRevision,
           boot,
           targets: [target],
         }),

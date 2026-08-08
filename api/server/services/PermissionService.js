@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
 const {
   getTransactionSupport,
+  getMCPAuthorityConsistencyModule,
   tenantStorage,
   getTenantId,
   logger,
@@ -562,26 +563,12 @@ const performEntraGroupMembershipSync = async (user, accessToken, session = null
       `[PermissionService.syncUserEntraGroupMemberships] Syncing ${allGroupIds.length} groups for user ${user._id}`,
     );
 
-    // Step 2: Try to add user to existing groups (fast operation)
-    const addResult = await db.bulkUpdateGroups(
-      {
-        idOnTheSource: { $in: allGroupIds },
-        source: 'entra',
-        memberIds: { $ne: user.idOnTheSource },
-      },
-      { $addToSet: { memberIds: user.idOnTheSource } },
-      sessionOptions,
-    );
-
-    logger.debug(
-      `[PermissionService.syncUserEntraGroupMemberships] Added user to ${addResult.modifiedCount || 0} existing groups`,
-    );
-
-    // Step 3: Find which groups don't exist in DB using db layer
+    // Step 2: Find which groups don't exist in DB using db layer
     const existingGroups = await db.findGroupsByExternalIds(allGroupIds, 'entra', session);
     const existingGroupIds = new Set(existingGroups.map((g) => g.idOnTheSource));
 
     const missingGroupIds = allGroupIds.filter((id) => !existingGroupIds.has(id));
+    let groupDetails = [];
 
     if (missingGroupIds.length > 0) {
       logger.info(
@@ -589,49 +576,8 @@ const performEntraGroupMembershipSync = async (user, accessToken, session = null
       );
 
       // Step 4: Fetch details only for missing groups (optimized batch request)
-      const groupDetails = await getEntraGroupDetailsBatch(
-        accessToken,
-        user.openidId,
-        missingGroupIds,
-      );
-
-      if (groupDetails.length > 0) {
-        logger.info(
-          `[PermissionService.syncUserEntraGroupMemberships] Creating ${groupDetails.length} new groups`,
-        );
-
-        // Step 5: Upsert missing groups (race-safe by design)
-        // Use upsertGroupByExternalId for each group to handle concurrent creates gracefully
-        const upsertPromises = groupDetails.map((group) =>
-          db.upsertGroupByExternalId(
-            group.id,
-            'entra',
-            {
-              name: group.name,
-              email: group.email,
-              description: group.description,
-            },
-            session,
-          ),
-        );
-
-        await Promise.all(upsertPromises);
-
-        // Step 6: Add user to all newly created/upserted groups
-        await db.bulkUpdateGroups(
-          {
-            idOnTheSource: { $in: missingGroupIds },
-            source: 'entra',
-            memberIds: { $ne: user.idOnTheSource },
-          },
-          { $addToSet: { memberIds: user.idOnTheSource } },
-          sessionOptions,
-        );
-
-        logger.info(
-          `[PermissionService.syncUserEntraGroupMemberships] Successfully created/updated ${groupDetails.length} groups`,
-        );
-      } else {
+      groupDetails = await getEntraGroupDetailsBatch(accessToken, user.openidId, missingGroupIds);
+      if (groupDetails.length === 0) {
         logger.warn(
           `[PermissionService.syncUserEntraGroupMemberships] Could not fetch details for ${missingGroupIds.length} missing groups`,
         );
@@ -642,19 +588,60 @@ const performEntraGroupMembershipSync = async (user, accessToken, session = null
       );
     }
 
-    // Step 7: Remove user from Entra groups they're no longer member of
-    const removeResult = await db.bulkUpdateGroups(
-      {
-        source: 'entra',
-        memberIds: user.idOnTheSource,
-        idOnTheSource: { $nin: allGroupIds },
-      },
-      { $pullAll: { memberIds: [user.idOnTheSource] } },
-      sessionOptions,
-    );
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    const { result } = await consistency.mutateMCPAuthority(async () => {
+      if (groupDetails.length > 0) {
+        logger.info(
+          `[PermissionService.syncUserEntraGroupMemberships] Creating ${groupDetails.length} new groups`,
+        );
+        await Promise.all(
+          groupDetails.map((group) =>
+            db.upsertGroupByExternalId(
+              group.id,
+              'entra',
+              {
+                name: group.name,
+                email: group.email,
+                description: group.description,
+              },
+              session,
+            ),
+          ),
+        );
+      }
+
+      const addResult = await db.bulkUpdateGroups(
+        {
+          idOnTheSource: { $in: allGroupIds },
+          source: 'entra',
+          memberIds: { $ne: user.idOnTheSource },
+        },
+        { $addToSet: { memberIds: user.idOnTheSource } },
+        sessionOptions,
+      );
+      const removeResult = await db.bulkUpdateGroups(
+        {
+          source: 'entra',
+          memberIds: user.idOnTheSource,
+          idOnTheSource: { $nin: allGroupIds },
+        },
+        { $pullAll: { memberIds: [user.idOnTheSource] } },
+        sessionOptions,
+      );
+      return { addResult, removeResult };
+    });
 
     logger.debug(
-      `[PermissionService.syncUserEntraGroupMemberships] Removed user from ${removeResult.modifiedCount || 0} groups`,
+      `[PermissionService.syncUserEntraGroupMemberships] Added user to ${result.addResult.modifiedCount || 0} groups`,
+    );
+    if (groupDetails.length > 0) {
+      logger.info(
+        `[PermissionService.syncUserEntraGroupMemberships] Successfully created/updated ${groupDetails.length} groups`,
+      );
+    }
+
+    logger.debug(
+      `[PermissionService.syncUserEntraGroupMemberships] Removed user from ${result.removeResult.modifiedCount || 0} groups`,
     );
 
     logger.info(

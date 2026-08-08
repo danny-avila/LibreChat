@@ -34,6 +34,8 @@ import type {
 } from '~/types';
 import type { MCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import {
+  MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS,
+  MCP_AUTHORITY_USER_SOURCE_FIELDS,
   MCP_AUTHORITY_OAUTH_TOKEN_TYPES,
   type MCPAuthorityOAuthTokenType,
 } from './mcpAuthority/classification';
@@ -59,6 +61,9 @@ interface PreparedTarget {
 
 interface UserProjection {
   _id: Types.ObjectId;
+  name?: string;
+  username?: string;
+  email?: string;
   tenantId?: string;
   role?: string;
   provider?: string;
@@ -72,6 +77,10 @@ interface UserProjection {
   githubId?: string;
   discordId?: string;
   appleId?: string;
+  emailVerified?: boolean;
+  twoFactorEnabled?: boolean;
+  termsAccepted?: boolean;
+  termsAcceptedAt?: Date | string | null;
 }
 
 interface GroupProjection {
@@ -177,6 +186,15 @@ const MAX_MCP_AUTHORITY_CONFIG_TOMBSTONES = 64;
 
 export type MCPAuthorityMethods = MCPAuthorityDatabaseMethods & MCPAuthorityConsistencyModule;
 
+export type MCPAuthorityUserSourceDocument = Readonly<
+  { id: string } & Partial<
+    Pick<
+      IUser,
+      Exclude<(typeof MCP_AUTHORITY_USER_SOURCE_FIELDS)[number], 'id' | 'termsAcceptedAt'>
+    >
+  > & { termsAcceptedAt?: Date | string | null }
+>;
+
 export interface MCPAuthorityMethodHooks {
   afterPrincipalSnapshot?: () => void | Promise<void>;
   now?: () => Date;
@@ -257,6 +275,47 @@ function stableStringify(value: unknown, seen = new WeakSet<object>()): string {
 
 export function digestMCPAuthorityValue(value: unknown): string {
   return createHash('sha256').update(stableStringify(value)).digest('base64url');
+}
+
+function normalizeMCPAuthorityUserPlaceholderValue(
+  value: MCPAuthorityUserSourceDocument[keyof MCPAuthorityUserSourceDocument],
+): string {
+  if (value == null) {
+    return '';
+  }
+  if (typeof value === 'string' || typeof value === 'boolean' || value instanceof Date) {
+    return String(value);
+  }
+  reject('malformed_input', 'MCP user source revision contains a malformed placeholder value');
+}
+
+function normalizeMCPAuthorityUserIdentityValue(value: string | null | undefined): string | null {
+  if (value == null) {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    reject('malformed_input', 'MCP user source revision contains a malformed identity value');
+  }
+  return value;
+}
+
+export function createMCPAuthorityUserSourceRevision(user: MCPAuthorityUserSourceDocument): string {
+  if (!user || typeof user !== 'object' || typeof user.id !== 'string' || !user.id) {
+    reject('malformed_input', 'MCP user source revision inputs are malformed');
+  }
+  const placeholders = MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS.reduce<Record<string, string>>(
+    (values, field) => {
+      values[field] = normalizeMCPAuthorityUserPlaceholderValue(user[field]);
+      return values;
+    },
+    {},
+  );
+  return digestMCPAuthorityValue({
+    placeholders,
+    tenantId: normalizeMCPAuthorityUserIdentityValue(user.tenantId),
+    idOnTheSource: normalizeMCPAuthorityUserIdentityValue(user.idOnTheSource),
+    openidIssuer: normalizeMCPAuthorityUserIdentityValue(user.openidIssuer),
+  });
 }
 
 function deepFreeze<T>(value: T): Readonly<T> {
@@ -620,6 +679,8 @@ function assertProofIntegrity(proof: MCPAuthorityProofV1): void {
     !Array.isArray(shared.groups) ||
     !Array.isArray(shared.configs) ||
     !shared.user.userId ||
+    typeof shared.user.sourceRevision !== 'string' ||
+    !shared.user.sourceRevision ||
     !shared.user.revision ||
     !shared.role.revision ||
     !shared.boot.revision ||
@@ -1124,6 +1185,7 @@ export function createMCPAuthorityMethods(
   async function loadCurrentProof(
     userId: string,
     tenantId: string | undefined,
+    expectedUserSourceRevision: string,
     boot: MCPAuthorityBootRevision,
     targets: readonly PreparedTarget[],
     generation: number,
@@ -1134,12 +1196,20 @@ export function createMCPAuthorityMethods(
     if (!boot.revision.trim() || !boot.digest.trim()) {
       reject('malformed_input', 'MCP boot authority revision is malformed');
     }
+    if (
+      typeof expectedUserSourceRevision !== 'string' ||
+      !expectedUserSourceRevision ||
+      expectedUserSourceRevision.trim() !== expectedUserSourceRevision ||
+      expectedUserSourceRevision.length > MAX_MCP_AUTHORITY_SOURCE_REVISION_LENGTH
+    ) {
+      reject('malformed_input', 'MCP user source revision is malformed');
+    }
     const tenantScope =
       tenantId === undefined ? { tenantId: { $exists: false as const } } : { tenantId };
 
     const User = mongoose.models.User as Model<IUser>;
     const userQuery = User.findOne({ _id: new Types.ObjectId(userId), ...tenantScope }).select(
-      '_id tenantId role provider idOnTheSource openidIssuer googleId facebookId openidId samlId ldapId githubId discordId appleId',
+      MCP_AUTHORITY_USER_SOURCE_FIELDS.map((field) => (field === 'id' ? '_id' : field)).join(' '),
     );
     userQuery.read('primary').readConcern('majority');
     const user = await userQuery.lean<UserProjection>();
@@ -1154,6 +1224,10 @@ export function createMCPAuthorityMethods(
     const provider = user.provider?.trim();
     if (!roleName || !provider) {
       reject('proof_unavailable', 'MCP authority principal data is malformed');
+    }
+    const userSourceRevision = createMCPAuthorityUserSourceRevision({ id: userId, ...user });
+    if (userSourceRevision !== expectedUserSourceRevision) {
+      reject('principal_changed', 'MCP user source changed before authority was resolved');
     }
     const memberId = user.idOnTheSource || userId;
 
@@ -1495,12 +1569,14 @@ export function createMCPAuthorityMethods(
       role: roleName,
       provider,
       sourceIdentityDigest: userSourceIdentityDigest,
+      sourceRevision: userSourceRevision,
       revision: digestMCPAuthorityValue({
         userId,
         tenantId: actualTenantId,
         role: roleName,
         provider,
         sourceIdentityDigest: userSourceIdentityDigest,
+        sourceRevision: userSourceRevision,
       }),
     };
     const groupProofs = sortedGroups.map(buildGroupProof);
@@ -1717,6 +1793,7 @@ export function createMCPAuthorityMethods(
   async function loadAuthoritativeSnapshot(
     userId: string,
     tenantId: string | undefined,
+    expectedUserSourceRevision: string,
     boot: MCPAuthorityBootRevision,
     targets: readonly PreparedTarget[],
   ): Promise<MCPAuthorityProofV1> {
@@ -1725,7 +1802,7 @@ export function createMCPAuthorityMethods(
     }
     await consistency.initializeMCPAuthorityConsistency();
     const stable = await consistency.readStableSnapshot(async (generation) =>
-      loadCurrentProof(userId, tenantId, boot, targets, generation),
+      loadCurrentProof(userId, tenantId, expectedUserSourceRevision, boot, targets, generation),
     );
     return stable.snapshot;
   }
@@ -1735,7 +1812,13 @@ export function createMCPAuthorityMethods(
   ): Promise<MCPAuthorityProofV1> {
     try {
       const targets = prepareTargets(input.targets);
-      return await loadAuthoritativeSnapshot(input.userId, input.tenantId, input.boot, targets);
+      return await loadAuthoritativeSnapshot(
+        input.userId,
+        input.tenantId,
+        input.expectedUserSourceRevision,
+        input.boot,
+        targets,
+      );
     } catch (error) {
       throw asMCPError(error);
     }
@@ -1881,6 +1964,7 @@ export function createMCPAuthorityMethods(
       const current = await loadAuthoritativeSnapshot(
         expectedShared.user.userId,
         expectedShared.user.tenantId ?? undefined,
+        expectedShared.user.sourceRevision,
         input.boot,
         targets,
       );
