@@ -229,7 +229,24 @@ async function getCachedTools(options = {}) {
 
   // Return MCP server-specific tools if requested
   if (serverName && userId) {
-    const cached = await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName, configGeneration));
+    const toolsKey = ToolCacheKeys.MCP_SERVER(userId, serverName, configGeneration);
+    let cached = await cache.get(toolsKey);
+    if (cached == null && configGeneration) {
+      cached = await runWithUserToolsQueue(userId, serverName, async () => {
+        const current = await cache.get(toolsKey);
+        if (current != null) {
+          return current;
+        }
+        const legacy = await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName));
+        if (legacy == null) {
+          return null;
+        }
+        if ((await cache.set(toolsKey, legacy, Time.TWELVE_HOURS)) === false) {
+          throw new Error('Tool cache rejected the legacy user catalog migration');
+        }
+        return legacy;
+      });
+    }
     if (!isGenerationGuardedToolEntry(cached)) {
       return cached;
     }
@@ -269,10 +286,12 @@ async function setCachedToolsWithinGlobalLock(tools, options = {}) {
   return await cache.set(ToolCacheKeys.GLOBAL, tools, ttl);
 }
 
-/** Sets tools while serializing aggregate global writes across Redis-backed workers. */
+/** Sets tools while serializing writes for the addressed user/server or aggregate global scope. */
 async function setCachedTools(tools, options = {}) {
   if (options.serverName && options.userId) {
-    return setCachedToolsWithinGlobalLock(tools, options);
+    return runWithUserToolsQueue(options.userId, options.serverName, () =>
+      setCachedToolsWithinGlobalLock(tools, options),
+    );
   }
   return runWithGlobalCacheLock(() => setCachedToolsWithinGlobalLock(tools, options));
 }

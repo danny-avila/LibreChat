@@ -26,6 +26,7 @@ const mockCache = { get: jest.fn(), set: jest.fn(), delete: jest.fn() };
 getLogStores.mockReturnValue(mockCache);
 
 const {
+  getCachedTools,
   setCachedTools,
   setCachedToolsIfCurrent,
   runWithGlobalCacheLock,
@@ -149,6 +150,35 @@ describe('global tool cache write lock', () => {
     ).resolves.toBe(false);
 
     expect(mockCache.set).not.toHaveBeenCalled();
+  });
+
+  it('serializes legacy user catalog migration with Redis-backed writers', async () => {
+    const legacy = { legacy: {} };
+    mockCache.get
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(legacy);
+
+    await expect(
+      getCachedTools({
+        userId: 'user-1',
+        serverName: 'server-1',
+        configGeneration: 'config-current',
+      }),
+    ).resolves.toBe(legacy);
+
+    expect(mockRedisClient.set).toHaveBeenCalledWith(
+      `${CacheKeys.TOOL_CACHE}:tools:mcp-write-lock:user-1:server-1`,
+      expect.any(String),
+      'PX',
+      30_000,
+      'NX',
+    );
+    expect(mockCache.set).toHaveBeenCalledWith(
+      'tools:mcp:user:{user-1:server-1}:config-current',
+      legacy,
+      expect.any(Number),
+    );
   });
 
   it('waits through the full abandoned Redis lease before giving up', async () => {

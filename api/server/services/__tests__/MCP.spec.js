@@ -162,6 +162,21 @@ describe('getAssistantToolDefinitions', () => {
       serverConfig,
     });
   });
+
+  it('propagates config-server resolution failures through the assistant write bridge', async () => {
+    const resolutionError = new Error('config resolution failed');
+    getCachedTools.mockResolvedValue({});
+    getAppConfig.mockResolvedValue({
+      mcpConfig: { 'app-server': { type: 'streamable-http', url: 'https://example.com/mcp' } },
+    });
+    mockRegistry.ensureConfigServers.mockRejectedValue(resolutionError);
+
+    await expect(getAssistantToolDefinitions({ req, tools: [toolKey] })).rejects.toBe(
+      resolutionError,
+    );
+    expect(mockRegistry.getAllServerConfigs).not.toHaveBeenCalled();
+    expect(getMCPServerTools).not.toHaveBeenCalled();
+  });
 });
 
 describe('resolveConfigServers', () => {

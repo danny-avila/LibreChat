@@ -90,4 +90,41 @@ describe('getAssistantToolDefinitions', () => {
       publicationGeneration: 'generation-1',
     });
   });
+
+  it('propagates config-server resolution failures instead of dropping selected tools', async () => {
+    const resolutionError = new Error('config resolution failed');
+    const deps = createDeps({
+      ensureConfigServers: jest.fn().mockRejectedValue(resolutionError),
+    });
+
+    await expect(getAssistantToolDefinitions(params, deps)).rejects.toBe(resolutionError);
+    expect(deps.getAllServerConfigs).not.toHaveBeenCalled();
+    expect(deps.getMCPServerTools).not.toHaveBeenCalled();
+  });
+
+  it('does not classify a known static tool containing the MCP delimiter as an MCP reference', async () => {
+    const staticToolKey = `get${Constants.mcp_delimiter}status`;
+    const staticTools: LCAvailableTools = {
+      [staticToolKey]: {
+        type: 'function',
+        ['function']: { name: staticToolKey },
+      },
+    };
+    const deps = createDeps({
+      getAllServerConfigs: jest.fn().mockResolvedValue({ status: serverConfig }),
+    });
+
+    await expect(
+      getAssistantToolDefinitions(
+        {
+          ...params,
+          tools: [staticToolKey],
+          staticTools,
+        },
+        deps,
+      ),
+    ).resolves.toBe(staticTools);
+    expect(deps.ensureConfigServers).not.toHaveBeenCalled();
+    expect(deps.getMCPServerTools).not.toHaveBeenCalled();
+  });
 });

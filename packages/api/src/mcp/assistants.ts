@@ -64,15 +64,7 @@ async function resolveAssistantMcpConfigs(
   mcpConfig: Record<string, MCPOptions>,
   deps: AssistantToolDefinitionsDeps,
 ): Promise<Record<string, ParsedServerConfig>> {
-  let configServers: Record<string, ParsedServerConfig> = {};
-  try {
-    configServers = await deps.ensureConfigServers(mcpConfig);
-  } catch (error) {
-    logger.warn(
-      '[assistant tool definitions] Config server resolution failed; continuing without config-only servers:',
-      error,
-    );
-  }
+  const configServers = await deps.ensureConfigServers(mcpConfig);
   return deps.getAllServerConfigs(userId, configServers, role);
 }
 
@@ -140,7 +132,11 @@ export async function getAssistantToolDefinitions(
   params: AssistantToolDefinitionsParams,
   deps: AssistantToolDefinitionsDeps,
 ): Promise<LCAvailableTools> {
-  const mcpToolNames = params.tools?.filter(isMCPToolReference) ?? [];
+  const mcpToolNames =
+    params.tools?.filter(
+      (tool): tool is string =>
+        isMCPToolReference(tool) && !Object.prototype.hasOwnProperty.call(params.staticTools, tool),
+    ) ?? [];
   const userId = params.user?.id;
   if (mcpToolNames.length === 0 || !userId) {
     return params.staticTools;

@@ -133,6 +133,46 @@ describe('MCP tool cache', () => {
     );
   });
 
+  it('copies a legacy user catalog into the config-addressed key on rollout', async () => {
+    const tools = { legacy: { type: 'function' } };
+    mockCache.get
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(tools);
+    mockCache.set.mockResolvedValue(true);
+
+    await expect(
+      getCachedTools({
+        userId: 'user1',
+        serverName: 'github',
+        configGeneration: 'config-v2',
+      }),
+    ).resolves.toBe(tools);
+
+    expect(mockCache.get).toHaveBeenNthCalledWith(3, ToolCacheKeys.MCP_SERVER('user1', 'github'));
+    expect(mockCache.set).toHaveBeenCalledWith(
+      ToolCacheKeys.MCP_SERVER('user1', 'github', 'config-v2'),
+      tools,
+      Time.TWELVE_HOURS,
+    );
+  });
+
+  it('preserves a config-addressed catalog published during legacy fallback', async () => {
+    const current = { current: { type: 'function' } };
+    mockCache.get.mockResolvedValueOnce(null).mockResolvedValueOnce(current);
+
+    await expect(
+      getCachedTools({
+        userId: 'user1',
+        serverName: 'github',
+        configGeneration: 'config-v2',
+      }),
+    ).resolves.toBe(current);
+
+    expect(mockCache.get).toHaveBeenCalledTimes(2);
+    expect(mockCache.set).not.toHaveBeenCalled();
+  });
+
   it('hides a guarded entry after its connection generation is replaced', async () => {
     mockCache.get
       .mockResolvedValueOnce({
