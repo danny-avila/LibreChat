@@ -1,5 +1,10 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants, buildServerNameAliases, splitMCPToolKey } from 'librechat-data-provider';
+import {
+  Constants,
+  buildServerNameAliases,
+  normalizeServerName,
+  splitMCPToolKey,
+} from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { LCAvailableTools, ParsedServerConfig } from '~/mcp/types';
 import { findShadowedServerNames } from '~/mcp/utils';
@@ -71,18 +76,32 @@ async function resolveAssistantMcpConfigs(
 function selectReferencedServers(
   toolNames: readonly string[],
   configs: Record<string, ParsedServerConfig>,
+  configuredServerNames: readonly string[] = [],
 ): Set<string> {
-  const serverNames = Object.keys(configs);
+  const serverNames = [...new Set([...Object.keys(configs), ...configuredServerNames])];
   const aliases = buildServerNameAliases(serverNames);
   const knownNames = [...new Set([...serverNames, ...aliases.keys()])];
   const shadowed = findShadowedServerNames(serverNames);
 
   return toolNames.reduce((selected, toolName) => {
     const [, parsedServerName] = splitMCPToolKey(toolName, knownNames);
+    const unavailableConfiguredServer = configuredServerNames.find(
+      (serverName) =>
+        !Object.prototype.hasOwnProperty.call(configs, serverName) &&
+        (serverName === parsedServerName || normalizeServerName(serverName) === parsedServerName),
+    );
+    if (unavailableConfiguredServer) {
+      throw new Error(
+        `MCP server configuration unavailable for assistant server "${unavailableConfiguredServer}"`,
+      );
+    }
     const serverName =
       parsedServerName != null && Object.prototype.hasOwnProperty.call(configs, parsedServerName)
         ? parsedServerName
         : aliases.get(parsedServerName ?? '');
+    if (serverName && !Object.prototype.hasOwnProperty.call(configs, serverName)) {
+      throw new Error(`MCP server configuration unavailable for assistant server "${serverName}"`);
+    }
     if (serverName && !shadowed.has(serverName)) {
       selected.add(serverName);
     }
@@ -149,8 +168,9 @@ export async function getAssistantToolDefinitions(
     deps,
   );
   const serverCatalogs = await Promise.all(
-    Array.from(selectReferencedServers(mcpToolNames, configs), (serverName) =>
-      loadServerCatalog(userId, serverName, configs[serverName], deps),
+    Array.from(
+      selectReferencedServers(mcpToolNames, configs, Object.keys(params.mcpConfig)),
+      (serverName) => loadServerCatalog(userId, serverName, configs[serverName], deps),
     ),
   );
   return Object.assign({}, params.staticTools, ...serverCatalogs);

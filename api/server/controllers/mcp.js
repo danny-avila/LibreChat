@@ -98,7 +98,7 @@ function handleMCPError(error, res) {
   return null;
 }
 
-/** Fences cross-replica publications before a DB-backed server changes configuration. */
+/** Fences cross-replica publications around a DB-backed server mutation. */
 async function fenceMCPServerMutation(userId, serverName) {
   await invalidateCachedTools({ userId, serverName });
   try {
@@ -527,13 +527,13 @@ const updateMCPServerController = async (req, res) => {
         .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
     }
 
-    await fenceMCPServerMutation(userId, serverName);
     const parsedConfig = await getMCPServersRegistry().updateServer(
       serverName,
       validation.data,
       'DB',
       userId,
     );
+    await fenceMCPServerMutation(userId, serverName);
 
     res.status(200).json(redactServerSecrets(parsedConfig, { canEdit: true }));
   } catch (error) {

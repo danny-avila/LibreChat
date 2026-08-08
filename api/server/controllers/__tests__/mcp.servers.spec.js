@@ -280,7 +280,7 @@ describe('DB-backed server mutation fencing', () => {
     source: 'user',
   };
 
-  it('fences and disconnects before updating the registry', async () => {
+  it('commits the inspected update before fencing and disconnecting old connections', async () => {
     const user = await createUser();
     mockRegistryInstance.getServerConfig.mockResolvedValue(
       createDbConfig(new mongoose.Types.ObjectId()),
@@ -296,16 +296,35 @@ describe('DB-backed server mutation fencing', () => {
     const { invalidateCachedTools } = require('~/server/services/Config');
     expect(invalidateCachedTools).toHaveBeenCalledWith({ userId: user.id, serverName: 'github' });
     expect(mockMcpManager.disconnectUserConnection).toHaveBeenCalledWith(user.id, 'github');
+    expect(mockRegistryInstance.updateServer.mock.invocationCallOrder[0]).toBeLessThan(
+      invalidateCachedTools.mock.invocationCallOrder[0],
+    );
     expect(invalidateCachedTools.mock.invocationCallOrder[0]).toBeLessThan(
       mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0],
-    );
-    expect(mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0]).toBeLessThan(
-      mockRegistryInstance.updateServer.mock.invocationCallOrder[0],
     );
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
-  it('does not mutate the registry when the distributed fence fails', async () => {
+  it('does not fence the valid catalog when update inspection or persistence fails', async () => {
+    const user = await createUser();
+    const updateError = new Error('inspection failed');
+    mockRegistryInstance.getServerConfig.mockResolvedValue(
+      createDbConfig(new mongoose.Types.ObjectId()),
+    );
+    mockRegistryInstance.updateServer.mockRejectedValue(updateError);
+    const res = createRes();
+
+    await updateMCPServerController(
+      { user, params: { serverName: 'github' }, body: { config: updatedConfig } },
+      res,
+    );
+
+    expect(require('~/server/services/Config').invalidateCachedTools).not.toHaveBeenCalled();
+    expect(mockMcpManager.disconnectUserConnection).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it('reports a fence failure after the registry update commits', async () => {
     const user = await createUser();
     mockRegistryInstance.getServerConfig.mockResolvedValue(
       createDbConfig(new mongoose.Types.ObjectId()),
@@ -321,7 +340,7 @@ describe('DB-backed server mutation fencing', () => {
     );
 
     expect(mockMcpManager.disconnectUserConnection).not.toHaveBeenCalled();
-    expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+    expect(mockRegistryInstance.updateServer).toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
   });
 

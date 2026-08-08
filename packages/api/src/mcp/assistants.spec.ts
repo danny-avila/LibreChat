@@ -102,6 +102,38 @@ describe('getAssistantToolDefinitions', () => {
     expect(deps.getMCPServerTools).not.toHaveBeenCalled();
   });
 
+  it('rejects a selected config server omitted by partial initialization', async () => {
+    const deps = createDeps({
+      ensureConfigServers: jest.fn().mockResolvedValue({}),
+      getAllServerConfigs: jest.fn().mockResolvedValue({}),
+    });
+
+    await expect(
+      getAssistantToolDefinitions({ ...params, mcpConfig: { 'app-server': serverConfig } }, deps),
+    ).rejects.toThrow('MCP server configuration unavailable for assistant server "app-server"');
+    expect(deps.getMCPServerTools).not.toHaveBeenCalled();
+  });
+
+  it('does not route a missing normalized config server to a colliding available server', async () => {
+    const collidingToolKey = `search${Constants.mcp_delimiter}foo`;
+    const deps = createDeps({
+      ensureConfigServers: jest.fn().mockResolvedValue({}),
+      getAllServerConfigs: jest.fn().mockResolvedValue({ foo: serverConfig }),
+    });
+
+    await expect(
+      getAssistantToolDefinitions(
+        {
+          ...params,
+          tools: [collidingToolKey],
+          mcpConfig: { 'foo!': { ...serverConfig, url: 'https://other.example.com/mcp' } },
+        },
+        deps,
+      ),
+    ).rejects.toThrow('MCP server configuration unavailable for assistant server "foo!"');
+    expect(deps.getMCPServerTools).not.toHaveBeenCalled();
+  });
+
   it('does not classify a known static tool containing the MCP delimiter as an MCP reference', async () => {
     const staticToolKey = `get${Constants.mcp_delimiter}status`;
     const staticTools: LCAvailableTools = {
