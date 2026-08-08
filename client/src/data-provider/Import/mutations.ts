@@ -70,5 +70,12 @@ export const useCancelImportMutation = (): UseMutationResult<
       queryClient.invalidateQueries([QueryKeys.importJob, jobId]);
       queryClient.invalidateQueries([QueryKeys.allConversations]);
     },
+    /** A dropped response is ambiguous: cancellation may already have
+     * succeeded while polling is paused on the confirmation screen. Refetch
+     * both the job and any conversations the run may have committed. */
+    onError: (_error, jobId) => {
+      queryClient.invalidateQueries([QueryKeys.importJob, jobId]);
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
+    },
   });
 };

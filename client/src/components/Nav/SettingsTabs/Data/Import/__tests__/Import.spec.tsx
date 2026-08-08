@@ -702,6 +702,29 @@ describe('Import panel', () => {
     );
   });
 
+  it('shows compression guidance when a bare JSON export exceeds the shard limit', () => {
+    render(<Import />);
+
+    act(() => {
+      capturedUploadOptions.onError?.({
+        response: {
+          data: {
+            message:
+              'This JSON file is too large to import on its own. Compress it into a .zip and upload that instead',
+          },
+        },
+      });
+    });
+
+    expect(showToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          'This JSON file is too large to import on its own. Compress it into a .zip and upload that instead',
+        severity: 'error',
+      }),
+    );
+  });
+
   it('shows a generic toast for any other upload failure', () => {
     render(<Import />);
 

@@ -51,6 +51,16 @@ const BASE = {
 
 const localDirs: string[] = [];
 
+function claudeConversation(uuid: string, name: string) {
+  return {
+    uuid,
+    name,
+    created_at: '2025-01-01T00:00:00.000Z',
+    updated_at: '2025-01-01T00:00:01.000Z',
+    chat_messages: [],
+  };
+}
+
 afterEach(() => {
   cleanupClaudeFixtureExport();
   for (const dir of localDirs) {
@@ -99,6 +109,16 @@ describe('inspectExport for a Claude export', () => {
     expect(inspected.format).toBe('claude');
     expect(inspected.summary.source).toBe('claude');
     expect(inspected.summary.conversations).toBe(2);
+  });
+
+  it('rejects a later shard containing a malformed Claude entry', async () => {
+    const valid = claudeConversation('valid', 'Valid');
+    const filepath = await writeZip({
+      'conversations-000.json': JSON.stringify([valid]),
+      'conversations-001.json': JSON.stringify([valid, null]),
+    });
+
+    await expect(inspectExport(filepath)).rejects.toThrow('Unsupported import type');
   });
 });
 
@@ -374,5 +394,34 @@ describe('runImport for a Claude export', () => {
 
     expect(report.imported).toBe(0);
     expect(report.errors[0]).toContain('expected Claude conversation objects');
+  });
+
+  it('skips a shard containing a malformed later entry and continues with the next shard', async () => {
+    const filepath = await writeZip({
+      'conversations-000.json': JSON.stringify([
+        claudeConversation('before-null', 'Before malformed entry'),
+        null,
+      ]),
+      'conversations-001.json': JSON.stringify([
+        claudeConversation('after-null', 'After malformed shard'),
+      ]),
+    });
+    const { sink, recorded } = recorder();
+
+    const report = await runImport({
+      ...BASE,
+      filepath,
+      format: 'claude',
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.imported).toBe(1);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toContain('conversations-000.json');
+    expect(report.errors[0]).toContain('expected Claude conversation objects');
+    expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
+      'After malformed shard',
+    ]);
   });
 });

@@ -109,12 +109,28 @@ export interface ChatGptAttachment {
   height?: number;
 }
 
+export interface ChatGptLegacyCitationMetadata {
+  type?: string | null;
+  title?: string | null;
+  url?: string | null;
+  text?: string | null;
+  pub_date?: number | null;
+}
+
+export interface ChatGptLegacyCitation {
+  start_ix?: number | null;
+  end_ix?: number | null;
+  citation_format_type?: string | null;
+  metadata?: ChatGptLegacyCitationMetadata | null;
+}
+
 export interface ChatGptMessageMetadata {
   model_slug?: string;
   attachments?: ChatGptAttachment[];
   content_references?: ChatGptContentReference[];
   search_result_groups?: ChatGptSearchGroup[];
   image_results?: ChatGptSearchEntry[];
+  citations?: ChatGptLegacyCitation[];
 }
 
 export interface ChatGptMessage {

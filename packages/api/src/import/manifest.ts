@@ -119,7 +119,16 @@ function shardsFromFilenames(entries: ArchiveEntry[], present: Set<string>): str
   const jsonEntries = entries.filter(
     (entry) => entry.name.endsWith('.json') && entry.name !== MANIFEST_ENTRY,
   );
-  return jsonEntries.length === 1 ? [jsonEntries[0].name] : [];
+  if (jsonEntries.length === 1) {
+    return [jsonEntries[0].name];
+  }
+
+  /** Multer accepts a bare export by its JSON MIME type even when the client
+   * filename has no `.json` suffix. A single-file archive has no other
+   * metadata available here, so its sole non-manifest entry is the shard and
+   * content validation decides whether it is a supported provider export. */
+  const bareEntries = entries.filter((entry) => entry.name !== MANIFEST_ENTRY);
+  return bareEntries.length === 1 ? [bareEntries[0].name] : [];
 }
 
 /**
@@ -143,11 +152,15 @@ export function hasChatGptConversationShape(conversations: unknown[]): boolean {
  * conversations carry a flat `chat_messages` array instead of a `mapping` tree.
  */
 export function hasClaudeConversationShape(conversations: unknown[]): boolean {
-  if (conversations.length === 0) {
-    return false;
-  }
-  const [first] = conversations;
-  return typeof first === 'object' && first !== null && 'chat_messages' in first;
+  return (
+    conversations.length > 0 &&
+    conversations.every(
+      (conversation) =>
+        typeof conversation === 'object' &&
+        conversation !== null &&
+        'chat_messages' in conversation,
+    )
+  );
 }
 
 /**

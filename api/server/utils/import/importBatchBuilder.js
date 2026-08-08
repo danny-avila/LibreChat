@@ -15,6 +15,7 @@ const {
   bulkSaveConvos,
   bulkSaveMessages,
   bulkIncrementTagCounts,
+  getConvosQueried,
 } = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
@@ -168,19 +169,20 @@ class ImportBatchBuilder {
 
     try {
       await bulkSaveMessages(messages, true);
-      await Promise.all([
-        bulkSaveConvos(conversations),
-        bulkIncrementTagCounts(
-          this.requestUserId,
-          conversations.flatMap((convo) => convo.tags),
-        ),
-      ]);
+      /** Conversation rows are the commit markers for their messages. Keep
+       * this write separate from tag maintenance so a fast tag failure cannot
+       * start cleanup while the conversation write is still in flight. */
+      await bulkSaveConvos(conversations);
+      await bulkIncrementTagCounts(
+        this.requestUserId,
+        conversations.flatMap((convo) => convo.tags),
+      );
       logger.debug(
         `user: ${this.requestUserId} | Added ${conversations.length} conversations and ${messages.length} messages to the DB.`,
       );
     } catch (error) {
       logger.error('Error saving batch', error);
-      await this.discardOrphanedMessages(messages);
+      await this.discardOrphanedMessages(messages, conversations);
       throw error;
     }
   }
@@ -192,16 +194,35 @@ class ImportBatchBuilder {
    * (every run mints fresh message ids), and so duplicated on every re-import.
    * Scoped to this user and to the ids this flush wrote. Best effort, and
    * never allowed to mask the original failure.
-   * @param {Array<{ messageId: string }>} messages - the messages this flush wrote
+   * A rejected bulk write has an ambiguous outcome, so the database is queried
+   * for the batch's commit markers before anything is removed. This also
+   * covers failures after the conversation write, such as tag maintenance.
+   * @param {Array<{ messageId: string, conversationId: string }>} messages - the messages this flush wrote
+   * @param {Array<{ conversationId: string }>} conversations - the conversations this flush attempted
    */
-  async discardOrphanedMessages(messages) {
+  async discardOrphanedMessages(messages, conversations) {
     if (messages.length === 0) {
       return;
     }
     try {
+      let convoMap = {};
+      if (conversations.length > 0) {
+        ({ convoMap } = await getConvosQueried(
+          this.requestUserId,
+          conversations.map(({ conversationId }) => ({ conversationId })),
+          null,
+          conversations.length,
+        ));
+      }
+      const orphanedMessageIds = messages
+        .filter((message) => convoMap[message.conversationId] == null)
+        .map((message) => message.messageId);
+      if (orphanedMessageIds.length === 0) {
+        return;
+      }
       await deleteMessages({
         user: this.requestUserId,
-        messageId: { $in: messages.map((message) => message.messageId) },
+        messageId: { $in: orphanedMessageIds },
       });
     } catch (cleanupError) {
       logger.error(

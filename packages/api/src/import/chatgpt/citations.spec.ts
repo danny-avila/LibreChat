@@ -15,6 +15,22 @@ function assistant(references: ChatGptContentReference[]): ChatGptMessage {
   };
 }
 
+function legacyAssistant(
+  citations: Array<{
+    start_ix: number;
+    end_ix: number;
+    metadata: { type: string; title: string; url: string; text?: string };
+  }>,
+): ChatGptMessage {
+  return {
+    id: 'm1',
+    author: { role: 'assistant', name: null },
+    create_time: 1,
+    content: { content_type: 'text', parts: [''] },
+    metadata: { citations },
+  };
+}
+
 function webpage(url: string, title: string): ChatGptContentReference {
   return { type: 'webpage', alt: null, url, title, snippet: 'snip', attribution: title };
 }
@@ -101,6 +117,80 @@ describe('buildCitations with no citations', () => {
   it('strips stray highlight markers even with no anchors', () => {
     const result = buildCitations(assistant([]), 'Highlighted.');
     expect(result.text).toBe('Highlighted.');
+  });
+});
+
+describe('buildCitations with legacy citation metadata', () => {
+  const first = {
+    start_ix: 10,
+    end_ix: 22,
+    metadata: {
+      type: 'webpage',
+      title: 'First source',
+      url: 'https://first.example/article',
+      text: 'First snippet',
+    },
+  };
+  const second = {
+    start_ix: 32,
+    end_ix: 44,
+    metadata: {
+      type: 'webpage',
+      title: 'Second source',
+      url: 'https://second.example/article',
+      text: 'Second snippet',
+    },
+  };
+
+  it('adapts legacy markers and metadata into renderer-compatible citations', () => {
+    const result = buildCitations(
+      legacyAssistant([second, first]),
+      'First fact.【3:0†source】 Second fact.【4:0†source】',
+    );
+
+    expect(result.text).toBe(`First fact.${CITE}turn0search0 Second fact.${CITE}turn0search1`);
+    expect(result.text).not.toContain('【');
+    expect(result.citations[0].data.organic).toEqual([
+      {
+        link: 'https://first.example/article',
+        title: 'First source',
+        snippet: 'First snippet',
+        attribution: undefined,
+      },
+      {
+        link: 'https://second.example/article',
+        title: 'Second source',
+        snippet: 'Second snippet',
+        attribution: undefined,
+      },
+    ]);
+  });
+
+  it('does not inline legacy citations when marker and metadata counts differ', () => {
+    const result = buildCitations(
+      legacyAssistant([first, second]),
+      'Only one claim.【3:0†source】',
+    );
+
+    expect(result.citations).toEqual([]);
+    expect(result.text).not.toContain('【');
+    expect(result.text).toContain('[First source](https://first.example/article)');
+    expect(result.text).toContain('[Second source](https://second.example/article)');
+  });
+
+  it('drops an unsafe legacy citation URL and removes its marker', () => {
+    const result = buildCitations(
+      legacyAssistant([
+        {
+          ...first,
+          metadata: { ...first.metadata, url: 'javascript:alert(document.cookie)' },
+        },
+      ]),
+      'Unsafe claim.【3:0†source】',
+    );
+
+    expect(result).toEqual({ text: 'Unsafe claim.', citations: [] });
+    expect(JSON.stringify(result)).not.toContain('javascript:');
   });
 });
 

@@ -6,6 +6,7 @@ import {
   parseManifest,
   resolveLayout,
   detectExportFormat,
+  hasClaudeConversationShape,
   hasChatGptConversationShape,
 } from './manifest';
 import { openArchive } from './archive';
@@ -85,6 +86,9 @@ export async function inspectExport(
       }
 
       if (format === 'claude') {
+        if (!hasClaudeConversationShape(parsed)) {
+          throw new Error('Unsupported import type');
+        }
         totals.conversations += parsed.length;
         continue;
       }

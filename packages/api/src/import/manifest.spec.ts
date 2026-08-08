@@ -115,6 +115,11 @@ describe('resolveLayout', () => {
     expect(layout.conversationShards).toEqual(['my-export.json']);
   });
 
+  it('falls back to a lone bare upload whose accepted MIME type supplied no json suffix', () => {
+    const layout = resolveLayout(entries('my-export'), null);
+    expect(layout.conversationShards).toEqual(['my-export']);
+  });
+
   it('ignores manifest shards that are absent from the archive', () => {
     const layout = resolveLayout(entries('conversations-000.json'), {
       version: 1,
@@ -253,6 +258,10 @@ describe('detectExportFormat', () => {
     expect(detectExportFormat({ conversationId: 'c1', messages: [] })).toBeNull();
     expect(detectExportFormat([{ nothing: true }])).toBeNull();
     expect(detectExportFormat('nope')).toBeNull();
+  });
+
+  it('rejects a Claude array containing a malformed later entry', () => {
+    expect(detectExportFormat([{ uuid: 'c1', chat_messages: [] }, null])).toBeNull();
   });
 });
 

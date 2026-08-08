@@ -20,6 +20,9 @@ import Loading from './Loading';
 import Summary from './Summary';
 import Lost from './Lost';
 
+const JSON_FILE_TOO_LARGE_MESSAGE =
+  'This JSON file is too large to import on its own. Compress it into a .zip and upload that instead';
+
 /** Phases the job will never move out of. Once one is reached the panel has
  * nothing left to rejoin, so the id must stop being remembered. */
 const SETTLED_PHASES = new Set<TImportPhase>(['completed', 'failed', 'cancelled']);
@@ -27,6 +30,16 @@ const SETTLED_PHASES = new Set<TImportPhase>(['completed', 'failed', 'cancelled'
 function getUploadErrorMessage(error: unknown): string | undefined {
   const data = (error as { response?: { data?: { message?: string } } })?.response?.data;
   return data?.message;
+}
+
+function getUploadErrorKey(message: string | undefined) {
+  if (message === 'Unsupported import type') {
+    return 'com_ui_import_conversation_file_type_error';
+  }
+  if (message === JSON_FILE_TOO_LARGE_MESSAGE) {
+    return 'com_ui_import_conversation_json_too_large';
+  }
+  return 'com_ui_import_conversation_upload_error';
 }
 
 export default function Import() {
@@ -88,13 +101,9 @@ export default function Import() {
       showToast({ message: data.message, severity: NotificationSeverity.SUCCESS });
     },
     onError: (error: unknown) => {
-      const isUnsupportedType = getUploadErrorMessage(error) === 'Unsupported import type';
+      const uploadError = getUploadErrorMessage(error);
       showToast({
-        message: localize(
-          isUnsupportedType
-            ? 'com_ui_import_conversation_file_type_error'
-            : 'com_ui_import_conversation_upload_error',
-        ),
+        message: localize(getUploadErrorKey(uploadError)),
         severity: NotificationSeverity.ERROR,
       });
     },

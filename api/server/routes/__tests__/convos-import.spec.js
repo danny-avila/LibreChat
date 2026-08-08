@@ -18,6 +18,7 @@ const {
 } = require('~/test/claudeExport');
 const { bareGrokExport, buildGrokExportZip, cleanupGrokExportZips } = require('~/test/grokExport');
 const { createModels, createMethods } = require('@librechat/data-schemas');
+const { ImportJobStore } = require('@librechat/api');
 const { FileSources, EModelEndpoint } = require('librechat-data-provider');
 
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
@@ -391,6 +392,54 @@ describe('conversation import job API (real router, real Mongo)', () => {
 
     const savedConvos = await Conversation.countDocuments({ user: userId });
     expect(savedConvos).toBe(1);
+  });
+
+  it('keeps an extensionless MIME-only ChatGPT upload in the job pipeline', async () => {
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', bareChatGptExport(), {
+        filename: 'bare-export',
+        contentType: 'application/json',
+      })
+      .expect(202);
+
+    expect(uploaded.body.jobId).toBeDefined();
+    expect(uploaded.body.summary).toMatchObject({ source: 'chatgpt-legacy', conversations: 1 });
+
+    await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+    const completed = await waitForTerminal(app, uploaded.body.jobId);
+    expect(completed.body.phase).toBe('completed');
+    expect(await Conversation.countDocuments({ user: userId })).toBe(1);
+  });
+
+  it('continues importing when a progress-only job-store write fails', async () => {
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', bareChatGptExport(), 'bare-export.json')
+      .expect(202);
+    const realPatch = ImportJobStore.prototype.patch;
+    let injectedFailure = false;
+    const patchSpy = jest
+      .spyOn(ImportJobStore.prototype, 'patch')
+      .mockImplementation(function (owner, jobId, patch) {
+        if (!injectedFailure && patch.progress) {
+          injectedFailure = true;
+          return Promise.reject(new Error('transient progress cache failure'));
+        }
+        return realPatch.call(this, owner, jobId, patch);
+      });
+
+    try {
+      await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+      const completed = await waitForTerminal(app, uploaded.body.jobId);
+
+      expect(injectedFailure).toBe(true);
+      expect(completed.body.phase).toBe('completed');
+      expect(completed.body.report.imported).toBe(1);
+      expect(await Conversation.countDocuments({ user: userId })).toBe(1);
+    } finally {
+      patchSpy.mockRestore();
+    }
   });
 
   it('imports a Claude export .zip through the job API', async () => {

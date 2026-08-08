@@ -1360,6 +1360,7 @@
   "com_ui_import_cancelled": "Import cancelled",
   "com_ui_import_conversation_error": "There was an error importing your data",
   "com_ui_import_conversation_file_type_error": "Unsupported import type",
+  "com_ui_import_conversation_json_too_large": "This JSON file is too large to import on its own. Compress it into a .zip and upload that instead",
   "com_ui_import_conversation_success": "Import complete",
   "com_ui_import_conversation_upload_error": "Error uploading file. Please try again.",
   "com_ui_import_detected": "Detected {{0}} export",

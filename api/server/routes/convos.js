@@ -561,7 +561,16 @@ async function runImportJob(context, job) {
           return;
         }
         lastProgressWrite = now;
-        await importJobs.patch(userId, job.jobId, { progress });
+        try {
+          await importJobs.patch(userId, job.jobId, { progress });
+        } catch (error) {
+          /** Progress is telemetry, not import state. A transient cache error
+           * must not abort database or file work that is otherwise healthy. */
+          logger.warn(
+            `[import] Could not persist progress for job ${job.jobId} and user ${userId}`,
+            error,
+          );
+        }
       },
       onPhase: async (phase) => {
         if (await importJobs.isCancelled(userId, job.jobId)) {

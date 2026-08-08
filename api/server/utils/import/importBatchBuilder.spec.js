@@ -4,14 +4,18 @@ jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn().mockResolvedValue(undefined),
   bulkSaveMessages: jest.fn().mockResolvedValue(undefined),
   bulkIncrementTagCounts: jest.fn().mockResolvedValue(undefined),
+  getConvosQueried: jest
+    .fn()
+    .mockResolvedValue({ conversations: [], nextCursor: null, convoMap: {} }),
   deleteMessages: jest.fn().mockResolvedValue({ deletedCount: 0 }),
 }));
 
-const { bulkSaveConvos, bulkSaveMessages, deleteMessages } = require('~/models');
+const { bulkSaveConvos, bulkSaveMessages, getConvosQueried, deleteMessages } = require('~/models');
 
 describe('ImportBatchBuilder flushing', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    getConvosQueried.mockResolvedValue({ conversations: [], nextCursor: null, convoMap: {} });
   });
 
   it('flushes once the threshold is reached and clears the buffer', async () => {
@@ -109,5 +113,54 @@ describe('ImportBatchBuilder flushing', () => {
       user: 'u1',
       messageId: { $in: [message.messageId] },
     });
+  });
+
+  it('keeps messages whose conversation committed before an ambiguous write failure', async () => {
+    bulkSaveConvos.mockRejectedValueOnce(new Error('conversation write outcome unknown'));
+
+    const builder = new ImportBatchBuilder('u1', undefined, { flushThreshold: 5 });
+    builder.startConversation();
+    const committedMessage = builder.addUserMessage('committed');
+    const { conversation: committed } = builder.finishConversation('Committed', new Date());
+    builder.startConversation();
+    const orphanedMessage = builder.addUserMessage('orphaned');
+    const { conversation: orphaned } = builder.finishConversation('Orphaned', new Date());
+    getConvosQueried.mockResolvedValueOnce({
+      conversations: [committed],
+      nextCursor: null,
+      convoMap: { [committed.conversationId]: committed },
+    });
+
+    await expect(builder.saveBatch()).rejects.toThrow('conversation write outcome unknown');
+
+    expect(getConvosQueried).toHaveBeenCalledWith(
+      'u1',
+      [{ conversationId: committed.conversationId }, { conversationId: orphaned.conversationId }],
+      null,
+      2,
+    );
+    expect(deleteMessages).toHaveBeenCalledWith({
+      user: 'u1',
+      messageId: { $in: [orphanedMessage.messageId] },
+    });
+    expect(deleteMessages.mock.calls[0][0].messageId.$in).not.toContain(committedMessage.messageId);
+  });
+
+  it('deletes no messages when every conversation committed before the write rejected', async () => {
+    bulkSaveConvos.mockRejectedValueOnce(new Error('write concern timeout'));
+
+    const builder = new ImportBatchBuilder('u1', undefined, { flushThreshold: 5 });
+    builder.startConversation();
+    builder.addUserMessage('hello');
+    const { conversation } = builder.finishConversation('Committed', new Date());
+    getConvosQueried.mockResolvedValueOnce({
+      conversations: [conversation],
+      nextCursor: null,
+      convoMap: { [conversation.conversationId]: conversation },
+    });
+
+    await expect(builder.saveBatch()).rejects.toThrow('write concern timeout');
+
+    expect(deleteMessages).not.toHaveBeenCalled();
   });
 });

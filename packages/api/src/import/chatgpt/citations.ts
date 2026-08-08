@@ -3,6 +3,7 @@ import type {
   ChatGptMessage,
   ImportedCitations,
   ChatGptSearchEntry,
+  ChatGptLegacyCitation,
   ChatGptContentReference,
 } from '~/import/types';
 import { safeSourceUrl } from '~/import/url';
@@ -12,6 +13,7 @@ type OrganicSource = NonNullable<SearchResultData['organic']>[number];
 const COMPOSITE_PATTERN = /[\s\S]*?/g;
 const ANCHOR_PATTERN = /turn\d+(?:search|image|news|video|ref|file)\d+/g;
 const MARKER_PATTERN = /[-]/g;
+const LEGACY_MARKER_PATTERN = /【\d+(?::\d+)?†[^【】]*】/g;
 
 const CITABLE_TYPES = new Set([
   'grouped_webpages',
@@ -29,7 +31,10 @@ interface GroupSpan {
 }
 
 function stripMarkers(value: string): string {
-  return value.replace(ANCHOR_PATTERN, '').replace(MARKER_PATTERN, '');
+  return value
+    .replace(ANCHOR_PATTERN, '')
+    .replace(MARKER_PATTERN, '')
+    .replace(LEGACY_MARKER_PATTERN, '');
 }
 
 /**
@@ -56,6 +61,16 @@ function findGroups(text: string): GroupSpan[] {
   }
 
   return groups.sort((a, b) => a.start - b.start);
+}
+
+function findLegacyGroups(text: string): GroupSpan[] {
+  const groups: GroupSpan[] = [];
+  LEGACY_MARKER_PATTERN.lastIndex = 0;
+  let marker: RegExpExecArray | null;
+  while ((marker = LEGACY_MARKER_PATTERN.exec(text)) !== null) {
+    groups.push({ start: marker.index, end: marker.index + marker[0].length });
+  }
+  return groups;
 }
 
 function fromEntry(entry: ChatGptSearchEntry): OrganicSource | null {
@@ -93,6 +108,27 @@ function sourcesOfReference(reference: ChatGptContentReference): OrganicSource[]
 function citableReferences(message: ChatGptMessage): ChatGptContentReference[] {
   const references = message.metadata?.content_references ?? [];
   return references.filter((reference) => CITABLE_TYPES.has(reference.type));
+}
+
+function legacyReferences(message: ChatGptMessage): ChatGptContentReference[] {
+  const citations = message.metadata?.citations ?? [];
+  return [...citations]
+    .filter(
+      (
+        citation,
+      ): citation is ChatGptLegacyCitation & {
+        metadata: NonNullable<ChatGptLegacyCitation['metadata']>;
+      } => citation.metadata != null,
+    )
+    .sort((a, b) => (a.start_ix ?? 0) - (b.start_ix ?? 0))
+    .map(({ metadata }) => ({
+      type: metadata.type ?? 'webpage',
+      alt: null,
+      url: metadata.url,
+      title: metadata.title,
+      snippet: metadata.text,
+      pub_date: metadata.pub_date,
+    }));
 }
 
 function appendSources(text: string, references: ChatGptContentReference[]): string {
@@ -164,6 +200,17 @@ export function buildCitations(
   const references = citableReferences(message);
 
   if (groups.length === 0) {
+    const legacyGroups = findLegacyGroups(text);
+    if (legacyGroups.length > 0) {
+      const legacy = legacyReferences(message);
+      if (legacyGroups.length !== legacy.length) {
+        return { text: appendSources(stripMarkers(text), legacy), citations: [] };
+      }
+      const { text: rewritten, sources } = renumber(text, legacyGroups, legacy);
+      return sources.length > 0
+        ? { text: rewritten, citations: [{ turn: 0, data: { turn: 0, organic: sources } }] }
+        : { text: rewritten, citations: [] };
+    }
     return { text: stripMarkers(text), citations: [] };
   }
 

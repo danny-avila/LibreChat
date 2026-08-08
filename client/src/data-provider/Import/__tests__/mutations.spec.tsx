@@ -210,4 +210,26 @@ describe('useCancelImportMutation', () => {
 
     unmount();
   });
+
+  it('refetches the job and conversation list when the cancellation outcome is ambiguous', async () => {
+    const mockCancel = dataService.cancelImportJob as jest.MockedFunction<
+      typeof dataService.cancelImportJob
+    >;
+    mockCancel.mockRejectedValue(new Error('response lost'));
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+
+    const { result, unmount } = renderHook(() => useCancelImportMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync('job-1').catch(() => undefined);
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.importJob, 'job-1']);
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.allConversations]);
+
+    unmount();
+  });
 });
