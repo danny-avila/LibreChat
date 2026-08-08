@@ -200,6 +200,42 @@ describe('ConnectionsRepository', () => {
       expect(mockConnection.refreshToolList).toHaveBeenCalledTimes(1);
     });
 
+    it('does not publish an initial snapshot superseded by a list-changed refresh', async () => {
+      let toolsChanged: ((tools: t.MCPTool[]) => void) | undefined;
+      mockConnection.on.mockImplementation((event, listener) => {
+        if (event === 'toolsChanged') {
+          toolsChanged = listener as (tools: t.MCPTool[]) => void;
+        }
+        return mockConnection;
+      });
+      let releaseInitialSnapshot:
+        | ((snapshot: { tools: t.MCPTool[]; complete: boolean }) => void)
+        | undefined;
+      mockConnection.fetchToolsSnapshot.mockReturnValue(
+        new Promise((resolve) => {
+          releaseInitialSnapshot = resolve;
+        }),
+      );
+      const handler = jest.fn().mockResolvedValue(undefined);
+      setMCPToolsChangedHandler(handler);
+
+      const load = repository.get('server1');
+      await new Promise((resolve) => setImmediate(resolve));
+      toolsChanged?.([{ name: 'current', inputSchema: { type: 'object' } } as t.MCPTool]);
+      releaseInitialSnapshot?.({
+        tools: [{ name: 'stale', inputSchema: { type: 'object' } } as t.MCPTool],
+        complete: true,
+      });
+      await load;
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ tools: [expect.objectContaining({ name: 'current' })] }),
+      );
+      expect(handler).not.toHaveBeenCalledWith(
+        expect.objectContaining({ tools: [expect.objectContaining({ name: 'stale' })] }),
+      );
+    });
+
     it('publishes an empty snapshot without listing tools when the server lacks the capability', async () => {
       const handler = jest.fn().mockResolvedValue(undefined);
       setMCPToolsChangedHandler(handler);
@@ -443,7 +479,7 @@ describe('ConnectionsRepository', () => {
   });
 
   describe('disconnectAll', () => {
-    it('should disconnect all active connections', () => {
+    it('should disconnect all active connections', async () => {
       const mockConnection1 = {
         disconnect: jest.fn().mockResolvedValue(undefined),
         dispose: jest.fn().mockResolvedValue(undefined),
@@ -463,8 +499,32 @@ describe('ConnectionsRepository', () => {
 
       const promises = repository.disconnectAll();
 
-      expect(promises).toHaveLength(3);
+      expect(promises).toHaveLength(1);
       expect(Array.isArray(promises)).toBe(true);
+      await Promise.all(promises);
+      expect(mockConnection1.dispose).toHaveBeenCalledTimes(1);
+      expect(mockConnection2.dispose).toHaveBeenCalledTimes(1);
+      expect(mockConnection3.dispose).toHaveBeenCalledTimes(1);
+    });
+
+    it('drains and disposes a connection whose creation finishes during shutdown', async () => {
+      let releaseCreation: ((connection: MCPConnection) => void) | undefined;
+      (MCPConnectionFactory.create as jest.Mock).mockReturnValue(
+        new Promise((resolve) => {
+          releaseCreation = resolve;
+        }),
+      );
+
+      const load = repository.get('server1');
+      await new Promise((resolve) => setImmediate(resolve));
+      const shutdown = Promise.all(repository.disconnectAll());
+      releaseCreation?.(mockConnection);
+
+      await expect(load).resolves.toBeNull();
+      await shutdown;
+      expect(mockConnection.dispose).toHaveBeenCalledTimes(1);
+      await expect(repository.get('server1')).resolves.toBeNull();
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
     });
   });
 

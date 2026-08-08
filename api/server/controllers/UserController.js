@@ -312,17 +312,30 @@ const updateUserPluginsController = async (req, res) => {
               `[updateUserPluginsController] Attempting disconnect of MCP server "${serverName}" for user ${user.id} after plugin auth update.`,
             );
           }
+          let invalidationError;
           try {
             await invalidateCachedTools({ userId: user.id, serverName });
-          } finally {
+          } catch (error) {
+            invalidationError = error;
+          }
+          try {
             await mcpManager?.disconnectUserConnection(user.id, serverName);
+          } catch (error) {
+            logger.error(
+              `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,
+              error,
+            );
+          }
+          if (invalidationError) {
+            throw invalidationError;
           }
         } catch (disconnectError) {
           logger.error(
-            `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,
+            `[updateUserPluginsController] Error fencing MCP connection for user ${user.id} after plugin auth update:`,
             disconnectError,
           );
-          // Do not fail the request for this, but log it.
+          // A credential mutation is not safely published until the shared generation fence moves.
+          throw disconnectError;
         }
       }
       return res.status(status).send();

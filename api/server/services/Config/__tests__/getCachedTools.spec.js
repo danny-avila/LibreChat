@@ -138,7 +138,9 @@ describe('MCP tool cache', () => {
     mockCache.get
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(tools);
+      .mockResolvedValueOnce(tools)
+      .mockResolvedValueOnce('connection-a')
+      .mockResolvedValueOnce('connection-a');
     mockCache.set.mockResolvedValue(true);
 
     await expect(
@@ -152,8 +154,38 @@ describe('MCP tool cache', () => {
     expect(mockCache.get).toHaveBeenNthCalledWith(3, ToolCacheKeys.MCP_SERVER('user1', 'github'));
     expect(mockCache.set).toHaveBeenCalledWith(
       ToolCacheKeys.MCP_SERVER('user1', 'github', 'config-v2'),
-      tools,
+      {
+        version: 1,
+        publicationGeneration: 'connection-a',
+        tools,
+      },
       Time.TWELVE_HOURS,
+    );
+  });
+
+  it('creates a generation fence before migrating a legacy user catalog', async () => {
+    const tools = { legacy: { type: 'function' } };
+    mockCache.get
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(tools)
+      .mockResolvedValueOnce(null)
+      .mockImplementationOnce(async () => mockCache.set.mock.calls[0][1]);
+    mockCache.set.mockResolvedValue(true);
+
+    await expect(
+      getCachedTools({
+        userId: 'user1',
+        serverName: 'github',
+        configGeneration: 'config-v2',
+      }),
+    ).resolves.toBe(tools);
+
+    const [generationKey, generation] = mockCache.set.mock.calls[0];
+    expect(generationKey).toBe(ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'));
+    expect(generation).toEqual(expect.any(String));
+    expect(mockCache.set.mock.calls[1][1]).toEqual(
+      expect.objectContaining({ publicationGeneration: generation, tools }),
     );
   });
 

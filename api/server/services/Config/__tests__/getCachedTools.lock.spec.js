@@ -157,7 +157,9 @@ describe('global tool cache write lock', () => {
     mockCache.get
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(legacy);
+      .mockResolvedValueOnce(legacy)
+      .mockResolvedValueOnce('generation-current')
+      .mockResolvedValueOnce('generation-current');
 
     await expect(
       getCachedTools({
@@ -176,7 +178,11 @@ describe('global tool cache write lock', () => {
     );
     expect(mockCache.set).toHaveBeenCalledWith(
       'tools:mcp:user:{user-1:server-1}:config-current',
-      legacy,
+      {
+        version: 1,
+        publicationGeneration: 'generation-current',
+        tools: legacy,
+      },
       expect.any(Number),
     );
   });

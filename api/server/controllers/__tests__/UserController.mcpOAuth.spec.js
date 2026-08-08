@@ -192,6 +192,20 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it('fails the credential update response when the shared generation fence cannot move', async () => {
+    const { mcpManager } = setupMCPMocks();
+    const fenceError = new Error('Redis unavailable');
+    mockInvalidateCachedTools.mockRejectedValue(fenceError);
+    MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue(null);
+
+    const res = createResponse();
+    await updateUserPluginsController(createRequest(), res);
+
+    expect(mcpManager.disconnectUserConnection).toHaveBeenCalledWith('user-1', 'test-server');
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(logger.error).toHaveBeenCalledWith('[updateUserPluginsController]', fenceError);
+  });
+
   it('clears stored OAuth token state when client metadata is missing', async () => {
     const { flowManager, mcpManager } = setupMCPMocks();
     MCPTokenStorage.getClientInfoAndMetadata.mockResolvedValue(null);

@@ -31,6 +31,7 @@ export class ConnectionsRepository {
   protected oauthOpts: t.OAuthConnectionOptions | undefined;
   private readonly ownerId: string | undefined;
   private readonly connectionOperations = new Map<string, Promise<void>>();
+  private shuttingDown = false;
 
   constructor(ownerId?: string, oauthOpts?: t.OAuthConnectionOptions) {
     this.ownerId = ownerId;
@@ -75,6 +76,9 @@ export class ConnectionsRepository {
     serverName: string,
     options: ConnectionLoadOptions = {},
   ): Promise<MCPConnection | null> {
+    if (this.shuttingDown) {
+      return null;
+    }
     return this.runConnectionOperation(serverName, () => this.loadConnection(serverName, options));
   }
 
@@ -82,6 +86,9 @@ export class ConnectionsRepository {
     serverName: string,
     options: ConnectionLoadOptions,
   ): Promise<MCPConnection | null> {
+    if (this.shuttingDown) {
+      return null;
+    }
     const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
       serverName,
       this.ownerId,
@@ -129,16 +136,27 @@ export class ConnectionsRepository {
       this.oauthOpts,
     );
 
+    if (this.shuttingDown) {
+      await connection.dispose();
+      await cancelMCPToolsChanged({ userId: this.ownerId, serverName });
+      return null;
+    }
+
+    let toolsChangedGeneration = 0;
+    let latestToolsChangedPublication = Promise.resolve();
+
     /* Both scopes get the same treatment: this repository is per-owner, so ownerId already says
      * whose tool cache a change belongs to (undefined = the app-level, shared one). */
     connection.on('toolsChanged', (tools: t.MCPTool[]) => {
-      void notifyMCPToolsChanged({
+      toolsChangedGeneration++;
+      latestToolsChangedPublication = notifyMCPToolsChanged({
         tools,
         serverName,
         serverConfig,
         userId: this.ownerId,
         publicationGeneration,
       });
+      void latestToolsChangedPublication;
     });
 
     this.connections.set(serverName, connection);
@@ -152,14 +170,19 @@ export class ConnectionsRepository {
         });
         return connection;
       }
+      const initialGeneration = toolsChangedGeneration;
       const snapshot = await connection.fetchToolsSnapshot();
       if (snapshot.complete) {
-        await notifyMCPToolsChanged({
-          tools: snapshot.tools,
-          serverName,
-          serverConfig,
-          publicationGeneration,
-        });
+        if (toolsChangedGeneration !== initialGeneration) {
+          await latestToolsChangedPublication;
+        } else {
+          await notifyMCPToolsChanged({
+            tools: snapshot.tools,
+            serverName,
+            serverConfig,
+            publicationGeneration,
+          });
+        }
       } else {
         await connection.refreshToolList();
       }
@@ -230,8 +253,14 @@ export class ConnectionsRepository {
 
   /** Disconnects all active connections and returns array of disconnect promises */
   disconnectAll(): Promise<void>[] {
+    this.shuttingDown = true;
+    return [this.drainAndDisconnectAll()];
+  }
+
+  private async drainAndDisconnectAll(): Promise<void> {
+    await Promise.allSettled(Array.from(this.connectionOperations.values()));
     const serverNames = Array.from(this.connections.keys());
-    return serverNames.map((serverName) => this.disconnect(serverName));
+    await Promise.all(serverNames.map((serverName) => this.disconnect(serverName)));
   }
 
   // Returns formatted log prefix for server messages

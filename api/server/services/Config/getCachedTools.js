@@ -241,10 +241,29 @@ async function getCachedTools(options = {}) {
         if (legacy == null) {
           return null;
         }
-        if ((await cache.set(toolsKey, legacy, Time.TWELVE_HOURS)) === false) {
+        const generationKey = ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName);
+        let publicationGeneration = await cache.get(generationKey);
+        if (typeof publicationGeneration !== 'string' || publicationGeneration.length === 0) {
+          publicationGeneration = randomUUID();
+          if (
+            (await cache.set(
+              generationKey,
+              publicationGeneration,
+              MCP_SERVER_GENERATION_TTL_MS,
+            )) === false
+          ) {
+            throw new Error('Tool publication generation cache rejected the migration fence');
+          }
+        }
+        const migrated = {
+          version: MCP_SERVER_CACHE_ENTRY_VERSION,
+          publicationGeneration,
+          tools: legacy,
+        };
+        if ((await cache.set(toolsKey, migrated, Time.TWELVE_HOURS)) === false) {
           throw new Error('Tool cache rejected the legacy user catalog migration');
         }
-        return legacy;
+        return migrated;
       });
     }
     if (!isGenerationGuardedToolEntry(cached)) {
