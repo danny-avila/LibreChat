@@ -2,8 +2,8 @@ import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
+import { extractDocumentTextWithPages, extractPageText } from '../documents/pdfjs';
 import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
-import { extractDocumentText, extractPageText } from '../documents/pdfjs';
 
 type ParsedDocument = Pick<ParsedDocumentUploadResult, 'text' | 'pagesNeedingOcr'>;
 
@@ -44,7 +44,7 @@ export async function parseWithPdfInspector(
       `[pdfInspector] Native extraction failed for "${file.originalname}", falling back to pdfjs:`,
       error,
     );
-    parsed = { text: await extractDocumentText(data, MAX_RECOVERED_PAGES) };
+    parsed = await extractDocumentTextWithPages(data, MAX_RECOVERED_PAGES);
   }
   const { text, pagesNeedingOcr } = parsed;
 

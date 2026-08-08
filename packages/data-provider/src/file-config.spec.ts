@@ -63,6 +63,22 @@ describe('inferMimeType', () => {
     expect(inferMimeType('Main.java', '')).toBe('text/x-java');
   });
 
+  it.each(['application/octet-stream', 'binary/octet-stream'])(
+    'should replace generic MIME type %s with the document type inferred from its extension',
+    (genericType) => {
+      expect(inferMimeType('report.docx', genericType)).toBe(
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      );
+      expect(inferMimeType('report.pdf', genericType)).toBe('application/pdf');
+    },
+  );
+
+  it('should preserve a generic MIME type when the extension is unknown', () => {
+    expect(inferMimeType('payload.unknownext', 'application/octet-stream')).toBe(
+      'application/octet-stream',
+    );
+  });
+
   it('should return empty string for unknown extension with no browser type', () => {
     expect(inferMimeType('file.xyz', '')).toBe('');
   });

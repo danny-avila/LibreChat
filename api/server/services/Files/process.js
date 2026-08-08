@@ -19,6 +19,7 @@ const {
   getEndpointFileConfig,
   documentParserSources,
   documentParserMimeTypes,
+  inferMimeType,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -91,7 +92,7 @@ const resolveEffectiveMimeType = (file) => {
   if (!genericMimeTypes.has(declared)) {
     return declared;
   }
-  return mime.getType(file?.originalname ?? '') ?? declared;
+  return inferMimeType(file?.originalname ?? '', declared);
 };
 
 const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';

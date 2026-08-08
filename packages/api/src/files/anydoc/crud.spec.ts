@@ -200,6 +200,33 @@ describe('parseWithAnydoc', () => {
       expect(result.text).toContain('Quarterly Highlights');
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('content detection'));
     });
+
+    test('accepts every declared legacy Excel MIME alias without an extension', async () => {
+      const aliases = [
+        'application/msexcel',
+        'application/x-msexcel',
+        'application/x-ms-excel',
+        'application/x-excel',
+        'application/x-dos_ms_excel',
+        'application/xls',
+        'application/x-xls',
+      ];
+      const toMarkdownBytes = jest.fn().mockResolvedValue('# Legacy spreadsheet');
+
+      await withAnydocSpy(toMarkdownBytes, async (run) => {
+        for (const mimetype of aliases) {
+          const result = await run({
+            originalname: 'legacy-sheet',
+            path: path.join(fixtures, 'sample.xls'),
+            mimetype,
+          });
+
+          expect(result.text).toBe('# Legacy spreadsheet');
+        }
+      });
+
+      expect(toMarkdownBytes).toHaveBeenCalledTimes(aliases.length);
+    });
   });
 
   describe('PDF routing boundary', () => {

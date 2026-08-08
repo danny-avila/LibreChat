@@ -4,6 +4,7 @@ import { getViableUploadOptions, type UploadOptionContext } from '../files';
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const POTX = 'application/vnd.openxmlformats-officedocument.presentationml.template';
+const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 /** context accepts plain text + csv (text), pdf + xlsx (ocr), and rtf (document parser). */
 const fileConfig = {
@@ -14,7 +15,13 @@ const fileConfig = {
       /^application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet$/,
     ],
   },
-  documentParser: { supportedMimeTypes: [/^application\/rtf$/] },
+  documentParser: {
+    supportedMimeTypes: [
+      /^application\/rtf$/,
+      /^application\/pdf$/,
+      /^application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet$/,
+    ],
+  },
   stt: { supportedMimeTypes: [] },
 } as unknown as FileConfig;
 
@@ -48,6 +55,22 @@ describe('getViableUploadOptions', () => {
       expect(getViableUploadOptions([file('application/rtf', 'notes.rtf')], baseCtx())).toEqual([
         EToolResources.context,
       ]);
+    });
+
+    it('does not route a known document excluded by the document-parser allowlist', () => {
+      const parserRestrictedConfig = {
+        text: { supportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] },
+        ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)] },
+        documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+        stt: { supportedMimeTypes: [] },
+      } as unknown as FileConfig;
+      const ctx = baseCtx({
+        fileConfig: parserRestrictedConfig,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+      });
+
+      expect(getViableUploadOptions([file(DOCX, 'report.docx')], ctx)).toEqual([]);
     });
 
     it('routes a spreadsheet to code + text, not the provider', () => {

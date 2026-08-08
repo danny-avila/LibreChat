@@ -326,6 +326,7 @@ export const codeInterpreterMimeTypes = [
 ];
 
 export const codeTypeMapping: { [key: string]: string } = {
+  pdf: 'application/pdf', // .pdf - Portable Document Format
   c: 'text/x-c', // .c - C source
   cs: 'text/x-csharp', // .cs - C# source
   cpp: 'text/x-c++', // .cpp - C++ source
@@ -446,11 +447,21 @@ export const codeTypeMapping: { [key: string]: string } = {
   odg: 'application/vnd.oasis.opendocument.graphics', // .odg - OpenDocument Graphics
   doc: 'application/msword', // .doc - Word (legacy)
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx - Word
+  docm: 'application/vnd.ms-word.document.macroEnabled.12', // .docm - Word with macros
+  rtf: 'application/rtf', // .rtf - Rich Text Format
+  epub: 'application/epub+zip', // .epub - EPUB publication
   xls: 'application/vnd.ms-excel', // .xls - Excel (legacy)
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx - Excel
+  xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12', // .xlsm - Excel with macros
+  xlsb: 'application/vnd.ms-excel.sheet.binary.macroEnabled.12', // .xlsb - Excel binary workbook
   ppt: 'application/vnd.ms-powerpoint', // .ppt - PowerPoint (legacy)
+  pps: 'application/vnd.ms-powerpoint', // .pps - PowerPoint slideshow (legacy)
+  pot: 'application/vnd.ms-powerpoint', // .pot - PowerPoint template (legacy)
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx - PowerPoint
   potx: 'application/vnd.openxmlformats-officedocument.presentationml.template', // .potx - PowerPoint template
+  pptm: 'application/vnd.ms-powerpoint.presentation.macroEnabled.12', // .pptm - PowerPoint with macros
+  ppsx: 'application/vnd.openxmlformats-officedocument.presentationml.slideshow', // .ppsx - PowerPoint slideshow
+  ppsm: 'application/vnd.ms-powerpoint.slideshow.macroEnabled.12', // .ppsm - PowerPoint slideshow with macros
   ics: 'text/calendar', // .ics - iCalendar
   ical: 'text/calendar', // .ical - iCalendar
   ifb: 'text/calendar', // .ifb - iCalendar free/busy
@@ -474,6 +485,8 @@ export const mimeTypeAliases: Readonly<Record<string, string>> = {
   'text/x-shellscript': 'application/x-sh',
 };
 
+const genericMimeTypes = new Set(['application/octet-stream', 'binary/octet-stream']);
+
 /**
  * Infers the MIME type from a file's extension when the browser doesn't recognize it,
  * and normalizes known non-standard MIME type aliases to their canonical forms.
@@ -482,12 +495,20 @@ export const mimeTypeAliases: Readonly<Record<string, string>> = {
  * @returns The normalized or inferred MIME type; empty string if unresolvable
  */
 export function inferMimeType(fileName: string, currentType: string): string {
+  const declaredType = currentType.split(';')[0].trim().toLowerCase();
+  const shouldInfer = !currentType || genericMimeTypes.has(declaredType);
+  const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
+  const inferredType = codeTypeMapping[extension] || imageTypeMapping[extension];
+
+  if (shouldInfer && inferredType) {
+    return inferredType;
+  }
+
   if (currentType) {
     return mimeTypeAliases[currentType] ?? currentType;
   }
 
-  const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
-  return codeTypeMapping[extension] || imageTypeMapping[extension] || currentType;
+  return currentType;
 }
 
 export const retrievalMimeTypes = [
