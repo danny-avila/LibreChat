@@ -1153,6 +1153,45 @@ describe('MCPManager', () => {
       expect(request.mock.calls[1]).toEqual(request.mock.calls[0]);
     });
 
+    it('joins recovery registered between cached checkout and lease acquisition', async () => {
+      const request = jest.fn().mockResolvedValue(toolResult);
+      const connection = createConnection(request);
+      const manager = await createManager(connection);
+      let resolveConnection: ((connection: MCPConnection) => void) | undefined;
+      const firstCheckout = new Promise<MCPConnection>((resolve) => {
+        resolveConnection = resolve;
+      });
+      (manager.getConnection as jest.Mock)
+        .mockReset()
+        .mockReturnValueOnce(firstCheckout)
+        .mockResolvedValue(connection);
+      let resolveRecovery: (() => void) | undefined;
+      const recovery = new Promise<void>((resolve) => {
+        resolveRecovery = resolve;
+      });
+      const internals = manager as unknown as {
+        oauthRecoveries: WeakMap<
+          MCPConnection,
+          { promise: Promise<void>; allowsTakeover: boolean }
+        >;
+      };
+
+      const toolPromise = callTool(manager);
+      resolveConnection?.(connection);
+      internals.oauthRecoveries.set(connection, { promise: recovery, allowsTakeover: true });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(request).not.toHaveBeenCalled();
+      expect(manager.getConnection).toHaveBeenCalledTimes(1);
+
+      internals.oauthRecoveries.delete(connection);
+      resolveRecovery?.();
+
+      await expect(toolPromise).resolves.toBeDefined();
+      expect(manager.getConnection).toHaveBeenCalledTimes(2);
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
     it('disposes a recovered connection that was evicted before recovery', async () => {
       const authError = new Error('Non-200 status code (401)');
       const request = jest.fn();
@@ -1207,6 +1246,29 @@ describe('MCPManager', () => {
       expect(connection.connect).toHaveBeenCalledTimes(1);
       expect(connection.disconnect).toHaveBeenCalledTimes(2);
       expect(request).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves eviction requested during a recovery lease gap', async () => {
+      const connection = createConnection(jest.fn());
+      const manager = await createManager(connection);
+      const lifecycle = manager as unknown as {
+        disposeEvictedConnection: (connection: MCPConnection, logPrefix: string) => Promise<void>;
+        holdDeferredConnectionDisposal: (connection: MCPConnection) => void;
+        releaseDeferredConnectionDisposal: (connection: MCPConnection) => void;
+        retainConnection: (connection: MCPConnection) => void;
+        releaseConnection: (connection: MCPConnection) => Promise<void>;
+      };
+
+      lifecycle.holdDeferredConnectionDisposal(connection);
+      await lifecycle.disposeEvictedConnection(connection, '[MCP][evicted]');
+
+      expect(connection.disconnect).not.toHaveBeenCalled();
+
+      lifecycle.retainConnection(connection);
+      lifecycle.releaseDeferredConnectionDisposal(connection);
+      await lifecycle.releaseConnection(connection);
+
+      expect(connection.disconnect).toHaveBeenCalledTimes(1);
     });
 
     it('recovers an OAuth failure found by the connection preflight check', async () => {
@@ -1421,17 +1483,13 @@ describe('MCPManager', () => {
 
       await expect(ownerCall).rejects.toBe(authError);
       expect(connection.connect).not.toHaveBeenCalled();
-      expect(request).toHaveBeenCalledTimes(2);
+      expect(request).toHaveBeenCalledTimes(1);
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
 
     it('lets an aborted recovery owner leave while a live waiter completes recovery', async () => {
       const authError = new Error('Non-200 status code (401)');
-      const request = jest
-        .fn()
-        .mockRejectedValueOnce(authError)
-        .mockRejectedValueOnce(authError)
-        .mockResolvedValueOnce(toolResult);
+      const request = jest.fn().mockRejectedValueOnce(authError).mockResolvedValueOnce(toolResult);
       const connection = createConnection(request);
       attachOAuthHandler(() => undefined);
       const manager = await createManager(connection);
@@ -1453,7 +1511,7 @@ describe('MCPManager', () => {
       await expect(waiterCall).resolves.toBeDefined();
       expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledTimes(1);
       expect(connection.connect).toHaveBeenCalledTimes(1);
-      expect(request).toHaveBeenCalledTimes(3);
+      expect(request).toHaveBeenCalledTimes(2);
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
 
@@ -1520,6 +1578,41 @@ describe('MCPManager', () => {
       expect(results.every((result) => result.status === 'rejected')).toBe(true);
       expect(attachmentCount).toBe(2);
       expect(connection.connect).not.toHaveBeenCalled();
+      expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
+    });
+
+    it('allows only one checkout waiter to claim a failed recovery takeover', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValue(authError);
+      const connection = createConnection(request);
+      attachOAuthHandler((currentConnection) => {
+        currentConnection.emit('oauthFailed', new Error('OAuth denied'));
+      });
+      const manager = await createManager(connection);
+      let rejectRecovery: ((error: Error) => void) | undefined;
+      const recovery = new Promise<void>((_resolve, reject) => {
+        rejectRecovery = reject;
+      });
+      const internals = manager as unknown as {
+        oauthRecoveries: WeakMap<
+          MCPConnection,
+          { promise: Promise<void>; allowsTakeover: boolean; takeoverClaimed?: boolean }
+        >;
+      };
+      internals.oauthRecoveries.set(connection, {
+        promise: recovery,
+        allowsTakeover: true,
+      });
+
+      const calls = [callTool(manager), callTool(manager), callTool(manager), callTool(manager)];
+      await new Promise((resolve) => setImmediate(resolve));
+      internals.oauthRecoveries.delete(connection);
+      rejectRecovery?.(new Error('Shared recovery failed'));
+      const results = await Promise.allSettled(calls);
+
+      expect(results.every((result) => result.status === 'rejected')).toBe(true);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledTimes(1);
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
   });
@@ -1620,6 +1713,53 @@ describe('MCPManager', () => {
       expect(connection.isConnected).toHaveBeenCalledTimes(1);
       expect(connection.disconnect).not.toHaveBeenCalled();
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
+    it('replaces stale configuration without waiting for obsolete recovery', async () => {
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const staleConnection = {
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        isConnected: jest.fn().mockResolvedValue(false),
+        isStale: jest.fn().mockReturnValue(true),
+      } as unknown as MCPConnection;
+      const replacementConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+      const recovery = new Promise<void>(() => undefined);
+      const internals = manager as unknown as {
+        oauthRecoveries: WeakMap<
+          MCPConnection,
+          { promise: Promise<void>; allowsTakeover: boolean }
+        >;
+        retainConnection: (connection: MCPConnection) => void;
+        releaseConnection: (connection: MCPConnection) => Promise<void>;
+        userConnections: Map<string, Map<string, MCPConnection>>;
+      };
+      internals.userConnections.set(mockUser.id, new Map([[serverName, staleConnection]]));
+      internals.retainConnection(staleConnection);
+      internals.oauthRecoveries.set(staleConnection, {
+        promise: recovery,
+        allowsTakeover: true,
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(replacementConnection);
+      const updatedConfig = { ...serverConfig, updatedAt: new Date() };
+
+      await expect(
+        manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          serverConfig: updatedConfig,
+        }),
+      ).resolves.toBe(replacementConnection);
+
+      expect(staleConnection.disconnect).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+
+      await internals.releaseConnection(staleConnection);
+      expect(staleConnection.disconnect).toHaveBeenCalledTimes(1);
     });
 
     it('lets an aborted waiter leave without cancelling the shared recovery', async () => {

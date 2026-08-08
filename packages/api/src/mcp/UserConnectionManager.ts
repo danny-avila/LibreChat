@@ -99,20 +99,15 @@ export abstract class UserConnectionManager {
         | MCPConnection
         | undefined;
       if (existing) {
-        const activeRecovery = this.getActiveConnectionRecovery(existing);
-        let awaitedRecovery = activeRecovery;
-        if (activeRecovery) {
-          await this.waitForConnectionRecovery(activeRecovery, opts.signal);
-        }
         if (!config || (config.updatedAt && existing.isStale(config.updatedAt))) {
-          await existing.disconnect().catch((error) => {
-            logger.warn(
-              `[MCP][User: ${userId}][${serverName}] Failed to disconnect stale request-scoped connection`,
-              error,
-            );
-          });
           requestScopedConnections.connections.delete(requestConnectionKey);
+          await this.disposeEvictedConnection(existing, `[MCP][User: ${userId}][${serverName}]`);
         } else {
+          const activeRecovery = this.getActiveConnectionRecovery(existing);
+          let awaitedRecovery = activeRecovery;
+          if (activeRecovery) {
+            await this.waitForConnectionRecovery(activeRecovery, opts.signal);
+          }
           let connected = await existing.isConnected();
           let recovery = this.getActiveConnectionRecovery(existing);
           while (recovery && recovery !== awaitedRecovery) {
@@ -413,11 +408,6 @@ export abstract class UserConnectionManager {
 
     const userServerMap = this.userConnections.get(userId);
     let connection = forceNew ? undefined : userServerMap?.get(serverName);
-    const activeRecovery = connection ? this.getActiveConnectionRecovery(connection) : undefined;
-    let awaitedRecovery = activeRecovery;
-    if (activeRecovery) {
-      await this.waitForConnectionRecovery(activeRecovery, signal);
-    }
     if (clearCooldown) {
       MCPConnection.clearCooldown(serverName);
     }
@@ -438,12 +428,18 @@ export abstract class UserConnectionManager {
       if (!config || (config.updatedAt && connection.isStale(config.updatedAt))) {
         if (config) {
           logger.info(
-            `[MCP][User: ${userId}][${serverName}] Config was updated, disconnecting stale connection`,
+            `[MCP][User: ${userId}][${serverName}] Config was updated, evicting stale connection`,
           );
         }
-        await this.disconnectUserConnection(userId, serverName);
+        this.removeUserConnection(userId, serverName);
+        await this.disposeEvictedConnection(connection, `[MCP][User: ${userId}][${serverName}]`);
         connection = undefined;
       } else {
+        const activeRecovery = this.getActiveConnectionRecovery(connection);
+        let awaitedRecovery = activeRecovery;
+        if (activeRecovery) {
+          await this.waitForConnectionRecovery(activeRecovery, signal);
+        }
         let connected = await connection.isConnected();
         let recovery = this.getActiveConnectionRecovery(connection);
         while (recovery && recovery !== awaitedRecovery) {
@@ -816,7 +812,10 @@ export abstract class UserConnectionManager {
     connection: MCPConnection,
     logPrefix: string,
   ): Promise<void> {
-    if ((this.connectionBorrowers.get(connection) ?? 0) > 0) {
+    if (
+      (this.connectionBorrowers.get(connection) ?? 0) > 0 ||
+      (this.deferredConnectionDisposalHolds.get(connection) ?? 0) > 0
+    ) {
       this.deferredConnectionDisposals.set(connection, logPrefix);
       return;
     }

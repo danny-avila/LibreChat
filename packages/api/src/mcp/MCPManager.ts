@@ -55,7 +55,7 @@ export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
   private readonly oauthRecoveries = new WeakMap<
     MCPConnection,
-    { promise: Promise<void>; allowsTakeover: boolean }
+    { promise: Promise<void>; allowsTakeover: boolean; takeoverClaimed?: boolean }
   >();
 
   /** Creates and initializes the singleton MCPManager instance */
@@ -92,7 +92,11 @@ export class MCPManager extends UserConnectionManager {
       | undefined;
     const connection = requestConnection ?? this.userConnections.get(userId)?.get(opts.serverName);
     const recovery = connection ? this.oauthRecoveries.get(connection) : undefined;
-    if (recovery) {
+    const providedConfigIsNewer =
+      connection != null &&
+      opts.serverConfig?.updatedAt != null &&
+      connection.isStale(opts.serverConfig.updatedAt);
+    if (recovery && !providedConfigIsNewer) {
       await this.waitForActiveRecovery(recovery.promise, opts.signal);
     }
 
@@ -140,6 +144,17 @@ export class MCPManager extends UserConnectionManager {
     signal?: AbortSignal,
   ): Promise<void> {
     return this.waitForActiveRecovery(recovery, signal);
+  }
+
+  private claimRecoveryTakeover(recovery: {
+    allowsTakeover: boolean;
+    takeoverClaimed?: boolean;
+  }): boolean {
+    if (!recovery.allowsTakeover || recovery.takeoverClaimed) {
+      return false;
+    }
+    recovery.takeoverClaimed = true;
+    return true;
   }
 
   /** Retrieves an app-level or user-specific connection based on provided arguments */
@@ -422,7 +437,7 @@ Please follow these instructions when using tools from the respective MCP server
         if (signal?.aborted) {
           throw recoveryError;
         }
-        if (!existingRecovery.allowsTakeover) {
+        if (!this.claimRecoveryTakeover(existingRecovery)) {
           throw recoveryError;
         }
         if (this.oauthRecoveries.get(connection) === existingRecovery) {
@@ -467,7 +482,7 @@ Please follow these instructions when using tools from the respective MCP server
       }
     })();
 
-    const recoveryEntry = { promise: recovery, allowsTakeover };
+    const recoveryEntry = { promise: recovery, allowsTakeover, takeoverClaimed: false };
     this.oauthRecoveries.set(connection, recoveryEntry);
     const clearRecovery = () => {
       if (this.oauthRecoveries.get(connection) === recoveryEntry) {
@@ -619,6 +634,7 @@ Please follow these instructions when using tools from the respective MCP server
     let connection: MCPConnection | undefined;
     let connectionRetained = false;
     let deferredDisposalHeld = false;
+    let recoveryTakeoverConsumed = false;
     let attachRequestOAuthHandler: (() => () => void) | undefined;
     let disconnectAfterCall = false;
     const userId = user?.id;
@@ -659,23 +675,42 @@ Please follow these instructions when using tools from the respective MCP server
     };
 
     try {
-      connection = await this.getConnection({
-        serverName,
-        user,
-        flowManager,
-        tokenMethods,
-        oauthStart,
-        oauthEnd,
-        oboTokenResolver,
-        oboTrustChecker,
-        graphTokenResolver,
-        signal: options?.signal,
-        customUserVars,
-        requestBody,
-        requestScopedConnections,
-        serverConfig: providedConfig,
-      });
-      retainConnectionLease();
+      let awaitedCheckoutRecovery: Promise<void> | undefined;
+      while (true) {
+        connection = await this.getConnection({
+          serverName,
+          user,
+          flowManager,
+          tokenMethods,
+          oauthStart,
+          oauthEnd,
+          oboTokenResolver,
+          oboTrustChecker,
+          graphTokenResolver,
+          signal: options?.signal,
+          customUserVars,
+          requestBody,
+          requestScopedConnections,
+          serverConfig: providedConfig,
+        });
+        retainConnectionLease();
+        const checkoutRecovery = this.oauthRecoveries.get(connection);
+        if (!checkoutRecovery || checkoutRecovery.promise === awaitedCheckoutRecovery) {
+          break;
+        }
+        awaitedCheckoutRecovery = checkoutRecovery.promise;
+        await releaseConnectionLease();
+        try {
+          await this.waitForConnectionRecovery(checkoutRecovery.promise, options?.signal);
+        } catch (recoveryError) {
+          if (options?.signal?.aborted || !this.claimRecoveryTakeover(checkoutRecovery)) {
+            throw recoveryError;
+          }
+          recoveryTakeoverConsumed = true;
+          retainConnectionLease();
+          break;
+        }
+      }
 
       const connectionIsActive = await connection.isConnected();
       const connectionCheckError = connectionIsActive
@@ -819,6 +854,7 @@ Please follow these instructions when using tools from the respective MCP server
               userId,
               requestOAuthHandler,
               options?.signal,
+              !recoveryTakeoverConsumed,
             ),
           );
         } catch (recoveryError) {
@@ -872,6 +908,7 @@ Please follow these instructions when using tools from the respective MCP server
               userId,
               requestOAuthHandler,
               options?.signal,
+              !recoveryTakeoverConsumed,
             ),
           );
         } catch (recoveryError) {
