@@ -9,6 +9,7 @@ import {
 import type { Model } from 'mongoose';
 import type { CacheStore, IRole, IUser } from '~/types';
 import {
+  MCPAuthorityConsistencyError,
   getMCPAuthorityConsistencyModule,
   runMCPAuthorityMutation,
 } from './mcpAuthority/consistency';
@@ -25,6 +26,10 @@ function isSystemRoleName(name: string): boolean {
 
 function isAuthUserDocCacheEnabled(): boolean {
   return process.env.AUTH_USER_CACHE_MODE === 'on';
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  return error != null && typeof error === 'object' && 'code' in error && error.code === 11000;
 }
 
 export class RoleConflictError extends Error {
@@ -80,70 +85,83 @@ export function createRoleMethods(
    * Updates existing roles with new permission types if they're missing.
    */
   async function initializeRoles(): Promise<void> {
-    await runMCPAuthorityMutation(authorityMutationGate, async () => {
-      const Role = mongoose.models.Role;
+    const status = await authorityMutationGate.getMCPAuthorityConsistencyStatus();
+    if (status.dirty) {
+      logger.warn('[initializeRoles] Skipping role seeding while MCP authority is dirty');
+      return;
+    }
+    try {
+      await runMCPAuthorityMutation(authorityMutationGate, async () => {
+        const Role = mongoose.models.Role;
 
-      for (const roleName of [SystemRoles.ADMIN, SystemRoles.USER]) {
-        // Strict mode hides off-schema SHARED_GLOBAL and won't $unset it on save; migrate it via the raw driver.
-        // eslint-disable-next-line no-restricted-syntax -- Role is a global (non-tenant) collection; raw read is required to see the off-schema field.
-        const legacyDoc = await Role.collection.findOne({ name: roleName });
-        if (legacyDoc?.permissions) {
-          const set: Record<string, unknown> = {};
-          const unset: Record<string, ''> = {};
-          for (const permType of ['PROMPTS', 'AGENTS']) {
-            const block = legacyDoc.permissions[permType];
-            if (block && 'SHARED_GLOBAL' in block) {
-              if (!('SHARE' in block)) {
-                set[`permissions.${permType}.SHARE`] = block.SHARED_GLOBAL;
-              }
-              unset[`permissions.${permType}.SHARED_GLOBAL`] = '';
-            }
-          }
-          if (Object.keys(unset).length) {
-            const update: Record<string, unknown> = { $unset: unset };
-            if (Object.keys(set).length) {
-              update.$set = set;
-            }
-            // eslint-disable-next-line no-restricted-syntax -- Role is a global (non-tenant) collection; raw $unset is required to drop the off-schema field.
-            await Role.collection.updateOne({ name: roleName }, update);
-          }
-        }
-        let role = await Role.findOne({ name: roleName });
-        const defaultPerms = roleDefaults[roleName].permissions;
-
-        if (!role) {
-          role = new Role({ ...roleDefaults[roleName], description: '' });
-        } else {
-          if (role.description == null) {
-            role.description = '';
-          }
-          const permissions = role.toObject()?.permissions ?? {};
-          role.permissions = role.permissions || {};
-          for (const permType of Object.keys(defaultPerms)) {
-            const defaultBlock = defaultPerms[permType as keyof typeof defaultPerms] as Record<
-              string,
-              unknown
-            >;
-            const existingBlock = permissions[permType] as
-              | Record<string, unknown>
-              | null
-              | undefined;
-            if (existingBlock == null) {
-              role.permissions[permType] = defaultBlock;
-              continue;
-            }
-            const mergedBlock: Record<string, unknown> = { ...existingBlock };
-            for (const field of Object.keys(defaultBlock)) {
-              if (mergedBlock[field] == null) {
-                mergedBlock[field] = defaultBlock[field];
+        for (const roleName of [SystemRoles.ADMIN, SystemRoles.USER]) {
+          // Strict mode hides off-schema SHARED_GLOBAL and won't $unset it on save; migrate it via the raw driver.
+          // eslint-disable-next-line no-restricted-syntax -- Role is a global (non-tenant) collection; raw read is required to see the off-schema field.
+          const legacyDoc = await Role.collection.findOne({ name: roleName });
+          if (legacyDoc?.permissions) {
+            const set: Record<string, unknown> = {};
+            const unset: Record<string, ''> = {};
+            for (const permType of ['PROMPTS', 'AGENTS']) {
+              const block = legacyDoc.permissions[permType];
+              if (block && 'SHARED_GLOBAL' in block) {
+                if (!('SHARE' in block)) {
+                  set[`permissions.${permType}.SHARE`] = block.SHARED_GLOBAL;
+                }
+                unset[`permissions.${permType}.SHARED_GLOBAL`] = '';
               }
             }
-            role.permissions[permType] = mergedBlock;
+            if (Object.keys(unset).length) {
+              const update: Record<string, unknown> = { $unset: unset };
+              if (Object.keys(set).length) {
+                update.$set = set;
+              }
+              // eslint-disable-next-line no-restricted-syntax -- Role is a global (non-tenant) collection; raw $unset is required to drop the off-schema field.
+              await Role.collection.updateOne({ name: roleName }, update);
+            }
           }
+          let role = await Role.findOne({ name: roleName });
+          const defaultPerms = roleDefaults[roleName].permissions;
+
+          if (!role) {
+            role = new Role({ ...roleDefaults[roleName], description: '' });
+          } else {
+            if (role.description == null) {
+              role.description = '';
+            }
+            const permissions = role.toObject()?.permissions ?? {};
+            role.permissions = role.permissions || {};
+            for (const permType of Object.keys(defaultPerms)) {
+              const defaultBlock = defaultPerms[permType as keyof typeof defaultPerms] as Record<
+                string,
+                unknown
+              >;
+              const existingBlock = permissions[permType] as
+                | Record<string, unknown>
+                | null
+                | undefined;
+              if (existingBlock == null) {
+                role.permissions[permType] = defaultBlock;
+                continue;
+              }
+              const mergedBlock: Record<string, unknown> = { ...existingBlock };
+              for (const field of Object.keys(defaultBlock)) {
+                if (mergedBlock[field] == null) {
+                  mergedBlock[field] = defaultBlock[field];
+                }
+              }
+              role.permissions[permType] = mergedBlock;
+            }
+          }
+          await role.save();
         }
-        await role.save();
+      });
+    } catch (error) {
+      if (error instanceof MCPAuthorityConsistencyError && error.reason === 'dirty') {
+        logger.warn('[initializeRoles] Skipping role seeding while MCP authority is dirty');
+        return;
       }
-    });
+      throw error;
+    }
   }
 
   /**
@@ -273,16 +291,23 @@ export function createRoleMethods(
   async function updateRoleByName(roleName: string, updates: Partial<IRole>): Promise<IRole> {
     const cache = deps.getCache?.(CacheKeys.ROLES);
     try {
-      return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const mutation = await authorityMutationGate.mutateMCPAuthority(async () => {
         const Role = mongoose.models.Role;
-        const role = await Role.findOneAndUpdate(
-          { name: roleName },
-          { $set: updates },
-          { new: true },
-        )
-          .select('-__v')
-          .lean()
-          .exec();
+        let role: IRole | null;
+        try {
+          role = await Role.findOneAndUpdate({ name: roleName }, { $set: updates }, { new: true })
+            .select('-__v')
+            .lean<IRole>()
+            .exec();
+        } catch (error) {
+          if (isDuplicateKeyError(error)) {
+            const targetName = updates.name ?? roleName;
+            return {
+              conflict: new RoleConflictError(`Role "${targetName}" already exists`),
+            } as const;
+          }
+          throw error;
+        }
         if (cache) {
           if (updates.name && updates.name !== roleName) {
             await Promise.all([
@@ -293,10 +318,17 @@ export function createRoleMethods(
             await cache.set(scopedCacheKey(roleName), role);
           }
         }
-        return role as unknown as IRole;
+        return { role: role as IRole } as const;
       });
+      if ('conflict' in mutation.result) {
+        throw mutation.result.conflict;
+      }
+      return mutation.result.role;
     } catch (error) {
-      if (error && typeof error === 'object' && 'code' in error && error.code === 11000) {
+      if (error instanceof RoleConflictError) {
+        throw error;
+      }
+      if (isDuplicateKeyError(error)) {
         const targetName = updates.name ?? roleName;
         throw new RoleConflictError(`Role "${targetName}" already exists`);
       }
@@ -566,7 +598,7 @@ export function createRoleMethods(
         const role = await new Role({ ...roleData, name: trimmed }).save();
         return { role } as const;
       } catch (err) {
-        if (err && typeof err === 'object' && 'code' in err && err.code === 11000) {
+        if (isDuplicateKeyError(err)) {
           return { conflict: new RoleConflictError(`Role "${trimmed}" already exists`) } as const;
         }
         throw err;

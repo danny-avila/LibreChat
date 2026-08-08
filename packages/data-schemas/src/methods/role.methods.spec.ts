@@ -489,6 +489,26 @@ describe('updateAccessPermissions', () => {
 });
 
 describe('initializeRoles', () => {
+  it('keeps general startup available when a previous authority writer left the fence dirty', async () => {
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    await expect(
+      consistency.mutateMCPAuthority(async () => {
+        throw new Error('simulated writer crash');
+      }),
+    ).rejects.toThrow('simulated writer crash');
+    const dirty = await consistency.getMCPAuthorityConsistencyStatus();
+
+    try {
+      await expect(initializeRoles()).resolves.toBeUndefined();
+      await expect(Role.countDocuments()).resolves.toBe(0);
+    } finally {
+      await consistency.reconcileMCPAuthorityConsistency({
+        expectedGeneration: dirty.generation,
+        expectedOwnerId: dirty.ownerId!,
+      });
+    }
+  });
+
   beforeEach(async () => {
     await Role.deleteMany({});
   });
@@ -971,6 +991,18 @@ describe('updateRoleByName - cache on rename', () => {
       expect.objectContaining({ name: 'editor', description: 'Updated desc' }),
     );
     expect(mockCache.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a duplicate rename conflict without leaving MCP authority dirty', async () => {
+    await createRoleByName({ name: 'editor' });
+    await createRoleByName({ name: 'viewer' });
+    await Role.syncIndexes();
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+
+    await expect(updateRoleByName('editor', { name: 'viewer' })).rejects.toBeInstanceOf(Error);
+    await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+      dirty: false,
+    });
   });
 });
 

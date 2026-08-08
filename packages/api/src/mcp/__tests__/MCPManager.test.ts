@@ -909,6 +909,11 @@ describe('MCPManager', () => {
         },
       };
       const cleanupOAuthHandler = jest.fn();
+      const refreshAuthorityLifecycle = {
+        exchange: jest.fn(async (action) => await action()),
+        store: jest.fn(async (_tokens, action) => await action()),
+        accept: jest.fn(async () => undefined),
+      } as t.MCPRefreshAuthorityLifecycle;
 
       mockProcessMCPEnv.mockReturnValue(processedServerConfig);
       (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mockReturnValue(
@@ -929,6 +934,7 @@ describe('MCPManager', () => {
         toolName: 'test_tool',
         provider: 'openai',
         oauthStart,
+        refreshAuthorityLifecycle,
         flowManager: mockFlowManager as unknown as Parameters<
           typeof manager.callTool
         >[0]['flowManager'],
@@ -943,6 +949,7 @@ describe('MCPManager', () => {
         expect.objectContaining({
           oauthStart,
           user: mockUser,
+          refreshAuthorityLifecycle,
         }),
         mockConnection,
       );
@@ -2219,12 +2226,18 @@ describe('MCPManager', () => {
         config: 'config-revision',
         credentials: 'credential-revision',
       };
+      const refreshAuthorityLifecycle = {
+        exchange: jest.fn(async (action) => await action()),
+        store: jest.fn(async (_tokens, action) => await action()),
+        accept: jest.fn(async () => undefined),
+      } as t.MCPRefreshAuthorityLifecycle;
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       await manager.getUserConnection({
         ...issuedConnectionInput(serverConfig, serverConfig, 'oauth', oauthAuthorityScope),
         serverName,
         user: mockUser,
+        refreshAuthorityLifecycle,
         flowManager: mockFlowManager as unknown as t.UserMCPConnectionOptions['flowManager'],
       });
 
@@ -2233,6 +2246,7 @@ describe('MCPManager', () => {
         expect.objectContaining({
           useOAuth: true,
           oauthAuthorityScope,
+          refreshAuthorityLifecycle,
         }),
       );
     });

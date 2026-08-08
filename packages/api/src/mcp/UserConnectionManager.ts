@@ -580,6 +580,7 @@ export abstract class UserConnectionManager {
       securityPolicy,
       oauthAuthorityScope,
       authorityAuthorizationKind,
+      refreshAuthorityLifecycle,
     }: t.UserMCPConnectionOptions,
     userId: string,
     clearCooldown: boolean,
@@ -737,6 +738,7 @@ export abstract class UserConnectionManager {
           connectionTimeout: connectionTimeout,
           oauthAuthorityScope,
           authorityAuthorizationKind,
+          refreshAuthorityLifecycle,
           effectiveServerConfig,
           securityPolicy,
         };
@@ -749,6 +751,7 @@ export abstract class UserConnectionManager {
           connectionTimeout,
           oauthAuthorityScope,
           authorityAuthorizationKind,
+          refreshAuthorityLifecycle,
           effectiveServerConfig,
           securityPolicy,
         };

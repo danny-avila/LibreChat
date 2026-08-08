@@ -711,6 +711,7 @@ Please follow these instructions when using tools from the respective MCP server
             securityPolicy,
             oauthAuthorityScope,
             authorityAuthorizationKind,
+            refreshAuthorityLifecycle,
           },
           activeConnection,
         );
