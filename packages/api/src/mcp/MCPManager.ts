@@ -492,12 +492,15 @@ Please follow these instructions when using tools from the respective MCP server
 
     const recoveryEntry = { promise: recovery, allowsTakeover, takeoverClaimed: false };
     this.oauthRecoveries.set(connection, recoveryEntry);
+    this.holdDeferredConnectionDisposal(connection);
     const clearRecovery = () => {
       if (this.oauthRecoveries.get(connection) === recoveryEntry) {
         this.oauthRecoveries.delete(connection);
       }
     };
+    const releaseRecoveryDisposal = () => this.releaseRecoveryConnectionDisposal(connection);
     void recovery.then(clearRecovery, clearRecovery);
+    void recovery.then(releaseRecoveryDisposal, releaseRecoveryDisposal);
     await this.waitForActiveRecovery(recovery, signal);
   }
 

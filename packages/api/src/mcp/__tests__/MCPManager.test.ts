@@ -1592,6 +1592,34 @@ describe('MCPManager', () => {
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
 
+    it('keeps recovery disposal owned after the request owner aborts', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValueOnce(authError);
+      const connection = createConnection(request);
+      attachOAuthHandler(() => undefined);
+      const manager = await createManager(connection);
+      const lifecycle = manager as unknown as {
+        disposeEvictedConnection: (connection: MCPConnection, logPrefix: string) => Promise<void>;
+      };
+      const controller = new AbortController();
+      const abortReason = new Error('request aborted');
+
+      const ownerCall = callTool(manager, controller.signal);
+      await new Promise((resolve) => setImmediate(resolve));
+      controller.abort(abortReason);
+
+      await expect(ownerCall).rejects.toBe(abortReason);
+      await lifecycle.disposeEvictedConnection(connection, '[MCP][evicted]');
+      expect(connection.disconnect).not.toHaveBeenCalled();
+
+      connection.emit('oauthHandled');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(connection.disconnect).toHaveBeenCalledTimes(1);
+      expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
+    });
+
     it('lets a live waiter recover after the recovery owner fails', async () => {
       const authError = new Error('Non-200 status code (401)');
       const request = jest
