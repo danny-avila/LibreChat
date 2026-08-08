@@ -24,11 +24,11 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
+import { reserveMCPToolsChangedRevision } from './toolsChanged';
 import { isOAuthServer, sanitizeUrlForLogging } from './utils';
 import { runOutsideTracing } from '~/utils/tracing';
 import { isAddressAllowed } from '~/auth/domain';
 import { withTimeout } from '~/utils/promise';
-import { reserveMCPToolsChangedRevision } from './toolsChanged';
 import { mcpConfig } from './mcpConfig';
 
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;

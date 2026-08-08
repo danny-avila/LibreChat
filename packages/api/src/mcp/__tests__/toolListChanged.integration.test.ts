@@ -1,4 +1,5 @@
 /** Real-SDK integration coverage for `notifications/tools/list_changed` (#7117). */
+import { CacheKeys } from 'librechat-data-provider';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
@@ -7,13 +8,12 @@ import {
   McpError,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import { CacheKeys } from 'librechat-data-provider';
 import type { LCAvailableTools } from '../types';
-import { createMCPCatalogStore } from '../catalog/store';
 import {
   getMCPAppToolsPublicationGeneration,
   setMCPToolsChangedRevisionHandler,
 } from '../toolsChanged';
+import { createMCPCatalogStore } from '../catalog/store';
 import { MCPConnection } from '../connection';
 
 jest.setTimeout(10_000);
