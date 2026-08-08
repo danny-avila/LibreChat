@@ -3259,7 +3259,14 @@ describe('MCP Routes', () => {
         '[getMCPTools] Error fetching cached tools for bad-server:',
         expect.any(Error),
       );
-      expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledWith('test-user-id', 'bad-server');
+      expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledWith(
+        'test-user-id',
+        'bad-server',
+        {
+          type: 'sse',
+          url: 'https://bad.example.com/sse',
+        },
+      );
       expect(response.body.servers['good-server']).toMatchObject({
         name: 'good-server',
         icon: '/icons/good.svg',

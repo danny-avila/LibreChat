@@ -1,0 +1,589 @@
+import { randomUUID } from 'crypto';
+import { logger } from '@librechat/data-schemas';
+import { CacheKeys, Time } from 'librechat-data-provider';
+import type { LCAvailableTools } from '../types';
+
+const GLOBAL_LOCK_TTL_MS = 30_000;
+const GLOBAL_FENCE_SAFETY_MS = 1_000;
+const LOCK_RETRY_MS = 25;
+const CACHE_ENTRY_VERSION = 1;
+const GLOBAL_LOCK_KEY = `${CacheKeys.TOOL_CACHE}:tools:global:write-lock`;
+
+const RELEASE_LOCK_SCRIPT = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`;
+
+const CLAIM_GLOBAL_FENCE_SCRIPT = `
+redis.call('PSETEX', KEYS[1], ARGV[2], ARGV[1])
+return 1
+`;
+
+const RENEW_GENERATION_SCRIPT = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local decoded, value = pcall(cjson.decode, raw)
+if not decoded or type(value) ~= 'table' or value['value'] ~= ARGV[1] then return 0 end
+value['expires'] = tonumber(ARGV[2])
+redis.call('PSETEX', KEYS[1], ARGV[3], cjson.encode(value))
+return 1
+`;
+
+const WRITE_USER_TOOLS_SCRIPT = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local decoded, value = pcall(cjson.decode, raw)
+if not decoded or type(value) ~= 'table' or value['value'] ~= ARGV[1] then return 0 end
+value['expires'] = tonumber(ARGV[2])
+redis.call('PSETEX', KEYS[1], ARGV[3], cjson.encode(value))
+local decodedEntry, entry = pcall(cjson.decode, ARGV[4])
+if not decodedEntry then return redis.error_reply('Invalid MCP tools cache entry') end
+redis.call('PSETEX', KEYS[2], ARGV[6], cjson.encode({value=entry, expires=tonumber(ARGV[5])}))
+return 1
+`;
+
+const WRITE_GLOBAL_IF_OWNER_SCRIPT = `
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+local decoded, tools = pcall(cjson.decode, ARGV[2])
+if not decoded then return redis.error_reply('Invalid global tools catalog') end
+redis.call('PSETEX', KEYS[2], ARGV[4], cjson.encode({value=tools, expires=tonumber(ARGV[3])}))
+return 1
+`;
+
+const DELETE_GLOBAL_IF_OWNER_SCRIPT = `
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+redis.call('DEL', KEYS[2])
+return 1
+`;
+
+export const ToolCacheKeys = {
+  GLOBAL: 'tools:global',
+  MCP_APP_SERVER: (serverName: string, configGeneration: string): string =>
+    `tools:mcp:app:${encodeURIComponent(serverName)}:${encodeURIComponent(configGeneration)}`,
+  MCP_SERVER: (userId: string, serverName: string, configGeneration?: string): string =>
+    configGeneration
+      ? `tools:mcp:user:{${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}}:${encodeURIComponent(configGeneration)}`
+      : `tools:mcp:${userId}:${serverName}`,
+  MCP_SERVER_GENERATION: (userId: string, serverName: string): string =>
+    `tools:metadata:mcp:user-generation:{${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}}`,
+  MCP_SERVER_LEGACY_FENCE: (userId: string, serverName: string): string =>
+    `tools:metadata:mcp:user-legacy-fence:{${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}}`,
+};
+
+export interface CatalogCache {
+  get(key: string): Promise<unknown>;
+  set(key: string, value: unknown, ttl?: number): Promise<boolean | void>;
+  delete(key: string): Promise<boolean | void>;
+}
+
+interface LockRedisClient {
+  set(key: string, value: string, mode: 'PX', ttl: number, condition: 'NX'): Promise<string | null>;
+  eval(script: string, numberOfKeys: number, ...args: string[]): Promise<unknown>;
+}
+
+interface KeyvRedisClient {
+  eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
+}
+
+export interface CatalogStoreDeps {
+  getCache: () => CatalogCache;
+  cacheConfig: {
+    FORCED_IN_MEMORY_CACHE_NAMESPACES?: string[];
+    REDIS_KEY_PREFIX?: string;
+    GLOBAL_PREFIX_SEPARATOR?: string;
+  };
+  ioredisClient?: LockRedisClient | null;
+  keyvRedisClient?: KeyvRedisClient | null;
+  userConnectionIdleTimeout?: number | string;
+}
+
+export interface CachedToolsOptions {
+  userId?: string;
+  serverName?: string;
+  configGeneration?: string;
+  ttl?: number;
+}
+
+export interface GuardedToolsOptions extends CachedToolsOptions {
+  userId: string;
+  serverName: string;
+  configGeneration: string;
+  publicationGeneration: string;
+}
+
+interface GuardedEntry {
+  version: number;
+  publicationGeneration: string;
+  tools: LCAvailableTools;
+}
+
+export interface MCPCatalogStore {
+  getCachedTools: (options?: CachedToolsOptions) => Promise<LCAvailableTools | null>;
+  setCachedTools: (tools: LCAvailableTools, options?: CachedToolsOptions) => Promise<boolean>;
+  setCachedToolsWithinGlobalLock: (
+    tools: LCAvailableTools,
+    options?: CachedToolsOptions,
+  ) => Promise<boolean>;
+  setCachedToolsIfCurrent: (
+    tools: LCAvailableTools,
+    options: GuardedToolsOptions,
+  ) => Promise<boolean>;
+  getMCPToolsCacheGeneration: (scope: {
+    userId: string;
+    serverName: string;
+  }) => Promise<string | undefined>;
+  renewMCPToolsCacheGeneration: (scope: {
+    userId: string;
+    serverName: string;
+    publicationGeneration: string;
+  }) => Promise<boolean>;
+  getCachedAppServerTools: (
+    serverName: string,
+    configGeneration: string,
+  ) => Promise<LCAvailableTools | null>;
+  setCachedAppServerTools: (
+    serverName: string,
+    configGeneration: string,
+    tools: LCAvailableTools,
+    ttl?: number,
+  ) => Promise<boolean>;
+  runWithGlobalCacheLock: <T>(operation: () => Promise<T>) => Promise<T>;
+  invalidateCachedTools: (options?: {
+    userId?: string;
+    serverName?: string;
+    invalidateGlobal?: boolean;
+  }) => Promise<void>;
+}
+
+function isTools(value: unknown): value is LCAvailableTools {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isGuardedEntry(value: unknown): value is GuardedEntry {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const entry = value as Partial<GuardedEntry>;
+  return (
+    entry.version === CACHE_ENTRY_VERSION &&
+    typeof entry.publicationGeneration === 'string' &&
+    isTools(entry.tools)
+  );
+}
+
+export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
+  const generationTtl = Math.max(
+    Time.ONE_DAY,
+    Number.isFinite(Number(deps.userConnectionIdleTimeout))
+      ? Number(deps.userConnectionIdleTimeout) * 2
+      : 0,
+  );
+  const userQueues = new Map<string, Promise<void>>();
+  let globalQueue = Promise.resolve();
+  let globalLockToken: string | undefined;
+
+  const sharedRedis = (): boolean =>
+    deps.ioredisClient != null &&
+    deps.keyvRedisClient != null &&
+    !deps.cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(CacheKeys.TOOL_CACHE);
+
+  const rawKey = (key: string): string => {
+    const namespaced = `${CacheKeys.TOOL_CACHE}:${key}`;
+    return deps.cacheConfig.REDIS_KEY_PREFIX
+      ? `${deps.cacheConfig.REDIS_KEY_PREFIX}${deps.cacheConfig.GLOBAL_PREFIX_SEPARATOR ?? '::'}${namespaced}`
+      : namespaced;
+  };
+  const globalCacheRawKey = rawKey(ToolCacheKeys.GLOBAL);
+  const openingBrace = globalCacheRawKey.indexOf('{');
+  const closingBrace = openingBrace >= 0 ? globalCacheRawKey.indexOf('}', openingBrace + 1) : -1;
+  const globalCacheHashTag =
+    closingBrace > openingBrace + 1
+      ? globalCacheRawKey.slice(openingBrace + 1, closingBrace)
+      : globalCacheRawKey;
+  /** Hashes to the same Redis Cluster slot as the unchanged legacy global catalog key. */
+  const globalFenceKey = `tools:global:write-fence:{${globalCacheHashTag}}`;
+
+  async function withRedisLock<T>(
+    lockKey: string,
+    ttl: number,
+    operation: (token?: string, leaseExpiresAt?: number) => Promise<T>,
+  ): Promise<T> {
+    if (!sharedRedis()) {
+      return operation();
+    }
+    const redis = deps.ioredisClient!;
+    const token = randomUUID();
+    const deadline = Date.now() + ttl + LOCK_RETRY_MS;
+    let leaseExpiresAt = 0;
+    while (true) {
+      const attemptedLeaseExpiry = Date.now() + ttl;
+      if ((await redis.set(lockKey, token, 'PX', ttl, 'NX')) === 'OK') {
+        leaseExpiresAt = attemptedLeaseExpiry;
+        break;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for tool cache lock ${lockKey}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
+    }
+    try {
+      return await operation(token, leaseExpiresAt);
+    } finally {
+      try {
+        await redis.eval(RELEASE_LOCK_SCRIPT, 1, lockKey, token);
+      } catch (error) {
+        logger.warn(`[MCP Cache] Failed to release tool cache lock ${lockKey}:`, error);
+      }
+    }
+  }
+
+  function withUserQueue<T>(
+    userId: string,
+    serverName: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const scope = JSON.stringify([userId, serverName]);
+    const previous = userQueues.get(scope) ?? Promise.resolve();
+    const lockKey = `${CacheKeys.TOOL_CACHE}:tools:mcp-write-lock:${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}`;
+    const result = previous.then(
+      () => withRedisLock(lockKey, GLOBAL_LOCK_TTL_MS, operation),
+      () => withRedisLock(lockKey, GLOBAL_LOCK_TTL_MS, operation),
+    );
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    userQueues.set(scope, tail);
+    void tail.then(() => userQueues.get(scope) === tail && userQueues.delete(scope));
+    return result;
+  }
+
+  async function renewIfCurrent(
+    cache: CatalogCache,
+    key: string,
+    publicationGeneration: string,
+  ): Promise<boolean> {
+    if (sharedRedis()) {
+      const renewed = await deps.keyvRedisClient!.eval(RENEW_GENERATION_SCRIPT, {
+        keys: [rawKey(key)],
+        arguments: [
+          publicationGeneration,
+          String(Date.now() + generationTtl),
+          String(generationTtl),
+        ],
+      });
+      return Number(renewed) === 1;
+    }
+    if ((await cache.get(key)) !== publicationGeneration) {
+      return false;
+    }
+    if ((await cache.set(key, publicationGeneration, generationTtl)) === false) {
+      throw new Error('Tool publication generation cache rejected the lease refresh');
+    }
+    return true;
+  }
+
+  async function setGlobalWithinLock(
+    cache: CatalogCache,
+    tools: LCAvailableTools,
+    ttl: number,
+  ): Promise<boolean> {
+    if (!sharedRedis()) {
+      return (await cache.set(ToolCacheKeys.GLOBAL, tools, ttl)) !== false;
+    }
+    if (!globalLockToken) {
+      throw new Error('Global tool cache write requires lock ownership');
+    }
+    const written = await deps.keyvRedisClient!.eval(WRITE_GLOBAL_IF_OWNER_SCRIPT, {
+      keys: [globalFenceKey, globalCacheRawKey],
+      arguments: [globalLockToken, JSON.stringify(tools), String(Date.now() + ttl), String(ttl)],
+    });
+    if (Number(written) !== 1) {
+      throw new Error('Global tool cache lock ownership was lost before write');
+    }
+    return true;
+  }
+
+  async function deleteGlobalWithinLock(cache: CatalogCache): Promise<void> {
+    if (!sharedRedis()) {
+      await cache.delete(ToolCacheKeys.GLOBAL);
+      return;
+    }
+    if (!globalLockToken) {
+      throw new Error('Global tool cache invalidation requires lock ownership');
+    }
+    const deleted = await deps.keyvRedisClient!.eval(DELETE_GLOBAL_IF_OWNER_SCRIPT, {
+      keys: [globalFenceKey, globalCacheRawKey],
+      arguments: [globalLockToken],
+    });
+    if (Number(deleted) !== 1) {
+      throw new Error('Global tool cache lock ownership was lost before invalidation');
+    }
+  }
+
+  function runWithGlobalCacheLock<T>(operation: () => Promise<T>): Promise<T> {
+    const locked = () =>
+      withRedisLock(GLOBAL_LOCK_KEY, GLOBAL_LOCK_TTL_MS, async (token, leaseExpiresAt) => {
+        if (sharedRedis() && token) {
+          const fenceTtl = (leaseExpiresAt ?? 0) - Date.now() - GLOBAL_FENCE_SAFETY_MS;
+          if (fenceTtl <= 0) {
+            throw new Error('Global tool cache lock expired before ownership could be fenced');
+          }
+          await deps.keyvRedisClient!.eval(CLAIM_GLOBAL_FENCE_SCRIPT, {
+            keys: [globalFenceKey],
+            arguments: [token, String(fenceTtl)],
+          });
+        }
+        globalLockToken = token;
+        try {
+          return await operation();
+        } finally {
+          globalLockToken = undefined;
+          if (sharedRedis() && token) {
+            try {
+              await deps.keyvRedisClient!.eval(RELEASE_LOCK_SCRIPT, {
+                keys: [globalFenceKey],
+                arguments: [token],
+              });
+            } catch (error) {
+              logger.warn('[MCP Cache] Failed to release global tool cache fence:', error);
+            }
+          }
+        }
+      });
+    const result = globalQueue.then(locked, locked);
+    globalQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  async function getCachedTools(
+    options: CachedToolsOptions = {},
+  ): Promise<LCAvailableTools | null> {
+    const cache = deps.getCache();
+    const { userId, serverName, configGeneration } = options;
+    if (!userId || !serverName) {
+      const global = await cache.get(ToolCacheKeys.GLOBAL);
+      return isTools(global) ? global : null;
+    }
+    const toolsKey = ToolCacheKeys.MCP_SERVER(userId, serverName, configGeneration);
+    let cached = await cache.get(toolsKey);
+    if (cached == null && configGeneration) {
+      cached = await withUserQueue(userId, serverName, async () => {
+        const current = await cache.get(toolsKey);
+        if (current != null) return current;
+        if ((await cache.get(ToolCacheKeys.MCP_SERVER_LEGACY_FENCE(userId, serverName))) != null) {
+          return null;
+        }
+        const legacy = await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName));
+        if (!isTools(legacy)) return null;
+        const generationKey = ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName);
+        const generation = await cache.get(generationKey);
+        const publicationGeneration =
+          typeof generation === 'string' && generation.length > 0 ? generation : randomUUID();
+        if (publicationGeneration !== generation) {
+          if ((await cache.set(generationKey, publicationGeneration, generationTtl)) === false) {
+            throw new Error('Tool publication generation cache rejected the migration fence');
+          }
+        }
+        const migrated: GuardedEntry = {
+          version: CACHE_ENTRY_VERSION,
+          publicationGeneration,
+          tools: legacy,
+        };
+        if ((await cache.set(toolsKey, migrated, Time.TWELVE_HOURS)) === false) {
+          throw new Error('Tool cache rejected the legacy user catalog migration');
+        }
+        return migrated;
+      });
+    }
+    if (!isGuardedEntry(cached)) {
+      return isTools(cached) ? cached : null;
+    }
+    const generation = await cache.get(ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName));
+    return generation === cached.publicationGeneration ? cached.tools : null;
+  }
+
+  async function setCachedToolsWithinGlobalLock(
+    tools: LCAvailableTools,
+    options: CachedToolsOptions = {},
+  ): Promise<boolean> {
+    const cache = deps.getCache();
+    const ttl = options.ttl ?? Time.TWELVE_HOURS;
+    if (options.userId && options.serverName) {
+      return (
+        (await cache.set(
+          ToolCacheKeys.MCP_SERVER(options.userId, options.serverName, options.configGeneration),
+          tools,
+          ttl,
+        )) !== false
+      );
+    }
+    return setGlobalWithinLock(cache, tools, ttl);
+  }
+
+  async function setCachedTools(
+    tools: LCAvailableTools,
+    options: CachedToolsOptions = {},
+  ): Promise<boolean> {
+    if (options.userId && options.serverName) {
+      return withUserQueue(options.userId, options.serverName, () =>
+        setCachedToolsWithinGlobalLock(tools, options),
+      );
+    }
+    return runWithGlobalCacheLock(() => setCachedToolsWithinGlobalLock(tools, options));
+  }
+
+  async function getMCPToolsCacheGeneration(scope: {
+    userId: string;
+    serverName: string;
+  }): Promise<string> {
+    const cache = deps.getCache();
+    const key = ToolCacheKeys.MCP_SERVER_GENERATION(scope.userId, scope.serverName);
+    const existing = await cache.get(key);
+    if (typeof existing === 'string' && existing.length > 0) return existing;
+    return withUserQueue(scope.userId, scope.serverName, async () => {
+      const current = await cache.get(key);
+      if (typeof current === 'string' && current.length > 0) return current;
+      const generation = randomUUID();
+      if ((await cache.set(key, generation, generationTtl)) === false) {
+        throw new Error('Tool publication generation cache rejected the write');
+      }
+      return generation;
+    });
+  }
+
+  async function renewMCPToolsCacheGeneration(scope: {
+    userId: string;
+    serverName: string;
+    publicationGeneration: string;
+  }): Promise<boolean> {
+    const cache = deps.getCache();
+    return withUserQueue(scope.userId, scope.serverName, () =>
+      renewIfCurrent(
+        cache,
+        ToolCacheKeys.MCP_SERVER_GENERATION(scope.userId, scope.serverName),
+        scope.publicationGeneration,
+      ),
+    );
+  }
+
+  async function setCachedToolsIfCurrent(
+    tools: LCAvailableTools,
+    options: GuardedToolsOptions,
+  ): Promise<boolean> {
+    const cache = deps.getCache();
+    return withUserQueue(options.userId, options.serverName, async () => {
+      const generationKey = ToolCacheKeys.MCP_SERVER_GENERATION(options.userId, options.serverName);
+      const guarded: GuardedEntry = {
+        version: CACHE_ENTRY_VERSION,
+        publicationGeneration: options.publicationGeneration,
+        tools,
+      };
+      if (!sharedRedis()) {
+        if (!(await renewIfCurrent(cache, generationKey, options.publicationGeneration))) {
+          return false;
+        }
+        return (
+          (await cache.set(
+            ToolCacheKeys.MCP_SERVER(options.userId, options.serverName, options.configGeneration),
+            guarded,
+            options.ttl ?? Time.TWELVE_HOURS,
+          )) !== false
+        );
+      }
+      const ttl = options.ttl ?? Time.TWELVE_HOURS;
+      const written = await deps.keyvRedisClient!.eval(WRITE_USER_TOOLS_SCRIPT, {
+        keys: [
+          rawKey(generationKey),
+          rawKey(
+            ToolCacheKeys.MCP_SERVER(options.userId, options.serverName, options.configGeneration),
+          ),
+        ],
+        arguments: [
+          options.publicationGeneration,
+          String(Date.now() + generationTtl),
+          String(generationTtl),
+          JSON.stringify(guarded),
+          String(Date.now() + ttl),
+          String(ttl),
+        ],
+      });
+      return Number(written) === 1;
+    });
+  }
+
+  async function getCachedAppServerTools(
+    serverName: string,
+    configGeneration: string,
+  ): Promise<LCAvailableTools | null> {
+    const value = await deps
+      .getCache()
+      .get(ToolCacheKeys.MCP_APP_SERVER(serverName, configGeneration));
+    return isTools(value) ? value : null;
+  }
+
+  async function setCachedAppServerTools(
+    serverName: string,
+    configGeneration: string,
+    tools: LCAvailableTools,
+    ttl = Time.TWELVE_HOURS,
+  ): Promise<boolean> {
+    return (
+      (await deps
+        .getCache()
+        .set(ToolCacheKeys.MCP_APP_SERVER(serverName, configGeneration), tools, ttl)) !== false
+    );
+  }
+
+  async function invalidateCachedTools(
+    options: {
+      userId?: string;
+      serverName?: string;
+      invalidateGlobal?: boolean;
+    } = {},
+  ): Promise<void> {
+    const cache = deps.getCache();
+    if (options.invalidateGlobal) {
+      await runWithGlobalCacheLock(() => deleteGlobalWithinLock(cache));
+    }
+    const { userId, serverName } = options;
+    if (userId && serverName) {
+      await withUserQueue(userId, serverName, async () => {
+        if (
+          (await cache.set(ToolCacheKeys.MCP_SERVER_LEGACY_FENCE(userId, serverName), true)) ===
+          false
+        ) {
+          throw new Error('Tool cache rejected the legacy migration fence');
+        }
+        if (
+          (await cache.set(
+            ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName),
+            randomUUID(),
+            generationTtl,
+          )) === false
+        ) {
+          throw new Error('Tool publication generation cache rejected invalidation');
+        }
+        await cache.delete(ToolCacheKeys.MCP_SERVER(userId, serverName));
+      });
+    }
+  }
+
+  return {
+    getCachedTools,
+    setCachedTools,
+    setCachedToolsIfCurrent,
+    getMCPToolsCacheGeneration,
+    renewMCPToolsCacheGeneration,
+    setCachedToolsWithinGlobalLock,
+    getCachedAppServerTools,
+    setCachedAppServerTools,
+    runWithGlobalCacheLock,
+    invalidateCachedTools,
+  };
+}

@@ -45,6 +45,7 @@ export interface AssistantToolDefinitionsDeps {
   getServerToolFunctionsSnapshot: (
     userId: string,
     serverName: string,
+    serverConfig: ParsedServerConfig,
   ) => Promise<AssistantToolCatalogSnapshot>;
   recoverServerTools: (
     serverName: string,
@@ -120,7 +121,7 @@ async function loadServerCatalog(
     return cached;
   }
 
-  const snapshot = await deps.getServerToolFunctionsSnapshot(userId, serverName);
+  const snapshot = await deps.getServerToolFunctionsSnapshot(userId, serverName, serverConfig);
   if (snapshot.tools != null) {
     void deps
       .cacheMCPServerTools({

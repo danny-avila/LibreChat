@@ -42,7 +42,6 @@ type PendingOAuthState = {
 type PendingConnection = {
   promise: Promise<MCPConnection>;
   oauth: PendingOAuthState;
-  guard: ConnectionCreationGuard;
 };
 
 type ConnectionCreationGuard = { cancelled: boolean };
@@ -63,6 +62,8 @@ export abstract class UserConnectionManager {
   protected userLastActivity: Map<string, number> = new Map();
   /** In-flight connection promises keyed by `userId:serverName` — coalesces concurrent attempts */
   protected pendingConnections: Map<string, PendingConnection> = new Map();
+  /** All durable creations, including forced replacements, visible to mutation teardown. */
+  private readonly activeConnectionCreations: Map<string, Set<ConnectionCreationGuard>> = new Map();
   /** Serializes explicit durable replacements without coalescing their callers. */
   private readonly forceNewConnectionQueues: Map<string, Promise<void>> = new Map();
   /** Fences durable connections whose credentials were invalidated on another replica. */
@@ -92,6 +93,28 @@ export abstract class UserConnectionManager {
       }
     });
     return result;
+  }
+
+  private registerConnectionCreation(key: string, guard: ConnectionCreationGuard): void {
+    const guards = this.activeConnectionCreations.get(key) ?? new Set<ConnectionCreationGuard>();
+    guards.add(guard);
+    this.activeConnectionCreations.set(key, guards);
+  }
+
+  private unregisterConnectionCreation(key: string, guard: ConnectionCreationGuard): void {
+    const guards = this.activeConnectionCreations.get(key);
+    guards?.delete(guard);
+    if (guards?.size === 0) {
+      this.activeConnectionCreations.delete(key);
+    }
+  }
+
+  private cancelConnectionCreations(key: string, preserved?: ConnectionCreationGuard): void {
+    for (const guard of this.activeConnectionCreations.get(key) ?? []) {
+      if (guard !== preserved) {
+        guard.cancelled = true;
+      }
+    }
   }
 
   private async renewUserToolPublicationLeases(userId: string, now: number): Promise<void> {
@@ -270,6 +293,7 @@ export abstract class UserConnectionManager {
 
     const pendingOAuth = this.createPendingOAuthState(opts.oauthStart);
     const creationGuard: ConnectionCreationGuard = { cancelled: false };
+    this.registerConnectionCreation(lockKey, creationGuard);
     const createConnection = () =>
       this.createUserConnectionInternal(
         {
@@ -306,13 +330,13 @@ export abstract class UserConnectionManager {
       this.pendingConnections.set(lockKey, {
         promise: connectionPromise,
         oauth: pendingOAuth,
-        guard: creationGuard,
       });
     }
 
     try {
       return await connectionPromise;
     } finally {
+      this.unregisterConnectionCreation(lockKey, creationGuard);
       if (
         !forceNewConnection &&
         this.pendingConnections.get(lockKey)?.promise === connectionPromise
@@ -510,6 +534,11 @@ export abstract class UserConnectionManager {
     clearCooldown: boolean,
     creationGuard?: ConnectionCreationGuard,
   ): Promise<MCPConnection> {
+    if (creationGuard?.cancelled) {
+      throw new Error(
+        `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
+      );
+    }
     if (await this.appConnections!.has(serverName)) {
       throw new McpError(
         ErrorCode.InvalidRequest,
@@ -912,8 +941,8 @@ export abstract class UserConnectionManager {
   ): Promise<void> {
     const pendingKey = `${userId}:${serverName}`;
     const pending = this.pendingConnections.get(pendingKey);
-    if (pending && pending.guard !== preservedCreation) {
-      pending.guard.cancelled = true;
+    this.cancelConnectionCreations(pendingKey, preservedCreation);
+    if (pending && preservedCreation == null) {
       this.pendingConnections.delete(pendingKey);
     }
     const userMap = this.userConnections.get(userId);
@@ -935,10 +964,16 @@ export abstract class UserConnectionManager {
     userId: string,
     preservedCreation?: ConnectionCreationGuard,
   ): Promise<void> {
-    for (const [key, pending] of this.pendingConnections) {
-      if (key.startsWith(`${userId}:`) && pending.guard !== preservedCreation) {
-        pending.guard.cancelled = true;
-        this.pendingConnections.delete(key);
+    for (const key of this.activeConnectionCreations.keys()) {
+      if (key.startsWith(`${userId}:`)) {
+        this.cancelConnectionCreations(key, preservedCreation);
+      }
+    }
+    if (preservedCreation == null) {
+      for (const key of this.pendingConnections.keys()) {
+        if (key.startsWith(`${userId}:`)) {
+          this.pendingConnections.delete(key);
+        }
       }
     }
     const userMap = this.userConnections.get(userId);

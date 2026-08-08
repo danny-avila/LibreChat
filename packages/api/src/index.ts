@@ -22,6 +22,7 @@ export * from './mcp/zod';
 export * from './mcp/errors';
 export * from './mcp/cache';
 export * from './mcp/tools';
+export * from './mcp/catalog/store';
 export * from './mcp/assistants';
 export * from './mcp/request';
 /* Utilities */

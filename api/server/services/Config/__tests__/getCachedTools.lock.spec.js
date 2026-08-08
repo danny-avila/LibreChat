@@ -1,4 +1,5 @@
 const { CacheKeys } = require('librechat-data-provider');
+const calculateSlot = require('cluster-key-slot');
 
 const mockRedisClient = {
   set: jest.fn(),
@@ -9,6 +10,7 @@ const mockKeyvRedisClient = {
 };
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   cacheConfig: { FORCED_IN_MEMORY_CACHE_NAMESPACES: [] },
   mcpConfig: { USER_CONNECTION_IDLE_TIMEOUT: 15 * 60 * 1000 },
   ioredisClient: mockRedisClient,
@@ -67,6 +69,8 @@ describe('global tool cache write lock', () => {
       `${CacheKeys.TOOL_CACHE}:tools:global:write-lock`,
       token,
     );
+    const fenceKey = mockKeyvRedisClient.eval.mock.calls[0][1].keys[0];
+    expect(calculateSlot(fenceKey)).toBe(calculateSlot(`${CacheKeys.TOOL_CACHE}:tools:global`));
   });
 
   it('releases the Redis lock when the aggregate update fails', async () => {
@@ -90,7 +94,35 @@ describe('global tool cache write lock', () => {
 
     expect(mockRedisClient.set).toHaveBeenCalledTimes(1);
     expect(mockRedisClient.eval).toHaveBeenCalledTimes(1);
-    expect(mockCache.set).toHaveBeenCalledTimes(1);
+    expect(mockKeyvRedisClient.eval).toHaveBeenCalledWith(
+      expect.stringContaining("redis.call('GET', KEYS[1])"),
+      expect.objectContaining({
+        keys: [
+          `tools:global:write-fence:{${CacheKeys.TOOL_CACHE}:tools:global}`,
+          `${CacheKeys.TOOL_CACHE}:tools:global`,
+        ],
+      }),
+    );
+    expect(mockCache.set).not.toHaveBeenCalled();
+  });
+
+  it('rejects a Redis-backed global write made without distributed lock ownership', async () => {
+    await expect(setCachedToolsWithinGlobalLock({ unsafe: {} })).rejects.toThrow(
+      'Global tool cache write requires lock ownership',
+    );
+
+    expect(mockCache.set).not.toHaveBeenCalled();
+    expect(mockKeyvRedisClient.eval).not.toHaveBeenCalled();
+  });
+
+  it('rejects a delayed global write after its distributed lease is lost', async () => {
+    mockKeyvRedisClient.eval.mockResolvedValueOnce(1).mockResolvedValueOnce(0).mockResolvedValue(1);
+
+    await expect(
+      runWithGlobalCacheLock(() => setCachedToolsWithinGlobalLock({ stale: {} })),
+    ).rejects.toThrow('Global tool cache lock ownership was lost before write');
+
+    expect(mockCache.set).not.toHaveBeenCalled();
   });
 
   it('atomically checks the generation and writes a generation-guarded user catalog', async () => {

@@ -26,6 +26,7 @@ import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
+import { getMCPToolsChangedGeneration } from './toolsChanged';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
@@ -280,14 +281,22 @@ export class MCPManager extends UserConnectionManager {
   public async getServerToolFunctionsSnapshot(
     userId: string,
     serverName: string,
+    serverConfig?: t.ParsedServerConfig,
   ): Promise<{
     tools: t.LCAvailableTools | null;
     publicationGeneration?: string;
   }> {
     try {
-      //try get the appConnection (if the config is not in the app level anymore any existing connection will disconnect and get will return null)
-      const existingAppConnection = await this.appConnections?.get(serverName);
-      if (existingAppConnection) {
+      const registry = MCPServersRegistry.getInstance();
+      const effectiveConfig = serverConfig ?? (await registry.getServerConfig(serverName, userId));
+      const useAppConnection =
+        effectiveConfig != null &&
+        canUseAppConnection(effectiveConfig) &&
+        (await registry.isAppServerConfig(serverName, effectiveConfig));
+      const existingAppConnection = useAppConnection
+        ? await this.appConnections?.get(serverName)
+        : null;
+      if (existingAppConnection != null) {
         return {
           tools: await MCPServerInspector.getToolFunctions(serverName, existingAppConnection),
         };
@@ -302,9 +311,29 @@ export class MCPManager extends UserConnectionManager {
       }
 
       const connection = userConnections.get(serverName)!;
+      const publicationGeneration = this.getToolPublicationGeneration(connection);
+      const currentGeneration = await getMCPToolsChangedGeneration({ userId, serverName });
+      if (
+        publicationGeneration != null &&
+        currentGeneration != null &&
+        publicationGeneration !== currentGeneration
+      ) {
+        await this.disconnectUserConnection(userId, serverName);
+        return { tools: null };
+      }
+      const tools = await MCPServerInspector.getToolFunctions(serverName, connection);
+      const generationAfterFetch = await getMCPToolsChangedGeneration({ userId, serverName });
+      if (
+        publicationGeneration != null &&
+        generationAfterFetch != null &&
+        publicationGeneration !== generationAfterFetch
+      ) {
+        await this.disconnectUserConnection(userId, serverName);
+        return { tools: null };
+      }
       return {
-        tools: await MCPServerInspector.getToolFunctions(serverName, connection),
-        publicationGeneration: this.getToolPublicationGeneration(connection),
+        tools,
+        publicationGeneration,
       };
     } catch (error) {
       logger.warn(

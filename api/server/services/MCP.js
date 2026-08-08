@@ -333,8 +333,12 @@ async function getAssistantToolDefinitions({ req, tools }) {
       getAllServerConfigs: (userId, configServers, role) =>
         registry.getAllServerConfigs(userId, configServers, role),
       getMCPServerTools,
-      getServerToolFunctionsSnapshot: async (userId, serverName) =>
-        (await getMCPManager()?.getServerToolFunctionsSnapshot(userId, serverName)) ?? {
+      getServerToolFunctionsSnapshot: async (userId, serverName, serverConfig) =>
+        (await getMCPManager()?.getServerToolFunctionsSnapshot(
+          userId,
+          serverName,
+          serverConfig,
+        )) ?? {
           tools: null,
         },
       recoverServerTools: async (serverName, serverConfig) => {

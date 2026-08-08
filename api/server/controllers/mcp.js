@@ -196,7 +196,11 @@ const getMCPTools = async (req, res) => {
       let publicationGeneration;
       try {
         ({ tools: serverTools, publicationGeneration } =
-          await mcpManager.getServerToolFunctionsSnapshot(userId, serverName));
+          await mcpManager.getServerToolFunctionsSnapshot(
+            userId,
+            serverName,
+            mcpConfig[serverName],
+          ));
       } catch (error) {
         logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
         continue;
