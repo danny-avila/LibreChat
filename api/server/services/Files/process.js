@@ -325,6 +325,66 @@ const processDeleteRequest = async ({ req, files }) => {
 };
 
 /**
+ * Collects the full file documents that are safe to delete when a single
+ * conversation is deleted.
+ *
+ * Candidates are the union of the conversation's `files` array and any
+ * `file_id`s found on the conversation's messages. A candidate is only
+ * returned when it is exclusively owned by this conversation; the safety
+ * guarantee is that this NEVER returns a file that is:
+ *   - still referenced by another of the user's conversations, or
+ *   - attached to any agent's `tool_resources`.
+ * File documents are also scoped to the requesting user, so files belonging to
+ * other users are never considered.
+ *
+ * @param {Object} params
+ * @param {string} params.userId - The id of the user who owns the conversation.
+ * @param {string} params.conversationId - The conversation being deleted.
+ * @returns {Promise<Array<MongoFile>>} Full file documents safe to delete (may be empty).
+ */
+const getConvoFilesToDelete = async ({ userId, conversationId }) => {
+  const candidateSet = new Set();
+
+  const convoFileIds = (await db.getConvoFiles(conversationId)) ?? [];
+  for (const fileId of convoFileIds) {
+    if (fileId) {
+      candidateSet.add(fileId);
+    }
+  }
+
+  const messages = (await db.getMessages({ conversationId, user: userId }, 'files')) ?? [];
+  for (const message of messages) {
+    for (const entry of message.files ?? []) {
+      const fileId = typeof entry === 'string' ? entry : entry?.file_id;
+      if (fileId) {
+        candidateSet.add(fileId);
+      }
+    }
+  }
+
+  const candidateIds = [...candidateSet];
+  if (candidateIds.length === 0) {
+    return [];
+  }
+
+  const fileDocs =
+    (await db.getFiles({ file_id: { $in: candidateIds }, user: userId })) ?? [];
+
+  const [convoReferenced, agentReferenced] = await Promise.all([
+    db.findConvosWithFiles({
+      user: userId,
+      excludeConversationId: conversationId,
+      fileIds: candidateIds,
+    }),
+    db.findAgentFileIds({ fileIds: candidateIds }),
+  ]);
+
+  const protectedIds = new Set([...(convoReferenced ?? []), ...(agentReferenced ?? [])]);
+
+  return fileDocs.filter((file) => !protectedIds.has(file.file_id));
+};
+
+/**
  * Deletes expired file storage before removing the corresponding File records.
  *
  * Mongo TTL indexes delete only the metadata document, so file retention uses
@@ -1388,6 +1448,7 @@ module.exports = {
   startExpiredFileSweep,
   processFileUpload,
   processDeleteRequest,
+  getConvoFilesToDelete,
   processAgentFileUpload,
   retrieveAndProcessFile,
 };
