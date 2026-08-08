@@ -70,7 +70,7 @@ export default function useNavScrolling<TData>({
 
   useEffect(() => {
     throttledFetchNext();
-  }, [nextCursor, isFetchingNext, enabled, throttledFetchNext]);
+  }, [nextCursor, enabled, throttledFetchNext]);
 
   const moveToTop = useCallback(() => {
     const container = containerRef.current;

@@ -68,9 +68,25 @@ describe('useNavScrolling', () => {
 
     act(() => {
       rerender({ nextCursor: 'cursor-2' });
+      jest.advanceTimersByTime(1000);
     });
 
-    expect(fetchNextPage).toHaveBeenCalled();
+    expect(fetchNextPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not restart a fetch when loading finishes with the same cursor', () => {
+    const { rerender, fetchNextPage } = setup();
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      rerender({ isFetchingNext: true });
+    });
+    act(() => {
+      rerender({ isFetchingNext: false });
+      jest.advanceTimersByTime(1000);
+    });
+
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
   });
 
   it('does not fetch while the container has no layout yet', () => {
