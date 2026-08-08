@@ -24,11 +24,14 @@ jest.mock('~/server/services/GraphApiService', () => ({
 
 const mockRegistryInstance = {
   getServerConfig: jest.fn(),
+  updateServer: jest.fn(),
+  removeServer: jest.fn(),
 };
+const mockMcpManager = { disconnectUserConnection: jest.fn() };
 
 jest.mock('~/config', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
-  getMCPManager: jest.fn(),
+  getMCPManager: jest.fn(() => mockMcpManager),
   getMCPServersRegistry: jest.fn(() => mockRegistryInstance),
 }));
 
@@ -43,9 +46,15 @@ jest.mock('~/server/services/Config', () => ({
   cacheMCPServerTools: jest.fn(),
   getMCPToolsCacheGeneration: jest.fn().mockResolvedValue('test-generation'),
   getMCPServerTools: jest.fn(),
+  invalidateCachedTools: jest.fn(),
 }));
 
-const { getMCPServersList, getMCPServerById } = require('~/server/controllers/mcp');
+const {
+  getMCPServersList,
+  getMCPServerById,
+  updateMCPServerController,
+  deleteMCPServerController,
+} = require('~/server/controllers/mcp');
 const { grantPermission } = require('~/server/services/PermissionService');
 const { seedDefaultRoles } = require('~/models');
 
@@ -109,6 +118,12 @@ beforeEach(async () => {
   await User.deleteMany({});
   mockResolveAllMcpConfigs.mockReset();
   mockRegistryInstance.getServerConfig.mockReset();
+  mockRegistryInstance.updateServer.mockReset();
+  mockRegistryInstance.removeServer.mockReset();
+  mockMcpManager.disconnectUserConnection.mockReset().mockResolvedValue(undefined);
+  require('~/server/services/Config')
+    .invalidateCachedTools.mockReset()
+    .mockResolvedValue(undefined);
   existsSpy = jest.spyOn(SystemGrant, 'exists');
 });
 
@@ -255,5 +270,106 @@ describe('getMCPServerById', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.url).toBeUndefined();
     expect(payload.oauth.authorization_url).toBeUndefined();
+  });
+});
+
+describe('DB-backed server mutation fencing', () => {
+  const updatedConfig = {
+    type: 'streamable-http',
+    url: 'https://updated.example.com/mcp',
+    source: 'user',
+  };
+
+  it('fences and disconnects before updating the registry', async () => {
+    const user = await createUser();
+    mockRegistryInstance.getServerConfig.mockResolvedValue(
+      createDbConfig(new mongoose.Types.ObjectId()),
+    );
+    mockRegistryInstance.updateServer.mockResolvedValue(updatedConfig);
+    const res = createRes();
+
+    await updateMCPServerController(
+      { user, params: { serverName: 'github' }, body: { config: updatedConfig } },
+      res,
+    );
+
+    const { invalidateCachedTools } = require('~/server/services/Config');
+    expect(invalidateCachedTools).toHaveBeenCalledWith({ userId: user.id, serverName: 'github' });
+    expect(mockMcpManager.disconnectUserConnection).toHaveBeenCalledWith(user.id, 'github');
+    expect(invalidateCachedTools.mock.invocationCallOrder[0]).toBeLessThan(
+      mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0],
+    );
+    expect(mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRegistryInstance.updateServer.mock.invocationCallOrder[0],
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('does not mutate the registry when the distributed fence fails', async () => {
+    const user = await createUser();
+    mockRegistryInstance.getServerConfig.mockResolvedValue(
+      createDbConfig(new mongoose.Types.ObjectId()),
+    );
+    require('~/server/services/Config').invalidateCachedTools.mockRejectedValue(
+      new Error('Redis unavailable'),
+    );
+    const res = createRes();
+
+    await updateMCPServerController(
+      { user, params: { serverName: 'github' }, body: { config: updatedConfig } },
+      res,
+    );
+
+    expect(mockMcpManager.disconnectUserConnection).not.toHaveBeenCalled();
+    expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it('continues an update when only local disconnect cleanup fails', async () => {
+    const user = await createUser();
+    mockRegistryInstance.getServerConfig.mockResolvedValue(
+      createDbConfig(new mongoose.Types.ObjectId()),
+    );
+    mockMcpManager.disconnectUserConnection.mockRejectedValue(new Error('dispose failed'));
+    mockRegistryInstance.updateServer.mockResolvedValue(updatedConfig);
+    const res = createRes();
+
+    await updateMCPServerController(
+      { user, params: { serverName: 'github' }, body: { config: updatedConfig } },
+      res,
+    );
+
+    expect(mockRegistryInstance.updateServer).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('fences and disconnects before deleting the registry entry', async () => {
+    const user = await createUser();
+    mockRegistryInstance.removeServer.mockResolvedValue(undefined);
+    const res = createRes();
+
+    await deleteMCPServerController({ user, params: { serverName: 'github' } }, res);
+
+    const { invalidateCachedTools } = require('~/server/services/Config');
+    expect(invalidateCachedTools).toHaveBeenCalledWith({ userId: user.id, serverName: 'github' });
+    expect(mockMcpManager.disconnectUserConnection).toHaveBeenCalledWith(user.id, 'github');
+    expect(mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRegistryInstance.removeServer.mock.invocationCallOrder[0],
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('does not delete the registry entry when the distributed fence fails', async () => {
+    const user = await createUser();
+    require('~/server/services/Config').invalidateCachedTools.mockRejectedValue(
+      new Error('Redis unavailable'),
+    );
+    const res = createRes();
+
+    await deleteMCPServerController({ user, params: { serverName: 'github' } }, res);
+
+    expect(mockMcpManager.disconnectUserConnection).not.toHaveBeenCalled();
+    expect(mockRegistryInstance.removeServer).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
   });
 });

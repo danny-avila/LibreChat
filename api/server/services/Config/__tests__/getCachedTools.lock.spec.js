@@ -99,6 +99,7 @@ describe('global tool cache write lock', () => {
         {
           userId: 'user-1',
           serverName: 'server-1',
+          configGeneration: 'config-current',
           publicationGeneration: 'generation-current',
         },
       ),
@@ -120,7 +121,7 @@ describe('global tool cache write lock', () => {
       }),
     );
     expect(mockCache.set).toHaveBeenCalledWith(
-      'tools:mcp:user-1:server-1',
+      'tools:mcp:user:user-1:server-1:config-current',
       {
         version: 1,
         publicationGeneration: 'generation-current',
@@ -139,6 +140,7 @@ describe('global tool cache write lock', () => {
         {
           userId: 'user-1',
           serverName: 'server-1',
+          configGeneration: 'config-old',
           publicationGeneration: 'generation-old',
         },
       ),

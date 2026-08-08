@@ -155,9 +155,6 @@ describe('ConnectionsRepository', () => {
       expect(second).toBe(mockConnection);
       expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
       expect(mockConnection.on).toHaveBeenCalledTimes(1);
-      expect(repository.getPublicationGenerations()).toEqual({
-        server1: getMCPAppToolsPublicationGeneration(mockServerConfigs.server1),
-      });
     });
 
     it('awaits initial app tool publication before returning a new connection', async () => {

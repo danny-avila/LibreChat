@@ -13,323 +13,258 @@ const {
   setCachedToolsIfCurrent,
   getMCPToolsCacheGeneration,
   renewMCPToolsCacheGeneration,
-  getCachedAppServerSnapshots,
-  setCachedAppServerSnapshots,
-  getCachedAppServerGenerations,
-  setCachedAppServerGenerations,
+  getCachedAppServerTools,
+  setCachedAppServerTools,
   runWithGlobalCacheLock,
   invalidateCachedTools,
 } = require('../getCachedTools');
 
-describe('getCachedTools', () => {
+describe('MCP tool cache', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     getLogStores.mockReturnValue(mockCache);
   });
 
-  describe('ToolCacheKeys.MCP_SERVER', () => {
-    it('should generate cache keys that include userId', () => {
-      const key = ToolCacheKeys.MCP_SERVER('user123', 'github');
-      expect(key).toBe('tools:mcp:user123:github');
-    });
-
-    it('uses a separate durable key for the publication generation', () => {
-      expect(ToolCacheKeys.MCP_SERVER_GENERATION('user123', 'github')).toBe(
-        'tools:metadata:mcp:user-generation:user123:github',
-      );
-    });
-
-    it('cannot collide with a user tool key whose server name resembles metadata', () => {
-      expect(ToolCacheKeys.MCP_SERVER_GENERATION('user123', 'github')).not.toBe(
-        ToolCacheKeys.MCP_SERVER('user123', 'github:publication-generation'),
-      );
-      expect(ToolCacheKeys.MCP_SERVER_GENERATION('tenant:user', 'server:name')).not.toBe(
-        ToolCacheKeys.MCP_SERVER_GENERATION('tenant', 'user:server:name'),
-      );
-    });
+  it('uses collision-safe configuration-addressed keys', () => {
+    expect(ToolCacheKeys.MCP_APP_SERVER('server:name', 'config/a')).toBe(
+      'tools:mcp:app:server%3Aname:config%2Fa',
+    );
+    expect(ToolCacheKeys.MCP_SERVER('tenant:user', 'server:name', 'config/a')).toBe(
+      'tools:mcp:user:tenant%3Auser:server%3Aname:config%2Fa',
+    );
+    expect(ToolCacheKeys.MCP_SERVER('tenant:user', 'server:name', 'config/a')).not.toBe(
+      ToolCacheKeys.MCP_SERVER('tenant', 'user:server:name', 'config/a'),
+    );
+    expect(ToolCacheKeys.MCP_SERVER_GENERATION('tenant:user', 'server:name')).not.toBe(
+      ToolCacheKeys.MCP_SERVER_GENERATION('tenant', 'user:server:name'),
+    );
   });
 
-  describe('ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS', () => {
-    it('uses a dedicated key for authoritative app snapshots', () => {
-      expect(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS).toBe('tools:mcp:app:snapshots');
-    });
+  it('keeps the legacy user key available for non-generation callers', () => {
+    expect(ToolCacheKeys.MCP_SERVER('user123', 'github')).toBe('tools:mcp:user123:github');
   });
 
-  describe('TOOL_CACHE namespace usage', () => {
-    it('getCachedTools should use TOOL_CACHE namespace', async () => {
-      mockCache.get.mockResolvedValue(null);
-      await getCachedTools();
-      expect(getLogStores).toHaveBeenCalledWith(CacheKeys.TOOL_CACHE);
+  it('gets and sets static global tools without touching MCP slices', async () => {
+    const tools = { builtin: { type: 'function' } };
+    mockCache.get.mockResolvedValue(tools);
+    mockCache.set.mockResolvedValue(true);
+
+    await expect(getCachedTools()).resolves.toBe(tools);
+    await expect(setCachedTools(tools)).resolves.toBe(true);
+
+    expect(mockCache.get).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL);
+    expect(mockCache.set).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL, tools, expect.any(Number));
+    expect(mockCache.delete).not.toHaveBeenCalled();
+  });
+
+  it('gets and sets an authoritative app slice, including an empty catalog', async () => {
+    mockCache.get.mockResolvedValue({});
+    mockCache.set.mockResolvedValue(true);
+
+    await expect(getCachedAppServerTools('github', 'config-v2')).resolves.toEqual({});
+    await expect(setCachedAppServerTools('github', 'config-v2', {})).resolves.toBe(true);
+
+    const key = ToolCacheKeys.MCP_APP_SERVER('github', 'config-v2');
+    expect(mockCache.get).toHaveBeenCalledWith(key);
+    expect(mockCache.set).toHaveBeenCalledWith(key, {}, expect.any(Number));
+  });
+
+  it('stores unguarded user tools under the supplied config generation', async () => {
+    const tools = { search: { type: 'function' } };
+    mockCache.set.mockResolvedValue(true);
+
+    await setCachedTools(tools, {
+      userId: 'user1',
+      serverName: 'github',
+      configGeneration: 'config-v2',
     });
 
-    it('getCachedTools with MCP server options should use TOOL_CACHE namespace', async () => {
-      mockCache.get.mockResolvedValue({ tool1: {} });
-      await getCachedTools({ userId: 'user1', serverName: 'github' });
-      expect(getLogStores).toHaveBeenCalledWith(CacheKeys.TOOL_CACHE);
-      expect(mockCache.get).toHaveBeenCalledWith(ToolCacheKeys.MCP_SERVER('user1', 'github'));
-    });
+    expect(mockCache.set).toHaveBeenCalledWith(
+      ToolCacheKeys.MCP_SERVER('user1', 'github', 'config-v2'),
+      tools,
+      expect.any(Number),
+    );
+  });
 
-    it('setCachedTools should use TOOL_CACHE namespace', async () => {
-      mockCache.set.mockResolvedValue(true);
-      const tools = { tool1: { type: 'function' } };
-      await setCachedTools(tools);
-      expect(getLogStores).toHaveBeenCalledWith(CacheKeys.TOOL_CACHE);
-      expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
-      expect(mockCache.delete).not.toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_GENERATIONS);
-      expect(mockCache.set).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL, tools, expect.any(Number));
-    });
+  it('writes guarded user tools under both config and connection generations', async () => {
+    const tools = { current: { type: 'function' } };
+    mockCache.get.mockResolvedValue('connection-a');
+    mockCache.set.mockResolvedValue(true);
 
-    it('gets and sets durable app publication generations', async () => {
-      const generations = { dynamic: 'config-generation' };
-      mockCache.get.mockResolvedValue(generations);
-      mockCache.set.mockResolvedValue(true);
+    await expect(
+      setCachedToolsIfCurrent(tools, {
+        userId: 'user1',
+        serverName: 'github',
+        configGeneration: 'config-v2',
+        publicationGeneration: 'connection-a',
+      }),
+    ).resolves.toBe(true);
 
-      await expect(getCachedAppServerGenerations()).resolves.toEqual(generations);
-      await expect(setCachedAppServerGenerations(generations)).resolves.toBe(true);
+    expect(mockCache.set).toHaveBeenCalledWith(
+      ToolCacheKeys.MCP_SERVER('user1', 'github', 'config-v2'),
+      { version: 1, publicationGeneration: 'connection-a', tools },
+      expect.any(Number),
+    );
+  });
 
-      expect(mockCache.get).toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_GENERATIONS);
-      expect(mockCache.set).toHaveBeenCalledWith(
-        ToolCacheKeys.MCP_APP_SERVER_GENERATIONS,
-        generations,
-      );
-    });
-
-    it('gets and sets authoritative app snapshot names', async () => {
-      mockCache.get.mockResolvedValue(['empty']);
-      mockCache.set.mockResolvedValue(true);
-
-      await expect(getCachedAppServerSnapshots()).resolves.toEqual(['empty']);
-      await expect(setCachedAppServerSnapshots(['empty', 'dynamic'])).resolves.toBe(true);
-
-      expect(mockCache.get).toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
-      expect(mockCache.set).toHaveBeenCalledWith(
-        ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS,
-        ['empty', 'dynamic'],
-        expect.any(Number),
-      );
-    });
-
-    it('setCachedTools with MCP server options should use TOOL_CACHE namespace', async () => {
-      mockCache.set.mockResolvedValue(true);
-      const tools = { tool1: { type: 'function' } };
-      await setCachedTools(tools, { userId: 'user1', serverName: 'github' });
-      expect(getLogStores).toHaveBeenCalledWith(CacheKeys.TOOL_CACHE);
-      expect(mockCache.set).toHaveBeenCalledWith(
-        ToolCacheKeys.MCP_SERVER('user1', 'github'),
+  it('reads guarded user tools only while their connection generation is current', async () => {
+    const tools = { current: { type: 'function' } };
+    mockCache.get
+      .mockResolvedValueOnce({
+        version: 1,
+        publicationGeneration: 'connection-a',
         tools,
-        expect.any(Number),
-      );
-    });
+      })
+      .mockResolvedValueOnce('connection-a');
 
-    it('creates and reuses a durable user publication generation', async () => {
-      mockCache.get
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce('existing-generation');
-      mockCache.set.mockResolvedValue(true);
+    await expect(
+      getCachedTools({
+        userId: 'user1',
+        serverName: 'github',
+        configGeneration: 'config-v2',
+      }),
+    ).resolves.toEqual(tools);
 
-      const created = await getMCPToolsCacheGeneration({ userId: 'user1', serverName: 'github' });
-      const existing = await getMCPToolsCacheGeneration({ userId: 'user1', serverName: 'github' });
+    expect(mockCache.get.mock.calls[0][0]).toBe(
+      ToolCacheKeys.MCP_SERVER('user1', 'github', 'config-v2'),
+    );
+  });
 
-      expect(created).toEqual(expect.any(String));
-      expect(mockCache.set).toHaveBeenCalledWith(
-        ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
-        created,
-        expect.any(Number),
-      );
-      expect(existing).toBe('existing-generation');
-    });
+  it('hides a guarded entry after its connection generation is replaced', async () => {
+    mockCache.get
+      .mockResolvedValueOnce({
+        version: 1,
+        publicationGeneration: 'connection-a',
+        tools: { stale: {} },
+      })
+      .mockResolvedValueOnce('connection-b');
 
-    it('writes user tools only for the current publication generation', async () => {
-      const tools = { current: { type: 'function' } };
-      mockCache.get.mockResolvedValue('generation-a');
-      mockCache.set.mockResolvedValue(true);
+    await expect(
+      getCachedTools({
+        userId: 'user1',
+        serverName: 'github',
+        configGeneration: 'config-v1',
+      }),
+    ).resolves.toBeNull();
+  });
 
-      await expect(
-        setCachedToolsIfCurrent(tools, {
-          userId: 'user1',
-          serverName: 'github',
-          publicationGeneration: 'generation-a',
-        }),
-      ).resolves.toBe(true);
+  it('cannot let a late old-config write replace the current config key', async () => {
+    mockCache.get.mockResolvedValue('connection-a');
+    mockCache.set.mockResolvedValue(true);
 
-      expect(mockCache.set).toHaveBeenCalledWith(
-        ToolCacheKeys.MCP_SERVER('user1', 'github'),
-        {
-          version: 1,
-          publicationGeneration: 'generation-a',
-          tools,
-        },
-        expect.any(Number),
-      );
-      expect(mockCache.set).toHaveBeenCalledWith(
-        ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
-        'generation-a',
-        expect.any(Number),
-      );
-    });
+    await setCachedToolsIfCurrent(
+      { current: {} },
+      {
+        userId: 'user1',
+        serverName: 'github',
+        configGeneration: 'config-v2',
+        publicationGeneration: 'connection-a',
+      },
+    );
+    await setCachedToolsIfCurrent(
+      { stale: {} },
+      {
+        userId: 'user1',
+        serverName: 'github',
+        configGeneration: 'config-v1',
+        publicationGeneration: 'connection-a',
+      },
+    );
 
-    it('returns generation-guarded user tools only while their owner is current', async () => {
-      const tools = { current: { type: 'function' } };
-      mockCache.get
-        .mockResolvedValueOnce({
-          version: 1,
-          publicationGeneration: 'generation-a',
-          tools,
-        })
-        .mockResolvedValueOnce('generation-a');
+    expect(mockCache.set).toHaveBeenCalledWith(
+      ToolCacheKeys.MCP_SERVER('user1', 'github', 'config-v2'),
+      expect.objectContaining({ tools: { current: {} } }),
+      expect.any(Number),
+    );
+    expect(mockCache.set).toHaveBeenCalledWith(
+      ToolCacheKeys.MCP_SERVER('user1', 'github', 'config-v1'),
+      expect.objectContaining({ tools: { stale: {} } }),
+      expect.any(Number),
+    );
+  });
 
-      await expect(getCachedTools({ userId: 'user1', serverName: 'github' })).resolves.toEqual(
-        tools,
-      );
-    });
+  it('creates and reuses a durable connection publication generation', async () => {
+    mockCache.get
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce('existing-generation');
+    mockCache.set.mockResolvedValue(true);
 
-    it('hides a delayed stale write after its publication generation was replaced', async () => {
-      mockCache.get
-        .mockResolvedValueOnce({
-          version: 1,
-          publicationGeneration: 'generation-a',
-          tools: { stale: { type: 'function' } },
-        })
-        .mockResolvedValueOnce('generation-b');
+    const created = await getMCPToolsCacheGeneration({ userId: 'user1', serverName: 'github' });
+    const existing = await getMCPToolsCacheGeneration({ userId: 'user1', serverName: 'github' });
 
-      await expect(getCachedTools({ userId: 'user1', serverName: 'github' })).resolves.toBeNull();
-    });
+    expect(created).toEqual(expect.any(String));
+    expect(existing).toBe('existing-generation');
+    expect(mockCache.set).toHaveBeenCalledWith(
+      ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
+      created,
+      expect.any(Number),
+    );
+  });
 
-    it('renews an active connection lease only for its current publication generation', async () => {
-      mockCache.get.mockResolvedValue('generation-a');
-      mockCache.set.mockResolvedValue(true);
+  it('renews a lease only for its current publication generation', async () => {
+    mockCache.get.mockResolvedValue('connection-a');
+    mockCache.set.mockResolvedValue(true);
 
-      await expect(
-        renewMCPToolsCacheGeneration({
-          userId: 'user1',
-          serverName: 'github',
-          publicationGeneration: 'generation-a',
-        }),
-      ).resolves.toBe(true);
+    await expect(
+      renewMCPToolsCacheGeneration({
+        userId: 'user1',
+        serverName: 'github',
+        publicationGeneration: 'connection-a',
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      renewMCPToolsCacheGeneration({
+        userId: 'user1',
+        serverName: 'github',
+        publicationGeneration: 'connection-b',
+      }),
+    ).resolves.toBe(false);
+  });
 
-      expect(mockCache.set).toHaveBeenCalledWith(
-        ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
-        'generation-a',
-        expect.any(Number),
-      );
-    });
+  it('rotates the connection generation before deleting the legacy user key', async () => {
+    mockCache.set.mockResolvedValue(true);
+    mockCache.delete.mockResolvedValue(true);
 
-    it('does not revive an expired or replaced publication generation', async () => {
-      mockCache.get.mockResolvedValue(null);
+    await invalidateCachedTools({ userId: 'user1', serverName: 'github' });
 
-      await expect(
-        renewMCPToolsCacheGeneration({
-          userId: 'user1',
-          serverName: 'github',
-          publicationGeneration: 'generation-a',
-        }),
-      ).resolves.toBe(false);
+    expect(mockCache.set).toHaveBeenCalledWith(
+      ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
+      expect.any(String),
+      expect.any(Number),
+    );
+    expect(mockCache.set.mock.calls[0][2]).toBeGreaterThanOrEqual(Time.ONE_DAY);
+    expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.MCP_SERVER('user1', 'github'));
+    expect(mockCache.set.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCache.delete.mock.invocationCallOrder[0],
+    );
+  });
 
-      expect(mockCache.set).not.toHaveBeenCalled();
-    });
+  it('invalidates only the static global key for broad config changes', async () => {
+    mockCache.delete.mockResolvedValue(true);
 
-    it('rejects stale user tools without writing them', async () => {
-      mockCache.get.mockResolvedValue('generation-b');
+    await invalidateCachedTools({ invalidateGlobal: true });
 
-      await expect(
-        setCachedToolsIfCurrent(
-          { stale: { type: 'function' } },
-          {
-            userId: 'user1',
-            serverName: 'github',
-            publicationGeneration: 'generation-a',
-          },
-        ),
-      ).resolves.toBe(false);
+    expect(mockCache.delete).toHaveBeenCalledTimes(1);
+    expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL);
+  });
 
-      expect(mockCache.set).not.toHaveBeenCalled();
-    });
+  it('runs global cache operations directly when the cache is in memory', async () => {
+    const operation = jest.fn().mockResolvedValue('done');
+    await expect(runWithGlobalCacheLock(operation)).resolves.toBe('done');
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
 
-    it('rotates the publication generation before deleting user tools', async () => {
-      mockCache.set.mockResolvedValue(true);
-      mockCache.delete.mockResolvedValue(true);
+  it('uses only the TOOL_CACHE namespace', async () => {
+    mockCache.get.mockResolvedValue(null);
+    mockCache.set.mockResolvedValue(true);
+    mockCache.delete.mockResolvedValue(true);
 
-      await invalidateCachedTools({ userId: 'user1', serverName: 'github' });
+    await getCachedTools();
+    await getCachedAppServerTools('github', 'config-v2');
+    await setCachedTools({});
+    await invalidateCachedTools({ invalidateGlobal: true });
 
-      const generationWrite = mockCache.set.mock.invocationCallOrder[0];
-      const toolDelete = mockCache.delete.mock.invocationCallOrder[0];
-      expect(mockCache.set).toHaveBeenCalledWith(
-        ToolCacheKeys.MCP_SERVER_GENERATION('user1', 'github'),
-        expect.any(String),
-        expect.any(Number),
-      );
-      expect(mockCache.set.mock.calls[0][2]).toBeGreaterThanOrEqual(Time.ONE_DAY);
-      expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.MCP_SERVER('user1', 'github'));
-      expect(generationWrite).toBeLessThan(toolDelete);
-    });
-
-    it('fences a stale publication queued behind credential invalidation', async () => {
-      mockCache.get.mockResolvedValue('new-generation');
-      mockCache.set.mockResolvedValue(true);
-      mockCache.delete.mockResolvedValue(true);
-
-      const invalidation = invalidateCachedTools({ userId: 'user1', serverName: 'github' });
-      const stalePublication = setCachedToolsIfCurrent(
-        { stale: { type: 'function' } },
-        {
-          userId: 'user1',
-          serverName: 'github',
-          publicationGeneration: 'old-generation',
-        },
-      );
-
-      await expect(Promise.all([invalidation, stalePublication])).resolves.toEqual([
-        undefined,
-        false,
-      ]);
-      expect(mockCache.set).not.toHaveBeenCalledWith(
-        ToolCacheKeys.MCP_SERVER('user1', 'github'),
-        expect.anything(),
-        expect.anything(),
-      );
-    });
-
-    it('runs global cache operations directly when the tool cache is not Redis-backed', async () => {
-      const operation = jest.fn().mockResolvedValue('done');
-
-      await expect(runWithGlobalCacheLock(operation)).resolves.toBe('done');
-      expect(operation).toHaveBeenCalledTimes(1);
-    });
-
-    it('preserves app publication generations when invalidating global tools', async () => {
-      const generations = { dynamic: 'config-generation' };
-      const entries = new Map([
-        [ToolCacheKeys.GLOBAL, { stale: { type: 'function' } }],
-        [ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS, ['dynamic']],
-        [ToolCacheKeys.MCP_APP_SERVER_GENERATIONS, generations],
-      ]);
-      mockCache.get.mockImplementation(async (key) => entries.get(key));
-      mockCache.delete.mockImplementation(async (key) => entries.delete(key));
-
-      await invalidateCachedTools({ invalidateGlobal: true });
-
-      await expect(getCachedAppServerGenerations()).resolves.toEqual(generations);
-      expect(entries.has(ToolCacheKeys.GLOBAL)).toBe(false);
-      expect(entries.has(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS)).toBe(false);
-      expect(getLogStores).toHaveBeenCalledWith(CacheKeys.TOOL_CACHE);
-      expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL);
-      expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
-      expect(mockCache.delete).not.toHaveBeenCalledWith(ToolCacheKeys.MCP_APP_SERVER_GENERATIONS);
-    });
-
-    it('should NOT use CONFIG_STORE namespace', async () => {
-      mockCache.get.mockResolvedValue(null);
-      await getCachedTools();
-      await getCachedTools({ userId: 'user1', serverName: 'github' });
-      mockCache.set.mockResolvedValue(true);
-      await setCachedTools({ tool1: {} });
-      mockCache.delete.mockResolvedValue(true);
-      await invalidateCachedTools({ invalidateGlobal: true });
-
-      const allCalls = getLogStores.mock.calls.flat();
-      expect(allCalls).not.toContain(CacheKeys.CONFIG_STORE);
-      expect(allCalls.every((key) => key === CacheKeys.TOOL_CACHE)).toBe(true);
-    });
+    expect(getLogStores.mock.calls.flat().every((key) => key === CacheKeys.TOOL_CACHE)).toBe(true);
   });
 });

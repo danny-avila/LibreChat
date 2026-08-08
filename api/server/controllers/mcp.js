@@ -35,7 +35,11 @@ const {
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
 } = require('~/server/services/MCP');
-const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+const {
+  cacheMCPServerTools,
+  getMCPServerTools,
+  invalidateCachedTools,
+} = require('~/server/services/Config');
 const { getResourcePermissionsMap } = require('~/server/services/PermissionService');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
@@ -92,6 +96,19 @@ function handleMCPError(error, res) {
   }
 
   return null;
+}
+
+/** Fences cross-replica publications before a DB-backed server changes configuration. */
+async function fenceMCPServerMutation(userId, serverName) {
+  await invalidateCachedTools({ userId, serverName });
+  try {
+    await getMCPManager()?.disconnectUserConnection(userId, serverName);
+  } catch (error) {
+    logger.warn(
+      `[MCP Cache] Failed to disconnect the local connection for ${serverName} (user: ${userId}):`,
+      error,
+    );
+  }
 }
 
 /**
@@ -512,6 +529,7 @@ const updateMCPServerController = async (req, res) => {
         .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
     }
 
+    await fenceMCPServerMutation(userId, serverName);
     const parsedConfig = await getMCPServersRegistry().updateServer(
       serverName,
       validation.data,
@@ -538,6 +556,7 @@ const deleteMCPServerController = async (req, res) => {
   try {
     const userId = req.user?.id;
     const { serverName } = req.params;
+    await fenceMCPServerMutation(userId, serverName);
     await getMCPServersRegistry().removeServer(serverName, 'DB', userId);
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {

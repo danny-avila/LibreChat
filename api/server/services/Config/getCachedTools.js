@@ -46,12 +46,14 @@ return 1
 const ToolCacheKeys = {
   /** Global tools available to all users */
   GLOBAL: 'tools:global',
-  /** App servers with an authoritative cached catalog, including an empty one */
-  MCP_APP_SERVER_SNAPSHOTS: 'tools:mcp:app:snapshots',
-  /** Connection-config generations allowed to publish app-server tools */
-  MCP_APP_SERVER_GENERATIONS: 'tools:metadata:mcp:app-server-generations',
+  /** App tools addressed by the connection config that produced them. */
+  MCP_APP_SERVER: (serverName, configGeneration) =>
+    `tools:mcp:app:${encodeURIComponent(serverName)}:${encodeURIComponent(configGeneration)}`,
   /** MCP tools cached by user ID and server name */
-  MCP_SERVER: (userId, serverName) => `tools:mcp:${userId}:${serverName}`,
+  MCP_SERVER: (userId, serverName, configGeneration) =>
+    configGeneration
+      ? `tools:mcp:user:${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}:${encodeURIComponent(configGeneration)}`
+      : `tools:mcp:${userId}:${serverName}`,
   /** Leased generation fencing stale publications from replaced user connections */
   MCP_SERVER_GENERATION: (userId, serverName) =>
     `tools:metadata:mcp:user-generation:${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}`,
@@ -161,15 +163,16 @@ function runWithUserToolsQueue(userId, serverName, operation) {
  * @param {Object} options - Options for retrieving tools
  * @param {string} [options.userId] - User ID for user-specific MCP tools
  * @param {string} [options.serverName] - MCP server name to get cached tools for
+ * @param {string} [options.configGeneration] - Connection-config fingerprint for MCP tools
  * @returns {Promise<LCAvailableTools|null>} The available tools object or null if not cached
  */
 async function getCachedTools(options = {}) {
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
-  const { userId, serverName } = options;
+  const { userId, serverName, configGeneration } = options;
 
   // Return MCP server-specific tools if requested
   if (serverName && userId) {
-    const cached = await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName));
+    const cached = await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName, configGeneration));
     if (!isGenerationGuardedToolEntry(cached)) {
       return cached;
     }
@@ -188,20 +191,24 @@ async function getCachedTools(options = {}) {
  * @param {Object} options - Options for caching tools
  * @param {string} [options.userId] - User ID for user-specific MCP tools
  * @param {string} [options.serverName] - MCP server name for server-specific tools
+ * @param {string} [options.configGeneration] - Connection-config fingerprint for MCP tools
  * @param {number} [options.ttl] - Time to live in milliseconds (default: 12 hours)
  * @returns {Promise<boolean>} Whether the operation was successful
  */
 async function setCachedToolsWithinGlobalLock(tools, options = {}) {
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
-  const { userId, serverName, ttl = Time.TWELVE_HOURS } = options;
+  const { userId, serverName, configGeneration, ttl = Time.TWELVE_HOURS } = options;
 
   // Cache by MCP server if specified (requires userId)
   if (serverName && userId) {
-    return await cache.set(ToolCacheKeys.MCP_SERVER(userId, serverName), tools, ttl);
+    return await cache.set(
+      ToolCacheKeys.MCP_SERVER(userId, serverName, configGeneration),
+      tools,
+      ttl,
+    );
   }
 
   // Default to global cache
-  await cache.delete(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
   return await cache.set(ToolCacheKeys.GLOBAL, tools, ttl);
 }
 
@@ -251,7 +258,13 @@ async function renewMCPToolsCacheGeneration({ userId, serverName, publicationGen
 
 /** Writes a user tool snapshot only while its originating connection still owns the generation. */
 async function setCachedToolsIfCurrent(tools, options) {
-  const { userId, serverName, publicationGeneration, ttl = Time.TWELVE_HOURS } = options;
+  const {
+    userId,
+    serverName,
+    configGeneration,
+    publicationGeneration,
+    ttl = Time.TWELVE_HOURS,
+  } = options;
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
   return runWithUserToolsQueue(userId, serverName, async () => {
     const generationKey = ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName);
@@ -264,7 +277,7 @@ async function setCachedToolsIfCurrent(tools, options) {
       tools,
     };
     const written = await cache.set(
-      ToolCacheKeys.MCP_SERVER(userId, serverName),
+      ToolCacheKeys.MCP_SERVER(userId, serverName, configGeneration),
       guardedEntry,
       ttl,
     );
@@ -275,32 +288,21 @@ async function setCachedToolsIfCurrent(tools, options) {
   });
 }
 
-/** Returns app servers whose global tool slice is an authoritative snapshot. */
-async function getCachedAppServerSnapshots() {
+/** Returns one app server's authoritative catalog for a specific connection config. */
+async function getCachedAppServerTools(serverName, configGeneration) {
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
-  const serverNames = await cache.get(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
-  return Array.isArray(serverNames) ? serverNames : null;
+  return await cache.get(ToolCacheKeys.MCP_APP_SERVER(serverName, configGeneration));
 }
 
-/** Replaces the authoritative app-server snapshot index. */
-async function setCachedAppServerSnapshots(serverNames, ttl = Time.TWELVE_HOURS) {
+/** Writes one app server's catalog without contending with another config generation. */
+async function setCachedAppServerTools(
+  serverName,
+  configGeneration,
+  tools,
+  ttl = Time.TWELVE_HOURS,
+) {
   const cache = getLogStores(CacheKeys.TOOL_CACHE);
-  return await cache.set(ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS, serverNames, ttl);
-}
-
-/** Returns the app connection-config generations allowed to publish global tools. */
-async function getCachedAppServerGenerations() {
-  const cache = getLogStores(CacheKeys.TOOL_CACHE);
-  const generations = await cache.get(ToolCacheKeys.MCP_APP_SERVER_GENERATIONS);
-  return generations != null && typeof generations === 'object' && !Array.isArray(generations)
-    ? generations
-    : null;
-}
-
-/** Replaces app publication generations without expiring active, quiet connections. */
-async function setCachedAppServerGenerations(generations) {
-  const cache = getLogStores(CacheKeys.TOOL_CACHE);
-  return await cache.set(ToolCacheKeys.MCP_APP_SERVER_GENERATIONS, generations);
+  return await cache.set(ToolCacheKeys.MCP_APP_SERVER(serverName, configGeneration), tools, ttl);
 }
 
 /** Serializes aggregate global-tool read/modify/write operations across Redis-backed workers. */
@@ -340,10 +342,7 @@ async function invalidateCachedTools(options = {}) {
   const keysToDelete = [];
 
   if (invalidateGlobal) {
-    // Keep publication generations: active app connections need the durable map to heal the
-    // global catalog after broad config invalidation. Startup synchronization replaces the map
-    // atomically when the actual app-server configuration changes.
-    keysToDelete.push(ToolCacheKeys.GLOBAL, ToolCacheKeys.MCP_APP_SERVER_SNAPSHOTS);
+    keysToDelete.push(ToolCacheKeys.GLOBAL);
   }
 
   const invalidate = () => Promise.all(keysToDelete.map((key) => cache.delete(key)));
@@ -369,10 +368,8 @@ module.exports = {
   getMCPToolsCacheGeneration,
   renewMCPToolsCacheGeneration,
   setCachedToolsWithinGlobalLock,
-  getCachedAppServerSnapshots,
-  setCachedAppServerSnapshots,
-  getCachedAppServerGenerations,
-  setCachedAppServerGenerations,
+  getCachedAppServerTools,
+  setCachedAppServerTools,
   runWithGlobalCacheLock,
   invalidateCachedTools,
 };

@@ -62,6 +62,30 @@ describe('MCP tools-changed dispatch', () => {
     );
   });
 
+  it('includes the resolved runtime environment in app publication generations', () => {
+    const variable = 'LIBRECHAT_MCP_CATALOG_ORIGIN_TEST';
+    const original = process.env[variable];
+    const config: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: `\${${variable}}/mcp`,
+    };
+
+    try {
+      process.env[variable] = 'https://old.example.com';
+      const oldGeneration = getMCPAppToolsPublicationGeneration(config);
+      process.env[variable] = 'https://new.example.com';
+      const newGeneration = getMCPAppToolsPublicationGeneration(config);
+
+      expect(newGeneration).not.toBe(oldGeneration);
+    } finally {
+      if (original === undefined) {
+        delete process.env[variable];
+      } else {
+        process.env[variable] = original;
+      }
+    }
+  });
+
   it('captures a connection-bound publication generation from the app layer', async () => {
     const generationHandler = jest.fn().mockResolvedValue('generation-a');
     setMCPToolsChangedGenerationHandler(generationHandler);

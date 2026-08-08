@@ -13,24 +13,33 @@ export interface MCPToolCacheDeps {
   getCachedTools: (options?: {
     userId?: string;
     serverName?: string;
+    configGeneration?: string;
   }) => Promise<LCAvailableTools | null>;
   setCachedTools: (
     tools: LCAvailableTools,
-    options?: { userId?: string; serverName?: string },
+    options?: { userId?: string; serverName?: string; configGeneration?: string },
   ) => Promise<boolean>;
   setCachedToolsIfCurrent?: (
     tools: LCAvailableTools,
-    options: { userId: string; serverName: string; publicationGeneration: string },
+    options: {
+      userId: string;
+      serverName: string;
+      configGeneration: string;
+      publicationGeneration: string;
+    },
+  ) => Promise<boolean>;
+  getCachedAppServerTools: (
+    serverName: string,
+    configGeneration: string,
+  ) => Promise<LCAvailableTools | null>;
+  setCachedAppServerTools: (
+    serverName: string,
+    configGeneration: string,
+    tools: LCAvailableTools,
   ) => Promise<boolean>;
   getServerConfig: (serverName: string, userId?: string) => Promise<ParsedServerConfig | undefined>;
   getAllServerConfigs?: () => Promise<Record<string, ParsedServerConfig>>;
   isAppServerConfig?: (serverName: string, effectiveConfig: ParsedServerConfig) => Promise<boolean>;
-  getCachedAppServerSnapshots?: () => Promise<string[] | null>;
-  setCachedAppServerSnapshots?: (serverNames: string[]) => Promise<boolean>;
-  getCachedAppServerGenerations?: () => Promise<Record<string, string> | null>;
-  setCachedAppServerGenerations?: (generations: Record<string, string>) => Promise<boolean>;
-  getActiveAppServerGenerations?: () => Promise<Record<string, string>> | Record<string, string>;
-  runWithGlobalCacheLock?: <T>(operation: () => Promise<T>) => Promise<T>;
 }
 
 export interface MCPToolCacheService {
@@ -71,37 +80,21 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     getCachedTools,
     setCachedTools,
     setCachedToolsIfCurrent,
+    getCachedAppServerTools,
+    setCachedAppServerTools,
     getServerConfig,
     getAllServerConfigs,
     isAppServerConfig,
-    getCachedAppServerSnapshots,
-    setCachedAppServerSnapshots,
-    getCachedAppServerGenerations,
-    setCachedAppServerGenerations,
-    getActiveAppServerGenerations,
-    runWithGlobalCacheLock,
   } = deps;
-  let globalCacheQueue: Promise<void> = Promise.resolve();
 
   async function writeCachedTools(
     tools: LCAvailableTools,
-    options?: { userId?: string; serverName?: string },
+    options?: { userId?: string; serverName?: string; configGeneration?: string },
   ): Promise<void> {
     const success = options ? await setCachedTools(tools, options) : await setCachedTools(tools);
     if (success === false) {
       throw new Error('Tool cache rejected the write');
     }
-  }
-
-  function withGlobalCacheLock<T>(operation: () => Promise<T>): Promise<T> {
-    const lockedOperation = () =>
-      runWithGlobalCacheLock ? runWithGlobalCacheLock(operation) : operation();
-    const result = globalCacheQueue.then(lockedOperation, lockedOperation);
-    globalCacheQueue = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
   }
 
   async function isAppSharedConfig(
@@ -127,64 +120,6 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       );
       return false;
     }
-  }
-
-  async function writeCachedAppServerSnapshots(serverNames: string[]): Promise<void> {
-    if (!setCachedAppServerSnapshots) {
-      return;
-    }
-    if ((await setCachedAppServerSnapshots(serverNames)) === false) {
-      throw new Error('App tool snapshot cache rejected the write');
-    }
-  }
-
-  async function writeCachedAppServerGenerations(
-    generations: Record<string, string>,
-  ): Promise<void> {
-    if (!setCachedAppServerGenerations) {
-      return;
-    }
-    if ((await setCachedAppServerGenerations(generations)) === false) {
-      throw new Error('App tool publication generation cache rejected the write');
-    }
-  }
-
-  async function getStartupAppServers(): Promise<{
-    names: string[];
-    snapshots: string[] | null;
-    generations: Record<string, string> | null;
-  }> {
-    if (!getAllServerConfigs) {
-      return { names: [], snapshots: null, generations: null };
-    }
-    const entries = Object.entries(await getAllServerConfigs()).filter(([, config]) =>
-      canUseAppConnection(config),
-    );
-    return {
-      names: entries.map(([serverName]) => serverName),
-      snapshots: setCachedAppServerSnapshots
-        ? entries
-            .filter(([, config]) => config.toolFunctions != null)
-            .map(([serverName]) => serverName)
-        : null,
-      generations: setCachedAppServerGenerations
-        ? Object.fromEntries(
-            entries.map(([serverName, config]) => [
-              serverName,
-              getMCPAppToolsPublicationGeneration(config),
-            ]),
-          )
-        : null,
-    };
-  }
-
-  /** Rebuilds publication authority after shared cache loss from registry and live connections. */
-  async function rebuildAppServerGenerations(): Promise<Record<string, string>> {
-    const startupGenerations = (await getStartupAppServers()).generations ?? {};
-    const activeGenerations = (await getActiveAppServerGenerations?.()) ?? {};
-    const generations = { ...activeGenerations, ...startupGenerations };
-    await writeCachedAppServerGenerations(generations);
-    return generations;
   }
 
   async function resolveCacheConfig(
@@ -304,6 +239,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       }
 
       const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
+      const configGeneration = resolvedConfig
+        ? getMCPAppToolsPublicationGeneration(resolvedConfig)
+        : undefined;
       if (resolvedConfig && requiresEphemeralUserConnection(resolvedConfig)) {
         logger.debug(
           `[MCP Cache] Built ${tools.length} tools for request-scoped server ${serverName} (user: ${userId}) without caching`,
@@ -313,15 +251,16 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
 
       if (userId && !(await isAppSharedConfig(serverName, resolvedConfig))) {
         if (setCachedToolsIfCurrent) {
-          if (!publicationGeneration) {
+          if (!publicationGeneration || !configGeneration) {
             logger.debug(
-              `[MCP Cache] Skipped unfenced tool publication for ${serverName} (user: ${userId})`,
+              `[MCP Cache] Skipped unfenced or unaddressed tool publication for ${serverName} (user: ${userId})`,
             );
             return serverTools;
           }
           const current = await setCachedToolsIfCurrent(serverTools, {
             userId,
             serverName,
+            configGeneration,
             publicationGeneration,
           });
           if (!current) {
@@ -331,16 +270,17 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
             return serverTools;
           }
         } else {
-          await writeCachedTools(serverTools, { userId, serverName });
+          await writeCachedTools(serverTools, { userId, serverName, configGeneration });
         }
       } else {
-        const appPublicationGeneration = resolvedConfig
-          ? getMCPAppToolsPublicationGeneration(resolvedConfig)
-          : publicationGeneration;
+        const appConfigGeneration =
+          userId == null
+            ? (publicationGeneration ?? configGeneration)
+            : (configGeneration ?? publicationGeneration);
         const replaced = await replaceAppServerTools({
           serverName,
           serverTools,
-          publicationGeneration: appPublicationGeneration,
+          publicationGeneration: appConfigGeneration,
         });
         if (!replaced) {
           return serverTools;
@@ -362,45 +302,25 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   async function mergeAppTools(appTools: LCAvailableTools): Promise<void> {
     try {
       const count = Object.keys(appTools).length;
-      const {
-        names: appServerNames,
-        snapshots: appServerSnapshots,
-        generations: appServerGenerations,
-      } = await getStartupAppServers();
-      await withGlobalCacheLock(async () => {
-        const cachedTools = (await getCachedTools()) ?? {};
-        const previousAppServerSnapshots = (await getCachedAppServerSnapshots?.()) ?? [];
-        const currentAppServers = new Set(appServerNames);
-        const authoritativeAppServers = new Set(appServerSnapshots ?? appServerNames);
-        const boundaries = buildAppServerBoundaries([
-          ...appServerNames,
-          ...previousAppServerSnapshots,
-        ]);
-        const mergedTools: LCAvailableTools = {};
-        for (const [name, tool] of Object.entries(cachedTools)) {
-          const owner = resolveToolServerName(name, boundaries);
-          if (
-            owner == null ||
-            (currentAppServers.has(owner) && !authoritativeAppServers.has(owner))
-          ) {
-            mergedTools[name] = tool;
-          }
-        }
-        Object.assign(mergedTools, appTools);
-        if (appServerGenerations) {
-          await writeCachedAppServerGenerations(appServerGenerations);
-        }
-        await writeCachedTools(mergedTools);
-        if (appServerSnapshots) {
-          const nextSnapshots = new Set(appServerSnapshots);
-          for (const serverName of previousAppServerSnapshots) {
-            if (currentAppServers.has(serverName) && !authoritativeAppServers.has(serverName)) {
-              nextSnapshots.add(serverName);
+      const appConfigs = getAllServerConfigs
+        ? Object.entries(await getAllServerConfigs()).filter(([, config]) =>
+            canUseAppConnection(config),
+          )
+        : [];
+      const boundaries = buildAppServerBoundaries(appConfigs.map(([serverName]) => serverName));
+      await Promise.all(
+        appConfigs
+          .filter(([, config]) => config.toolFunctions != null)
+          .map(async ([serverName, config]) => {
+            const serverTools = getAppServerSlice(appTools, serverName, boundaries);
+            const configGeneration = getMCPAppToolsPublicationGeneration(config);
+            if (
+              (await setCachedAppServerTools(serverName, configGeneration, serverTools)) === false
+            ) {
+              throw new Error(`App tool cache rejected the write for ${serverName}`);
             }
-          }
-          await writeCachedAppServerSnapshots(Array.from(nextSnapshots));
-        }
-      });
+          }),
+      );
       logger.debug(`Synchronized ${count} app-level MCP tools`);
     } catch (error) {
       logger.error('Failed to merge app-level tools:', error);
@@ -409,11 +329,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
   }
 
   /**
-   * Swaps one server's app-level tools for the set it reports now.
-   *
-   * Unlike mergeAppTools this also drops what disappeared: a server that removes a tool at runtime
-   * would otherwise keep it advertised forever, since merging can only ever add. Only entries
-   * belonging to `serverName` are touched, so other servers' tools survive untouched.
+   * Replaces one server's configuration-addressed app-level snapshot. Old and new replicas may
+   * publish concurrently without overwriting each other; readers select the current config key.
    */
   async function replaceAppServerTools(params: {
     serverName: string;
@@ -429,45 +346,18 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           throw new Error(`Tool ${name} belongs to app server ${owner}, not ${serverName}`);
         }
       }
-      const replaced = await withGlobalCacheLock(async () => {
-        let appServerGenerations = getCachedAppServerGenerations
-          ? await getCachedAppServerGenerations()
-          : null;
-        if (
-          publicationGeneration &&
-          appServerGenerations == null &&
-          setCachedAppServerGenerations
-        ) {
-          appServerGenerations = await rebuildAppServerGenerations();
-        }
-        if (
-          publicationGeneration &&
-          appServerGenerations != null &&
-          appServerGenerations[serverName] !== publicationGeneration
-        ) {
-          return false;
-        }
-        const appServerSnapshots =
-          getCachedAppServerSnapshots && setCachedAppServerSnapshots
-            ? new Set((await getCachedAppServerSnapshots()) ?? [])
-            : null;
-        const cachedTools = (await getCachedTools()) ?? {};
-        const kept: LCAvailableTools = {};
-        for (const [name, tool] of Object.entries(cachedTools)) {
-          if (resolveToolServerName(name, boundaries) !== serverName) {
-            kept[name] = tool;
-          }
-        }
-        await writeCachedTools({ ...kept, ...serverTools });
-        if (appServerSnapshots) {
-          appServerSnapshots.add(serverName);
-          await writeCachedAppServerSnapshots(Array.from(appServerSnapshots));
-        }
-        return true;
-      });
-      if (!replaced) {
-        logger.debug(`[MCP Cache] Ignored stale app-level tool publication for ${serverName}`);
+      let configGeneration = publicationGeneration;
+      if (!configGeneration) {
+        const config = await resolveCacheConfig(undefined, serverName);
+        configGeneration = config ? getMCPAppToolsPublicationGeneration(config) : undefined;
+      }
+      if (!configGeneration) {
+        logger.debug(`[MCP Cache] Skipped unaddressed app-level publication for ${serverName}`);
         return false;
+      }
+      const replaced = await setCachedAppServerTools(serverName, configGeneration, serverTools);
+      if (replaced === false) {
+        throw new Error(`App tool cache rejected the write for ${serverName}`);
       }
       logger.debug(
         `[MCP Cache] Replaced app-level tools for ${serverName} with ${Object.keys(serverTools).length} tool(s)`,
@@ -490,6 +380,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     try {
       const count = Object.keys(serverTools).length;
       const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
+      const configGeneration = resolvedConfig
+        ? getMCPAppToolsPublicationGeneration(resolvedConfig)
+        : undefined;
       if (resolvedConfig && requiresEphemeralUserConnection(resolvedConfig)) {
         logger.debug(
           `[MCP Cache] Skipped caching ${count} tools for request-scoped server ${serverName} (user: ${userId})`,
@@ -497,13 +390,14 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         return;
       }
       if (await isAppSharedConfig(serverName, resolvedConfig)) {
-        const appPublicationGeneration = resolvedConfig
-          ? getMCPAppToolsPublicationGeneration(resolvedConfig)
-          : publicationGeneration;
+        const appConfigGeneration =
+          userId == null
+            ? (publicationGeneration ?? configGeneration)
+            : (configGeneration ?? publicationGeneration);
         const replaced = await replaceAppServerTools({
           serverName,
           serverTools,
-          publicationGeneration: appPublicationGeneration,
+          publicationGeneration: appConfigGeneration,
         });
         if (!replaced) {
           return;
@@ -512,15 +406,16 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         return;
       }
       if (setCachedToolsIfCurrent) {
-        if (!publicationGeneration) {
+        if (!publicationGeneration || !configGeneration) {
           logger.debug(
-            `[MCP Cache] Skipped unfenced discovered tools for ${serverName} (user: ${userId})`,
+            `[MCP Cache] Skipped unfenced or unaddressed discovered tools for ${serverName} (user: ${userId})`,
           );
           return;
         }
         const current = await setCachedToolsIfCurrent(serverTools, {
           userId,
           serverName,
+          configGeneration,
           publicationGeneration,
         });
         if (!current) {
@@ -530,7 +425,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           return;
         }
       } else {
-        await writeCachedTools(serverTools, { userId, serverName });
+        await writeCachedTools(serverTools, { userId, serverName, configGeneration });
       }
       logger.debug(`Cached ${count} MCP server tools for ${serverName} (user: ${userId})`);
     } catch (error) {
@@ -588,22 +483,20 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     }
     try {
       if (await isAppSharedConfig(serverName, resolvedConfig)) {
-        const globalTools = await getCachedTools();
-        if (globalTools == null) {
+        if (!resolvedConfig) {
           return null;
         }
-        const boundaries = await getAppServerBoundaries(serverName);
-        const serverTools = getAppServerSlice(globalTools, serverName, boundaries);
-        if (Object.keys(serverTools).length === 0) {
-          const appServerSnapshots = await getCachedAppServerSnapshots?.();
-          if (appServerSnapshots?.includes(serverName)) {
-            return {};
-          }
+        const configGeneration = getMCPAppToolsPublicationGeneration(resolvedConfig);
+        const serverTools = await getCachedAppServerTools(serverName, configGeneration);
+        if (serverTools == null) {
           return null;
         }
         return normalizeCachedToolKeys(serverTools, serverName);
       }
-      const cached = (await getCachedTools({ userId, serverName })) ?? null;
+      const configGeneration = resolvedConfig
+        ? getMCPAppToolsPublicationGeneration(resolvedConfig)
+        : undefined;
+      const cached = (await getCachedTools({ userId, serverName, configGeneration })) ?? null;
       if (!cached) {
         return null;
       }

@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { MCPOptionsSchema } from 'librechat-data-provider';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPOptions, ParsedServerConfig } from './types';
+import { processMCPEnv } from '../utils/env';
 
 const RETRY_BASE_DELAY_MS = 250;
 const RETRY_MAX_DELAY_MS = 30_000;
@@ -29,9 +30,14 @@ function sortConfigValue(value: StableConfigValue): StableConfigValue {
   return sorted;
 }
 
-/** Returns a stable token for the connection-relevant portion of an app MCP config. */
+/** Returns a stable token for the connection-relevant portion of an MCP config. */
 export function getMCPAppToolsPublicationGeneration(config: ParsedServerConfig): string {
-  const parsedConfig = MCPOptionsSchema.parse(config) as StableConfigValue;
+  /** App replicas can resolve the same stored config through different process environments during
+   * a rolling deployment. Address the catalog by the effective runtime config so an old replica's
+   * live connection cannot publish into the new replica's slice. DB-sourced configs deliberately
+   * remain literal because processMCPEnv derives that rule from dbId. */
+  const runtimeConfig = processMCPEnv({ options: config });
+  const parsedConfig = MCPOptionsSchema.parse(runtimeConfig) as StableConfigValue;
   return createHash('sha256')
     .update(JSON.stringify(sortConfigValue(parsedConfig)))
     .digest('hex');

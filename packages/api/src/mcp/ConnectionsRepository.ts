@@ -31,7 +31,6 @@ export class ConnectionsRepository {
   protected oauthOpts: t.OAuthConnectionOptions | undefined;
   private readonly ownerId: string | undefined;
   private readonly connectionOperations = new Map<string, Promise<void>>();
-  private readonly publicationGenerations = new Map<string, string>();
 
   constructor(ownerId?: string, oauthOpts?: t.OAuthConnectionOptions) {
     this.ownerId = ownerId;
@@ -41,11 +40,6 @@ export class ConnectionsRepository {
   /** Returns the number of active connections in this repository */
   public getConnectionCount(): number {
     return this.connections.size;
-  }
-
-  /** Returns generations bound to this process's currently tracked app connections. */
-  public getPublicationGenerations(): Record<string, string> {
-    return Object.fromEntries(this.publicationGenerations);
   }
 
   /** Serializes connection lifecycle transitions for one server without blocking other servers. */
@@ -148,9 +142,6 @@ export class ConnectionsRepository {
     });
 
     this.connections.set(serverName, connection);
-    if (publicationGeneration) {
-      this.publicationGenerations.set(serverName, publicationGeneration);
-    }
     if (this.ownerId === undefined && options.refreshTools !== false) {
       if (connection.client.getServerCapabilities()?.tools == null) {
         await notifyMCPToolsChanged({
@@ -222,7 +213,6 @@ export class ConnectionsRepository {
 
   private async disconnectConnection(serverName: string): Promise<void> {
     const connection = this.connections.get(serverName);
-    this.publicationGenerations.delete(serverName);
     if (!connection) {
       await cancelMCPToolsChanged({ userId: this.ownerId, serverName });
       return;
