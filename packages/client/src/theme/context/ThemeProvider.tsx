@@ -1,4 +1,12 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { JSX } from 'react/jsx-runtime';
 
 import type { IThemeRGB, ThemeDefinition, ThemeMode } from '../types';
@@ -169,6 +177,32 @@ export function ThemeProvider({
   const [themeName, setThemeNameState] = useState<string | undefined>(
     propThemeName ?? themeDefinition?.name ?? getInitialThemeName,
   );
+  const persistedInitialProps = useRef(false);
+
+  useEffect(() => {
+    if (persistedInitialProps.current) {
+      return;
+    }
+    persistedInitialProps.current = true;
+
+    if (initialTheme && isAppearanceMode(initialTheme)) {
+      writeStorage(THEME_KEY, initialTheme);
+    }
+
+    const definition =
+      propThemeDefinition ??
+      (propThemeRGB ? fromLegacyTheme(propThemeRGB, propThemeName) : undefined);
+    if (!definition) {
+      if (propThemeName) {
+        writeStorage(THEME_NAME_KEY, propThemeName);
+      }
+      return;
+    }
+
+    writeStorage(THEME_DEFINITION_KEY, JSON.stringify(definition));
+    writeStorage(THEME_NAME_KEY, definition.name);
+    writeStorage(THEME_COLORS_KEY, propThemeRGB ? JSON.stringify(propThemeRGB) : undefined);
+  }, [initialTheme, propThemeDefinition, propThemeName, propThemeRGB]);
 
   const setTheme = useCallback((newTheme: string) => {
     if (!isAppearanceMode(newTheme)) {
@@ -185,6 +219,9 @@ export function ThemeProvider({
     }
     setThemeDefinitionState(definition);
     writeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
+    if (!definition) {
+      writeStorage(THEME_COLORS_KEY);
+    }
     setThemeNameState(definition?.name);
     writeStorage(THEME_NAME_KEY, definition?.name);
   }, []);
@@ -198,10 +235,21 @@ export function ThemeProvider({
     [setThemeDefinition, themeName],
   );
 
-  const setThemeName = useCallback((name?: string) => {
-    setThemeNameState(name);
-    writeStorage(THEME_NAME_KEY, name);
-  }, []);
+  const setThemeName = useCallback(
+    (name?: string) => {
+      setThemeNameState(name);
+      writeStorage(THEME_NAME_KEY, name);
+
+      if (!name || !themeDefinition) {
+        return;
+      }
+
+      const renamedDefinition = { ...themeDefinition, name };
+      setThemeDefinitionState(renamedDefinition);
+      writeStorage(THEME_DEFINITION_KEY, JSON.stringify(renamedDefinition));
+    },
+    [themeDefinition],
+  );
 
   const applyThemeMode = useCallback(
     (currentTheme: AppearanceMode) => {

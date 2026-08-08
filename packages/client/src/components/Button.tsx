@@ -33,7 +33,7 @@ const buttonVariants: (
         outline:
           'text-text-primary border border-border-light bg-transparent hover:bg-surface-hover hover:text-text-primary',
         subtle:
-          'rounded-xl border border-border-light bg-transparent text-text-primary hover:bg-surface-secondary focus-visible:ring-text-primary focus-visible:ring-offset-0',
+          'border border-border-light bg-transparent text-text-primary hover:bg-surface-secondary focus-visible:ring-text-primary focus-visible:ring-offset-0',
         secondary: 'bg-surface-secondary text-text-primary hover:bg-surface-hover',
         ghost: 'hover:bg-surface-hover hover:text-text-primary',
         link: 'text-text-primary underline-offset-4 hover:underline',
@@ -70,10 +70,15 @@ const Button: React.ForwardRefExoticComponent<
 > = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, shape, asChild = false, type = 'button', ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
+    const preservesSubtleShape = variant === 'subtle' && shape == null;
     return (
       <Comp
         type={asChild ? undefined : type}
-        className={cn(buttonVariants({ variant, size, shape, className }))}
+        className={cn(
+          buttonVariants({ variant, size, shape: preservesSubtleShape ? null : shape }),
+          preservesSubtleShape && 'rounded-xl',
+          className,
+        )}
         ref={ref}
         {...props}
       />

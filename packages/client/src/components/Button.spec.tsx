@@ -16,4 +16,21 @@ describe('Button', () => {
       'gap-theme-compact',
     );
   });
+
+  it('preserves variant geometry until a shape is explicitly selected', () => {
+    const { rerender } = render(<Button variant="subtle">Subtle</Button>);
+    const button = screen.getByRole('button', { name: 'Subtle' });
+
+    expect(button).toHaveClass('rounded-xl');
+    expect(button).not.toHaveClass('rounded-lg');
+
+    rerender(
+      <Button variant="subtle" shape="theme">
+        Subtle
+      </Button>,
+    );
+
+    expect(button).toHaveClass('rounded-theme-control');
+    expect(button).not.toHaveClass('rounded-xl');
+  });
 });
