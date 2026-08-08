@@ -20,6 +20,7 @@ const {
   documentParserSources,
   documentParserMimeTypes,
   isPermissiveMimeConfig,
+  isParsedDocument,
   inferMimeType,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
@@ -79,12 +80,26 @@ const hasCodeEnvRef = (file) =>
 
 const genericMimeTypes = new Set(['application/octet-stream', 'binary/octet-stream']);
 
+/**
+ * OOXML, ODF and EPUB documents are zip containers, so a client that types uploads by
+ * magic bytes announces an ordinary `.docx` as an archive, as does the Windows
+ * `application/x-zip-compressed` alias. That is not a generic type, so extension
+ * inference alone would leave it alone, and the file would miss every parser check and
+ * be stored as raw archive bytes. `isParsedDocument` is already what the client trusts
+ * to offer extracted text for these, so routing resolves them the same way.
+ */
+const archiveMimeTypes = new Set(['application/zip', 'application/x-zip-compressed']);
+
 const resolveEffectiveMimeType = (file) => {
   const declared = (file?.mimetype ?? '').split(';')[0].trim().toLowerCase();
-  if (!genericMimeTypes.has(declared)) {
-    return declared;
+  const filename = file?.originalname ?? '';
+  if (genericMimeTypes.has(declared)) {
+    return inferMimeType(filename, declared);
   }
-  return inferMimeType(file?.originalname ?? '', declared);
+  if (archiveMimeTypes.has(declared) && isParsedDocument(null, filename)) {
+    return inferMimeType(filename, '') || declared;
+  }
+  return declared;
 };
 
 const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';

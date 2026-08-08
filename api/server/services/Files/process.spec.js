@@ -290,6 +290,45 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile.mock.calls[0][0].type).toBe(DOCX_MIME);
     });
 
+    /**
+     * OOXML/ODF/EPUB documents are zip containers, so a client that types uploads by
+     * content announces a `.docx` as an archive. That is not a generic type, so nothing
+     * re-infers it, and the file used to miss every parser check and land in text
+     * parsing, which stores the archive's bytes as the model's copy of the document.
+     */
+    test('routes a zip-typed office document through the parser on its extension', async () => {
+      const req = makeReq({
+        mimetype: 'application/zip',
+        originalname: 'report.docx',
+        ocrConfig: null,
+      });
+      const { parseText } = require('@librechat/api');
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+      expect(parseText).not.toHaveBeenCalled();
+      expect(db.createFile.mock.calls[0][0].type).toBe(DOCX_MIME);
+    });
+
+    test('leaves an ordinary archive alone', async () => {
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ textSupportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] }),
+      );
+      const req = makeReq({
+        mimetype: 'application/zip',
+        originalname: 'bundle.zip',
+        ocrConfig: null,
+      });
+      const { parseText } = require('@librechat/api');
+      parseText.mockResolvedValueOnce({ text: 'archive listing', bytes: 15 });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.document_parser);
+      expect(parseText).toHaveBeenCalled();
+    });
+
     test('does not check OCR capability when using automatic document_parser fallback', async () => {
       const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
 
