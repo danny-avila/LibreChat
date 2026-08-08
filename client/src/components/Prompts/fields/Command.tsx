@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useId, useState, useEffect } from 'react';
 import { Input } from '@librechat/client';
 import { SquareSlash } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
@@ -20,6 +20,7 @@ const Command = ({
   labelBgClassName?: string;
 }) => {
   const localize = useLocalize();
+  const commandId = useId();
   const [command, setCommand] = useState(initialValue || '');
   const [charCount, setCharCount] = useState(initialValue?.length || 0);
 
@@ -49,10 +50,7 @@ const Command = ({
 
   return (
     <div className="rounded-xl border border-border-medium">
-      <label
-        htmlFor="prompt-command"
-        className="block px-4 pt-2 text-sm text-text-secondary md:hidden"
-      >
+      <label htmlFor={commandId} className="block px-4 pt-2 text-sm text-text-secondary md:hidden">
         {localize('com_ui_command_placeholder')}
       </label>
       <div className="relative flex h-10 items-center gap-1 pl-4 pr-2 text-sm text-text-secondary">
@@ -60,7 +58,7 @@ const Command = ({
         <div className="relative min-w-0 flex-1">
           <Input
             type="text"
-            id="prompt-command"
+            id={commandId}
             tabIndex={tabIndex}
             disabled={disabled}
             placeholder=" "
@@ -70,7 +68,7 @@ const Command = ({
             aria-label={localize('com_ui_command_placeholder')}
           />
           <label
-            htmlFor="prompt-command"
+            htmlFor={commandId}
             className={cn(
               'pointer-events-none absolute left-0 top-0.5 hidden max-w-[calc(100%-3.5rem)] origin-[0] translate-y-2 scale-100 rounded px-1 text-sm text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-2 peer-placeholder-shown:scale-100 peer-focus:-translate-y-3 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-3 peer-[:not(:placeholder-shown)]:scale-75 md:block',
               labelBgClassName,

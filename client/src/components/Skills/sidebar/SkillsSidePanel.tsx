@@ -25,6 +25,7 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
   const localize = useLocalize();
   const { skillId: activeSkillId } = useParams();
   const [searchTerm, setSearchTerm] = useState('');
+  const [sectionOpen, setSectionOpen] = useState(true);
   const debouncedSearch = useDebounce(searchTerm, 250);
 
   const listQuery = useSkillsInfiniteQuery({ search: debouncedSearch || undefined, limit: 20 });
@@ -42,7 +43,7 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
     nextCursor,
     isFetchingNext: listQuery.isFetchingNextPage,
     fetchNextPage: listQuery.fetchNextPage,
-    enabled: sidebarExpanded,
+    enabled: sidebarExpanded && sectionOpen,
   });
 
   return (
@@ -65,7 +66,12 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
         skeleton={<SkillListSkeleton />}
         className="px-4"
       >
-        <SkillListPanel skills={skills} activeSkillId={activeSkillId} />
+        <SkillListPanel
+          skills={skills}
+          activeSkillId={activeSkillId}
+          sectionOpen={sectionOpen}
+          onSectionOpenChange={setSectionOpen}
+        />
         {/* Appending the next page, so the loaded rows stay put */}
         {listQuery.isFetchingNextPage && (
           <div className="flex shrink-0 justify-center py-2">

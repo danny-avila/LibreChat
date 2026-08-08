@@ -9,14 +9,20 @@ import { cn } from '~/utils';
 interface SkillListProps {
   skills: TSkillSummary[];
   activeSkillId?: string;
+  sectionOpen: boolean;
+  onSectionOpenChange: (open: boolean) => void;
 }
 
 /** Collapsible skill list. Active/inactive toggling lives in the detail view. */
-export default function SkillList({ skills, activeSkillId }: SkillListProps) {
+export default function SkillList({
+  skills,
+  activeSkillId,
+  sectionOpen,
+  onSectionOpenChange,
+}: SkillListProps) {
   const localize = useLocalize();
   const [searchParams] = useSearchParams();
   const activeFile = searchParams.get('file');
-  const [sectionOpen, setSectionOpen] = useState(true);
   const [expandedSkillId, setExpandedSkillId] = useState<string | null>(activeSkillId ?? null);
 
   return (
@@ -25,7 +31,7 @@ export default function SkillList({ skills, activeSkillId }: SkillListProps) {
       <div className="flex items-center justify-between px-2 pb-2">
         <button
           type="button"
-          onClick={() => setSectionOpen((prev) => !prev)}
+          onClick={() => onSectionOpenChange(!sectionOpen)}
           className="flex cursor-pointer items-center gap-1.5"
           aria-expanded={sectionOpen}
         >
