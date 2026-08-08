@@ -2264,6 +2264,86 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
      * empty-guard is exercised by data-schemas tests. */
     expect(getUserCodeFiles).not.toHaveBeenCalled();
   });
+
+  it('skips the thread walk when parentMessageId is an empty string', async () => {
+    /* An empty anchor can never match a parent chain, so walking the
+     * conversation only buys an unbounded read whose result is discarded.
+     * `req.body.parentMessageId` reaches this layer unnormalized. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([]);
+    const getConvoFiles = jest.fn().mockResolvedValue([]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: '',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles },
+    );
+
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(mockGetThreadData).not.toHaveBeenCalled();
+    /* The conversation read is unconditional and must survive the guard. */
+    expect(getConvoFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches the convo-file read and the thread walk concurrently', async () => {
+    /* Both reads gate the model call, so serializing them costs
+     * time-to-first-token on every turn. Holding BOTH unresolved is what
+     * makes this fail under either ordering: whichever runs first blocks,
+     * and the second is never dispatched.
+     *
+     * DELETE this test, do not repair it, if the thread walk ever gains a
+     * data dependency on the convo file ids — serializing becomes correct. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    let releaseConvoFiles!: (fileIds: string[]) => void;
+    let releaseMessages!: (messages: Array<{ messageId: string }>) => void;
+    const getConvoFiles = jest
+      .fn()
+      .mockReturnValue(new Promise<string[]>((resolve) => (releaseConvoFiles = resolve)));
+    const getMessages = jest
+      .fn()
+      .mockReturnValue(
+        new Promise<Array<{ messageId: string }>>((resolve) => (releaseMessages = resolve)),
+      );
+
+    const initialized = initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getConvoFiles, getMessages },
+    );
+
+    /* Drain pending microtasks so the mocked chain runs up to the first
+     * genuinely-pending await. */
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(getConvoFiles).toHaveBeenCalledTimes(1);
+    expect(getMessages).toHaveBeenCalledTimes(1);
+
+    releaseConvoFiles([]);
+    releaseMessages([]);
+    await initialized;
+  });
 });
 
 describe('initializeAgent — run-scoped MCP tool definitions', () => {

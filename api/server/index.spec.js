@@ -50,13 +50,17 @@ jest.mock(
 describe('Telemetry wiring', () => {
   const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
 
-  it('loads telemetry before other server imports', () => {
-    const firstStatement = source
+  it('loads credentials before telemetry and other server imports', () => {
+    const firstStatements = source
       .split('\n')
       .map((line) => line.trim())
-      .find(Boolean);
+      .filter(Boolean)
+      .slice(0, 2);
 
-    expect(firstStatement).toBe("const telemetry = require('./telemetry');");
+    expect(firstStatements).toEqual([
+      "require('../config/credentials');",
+      "const telemetry = require('./telemetry');",
+    ]);
   });
 
   it('mounts telemetry middleware after static assets and before routes', () => {
