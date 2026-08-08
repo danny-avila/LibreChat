@@ -531,6 +531,8 @@ describe('checkVariables - hex secret validation', () => {
     checkVariables();
 
     expect(logger.error).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith('Default value for CREDS_KEY is being used.');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Legacy default value for CREDS_KEY is being used. Generate and configure a unique value.',
+    );
   });
 });
