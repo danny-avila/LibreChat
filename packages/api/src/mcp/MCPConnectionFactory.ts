@@ -28,7 +28,12 @@ import {
   ReauthenticationRequiredError,
   resolveOboToken,
 } from '~/mcp/oauth';
-import { sanitizeUrlForLogging, isClientRejectionMessage, isOAuthServer } from './utils';
+import {
+  sanitizeUrlForLogging,
+  isClientRejectionMessage,
+  isUserSourced,
+  isOAuthServer,
+} from './utils';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { withTimeout } from '~/utils/promise';
@@ -418,16 +423,20 @@ export class MCPConnectionFactory {
   /** Resolves OBO tokens when the server config specifies obo, returns null otherwise */
   protected async getOboTokens(): Promise<MCPOAuthTokens | null> {
     const oboConfig = this.serverConfig.obo;
+    const provenanceConfig = this.declarativeServerConfig as t.ParsedServerConfig;
     if (!oboConfig || !this.oboTokenResolver || !this.user) {
       return null;
     }
 
+    if (isUserSourced(provenanceConfig) && !this.oboTrustChecker) {
+      throw new Error(`${this.logPrefix} OBO author trust proof is required`);
+    }
+
     if (this.oboTrustChecker) {
-      const config = this.serverConfig as t.ParsedServerConfig;
       const trusted = await this.oboTrustChecker({
-        source: config.source,
-        author: config.author,
-        dbId: config.dbId,
+        source: provenanceConfig.source,
+        author: provenanceConfig.author,
+        dbId: provenanceConfig.dbId,
       });
       if (!trusted) {
         logger.warn(

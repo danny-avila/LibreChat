@@ -501,6 +501,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboTrustChecker,
     oauthAuthorityScope,
     authorityAuthorizationKind,
+    refreshAuthorityLifecycle,
     bindWithCurrentAuthority,
     beforeExecute,
     executeWithCurrentAuthority,
@@ -527,6 +528,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboTrustChecker?: OboTrustChecker;
     oauthAuthorityScope?: MCPToolCatalogScope;
     authorityAuthorizationKind?: t.MCPConnectionProvenance['authorizationKind'];
+    refreshAuthorityLifecycle?: t.MCPRefreshAuthorityLifecycle;
     bindWithCurrentAuthority?: <Result>(bind: () => Promise<Result>) => Promise<Result>;
     beforeExecute?: (context: {
       connectionProvenance: t.MCPConnectionProvenance | null;
@@ -568,6 +570,7 @@ Please follow these instructions when using tools from the respective MCP server
           securityPolicy,
           oauthAuthorityScope,
           authorityAuthorizationKind,
+          refreshAuthorityLifecycle,
         });
       connection = bindWithCurrentAuthority ? await bindWithCurrentAuthority(bind) : await bind();
 
@@ -632,6 +635,12 @@ Please follow these instructions when using tools from the respective MCP server
       /** Refresh OBO token on each tool call to ensure it's current */
       const oboConfig = rawConfig.obo;
       if (oboConfig && oboTokenResolver && user) {
+        if (isDbSourced && !oboTrustChecker) {
+          throw new McpError(
+            ErrorCode.InvalidRequest,
+            `${logPrefix} OBO author trust proof is required for user-authored server "${serverName}".`,
+          );
+        }
         const oboTrusted = oboTrustChecker
           ? await oboTrustChecker({
               source: rawConfig.source,

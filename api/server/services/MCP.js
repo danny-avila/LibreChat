@@ -62,6 +62,7 @@ const { createOboTrustChecker } = require('./OboPolicyService');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig, getMCPServerCatalog } = require('./Config');
 const {
+  createMCPRefreshAuthorityLifecycle,
   matchesMCPToolAuthorityScope,
   resolveCurrentMCPToolAuthority,
 } = require('./MCPDiscoveryScope');
@@ -1395,6 +1396,10 @@ function createToolInstance({
         securityPolicy: currentParsedConfig.securityPolicy,
         oauthAuthorityScope: currentParsedConfig.catalogScope,
         authorityAuthorizationKind: currentParsedConfig.authorization.kind,
+        refreshAuthorityLifecycle: createMCPRefreshAuthorityLifecycle({
+          authority: currentAuthority,
+          requestBody,
+        }),
         bindWithCurrentAuthority: async (bind) =>
           await getMCPAuthorityResolver().useIssuedResolution(currentAuthority, bind),
         executeWithCurrentAuthority: async (execute, { connectionProvenance }) => {

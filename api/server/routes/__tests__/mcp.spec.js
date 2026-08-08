@@ -348,6 +348,11 @@ const mockAsMCPAuthorityResolution = (authority, options = {}) => {
   };
 };
 jest.mock('~/server/services/MCPDiscoveryScope', () => ({
+  createMCPRefreshAuthorityLifecycle: () => ({
+    exchange: async (action) => await action(),
+    store: async (_tokens, action) => await action(),
+    accept: async () => undefined,
+  }),
   matchesMCPToolAuthorityScope: (left, right) =>
     left != null && right != null && JSON.stringify(left) === JSON.stringify(right),
   resolveCurrentMCPDiscoveryScope: async (...args) => {

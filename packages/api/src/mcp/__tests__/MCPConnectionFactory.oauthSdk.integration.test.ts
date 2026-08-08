@@ -5,6 +5,7 @@ import type {
   OAuthStoredClientMetadata,
   MCPOAuthTokens,
 } from '~/mcp/oauth';
+import type { MCPRefreshAuthorityLifecycle } from '~/mcp/types';
 import {
   MockKeyv,
   InMemoryTokenStore,
@@ -54,6 +55,11 @@ jest.mock('~/mcp/mcpConfig', () => ({
 const SERVER_NAME = 'sdk-oauth-server';
 const USER_ID = 'sdk-user';
 const CLIENT_ID = 'librechat-sdk-test-client';
+const passthroughRefreshAuthorityLifecycle: MCPRefreshAuthorityLifecycle = {
+  exchange: async (action) => await action(),
+  store: async (_tokens, action) => await action(),
+  accept: async () => undefined,
+};
 
 async function safeDisconnect(conn: MCPConnection | null): Promise<void> {
   if (!conn) {
@@ -200,6 +206,7 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
         useOAuth: true,
         user: { id: USER_ID } as IUser,
         flowManager: createFlowManager(),
+        refreshAuthorityLifecycle: passthroughRefreshAuthorityLifecycle,
         tokenMethods: {
           findToken: tokenStore.findToken,
           createToken: tokenStore.createToken,
@@ -257,6 +264,7 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
           useOAuth: true,
           user: { id: USER_ID } as IUser,
           flowManager: createFlowManager(),
+          refreshAuthorityLifecycle: passthroughRefreshAuthorityLifecycle,
           tokenMethods: {
             findToken: tokenStore.findToken,
             createToken: tokenStore.createToken,

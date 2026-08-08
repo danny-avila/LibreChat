@@ -24,6 +24,7 @@ export interface OAuthReconnectAuthority {
   customUserVars?: Record<string, string>;
   oauthAuthorityScope: MCPToolCatalogScope;
   authorityAuthorizationKind: MCPConnectionProvenance['authorizationKind'];
+  refreshAuthorityLifecycle: NonNullable<UserConnectionContext['refreshAuthorityLifecycle']>;
   bind<Result>(action: () => Promise<Result>): Promise<Result>;
 }
 
@@ -233,6 +234,7 @@ export class OAuthReconnectionManager {
           customUserVars: authority?.customUserVars,
           oauthAuthorityScope: authority?.oauthAuthorityScope,
           authorityAuthorizationKind: authority?.authorityAuthorizationKind,
+          refreshAuthorityLifecycle: authority?.refreshAuthorityLifecycle,
           // don't force new connection, let it reuse existing or create new as needed
           forceNew: false,
           // set a reasonable timeout for reconnection attempts

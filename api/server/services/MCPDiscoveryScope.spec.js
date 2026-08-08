@@ -60,6 +60,7 @@ jest.mock('~/server/services/MCPAuthority', () => ({
 }));
 
 const {
+  createMCPRefreshAuthorityLifecycle,
   resolveCurrentMCPPrincipal,
   resolveCurrentMCPToolAuthority,
 } = require('./MCPDiscoveryScope');
@@ -248,5 +249,146 @@ describe('MCPDiscoveryScope', () => {
       headers: { Authorization: 'Bearer materialized-graph-token' },
     });
     expect(result.parsedConfig.authorization.kind).toBe('oauth');
+  });
+
+  it('revalidates a refreshed OAuth generation before accepting it', async () => {
+    const serverName = 'refresh-server';
+    const serverConfig = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+      requiresOAuth: true,
+      source: 'yaml',
+    };
+    const oauthRecords = (generation) => [
+      {
+        _id: new Types.ObjectId(),
+        type: 'mcp_oauth_client',
+        identifier: `mcp:${serverName}:client`,
+        metadata: { credential_set_id: generation },
+      },
+    ];
+    mockFindPluginAuthsByKeys.mockResolvedValue([]);
+    mockResolveMCPDiscoveryConfigSnapshot.mockResolvedValue({
+      configs: { [serverName]: serverConfig },
+      pendingConfigs: {},
+      sourceDocuments: [],
+      securityPolicy: { allowedDomains: null, allowedAddresses: null },
+      collisionServerNames: [serverName],
+      missingConfigServerNames: [],
+    });
+    mockFindTokens.mockResolvedValue(oauthRecords('generation-before-refresh'));
+    const authority = await resolveCurrentMCPToolAuthority({
+      user: { id: userId, role: 'USER' },
+      serverName,
+      oauthRequiredHint: true,
+    });
+    mockFindTokens.mockResolvedValue(oauthRecords('generation-after-refresh'));
+    const lifecycle = createMCPRefreshAuthorityLifecycle({ authority });
+    const exchange = jest.fn().mockResolvedValue({ access_token: 'new-token' });
+    const store = jest.fn().mockResolvedValue({
+      access_token: 'new-token',
+      credential_set_id: 'generation-after-refresh',
+    });
+
+    await expect(lifecycle.exchange(exchange)).resolves.toEqual({ access_token: 'new-token' });
+    await expect(lifecycle.store({ access_token: 'new-token' }, store)).resolves.toEqual(
+      expect.objectContaining({ credential_set_id: 'generation-after-refresh' }),
+    );
+    await expect(
+      lifecycle.accept({
+        access_token: 'new-token',
+        credential_set_id: 'generation-after-refresh',
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(exchange).toHaveBeenCalledTimes(1);
+    expect(store).toHaveBeenCalledTimes(1);
+    expect(mockUseIssuedResolution).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects a refreshed OAuth generation that is not current', async () => {
+    const serverName = 'stale-refresh-server';
+    const serverConfig = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+      requiresOAuth: true,
+      source: 'yaml',
+    };
+    mockFindPluginAuthsByKeys.mockResolvedValue([]);
+    mockResolveMCPDiscoveryConfigSnapshot.mockResolvedValue({
+      configs: { [serverName]: serverConfig },
+      pendingConfigs: {},
+      sourceDocuments: [],
+      securityPolicy: { allowedDomains: null, allowedAddresses: null },
+      collisionServerNames: [serverName],
+      missingConfigServerNames: [],
+    });
+    mockFindTokens.mockResolvedValue([
+      {
+        _id: new Types.ObjectId(),
+        type: 'mcp_oauth_client',
+        identifier: `mcp:${serverName}:client`,
+        metadata: { credential_set_id: 'current-generation' },
+      },
+    ]);
+    const authority = await resolveCurrentMCPToolAuthority({
+      user: { id: userId, role: 'USER' },
+      serverName,
+      oauthRequiredHint: true,
+    });
+    const lifecycle = createMCPRefreshAuthorityLifecycle({ authority });
+
+    await expect(
+      lifecycle.accept({ access_token: 'rejected-token', credential_set_id: 'other-generation' }),
+    ).rejects.toThrow('MCP authority changed after refreshed credentials were stored');
+  });
+
+  it('rejects refreshed credentials when effective user configuration changes', async () => {
+    const serverName = 'credential-drift-refresh-server';
+    const serverConfig = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+      requiresOAuth: true,
+      source: 'yaml',
+      headers: { 'X-API-Key': '{{API_KEY}}' },
+      customUserVars: { API_KEY: { title: 'API key' } },
+    };
+    const credential = (value) => ({
+      _id: new Types.ObjectId(),
+      pluginKey: `mcp_${serverName}`,
+      authField: 'API_KEY',
+      value,
+    });
+    mockResolveMCPDiscoveryConfigSnapshot.mockResolvedValue({
+      configs: { [serverName]: serverConfig },
+      pendingConfigs: {},
+      sourceDocuments: [],
+      securityPolicy: { allowedDomains: null, allowedAddresses: null },
+      collisionServerNames: [serverName],
+      missingConfigServerNames: [],
+    });
+    mockFindTokens.mockResolvedValue([
+      {
+        _id: new Types.ObjectId(),
+        type: 'mcp_oauth_client',
+        identifier: `mcp:${serverName}:client`,
+        metadata: { credential_set_id: 'current-generation' },
+      },
+    ]);
+    mockFindPluginAuthsByKeys.mockResolvedValue([credential('old-key')]);
+    const authority = await resolveCurrentMCPToolAuthority({
+      user: { id: userId, role: 'USER' },
+      serverName,
+      oauthRequiredHint: true,
+    });
+    mockFindPluginAuthsByKeys.mockResolvedValue([credential('new-key')]);
+    const lifecycle = createMCPRefreshAuthorityLifecycle({ authority });
+
+    await expect(
+      lifecycle.accept({
+        access_token: 'rejected-token',
+        credential_set_id: 'current-generation',
+      }),
+    ).rejects.toThrow('MCP authority changed after refreshed credentials were stored');
   });
 });

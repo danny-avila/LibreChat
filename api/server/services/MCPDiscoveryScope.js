@@ -504,6 +504,63 @@ function matchesMCPToolAuthorityScope(left, right) {
   );
 }
 
+function matchesMCPRefreshAuthority(previous, current, credentialSetId) {
+  const previousConfig = previous.parsedConfig;
+  const currentConfig = current.parsedConfig;
+  const previousScope = previousConfig.catalogScope;
+  const currentScope = currentConfig.catalogScope;
+  const refreshCredentialScope = (config) =>
+    createMCPToolCatalogScope({
+      tenantId: config.actor.tenantId,
+      userId: config.actor.userId,
+      serverName: config.serverName,
+      serverConfig: config.sourceConfig,
+      effectiveServerConfig: config.effectiveConfig,
+      securityPolicyIdentity: config.securityPolicyIdentity,
+      customUserVars: config.customUserVars,
+      authorizationIdentity: '__mcp_refresh_authority__',
+      authorizationKind: 'oauth',
+    }).credentials;
+  return (
+    previousConfig.serverName === currentConfig.serverName &&
+    previousScope.tenant === currentScope.tenant &&
+    previousScope.principal === currentScope.principal &&
+    previousScope.server === currentScope.server &&
+    previousScope.policy === currentScope.policy &&
+    previousScope.config === currentScope.config &&
+    refreshCredentialScope(previousConfig) === refreshCredentialScope(currentConfig) &&
+    currentConfig.authorization.kind === 'oauth' &&
+    currentConfig.authorization.generation === credentialSetId
+  );
+}
+
+function createMCPRefreshAuthorityLifecycle({ authority, requestBody }) {
+  const resolver = getMCPAuthorityResolver();
+  const bindCurrent = async (action) => await resolver.useIssuedResolution(authority, action);
+  return {
+    exchange: bindCurrent,
+    store: async (_tokens, action) => await bindCurrent(action),
+    accept: async (tokens) => {
+      const credentialSetId = tokens?.credential_set_id;
+      if (typeof credentialSetId !== 'string' || credentialSetId.length === 0) {
+        throw new Error('Stored MCP OAuth generation is unavailable after refresh');
+      }
+      const parsedConfig = authority.parsedConfig;
+      const current = await resolveCurrentMCPToolAuthority({
+        user: parsedConfig.actor.user,
+        serverName: parsedConfig.serverName,
+        requestBody,
+        oauthRequiredHint: true,
+        expectedServerConfig: parsedConfig.sourceConfig,
+      });
+      if (!current || !matchesMCPRefreshAuthority(authority, current, credentialSetId)) {
+        throw new Error('MCP authority changed after refreshed credentials were stored');
+      }
+      await resolver.useIssuedResolution(current, async () => undefined);
+    },
+  };
+}
+
 async function resolveCurrentMCPDiscoveryScope({
   user,
   serverName,
@@ -529,6 +586,7 @@ async function resolveCurrentMCPDiscoveryScope({
 }
 
 module.exports = {
+  createMCPRefreshAuthorityLifecycle,
   matchesMCPToolAuthorityScope,
   resolveCurrentMCPAuthoritySnapshot,
   resolveCurrentMCPDiscoveryScope,

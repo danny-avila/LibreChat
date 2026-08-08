@@ -3,7 +3,10 @@ const { CacheKeys } = require('librechat-data-provider');
 const { createOAuthReconnectionManager, getFlowStateManager } = require('~/config');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
 const { getLogStores } = require('~/cache');
-const { resolveCurrentMCPToolAuthority } = require('./MCPDiscoveryScope');
+const {
+  createMCPRefreshAuthorityLifecycle,
+  resolveCurrentMCPToolAuthority,
+} = require('./MCPDiscoveryScope');
 const { getMCPAuthorityResolver } = require('./MCPAuthority');
 
 /**
@@ -37,6 +40,7 @@ async function initializeOAuthReconnectManager() {
           customUserVars: parsedConfig.customUserVars,
           oauthAuthorityScope: parsedConfig.catalogScope,
           authorityAuthorizationKind: parsedConfig.authorization.kind,
+          refreshAuthorityLifecycle: createMCPRefreshAuthorityLifecycle({ authority }),
           bind: async (action) =>
             await getMCPAuthorityResolver().useIssuedResolution(authority, action),
         };

@@ -14,6 +14,7 @@ const { exchangeOboToken } = require('~/server/services/OboTokenService');
 const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
 const { updateMCPServerTools } = require('~/server/services/Config');
 const {
+  createMCPRefreshAuthorityLifecycle,
   resolveCurrentMCPDiscoveryScope,
   resolveCurrentMCPToolAuthority,
 } = require('~/server/services/MCPDiscoveryScope');
@@ -274,6 +275,10 @@ async function reinitMCPServer({
             securityPolicy: parsedConfig.securityPolicy,
             oauthAuthorityScope: parsedConfig.catalogScope,
             authorityAuthorizationKind: parsedConfig.authorization.kind,
+            refreshAuthorityLifecycle: createMCPRefreshAuthorityLifecycle({
+              authority: bindAuthority,
+              requestBody,
+            }),
             graphTokenResolver: getGraphApiToken,
             oboTokenResolver: exchangeOboToken,
             oboTrustChecker: createOboTrustChecker(),
@@ -327,6 +332,10 @@ async function reinitMCPServer({
                 securityPolicy: parsedConfig.securityPolicy,
                 oauthAuthorityScope: parsedConfig.catalogScope,
                 authorityAuthorizationKind: parsedConfig.authorization.kind,
+                refreshAuthorityLifecycle: createMCPRefreshAuthorityLifecycle({
+                  authority: bindAuthority,
+                  requestBody,
+                }),
               });
             },
           );

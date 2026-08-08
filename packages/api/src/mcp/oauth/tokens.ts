@@ -751,6 +751,11 @@ export class MCPTokenStorage {
   ): Promise<MCPOAuthTokens | null> {
     const { userId, serverName, refreshTokens, createToken, signal, singleFlightScope } = params;
     const logPrefix = this.getLogPrefix(userId, serverName);
+    const refreshAuthorityLifecycle = params.refreshAuthorityLifecycle;
+
+    if (!refreshAuthorityLifecycle) {
+      throw new Error('MCP refresh authority lifecycle is required');
+    }
 
     const refreshKey = `${getTenantId() ?? ''}:${userId}:${serverName}:${singleFlightScope ?? ''}`;
     const inflight = this.inflightRefreshes.get(refreshKey);
@@ -781,6 +786,7 @@ export class MCPTokenStorage {
       ...params,
       refreshTokens,
       createToken,
+      refreshAuthorityLifecycle,
       signal: executionController.signal,
     }).finally(() => {
       clearTimeout(staleTimer);
@@ -875,6 +881,7 @@ export class MCPTokenStorage {
     existingAccessToken?: IToken | null;
     refreshTokens: NonNullable<GetTokensParams['refreshTokens']>;
     createToken: NonNullable<GetTokensParams['createToken']>;
+    refreshAuthorityLifecycle: NonNullable<GetTokensParams['refreshAuthorityLifecycle']>;
     /** Internal stale-abort signal owned by `forceRefreshTokens` — never a caller's. */
     signal: AbortSignal;
   }): Promise<MCPOAuthTokens | null> {
@@ -976,9 +983,7 @@ export class MCPTokenStorage {
       }
 
       const exchange = async () => await refreshTokens(decryptedRefreshToken, metadata, signal);
-      const newTokens = refreshAuthorityLifecycle
-        ? await refreshAuthorityLifecycle.exchange(exchange)
-        : await exchange();
+      const newTokens = await refreshAuthorityLifecycle.exchange(exchange);
 
       logger.debug(`${logPrefix} Refresh completed`, {
         has_new_access_token: !!newTokens.access_token,
@@ -1007,10 +1012,23 @@ export class MCPTokenStorage {
           metadata: storedClientMetadata,
           expectedCredentialSetId: refreshCredentialSetId,
         });
-      const storedTokens = refreshAuthorityLifecycle
-        ? await refreshAuthorityLifecycle.store(newTokens, store)
-        : await store();
-      await refreshAuthorityLifecycle?.accept(storedTokens);
+      const storedTokens = await refreshAuthorityLifecycle.store(newTokens, store);
+      try {
+        await refreshAuthorityLifecycle.accept(storedTokens);
+      } catch (authorityError) {
+        const storedCredentialSetId = storedTokens.credential_set_id;
+        if (deleteTokens && storedCredentialSetId) {
+          try {
+            await deleteTokens({ userId, metadataCredentialSetId: storedCredentialSetId });
+          } catch (cleanupError) {
+            logger.warn(`${logPrefix} Failed to remove rejected refreshed credentials`, {
+              error: cleanupError,
+              credentialSetId: storedCredentialSetId,
+            });
+          }
+        }
+        throw authorityError;
+      }
 
       if (onRefreshSuccess) {
         try {
@@ -1082,6 +1100,7 @@ export class MCPTokenStorage {
     deleteTokens,
     refreshTokens,
     singleFlightScope,
+    refreshAuthorityLifecycle,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -1130,6 +1149,7 @@ export class MCPTokenStorage {
           deleteTokens,
           refreshTokens,
           singleFlightScope,
+          refreshAuthorityLifecycle,
           existingAccessToken: accessTokenData,
         });
       }

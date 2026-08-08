@@ -54,6 +54,7 @@ const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const {
+  createMCPRefreshAuthorityLifecycle,
   resolveCurrentMCPDiscoveryScope,
   resolveCurrentMCPToolAuthority,
 } = require('~/server/services/MCPDiscoveryScope');
@@ -844,6 +845,9 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                 customUserVars: parsedConfig.customUserVars,
                 oauthAuthorityScope: parsedConfig.catalogScope,
                 authorityAuthorizationKind: parsedConfig.authorization.kind,
+                refreshAuthorityLifecycle: createMCPRefreshAuthorityLifecycle({
+                  authority: reconnectAuthority,
+                }),
                 tokenMethods: {
                   findToken: db.findToken,
                   findTokens: db.findTokens,

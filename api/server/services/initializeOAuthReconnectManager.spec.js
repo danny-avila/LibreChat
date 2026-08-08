@@ -2,6 +2,11 @@ const mockCreateOAuthReconnectionManager = jest.fn();
 const mockResolveCurrentMCPToolAuthority = jest.fn();
 const mockUseIssuedResolution = jest.fn(async (resolution, action) => await action(resolution));
 const mockTenantStorageRun = jest.fn(async (_store, action) => await action());
+const mockCreateMCPRefreshAuthorityLifecycle = jest.fn(() => ({
+  exchange: async (action) => await action(),
+  store: async (_tokens, action) => await action(),
+  accept: async () => undefined,
+}));
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -30,6 +35,7 @@ jest.mock('~/cache', () => ({
 }));
 
 jest.mock('./MCPDiscoveryScope', () => ({
+  createMCPRefreshAuthorityLifecycle: mockCreateMCPRefreshAuthorityLifecycle,
   resolveCurrentMCPToolAuthority: mockResolveCurrentMCPToolAuthority,
 }));
 
