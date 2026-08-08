@@ -4,6 +4,7 @@ import {
   bedrockModels,
   configSchema,
   excludedKeys,
+  LEGACY_LOCAL_OCR_STRATEGY,
   OCRStrategy,
   ocrSchema,
   resolveEndpointType,
@@ -721,12 +722,23 @@ describe('OCRStrategy / FileSources coupling', () => {
     );
   });
 
-  it.each([FileSources.document_parser, FileSources.pdf_inspector, FileSources.anydoc])(
+  it.each([FileSources.pdf_inspector, FileSources.anydoc])(
     'rejects local parser %s as an OCR configuration strategy',
     (strategy) => {
       expect(ocrSchema.safeParse({ strategy }).success).toBe(false);
     },
   );
+
+  /**
+   * `document_parser` was a valid `ocr.strategy` from v0.8.3 through v0.8.6. Rejecting
+   * it here would make `loadCustomConfig` exit(1) on every upgraded deployment that
+   * still has it in `librechat.yaml`, so the value stays parseable; `loadOCRConfig`
+   * is what reduces it to "no OCR provider configured".
+   */
+  it('keeps accepting the deprecated document_parser strategy', () => {
+    expect(LEGACY_LOCAL_OCR_STRATEGY).toBe(FileSources.document_parser);
+    expect(ocrSchema.safeParse({ strategy: LEGACY_LOCAL_OCR_STRATEGY }).success).toBe(true);
+  });
 
   it.each([
     OCRStrategy.MISTRAL_OCR,
