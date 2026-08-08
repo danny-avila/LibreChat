@@ -113,6 +113,25 @@ describePg('chat search composition root', () => {
   }, 180_000);
 
   /**
+   * A pod that only projects — sync on, writer URL set, no reader URL — still
+   * needs a schema to project into. Gating provisioning on the *reader* being
+   * configured would have left exactly this deployment writing to nothing.
+   */
+  it('provisions the schema for a pod that projects but does not serve', async () => {
+    await admin.query('DROP SCHEMA IF EXISTS chat_search CASCADE');
+    delete process.env.CHAT_SEARCH_DATABASE_URL;
+
+    const stack = await startChatSearch({ mongoose });
+    try {
+      expect(stack.migrated).toContain('001_schema.sql');
+      expect(stack.chatSearch).toBeNull();
+      expect(stack.isProjecting()).toBe(true);
+    } finally {
+      await stack.stop();
+    }
+  }, 120_000);
+
+  /**
    * A deployment that configured nothing must boot exactly as it did before,
    * which means no pool, no projector and no throw — just no search.
    */

@@ -7,9 +7,9 @@ import {
 } from '@librechat/data-schemas';
 import type { ChatSearch, SearchPool } from './types';
 import type { QueryEmbedder } from './search';
-import { chatSearchConfigured, createChatSearch } from './service';
 import { applyRolePasswords, migrate } from './migrate';
 import { createMongoSourceReader } from './source';
+import { createChatSearch } from './service';
 import { createSearchPool } from './pool';
 import { Projector } from './projector';
 
@@ -159,16 +159,21 @@ async function startProjector(
  * says so — refusing to start would turn a search outage into a total one.
  */
 export async function startChatSearch(options: ChatSearchStackOptions): Promise<ChatSearchStack> {
+  /**
+   * Gated on the owner URL alone, deliberately. Gating on the *reader* being
+   * configured would leave a pod that runs only the projector — sync on, writer
+   * URL set, no reader URL — projecting against a schema nobody migrated.
+   * Supplying an owner connection is the operator saying "migrate this", and it
+   * is the only signal that means that.
+   */
   let migrated: readonly string[] = [];
-  if (chatSearchConfigured()) {
-    try {
-      migrated = await provisionSchema();
-    } catch (error) {
-      logger.error(
-        '[chatSearch] schema provisioning failed; search will be degraded until it succeeds',
-        error,
-      );
-    }
+  try {
+    migrated = await provisionSchema();
+  } catch (error) {
+    logger.error(
+      '[chatSearch] schema provisioning failed; search will be degraded until it succeeds',
+      error,
+    );
   }
 
   let chatSearch: ChatSearch | null = null;
