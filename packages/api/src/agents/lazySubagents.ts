@@ -130,7 +130,10 @@ export function selectLazySubagentConfig(agent: VersionedAgent): Omit<VersionedA
 
 /** Deterministic descriptor identity for a persisted lazy subagent. */
 export function getLazySubagentConfigId(agent: VersionedAgent): string {
-  const version = Number.isInteger(agent.version) && agent.version >= 0 ? agent.version : 0;
+  const version =
+    agent.version != null && Number.isInteger(agent.version) && agent.version >= 0
+      ? agent.version
+      : 0;
   const fingerprint = createHash('sha256')
     .update(canonicalize(selectLazySubagentConfig(agent)))
     .digest('hex');

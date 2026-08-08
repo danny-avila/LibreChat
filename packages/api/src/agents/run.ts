@@ -423,8 +423,23 @@ type LazySubagentAgent = Pick<
   | 'includeReasoningHistory'
 > & {
   configId: string;
+  subagentAgentConfigs?: RunAgent[];
   lazySubagentConfigs?: LazySubagentAgent[];
   resolve: (context: SubagentResolveContext) => Promise<RunAgent>;
+};
+
+type SubagentTreeNode = Pick<
+  RunAgent,
+  | 'id'
+  | 'provider'
+  | 'model'
+  | 'model_parameters'
+  | 'codeEnvAvailable'
+  | 'statefulCodeSessions'
+  | 'includeReasoningHistory'
+> & {
+  subagentAgentConfigs?: SubagentTreeNode[];
+  lazySubagentConfigs?: SubagentTreeNode[];
 };
 
 function isNonEmptyString(value: unknown): value is string {
@@ -862,7 +877,7 @@ function createLazySubagentConfig(
  */
 function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
   const visited = new Set<string>();
-  const pending = [...agents];
+  const pending: SubagentTreeNode[] = [...agents];
 
   for (let index = 0; index < pending.length; index++) {
     const agent = pending[index];
@@ -880,7 +895,7 @@ function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
     }
     for (const child of agent.lazySubagentConfigs ?? []) {
       if (!visited.has(child.id)) {
-        pending.push(child as RunAgent);
+        pending.push(child);
       }
     }
   }
@@ -942,7 +957,7 @@ function isAskUserQuestionAdminDisabled(appConfig?: AppConfig): boolean {
  */
 export function anyAgentHasStatefulSessions(agents: Array<RunAgent | null | undefined>): boolean {
   const visited = new Set<string>();
-  const pending = [...agents];
+  const pending: Array<SubagentTreeNode | null | undefined> = [...agents];
 
   for (let index = 0; index < pending.length; index++) {
     const agent = pending[index];
@@ -960,7 +975,7 @@ export function anyAgentHasStatefulSessions(agents: Array<RunAgent | null | unde
     }
     for (const child of agent.lazySubagentConfigs ?? []) {
       if (!visited.has(child.id)) {
-        pending.push(child as RunAgent);
+        pending.push(child);
       }
     }
   }
@@ -977,7 +992,7 @@ export function anyAgentReplaysReasoningContent(
   agents: Array<RunAgent | null | undefined>,
 ): boolean {
   const visited = new Set<string>();
-  const pending = [...agents];
+  const pending: Array<SubagentTreeNode | null | undefined> = [...agents];
 
   for (let index = 0; index < pending.length; index++) {
     const agent = pending[index];
@@ -995,7 +1010,7 @@ export function anyAgentReplaysReasoningContent(
     }
     for (const child of agent.lazySubagentConfigs ?? []) {
       if (!visited.has(child.id)) {
-        pending.push(child as RunAgent);
+        pending.push(child);
       }
     }
   }
