@@ -15,7 +15,7 @@ LibreChat will use one Mongo-wire MCP authority consistency Module.
 
 The Module owns one global MCP authority fence document. An authority mutation atomically acquires the clean fence, marks it dirty with an owner identifier, performs the mutation, and atomically publishes a new clean generation. Only the recorded owner may publish that generation.
 
-Proof construction reads a clean generation, performs its bounded authority reads, and reads the fence again. It succeeds only when both reads observe the same clean generation. Proofs carry that generation, and every authority-dependent effect asserts that the generation remains current immediately before the effect.
+Proof construction reads a clean generation from the primary, performs its bounded primary/majority authority reads, and finishes with a majority-acknowledged compare-and-set against that exact clean generation. The final fence write is the cross-provider linearization point, including across a primary change. Proofs carry the accepted generation, and every authority-dependent effect repeats the generation assertion immediately before the effect.
 
 The Implementation uses only atomic single-document `findOneAndUpdate` operations and bounded Mongo reads. Native MongoDB is the canonical engine. Amazon DocumentDB, Azure Cosmos DB for MongoDB, and FerretDB must pass the same Mongo-wire conformance suite; they do not receive separate authority Adapters. FerretDB is accessed through Mongo wire rather than a direct PostgreSQL authority path.
 
@@ -28,7 +28,8 @@ A crashed or uncertain mutation leaves the fence dirty. The Module never steals 
 - Standalone MongoDB no longer requires conversion to a replica set for MCP authority consistency.
 - MCP authority behavior has one Implementation and one conformance test surface across supported Mongo-wire engines.
 - Authority mutations are globally serialized initially, and any mutation invalidates all outstanding MCP authority proofs.
+- Every proof read and final proof assertion performs one small write to the global fence to establish its linearization point.
 - Every authority writer, including migrations and bulk or administrative paths, must use the Module. Direct database changes are outside the supported consistency contract.
-- MCP operations fail closed while a mutation or reconciliation is active; unrelated LibreChat operation remains available.
+- MCP operations fail closed while a mutation or reconciliation is active; unrelated LibreChat operations remain available.
 - Physical TTL cleanup must be authority-neutral because logical expiry is enforced when proofs are resolved and asserted.
 - The default-Compose replica-set migration in PR #14696 is not a prerequisite for MCP authority correctness.
