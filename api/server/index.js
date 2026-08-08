@@ -46,6 +46,7 @@ const {
   seedDatabase,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const { initializeChatSearch, shutdownChatSearch } = require('./services/Search');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
@@ -129,6 +130,18 @@ const startServer = async () => {
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
   });
+  /* Schema, reader and projector, in that order, from the one composition root
+   * both entry points share. Awaited, unlike indexSync: the routes below are
+   * mounted after this, so the schema exists and the backend is installed before
+   * anything can serve a search. Unawaited, a request arriving during boot gets
+   * an empty result from a backend that simply is not there yet.
+   *
+   * It does not throw — a deployment that configured nothing gets a no-op, and a
+   * misconfigured one is logged and serves without search rather than refusing
+   * to start. Serving and projecting stay independent: a pod that loses the
+   * projector election still answers every search. */
+  await initializeChatSearch();
+  registerShutdownTask('chat search', () => shutdownChatSearch());
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);

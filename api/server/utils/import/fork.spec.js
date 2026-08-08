@@ -7,6 +7,7 @@ jest.mock('~/models', () => ({
   bulkSaveMessages: jest.fn(),
   bulkIncrementTagCounts: jest.fn(),
   getSharedMessages: jest.fn(),
+  enqueueSearchEvents: jest.fn().mockResolvedValue(0),
 }));
 
 jest.mock('~/server/controllers/ModelController', () => ({

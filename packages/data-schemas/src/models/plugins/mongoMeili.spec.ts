@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import mongoMeili, { type SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import createMeiliSink, { type SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import { applySearchSync } from '~/models/plugins/projection';
 import { createConversationModel } from '~/models/convo';
 import { createMessageModel } from '~/models/message';
 
@@ -40,12 +41,22 @@ const createDynamicMeiliModel = (modelName: string): DynamicMeiliModel => {
     },
   });
 
-  schema.plugin(mongoMeili, {
+  /**
+   * Meilisearch is a sink behind the search-sync plugin now: the sink factory
+   * registers the statics and the sync plugin owns every write hook.
+   */
+  const sink = createMeiliSink(schema, {
     mongoose,
     host: 'foo',
     apiKey: 'bar',
     indexName: modelName.toLowerCase(),
     primaryKey: 'docId',
+  });
+  applySearchSync(schema, {
+    mongoose,
+    kind: 'message',
+    primaryKey: 'docId',
+    sinks: [sink],
   });
 
   return mongoose.model<DynamicMeiliDocument>(modelName, schema) as unknown as DynamicMeiliModel;
@@ -88,9 +99,11 @@ describe('Meilisearch Mongoose plugin', () => {
   beforeAll(async () => {
     process.env = {
       ...OLD_ENV,
-      // Set a fake meilisearch host/key so that we activate the meilisearch plugin
+      // Set a fake meilisearch host/key so that we activate the meilisearch sink
       MEILI_HOST: 'foo',
       MEILI_MASTER_KEY: 'bar',
+      /** Writes are decoupled by default; this suite exercises the sink itself. */
+      MEILI_WRITES_ENABLED: 'true',
     };
 
     mongoServer = await MongoMemoryServer.create();

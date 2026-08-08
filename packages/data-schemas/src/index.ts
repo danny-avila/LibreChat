@@ -73,6 +73,24 @@ export {
 } from './config/tenantContext';
 export type { TenantContext, Scope } from './config/tenantContext';
 export {
+  dedupeSearchEvents,
+  deleteSearchEvents,
+  enqueueSearchEvents,
+  readSearchEvents,
+  searchEventKey,
+  searchEnqueueEnabled,
+  searchSyncEnabled,
+} from './search/events';
+export type { DrainedSearchEvent, SearchEventInput } from './search/events';
+export {
+  flattenContent,
+  isUnfinished,
+  isIndexableDocument,
+  effectiveTemporaryFlag,
+  normalizeSearchText,
+  preprocessObjectForIndex,
+} from './search/document';
+export {
   MCPServerNameMigrationError,
   createMCPAuthorityLookupIndexes,
   dropSupersededTenantIndexes,
