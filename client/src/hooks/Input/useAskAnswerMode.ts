@@ -187,12 +187,15 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       const composerAnswer = formContext?.getValues('text') ?? answerText;
       morphTransition(() => {
         setAnswerDraft({ actionId: liveAsk.actionId, text: composerAnswer });
+        if (!saveDrafts) {
+          formContext?.reset();
+        }
         setCollapsedIds((prev) =>
           prev.includes(liveAsk.actionId) ? prev : [...prev, liveAsk.actionId],
         );
       });
     }
-  }, [liveAsk, formContext, answerText, setAnswerDraft, setCollapsedIds]);
+  }, [liveAsk, formContext, answerText, saveDrafts, setAnswerDraft, setCollapsedIds]);
 
   const expand = useCallback(() => {
     if (liveAsk) {
