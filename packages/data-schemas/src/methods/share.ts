@@ -411,6 +411,58 @@ function anonymizeMessages(
 }
 
 /**
+ * An update omits the target when the share dialog cannot resolve the conversation's own
+ * branch tail, which is every update started from the conversation list rather than the
+ * open pane. The stored target is the tail as of the last publish, so reusing it verbatim
+ * would republish the identical snapshot and silently drop the turns added since.
+ *
+ * Walking forward to the newest descendant is the same move an update from the open pane
+ * already makes by sending the live tail, so both entry points now publish the newer turns.
+ * Note `getMessagesUpToTarget` bounds the snapshot by the target's *level*, not by a single
+ * path, so this widens the shared depth; it stays bounded by the branch's own tail rather
+ * than clearing the target, which would drop the bound entirely.
+ */
+function advanceTargetToBranchTail(messages: t.IMessage[], targetMessageId: string): string {
+  const childrenByParent = new Map<string, t.IMessage[]>();
+  for (const message of messages) {
+    const parentMessageId = message.parentMessageId;
+    if (!parentMessageId) {
+      continue;
+    }
+    const siblings = childrenByParent.get(parentMessageId);
+    if (siblings) {
+      siblings.push(message);
+      continue;
+    }
+    childrenByParent.set(parentMessageId, [message]);
+  }
+
+  let current = targetMessageId;
+  const visited = new Set([current]);
+  for (;;) {
+    const children = childrenByParent.get(current);
+    if (!children?.length) {
+      return current;
+    }
+
+    let newest = children[0];
+    for (const child of children) {
+      const childTime = child.createdAt?.getTime() ?? 0;
+      const newestTime = newest.createdAt?.getTime() ?? 0;
+      if (childTime > newestTime) {
+        newest = child;
+      }
+    }
+
+    if (!newest?.messageId || visited.has(newest.messageId)) {
+      return current;
+    }
+    visited.add(newest.messageId);
+    current = newest.messageId;
+  }
+}
+
+/**
  * Filter messages up to and including the target message (branch-specific)
  * Similar to getMessagesUpToTargetLevel from fork utilities
  */
@@ -965,13 +1017,21 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       }
 
       const hasNewExpiration = expiredAt instanceof Date;
-      const resolvedTargetMessageId = targetMessageId ?? share.targetMessageId;
+      const storedTargetMessageId = targetMessageId ?? share.targetMessageId;
       if (
-        resolvedTargetMessageId &&
-        !updatedMessages.some((message) => message.messageId === resolvedTargetMessageId)
+        storedTargetMessageId &&
+        !updatedMessages.some((message) => message.messageId === storedTargetMessageId)
       ) {
         throw new ShareServiceError('Target message not found', 'TARGET_MESSAGE_NOT_FOUND');
       }
+      const resolvedTargetMessageId =
+        targetMessageId ??
+        (storedTargetMessageId
+          ? advanceTargetToBranchTail(
+              updatedMessages as unknown as t.IMessage[],
+              storedTargetMessageId,
+            )
+          : undefined);
       const messagesForSnapshot = updatedMessages as unknown as t.IMessage[];
       const fileSnapshots = snapshotFiles
         ? await buildFileSnapshots(

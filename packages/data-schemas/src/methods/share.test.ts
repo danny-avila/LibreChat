@@ -1280,6 +1280,142 @@ describe('Share Methods', () => {
       expect(updatedShare?.targetMessageId).toBe(targetMessageId);
     });
 
+    test('should publish turns added since the last share when no target override is given', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const rootMessageId = `msg_${nanoid()}`;
+      const sharedAnswerId = `msg_${nanoid()}`;
+      const laterPromptId = `msg_${nanoid()}`;
+      const laterAnswerId = `msg_${nanoid()}`;
+
+      await Conversation.create({ conversationId, title: 'Ongoing', user: userId });
+      const initialMessages = await Message.create([
+        {
+          messageId: rootMessageId,
+          conversationId,
+          user: userId,
+          text: 'First question',
+          isCreatedByUser: true,
+          parentMessageId: Constants.NO_PARENT,
+        },
+        {
+          messageId: sharedAnswerId,
+          conversationId,
+          user: userId,
+          text: 'First answer',
+          isCreatedByUser: false,
+          parentMessageId: rootMessageId,
+        },
+      ]);
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: initialMessages.map((message) => message._id),
+        targetMessageId: sharedAnswerId,
+      });
+
+      await Message.create([
+        {
+          messageId: laterPromptId,
+          conversationId,
+          user: userId,
+          text: 'Follow-up question',
+          isCreatedByUser: true,
+          parentMessageId: sharedAnswerId,
+        },
+        {
+          messageId: laterAnswerId,
+          conversationId,
+          user: userId,
+          text: 'Follow-up answer',
+          isCreatedByUser: false,
+          parentMessageId: laterPromptId,
+        },
+      ]);
+
+      const result = await shareMethods.updateSharedLink(userId, shareId);
+      const sharedMessages = await shareMethods.getSharedMessages(result.shareId);
+
+      expect(result.shareId).toBe(shareId);
+      expect(result.targetMessageId).toBe(laterAnswerId);
+      expect(sharedMessages?.messages.map((message) => message.text)).toEqual([
+        'First question',
+        'First answer',
+        'Follow-up question',
+        'Follow-up answer',
+      ]);
+    });
+
+    test('should advance to the newest sibling and stay bounded by that level', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const rootMessageId = `msg_${nanoid()}`;
+      const olderBranchId = `msg_${nanoid()}`;
+      const newerBranchId = `msg_${nanoid()}`;
+      const deeperMessageId = `msg_${nanoid()}`;
+
+      await Conversation.create({ conversationId, title: 'Branched', user: userId });
+      const rootMessage = await Message.create({
+        messageId: rootMessageId,
+        conversationId,
+        user: userId,
+        text: 'Question',
+        isCreatedByUser: true,
+        parentMessageId: Constants.NO_PARENT,
+      });
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [rootMessage._id],
+        targetMessageId: rootMessageId,
+      });
+
+      await Message.create({
+        messageId: olderBranchId,
+        conversationId,
+        user: userId,
+        text: 'Discarded regeneration',
+        isCreatedByUser: false,
+        parentMessageId: rootMessageId,
+        createdAt: new Date(Date.now() - 60_000),
+      });
+      await Message.create({
+        messageId: newerBranchId,
+        conversationId,
+        user: userId,
+        text: 'Kept regeneration',
+        isCreatedByUser: false,
+        parentMessageId: rootMessageId,
+        createdAt: new Date(),
+      });
+
+      await Message.create({
+        messageId: deeperMessageId,
+        conversationId,
+        user: userId,
+        text: 'Reply below the advanced target',
+        isCreatedByUser: true,
+        parentMessageId: newerBranchId,
+      });
+
+      const result = await shareMethods.updateSharedLink(userId, shareId);
+      const sharedMessages = await shareMethods.getSharedMessages(result.shareId);
+      const texts = sharedMessages?.messages.map((message) => message.text) ?? [];
+
+      // The tail is the deepest descendant, so the reply below the regeneration is included.
+      expect(result.targetMessageId).toBe(deeperMessageId);
+      expect(texts).toContain('Kept regeneration');
+      expect(texts).toContain('Reply below the advanced target');
+      // `getMessagesUpToTarget` bounds by level, so the same-level sibling comes along.
+      expect(texts).toContain('Discarded regeneration');
+    });
+
     test('should not allow user to update shared link they do not own', async () => {
       const ownerUserId = new mongoose.Types.ObjectId().toString();
       const otherUserId = new mongoose.Types.ObjectId().toString();

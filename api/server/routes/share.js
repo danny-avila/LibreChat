@@ -211,6 +211,17 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
   const source = file.source || FileSources.local;
   const { getDownloadStream, getDownloadURL } = getStrategyFunctions(source);
 
+  // An update keeps the shareId, so these URLs are stable across re-publishes. Without
+  // revalidation a viewer's cached copy would outlive a revoked "share files" choice or a
+  // replaced snapshot by the max-age. The tag mirrors the fields resolveShareFile pins the
+  // snapshot on, so unchanged files still settle on a 304 rather than re-sending bytes.
+  const etag = `"share-${file.file_id}-${file.previewRevision ?? 0}-${file.bytes ?? 0}"`;
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'private, no-cache');
+  if (req.headers['if-none-match'] === etag) {
+    return res.status(304).end();
+  }
+
   // Inline only safe preview types; anything else is forced to attachment.
   const disposition =
     requestedDisposition === 'inline' && SAFE_INLINE_TYPES.has(file.type) ? 'inline' : 'attachment';
@@ -250,8 +261,6 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
     'Content-Type',
     disposition === 'inline' ? file.type || 'application/octet-stream' : 'application/octet-stream',
   );
-  res.setHeader('Cache-Control', 'private, max-age=3600');
-
   return new Promise((resolve, reject) => {
     const cleanup = () => {
       fileStream.removeListener('error', onError);
