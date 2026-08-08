@@ -50,6 +50,7 @@ const Files = ({ message }: { message?: TMessage }) => {
         fileType={selectedFile?.type ?? undefined}
         fileSize={(selectedFile as TFile)?.bytes}
         source={selectedFile?.source}
+        hasTextPreview={selectedFile?.hasTextPreview}
       />
     </>
   );

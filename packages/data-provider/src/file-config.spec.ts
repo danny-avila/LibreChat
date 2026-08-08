@@ -329,6 +329,12 @@ describe('documentParser file config', () => {
     expect(merged.documentParser?.supportedMimeTypes).toEqual(documentParserMimeTypes);
   });
 
+  it('preserves the server-derived OCR availability signal', () => {
+    const merged = mergeFileConfig({ ocr: { enabled: true } });
+
+    expect(merged.ocr?.enabled).toBe(true);
+  });
+
   it('lets an admin allowlist take precedence over the provider default', () => {
     const merged = mergeFileConfig({
       documentParser: { supportedMimeTypes: ['^application\\/pdf$'] },

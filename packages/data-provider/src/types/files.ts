@@ -84,6 +84,8 @@ export type FileConfig = {
   };
   ocr?: {
     supportedMimeTypes?: RegexLike[];
+    /** Server-derived signal that an OCR strategy is configured. */
+    enabled?: boolean;
   };
   documentParser?: {
     supportedMimeTypes?: RegexLike[];
@@ -114,6 +116,7 @@ export type FileConfigInput = {
   };
   ocr?: {
     supportedMimeTypes?: string[];
+    enabled?: boolean;
   };
   documentParser?: {
     supportedMimeTypes?: string[];
@@ -152,6 +155,8 @@ export type TFile = {
   height?: number;
   expiresAt?: string | Date;
   preview?: string;
+  /** Share-safe marker for a parsed document whose durable preview is extracted text. */
+  hasTextPreview?: boolean;
   text?: string;
   /**
    * Format of the `text` field. `'html'` means the backend produced

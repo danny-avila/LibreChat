@@ -131,6 +131,7 @@ const SteerPart = memo(function SteerPart({
           fileType={selectedFile?.type ?? undefined}
           fileSize={(selectedFile as TFile | null)?.bytes}
           source={selectedFile?.source}
+          hasTextPreview={selectedFile?.hasTextPreview}
         />
       )}
     </div>

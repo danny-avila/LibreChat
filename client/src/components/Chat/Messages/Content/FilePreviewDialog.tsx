@@ -29,6 +29,8 @@ interface FilePreviewDialogProps {
    * cannot supply it rather than promising text that was never stored.
    */
   source?: FileSources;
+  /** Share-safe replacement for `source`, which shared-message sanitization removes. */
+  hasTextPreview?: boolean;
 }
 
 function getFileExtension(filename: string): string {
@@ -156,6 +158,7 @@ export default function FilePreviewDialog({
   fileType,
   fileSize,
   source,
+  hasTextPreview,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
@@ -165,7 +168,9 @@ export default function FilePreviewDialog({
    * parsed record, and offering its "extracted text" hides the real "preview
    * unavailable" outcome behind an empty state.
    */
-  const showParsedText = source === FileSources.text && isParsedDocument(fileType, fileName);
+  const showParsedText =
+    (source === FileSources.text || hasTextPreview === true) &&
+    isParsedDocument(fileType, fileName);
   const { shareId } = useShareContext();
   const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
   const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);

@@ -196,6 +196,9 @@ const resolveShareFile = async (req, res, next) => {
 
 /** Stream (or redirect to) a snapshotted file from its original stored object. */
 const streamSharedFile = async (req, res, file, requestedDisposition) => {
+  if (file.hasTextPreview === true) {
+    return res.status(404).json({ message: 'File has no shared binary' });
+  }
   const source = file.source || FileSources.local;
   const { getDownloadStream, getDownloadURL } = getStrategyFunctions(source);
 

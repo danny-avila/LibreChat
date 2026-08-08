@@ -19,6 +19,8 @@ export interface SharedFileSnapshot {
   width?: number;
   height?: number;
   model?: string;
+  /** Preview-only parsed record with durable text in the live File document. */
+  hasTextPreview?: boolean;
   /** Deferred-preview generation marker captured at share time. The share routes
    * refuse to serve when the live file's revision no longer matches (the file_id
    * was reused/overwritten by a later turn), so a link can't surface post-share

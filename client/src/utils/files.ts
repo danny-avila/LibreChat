@@ -386,6 +386,7 @@ export type UploadOptionContext = {
   fileSearchEnabled: boolean;
   codeEnabled: boolean;
   contextEnabled: boolean;
+  ocrEnabled: boolean;
   fileSearchAllowedByAgent: boolean;
   codeAllowedByAgent: boolean;
   fileConfig: FileConfig | null;
@@ -432,14 +433,23 @@ const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean =
   return type.startsWith('image/');
 };
 
-/** Known local document formats are governed by the document-parser allowlist.
- * General text and OCR matchers apply only to files outside that provider boundary. */
-const isContextType = (type: string, fileConfig: FileConfig | null): boolean => {
+/** Known document formats prefer the local parser allowlist. A deployment-supplied
+ * OCR override may provide the route when local parsing deliberately excludes one. */
+const isContextType = (
+  type: string,
+  fileConfig: FileConfig | null,
+  allowConfiguredOcr = true,
+): boolean => {
   if (checkType(type, documentParserMimeTypes)) {
-    return checkType(
+    const localParserEnabled = checkType(
       type,
       fileConfig?.documentParser?.supportedMimeTypes || documentParserMimeTypes,
     );
+    const configuredOcrEnabled =
+      allowConfiguredOcr &&
+      fileConfig?.ocr?.enabled === true &&
+      checkType(type, fileConfig.ocr.supportedMimeTypes || []);
+    return localParserEnabled || configuredOcrEnabled;
   }
 
   return checkType(type, [
@@ -487,7 +497,7 @@ export const getViableUploadOptions = (
   ) {
     options.push(EToolResources.execute_code);
   }
-  if (ctx.contextEnabled && every((type) => isContextType(type, ctx.fileConfig))) {
+  if (ctx.contextEnabled && every((type) => isContextType(type, ctx.fileConfig, ctx.ocrEnabled))) {
     options.push(EToolResources.context);
   }
   return options;

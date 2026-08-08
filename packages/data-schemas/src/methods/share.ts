@@ -1,6 +1,12 @@
 import { nanoid } from 'nanoid';
 import { Types } from 'mongoose';
-import { Constants, ContentTypes, FileSources, Tools } from 'librechat-data-provider';
+import {
+  Constants,
+  ContentTypes,
+  FileSources,
+  Tools,
+  documentParserSources,
+} from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
@@ -133,9 +139,9 @@ function sanitizeSharedAttachments(attachments: unknown): t.SharedFile[] | undef
  * Sources backed by a durable stored object that the share-scoped routes can
  * stream with only `storageKey`/`filepath` + the request. Sources requiring
  * owner-specific credentials (openai/azure assistants, execute_code, vectordb,
- * OCR/parser pipelines) are skipped — those files degrade to a 404 in the share
- * view. `FileSources.text` is intentionally excluded: its `filepath` is a Multer
- * temp path that the upload route deletes, so there is nothing durable to stream.
+ * OCR pipelines) are skipped. Parsed `FileSources.text` records are admitted as
+ * preview-only snapshots because their extracted text is durable in MongoDB even
+ * though their original upload path is not.
  */
 const SNAPSHOT_STREAMABLE_SOURCES = new Set<string>([
   FileSources.local,
@@ -217,20 +223,23 @@ async function buildFileSnapshots(
   const snapshots: t.SharedFileSnapshot[] = [];
   for (const file of files) {
     const source = file.source ?? FileSources.local;
-    if (!SNAPSHOT_STREAMABLE_SOURCES.has(source)) {
+    const hasTextPreview =
+      source === FileSources.text && documentParserSources.has(file.filepath ?? '');
+    if (!SNAPSHOT_STREAMABLE_SOURCES.has(source) && !hasTextPreview) {
       continue;
     }
     snapshots.push({
       file_id: file.file_id,
       source,
       storageKey: file.storageKey,
-      filepath: file.filepath,
+      ...(hasTextPreview ? {} : { filepath: file.filepath }),
       type: file.type,
       filename: file.filename,
       bytes: file.bytes,
       width: file.width,
       height: file.height,
       model: file.model,
+      ...(hasTextPreview && { hasTextPreview: true }),
       previewRevision: file.previewRevision,
       tenantId: file.tenantId,
     });
@@ -356,20 +365,31 @@ function shareFileRoute(shareId: string, fileId: string): string {
 function applyShareFileRoute(
   file: t.SharedFile,
   shareId: string,
-  snapshotIds: Set<string>,
+  snapshots: Map<string, t.SharedFileSnapshot>,
 ): t.SharedFile {
   const fileId = file.file_id;
-  if (typeof fileId === 'string' && snapshotIds.has(fileId)) {
-    const route = shareFileRoute(shareId, fileId);
-    const next: t.SharedFile = { ...file, filepath: route };
-    if (file.preview !== undefined) {
-      next.preview = route;
+  if (typeof fileId === 'string') {
+    const snapshot = snapshots.get(fileId);
+    if (snapshot?.hasTextPreview === true) {
+      const next: t.SharedFile = { ...file, hasTextPreview: true };
+      delete next.filepath;
+      delete next.preview;
+      return next;
     }
-    return next;
+    if (snapshot) {
+      const route = shareFileRoute(shareId, fileId);
+      const next: t.SharedFile = { ...file, filepath: route };
+      delete next.hasTextPreview;
+      if (file.preview !== undefined) {
+        next.preview = route;
+      }
+      return next;
+    }
   }
   // Not snapshotted (e.g. a non-streamable source on an included link): neutralize
   // the render URLs so the owner's original path can't be loaded through the share.
   const next: t.SharedFile = { ...file };
+  delete next.hasTextPreview;
   delete next.filepath;
   delete next.preview;
   return next;
@@ -388,7 +408,7 @@ export function anonymizeSharedContent(
     newConvoId: string;
     newMessageId: string;
     shareId: string;
-    snapshotIds: Set<string>;
+    snapshots: Map<string, t.SharedFileSnapshot>;
     includeFiles: boolean;
     sanitizeUIResourceMarkers?: boolean;
   },
@@ -418,7 +438,7 @@ export function anonymizeSharedContent(
               ...(file.messageId !== undefined && { messageId: params.newMessageId }),
             },
             params.shareId,
-            params.snapshotIds,
+            params.snapshots,
           ),
         )
       : undefined;
@@ -454,7 +474,7 @@ function anonymizeMessages(
   messages: t.IMessage[],
   newConvoId: string,
   shareId: string,
-  snapshotIds: Set<string>,
+  snapshots: Map<string, t.SharedFileSnapshot>,
   includeFiles: boolean,
   anonymizeMessageId: (id: string) => string,
   anonymizeAssistantId: (id: string) => string,
@@ -479,7 +499,7 @@ function anonymizeMessages(
               conversationId: newConvoId,
             },
             shareId,
-            snapshotIds,
+            snapshots,
           ),
         )
       : undefined;
@@ -494,7 +514,7 @@ function anonymizeMessages(
               ...(file.messageId !== undefined && { messageId: newMessageId }),
             },
             shareId,
-            snapshotIds,
+            snapshots,
           ),
         )
       : undefined;
@@ -515,7 +535,7 @@ function anonymizeMessages(
         newConvoId,
         newMessageId,
         shareId,
-        snapshotIds,
+        snapshots,
         includeFiles,
         sanitizeUIResourceMarkers: message.isCreatedByUser !== true,
       }),
@@ -826,9 +846,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
           await buildFileSnapshots(mongoose, messagesToShare, share.user),
         );
       }
-      const snapshotIds = includeFiles
-        ? new Set<string>((fileSnapshots ?? []).map((snapshot) => snapshot.file_id))
-        : new Set<string>();
+      const snapshots = includeFiles
+        ? new Map<string, t.SharedFileSnapshot>(
+            (fileSnapshots ?? []).map((snapshot) => [snapshot.file_id, snapshot]),
+          )
+        : new Map<string, t.SharedFileSnapshot>();
       const result: t.SharedMessagesResult = {
         shareId: resolvedShareId,
         title: share.title,
@@ -839,7 +861,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
           messagesToShare,
           newConvoId,
           resolvedShareId,
-          snapshotIds,
+          snapshots,
           includeFiles,
           anonymizeMessageId,
           anonymizeAssistantId,

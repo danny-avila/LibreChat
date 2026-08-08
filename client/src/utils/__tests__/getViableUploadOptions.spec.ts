@@ -33,6 +33,7 @@ const baseCtx = (over: Partial<UploadOptionContext> = {}): UploadOptionContext =
   fileSearchEnabled: true,
   codeEnabled: true,
   contextEnabled: true,
+  ocrEnabled: true,
   fileSearchAllowedByAgent: true,
   codeAllowedByAgent: true,
   fileConfig,
@@ -57,7 +58,25 @@ describe('getViableUploadOptions', () => {
       ]);
     });
 
-    it('does not route a known document excluded by the document-parser allowlist', () => {
+    it('routes a locally excluded document through explicitly configured OCR', () => {
+      const parserRestrictedConfig = {
+        text: { supportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] },
+        ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)], enabled: true },
+        documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+        stt: { supportedMimeTypes: [] },
+      } as unknown as FileConfig;
+      const ctx = baseCtx({
+        fileConfig: parserRestrictedConfig,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+      });
+
+      expect(getViableUploadOptions([file(DOCX, 'report.docx')], ctx)).toEqual([
+        EToolResources.context,
+      ]);
+    });
+
+    it('does not treat the default OCR type catalog as a configured fallback', () => {
       const parserRestrictedConfig = {
         text: { supportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] },
         ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)] },
@@ -68,6 +87,23 @@ describe('getViableUploadOptions', () => {
         fileConfig: parserRestrictedConfig,
         fileSearchEnabled: false,
         codeEnabled: false,
+      });
+
+      expect(getViableUploadOptions([file(DOCX, 'report.docx')], ctx)).toEqual([]);
+    });
+
+    it('does not offer configured OCR when the agent lacks the OCR capability', () => {
+      const parserRestrictedConfig = {
+        text: { supportedMimeTypes: [] },
+        ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)], enabled: true },
+        documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+        stt: { supportedMimeTypes: [] },
+      } as unknown as FileConfig;
+      const ctx = baseCtx({
+        fileConfig: parserRestrictedConfig,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+        ocrEnabled: false,
       });
 
       expect(getViableUploadOptions([file(DOCX, 'report.docx')], ctx)).toEqual([]);

@@ -776,6 +776,39 @@ describe('processAgentFileUpload', () => {
       expect(checkCapability).not.toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
     });
 
+    test('propagates a PDF page-limit refusal without sending the PDF to configured OCR', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
+      const pageLimitError = Object.assign(
+        new Error('PDF contains 4000 pages, exceeding the 250-page fallback limit'),
+        {
+          name: 'PdfPageLimitError',
+          code: 'PDF_PAGE_LIMIT',
+        },
+      );
+      const localUpload = jest.fn().mockRejectedValue(pageLimitError);
+      const remoteUpload = jest.fn().mockResolvedValue({
+        text: 'remote OCR text',
+        bytes: 15,
+        filepath: FileSources.mistral_ocr,
+      });
+      getStrategyFunctions.mockImplementation((source) => ({
+        handleFileUpload: source === FileSources.document_parser ? localUpload : remoteUpload,
+      }));
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        originalname: 'page-flood.pdf',
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toBe(pageLimitError);
+
+      expect(localUpload).toHaveBeenCalledTimes(1);
+      expect(remoteUpload).not.toHaveBeenCalled();
+      expect(checkCapability).not.toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
+    });
+
     test('does not bypass the document-parser allowlist when configured OCR fails', async () => {
       mergeFileConfig.mockReturnValue(
         makeFileConfig({

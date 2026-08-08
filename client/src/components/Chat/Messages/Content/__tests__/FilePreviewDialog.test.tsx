@@ -4,6 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import FilePreviewDialog from '../FilePreviewDialog';
 
 const mockDownload = jest.fn().mockResolvedValue({ data: null });
+let mockShareId: string | undefined;
 
 jest.mock('~/data-provider', () => ({
   useFileDownload: () => ({ refetch: mockDownload }),
@@ -15,7 +16,7 @@ jest.mock('~/data-provider', () => ({
   }),
 }));
 
-jest.mock('~/Providers', () => ({ useShareContext: () => ({ shareId: undefined }) }));
+jest.mock('~/Providers', () => ({ useShareContext: () => ({ shareId: mockShareId }) }));
 
 jest.mock('recoil', () => ({
   ...jest.requireActual('recoil'),
@@ -29,7 +30,12 @@ const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 const EXTRACTED_TEXT = /## Slide one/;
 const PREVIEW_UNAVAILABLE = /Preview not available/i;
 
-const renderDialog = (fileType: string, fileName: string, source?: FileSources) =>
+const renderDialog = (
+  fileType: string,
+  fileName: string,
+  source?: FileSources,
+  hasTextPreview?: boolean,
+) =>
   render(
     <FilePreviewDialog
       open={true}
@@ -39,11 +45,15 @@ const renderDialog = (fileType: string, fileName: string, source?: FileSources) 
       fileType={fileType}
       fileSize={1024}
       source={source}
+      hasTextPreview={hasTextPreview}
     />,
   );
 
 describe('FilePreviewDialog', () => {
-  beforeEach(() => mockDownload.mockClear());
+  beforeEach(() => {
+    mockDownload.mockClear();
+    mockShareId = undefined;
+  });
 
   test.each([
     [PPTX, 'deck.pptx'],
@@ -73,6 +83,15 @@ describe('FilePreviewDialog', () => {
     /* A parsed record stores its text and no file, so the text panel must be the
      * initial view rather than a fallback after a binary request fails. */
     renderDialog('application/pdf', 'paper.pdf', FileSources.text);
+
+    expect(await screen.findByText(EXTRACTED_TEXT)).toBeInTheDocument();
+    expect(mockDownload).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+  });
+
+  test('uses the share-safe marker when shared-message sanitization removes source', async () => {
+    mockShareId = 'share-1';
+    renderDialog('application/pdf', 'paper.pdf', undefined, true);
 
     expect(await screen.findByText(EXTRACTED_TEXT)).toBeInTheDocument();
     expect(mockDownload).not.toHaveBeenCalled();

@@ -11,6 +11,19 @@ export type ExtractedDocumentText = {
   pagesNeedingOcr?: number[];
 };
 
+/** Hard refusal used to stop page-flooded PDFs from entering another parser. */
+export class PdfPageLimitError extends Error {
+  readonly code = 'PDF_PAGE_LIMIT';
+
+  constructor(
+    readonly pageCount: number,
+    readonly maxPages: number,
+  ) {
+    super(`PDF contains ${pageCount} pages, exceeding the ${maxPages}-page fallback limit`);
+    this.name = 'PdfPageLimitError';
+  }
+}
+
 /**
  * Flat text extraction with pdfjs, shared by the two callers that need it: the
  * pdf-inspector parser, which repairs the pages that engine drops, and the
@@ -74,9 +87,7 @@ export async function extractDocumentTextWithPages(
   try {
     const pdf: PDFDocumentProxy = await loadingTask.promise;
     if (pdf.numPages > maxPages) {
-      throw new Error(
-        `PDF contains ${pdf.numPages} pages, exceeding the ${maxPages}-page fallback limit`,
-      );
+      throw new PdfPageLimitError(pdf.numPages, maxPages);
     }
 
     let fullText = '';

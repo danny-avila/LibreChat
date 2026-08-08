@@ -88,6 +88,10 @@ const resolveEffectiveMimeType = (file) => {
 };
 
 const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';
+const isPdfPageLimitError = (err) =>
+  err?.code === 'PDF_PAGE_LIMIT' || err?.name === 'PdfPageLimitError';
+
+const isDocumentParserRefusal = (err) => isZipBombError(err) || isPdfPageLimitError(err);
 
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -852,7 +856,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
         return await handleFileUpload({ req, file, loadAuthValues });
       } catch (err) {
-        if (isZipBombError(err)) {
+        if (isDocumentParserRefusal(err)) {
           throw err;
         }
         logger.error(
