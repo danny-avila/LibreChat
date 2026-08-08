@@ -22,7 +22,7 @@ type StoredBinary = Buffer | Uint8Array | { buffer: Buffer };
 /**
  * `lean()` skips Mongoose casting, so a `Buffer` field arrives as the driver's
  * BSON `Binary`. `new Uint8Array(binary)` silently yields zero bytes, which
- * would make every signature check fail — normalize at the data-layer boundary
+ * would make every signature check fail. Normalize at the data-layer boundary
  * so callers can trust the declared `Buffer` type.
  */
 function toBuffer(value: StoredBinary): Buffer {
@@ -76,13 +76,20 @@ export function createPasskeyMethods(mongoose: typeof import('mongoose')): Passk
 
   /**
    * Persists the authenticator's signature counter after a successful assertion.
+   * Only advances when the new counter is greater than or equal to the stored
+   * value ($lte filter): greater for normal increments, equal for platform
+   * authenticators that stay at 0 (still stamps lastUsedAt). A lower counter
+   * does not match, so clones cannot regress the stored value.
    * A failure here must not block the sign-in that already verified, so it logs
    * rather than throws.
    */
   async function recordPasskeyUse(credentialId: string, counter: number): Promise<void> {
     try {
       const Passkey = mongoose.models.Passkey;
-      await Passkey.updateOne({ credentialId }, { counter, lastUsedAt: new Date() }).exec();
+      await Passkey.updateOne(
+        { credentialId, counter: { $lte: counter } },
+        { $set: { counter, lastUsedAt: new Date() } },
+      ).exec();
     } catch (error) {
       logger.error('[recordPasskeyUse] Failed to persist passkey counter', error);
     }

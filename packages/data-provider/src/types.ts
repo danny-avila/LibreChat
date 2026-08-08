@@ -731,7 +731,15 @@ export type TPasskeyResponse = {
   passkey: TPasskey;
 };
 
-export type TVerifyPasskeyRegistrationRequest = {
+/**
+ * Enrollment is password-confirmed on both steps: a passkey is a durable
+ * single-factor login, so an access token alone must not be enough to mint one.
+ */
+export type TPasskeyRegistrationOptionsRequest = {
+  password: string;
+};
+
+export type TVerifyPasskeyRegistrationRequest = TPasskeyRegistrationOptionsRequest & {
   credential: TPasskeyRegistrationResponse;
   name?: string;
 };
@@ -750,6 +758,19 @@ export type TVerifyPasskeyLoginRequest = {
 export type TRenamePasskeyRequest = {
   passkeyId: string;
   name: string;
+};
+
+/**
+ * Removal is password-confirmed too: deleting a passkey takes a login factor
+ * away, so a bearer token alone must not be enough.
+ *
+ * `password` is optional because an account provisioned by an identity provider
+ * has no local password to confirm with, and its stranded credentials must stay
+ * removable. The server only waives the check when no password hash exists.
+ */
+export type TDeletePasskeyRequest = {
+  passkeyId: string;
+  password?: string;
 };
 
 export type TDisable2FARequest = TOTPVerificationPayload;

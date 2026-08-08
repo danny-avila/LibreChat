@@ -114,6 +114,7 @@ router.post(
   '/passkey/login/options',
   middleware.logHeaders,
   middleware.passkeyLimiter,
+  middleware.validateEmailLogin,
   middleware.checkBan,
   loginPasskeyOptions,
 );
@@ -121,16 +122,32 @@ router.post(
   '/passkey/login/verify',
   middleware.logHeaders,
   middleware.passkeyLimiter,
+  middleware.validateEmailLogin,
   middleware.checkBan,
   authenticatePasskey,
   setBalanceConfig,
   loginController,
 );
 router.get('/passkey', middleware.requireJwtAuth, listPasskeys);
-router.post('/passkey/register/options', middleware.requireJwtAuth, registerPasskeyOptions);
-router.post('/passkey/register/verify', middleware.requireJwtAuth, registerPasskeyVerify);
+router.post(
+  '/passkey/register/options',
+  middleware.requireJwtAuth,
+  middleware.passkeyStepUpLimiter,
+  registerPasskeyOptions,
+);
+router.post(
+  '/passkey/register/verify',
+  middleware.requireJwtAuth,
+  middleware.passkeyStepUpLimiter,
+  registerPasskeyVerify,
+);
 router.patch('/passkey/:passkeyId', middleware.requireJwtAuth, updatePasskey);
-router.delete('/passkey/:passkeyId', middleware.requireJwtAuth, removePasskey);
+router.delete(
+  '/passkey/:passkeyId',
+  middleware.requireJwtAuth,
+  middleware.passkeyStepUpLimiter,
+  removePasskey,
+);
 
 router.get('/graph-token', middleware.requireJwtAuth, graphTokenController);
 

@@ -98,7 +98,7 @@ describe('findPasskeyByCredentialId', () => {
 
   /**
    * `lean()` hands back a BSON `Binary`, and `new Uint8Array(binary)` yields
-   * zero bytes — which would make every signature verification fail. Assert on
+   * zero bytes, which would make every signature verification fail. Assert on
    * the read path, not the write path, since only the read path is affected.
    */
   it('returns the public key as a Buffer that survives Uint8Array conversion', async () => {
@@ -130,6 +130,26 @@ describe('recordPasskeyUse', () => {
 
     const updated = await methods.findPasskeyByCredentialId('credential-one');
     expect(updated?.counter).toBe(7);
+    expect(updated?.lastUsedAt).toBeInstanceOf(Date);
+  });
+
+  it('does not regress the counter when the new value is lower', async () => {
+    await methods.createPasskey(passkeyData({ counter: 5 }));
+
+    await methods.recordPasskeyUse('credential-one', 3);
+
+    const updated = await methods.findPasskeyByCredentialId('credential-one');
+    expect(updated?.counter).toBe(5);
+    expect(updated?.lastUsedAt).toBeNull();
+  });
+
+  it('stamps last use when the counter is unchanged (including 0 to 0)', async () => {
+    await methods.createPasskey(passkeyData({ counter: 0 }));
+
+    await methods.recordPasskeyUse('credential-one', 0);
+
+    const updated = await methods.findPasskeyByCredentialId('credential-one');
+    expect(updated?.counter).toBe(0);
     expect(updated?.lastUsedAt).toBeInstanceOf(Date);
   });
 

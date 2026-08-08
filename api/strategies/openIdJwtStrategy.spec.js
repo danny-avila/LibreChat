@@ -242,6 +242,48 @@ describe('openIdJwtStrategy – token validation', () => {
     expect(result).toBeTruthy();
     expect(findOpenIDUser).toHaveBeenCalled();
   });
+
+  describe('credentialsChangedAt revocation', () => {
+    /** Reset landed 500ms into second 1700000010 */
+    const credentialsChangedAt = new Date(1700000010500);
+
+    const runVerify = async (iat) => {
+      findOpenIDUser.mockResolvedValue({
+        user: {
+          _id: { toString: () => 'user-abc' },
+          role: SystemRoles.USER,
+          provider: 'openid',
+          credentialsChangedAt,
+        },
+        error: null,
+        migration: false,
+      });
+      updateUser.mockResolvedValue({});
+      openIdJwtLogin(mockOpenIdConfig);
+
+      const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+      return invokeVerify(req, {
+        sub: 'oidc-123',
+        email: 'test@example.com',
+        iss: 'https://issuer.example.com',
+        exp: 9999999999,
+        iat,
+      });
+    };
+
+    it('rejects an OpenID JWT issued before the credential change', async () => {
+      const { user } = await runVerify(1700000009);
+
+      expect(user).toBe(false);
+    });
+
+    it('accepts an OpenID JWT issued after the credential change', async () => {
+      const { user } = await runVerify(1700000011);
+
+      expect(user).toBeTruthy();
+      expect(user.id).toBe('user-abc');
+    });
+  });
 });
 
 describe('openIdJwtStrategy – token source handling', () => {

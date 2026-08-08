@@ -222,13 +222,13 @@ export const useRenamePasskeyMutation = (): UseMutationResult<
 export const useDeletePasskeyMutation = (): UseMutationResult<
   { message: string },
   unknown,
-  string,
+  t.TDeletePasskeyRequest,
   unknown
 > => {
   const queryClient = useQueryClient();
   return useMutation(
     [MutationKeys.deletePasskey],
-    (passkeyId: string) => dataService.deletePasskey(passkeyId),
+    (payload: t.TDeletePasskeyRequest) => dataService.deletePasskey(payload),
     {
       onSuccess: () => {
         queryClient.invalidateQueries([QueryKeys.passkeys]);

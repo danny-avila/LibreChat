@@ -118,7 +118,7 @@ const {
   verifyEmailController,
 } = require('./UserController');
 const { Group } = require('~/db/models');
-const { deleteConvos, acceptTerms } = require('~/models');
+const { deleteConvos, acceptTerms, deletePasskeysByUser } = require('~/models');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 
 describe('verifyEmailController', () => {
@@ -316,12 +316,14 @@ describe('deleteUserController', () => {
 
   it('should return 200 on successful deletion', async () => {
     const userId = new mongoose.Types.ObjectId();
-    const req = { user: { id: userId.toString(), _id: userId, email: 'test@test.com' } };
+    const userIdStr = userId.toString();
+    const req = { user: { id: userIdStr, _id: userId, email: 'test@test.com' } };
 
     await deleteUserController(req, mockRes);
 
     expect(mockRes.status).toHaveBeenCalledWith(200);
     expect(mockRes.send).toHaveBeenCalledWith({ message: 'User deleted' });
+    expect(deletePasskeysByUser).toHaveBeenCalledWith(userIdStr);
   });
 
   it('should remove the user from all groups via $pullAll', async () => {

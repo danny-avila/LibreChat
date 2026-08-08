@@ -4,13 +4,46 @@ export const SESSION_KEY = 'post_login_redirect_to';
 /** Matches `/login` as a full path segment, with optional basename prefix (e.g. `/librechat/login/2fa`) */
 const LOGIN_PATH_RE = /(?:^|\/)login(?:\/|$)/;
 
+/**
+ * The URL parser removes every ASCII tab and newline before resolving, so a target
+ * like `/\t/evil.com` would clear the prefix checks below and then resolve to
+ * `//evil.com`. Reject C0 controls outright rather than trying to match the parser.
+ */
+function hasControlChar(url: string): boolean {
+  for (let i = 0; i < url.length; i++) {
+    if (url.charCodeAt(i) <= 0x1f) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Confirms the target resolves to this origin, which is what the browser will actually navigate to */
+function resolvesToSameOrigin(url: string): boolean {
+  const origin = typeof window === 'undefined' ? undefined : window.location?.origin;
+  if (origin == null || origin === 'null') {
+    return false;
+  }
+  try {
+    return new URL(url, origin).origin === origin;
+  } catch {
+    return false;
+  }
+}
+
 /** Validates that a redirect target is a safe relative path (not an absolute or protocol-relative URL) */
 export function isSafeRedirect(url: string): boolean {
+  if (hasControlChar(url)) {
+    return false;
+  }
   if (!url.startsWith('/') || url.startsWith('//') || url.includes('\\')) {
     return false;
   }
   const path = url.split('?')[0].split('#')[0];
-  return !LOGIN_PATH_RE.test(path);
+  if (LOGIN_PATH_RE.test(path)) {
+    return false;
+  }
+  return resolvesToSameOrigin(url);
 }
 
 /**

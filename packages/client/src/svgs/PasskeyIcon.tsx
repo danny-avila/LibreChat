@@ -4,7 +4,7 @@
  * The FIDO Alliance passkey mark, used so the sign-in affordance is
  * recognizable across services.
  *
- * Source: https://www.passkeys.com/icons — FIDO Alliance, free to use.
+ * Source: https://www.passkeys.com/icons, FIDO Alliance, free to use.
  */
 import React from 'react';
 import { cn } from '~/utils';

@@ -1358,8 +1358,10 @@ export function getPasskeys(): Promise<t.TPasskeysResponse> {
   return request.get(endpoints.passkeys());
 }
 
-export function getPasskeyRegistrationOptions(): Promise<t.TPasskeyCreationOptions> {
-  return request.post(endpoints.passkeyRegistrationOptions(), {});
+export function getPasskeyRegistrationOptions(
+  payload: t.TPasskeyRegistrationOptionsRequest,
+): Promise<t.TPasskeyCreationOptions> {
+  return request.post(endpoints.passkeyRegistrationOptions(), payload);
 }
 
 export function verifyPasskeyRegistration(
@@ -1385,8 +1387,11 @@ export function renamePasskey({
   return request.patch(endpoints.passkey(passkeyId), { name });
 }
 
-export function deletePasskey(passkeyId: string): Promise<{ message: string }> {
-  return request.delete(endpoints.passkey(passkeyId));
+export function deletePasskey({
+  passkeyId,
+  password,
+}: t.TDeletePasskeyRequest): Promise<{ message: string }> {
+  return request.deleteWithOptions(endpoints.passkey(passkeyId), { data: { password } });
 }
 
 /* Memories */

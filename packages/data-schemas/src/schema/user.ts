@@ -116,6 +116,14 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       select: false,
       default: undefined,
     },
+    /**
+     * Instant of the last credential change (password reset). Access tokens issued
+     * before it are rejected at JWT verification, so a token that outlives the reset
+     * cannot keep authenticating.
+     */
+    credentialsChangedAt: {
+      type: Date,
+    },
     refreshToken: {
       type: [SessionSchema],
     },

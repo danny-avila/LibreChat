@@ -1,3 +1,7 @@
+import { logger } from '@librechat/data-schemas';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
+import type { PasskeyChallengeStore, PasskeyConfig } from './passkey';
 import {
   authenticationChallengeKey,
   consumeChallenge,
@@ -11,9 +15,6 @@ import {
   verifyPasskeyRegistration,
 } from './passkey';
 
-import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
-import type { PasskeyChallengeStore, PasskeyConfig } from './passkey';
-
 /** In-memory stand-in for the app's Keyv challenge store. */
 function createStore(): PasskeyChallengeStore & { entries: Map<string, string> } {
   const entries = new Map<string, string>();
@@ -22,6 +23,11 @@ function createStore(): PasskeyChallengeStore & { entries: Map<string, string> }
     get: async (key) => entries.get(key),
     set: async (key, value) => entries.set(key, value),
     delete: async (key) => entries.delete(key),
+    getDel: async (key) => {
+      const value = entries.get(key);
+      entries.delete(key);
+      return value;
+    },
   };
 }
 
@@ -33,6 +39,71 @@ const config: PasskeyConfig = {
 };
 
 const user = { id: '65f0000000000000000000aa', email: 'user@example.com', name: 'Ada' };
+
+/** Authenticator data flags: user present, and user present plus user verified. */
+const FLAG_UP = 0x01;
+const FLAG_UP_UV = 0x05;
+
+/**
+ * Builds a real ES256 authenticator so assertions are genuinely signed and the
+ * only thing under test is which flags the server insists on.
+ */
+function createAuthenticator(credentialId = 'cred-id') {
+  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const { x = '', y = '' } = publicKey.export({ format: 'jwk' });
+
+  /** COSE_Key map: kty EC2, alg ES256, crv P-256, then the 32-byte x and y. */
+  const cosePublicKey = Buffer.concat([
+    Buffer.from([0xa5, 0x01, 0x02, 0x03, 0x26, 0x20, 0x01, 0x21, 0x58, 0x20]),
+    Buffer.from(x, 'base64url'),
+    Buffer.from([0x22, 0x58, 0x20]),
+    Buffer.from(y, 'base64url'),
+  ]);
+
+  const id = Buffer.from(credentialId, 'utf8').toString('base64url');
+
+  const assert = ({
+    challenge,
+    flags,
+    counter = 1,
+    origin = config.origins[0],
+  }: {
+    challenge: string;
+    flags: number;
+    counter?: number;
+    origin?: string;
+  }): AuthenticationResponseJSON => {
+    const clientData = Buffer.from(
+      JSON.stringify({ type: 'webauthn.get', challenge, origin, crossOrigin: false }),
+      'utf8',
+    );
+
+    const authenticatorData = Buffer.alloc(37);
+    createHash('sha256').update(config.rpID).digest().copy(authenticatorData, 0);
+    authenticatorData[32] = flags;
+    authenticatorData.writeUInt32BE(counter, 33);
+
+    const signature = sign(
+      'sha256',
+      Buffer.concat([authenticatorData, createHash('sha256').update(clientData).digest()]),
+      privateKey,
+    );
+
+    return {
+      id,
+      rawId: id,
+      type: 'public-key',
+      clientExtensionResults: {},
+      response: {
+        clientDataJSON: clientData.toString('base64url'),
+        authenticatorData: authenticatorData.toString('base64url'),
+        signature: signature.toString('base64url'),
+      },
+    } as AuthenticationResponseJSON;
+  };
+
+  return { assert, credential: { credentialId: id, publicKey: cosePublicKey, counter: 0 } };
+}
 
 describe('getPasskeyConfig', () => {
   it('derives the RP ID and origins from DOMAIN_CLIENT', () => {
@@ -99,6 +170,33 @@ describe('consumeChallenge', () => {
   it('returns undefined for an unknown key', async () => {
     expect(await consumeChallenge(createStore(), 'missing')).toBeUndefined();
   });
+
+  it('uses getDel when present so concurrent consumers cannot both win', async () => {
+    const store = createStore();
+    await store.set('key', 'challenge-value');
+
+    const [first, second] = await Promise.all([
+      consumeChallenge(store, 'key'),
+      consumeChallenge(store, 'key'),
+    ]);
+
+    const values = [first, second].filter((value) => value !== undefined);
+    expect(values).toEqual(['challenge-value']);
+    expect(store.entries.has('key')).toBe(false);
+  });
+
+  it('falls back to get-then-delete when getDel is absent', async () => {
+    const entries = new Map<string, string>([['key', 'challenge-value']]);
+    const store: PasskeyChallengeStore = {
+      get: async (key) => entries.get(key),
+      set: async (key, value) => entries.set(key, value),
+      delete: async (key) => entries.delete(key),
+    };
+
+    expect(await consumeChallenge(store, 'key')).toBe('challenge-value');
+    expect(await consumeChallenge(store, 'key')).toBeUndefined();
+    expect(entries.has('key')).toBe(false);
+  });
 });
 
 describe('createPasskeyRegistrationOptions', () => {
@@ -121,6 +219,8 @@ describe('createPasskeyRegistrationOptions', () => {
     ]);
     /** Discoverable credentials are what make usernameless sign-in possible. */
     expect(options.authenticatorSelection?.residentKey).toBe('required');
+    /** UV at registration so the credential is bound to a verified user gesture. */
+    expect(options.authenticatorSelection?.userVerification).toBe('required');
     expect(store.entries.get(registrationChallengeKey(user.id))).toBe(options.challenge);
   });
 });
@@ -133,6 +233,12 @@ describe('createPasskeyAuthenticationOptions', () => {
     expect(options.allowCredentials).toBeUndefined();
     expect(options.rpId).toBe(config.rpID);
     expect(store.entries.get(authenticationChallengeKey(sessionId))).toBe(options.challenge);
+  });
+
+  it('asks the authenticator to verify the user, since sign-in is single-factor', async () => {
+    const { options } = await createPasskeyAuthenticationOptions({ config, store: createStore() });
+
+    expect(options.userVerification).toBe('required');
   });
 
   it('issues a distinct session handle per ceremony', async () => {
@@ -215,6 +321,176 @@ describe('verification without a live challenge', () => {
 
     expect(result).toBeNull();
     expect(store.entries.has(authenticationChallengeKey(sessionId))).toBe(false);
+  });
+});
+
+describe('verifyPasskeyAuthentication', () => {
+  it('accepts an assertion the authenticator user-verified', async () => {
+    const store = createStore();
+    const { assert, credential } = createAuthenticator();
+    const { options, sessionId } = await createPasskeyAuthenticationOptions({ config, store });
+
+    const result = await verifyPasskeyAuthentication({
+      config,
+      store,
+      sessionId,
+      response: assert({ challenge: options.challenge, flags: FLAG_UP_UV }),
+      credential,
+    });
+
+    expect(result).toEqual({ newCounter: 1 });
+  });
+
+  it('rejects an assertion carrying only the user-present flag', async () => {
+    const store = createStore();
+    const { assert, credential } = createAuthenticator();
+    const { options, sessionId } = await createPasskeyAuthenticationOptions({ config, store });
+
+    /** A tap on a PIN-less key is possession alone, which cannot stand in for a login. */
+    const result = await verifyPasskeyAuthentication({
+      config,
+      store,
+      sessionId,
+      response: assert({ challenge: options.challenge, flags: FLAG_UP }),
+      credential,
+    });
+
+    expect(result).toBeNull();
+    expect(store.entries.has(authenticationChallengeKey(sessionId))).toBe(false);
+  });
+});
+
+describe('ceremony failure logging', () => {
+  const credential = { credentialId: 'cred-id', publicKey: Buffer.alloc(1), counter: 0 };
+
+  /** Builds the base64url `clientDataJSON` an unauthenticated caller fully controls. */
+  function clientDataJSON(type: string, challenge: string): string {
+    return Buffer.from(
+      JSON.stringify({ type, challenge, origin: config.origins[0], crossOrigin: false }),
+      'utf8',
+    ).toString('base64url');
+  }
+
+  function authenticationResponseWith(challenge: string): AuthenticationResponseJSON {
+    return {
+      id: 'cred-id',
+      rawId: 'cred-id',
+      type: 'public-key',
+      clientExtensionResults: {},
+      response: {
+        clientDataJSON: clientDataJSON('webauthn.get', challenge),
+        authenticatorData: '',
+        signature: '',
+      },
+    } as AuthenticationResponseJSON;
+  }
+
+  function registrationResponseWith(challenge: string): RegistrationResponseJSON {
+    return {
+      id: 'cred-id',
+      rawId: 'cred-id',
+      type: 'public-key',
+      clientExtensionResults: {},
+      response: {
+        clientDataJSON: clientDataJSON('webauthn.create', challenge),
+        attestationObject: '',
+      },
+    } as RegistrationResponseJSON;
+  }
+
+  /** A challenge crafted to close the log line and forge a second, fake record. */
+  const forgedChallenge =
+    'x", expected "y\r\n2026-01-01 00:00:00 info: [FORGED] admin@example.com signed in\u001b[31m\u0007';
+
+  let warn: jest.SpyInstance;
+
+  beforeEach(() => {
+    warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+  });
+
+  it('logs the authentication failure as one line with no injected control characters', async () => {
+    const store = createStore();
+    const { sessionId } = await createPasskeyAuthenticationOptions({ config, store });
+
+    const result = await verifyPasskeyAuthentication({
+      config,
+      store,
+      sessionId,
+      response: authenticationResponseWith(forgedChallenge),
+      credential,
+    });
+
+    expect(result).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    /** A single string argument: nothing is left for winston to concatenate. */
+    expect(warn.mock.calls[0]).toHaveLength(1);
+    const line = warn.mock.calls[0][0] as string;
+    expect(typeof line).toBe('string');
+    // eslint-disable-next-line no-control-regex
+    expect(line).not.toMatch(/[\r\n\u0000-\u001f\u007f-\u009f]/);
+    /** The forged text stays inline as diagnostics: it can never begin its own record. */
+    expect(line.indexOf('[FORGED]')).toBeGreaterThan(0);
+    expect(line.split('\n')).toHaveLength(1);
+  });
+
+  it('keeps the reason for an authentication failure readable', async () => {
+    const store = createStore();
+    const { sessionId } = await createPasskeyAuthenticationOptions({ config, store });
+
+    await verifyPasskeyAuthentication({
+      config,
+      store,
+      sessionId,
+      response: authenticationResponseWith('a-mismatched-challenge'),
+      credential,
+    });
+
+    const line = warn.mock.calls[0][0] as string;
+    expect(line).toContain('[passkey] Authentication verification failed');
+    expect(line).toContain('Unexpected authentication response challenge');
+    expect(line).toContain('a-mismatched-challenge');
+  });
+
+  it('logs the registration failure as one line with no injected control characters', async () => {
+    const store = createStore();
+    await createPasskeyRegistrationOptions({ config, store, user });
+
+    const result = await verifyPasskeyRegistration({
+      config,
+      store,
+      userId: user.id,
+      response: registrationResponseWith(forgedChallenge),
+    });
+
+    expect(result).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]).toHaveLength(1);
+
+    const line = warn.mock.calls[0][0] as string;
+    expect(line).toContain('[passkey] Registration verification failed');
+    expect(line).toContain('Unexpected registration response challenge');
+    // eslint-disable-next-line no-control-regex
+    expect(line).not.toMatch(/[\r\n\u0000-\u001f\u007f-\u009f]/);
+    /** The forged text stays inline as diagnostics: it can never begin its own record. */
+    expect(line.indexOf('[FORGED]')).toBeGreaterThan(0);
+  });
+
+  it('bounds how much attacker-supplied text reaches the log', async () => {
+    const store = createStore();
+    const { sessionId } = await createPasskeyAuthenticationOptions({ config, store });
+
+    await verifyPasskeyAuthentication({
+      config,
+      store,
+      sessionId,
+      response: authenticationResponseWith('A'.repeat(5000)),
+      credential,
+    });
+
+    const line = warn.mock.calls[0][0] as string;
+    expect(line).toMatch(/\.\.\. \[truncated\]$/);
+    expect(line.length).toBeLessThan(300);
   });
 });
 

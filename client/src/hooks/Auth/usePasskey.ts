@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { dataService } from 'librechat-data-provider';
 import { useToastContext } from '@librechat/client';
-import {
-  startAuthentication,
-  startRegistration,
-  browserSupportsWebAuthn,
-  browserSupportsWebAuthnAutofill,
-} from '@simplewebauthn/browser';
-
+import { dataService } from 'librechat-data-provider';
 import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
@@ -18,15 +11,26 @@ import type {
   TPasskeyRegistrationResponse,
 } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
-
+import { SESSION_KEY, isSafeRedirect, REDIRECT_PARAM } from '~/utils/redirect';
 import { useRegisterPasskeyMutation } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
+
+async function loadWebAuthn() {
+  return import('@simplewebauthn/browser');
+}
 
 /** Thrown by the browser when the user dismisses or times out the native prompt. */
 const isDismissal = (error: unknown): boolean => {
   const name = (error as { name?: string } | null)?.name;
   return name === 'NotAllowedError' || name === 'AbortError';
 };
+
+/**
+ * The server answers a rejected step-up with 403 rather than 401, so a mistyped
+ * password is an inline error instead of a token refresh and a sign-out.
+ */
+export const isPasswordRejection = (error: unknown): boolean =>
+  (error as { response?: { status?: number } } | null)?.response?.status === 403;
 
 /** Maps a WebAuthn ceremony failure onto a message the user can act on. */
 const ceremonyErrorKey = (error: unknown): TranslationKeys => {
@@ -40,7 +44,31 @@ const ceremonyErrorKey = (error: unknown): TranslationKeys => {
   return 'com_auth_passkey_error';
 };
 
-export const passkeysSupported = (): boolean => browserSupportsWebAuthn();
+/** Sync capability check without loading the WebAuthn browser package. */
+export const passkeysSupported = (): boolean =>
+  typeof window !== 'undefined' && typeof window.PublicKeyCredential !== 'undefined';
+
+/**
+ * Resolves where to send the user after a successful passkey login.
+ * Mirrors password-flow sessionStorage + query handling without needing a router.
+ */
+function resolvePostLoginHref(): string {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get(REDIRECT_PARAM);
+    const fromSession = sessionStorage.getItem(SESSION_KEY);
+    if (fromSession) {
+      sessionStorage.removeItem(SESSION_KEY);
+    }
+    const target = fromQuery ?? fromSession;
+    if (target && isSafeRedirect(target)) {
+      return target;
+    }
+  } catch {
+    /* ignore storage / URL access failures */
+  }
+  return '/';
+}
 
 /**
  * Drives the passkey sign-in ceremony.
@@ -56,6 +84,8 @@ export function usePasskeySignIn({ enabled }: { enabled: boolean }) {
   const [isSigningIn, setIsSigningIn] = useState(false);
   /** Guards against a second autofill ceremony on React 18 double-invoked effects. */
   const autofillStarted = useRef(false);
+  /** Re-entry guard for both button sign-in and autofill complete paths. */
+  const inFlightRef = useRef(false);
 
   const complete = useCallback(
     async (credential: TPasskeyAuthenticationResponse, sessionId: string) => {
@@ -64,35 +94,47 @@ export function usePasskeySignIn({ enabled }: { enabled: boolean }) {
         window.location.href = `/login/2fa?tempToken=${encodeURIComponent(result.tempToken)}`;
         return;
       }
-      window.location.href = '/';
+      window.location.href = resolvePostLoginHref();
     },
     [],
   );
 
   const signIn = useCallback(async () => {
-    if (!enabled || isSigningIn) {
+    if (!enabled || inFlightRef.current) {
       return;
     }
-    if (!browserSupportsWebAuthn()) {
+    if (!passkeysSupported()) {
       showToast({ message: localize('com_auth_passkey_not_supported'), status: 'error' });
       return;
     }
 
+    inFlightRef.current = true;
     setIsSigningIn(true);
+    let navigated = false;
     try {
+      const { startAuthentication, browserSupportsWebAuthn } = await loadWebAuthn();
+      if (!browserSupportsWebAuthn()) {
+        showToast({ message: localize('com_auth_passkey_not_supported'), status: 'error' });
+        return;
+      }
       const { options, sessionId } = await dataService.getPasskeyLoginOptions();
       const credential = (await startAuthentication({
         optionsJSON: options as PublicKeyCredentialRequestOptionsJSON,
       })) as TPasskeyAuthenticationResponse;
       await complete(credential, sessionId);
+      navigated = true;
+      // On success we navigate away; keep busy state until unload.
     } catch (error) {
-      setIsSigningIn(false);
-      if (isDismissal(error)) {
-        return;
+      if (!isDismissal(error)) {
+        showToast({ message: localize(ceremonyErrorKey(error)), status: 'error' });
       }
-      showToast({ message: localize(ceremonyErrorKey(error)), status: 'error' });
+    } finally {
+      if (!navigated) {
+        inFlightRef.current = false;
+        setIsSigningIn(false);
+      }
     }
-  }, [enabled, isSigningIn, complete, localize, showToast]);
+  }, [enabled, complete, localize, showToast]);
 
   useEffect(() => {
     if (!enabled || autofillStarted.current) {
@@ -103,6 +145,7 @@ export function usePasskeySignIn({ enabled }: { enabled: boolean }) {
     let cancelled = false;
     const startAutofill = async () => {
       try {
+        const { startAuthentication, browserSupportsWebAuthnAutofill } = await loadWebAuthn();
         if (!(await browserSupportsWebAuthnAutofill())) {
           return;
         }
@@ -111,13 +154,27 @@ export function usePasskeySignIn({ enabled }: { enabled: boolean }) {
           optionsJSON: options as PublicKeyCredentialRequestOptionsJSON,
           useBrowserAutofill: true,
         })) as TPasskeyAuthenticationResponse;
-        if (cancelled) {
+        if (cancelled || inFlightRef.current) {
           return;
         }
+        inFlightRef.current = true;
         setIsSigningIn(true);
-        await complete(credential, sessionId);
+        try {
+          await complete(credential, sessionId);
+          // On success we navigate away; keep busy state until unload.
+        } catch (error) {
+          if (!isDismissal(error)) {
+            showToast({ message: localize(ceremonyErrorKey(error)), status: 'error' });
+          }
+          inFlightRef.current = false;
+          setIsSigningIn(false);
+        }
       } catch {
         /** Autofill is a progressive enhancement: a failure leaves the form usable. */
+        if (!cancelled) {
+          inFlightRef.current = false;
+          setIsSigningIn(false);
+        }
       }
     };
 
@@ -125,46 +182,70 @@ export function usePasskeySignIn({ enabled }: { enabled: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [enabled, complete]);
+  }, [enabled, complete, localize, showToast]);
 
   return { signIn, isSigningIn };
 }
 
 /**
- * Drives passkey enrollment for the signed-in user. Resolves to the stored
- * credential so callers can put it straight into rename mode, or `null` when
- * the ceremony was dismissed or failed.
+ * Drives passkey enrollment for the signed-in user. Both server steps require the
+ * account password, so `registerPasskey` takes it and reports a rejected password
+ * through `passwordErrorKey` rather than a toast, keeping the error next to the
+ * field that caused it.
+ *
+ * Resolves to the stored credential so callers can put it straight into rename
+ * mode, or `null` when the ceremony was dismissed or failed.
  */
 export function usePasskeyRegistration() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [isRegistering, setIsRegistering] = useState(false);
+  const [passwordErrorKey, setPasswordErrorKey] = useState<TranslationKeys | null>(null);
+  const inFlightRef = useRef(false);
   const { mutateAsync: verifyRegistration } = useRegisterPasskeyMutation();
 
-  const registerPasskey = useCallback(async (): Promise<TPasskey | null> => {
-    if (!browserSupportsWebAuthn()) {
-      showToast({ message: localize('com_auth_passkey_not_supported'), status: 'error' });
-      return null;
-    }
+  const clearPasswordError = useCallback(() => setPasswordErrorKey(null), []);
 
-    setIsRegistering(true);
-    try {
-      const options = await dataService.getPasskeyRegistrationOptions();
-      const credential = (await startRegistration({
-        optionsJSON: options as PublicKeyCredentialCreationOptionsJSON,
-      })) as TPasskeyRegistrationResponse;
-      const { passkey } = await verifyRegistration({ credential });
-      showToast({ message: localize('com_ui_passkey_added'), status: 'success' });
-      return passkey;
-    } catch (error) {
-      if (!isDismissal(error)) {
-        showToast({ message: localize(ceremonyErrorKey(error)), status: 'error' });
+  const registerPasskey = useCallback(
+    async (password: string): Promise<TPasskey | null> => {
+      if (inFlightRef.current) {
+        return null;
       }
-      return null;
-    } finally {
-      setIsRegistering(false);
-    }
-  }, [verifyRegistration, localize, showToast]);
+      if (!passkeysSupported()) {
+        showToast({ message: localize('com_auth_passkey_not_supported'), status: 'error' });
+        return null;
+      }
 
-  return { registerPasskey, isRegistering };
+      inFlightRef.current = true;
+      setIsRegistering(true);
+      setPasswordErrorKey(null);
+      try {
+        const { startRegistration, browserSupportsWebAuthn } = await loadWebAuthn();
+        if (!browserSupportsWebAuthn()) {
+          showToast({ message: localize('com_auth_passkey_not_supported'), status: 'error' });
+          return null;
+        }
+        const options = await dataService.getPasskeyRegistrationOptions({ password });
+        const credential = (await startRegistration({
+          optionsJSON: options as PublicKeyCredentialCreationOptionsJSON,
+        })) as TPasskeyRegistrationResponse;
+        const { passkey } = await verifyRegistration({ credential, password });
+        showToast({ message: localize('com_ui_passkey_added'), status: 'success' });
+        return passkey;
+      } catch (error) {
+        if (isPasswordRejection(error)) {
+          setPasswordErrorKey('com_ui_passkey_password_incorrect');
+        } else if (!isDismissal(error)) {
+          showToast({ message: localize(ceremonyErrorKey(error)), status: 'error' });
+        }
+        return null;
+      } finally {
+        inFlightRef.current = false;
+        setIsRegistering(false);
+      }
+    },
+    [verifyRegistration, localize, showToast],
+  );
+
+  return { registerPasskey, isRegistering, passwordErrorKey, clearPasswordError };
 }

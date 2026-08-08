@@ -25,6 +25,7 @@ function PasskeySignIn({ enabled }: { enabled: boolean }) {
         data-testid="passkey"
         onClick={() => void signIn()}
         disabled={isSigningIn}
+        aria-busy={isSigningIn}
         aria-label={localize('com_auth_passkey_login')}
         className="flex w-full items-center space-x-3 rounded-2xl border border-border-light bg-surface-primary px-5 py-3 text-text-primary transition-colors duration-200 hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary disabled:opacity-60"
       >
