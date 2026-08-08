@@ -1132,6 +1132,7 @@ describe('MCPManager', () => {
         client: { request },
         connect: jest.fn().mockResolvedValue(undefined),
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
         getLastConnectionCheckError: jest.fn().mockReturnValue(undefined),
         isConnected: jest.fn().mockResolvedValue(true),
         isOAuthAuthenticationError: jest.fn((error: unknown) => {
@@ -1163,6 +1164,7 @@ describe('MCPManager', () => {
       signal?: AbortSignal,
       oauthStart: t.OAuthStartHandler = jest.fn(),
       requestScopedConnections?: t.RequestScopedMCPConnectionStore,
+      oauthEnd?: () => Promise<void>,
     ) {
       return manager.callTool({
         user: mockUser,
@@ -1170,6 +1172,7 @@ describe('MCPManager', () => {
         toolName: 'oauth_tool',
         provider: 'openai',
         oauthStart,
+        oauthEnd,
         flowManager: mockFlowManager,
         requestScopedConnections,
         options: signal ? { signal } : undefined,
@@ -1295,7 +1298,7 @@ describe('MCPManager', () => {
       await expect(callTool(manager)).resolves.toBeDefined();
 
       expect(connection.connect).toHaveBeenCalledTimes(1);
-      expect(connection.disconnect).toHaveBeenCalledTimes(2);
+      expect(connection.dispose).toHaveBeenCalledTimes(1);
       expect(request).toHaveBeenCalledTimes(2);
     });
 
@@ -1322,13 +1325,13 @@ describe('MCPManager', () => {
       await new Promise((resolve) => setImmediate(resolve));
 
       expect(connection.connect).not.toHaveBeenCalled();
-      expect(connection.disconnect).not.toHaveBeenCalled();
+      expect(connection.dispose).not.toHaveBeenCalled();
 
       await lifecycle.releaseConnection(connection);
       await expect(toolPromise).resolves.toBeDefined();
 
       expect(connection.connect).toHaveBeenCalledTimes(1);
-      expect(connection.disconnect).toHaveBeenCalledTimes(2);
+      expect(connection.dispose).toHaveBeenCalledTimes(1);
       expect(request).toHaveBeenCalledTimes(2);
     });
 
@@ -1338,7 +1341,7 @@ describe('MCPManager', () => {
       const lifecycle = manager as unknown as {
         disposeEvictedConnection: (connection: MCPConnection, logPrefix: string) => Promise<void>;
         holdDeferredConnectionDisposal: (connection: MCPConnection) => void;
-        releaseDeferredConnectionDisposal: (connection: MCPConnection) => void;
+        releaseDeferredConnectionDisposal: (connection: MCPConnection) => Promise<void>;
         retainConnection: (connection: MCPConnection) => void;
         releaseConnection: (connection: MCPConnection) => Promise<void>;
       };
@@ -1346,13 +1349,36 @@ describe('MCPManager', () => {
       lifecycle.holdDeferredConnectionDisposal(connection);
       await lifecycle.disposeEvictedConnection(connection, '[MCP][evicted]');
 
-      expect(connection.disconnect).not.toHaveBeenCalled();
+      expect(connection.dispose).not.toHaveBeenCalled();
 
       lifecycle.retainConnection(connection);
-      lifecycle.releaseDeferredConnectionDisposal(connection);
+      await lifecycle.releaseDeferredConnectionDisposal(connection);
       await lifecycle.releaseConnection(connection);
 
-      expect(connection.disconnect).toHaveBeenCalledTimes(1);
+      expect(connection.dispose).toHaveBeenCalledTimes(1);
+    });
+
+    it('defers final borrower disposal until the recovery hold is released', async () => {
+      const connection = createConnection(jest.fn());
+      const manager = await createManager(connection);
+      const lifecycle = manager as unknown as {
+        disposeEvictedConnection: (connection: MCPConnection, logPrefix: string) => Promise<void>;
+        holdDeferredConnectionDisposal: (connection: MCPConnection) => void;
+        releaseDeferredConnectionDisposal: (connection: MCPConnection) => Promise<void>;
+        retainConnection: (connection: MCPConnection) => void;
+        releaseConnection: (connection: MCPConnection) => Promise<void>;
+      };
+
+      lifecycle.holdDeferredConnectionDisposal(connection);
+      lifecycle.retainConnection(connection);
+      await lifecycle.disposeEvictedConnection(connection, '[MCP][evicted]');
+      await lifecycle.releaseConnection(connection);
+
+      expect(connection.dispose).not.toHaveBeenCalled();
+
+      await lifecycle.releaseDeferredConnectionDisposal(connection);
+
+      expect(connection.dispose).toHaveBeenCalledTimes(1);
     });
 
     it('recovers an OAuth failure found by the connection preflight check', async () => {
@@ -1635,6 +1661,57 @@ describe('MCPManager', () => {
       expect(request).toHaveBeenCalledTimes(3);
     });
 
+    it('relays OAuth completion to live waiters without failing recovery on notification errors', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValueOnce(authError).mockResolvedValue(toolResult);
+      const connection = createConnection(request);
+      const ownerOAuthStart = jest.fn().mockResolvedValue(undefined);
+      const waiterOAuthStart = jest.fn().mockResolvedValue(undefined);
+      const ownerOAuthEnd = jest.fn().mockRejectedValue(new Error('owner response is stale'));
+      const waiterOAuthEnd = jest.fn().mockResolvedValue(undefined);
+      let completeOAuth: (() => void) | undefined;
+      const completionGate = new Promise<void>((resolve) => {
+        completeOAuth = resolve;
+      });
+      (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mockImplementation(
+        (
+          _basic,
+          oauth: {
+            oauthStart?: t.OAuthStartHandler;
+            oauthEnd?: () => Promise<void>;
+          },
+          currentConnection: MCPConnection,
+        ) => {
+          const listener = async () => {
+            await oauth.oauthStart?.('https://auth.example.com/pending');
+            await completionGate;
+            try {
+              await oauth.oauthEnd?.();
+              currentConnection.emit('oauthHandled');
+            } catch (error) {
+              currentConnection.emit('oauthFailed', error);
+            }
+          };
+          currentConnection.on('oauthReauthenticationRequired', listener);
+          return () => currentConnection.off('oauthReauthenticationRequired', listener);
+        },
+      );
+      const manager = await createManager(connection);
+
+      const ownerCall = callTool(manager, undefined, ownerOAuthStart, undefined, ownerOAuthEnd);
+      await new Promise((resolve) => setImmediate(resolve));
+      const waiterCall = callTool(manager, undefined, waiterOAuthStart, undefined, waiterOAuthEnd);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      completeOAuth?.();
+
+      await expect(Promise.all([ownerCall, waiterCall])).resolves.toHaveLength(2);
+      expect(ownerOAuthEnd).toHaveBeenCalledTimes(1);
+      expect(waiterOAuthEnd).toHaveBeenCalledTimes(1);
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledTimes(3);
+    });
+
     it('defers request-context cleanup until shared recovery settles', async () => {
       const authError = new Error('Non-200 status code (401)');
       const request = jest.fn().mockRejectedValueOnce(authError).mockResolvedValueOnce(toolResult);
@@ -1648,14 +1725,14 @@ describe('MCPManager', () => {
       await new Promise((resolve) => setImmediate(resolve));
 
       await cleanupMCPRequestContext(requestContext);
-      expect(connection.disconnect).not.toHaveBeenCalled();
+      expect(connection.dispose).not.toHaveBeenCalled();
       expect(requestContext.connections.size).toBe(0);
 
       connection.emit('oauthHandled');
 
       await expect(toolPromise).resolves.toBeDefined();
       expect(connection.connect).toHaveBeenCalledTimes(1);
-      expect(connection.disconnect).toHaveBeenCalledTimes(1);
+      expect(connection.dispose).toHaveBeenCalledTimes(1);
       expect(request).toHaveBeenCalledTimes(2);
     });
 
@@ -1699,13 +1776,13 @@ describe('MCPManager', () => {
 
       await manager.disconnectUserConnection(mockUser.id, serverName);
       expect(internals.userConnections.get(mockUser.id)).toBeUndefined();
-      expect(connection.disconnect).not.toHaveBeenCalled();
+      expect(connection.dispose).not.toHaveBeenCalled();
 
       connection.emit('oauthHandled');
 
       await expect(toolPromise).resolves.toBeDefined();
       expect(connection.connect).toHaveBeenCalledTimes(1);
-      expect(connection.disconnect).toHaveBeenCalledTimes(1);
+      expect(connection.dispose).toHaveBeenCalledTimes(1);
       expect(request).toHaveBeenCalledTimes(2);
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
@@ -1728,13 +1805,13 @@ describe('MCPManager', () => {
 
       await expect(ownerCall).rejects.toBe(abortReason);
       await lifecycle.disposeEvictedConnection(connection, '[MCP][evicted]');
-      expect(connection.disconnect).not.toHaveBeenCalled();
+      expect(connection.dispose).not.toHaveBeenCalled();
 
       connection.emit('oauthHandled');
       await new Promise((resolve) => setImmediate(resolve));
 
       expect(connection.connect).toHaveBeenCalledTimes(1);
-      expect(connection.disconnect).toHaveBeenCalledTimes(1);
+      expect(connection.dispose).toHaveBeenCalledTimes(1);
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
 
@@ -1973,6 +2050,7 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       const staleConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
         isConnected: jest.fn().mockResolvedValue(false),
         isStale: jest.fn().mockReturnValue(true),
       } as unknown as MCPConnection;
@@ -2006,11 +2084,11 @@ describe('MCPManager', () => {
         }),
       ).resolves.toBe(replacementConnection);
 
-      expect(staleConnection.disconnect).not.toHaveBeenCalled();
+      expect(staleConnection.dispose).not.toHaveBeenCalled();
       expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
 
       await internals.releaseConnection(staleConnection);
-      expect(staleConnection.disconnect).toHaveBeenCalledTimes(1);
+      expect(staleConnection.dispose).toHaveBeenCalledTimes(1);
     });
 
     it('lets an aborted waiter leave without cancelling the shared recovery', async () => {
@@ -2050,6 +2128,7 @@ describe('MCPManager', () => {
     it('evicts an inactive cached connection without disconnecting current borrowers', async () => {
       const unusableConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
         isConnected: jest.fn().mockResolvedValue(false),
       } as unknown as MCPConnection;
       const replacementConnection = {
@@ -2078,14 +2157,15 @@ describe('MCPManager', () => {
         }),
       ).resolves.toBe(replacementConnection);
 
-      expect(unusableConnection.disconnect).not.toHaveBeenCalled();
+      expect(unusableConnection.dispose).not.toHaveBeenCalled();
       await lifecycle.releaseConnection(unusableConnection);
-      expect(unusableConnection.disconnect).toHaveBeenCalledTimes(1);
+      expect(unusableConnection.dispose).toHaveBeenCalledTimes(1);
     });
 
     it('disposes an inactive cached connection immediately when it has no borrowers', async () => {
       const unusableConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
         isConnected: jest.fn().mockResolvedValue(false),
       } as unknown as MCPConnection;
       const replacementConnection = {
@@ -2109,12 +2189,13 @@ describe('MCPManager', () => {
         }),
       ).resolves.toBe(replacementConnection);
 
-      expect(unusableConnection.disconnect).toHaveBeenCalledTimes(1);
+      expect(unusableConnection.dispose).toHaveBeenCalledTimes(1);
     });
 
     it('evicts an inactive request connection without disconnecting current borrowers', async () => {
       const requestConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
         isConnected: jest.fn().mockResolvedValue(false),
       } as unknown as MCPConnection;
       const replacementConnection = {
@@ -2158,9 +2239,9 @@ describe('MCPManager', () => {
         }),
       ).resolves.toBe(replacementConnection);
 
-      expect(requestConnection.disconnect).not.toHaveBeenCalled();
+      expect(requestConnection.dispose).not.toHaveBeenCalled();
       await lifecycle.releaseConnection(requestConnection);
-      expect(requestConnection.disconnect).toHaveBeenCalledTimes(1);
+      expect(requestConnection.dispose).toHaveBeenCalledTimes(1);
     });
 
     it('propagates a failed recovery before checking the cached connection', async () => {
@@ -2562,6 +2643,7 @@ describe('MCPManager', () => {
     it('should use MCPConnectionFactory.discoverTools when no app connection available', async () => {
       const discoveryConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as MCPConnection;
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
@@ -2586,7 +2668,7 @@ describe('MCPManager', () => {
       expect(result.tools).toEqual(mockTools);
       expect(result.oauthRequired).toBe(false);
       expect(MCPConnectionFactory.discoverTools).toHaveBeenCalled();
-      expect(discoveryConnection.disconnect).toHaveBeenCalledTimes(1);
+      expect(discoveryConnection.dispose).toHaveBeenCalledTimes(1);
     });
 
     it('should forward runtime context to discoverTools in the non-OAuth path', async () => {

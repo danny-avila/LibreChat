@@ -12,7 +12,7 @@ import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { OAuthPromptRelay } from '~/mcp/oauth/pending';
+import { OAuthLifecycleRelay } from '~/mcp/oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { isMCPDomainAllowed } from '~/auth/domain';
 import { MCPConnection } from './connection';
@@ -21,7 +21,7 @@ import { mcpConfig } from './mcpConfig';
 
 type PendingConnection = {
   promise: Promise<MCPConnection>;
-  oauth: OAuthPromptRelay;
+  oauth: OAuthLifecycleRelay;
 };
 
 /**
@@ -122,10 +122,11 @@ export abstract class UserConnectionManager {
         return pending;
       }
 
-      const pendingOAuth = new OAuthPromptRelay(
-        opts.oauthStart,
-        `[MCP][User: ${userId}][${serverName}]`,
-      );
+      const pendingOAuth = new OAuthLifecycleRelay({
+        oauthStart: opts.oauthStart,
+        oauthEnd: opts.oauthEnd,
+        logPrefix: `[MCP][User: ${userId}][${serverName}]`,
+      });
       const connectionPromise = this.createUserConnectionInternal(
         {
           ...opts,
@@ -133,6 +134,7 @@ export abstract class UserConnectionManager {
           ephemeralConnection: true,
           serverConfig: config,
           oauthStart: pendingOAuth.start,
+          oauthEnd: pendingOAuth.end,
         },
         userId,
         forceNew === true,
@@ -166,6 +168,7 @@ export abstract class UserConnectionManager {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Joining in-flight connection attempt`);
         await pending.oauth.add({
           oauthStart: opts.oauthStart,
+          oauthEnd: opts.oauthEnd,
           flowManager: opts.flowManager,
           userId,
           serverName,
@@ -174,10 +177,11 @@ export abstract class UserConnectionManager {
       }
     }
 
-    const pendingOAuth = new OAuthPromptRelay(
-      opts.oauthStart,
-      `[MCP][User: ${userId}][${serverName}]`,
-    );
+    const pendingOAuth = new OAuthLifecycleRelay({
+      oauthStart: opts.oauthStart,
+      oauthEnd: opts.oauthEnd,
+      logPrefix: `[MCP][User: ${userId}][${serverName}]`,
+    });
     const connectionPromise = this.createUserConnectionInternal(
       {
         ...opts,
@@ -185,6 +189,7 @@ export abstract class UserConnectionManager {
         ephemeralConnection,
         serverConfig: config,
         oauthStart: pendingOAuth.start,
+        oauthEnd: pendingOAuth.end,
       },
       userId,
       clearCooldown,
@@ -596,30 +601,14 @@ export abstract class UserConnectionManager {
     this.deferredConnectionDisposalHolds.set(connection, holds + 1);
   }
 
-  protected releaseDeferredConnectionDisposal(connection: MCPConnection): void {
+  protected async releaseDeferredConnectionDisposal(connection: MCPConnection): Promise<void> {
     const holds = this.deferredConnectionDisposalHolds.get(connection) ?? 0;
     if (holds > 1) {
       this.deferredConnectionDisposalHolds.set(connection, holds - 1);
       return;
     }
     this.deferredConnectionDisposalHolds.delete(connection);
-  }
-
-  protected async releaseRecoveryConnectionDisposal(connection: MCPConnection): Promise<void> {
-    this.releaseDeferredConnectionDisposal(connection);
-    if (
-      (this.deferredConnectionDisposalHolds.get(connection) ?? 0) > 0 ||
-      (this.connectionBorrowers.get(connection) ?? 0) > 0
-    ) {
-      return;
-    }
-
-    const logPrefix = this.deferredConnectionDisposals.get(connection);
-    if (!logPrefix) {
-      return;
-    }
-    this.deferredConnectionDisposals.delete(connection);
-    await this.disconnectEvictedConnection(connection, logPrefix);
+    await this.finalizeDeferredConnectionDisposal(connection);
   }
 
   protected async releaseConnection(connection: MCPConnection): Promise<void> {
@@ -630,13 +619,7 @@ export abstract class UserConnectionManager {
     }
 
     this.connectionBorrowers.delete(connection);
-    const logPrefix = this.deferredConnectionDisposals.get(connection);
-    if (logPrefix) {
-      if ((this.deferredConnectionDisposalHolds.get(connection) ?? 0) === 0) {
-        this.deferredConnectionDisposals.delete(connection);
-      }
-      await this.disconnectEvictedConnection(connection, logPrefix);
-    }
+    await this.finalizeDeferredConnectionDisposal(connection);
 
     const drainWaiters = this.connectionBorrowerDrainWaiters.get(connection);
     if (drainWaiters) {
@@ -678,23 +661,29 @@ export abstract class UserConnectionManager {
     connection: MCPConnection,
     logPrefix: string,
   ): Promise<void> {
+    this.deferredConnectionDisposals.set(connection, logPrefix);
+    await this.finalizeDeferredConnectionDisposal(connection);
+  }
+
+  private async finalizeDeferredConnectionDisposal(connection: MCPConnection): Promise<void> {
     if (
       (this.connectionBorrowers.get(connection) ?? 0) > 0 ||
       (this.deferredConnectionDisposalHolds.get(connection) ?? 0) > 0
     ) {
-      this.deferredConnectionDisposals.set(connection, logPrefix);
       return;
     }
 
-    await this.disconnectEvictedConnection(connection, logPrefix);
+    const logPrefix = this.deferredConnectionDisposals.get(connection);
+    if (!logPrefix) {
+      return;
+    }
+    this.deferredConnectionDisposals.delete(connection);
+    await this.disposeConnection(connection, logPrefix);
   }
 
-  private async disconnectEvictedConnection(
-    connection: MCPConnection,
-    logPrefix: string,
-  ): Promise<void> {
+  private async disposeConnection(connection: MCPConnection, logPrefix: string): Promise<void> {
     try {
-      await connection.disconnect();
+      await connection.dispose();
     } catch (error) {
       logger.warn(`${logPrefix} Failed to dispose evicted connection`, error);
     }

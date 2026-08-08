@@ -69,19 +69,35 @@ export async function getReplayablePendingMCPOAuthStart({
   }
 }
 
-export class OAuthPromptRelay {
-  private readonly oauthStarts = new Set<t.OAuthStartHandler>();
-  private readonly emittedAuthUrls = new WeakMap<t.OAuthStartHandler, string>();
-  private lastOAuthStart?: PendingOAuthStart;
+type OAuthEndHandler = () => Promise<void>;
 
-  constructor(
-    oauthStart: t.OAuthStartHandler | undefined,
-    private readonly logPrefix: string,
-  ) {
+export class OAuthLifecycleRelay {
+  private readonly oauthStarts = new Set<t.OAuthStartHandler>();
+  private readonly oauthEnds = new Set<OAuthEndHandler>();
+  private readonly emittedAuthUrls = new WeakMap<t.OAuthStartHandler, string>();
+  private readonly emittedOAuthEnds = new WeakSet<OAuthEndHandler>();
+  private lastOAuthStart?: PendingOAuthStart;
+  private oauthEnded = false;
+
+  constructor({
+    oauthStart,
+    oauthEnd,
+    logPrefix,
+  }: {
+    oauthStart?: t.OAuthStartHandler;
+    oauthEnd?: OAuthEndHandler;
+    logPrefix: string;
+  }) {
+    this.logPrefix = logPrefix;
     if (oauthStart) {
       this.oauthStarts.add(oauthStart);
     }
+    if (oauthEnd) {
+      this.oauthEnds.add(oauthEnd);
+    }
   }
+
+  private readonly logPrefix: string;
 
   public readonly start: t.OAuthStartHandler = async (authURL, options) => {
     this.lastOAuthStart = { authURL, options };
@@ -103,29 +119,63 @@ export class OAuthPromptRelay {
     }
   };
 
+  /** Completion notifications are best effort and cannot invalidate received OAuth tokens. */
+  public readonly end: OAuthEndHandler = async () => {
+    this.oauthEnded = true;
+    for (const oauthEnd of Array.from(this.oauthEnds)) {
+      try {
+        await this.emitEnd(oauthEnd);
+      } catch (error) {
+        logger.warn(`${this.logPrefix} Failed to notify OAuth completion listener`, error);
+      }
+    }
+  };
+
   public async add({
     oauthStart,
+    oauthEnd,
     flowManager,
     userId,
     serverName,
   }: ReplayablePendingMCPOAuthStartOptions & {
     oauthStart?: t.OAuthStartHandler;
+    oauthEnd?: OAuthEndHandler;
   }): Promise<void> {
-    if (!oauthStart) {
+    if (oauthStart) {
+      this.oauthStarts.add(oauthStart);
+    }
+    if (oauthEnd) {
+      this.oauthEnds.add(oauthEnd);
+    }
+    if (this.oauthEnded) {
+      if (oauthEnd) {
+        try {
+          await this.emitEnd(oauthEnd);
+        } catch (error) {
+          logger.warn(`${this.logPrefix} Failed to re-issue OAuth completion`, error);
+        }
+      }
       return;
     }
 
-    this.oauthStarts.add(oauthStart);
+    if (!oauthStart) {
+      return;
+    }
     const lastOAuthStart = this.lastOAuthStart;
     const storedOAuthStart =
       !lastOAuthStart || lastOAuthStart.options?.expiresAt == null
         ? await getReplayablePendingMCPOAuthStart({ flowManager, userId, serverName })
         : undefined;
+    const currentOAuthStart = this.lastOAuthStart;
     const replayOAuthStart =
-      storedOAuthStart && (!lastOAuthStart || storedOAuthStart.authURL === lastOAuthStart.authURL)
+      storedOAuthStart &&
+      (!currentOAuthStart || storedOAuthStart.authURL === currentOAuthStart.authURL)
         ? storedOAuthStart
-        : lastOAuthStart;
+        : currentOAuthStart;
     if (!replayOAuthStart) {
+      return;
+    }
+    if (this.oauthEnded) {
       return;
     }
 
@@ -147,5 +197,13 @@ export class OAuthPromptRelay {
     }
     this.emittedAuthUrls.set(oauthStart, authURL);
     await oauthStart(authURL, options);
+  }
+
+  private async emitEnd(oauthEnd: OAuthEndHandler): Promise<void> {
+    if (this.emittedOAuthEnds.has(oauthEnd)) {
+      return;
+    }
+    this.emittedOAuthEnds.add(oauthEnd);
+    await oauthEnd();
   }
 }

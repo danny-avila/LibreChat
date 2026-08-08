@@ -25,7 +25,7 @@ import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
-import { OAuthPromptRelay } from './oauth/pending';
+import { OAuthLifecycleRelay } from './oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
@@ -72,7 +72,7 @@ export class MCPManager extends UserConnectionManager {
     MCPConnection,
     {
       promise: Promise<void>;
-      prompts: OAuthPromptRelay;
+      callbacks: OAuthLifecycleRelay;
       allowsTakeover: boolean;
       takeoverClaimed?: boolean;
     }
@@ -117,9 +117,10 @@ export class MCPManager extends UserConnectionManager {
       opts.serverConfig?.updatedAt != null &&
       connection.isStale(opts.serverConfig.updatedAt);
     if (recovery && !providedConfigIsNewer) {
-      if (recovery.prompts) {
-        await recovery.prompts.add({
+      if (recovery.callbacks) {
+        await recovery.callbacks.add({
           oauthStart: opts.oauthStart,
+          oauthEnd: opts.oauthEnd,
           flowManager: opts.flowManager,
           userId,
           serverName: opts.serverName,
@@ -298,9 +299,9 @@ export class MCPManager extends UserConnectionManager {
     ): Promise<t.ToolDiscoveryResult> => {
       if (result.connection) {
         try {
-          await result.connection.disconnect();
+          await result.connection.dispose();
         } catch (error) {
-          logger.warn(`${logPrefix} [Discovery] Failed to disconnect discovery connection`, error);
+          logger.warn(`${logPrefix} [Discovery] Failed to dispose discovery connection`, error);
         }
       }
       return {
@@ -461,16 +462,23 @@ Please follow these instructions when using tools from the respective MCP server
     error: unknown,
     serverName: string,
     userId: string,
-    attachSharedOAuthHandler: (oauthStart: t.OAuthStartHandler) => () => void,
+    attachSharedOAuthHandler: (relay: OAuthLifecycleRelay) => () => void,
     oauthStart: t.OAuthStartHandler | undefined,
+    oauthEnd: (() => Promise<void>) | undefined,
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
     signal?: AbortSignal,
     allowsTakeover = true,
   ): Promise<void> {
     const existingRecovery = this.oauthRecoveries.get(connection);
     if (existingRecovery) {
-      if (existingRecovery.prompts) {
-        await existingRecovery.prompts.add({ oauthStart, flowManager, userId, serverName });
+      if (existingRecovery.callbacks) {
+        await existingRecovery.callbacks.add({
+          oauthStart,
+          oauthEnd,
+          flowManager,
+          userId,
+          serverName,
+        });
       }
       try {
         return await this.waitForActiveRecovery(existingRecovery.promise, signal);
@@ -488,9 +496,13 @@ Please follow these instructions when using tools from the respective MCP server
       }
     }
 
-    const prompts = new OAuthPromptRelay(oauthStart, `[MCP][User: ${userId}][${serverName}]`);
+    const callbacks = new OAuthLifecycleRelay({
+      oauthStart,
+      oauthEnd,
+      logPrefix: `[MCP][User: ${userId}][${serverName}]`,
+    });
     const recovery = Promise.resolve().then(async () => {
-      const cleanupRequestOAuthHandler = attachSharedOAuthHandler(prompts.start);
+      const cleanupRequestOAuthHandler = attachSharedOAuthHandler(callbacks);
       try {
         await this.waitForOAuthRecovery(connection, () =>
           connection.emit('oauthReauthenticationRequired', {
@@ -516,7 +528,7 @@ Please follow these instructions when using tools from the respective MCP server
       }
     });
 
-    const recoveryEntry = { promise: recovery, prompts, allowsTakeover, takeoverClaimed: false };
+    const recoveryEntry = { promise: recovery, callbacks, allowsTakeover, takeoverClaimed: false };
     this.oauthRecoveries.set(connection, recoveryEntry);
     this.holdDeferredConnectionDisposal(connection);
     const clearRecovery = () => {
@@ -524,7 +536,7 @@ Please follow these instructions when using tools from the respective MCP server
         this.oauthRecoveries.delete(connection);
       }
     };
-    const releaseRecoveryDisposal = () => this.releaseRecoveryConnectionDisposal(connection);
+    const releaseRecoveryDisposal = () => this.releaseDeferredConnectionDisposal(connection);
     void recovery.then(clearRecovery, clearRecovery);
     void recovery.then(releaseRecoveryDisposal, releaseRecoveryDisposal);
     await this.waitForActiveRecovery(recovery, signal);
@@ -693,8 +705,8 @@ Please follow these instructions when using tools from the respective MCP server
       let connection: MCPConnection | undefined;
       let connectionRetained = false;
       let deferredDisposalHeld = false;
-      let attachSharedOAuthHandler: ((oauthStart: t.OAuthStartHandler) => () => void) | undefined;
-      let disconnectAfterCall = false;
+      let attachSharedOAuthHandler: ((relay: OAuthLifecycleRelay) => () => void) | undefined;
+      let disposeAfterCall = false;
       const retainConnectionLease = () => {
         if (!connection || connectionRetained) {
           return;
@@ -707,7 +719,7 @@ Please follow these instructions when using tools from the respective MCP server
           return;
         }
         if (deferredDisposalHeld && !preserveDisposalHold) {
-          this.releaseDeferredConnectionDisposal(connection);
+          await this.releaseDeferredConnectionDisposal(connection);
           deferredDisposalHeld = false;
         }
         connectionRetained = false;
@@ -754,9 +766,10 @@ Please follow these instructions when using tools from the respective MCP server
           if (!checkoutRecovery || checkoutRecovery.promise === awaitedCheckoutRecovery) {
             break;
           }
-          if (checkoutRecovery.prompts) {
-            await checkoutRecovery.prompts.add({
+          if (checkoutRecovery.callbacks) {
+            await checkoutRecovery.callbacks.add({
               oauthStart,
+              oauthEnd,
               flowManager,
               userId: userId!,
               serverName,
@@ -808,7 +821,7 @@ Please follow these instructions when using tools from the respective MCP server
         }
         const isDbSourced = isUserSourced(rawConfig);
         const ephemeralConnection = !!userId && requiresEphemeralUserConnection(rawConfig);
-        disconnectAfterCall = ephemeralConnection && !requestScopedConnections;
+        disposeAfterCall = ephemeralConnection && !requestScopedConnections;
 
         /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
         const graphProcessedConfig = isDbSourced
@@ -878,7 +891,7 @@ Please follow these instructions when using tools from the respective MCP server
         ) {
           const { allowedDomains, allowedAddresses, useSSRFProtection } =
             await registry.resolveAllowlists({ userId, role: user?.role });
-          attachSharedOAuthHandler = (sharedOAuthStart) =>
+          attachSharedOAuthHandler = (relay) =>
             MCPConnectionFactory.attachRequestOAuthHandler(
               {
                 serverName,
@@ -894,8 +907,8 @@ Please follow these instructions when using tools from the respective MCP server
                 user,
                 flowManager,
                 tokenMethods,
-                oauthStart: sharedOAuthStart,
-                oauthEnd,
+                oauthStart: relay.start,
+                oauthEnd: relay.end,
                 customUserVars,
                 requestBody,
               },
@@ -923,6 +936,7 @@ Please follow these instructions when using tools from the respective MCP server
                 userId,
                 requestOAuthHandler,
                 oauthStart,
+                oauthEnd,
                 flowManager,
                 options?.signal,
                 !recoveryTakeoverConsumed,
@@ -982,6 +996,7 @@ Please follow these instructions when using tools from the respective MCP server
                 userId,
                 requestOAuthHandler,
                 oauthStart,
+                oauthEnd,
                 flowManager,
                 options?.signal,
                 !recoveryTakeoverConsumed,
@@ -1017,15 +1032,15 @@ Please follow these instructions when using tools from the respective MCP server
         throw error;
       } finally {
         await releaseConnectionLease();
-        // Ephemeral connections are never stored in userConnections, so disconnecting
+        // Ephemeral connections are never stored in userConnections, so disposing
         // is the only cleanup needed; removing the map entry here could orphan a
         // still-connected cached connection from before a config change.
-        if (disconnectAfterCall && connection) {
+        if (disposeAfterCall && connection) {
           try {
-            await connection.disconnect();
-          } catch (disconnectError) {
-            logger.warn(`${logPrefix}[${toolName}] Failed to disconnect ephemeral connection`, {
-              error: disconnectError,
+            await connection.dispose();
+          } catch (disposeError) {
+            logger.warn(`${logPrefix}[${toolName}] Failed to dispose ephemeral connection`, {
+              error: disposeError,
             });
           }
         }

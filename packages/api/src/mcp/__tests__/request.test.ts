@@ -66,16 +66,23 @@ describe('MCP request context', () => {
     const res = createResponse();
     const context = getMCPRequestContext(req, res);
     const disconnect = jest.fn().mockResolvedValue(undefined);
+    const dispose = jest.fn().mockResolvedValue(undefined);
     const pendingDisconnect = jest.fn().mockResolvedValue(undefined);
+    const pendingDispose = jest.fn().mockResolvedValue(undefined);
 
-    context?.connections.set('server', { disconnect });
-    context?.pending.set('pending-server', Promise.resolve({ disconnect: pendingDisconnect }));
+    context?.connections.set('server', { disconnect, dispose });
+    context?.pending.set(
+      'pending-server',
+      Promise.resolve({ disconnect: pendingDisconnect, dispose: pendingDispose }),
+    );
 
     res.emit('finish');
     await nextTick();
 
-    expect(disconnect).toHaveBeenCalledTimes(1);
-    expect(pendingDisconnect).toHaveBeenCalledTimes(1);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(pendingDispose).toHaveBeenCalledTimes(1);
+    expect(disconnect).not.toHaveBeenCalled();
+    expect(pendingDisconnect).not.toHaveBeenCalled();
     expect(context?.connections.size).toBe(0);
     expect(context?.pending.size).toBe(0);
   });

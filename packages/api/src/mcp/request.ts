@@ -21,6 +21,7 @@ interface MCPResponseLike {
 
 interface Disconnectable {
   disconnect: () => Promise<unknown> | unknown;
+  dispose?: () => Promise<unknown> | unknown;
 }
 
 const contexts = new WeakMap<object, MCPRequestContext>();
@@ -73,11 +74,13 @@ export async function cleanupMCPRequestContext(context?: MCPRequestContext): Pro
       try {
         if (context.disposeConnection) {
           await context.disposeConnection(connectionKey, connection);
+        } else if (connection.dispose) {
+          await connection.dispose();
         } else {
           await connection.disconnect();
         }
       } catch (error) {
-        logger.warn('[MCP Request Context] Failed to disconnect request-scoped connection', error);
+        logger.warn('[MCP Request Context] Failed to dispose request-scoped connection', error);
       }
     }),
   );
