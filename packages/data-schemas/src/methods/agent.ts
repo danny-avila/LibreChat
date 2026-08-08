@@ -505,6 +505,24 @@ export function createAgentMethods(
     }
   }
 
+  async function pruneAgentFavorites(
+    User: Model<{ _id: Types.ObjectId }>,
+    agentIds: string[],
+  ): Promise<string[]> {
+    const affectedUserIds = new Set<string>();
+    while (true) {
+      const affectedUser = await User.findOneAndUpdate(
+        { 'favorites.agentId': { $in: agentIds } },
+        { $pull: { favorites: { agentId: { $in: agentIds } } } },
+        { new: true, projection: { _id: 1 } },
+      ).lean<{ _id: Types.ObjectId }>();
+      if (!affectedUser) {
+        return Array.from(affectedUserIds);
+      }
+      affectedUserIds.add(affectedUser._id.toString());
+    }
+  }
+
   /**
    * Create an agent with the provided data.
    */
@@ -949,16 +967,10 @@ export function createAgentMethods(
           logger.error('[deleteAgent] Error removing agent from handoff edges', error);
         }
         try {
-          const affectedUsers = await User.find({
-            'favorites.agentId': (agent as unknown as { id: string }).id,
-          })
-            .select('_id')
-            .lean<Array<{ _id: Types.ObjectId }>>();
-          await User.updateMany(
-            { 'favorites.agentId': (agent as unknown as { id: string }).id },
-            { $pull: { favorites: { agentId: (agent as unknown as { id: string }).id } } },
-          );
-          await invalidateAuthUserDocCache(affectedUsers.map((user) => user._id.toString()));
+          const affectedUserIds = await pruneAgentFavorites(User, [
+            (agent as unknown as { id: string }).id,
+          ]);
+          await invalidateAuthUserDocCache(affectedUserIds);
         } catch (error) {
           logger.error('[deleteAgent] Error removing agent from user favorites', error);
         }
@@ -1029,14 +1041,7 @@ export function createAgentMethods(
       }
 
       try {
-        const affectedUsers = await User.find({ 'favorites.agentId': { $in: agentIds } })
-          .select('_id')
-          .lean<Array<{ _id: Types.ObjectId }>>();
-        await User.updateMany(
-          { 'favorites.agentId': { $in: agentIds } },
-          { $pull: { favorites: { agentId: { $in: agentIds } } } },
-        );
-        await invalidateAuthUserDocCache(affectedUsers.map((user) => user._id.toString()));
+        await invalidateAuthUserDocCache(await pruneAgentFavorites(User, agentIds));
       } catch (error) {
         logger.error('[deleteUserAgents] Error removing agents from user favorites', error);
       }

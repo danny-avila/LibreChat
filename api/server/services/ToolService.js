@@ -1417,29 +1417,28 @@ async function loadToolDefinitionsWrapper({
   }
 
   const findChangedDefinitionAuthorities = async () => {
-    const changed = new Set();
-    for (const [serverName, availableTools] of Object.entries(mcpAvailableTools)) {
-      const currentAuthority = await resolveCurrentMCPToolAuthority({
-        user: mcpAuthoritySnapshot.user,
-        serverName,
-        requestBody: req.body,
-        schemas: availableTools,
-        ...(mcpAuthorityAuthorizationKinds.get(serverName) === 'oauth' && {
-          oauthRequiredHint: true,
-        }),
-        bounded: true,
-        expectedServerConfig: mcpAuthorityConfigs.get(serverName),
-      });
-      const currentParsedConfig = currentAuthority?.parsedConfig;
-      if (
-        !currentParsedConfig?.catalogScope ||
-        !(await userCanUseMCPServersFresh(currentParsedConfig.actor.user)) ||
-        !matchesMCPAvailableToolsAuthority(availableTools, currentParsedConfig.catalogScope)
-      ) {
-        changed.add(serverName);
-      }
-    }
-    return changed;
+    const checks = await Promise.all(
+      Object.entries(mcpAvailableTools).map(async ([serverName, availableTools]) => {
+        const currentAuthority = await resolveCurrentMCPToolAuthority({
+          user: mcpAuthoritySnapshot.user,
+          serverName,
+          requestBody: req.body,
+          schemas: availableTools,
+          ...(mcpAuthorityAuthorizationKinds.get(serverName) === 'oauth' && {
+            oauthRequiredHint: true,
+          }),
+          bounded: true,
+          expectedServerConfig: mcpAuthorityConfigs.get(serverName),
+        });
+        const currentParsedConfig = currentAuthority?.parsedConfig;
+        return !currentParsedConfig?.catalogScope ||
+          !(await userCanUseMCPServersFresh(currentParsedConfig.actor.user)) ||
+          !matchesMCPAvailableToolsAuthority(availableTools, currentParsedConfig.catalogScope)
+          ? serverName
+          : null;
+      }),
+    );
+    return new Set(checks.filter(Boolean));
   };
   const changedDefinitionAuthorities = await findChangedDefinitionAuthorities();
   if (changedDefinitionAuthorities.size > 0) {

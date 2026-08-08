@@ -504,6 +504,71 @@ describe('ToolService - Action Capability Gating', () => {
     expect(reinitMCPServer).not.toHaveBeenCalled();
   });
 
+  it('rechecks independent MCP definition authorities concurrently', async () => {
+    const serverNames = ['parallel-authority-a', 'parallel-authority-b'];
+    const tools = serverNames.map((serverName) => `search${Constants.mcp_delimiter}${serverName}`);
+    const req = createMockReq([AgentCapabilities.tools]);
+    const baseResolver = mockResolveCurrentMCPToolAuthority.getMockImplementation();
+    const callsByServer = new Map();
+    let activeFinalChecks = 0;
+    let overlappedFinalChecks = false;
+    mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig([AgentCapabilities.tools]));
+    mockResolveConfigServers.mockResolvedValue(
+      Object.fromEntries(
+        serverNames.map((serverName) => [
+          serverName,
+          { type: 'streamable-http', url: `https://${serverName}.example.com/mcp` },
+        ]),
+      ),
+    );
+    mockGetMCPServerTools.mockImplementation(async ({ serverName }) => ({
+      [`search${Constants.mcp_delimiter}${serverName}`]: {
+        function: { name: `search${Constants.mcp_delimiter}${serverName}`, parameters: {} },
+      },
+    }));
+    mockResolveCurrentMCPToolAuthority.mockImplementation(async (args) => {
+      const count = (callsByServer.get(args.serverName) ?? 0) + 1;
+      callsByServer.set(args.serverName, count);
+      if (count === 3) {
+        activeFinalChecks++;
+        overlappedFinalChecks ||= activeFinalChecks > 1;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        activeFinalChecks--;
+      }
+      return await baseResolver(args);
+    });
+    mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+      const definitions = [];
+      for (const serverName of params.mcpServerNames) {
+        const available = await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        definitions.push(...Object.keys(available ?? {}));
+      }
+      return {
+        toolDefinitions: definitions,
+        toolRegistry: new Map(),
+        hasDeferredTools: false,
+        mcpResolution: { expectedToolCount: 2, resolvedToolCount: definitions.length },
+      };
+    });
+
+    await expect(
+      loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools },
+        definitionsOnly: true,
+      }),
+    ).resolves.toMatchObject({ toolDefinitions: expect.arrayContaining(tools) });
+
+    expect(callsByServer).toEqual(
+      new Map([
+        [serverNames[0], 4],
+        [serverNames[1], 4],
+      ]),
+    );
+    expect(overlappedFinalChecks).toBe(true);
+  });
+
   describe('resolveAgentCapabilities', () => {
     it('should return capabilities from endpoints config', async () => {
       const capabilities = [AgentCapabilities.tools, AgentCapabilities.actions];

@@ -1177,6 +1177,56 @@ describe('Agent Methods', () => {
       expect(cache.delete).toHaveBeenCalledWith(indexKey);
     });
 
+    test('atomically identifies each user whose favorite is pruned before invalidating cache', async () => {
+      const previousCacheMode = process.env.AUTH_USER_CACHE_MODE;
+      process.env.AUTH_USER_CACHE_MODE = 'on';
+      const agentId = `agent_${uuidv4()}`;
+      const userId = new mongoose.Types.ObjectId();
+      const cache = {
+        get: jest.fn(async () => ['cached-auth-user-document']),
+        set: jest.fn(async () => undefined),
+        delete: jest.fn(async () => undefined),
+      };
+      const findOneAndUpdateSpy = jest.spyOn(User, 'findOneAndUpdate');
+      const cachedMethods = createAgentMethods(mongoose, {
+        removeAllPermissions: async () => undefined,
+        getActions,
+        getSoleOwnedResourceIds: async () => [],
+        getCache: jest.fn((key) => (key === CacheKeys.AUTH_USER_DOC ? cache : undefined)),
+      });
+      await createAgent({
+        id: agentId,
+        name: 'Atomic Favorite Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await User.create({
+        _id: userId,
+        name: 'Atomic Favorite User',
+        email: `atomic-favorite-${uuidv4()}@example.com`,
+        provider: 'openid',
+        favorites: [{ agentId }],
+      });
+
+      try {
+        await cachedMethods.deleteAgent({ id: agentId });
+        expect(findOneAndUpdateSpy).toHaveBeenCalledWith(
+          { 'favorites.agentId': { $in: [agentId] } },
+          { $pull: { favorites: { agentId: { $in: [agentId] } } } },
+          expect.objectContaining({ new: true }),
+        );
+        expect(cache.delete).toHaveBeenCalledWith('cached-auth-user-document');
+      } finally {
+        findOneAndUpdateSpy.mockRestore();
+        if (previousCacheMode === undefined) {
+          delete process.env.AUTH_USER_CACHE_MODE;
+        } else {
+          process.env.AUTH_USER_CACHE_MODE = previousCacheMode;
+        }
+      }
+    });
+
     test('should preserve other agents in database when one agent is deleted', async () => {
       const agentToDeleteId = `agent_${uuidv4()}`;
       const agentToKeep1Id = `agent_${uuidv4()}`;
