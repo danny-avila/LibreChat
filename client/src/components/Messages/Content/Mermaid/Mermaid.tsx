@@ -37,7 +37,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme, artifact: a
   const localize = useLocalize();
   const location = useLocation();
   const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
-  const { messageId } = useMessageContext();
+  const { messageId, partIndex } = useMessageContext();
   const artifactButtonRef = useRef<HTMLButtonElement>(null);
   const shouldFocusArtifactCardRef = useRef(false);
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
@@ -46,7 +46,10 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme, artifact: a
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
   const defaultTitle = localize('com_ui_mermaid_diagram');
   const canOpenArtifact = isArtifactRoute(location.pathname);
-  const artifactScope = messageId || instanceId;
+  /* Each content part renders its own markdown tree, so the per-message
+   * Mermaid counter restarts at zero in every part: diagrams sitting either
+   * side of a tool call would otherwise share an id within one message. */
+  const artifactScope = messageId ? `${messageId}-part${partIndex ?? 0}` : instanceId;
   const artifactId = `mermaid-artifact-${artifactScope}-${id || instanceId}`;
   const artifact = useMemo<Artifact>(() => {
     if (artifactProp != null) {

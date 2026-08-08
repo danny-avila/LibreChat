@@ -191,6 +191,68 @@ describe('Mermaid Artifact expansion', () => {
     expect(state.visible).toBe(true);
   });
 
+  it('separates diagrams that sit in different content parts of one message', async () => {
+    let state: ArtifactStateSnapshot = {
+      artifacts: null,
+      currentArtifactId: null,
+      visible: false,
+    };
+    const handleStateChange = (nextState: ArtifactStateSnapshot) => {
+      state = nextState;
+    };
+
+    /* Every content part builds its own markdown tree, so a diagram before a
+     * tool call and one after it both arrive here as `mermaid-0`. */
+    render(
+      <RecoilRoot>
+        <MemoryRouter initialEntries={['/c/conversation-1']}>
+          <StateProbe onChange={handleStateChange} />
+          <MessageContext.Provider
+            value={{
+              messageId: 'message-1',
+              conversationId: 'conversation-1',
+              partIndex: 0,
+              isExpanded: true,
+            }}
+          >
+            <Mermaid id="mermaid-0">{'graph TD\nA-->B'}</Mermaid>
+          </MessageContext.Provider>
+          <MessageContext.Provider
+            value={{
+              messageId: 'message-1',
+              conversationId: 'conversation-1',
+              partIndex: 2,
+              isExpanded: true,
+            }}
+          >
+            <Mermaid id="mermaid-0">{'graph TD\nC-->D'}</Mermaid>
+          </MessageContext.Provider>
+        </MemoryRouter>
+      </RecoilRoot>,
+    );
+
+    const [firstExpand, secondExpand] = screen.getAllByRole('button', {
+      name: mockOpenAsArtifactLabel,
+    });
+    fireEvent.click(firstExpand);
+    fireEvent.click(secondExpand);
+
+    await waitFor(() => expect(Object.keys(state.artifacts ?? {})).toHaveLength(2));
+
+    const registered = Object.values(state.artifacts ?? {}).filter(
+      (entry): entry is Artifact => entry != null,
+    );
+    expect(new Set(registered.map((entry) => entry.id)).size).toBe(2);
+    expect(registered.map((entry) => entry.content)).toEqual(
+      expect.arrayContaining(['graph TD\nA-->B', 'graph TD\nC-->D']),
+    );
+
+    const cards = screen.getAllByRole('button', { expanded: false });
+    const selected = screen.getAllByRole('button', { expanded: true });
+    expect(cards).toHaveLength(1);
+    expect(selected).toHaveLength(1);
+  });
+
   it('keeps the dialog expansion on routes without an Artifact panel', () => {
     let state: ArtifactStateSnapshot = {
       artifacts: null,
