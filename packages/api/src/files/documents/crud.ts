@@ -9,6 +9,13 @@ const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
  * turn the notice itself into hundreds of KB of text persisted on every turn. */
 const MAX_LISTED_MISSING_PAGES = 20;
 
+/** Formats a bounded page list for persistence and logging. */
+export function summarizeMissingPages(pagesNeedingOcr: readonly number[]): string {
+  const listed = pagesNeedingOcr.slice(0, MAX_LISTED_MISSING_PAGES);
+  const remaining = pagesNeedingOcr.length - listed.length;
+  return remaining ? `${listed.join(', ')} and ${remaining} more` : listed.join(', ');
+}
+
 /**
  * Appends a visible notice naming the pages that hold no extractable text.
  *
@@ -20,9 +27,7 @@ export function annotateMissingPages(text: string, pagesNeedingOcr?: number[]): 
   if (!pagesNeedingOcr?.length) {
     return text;
   }
-  const listed = pagesNeedingOcr.slice(0, MAX_LISTED_MISSING_PAGES);
-  const remaining = pagesNeedingOcr.length - listed.length;
-  const pages = remaining ? `${listed.join(', ')} and ${remaining} more` : listed.join(', ');
+  const pages = summarizeMissingPages(pagesNeedingOcr);
   const notice =
     pagesNeedingOcr.length === 1
       ? `Page ${pages} of this document contains no extractable text and was omitted. It is image-based and requires an OCR service to read.`

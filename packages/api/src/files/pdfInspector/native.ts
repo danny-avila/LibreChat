@@ -1,117 +1,127 @@
-import { Worker } from 'worker_threads';
+import { spawn } from 'child_process';
 import type { PageMarkdownResult } from '@firecrawl/pdf-inspector';
 
 /**
- * Runs pdf-inspector's native bindings on a worker thread.
+ * Runs pdf-inspector's native bindings in a child process.
  *
  * The bindings expose no async variant: every export is a synchronous napi call,
  * so invoking them inline blocks the event loop for the whole parse and stalls
- * every other request on the process. They also parse attacker-supplied bytes in
- * Rust, where a panic, abort, or stack overflow on a hostile object graph is not
- * something a JS `try`/`catch` can recover from, so an in-process crash would take
- * down the server and every in-flight stream with it.
+ * every other request on the process. A worker thread keeps the event loop free,
+ * but it does not isolate native faults because worker threads share the server
+ * process, and terminating a worker cannot preempt a synchronous N-API call.
  *
- * A worker per document turns both into a contained, recoverable failure: the loop
- * stays responsive while the parse runs, and a thread that dies takes only its own
- * request with it. Callers surface a rejection and fall back to pdfjs, so a
- * document that dies here still parses.
+ * A child process per document provides the required fault boundary: an abort or
+ * segmentation fault ends only the parser process, and the parent can forcibly
+ * kill a synchronous parse that exceeds the timeout. Callers receive a rejection
+ * and can fall back to pdfjs without risking the API process.
  */
 
 /** Bounds a parse that never returns; the main thread is free to fire this timer. */
-const PDF_WORKER_TIMEOUT_MS = 30_000;
+const PDF_CHILD_TIMEOUT_MS = 30_000;
 
 /**
- * Worker body, kept as a string so the bundler emits no second entry point and the
+ * Child body, kept as a string so the bundler emits no second entry point and the
  * path resolution stays valid under Jest, tsdown's CJS bundle, and a published
  * tarball alike. The native module is resolved on the main thread and passed in,
- * so the worker never depends on its own working directory.
+ * so the child never depends on its own working directory.
  */
-const WORKER_SOURCE = `
-const { parentPort, workerData } = require('worker_threads');
-const fs = require('fs');
-try {
-  const native = require(workerData.modulePath);
-  const data = fs.readFileSync(workerData.path);
-  const result =
-    workerData.op === 'text'
-      ? { text: native.extractText(data) }
-      : { pages: native.extractPagesMarkdown(data).pages };
-  parentPort.postMessage({ ok: true, result });
-} catch (error) {
-  parentPort.postMessage({ ok: false, message: error && error.message ? error.message : String(error) });
-}
+const CHILD_SOURCE = `
+process.once('message', (request) => {
+  const fs = require('fs');
+  try {
+    const native = require(request.modulePath);
+    const data = fs.readFileSync(request.path);
+    const result =
+      request.op === 'text'
+        ? { text: native.extractText(data) }
+        : { pages: native.extractPagesMarkdown(data).pages };
+    process.send({ ok: true, result });
+  } catch (error) {
+    process.send({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
 `;
 
-interface PdfWorkerResult {
+interface PdfChildResult {
   pages?: PageMarkdownResult[];
   text?: string;
 }
 
-type PdfWorkerOp = 'pages' | 'text';
+type PdfChildOp = 'pages' | 'text';
 
-function runPdfWorker(op: PdfWorkerOp, filePath: string): Promise<PdfWorkerResult> {
+function runPdfChild(op: PdfChildOp, filePath: string): Promise<PdfChildResult> {
   const modulePath = require.resolve('@firecrawl/pdf-inspector');
 
-  return new Promise<PdfWorkerResult>((resolve, reject) => {
-    const worker = new Worker(WORKER_SOURCE, {
-      eval: true,
-      workerData: { op, path: filePath, modulePath },
+  return new Promise<PdfChildResult>((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', CHILD_SOURCE], {
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     });
 
     let settled = false;
-    const finish = (error: Error | null, value?: PdfWorkerResult) => {
+    const finish = (error: Error | null, value?: PdfChildResult) => {
       if (settled) {
         return;
       }
       settled = true;
       clearTimeout(timer);
-      void worker.terminate();
+      if (!child.killed) {
+        child.kill('SIGKILL');
+      }
       if (error) {
         reject(error);
         return;
       }
-      resolve(value as PdfWorkerResult);
+      resolve(value as PdfChildResult);
     };
 
     const timer = setTimeout(
-      () => finish(new Error(`pdf-inspector ${op} timed out after ${PDF_WORKER_TIMEOUT_MS}ms`)),
-      PDF_WORKER_TIMEOUT_MS,
+      () => finish(new Error(`pdf-inspector ${op} timed out after ${PDF_CHILD_TIMEOUT_MS}ms`)),
+      PDF_CHILD_TIMEOUT_MS,
     );
-    /* The parse holds the thread; without this the timer alone would keep an idle
+    /* The parse holds the child; without this the timer alone would keep an idle
      * process alive for the full timeout. */
     timer.unref?.();
 
-    worker.on('message', (message: { ok: boolean; result?: PdfWorkerResult; message?: string }) => {
+    child.on('message', (message: { ok: boolean; result?: PdfChildResult; message?: string }) => {
       if (message.ok) {
         finish(null, message.result);
         return;
       }
       finish(new Error(message.message ?? `pdf-inspector ${op} failed`));
     });
-    worker.on('error', (error: Error) => finish(error));
-    /* Reached when the native binding aborts the thread outright, which is exactly
-     * the case an in-process call could not have survived. */
-    worker.on('exit', (code: number) =>
-      finish(new Error(`pdf-inspector ${op} worker exited with code ${code}`)),
+    child.on('error', (error: Error) => finish(error));
+    child.on('exit', (code: number | null, signal: NodeJS.Signals | null) =>
+      finish(
+        new Error(
+          signal
+            ? `pdf-inspector ${op} child exited from signal ${signal}`
+            : `pdf-inspector ${op} child exited with code ${code}`,
+        ),
+      ),
     );
+    child.send({ op, path: filePath, modulePath }, (error) => {
+      if (error) {
+        finish(error);
+      }
+    });
   });
 }
 
-/** Per-page markdown for a PDF, parsed off the event loop. */
+/** Per-page markdown for a PDF, parsed outside the API process. */
 export async function extractPagesMarkdownIsolated(
   filePath: string,
 ): Promise<PageMarkdownResult[]> {
-  const { pages } = await runPdfWorker('pages', filePath);
+  const { pages } = await runPdfChild('pages', filePath);
   return pages ?? [];
 }
 
 /**
- * Whole-document plain text for a PDF, parsed off the event loop.
+ * Whole-document plain text for a PDF, parsed outside the API process.
  *
  * Unlike the per-page markdown extractor, this one re-segments words from glyph
  * positions, which is what makes it readable on documents with a poor OCR layer.
  */
 export async function extractTextIsolated(filePath: string): Promise<string> {
-  const { text } = await runPdfWorker('text', filePath);
+  const { text } = await runPdfChild('text', filePath);
   return text ?? '';
 }

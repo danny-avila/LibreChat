@@ -51,14 +51,28 @@ export async function extractPageText(
   return texts;
 }
 
-/** Reads the raw text layer of every page, joined in document order. */
-export async function extractDocumentText(data: Buffer): Promise<string> {
+/**
+ * Reads the raw text layer in document order, up to `maxPages`.
+ *
+ * A document above the limit is rejected before visiting any page. Building an
+ * omitted-page array would itself be unbounded for a hostile page count, while
+ * silently returning the first pages would make incomplete text look complete.
+ */
+export async function extractDocumentText(
+  data: Buffer,
+  maxPages = Number.POSITIVE_INFINITY,
+): Promise<string> {
   // Imported inline so that Jest can test other routes without failing due to loading ESM
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
   const loadingTask = getDocument({ data: new Uint8Array(data) });
   try {
     const pdf: PDFDocumentProxy = await loadingTask.promise;
+    if (pdf.numPages > maxPages) {
+      throw new Error(
+        `PDF contains ${pdf.numPages} pages, exceeding the ${maxPages}-page fallback limit`,
+      );
+    }
 
     let fullText = '';
     for (let i = 1; i <= pdf.numPages; i++) {

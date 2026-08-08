@@ -181,7 +181,9 @@ export default function FilePreviewDialog({
   const [isCopied, setIsCopied] = useState(false);
   const loadingRef = useRef(false);
 
-  const previewKind = canPreviewByMime(fileType) || canPreviewByExt(fileName);
+  const previewKind = showParsedText
+    ? false
+    : canPreviewByMime(fileType) || canPreviewByExt(fileName);
 
   const cancelledRef = useRef(false);
 
@@ -306,7 +308,7 @@ export default function FilePreviewDialog({
             <OGDialogDescription className="min-w-0 truncate">
               {metaParts.join(' · ')}
             </OGDialogDescription>
-            {fileId && (
+            {fileId && !showParsedText && (
               <button
                 type="button"
                 onClick={handleDownload}
@@ -334,16 +336,6 @@ export default function FilePreviewDialog({
                 {localize('com_ui_preview_unavailable')}
               </span>
             </div>
-          )}
-          {/* A parsed PDF stores no binary to fetch (its filepath is the parser
-           * marker), so the inline preview fails. Its extracted text still exists. */}
-          {previewError && showParsedText && (
-            <>
-              <p className="pb-3 text-sm text-text-secondary">
-                {localize('com_ui_extracted_text_description')}
-              </p>
-              <ExtractedTextPanel fileId={fileId} enabled={open} shareId={shareId} />
-            </>
           )}
           {fileBlobUrl && (
             <iframe
@@ -377,8 +369,8 @@ export default function FilePreviewDialog({
               </span>
             </div>
           )}
-          {/* Office documents have no renderable preview here, but the parser already
-           * read them for the model. Showing that text beats an empty state. */}
+          {/* Parsed documents have no stored binary here, but the parser already read
+           * them for the model. Showing that text avoids a request for a marker path. */}
           {!previewKind && !loading && showParsedText && (
             <>
               <p className="pb-3 text-sm text-text-secondary">

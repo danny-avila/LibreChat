@@ -29,6 +29,7 @@ const {
   sendUploadSuccess,
   getStorageMetadata,
   annotateMissingPages,
+  summarizeMissingPages,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -74,6 +75,18 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
 
 const hasCodeEnvRef = (file) =>
   file?.metadata?.codeEnvRef != null || file?.metadata?.codeEnvRefs != null;
+
+const genericMimeTypes = new Set(['application/octet-stream', 'binary/octet-stream']);
+
+const resolveEffectiveMimeType = (file) => {
+  const declared = (file?.mimetype ?? '').split(';')[0].trim().toLowerCase();
+  if (!genericMimeTypes.has(declared)) {
+    return declared;
+  }
+  return mime.getType(file?.originalname ?? '') ?? declared;
+};
+
+const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';
 
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -799,19 +812,21 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
 
+    const effectiveMimeType = resolveEffectiveMimeType(file);
+    const parserMimeTypes =
+      fileConfig.documentParser?.supportedMimeTypes || documentParserMimeTypes;
+    const isKnownDocumentType = fileConfig.checkType(effectiveMimeType, documentParserMimeTypes);
+
     const shouldUseConfiguredOCR =
       appConfig?.ocr != null &&
-      fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
+      fileConfig.checkType(effectiveMimeType, fileConfig.ocr?.supportedMimeTypes || []);
 
     /* Admin file config wins over the parser's own defaults. `fileConfig.documentParser`
      * falls back to `documentParserMimeTypes` when unconfigured, so this keeps the
      * built-in behavior while giving operators the same override they already have for
      * `fileConfig.ocr` and `fileConfig.text`. Each provider still validates the type it
      * receives, which is what turns an unroutable file into a named error. */
-    const isDocumentParserEligible = fileConfig.checkType(
-      file.mimetype,
-      fileConfig.documentParser?.supportedMimeTypes || documentParserMimeTypes,
-    );
+    const isDocumentParserEligible = fileConfig.checkType(effectiveMimeType, parserMimeTypes);
 
     /**
      * When an admin narrows `fileConfig.text.supportedMimeTypes` to a non-permissive allowlist that
@@ -824,7 +839,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       !!process.env.RAG_API_URL &&
       isDocumentParserEligible &&
       !isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
-      fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || []);
+      fileConfig.checkType(effectiveMimeType, fileConfig.text?.supportedMimeTypes || []);
 
     const shouldUseDocumentParser = !shouldUseConfiguredText && isDocumentParserEligible;
 
@@ -836,6 +851,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
         return await handleFileUpload({ req, file, loadAuthValues });
       } catch (err) {
+        if (isZipBombError(err)) {
+          throw err;
+        }
         logger.error(
           `[processAgentFileUpload] Document parser failed for "${file.originalname}":`,
           err,
@@ -843,12 +861,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       }
     };
 
-    const resolveConfiguredOCR = async () => {
+    const resolveConfiguredOCR = async ({ throwOnMissingCapability = true } = {}) => {
       if (!shouldUseConfiguredOCR) {
         return;
       }
       if (!(await checkCapability(req, AgentCapabilities.ocr))) {
-        throw new Error('OCR capability is not enabled for Agents');
+        if (throwOnMissingCapability) {
+          throw new Error('OCR capability is not enabled for Agents');
+        }
+        return;
       }
       try {
         const ocrStrategy = appConfig?.ocr?.strategy ?? FileSources.mistral_ocr;
@@ -883,8 +904,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      */
     const createDocumentTextFile = async ({ text, bytes, filepath, pagesNeedingOcr }) => {
       if (pagesNeedingOcr?.length) {
+        const pageSummary = summarizeMissingPages(pagesNeedingOcr);
         logger.warn(
-          `[processAgentFileUpload] "${file.originalname}" has no extractable text on page(s) ${pagesNeedingOcr.join(', ')}; those pages were omitted.`,
+          `[processAgentFileUpload] "${file.originalname}" has no extractable text on page(s) ${pageSummary}; those pages were omitted.`,
         );
       }
       const annotated = annotateMissingPages(text, pagesNeedingOcr);
@@ -892,7 +914,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         text: annotated,
         bytes: annotated === text ? bytes : Buffer.byteLength(annotated, 'utf8'),
         filepath,
-        type: documentParserSources.has(filepath) ? file.mimetype : undefined,
+        type: documentParserSources.has(filepath) ? effectiveMimeType : undefined,
       });
     };
 
@@ -906,7 +928,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       }
 
       if (localNeedsOCR && shouldUseConfiguredOCR) {
-        const ocrResult = await resolveConfiguredOCR();
+        const ocrResult = await resolveConfiguredOCR({
+          throwOnMissingCapability: !hasLocalText,
+        });
         if (ocrResult?.text?.trim()) {
           return await createDocumentTextFile(ocrResult);
         }
@@ -933,8 +957,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       );
     }
 
+    if (isKnownDocumentType && !shouldUseConfiguredText) {
+      throw new Error(`File type ${effectiveMimeType} is not enabled for document parsing.`);
+    }
+
     const shouldUseSTT = fileConfig.checkType(
-      file.mimetype,
+      effectiveMimeType,
       fileConfig.stt?.supportedMimeTypes || [],
     );
 
@@ -945,12 +973,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     }
 
     const shouldUseText = fileConfig.checkType(
-      file.mimetype,
+      effectiveMimeType,
       fileConfig.text?.supportedMimeTypes || [],
     );
 
     if (!shouldUseText) {
-      throw new Error(`File type ${file.mimetype} is not supported for text parsing.`);
+      throw new Error(`File type ${effectiveMimeType} is not supported for text parsing.`);
     }
 
     /**

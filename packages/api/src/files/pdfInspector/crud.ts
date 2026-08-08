@@ -9,7 +9,7 @@ type ParsedDocument = Pick<ParsedDocumentUploadResult, 'text' | 'pagesNeedingOcr
 
 /** Above this share of dropped pages, whole-document plain text replaces interleaving. */
 const DROPPED_PAGE_MAJORITY = 0.5;
-/** Cap on pages the pdfjs recovery walk will read; see `extractPdf`. */
+/** Cap on pages either pdfjs recovery path will read; see `extractPdf`. */
 const MAX_RECOVERED_PAGES = 250;
 
 /**
@@ -44,7 +44,7 @@ export async function parseWithPdfInspector(
       `[pdfInspector] Native extraction failed for "${file.originalname}", falling back to pdfjs:`,
       error,
     );
-    parsed = { text: await extractDocumentText(data) };
+    parsed = { text: await extractDocumentText(data, MAX_RECOVERED_PAGES) };
   }
   const { text, pagesNeedingOcr } = parsed;
 
@@ -82,7 +82,7 @@ function assertSupportedMimeType(file: Express.Multer.File): void {
  * Pages are reported as needing OCR only when both engines find nothing, an
  * empirical test that replaces trusting the reason codes.
  *
- * The pdf-inspector calls run on a worker thread (see `./native`); pdfjs reads
+ * The pdf-inspector calls run in a child process (see `./native`); pdfjs reads
  * the already-loaded buffer inline, since it yields on its own.
  *
  * @throws {Error} when pdf-inspector reports no pages at all, so the caller falls
