@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   registerShutdownTask,
   setMCPToolsChangedHandler,
+  getDeploymentPluginMcpServers,
   setMCPToolsChangedGenerationHandler,
   setMCPToolsChangedGenerationRenewalHandler,
   setMCPToolsChangedRevisionHandler,
@@ -64,9 +65,33 @@ async function refreshChangedServerTools({
 /**
  * Initialize MCP servers
  */
+/**
+ * Merges Agent Plugins MCP servers under the configured servers. A plugin never
+ * displaces a server the operator declared in `librechat.yaml`.
+ */
+function withPluginServers(configured) {
+  const pluginServers = getDeploymentPluginMcpServers();
+  const names = Object.keys(pluginServers);
+  if (names.length === 0) {
+    return configured;
+  }
+
+  const merged = { ...configured };
+  for (const name of names) {
+    if (merged[name] !== undefined) {
+      logger.warn(
+        `[MCP] Plugin server "${name}" conflicts with a configured server and was skipped.`,
+      );
+      continue;
+    }
+    merged[name] = pluginServers[name];
+  }
+  return merged;
+}
+
 async function initializeMCPs() {
   const appConfig = await getAppConfig({ baseOnly: true });
-  const mcpServers = appConfig.mcpConfig;
+  const mcpServers = withPluginServers(appConfig.mcpConfig);
 
   try {
     createMCPServersRegistry(
