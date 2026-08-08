@@ -32,7 +32,7 @@ describe('Chip', () => {
 
   it('exposes theme-owned shape and density recipes', () => {
     render(
-      <Chip size="theme" shape="theme">
+      <Chip size="theme" shape="theme" onRemove={jest.fn()} removeLabel="Remove theme">
         Themeable
       </Chip>,
     );
@@ -41,6 +41,9 @@ describe('Chip', () => {
       'h-theme-control',
       'rounded-theme-control',
       'gap-theme-compact',
+    );
+    expect(screen.getByRole('button', { name: 'Remove theme' })).toHaveClass(
+      'rounded-theme-control',
     );
   });
 });
