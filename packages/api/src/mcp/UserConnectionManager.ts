@@ -9,11 +9,11 @@ import {
   requiresOAuthMachinery,
 } from './utils';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
-import { detectOAuthRequirement } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { OAuthLifecycleRelay } from '~/mcp/oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
+import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isMCPDomainAllowed } from '~/auth/domain';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
