@@ -836,8 +836,9 @@ describe('MCPManager', () => {
         >[0]['flowManager'],
       });
 
-      /** One pass from user-connection runtime resolution, one from callTool — none from the handler attach */
-      expect(mockProcessMCPEnv).toHaveBeenCalledTimes(2);
+      /** Runtime resolution, config-identity binding, and callTool each process once — none from
+       * attaching the request handler. */
+      expect(mockProcessMCPEnv).toHaveBeenCalledTimes(3);
       expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledWith(
         expect.objectContaining({
           serverConfig: processedServerConfig,
@@ -2066,6 +2067,83 @@ describe('MCPManager', () => {
         await expect(
           manager.getServerToolFunctionsSnapshot(userId, serverName, serverConfig),
         ).resolves.toEqual({ tools: null });
+        expect(MCPServerInspector.getToolFunctions).not.toHaveBeenCalled();
+        expect(connection.dispose).toHaveBeenCalledTimes(1);
+      } finally {
+        generationSpy.mockRestore();
+      }
+    });
+
+    it('rejects an old-config connection even when Redis generation rotation failed', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        isStale: jest.fn().mockReturnValue(false),
+        refreshToolList: jest.fn().mockResolvedValue(undefined),
+        on: jest.fn(),
+        removeAllListeners: jest.fn(),
+        dispose: jest.fn().mockResolvedValue(undefined),
+      } as unknown as MCPConnection;
+      const oldConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://old.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      };
+      const committedConfig: t.ParsedServerConfig = {
+        ...oldConfig,
+        url: 'https://new.example.com/mcp',
+      };
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(oldConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({ serverName, user: mockUser, serverConfig: oldConfig });
+
+        await expect(
+          manager.getServerToolFunctionsSnapshot(userId, serverName, committedConfig),
+        ).resolves.toEqual({ tools: null });
+        expect(MCPServerInspector.getToolFunctions).not.toHaveBeenCalled();
+        expect(connection.dispose).toHaveBeenCalledTimes(1);
+      } finally {
+        generationSpy.mockRestore();
+      }
+    });
+
+    it('rejects a connection for a deleted config even when Redis generation rotation failed', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('generation-a');
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        isStale: jest.fn().mockReturnValue(false),
+        refreshToolList: jest.fn().mockResolvedValue(undefined),
+        on: jest.fn(),
+        removeAllListeners: jest.fn(),
+        dispose: jest.fn().mockResolvedValue(undefined),
+      } as unknown as MCPConnection;
+      const oldConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://old.example.com/mcp',
+        source: 'user',
+        dbId: 'server-1',
+      };
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(oldConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({ serverName, user: mockUser, serverConfig: oldConfig });
+        (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(null);
+
+        await expect(manager.getServerToolFunctionsSnapshot(userId, serverName)).resolves.toEqual({
+          tools: null,
+        });
         expect(MCPServerInspector.getToolFunctions).not.toHaveBeenCalled();
         expect(connection.dispose).toHaveBeenCalledTimes(1);
       } finally {

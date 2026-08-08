@@ -19,6 +19,7 @@ import {
   requiresOAuthMachinery,
   requiresUserScopedConnection,
 } from './utils';
+import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerInspector } from './registry/MCPServerInspector';
@@ -26,7 +27,6 @@ import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
-import { getMCPToolsChangedGeneration } from './toolsChanged';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
@@ -311,6 +311,20 @@ export class MCPManager extends UserConnectionManager {
       }
 
       const connection = userConnections.get(serverName)!;
+      if (effectiveConfig == null) {
+        await this.disconnectUserConnection(userId, serverName);
+        return { tools: null };
+      }
+      const connectionConfigGeneration = this.getToolConfigGeneration(connection);
+      const effectiveConfigGeneration = getMCPAppToolsPublicationGeneration(effectiveConfig);
+      if (
+        connectionConfigGeneration != null &&
+        effectiveConfigGeneration != null &&
+        connectionConfigGeneration !== effectiveConfigGeneration
+      ) {
+        await this.disconnectUserConnection(userId, serverName);
+        return { tools: null };
+      }
       const publicationGeneration = this.getToolPublicationGeneration(connection);
       const currentGeneration = await getMCPToolsChangedGeneration({ userId, serverName });
       if (

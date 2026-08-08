@@ -126,6 +126,25 @@ describe('global tool cache write lock', () => {
     expect(mockCache.set).not.toHaveBeenCalled();
   });
 
+  it('rejects a delayed ownership claim after a newer owner has fenced the slot', async () => {
+    const operation = jest.fn();
+    mockKeyvRedisClient.eval.mockResolvedValueOnce(0);
+
+    await expect(runWithGlobalCacheLock(operation)).rejects.toThrow(
+      'Tool cache lock expired or was superseded before ownership could be fenced',
+    );
+
+    expect(operation).not.toHaveBeenCalled();
+    const [claimScript, claimOptions] = mockKeyvRedisClient.eval.mock.calls[0];
+    expect(claimScript).toContain('current ~= ARGV[1]');
+    expect(claimScript).toContain("redis.call('TIME')");
+    expect(claimOptions.arguments).toEqual([
+      mockRedisClient.set.mock.calls[0][1],
+      expect.any(String),
+      '1000',
+    ]);
+  });
+
   it('atomically checks the generation and writes a generation-guarded user catalog', async () => {
     await expect(
       setCachedToolsIfCurrent(

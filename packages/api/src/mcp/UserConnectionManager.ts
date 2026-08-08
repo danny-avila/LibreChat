@@ -4,18 +4,19 @@ import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
 import type { FlowState } from '~/flow/types';
 import type * as t from './types';
 import {
+  cancelMCPToolsChanged,
+  getMCPAppToolsPublicationGeneration,
+  getMCPToolsChangedGeneration,
+  notifyMCPToolsChanged,
+  renewMCPToolsChangedGeneration,
+} from '~/mcp/toolsChanged';
+import {
   getMissingRuntimeBodyPlaceholderFields,
   hasRuntimeUrlPlaceholders,
   isUserSourced,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
 } from './utils';
-import {
-  cancelMCPToolsChanged,
-  getMCPToolsChangedGeneration,
-  notifyMCPToolsChanged,
-  renewMCPToolsChangedGeneration,
-} from '~/mcp/toolsChanged';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { detectOAuthRequirement, MCPOAuthHandler } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
@@ -68,6 +69,8 @@ export abstract class UserConnectionManager {
   private readonly forceNewConnectionQueues: Map<string, Promise<void>> = new Map();
   /** Fences durable connections whose credentials were invalidated on another replica. */
   protected readonly toolPublicationGenerations: WeakMap<MCPConnection, string> = new WeakMap();
+  /** Binds a durable connection to the stored config that created it, independently of Redis. */
+  protected readonly toolConfigGenerations: WeakMap<MCPConnection, string> = new WeakMap();
   /** Limits Redis lease refreshes while ensuring active connections cannot outlive their lease. */
   private readonly toolPublicationLeaseRefreshes: WeakMap<MCPConnection, number> = new WeakMap();
   /** Coalesces concurrent activity updates for the same durable connection. */
@@ -77,6 +80,11 @@ export abstract class UserConnectionManager {
   /** Returns the cache-publication generation captured for a durable connection. */
   public getToolPublicationGeneration(connection: MCPConnection): string | undefined {
     return this.toolPublicationGenerations.get(connection);
+  }
+
+  /** Returns the config identity captured when a durable connection was created. */
+  public getToolConfigGeneration(connection: MCPConnection): string | undefined {
+    return this.toolConfigGenerations.get(connection);
   }
 
   private runWithForceNewConnectionQueue<T>(key: string, operation: () => Promise<T>): Promise<T> {
@@ -575,6 +583,22 @@ export abstract class UserConnectionManager {
     const existingPublicationGeneration = connection
       ? this.toolPublicationGenerations.get(connection)
       : undefined;
+    const configGeneration = config ? getMCPAppToolsPublicationGeneration(config) : undefined;
+    const existingConfigGeneration = connection
+      ? this.toolConfigGenerations.get(connection)
+      : undefined;
+    if (
+      connection &&
+      configGeneration &&
+      existingConfigGeneration &&
+      configGeneration !== existingConfigGeneration
+    ) {
+      logger.info(
+        `[MCP][User: ${userId}][${serverName}] Config identity changed, disconnecting stale connection`,
+      );
+      await this.disconnectUserConnection(userId, serverName, creationGuard);
+      connection = undefined;
+    }
     if (
       connection &&
       publicationGeneration &&
@@ -709,6 +733,9 @@ export abstract class UserConnectionManager {
 
       if (publicationGeneration) {
         this.toolPublicationGenerations.set(connection, publicationGeneration);
+      }
+      if (configGeneration) {
+        this.toolConfigGenerations.set(connection, configGeneration);
       }
 
       connection.on('toolsChanged', (tools: t.MCPTool[]) => {

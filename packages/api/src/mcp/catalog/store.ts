@@ -17,7 +17,13 @@ return 0
 `;
 
 const CLAIM_OWNERSHIP_FENCE_SCRIPT = `
-redis.call('PSETEX', KEYS[1], ARGV[2], ARGV[1])
+local current = redis.call('GET', KEYS[1])
+if current and current ~= ARGV[1] then return 0 end
+local redisTime = redis.call('TIME')
+local now = (tonumber(redisTime[1]) * 1000) + math.floor(tonumber(redisTime[2]) / 1000)
+local ttl = tonumber(ARGV[2]) - now - tonumber(ARGV[3])
+if ttl <= 0 then return 0 end
+redis.call('PSETEX', KEYS[1], ttl, ARGV[1])
 return 1
 `;
 
@@ -279,10 +285,13 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     if (fenceTtl <= 0) {
       throw new Error('Tool cache lock expired before ownership could be fenced');
     }
-    await deps.keyvRedisClient!.eval(CLAIM_OWNERSHIP_FENCE_SCRIPT, {
+    const claimed = await deps.keyvRedisClient!.eval(CLAIM_OWNERSHIP_FENCE_SCRIPT, {
       keys: [fenceKey],
-      arguments: [token, String(fenceTtl)],
+      arguments: [token, String(leaseExpiresAt), String(LOCK_FENCE_SAFETY_MS)],
     });
+    if (Number(claimed) !== 1) {
+      throw new Error('Tool cache lock expired or was superseded before ownership could be fenced');
+    }
     try {
       return await operation({ key: fenceKey, token });
     } finally {

@@ -111,6 +111,30 @@ async function disconnectLocalMCPServer(userId, serverName) {
   }
 }
 
+const POST_COMMIT_FENCE_RETRY_DELAYS_MS = [0, 50, 200];
+
+/** Retries the shared fence after persistence; config-bound connections remain a durable
+ * fallback if Redis stays unavailable, so an old connection cannot serve the new config. */
+async function fenceCommittedMCPMutation({ userId, serverName }) {
+  let lastError;
+  for (const delay of POST_COMMIT_FENCE_RETRY_DELAYS_MS) {
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    try {
+      await invalidateCachedTools({ userId, serverName });
+      return;
+    } catch (error) {
+      lastError = error;
+      logger.warn(
+        `[MCP Cache] Failed to fence committed mutation for ${serverName} (user: ${userId}); retrying:`,
+        error,
+      );
+    }
+  }
+  throw lastError;
+}
+
 /**
  * Republishes the pre-mutation catalog under the new fence when persistence
  * fails. The retained connection will reacquire that generation on its next
@@ -579,7 +603,7 @@ const updateMCPServerController = async (req, res) => {
     }
     /** Fence connections another replica could have created from the old DB
      * config between the pre-commit fence and the committed update. */
-    await invalidateCachedTools({ userId, serverName });
+    await fenceCommittedMCPMutation({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
 
     res.status(200).json(redactServerSecrets(parsedConfig, { canEdit: true }));
@@ -617,7 +641,7 @@ const deleteMCPServerController = async (req, res) => {
       throw error;
     }
     /** Fence connections another replica could have created before deletion committed. */
-    await invalidateCachedTools({ userId, serverName });
+    await fenceCommittedMCPMutation({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {

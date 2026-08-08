@@ -405,6 +405,29 @@ describe('DB-backed server mutation fencing', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it('retries a transient post-commit fence failure before returning success', async () => {
+    const user = await createUser();
+    mockRegistryInstance.getServerConfig.mockResolvedValue(
+      createDbConfig(new mongoose.Types.ObjectId()),
+    );
+    mockRegistryInstance.inspectServerUpdate.mockResolvedValue(updatedConfig);
+    mockRegistryInstance.commitServerUpdate.mockResolvedValue(updatedConfig);
+    require('~/server/services/Config')
+      .invalidateCachedTools.mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('Redis MOVED'))
+      .mockResolvedValueOnce(undefined);
+    const res = createRes();
+
+    await updateMCPServerController(
+      { user, params: { serverName: 'github' }, body: { config: updatedConfig } },
+      res,
+    );
+
+    expect(require('~/server/services/Config').invalidateCachedTools).toHaveBeenCalledTimes(3);
+    expect(mockMcpManager.disconnectUserConnection).toHaveBeenCalledWith(user.id, 'github');
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   it('fences before deletion and fences cross-replica creations before disconnecting', async () => {
     const user = await createUser();
     mockRegistryInstance.removeServer.mockResolvedValue(undefined);
