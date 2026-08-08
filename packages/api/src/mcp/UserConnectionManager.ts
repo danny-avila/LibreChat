@@ -77,6 +77,9 @@ export abstract class UserConnectionManager {
   private readonly toolPublicationLeaseRenewals: WeakMap<MCPConnection, Promise<void>> =
     new WeakMap();
 
+  /** Records connections whose distributed publication authority was replaced during renewal. */
+  private readonly lostToolPublicationLeases: WeakSet<MCPConnection> = new WeakSet();
+
   /** Returns the cache-publication generation captured for a durable connection. */
   public getToolPublicationGeneration(connection: MCPConnection): string | undefined {
     return this.toolPublicationGenerations.get(connection);
@@ -159,6 +162,7 @@ export abstract class UserConnectionManager {
           if (renewed === true) {
             this.toolPublicationLeaseRefreshes.set(connection, now);
           } else if (renewed === false) {
+            this.lostToolPublicationLeases.add(connection);
             logger.info(
               `[MCP][User: ${userId}][${serverName}] Publication lease is no longer current`,
             );
@@ -189,6 +193,19 @@ export abstract class UserConnectionManager {
       `[MCP][User: ${userId}] Updated last activity timestamp: ${new Date(now).toISOString()}`,
     );
     await this.renewUserToolPublicationLeases(userId, now);
+  }
+
+  private async assertToolPublicationLeaseCurrent(
+    connection: MCPConnection,
+    userId: string,
+    serverName: string,
+    creationGuard?: ConnectionCreationGuard,
+  ): Promise<void> {
+    if (!this.lostToolPublicationLeases.has(connection)) {
+      return;
+    }
+    await this.disconnectUserConnection(userId, serverName, creationGuard);
+    throw new Error(`[MCP][User: ${userId}][${serverName}] Publication lease is no longer current`);
   }
 
   /** Gets or creates a connection for a specific user, coalescing concurrent attempts */
@@ -612,6 +629,7 @@ export abstract class UserConnectionManager {
       } else if (await connection.isConnected()) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
         await this.updateUserLastActivity(userId);
+        await this.assertToolPublicationLeaseCurrent(connection, userId, serverName, creationGuard);
         if (creationGuard?.cancelled) {
           throw new Error(
             `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
@@ -750,6 +768,7 @@ export abstract class UserConnectionManager {
       logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
       if (!ephemeralConnection) {
         await this.updateUserLastActivity(userId);
+        await this.assertToolPublicationLeaseCurrent(connection, userId, serverName, creationGuard);
       }
       if (creationGuard?.cancelled) {
         throw new Error(

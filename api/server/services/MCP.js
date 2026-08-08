@@ -28,6 +28,7 @@ const {
   isUserSourced,
   checkAccessWithRequestCache,
   getMissingCustomUserVars,
+  getUserMCPAuthMap,
   getServerCustomUserVars,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
@@ -50,7 +51,7 @@ const {
   getMCPManager,
 } = require('~/config');
 const db = require('~/models');
-const { findToken, createToken, updateToken, deleteTokens } = db;
+const { findToken, createToken, updateToken, deleteTokens, findPluginAuthsByKeys } = db;
 const { getGraphApiToken } = require('./GraphTokenService');
 const { exchangeOboToken } = require('./OboTokenService');
 const { createOboTrustChecker } = require('./OboPolicyService');
@@ -342,7 +343,17 @@ async function getAssistantToolDefinitions({ req, tools }) {
           tools: null,
         },
       recoverServerTools: async (serverName, serverConfig) => {
-        const result = await reinitMCPServer({ user: req.user, serverName, serverConfig });
+        const userMCPAuthMap = await getUserMCPAuthMap({
+          userId: req.user.id,
+          servers: [serverName],
+          findPluginAuthsByKeys,
+        });
+        const result = await reinitMCPServer({
+          user: req.user,
+          serverName,
+          serverConfig,
+          userMCPAuthMap,
+        });
         return result?.availableTools ?? null;
       },
       cacheMCPServerTools,

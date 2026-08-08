@@ -500,11 +500,9 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     await runWithGlobalCacheLock(async () => {
       const cache = deps.getCache();
       const current = await cache.get(ToolCacheKeys.GLOBAL);
-      if (!isTools(current)) {
-        return;
-      }
-      const next = update(current);
-      if (next === current) {
+      const currentTools = isTools(current) ? current : {};
+      const next = update(currentTools);
+      if (isTools(current) && next === current) {
         return;
       }
       if (!(await setGlobalWithinLock(cache, next, Time.TWELVE_HOURS))) {

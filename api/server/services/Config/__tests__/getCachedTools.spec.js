@@ -79,6 +79,19 @@ describe('MCP tool cache', () => {
     );
   });
 
+  it('recreates the authoritative global catalog after its cache entry expires', async () => {
+    mockCache.get.mockResolvedValue(null);
+    mockCache.set.mockResolvedValue(true);
+
+    await updateCachedGlobalTools(() => ({ builtin: { type: 'function' } }));
+
+    expect(mockCache.set).toHaveBeenCalledWith(
+      ToolCacheKeys.GLOBAL,
+      { builtin: { type: 'function' } },
+      Time.TWELVE_HOURS,
+    );
+  });
+
   it('gets and sets an authoritative app slice, including an empty catalog', async () => {
     mockCache.get.mockResolvedValue({});
     mockCache.set.mockResolvedValue(true);

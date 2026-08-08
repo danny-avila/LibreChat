@@ -33,6 +33,7 @@ jest.mock('@librechat/api', () => ({
   isMCPDomainAllowed: jest.fn(),
   GenerationJobManager: jest.fn(),
   buildOAuthToolCallName: jest.fn((name) => name),
+  getUserMCPAuthMap: jest.fn(),
   /** Mirrors the real resolver so these tests still exercise the wrapper's own
    *  plumbing - loading the request config and degrading on failure - rather than
    *  the resolution logic, which is unit-tested in packages/api. Like the real
@@ -54,6 +55,7 @@ jest.mock('~/models', () => ({
   findToken: jest.fn(),
   createToken: jest.fn(),
   updateToken: jest.fn(),
+  findPluginAuthsByKeys: jest.fn(),
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
@@ -77,6 +79,7 @@ const {
   cacheMCPServerTools,
 } = require('~/server/services/Config');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { getUserMCPAuthMap } = require('@librechat/api');
 const {
   createMCPTool,
   healMcpToolNames,
@@ -151,6 +154,8 @@ describe('getAssistantToolDefinitions', () => {
     getMCPServerTools.mockResolvedValue(null);
     const getServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({ tools: null });
     require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctionsSnapshot });
+    const userMCPAuthMap = { 'mcp_app-server': { API_KEY: 'saved' } };
+    getUserMCPAuthMap.mockResolvedValue(userMCPAuthMap);
     reinitMCPServer.mockResolvedValue({ availableTools: { [toolKey]: mcpDefinition } });
 
     await expect(getAssistantToolDefinitions({ req, tools: [toolKey] })).resolves.toEqual({
@@ -160,6 +165,12 @@ describe('getAssistantToolDefinitions', () => {
       user: req.user,
       serverName: 'app-server',
       serverConfig,
+      userMCPAuthMap,
+    });
+    expect(getUserMCPAuthMap).toHaveBeenCalledWith({
+      userId: 'u1',
+      servers: ['app-server'],
+      findPluginAuthsByKeys: expect.any(Function),
     });
   });
 
