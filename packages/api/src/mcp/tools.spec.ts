@@ -86,6 +86,21 @@ function createSharedCacheDeps(params: {
 
 describe('createMCPToolCacheService', () => {
   describe('configuration-addressed app catalogs', () => {
+    it('restores the static catalog without discovering app server configs', async () => {
+      const staticTools = { builtin: makeTool('builtin') };
+      const updateCachedGlobalTools = jest.fn(async (update) => update({}));
+      const getAllServerConfigs = jest.fn().mockResolvedValue({ alpha: cacheableConfig });
+      const service = createMCPToolCacheService(
+        createMockDeps({ updateCachedGlobalTools, getAllServerConfigs }),
+      );
+
+      await service.syncStaticTools(staticTools);
+
+      expect(updateCachedGlobalTools).toHaveBeenCalledTimes(1);
+      expect(updateCachedGlobalTools.mock.calls[0][0]({})).toEqual(staticTools);
+      expect(getAllServerConfigs).not.toHaveBeenCalled();
+    });
+
     it('removes legacy MCP entries from the shared global catalog during rollout', async () => {
       const alphaConfig = { ...cacheableConfig, toolFunctions: {} };
       const builtin = 'code_interpreter';

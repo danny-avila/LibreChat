@@ -53,6 +53,7 @@ export interface MCPToolCacheService {
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
   }) => Promise<LCAvailableTools | null>;
+  syncStaticTools: (staticTools: LCAvailableTools) => Promise<void>;
   mergeAppTools: (appTools: LCAvailableTools, staticTools: LCAvailableTools) => Promise<void>;
   replaceAppServerTools: (params: {
     serverName: string;
@@ -315,7 +316,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           )
         : [];
       const boundaries = buildAppServerBoundaries(appConfigs.map(([serverName]) => serverName));
-      await updateCachedGlobalTools?.(() => staticTools);
+      await syncStaticTools(staticTools);
       await Promise.all(
         appConfigs
           .filter(([, config]) => config.toolFunctions != null)
@@ -334,6 +335,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       logger.error('Failed to merge app-level tools:', error);
       throw error;
     }
+  }
+
+  async function syncStaticTools(staticTools: LCAvailableTools): Promise<void> {
+    await updateCachedGlobalTools?.(() => staticTools);
   }
 
   /**
@@ -517,6 +522,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
 
   return {
     updateMCPServerTools,
+    syncStaticTools,
     mergeAppTools,
     replaceAppServerTools,
     cacheMCPServerTools,

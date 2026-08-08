@@ -27,6 +27,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 // Mock config functions
 const mockGetAppConfig = jest.fn();
+const mockSyncStaticTools = jest.fn();
 const mockMergeAppTools = jest.fn();
 
 jest.mock('./Config', () => ({
@@ -35,6 +36,9 @@ jest.mock('./Config', () => ({
   },
   get mergeAppTools() {
     return mockMergeAppTools;
+  },
+  get syncStaticTools() {
+    return mockSyncStaticTools;
   },
 }));
 
@@ -104,6 +108,7 @@ describe('initializeMCPs', () => {
     mockMCPManagerInstance.getAppToolFunctions.mockResolvedValue({});
     mockMCPManagerInstance.connectAppServers.mockResolvedValue(undefined);
     mockMCPManagerInstance.disconnectAppServers.mockResolvedValue(undefined);
+    mockSyncStaticTools.mockResolvedValue(undefined);
     mockMergeAppTools.mockResolvedValue(undefined);
   });
 
@@ -253,12 +258,14 @@ describe('initializeMCPs', () => {
     it('should skip app catalog discovery when no configured servers exist', async () => {
       mockGetAppConfig.mockResolvedValue({
         mcpConfig: null, // No configured servers
+        availableTools: { builtin: { type: 'function' } },
       });
 
       await initializeMCPs();
 
       expect(mockMCPManagerInstance.getAppToolFunctions).not.toHaveBeenCalled();
       expect(mockMergeAppTools).not.toHaveBeenCalled();
+      expect(mockSyncStaticTools).toHaveBeenCalledWith({ builtin: { type: 'function' } });
       expect(mockMCPManagerInstance.connectAppServers).not.toHaveBeenCalled();
       expect(logger.debug).toHaveBeenCalledWith(
         '[MCP] No servers configured. MCPManager ready for UI-based servers.',
@@ -274,6 +281,7 @@ describe('initializeMCPs', () => {
 
       expect(mockMCPManagerInstance.getAppToolFunctions).not.toHaveBeenCalled();
       expect(mockMergeAppTools).not.toHaveBeenCalled();
+      expect(mockSyncStaticTools).toHaveBeenCalledWith({});
       expect(mockMCPManagerInstance.connectAppServers).not.toHaveBeenCalled();
       expect(logger.debug).toHaveBeenCalledWith(
         '[MCP] No servers configured. MCPManager ready for UI-based servers.',

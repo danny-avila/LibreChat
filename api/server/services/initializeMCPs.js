@@ -6,7 +6,7 @@ const {
   setMCPToolsChangedGenerationHandler,
   setMCPToolsChangedGenerationRenewalHandler,
 } = require('@librechat/api');
-const { mergeAppTools, getAppConfig } = require('./Config');
+const { syncStaticTools, mergeAppTools, getAppConfig } = require('./Config');
 const {
   getMCPToolsCacheGeneration,
   renewMCPToolsCacheGeneration,
@@ -96,6 +96,7 @@ async function initializeMCPs() {
         `[MCP] Initialized with ${serverCount} configured ${serverCount === 1 ? 'server' : 'servers'} and ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}.`,
       );
     } else {
+      await syncStaticTools(appConfig.availableTools || {});
       logger.debug('[MCP] No servers configured. MCPManager ready for UI-based servers.');
     }
   } catch (error) {
