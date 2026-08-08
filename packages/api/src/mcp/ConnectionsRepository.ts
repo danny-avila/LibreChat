@@ -147,7 +147,7 @@ export class ConnectionsRepository {
 
     /* Both scopes get the same treatment: this repository is per-owner, so ownerId already says
      * whose tool cache a change belongs to (undefined = the app-level, shared one). */
-    connection.on('toolsChanged', (tools: t.MCPTool[]) => {
+    connection.on('toolsChanged', (tools: t.MCPTool[], publicationRevision?: string) => {
       toolsChangedGeneration++;
       latestToolsChangedPublication = notifyMCPToolsChanged({
         tools,
@@ -155,6 +155,7 @@ export class ConnectionsRepository {
         serverConfig,
         userId: this.ownerId,
         publicationGeneration,
+        publicationRevision,
       });
       void latestToolsChangedPublication;
     });

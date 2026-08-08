@@ -8,6 +8,7 @@ const {
   setCachedToolsIfCurrent,
   getMCPToolsCacheGeneration,
   renewMCPToolsCacheGeneration,
+  getNextAppToolsPublicationRevision,
 } = require('./getCachedTools');
 
 const {
@@ -38,4 +39,5 @@ module.exports = {
   updateMCPServerTools,
   getMCPToolsCacheGeneration,
   renewMCPToolsCacheGeneration,
+  getNextAppToolsPublicationRevision,
 };

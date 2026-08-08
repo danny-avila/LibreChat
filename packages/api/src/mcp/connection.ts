@@ -28,6 +28,7 @@ import { isOAuthServer, sanitizeUrlForLogging } from './utils';
 import { runOutsideTracing } from '~/utils/tracing';
 import { isAddressAllowed } from '~/auth/domain';
 import { withTimeout } from '~/utils/promise';
+import { reserveMCPToolsChangedRevision } from './toolsChanged';
 import { mcpConfig } from './mcpConfig';
 
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
@@ -1919,12 +1920,6 @@ export class MCPConnection extends EventEmitter {
 
   /** Queues a live tool-list refresh through the same coalescing path used by notifications. */
   public async refreshToolList(): Promise<void> {
-    if (this.client.getServerCapabilities()?.tools == null) {
-      if (this.connectionState === 'connected') {
-        this.dispatchToolsChanged([]);
-      }
-      return;
-    }
     this.toolListChangeGeneration++;
     this.clearToolListRefreshRetry();
     this.startToolListRefresh();
@@ -1984,7 +1979,26 @@ export class MCPConnection extends EventEmitter {
     const refreshEpoch = this.toolListRefreshEpoch;
     while (this.handledToolListChangeGeneration < this.toolListChangeGeneration) {
       const targetGeneration = this.toolListChangeGeneration;
-      const snapshot = await this.fetchToolsSnapshot();
+      let publicationRevision: string | undefined;
+      try {
+        publicationRevision = await reserveMCPToolsChangedRevision({
+          serverName: this.serverName,
+          serverConfig: this.options,
+          userId: this.userId,
+        });
+      } catch (error) {
+        this.toolListRefreshFailures++;
+        logger.error(
+          `${this.getLogPrefix()} Failed to reserve tool-list publication order:`,
+          error,
+        );
+        this.scheduleToolListRefreshRetry();
+        return;
+      }
+      const snapshot =
+        this.client.getServerCapabilities()?.tools == null
+          ? { tools: [], complete: true }
+          : await this.fetchToolsSnapshot();
       if (
         this.toolListRefreshEpoch !== refreshEpoch ||
         this.toolListRefreshSuspended ||
@@ -2005,13 +2019,16 @@ export class MCPConnection extends EventEmitter {
         generation: targetGeneration,
         tools: snapshot.tools,
       };
-      this.dispatchToolsChanged(snapshot.tools);
+      this.dispatchToolsChanged(snapshot.tools, publicationRevision);
     }
   }
 
-  private dispatchToolsChanged(tools: MCPListToolsResult['tools']): void {
+  private dispatchToolsChanged(
+    tools: MCPListToolsResult['tools'],
+    publicationRevision?: string,
+  ): void {
     try {
-      this.emit('toolsChanged', tools);
+      this.emit('toolsChanged', tools, publicationRevision);
     } catch (error) {
       logger.error(`${this.getLogPrefix()} Failed to dispatch refreshed tools:`, error);
     }

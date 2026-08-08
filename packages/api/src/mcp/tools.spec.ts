@@ -134,10 +134,11 @@ describe('createMCPToolCacheService', () => {
           serverName: 'dynamic',
           serverTools: {},
           publicationGeneration: generation,
+          publicationRevision: '1',
         }),
       ).resolves.toBe(true);
 
-      expect(setCachedAppServerTools).toHaveBeenCalledWith('dynamic', generation, {});
+      expect(setCachedAppServerTools).toHaveBeenCalledWith('dynamic', generation, {}, '1');
       expect(deps.setCachedTools).not.toHaveBeenCalled();
     });
 
@@ -151,8 +152,23 @@ describe('createMCPToolCacheService', () => {
           serverName: 'dynamic',
           serverTools: {},
           publicationGeneration: 'config-generation',
+          publicationRevision: '1',
         }),
       ).rejects.toThrow('Redis down');
+    });
+
+    it('does not publish a live app snapshot without pre-fetch ordering', async () => {
+      const deps = createMockDeps();
+
+      await expect(
+        createMCPToolCacheService(deps).replaceAppServerTools({
+          serverName: 'dynamic',
+          serverTools: {},
+          publicationGeneration: 'config-generation',
+        }),
+      ).resolves.toBe(false);
+
+      expect(deps.setCachedAppServerTools).not.toHaveBeenCalled();
     });
 
     it('rejects a tool boundary owned by another app server', async () => {
@@ -169,6 +185,7 @@ describe('createMCPToolCacheService', () => {
           serverName: 'foo bar',
           serverTools: { [shadowed]: makeTool(shadowed) },
           publicationGeneration: 'config-generation',
+          publicationRevision: '1',
         }),
       ).rejects.toThrow('belongs to app server foo_bar');
     });
@@ -190,11 +207,13 @@ describe('createMCPToolCacheService', () => {
         serverName: 'dynamic',
         serverTools: newTools,
         publicationGeneration: getMCPAppToolsPublicationGeneration(newConfig),
+        publicationRevision: '1',
       });
       await oldService.replaceAppServerTools({
         serverName: 'dynamic',
         serverTools: oldTools,
         publicationGeneration: getMCPAppToolsPublicationGeneration(oldConfig),
+        publicationRevision: '1',
       });
 
       await expect(newService.getMCPServerTools('user', 'dynamic')).resolves.toEqual(newTools);
@@ -222,6 +241,7 @@ describe('createMCPToolCacheService', () => {
         serverName: 'dynamic',
         serverTools: stale,
         publicationGeneration: getMCPAppToolsPublicationGeneration(oldConfig),
+        publicationRevision: '1',
       });
       await expect(newService.getMCPServerTools('user', 'dynamic')).resolves.toBeNull();
 
@@ -229,6 +249,7 @@ describe('createMCPToolCacheService', () => {
         serverName: 'dynamic',
         serverTools: current,
         publicationGeneration: getMCPAppToolsPublicationGeneration(newConfig),
+        publicationRevision: '1',
       });
       await expect(newService.getMCPServerTools('user', 'dynamic')).resolves.toEqual(current);
     });

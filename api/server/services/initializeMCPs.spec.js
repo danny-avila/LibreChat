@@ -63,10 +63,12 @@ jest.mock('~/config', () => ({
 const mockSetMCPToolsChangedHandler = jest.fn();
 const mockSetMCPToolsChangedGenerationHandler = jest.fn();
 const mockSetMCPToolsChangedGenerationRenewalHandler = jest.fn();
+const mockSetMCPToolsChangedRevisionHandler = jest.fn();
 const mockRegisterShutdownTask = jest.fn();
 const mockUpdateMCPServerTools = jest.fn();
 const mockGetMCPToolsCacheGeneration = jest.fn();
 const mockRenewMCPToolsCacheGeneration = jest.fn();
+const mockGetNextAppToolsPublicationRevision = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   get registerShutdownTask() {
@@ -81,6 +83,9 @@ jest.mock('@librechat/api', () => ({
   get setMCPToolsChangedGenerationRenewalHandler() {
     return mockSetMCPToolsChangedGenerationRenewalHandler;
   },
+  get setMCPToolsChangedRevisionHandler() {
+    return mockSetMCPToolsChangedRevisionHandler;
+  },
 }));
 
 jest.mock('./Config/mcp', () => ({
@@ -92,6 +97,9 @@ jest.mock('./Config/mcp', () => ({
   },
   get renewMCPToolsCacheGeneration() {
     return mockRenewMCPToolsCacheGeneration;
+  },
+  get getNextAppToolsPublicationRevision() {
+    return mockGetNextAppToolsPublicationRevision;
   },
 }));
 
@@ -239,6 +247,22 @@ describe('initializeMCPs', () => {
       const shutdown = mockRegisterShutdownTask.mock.calls[0][1];
       await shutdown();
       expect(mockMCPManagerInstance.disconnectAppServers).toHaveBeenCalledTimes(1);
+    });
+
+    it('should wire app publication revision allocation into the cache store', async () => {
+      mockGetAppConfig.mockResolvedValue({ mcpConfig: null });
+      mockGetNextAppToolsPublicationRevision.mockResolvedValue('9');
+
+      await initializeMCPs();
+
+      const allocateRevision = mockSetMCPToolsChangedRevisionHandler.mock.calls[0][0];
+      await expect(
+        allocateRevision({ serverName: 'dynamic', configGeneration: 'config-generation' }),
+      ).resolves.toBe('9');
+      expect(mockGetNextAppToolsPublicationRevision).toHaveBeenCalledWith(
+        'dynamic',
+        'config-generation',
+      );
     });
 
     it('should throw and log error if MCPManager initialization fails', async () => {

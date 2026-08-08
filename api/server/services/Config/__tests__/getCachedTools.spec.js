@@ -15,6 +15,7 @@ const {
   getMCPToolsCacheGeneration,
   renewMCPToolsCacheGeneration,
   getCachedAppServerTools,
+  getNextAppToolsPublicationRevision,
   setCachedAppServerTools,
   runWithGlobalCacheLock,
   invalidateCachedTools,
@@ -101,7 +102,38 @@ describe('MCP tool cache', () => {
 
     const key = ToolCacheKeys.MCP_APP_SERVER('github', 'config-v2');
     expect(mockCache.get).toHaveBeenCalledWith(key);
-    expect(mockCache.set).toHaveBeenCalledWith(key, {}, expect.any(Number));
+    expect(mockCache.set).toHaveBeenCalledWith(
+      key,
+      { version: 1, publicationRevision: '0', tools: {} },
+      expect.any(Number),
+    );
+  });
+
+  it('prevents a slow older app snapshot from replacing a newer revision', async () => {
+    const key = ToolCacheKeys.MCP_APP_SERVER('github', 'config-v2');
+    let cached = null;
+    mockCache.get.mockImplementation(async (requestedKey) =>
+      requestedKey === key ? cached : null,
+    );
+    mockCache.set.mockImplementation(async (requestedKey, value) => {
+      if (requestedKey === key) {
+        cached = value;
+      }
+      return true;
+    });
+
+    const older = await getNextAppToolsPublicationRevision('github', 'config-v2');
+    const newer = await getNextAppToolsPublicationRevision('github', 'config-v2');
+    const currentTools = { current: { type: 'function' } };
+    const staleTools = { stale: { type: 'function' } };
+
+    await expect(setCachedAppServerTools('github', 'config-v2', currentTools, newer)).resolves.toBe(
+      true,
+    );
+    await expect(setCachedAppServerTools('github', 'config-v2', staleTools, older)).resolves.toBe(
+      false,
+    );
+    await expect(getCachedAppServerTools('github', 'config-v2')).resolves.toEqual(currentTools);
   });
 
   it('stores unguarded user tools under the supplied config generation', async () => {

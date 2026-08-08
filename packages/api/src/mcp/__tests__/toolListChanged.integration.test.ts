@@ -7,6 +7,13 @@ import {
   McpError,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
+import { CacheKeys } from 'librechat-data-provider';
+import type { LCAvailableTools } from '../types';
+import { createMCPCatalogStore } from '../catalog/store';
+import {
+  getMCPAppToolsPublicationGeneration,
+  setMCPToolsChangedRevisionHandler,
+} from '../toolsChanged';
 import { MCPConnection } from '../connection';
 
 jest.setTimeout(10_000);
@@ -125,6 +132,7 @@ describe('tools/list_changed', () => {
   let harness: TestHarness | undefined;
 
   afterEach(async () => {
+    setMCPToolsChangedRevisionHandler(null);
     await harness?.close();
     harness = undefined;
   });
@@ -178,6 +186,63 @@ describe('tools/list_changed', () => {
 
     expect(snapshots[0].map(({ name }) => name)).toEqual(['initial', 'stale']);
     expect(snapshots[1].map(({ name }) => name)).toEqual(['initial', 'latest']);
+  });
+
+  it('keeps a newer cross-replica snapshot when an older request finishes last', async () => {
+    const olderReplica = await createHarness([tool('initial')]);
+    const newerReplica = await createHarness([tool('initial')]);
+    const cache = new Map<string, unknown>();
+    const store = createMCPCatalogStore({
+      cacheConfig: { FORCED_IN_MEMORY_CACHE_NAMESPACES: [CacheKeys.TOOL_CACHE] },
+      getCache: () => ({
+        get: async (key) => cache.get(key),
+        set: async (key, value) => {
+          cache.set(key, value);
+          return true;
+        },
+        delete: async (key) => cache.delete(key),
+      }),
+    });
+    const configGeneration = getMCPAppToolsPublicationGeneration({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+    });
+    setMCPToolsChangedRevisionHandler(({ serverName, configGeneration }) =>
+      store.getNextAppToolsPublicationRevision(serverName, configGeneration),
+    );
+    const publications: Promise<boolean>[] = [];
+    const publish = (tools: Tool[], publicationRevision?: string) => {
+      const catalog: LCAvailableTools = Object.fromEntries(
+        tools.map(({ name }) => [name, { type: 'function', function: { name } }]),
+      );
+      publications.push(
+        store.setCachedAppServerTools('dynamic', configGeneration, catalog, publicationRevision),
+      );
+    };
+    olderReplica.connection.on('toolsChanged', publish);
+    newerReplica.connection.on('toolsChanged', publish);
+
+    try {
+      const barrier = olderReplica.blockNextList();
+      olderReplica.setTools([tool('stale')]);
+      await olderReplica.notifyChanged();
+      await barrier.entered;
+
+      newerReplica.setTools([tool('current')]);
+      await newerReplica.notifyChanged();
+      await waitFor(() => publications.length === 1);
+      await Promise.all(publications);
+
+      barrier.release();
+      await waitFor(() => publications.length === 2);
+      await Promise.all(publications);
+
+      await expect(store.getCachedAppServerTools('dynamic', configGeneration)).resolves.toEqual({
+        current: { type: 'function', function: { name: 'current' } },
+      });
+    } finally {
+      await Promise.all([olderReplica.close(), newerReplica.close()]);
+    }
   });
 
   it('does not publish an in-flight snapshot after the connection is disconnected', async () => {
@@ -272,5 +337,26 @@ describe('tools/list_changed', () => {
 
     await waitFor(() => snapshots.length === 1);
     expect(snapshots[0].map(({ name }) => name)).toEqual(['initial', 'recovered']);
+  });
+
+  it('retries when shared publication ordering is temporarily unavailable', async () => {
+    harness = await createHarness([tool('initial')]);
+    const snapshots: Array<{ tools: Tool[]; revision?: string }> = [];
+    const allocateRevision = jest
+      .fn<Promise<string>, [{ serverName: string; configGeneration: string }]>()
+      .mockRejectedValueOnce(new Error('Redis unavailable'))
+      .mockResolvedValue('1');
+    setMCPToolsChangedRevisionHandler(allocateRevision);
+    harness.connection.on('toolsChanged', (tools: Tool[], revision?: string) =>
+      snapshots.push({ tools, revision }),
+    );
+
+    harness.setTools([tool('recovered')]);
+    await harness.notifyChanged();
+    expect(snapshots).toEqual([]);
+
+    await waitFor(() => snapshots.length === 1);
+    expect(snapshots[0]).toEqual({ tools: [tool('recovered')], revision: '1' });
+    expect(allocateRevision).toHaveBeenCalledTimes(2);
   });
 });

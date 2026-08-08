@@ -738,13 +738,14 @@ export abstract class UserConnectionManager {
         this.toolConfigGenerations.set(connection, configGeneration);
       }
 
-      connection.on('toolsChanged', (tools: t.MCPTool[]) => {
+      connection.on('toolsChanged', (tools: t.MCPTool[], publicationRevision?: string) => {
         void notifyMCPToolsChanged({
           tools,
           userId,
           serverName,
           serverConfig: config,
           ...(publicationGeneration && { publicationGeneration }),
+          ...(publicationRevision && { publicationRevision }),
         });
       });
 

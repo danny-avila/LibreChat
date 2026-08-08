@@ -4,8 +4,10 @@ import {
   setMCPToolsChangedHandler,
   setMCPToolsChangedGenerationHandler,
   setMCPToolsChangedGenerationRenewalHandler,
+  setMCPToolsChangedRevisionHandler,
   getMCPToolsChangedGeneration,
   renewMCPToolsChangedGeneration,
+  reserveMCPToolsChangedRevision,
   hasMCPToolsChangedHandler,
   cancelMCPToolsChanged,
   notifyMCPToolsChanged,
@@ -23,6 +25,7 @@ describe('MCP tools-changed dispatch', () => {
     setMCPToolsChangedHandler(null);
     setMCPToolsChangedGenerationHandler(null);
     setMCPToolsChangedGenerationRenewalHandler(null);
+    setMCPToolsChangedRevisionHandler(null);
     jest.useRealTimers();
   });
 
@@ -110,6 +113,27 @@ describe('MCP tools-changed dispatch', () => {
 
     await expect(renewMCPToolsChangedGeneration(scope)).resolves.toBe(true);
     expect(renewalHandler).toHaveBeenCalledWith(scope);
+  });
+
+  it('reserves app revisions by runtime config and skips user scopes', async () => {
+    const revisionHandler = jest.fn().mockResolvedValue('7');
+    const serverConfig: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+    };
+    setMCPToolsChangedRevisionHandler(revisionHandler);
+
+    await expect(
+      reserveMCPToolsChangedRevision({ serverName: 'dynamic', serverConfig }),
+    ).resolves.toBe('7');
+    await expect(
+      reserveMCPToolsChangedRevision({ serverName: 'dynamic', serverConfig, userId: 'user-1' }),
+    ).resolves.toBeUndefined();
+    expect(revisionHandler).toHaveBeenCalledTimes(1);
+    expect(revisionHandler).toHaveBeenCalledWith({
+      serverName: 'dynamic',
+      configGeneration: getMCPAppToolsPublicationGeneration(serverConfig),
+    });
   });
 
   it('passes a complete server snapshot and user scope to the handler', async () => {

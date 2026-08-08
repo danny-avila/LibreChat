@@ -51,6 +51,8 @@ export interface MCPToolsChangedEvent {
   userId?: string;
   /** Connection-bound token used to fence stale cross-replica cache publications. */
   publicationGeneration?: string;
+  /** Monotonic ticket assigned before an app-level tools/list request begins. */
+  publicationRevision?: string;
 }
 
 export type MCPToolsChangedHandler = (event: MCPToolsChangedEvent) => Promise<void> | void;
@@ -80,6 +82,13 @@ export type MCPToolsChangedGenerationRenewalHandler = (
 ) => Promise<boolean> | boolean;
 
 let generationRenewalHandler: MCPToolsChangedGenerationRenewalHandler | null = null;
+
+export type MCPToolsChangedRevisionHandler = (scope: {
+  serverName: string;
+  configGeneration: string;
+}) => Promise<string> | string;
+
+let revisionHandler: MCPToolsChangedRevisionHandler | null = null;
 
 function getChangeKey(event: MCPToolsChangedScope): string {
   return JSON.stringify([event.userId ?? null, event.serverName]);
@@ -176,6 +185,11 @@ export function setMCPToolsChangedGenerationRenewalHandler(
   generationRenewalHandler = fn;
 }
 
+/** Registers the shared app-catalog revision allocator. */
+export function setMCPToolsChangedRevisionHandler(fn: MCPToolsChangedRevisionHandler | null): void {
+  revisionHandler = fn;
+}
+
 /** Captures the current cache generation before a durable user connection is created. */
 export async function getMCPToolsChangedGeneration(
   scope: MCPToolsChangedScope,
@@ -188,6 +202,21 @@ export async function renewMCPToolsChangedGeneration(
   scope: MCPToolsChangedScope & { publicationGeneration: string },
 ): Promise<boolean | undefined> {
   return generationRenewalHandler?.(scope);
+}
+
+/** Reserves ordering before an app-level tools/list request starts. */
+export async function reserveMCPToolsChangedRevision(scope: {
+  serverName: string;
+  serverConfig: ParsedServerConfig;
+  userId?: string;
+}): Promise<string | undefined> {
+  if (scope.userId || !revisionHandler) {
+    return undefined;
+  }
+  return revisionHandler({
+    serverName: scope.serverName,
+    configGeneration: getMCPAppToolsPublicationGeneration(scope.serverConfig),
+  });
 }
 
 /**

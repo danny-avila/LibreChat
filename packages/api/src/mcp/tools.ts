@@ -39,6 +39,7 @@ export interface MCPToolCacheDeps {
     serverName: string,
     configGeneration: string,
     tools: LCAvailableTools,
+    publicationRevision?: string,
   ) => Promise<boolean>;
   getServerConfig: (serverName: string, userId?: string) => Promise<ParsedServerConfig | undefined>;
   getAllServerConfigs?: () => Promise<Record<string, ParsedServerConfig>>;
@@ -52,6 +53,7 @@ export interface MCPToolCacheService {
     tools: MCPToolInput[] | null;
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
+    publicationRevision?: string;
   }) => Promise<LCAvailableTools | null>;
   syncStaticTools: (staticTools: LCAvailableTools) => Promise<void>;
   mergeAppTools: (appTools: LCAvailableTools, staticTools: LCAvailableTools) => Promise<void>;
@@ -59,6 +61,7 @@ export interface MCPToolCacheService {
     serverName: string;
     serverTools: LCAvailableTools;
     publicationGeneration?: string;
+    publicationRevision?: string;
   }) => Promise<boolean>;
   cacheMCPServerTools: (params: {
     userId: string;
@@ -66,6 +69,7 @@ export interface MCPToolCacheService {
     serverTools: LCAvailableTools;
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
+    publicationRevision?: string;
   }) => Promise<void>;
   getMCPServerTools: (
     userId: string,
@@ -211,8 +215,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     tools: MCPToolInput[] | null;
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
+    publicationRevision?: string;
   }): Promise<LCAvailableTools | null> {
-    const { userId, serverName, tools, serverConfig, publicationGeneration } = params;
+    const { userId, serverName, tools, serverConfig, publicationGeneration, publicationRevision } =
+      params;
     try {
       const serverTools: LCAvailableTools = {};
       const mcpDelimiter = Constants.mcp_delimiter;
@@ -286,6 +292,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           serverName,
           serverTools,
           publicationGeneration: appConfigGeneration,
+          publicationRevision,
         });
         if (!replaced) {
           return null;
@@ -323,11 +330,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           .map(async ([serverName, config]) => {
             const serverTools = getAppServerSlice(appTools, serverName, boundaries);
             const configGeneration = getMCPAppToolsPublicationGeneration(config);
-            if (
-              (await setCachedAppServerTools(serverName, configGeneration, serverTools)) === false
-            ) {
-              throw new Error(`App tool cache rejected the write for ${serverName}`);
-            }
+            await setCachedAppServerTools(serverName, configGeneration, serverTools);
           }),
       );
       logger.debug(`Synchronized ${count} app-level MCP tools`);
@@ -349,8 +352,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     serverName: string;
     serverTools: LCAvailableTools;
     publicationGeneration?: string;
+    publicationRevision?: string;
   }): Promise<boolean> {
-    const { serverName, serverTools, publicationGeneration } = params;
+    const { serverName, serverTools, publicationGeneration, publicationRevision } = params;
     try {
       const boundaries = await getAppServerBoundaries(serverName);
       for (const name of Object.keys(serverTools)) {
@@ -368,9 +372,21 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         logger.debug(`[MCP Cache] Skipped unaddressed app-level publication for ${serverName}`);
         return false;
       }
-      const replaced = await setCachedAppServerTools(serverName, configGeneration, serverTools);
+      if (!publicationRevision) {
+        logger.debug(`[MCP Cache] Skipped unordered app-level publication for ${serverName}`);
+        return false;
+      }
+      const replaced = await setCachedAppServerTools(
+        serverName,
+        configGeneration,
+        serverTools,
+        publicationRevision,
+      );
       if (replaced === false) {
-        throw new Error(`App tool cache rejected the write for ${serverName}`);
+        logger.debug(
+          `[MCP Cache] Ignored superseded app-level tools for ${serverName} at revision ${publicationRevision ?? '0'}`,
+        );
+        return false;
       }
       logger.debug(
         `[MCP Cache] Replaced app-level tools for ${serverName} with ${Object.keys(serverTools).length} tool(s)`,
@@ -388,8 +404,16 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     serverTools: LCAvailableTools;
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
+    publicationRevision?: string;
   }): Promise<void> {
-    const { userId, serverName, serverTools, serverConfig, publicationGeneration } = params;
+    const {
+      userId,
+      serverName,
+      serverTools,
+      serverConfig,
+      publicationGeneration,
+      publicationRevision,
+    } = params;
     try {
       const count = Object.keys(serverTools).length;
       const resolvedConfig = await resolveCacheConfig(userId, serverName, serverConfig);
@@ -411,6 +435,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           serverName,
           serverTools,
           publicationGeneration: appConfigGeneration,
+          publicationRevision,
         });
         if (!replaced) {
           return;

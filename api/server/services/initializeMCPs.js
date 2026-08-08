@@ -5,11 +5,13 @@ const {
   setMCPToolsChangedHandler,
   setMCPToolsChangedGenerationHandler,
   setMCPToolsChangedGenerationRenewalHandler,
+  setMCPToolsChangedRevisionHandler,
 } = require('@librechat/api');
 const { syncStaticTools, mergeAppTools, getAppConfig } = require('./Config');
 const {
   getMCPToolsCacheGeneration,
   renewMCPToolsCacheGeneration,
+  getNextAppToolsPublicationRevision,
   updateMCPServerTools,
 } = require('./Config/mcp');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
@@ -43,6 +45,7 @@ async function refreshChangedServerTools({
   tools,
   serverConfig,
   publicationGeneration,
+  publicationRevision,
 }) {
   await updateMCPServerTools({
     userId,
@@ -50,6 +53,7 @@ async function refreshChangedServerTools({
     tools,
     serverConfig,
     ...(publicationGeneration && { publicationGeneration }),
+    ...(publicationRevision && { publicationRevision }),
   });
   const toolCount = tools.length;
   logger.info(
@@ -81,6 +85,9 @@ async function initializeMCPs() {
     setMCPToolsChangedHandler(refreshChangedServerTools);
     setMCPToolsChangedGenerationHandler(getMCPToolsCacheGeneration);
     setMCPToolsChangedGenerationRenewalHandler(renewMCPToolsCacheGeneration);
+    setMCPToolsChangedRevisionHandler(({ serverName, configGeneration }) =>
+      getNextAppToolsPublicationRevision(serverName, configGeneration),
+    );
     registerShutdownTask('MCP app connections', () => mcpManager.disconnectAppServers());
 
     if (mcpServers && Object.keys(mcpServers).length > 0) {

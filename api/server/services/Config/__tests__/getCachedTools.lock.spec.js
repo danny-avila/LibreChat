@@ -36,6 +36,8 @@ const {
   runWithGlobalCacheLock,
   invalidateCachedTools,
   setCachedToolsWithinGlobalLock,
+  getNextAppToolsPublicationRevision,
+  setCachedAppServerTools,
 } = require('../getCachedTools');
 
 describe('global tool cache write lock', () => {
@@ -231,6 +233,32 @@ describe('global tool cache write lock', () => {
       ),
     ).resolves.toBe(false);
 
+    expect(mockCache.set).not.toHaveBeenCalled();
+  });
+
+  it('orders app snapshots atomically in the app catalog Redis slot', async () => {
+    mockCache.get.mockResolvedValue(null);
+    mockKeyvRedisClient.eval
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0);
+
+    const older = await getNextAppToolsPublicationRevision('server-1', 'config-current');
+    const newer = await getNextAppToolsPublicationRevision('server-1', 'config-current');
+    await expect(
+      setCachedAppServerTools('server-1', 'config-current', { current: {} }, newer),
+    ).resolves.toBe(true);
+    await expect(
+      setCachedAppServerTools('server-1', 'config-current', { stale: {} }, older),
+    ).resolves.toBe(false);
+
+    const [reserveScript, reserveOptions] = mockKeyvRedisClient.eval.mock.calls[0];
+    const [writeScript, writeOptions] = mockKeyvRedisClient.eval.mock.calls[2];
+    expect(reserveScript).toContain("redis.call('INCR', KEYS[1])");
+    expect(writeScript).toContain('tonumber(current) > tonumber(ARGV[1])');
+    expect(calculateSlot(reserveOptions.keys[0])).toBe(calculateSlot(writeOptions.keys[1]));
+    expect(calculateSlot(writeOptions.keys[0])).toBe(calculateSlot(writeOptions.keys[1]));
     expect(mockCache.set).not.toHaveBeenCalled();
   });
 
