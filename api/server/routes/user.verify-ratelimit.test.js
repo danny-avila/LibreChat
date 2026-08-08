@@ -2,6 +2,7 @@ const express = require('express');
 const request = require('supertest');
 
 const mockVerifyEmailSubmissionLimiter = jest.fn((req, res, next) => next());
+const mockEmailChangeSubmissionLimiter = jest.fn((req, res, next) => next());
 const mockVerifyEmailController = jest.fn((req, res) => res.status(204).end());
 const mockConfirmEmailChangeController = jest.fn((req, res) => res.status(204).end());
 
@@ -25,6 +26,7 @@ jest.mock('~/server/middleware', () => {
     configMiddleware: pass,
     verifyEmailLimiter: pass,
     emailChangeLimiter: pass,
+    emailChangeSubmissionLimiter: (...args) => mockEmailChangeSubmissionLimiter(...args),
     verifyEmailSubmissionLimiter: (...args) => mockVerifyEmailSubmissionLimiter(...args),
   };
 });
@@ -42,6 +44,7 @@ describe('POST /api/user/verify rate limiting', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockVerifyEmailSubmissionLimiter.mockImplementation((req, res, next) => next());
+    mockEmailChangeSubmissionLimiter.mockImplementation((req, res, next) => next());
     mockVerifyEmailController.mockImplementation((req, res) => res.status(204).end());
     mockConfirmEmailChangeController.mockImplementation((req, res) => res.status(204).end());
 
@@ -77,9 +80,10 @@ describe('POST /api/user/verify rate limiting', () => {
   it('limits email change confirmation before checking the token', async () => {
     await request(app).post('/api/user/email/verify').send({ token: 'token' }).expect(204);
 
-    expect(mockVerifyEmailSubmissionLimiter).toHaveBeenCalledTimes(1);
+    expect(mockEmailChangeSubmissionLimiter).toHaveBeenCalledTimes(1);
+    expect(mockVerifyEmailSubmissionLimiter).not.toHaveBeenCalled();
     expect(mockConfirmEmailChangeController).toHaveBeenCalledTimes(1);
-    expect(mockVerifyEmailSubmissionLimiter.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockEmailChangeSubmissionLimiter.mock.invocationCallOrder[0]).toBeLessThan(
       mockConfirmEmailChangeController.mock.invocationCallOrder[0],
     );
   });

@@ -13,6 +13,7 @@ const {
 const {
   verifyEmailLimiter,
   emailChangeLimiter,
+  emailChangeSubmissionLimiter,
   verifyEmailSubmissionLimiter,
   configMiddleware,
   canDeleteAccount,
@@ -36,7 +37,7 @@ router.post(
   configMiddleware,
   requestEmailChangeController,
 );
-router.post('/email/verify', verifyEmailSubmissionLimiter, confirmEmailChangeController);
+router.post('/email/verify', emailChangeSubmissionLimiter, confirmEmailChangeController);
 router.post('/verify', verifyEmailSubmissionLimiter, verifyEmailController);
 router.post('/verify/resend', verifyEmailLimiter, resendVerificationController);
 
