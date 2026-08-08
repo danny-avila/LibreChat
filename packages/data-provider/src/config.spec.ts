@@ -5,6 +5,7 @@ import {
   configSchema,
   excludedKeys,
   OCRStrategy,
+  ocrSchema,
   resolveEndpointType,
   webSearchSchema,
 } from './config';
@@ -710,6 +711,31 @@ describe('bedrockModels defaults', () => {
 });
 
 describe('OCRStrategy / FileSources coupling', () => {
+  it('contains only actual OCR services, not local document parsers', () => {
+    expect(Object.values(OCRStrategy)).not.toEqual(
+      expect.arrayContaining([
+        FileSources.document_parser,
+        FileSources.pdf_inspector,
+        FileSources.anydoc,
+      ]),
+    );
+  });
+
+  it.each([FileSources.document_parser, FileSources.pdf_inspector, FileSources.anydoc])(
+    'rejects local parser %s as an OCR configuration strategy',
+    (strategy) => {
+      expect(ocrSchema.safeParse({ strategy }).success).toBe(false);
+    },
+  );
+
+  it.each([
+    OCRStrategy.MISTRAL_OCR,
+    OCRStrategy.AZURE_MISTRAL_OCR,
+    OCRStrategy.VERTEXAI_MISTRAL_OCR,
+  ])('accepts actual OCR service %s as an OCR configuration strategy', (strategy) => {
+    expect(ocrSchema.safeParse({ strategy }).success).toBe(true);
+  });
+
   /**
    * `appConfig.ocr.strategy` is handed straight to `getStrategyFunctions()` as a
    * `FileSources` key (api/server/services/Files/process.js), so the two enums are

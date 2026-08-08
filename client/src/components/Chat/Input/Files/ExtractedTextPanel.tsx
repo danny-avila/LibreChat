@@ -55,7 +55,7 @@ export default function ExtractedTextPanel({ fileId, enabled, shareId }: Extract
 
   if (isError) {
     return (
-      <p className="py-8 text-center text-sm text-text-secondary">
+      <p className="py-8 text-center text-sm text-text-secondary" role="alert">
         {localize('com_ui_extracted_text_error')}
       </p>
     );
@@ -85,7 +85,7 @@ export default function ExtractedTextPanel({ fileId, enabled, shareId }: Extract
         tabIndex={0}
         role="region"
         aria-label={localize('com_ui_extracted_text_region_label')}
-        className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-tertiary p-4 pr-12 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-tertiary p-4 pr-12 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2"
       >
         {text}
       </pre>

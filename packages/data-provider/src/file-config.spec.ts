@@ -1,5 +1,5 @@
+import type { FileConfig, RegexLike } from './types/files';
 import type { MimeUploadCapability } from './file-config';
-import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
   fileConfigSchema,
@@ -231,31 +231,74 @@ describe('documentParserMimeTypes', () => {
 
   it.each([
     'application/pdf',
+    'application/msword',
+    'application/vnd.ms-word.document.macroenabled.12',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/rtf',
+    'text/rtf',
+    'application/epub+zip',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.ms-powerpoint.presentation.macroenabled.12',
+    'application/vnd.ms-powerpoint.slideshow.macroenabled.12',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.ms-excel',
+    'application/vnd.ms-excel.sheet.macroenabled.12',
+    'application/vnd.ms-excel.sheet.binary.macroenabled.12',
     'application/msexcel',
     'application/x-msexcel',
     'application/x-ms-excel',
     'application/vnd.oasis.opendocument.spreadsheet',
     'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.presentation',
+    'text/csv',
+    'application/csv',
   ])('matches natively parseable type: %s', (mimeType) => {
     expect(check(mimeType)).toBe(true);
   });
 
-  it.each([
-    'application/vnd.oasis.opendocument.presentation',
-    'application/vnd.oasis.opendocument.graphics',
-    'text/plain',
-    'image/png',
-  ])('does not match OCR-only or unsupported type: %s', (mimeType) => {
-    expect(check(mimeType)).toBe(false);
+  it.each(['application/vnd.oasis.opendocument.graphics', 'text/plain', 'image/png'])(
+    'does not match OCR-only or unsupported type: %s',
+    (mimeType) => {
+      expect(check(mimeType)).toBe(false);
+    },
+  );
+
+  it('allows every local parser type through the general upload defaults', () => {
+    const locallyParsedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.ms-word.document.macroenabled.12',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/rtf',
+      'text/rtf',
+      'application/epub+zip',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.ms-powerpoint.presentation.macroenabled.12',
+      'application/vnd.ms-powerpoint.slideshow.macroenabled.12',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
+      'application/vnd.ms-excel',
+      'application/vnd.ms-excel.sheet.macroenabled.12',
+      'application/vnd.ms-excel.sheet.binary.macroenabled.12',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.oasis.opendocument.text',
+      'application/vnd.oasis.opendocument.spreadsheet',
+      'application/vnd.oasis.opendocument.presentation',
+      'text/csv',
+      'application/csv',
+    ];
+
+    for (const mimeType of locallyParsedTypes) {
+      expect(supportedMimeTypes.some((regex) => regex.test(mimeType))).toBe(true);
+    }
   });
 });
 
 describe('documentParser file config', () => {
   const docx = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-  const matches = (types: RegExp[] | undefined, mimeType: string): boolean =>
+  const matches = (types: RegexLike[] | undefined, mimeType: string): boolean =>
     (types ?? []).some((regex) => regex.test(mimeType));
 
   it('defaults to the built-in parser MIME types when unconfigured', () => {

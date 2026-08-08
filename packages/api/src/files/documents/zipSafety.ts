@@ -22,7 +22,7 @@ const DEFAULT_MAX_ENTRY_BYTES = 25 * megabyte;
  * entries an archive may hold, yet every entry costs an openReadStream
  * plus an inflate teardown no matter how little it decompresses to:
  * 20,000 one-byte entries are 1.87MB on disk and 20,000 decompressed
- * bytes — comfortably inside both byte caps — but take 835ms to walk
+ * bytes, comfortably inside both byte caps, but take 835ms to walk
  * (0.042ms/entry), so a 15MB upload buys roughly 6.7s of CPU. Real
  * office documents are orders of magnitude below that: the largest
  * fixture here (a 3-slide deck.pptx) holds 42 entries, the DOCX
@@ -78,7 +78,7 @@ export interface ZipSafetyOptions {
  * validator's own memory footprint is bounded by yauzl's stream
  * buffer regardless of payload size. CPU is bounded by `maxTotalBytes`
  * — once the cap fires, the underlying read stream is destroyed and
- * decompression stops — and by `maxEntries`, which bounds the
+ * decompression stops. The `maxEntries` cap bounds the
  * per-entry stream setup that inflated bytes alone never account for.
  *
  * Throws `ZipBombError` on cap violation; throws plain `Error` on a
@@ -210,7 +210,7 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
  *
  * Testing the leading `PK` magic bytes is not enough. Real zip readers (anydoc's
  * Rust zip crate, SheetJS) seek the EOCD backwards from the end of the file and
- * tolerate arbitrary prepended data — that is how self-extracting archives work.
+ * tolerate arbitrary prepended data; that is how self-extracting archives work.
  * Prepending a few junk bytes to a zip bomb therefore makes a magic-byte test
  * report "not a zip" while the parser still happily inflates it.
  *
@@ -240,7 +240,7 @@ export function isZipArchive(buffer: Buffer): boolean {
 }
 
 /**
- * Runs the decompression guard when — and only when — the buffer really is a ZIP.
+ * Runs the decompression guard only when the buffer really is a ZIP.
  *
  * Detection and enforcement have to stay welded together. Once the tail says
  * "archive", a validator failure is a rejection and never a fall-through: yauzl

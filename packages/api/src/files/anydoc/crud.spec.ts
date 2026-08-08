@@ -1,20 +1,15 @@
 import path from 'path';
 import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
-import { uploadAnydoc } from './crud';
+import { parseWithAnydoc } from './crud';
 
-type UploadContext = Parameters<typeof uploadAnydoc>[0];
-type UploadResult = ReturnType<typeof uploadAnydoc>;
+type ParseResult = ReturnType<typeof parseWithAnydoc>;
 
 /** Fixtures are shared with the built-in parser suite and live alongside it. */
 const fixtures = path.join(__dirname, '..', 'documents');
 
-const upload = (file: Partial<Express.Multer.File>): UploadResult =>
-  uploadAnydoc({
-    file: file as Express.Multer.File,
-    req: {} as UploadContext['req'],
-    loadAuthValues: async () => ({}),
-  });
+const parse = (file: Partial<Express.Multer.File>): ParseResult =>
+  parseWithAnydoc(file as Express.Multer.File);
 
 const docxFile = (name: string): Partial<Express.Multer.File> => ({
   originalname: name,
@@ -36,7 +31,7 @@ const pdfFile = (name: string): Partial<Express.Multer.File> => ({
  */
 const withAnydocSpy = async (
   toMarkdownBytes: jest.Mock,
-  body: (run: typeof upload) => Promise<void>,
+  body: (run: typeof parse) => Promise<void>,
 ): Promise<void> => {
   try {
     await jest.isolateModulesAsync(async () => {
@@ -44,23 +39,17 @@ const withAnydocSpy = async (
         ...jest.requireActual('@firecrawl/anydoc'),
         toMarkdownBytes,
       }));
-      const { uploadAnydoc: uploadWithSpy } = await import('./crud');
-      await body((file) =>
-        uploadWithSpy({
-          file: file as Express.Multer.File,
-          req: {} as UploadContext['req'],
-          loadAuthValues: async () => ({}),
-        }),
-      );
+      const { parseWithAnydoc: parseWithSpy } = await import('./crud');
+      await body((file) => parseWithSpy(file as Express.Multer.File));
     });
   } finally {
     jest.dontMock('@firecrawl/anydoc');
   }
 };
 
-describe('uploadAnydoc', () => {
+describe('parseWithAnydoc', () => {
   test('converts an office document to Markdown', async () => {
-    const result = await upload(docxFile('structured.docx'));
+    const result = await parse(docxFile('structured.docx'));
 
     expect(result.filename).toBe('structured.docx');
     expect(result.filepath).toBe('anydoc');
@@ -71,7 +60,7 @@ describe('uploadAnydoc', () => {
   });
 
   test('converts a legacy .xls workbook, which is not a zip archive', async () => {
-    const result = await upload({
+    const result = await parse({
       originalname: 'sample.xls',
       path: path.join(fixtures, 'sample.xls'),
       mimetype: 'application/vnd.ms-excel',
@@ -81,7 +70,7 @@ describe('uploadAnydoc', () => {
   });
 
   test('never reports pagesNeedingOcr, which anydoc cannot produce', async () => {
-    const result = await upload(docxFile('structured.docx'));
+    const result = await parse(docxFile('structured.docx'));
 
     expect(result.pagesNeedingOcr).toBeUndefined();
   });
@@ -163,7 +152,7 @@ describe('uploadAnydoc', () => {
     });
 
     test('ignores MIME type parameters when matching the declared table', async () => {
-      const result = await upload({
+      const result = await parse({
         ...docxFile('structured.docx'),
         mimetype:
           'Application/vnd.openxmlformats-officedocument.wordprocessingml.document; charset=binary',
@@ -177,7 +166,7 @@ describe('uploadAnydoc', () => {
        * so the extension alone is enough to try, with the uncertainty logged. */
       const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
 
-      const result = await upload({
+      const result = await parse({
         ...docxFile('structured.docx'),
         mimetype: 'application/octet-stream',
       });
@@ -189,7 +178,7 @@ describe('uploadAnydoc', () => {
     test('attempts a declared MIME type whose filename has no usable extension', async () => {
       const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
 
-      const result = await upload({
+      const result = await parse({
         originalname: 'structured',
         path: path.join(fixtures, 'structured.docx'),
         mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -198,40 +187,31 @@ describe('uploadAnydoc', () => {
       expect(result.text).toContain('# Quarterly Report');
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('content detection'));
     });
+
+    test('accepts the macro-enabled slideshow MIME type without an extension', async () => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+      const result = await parse({
+        originalname: 'slides',
+        path: path.join(fixtures, 'deck.pptx'),
+        mimetype: 'application/vnd.ms-powerpoint.slideshow.macroenabled.12',
+      });
+
+      expect(result.text).toContain('Quarterly Highlights');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('content detection'));
+    });
   });
 
-  describe('PDF handling', () => {
-    test('converts a text-based PDF', async () => {
-      const result = await upload(pdfFile('sample.pdf'));
-
-      expect(result.filepath).toBe('anydoc');
-      expect(result.text).toContain('# Quarterly Report');
-    });
-
-    test('reports a scanned PDF as needing an OCR service', async () => {
-      /* anydoc converts PDFs with pdf-inspector, which refuses image-only pages with
-       * "unsupported input: PDF has no extractable text (Scanned, 1 pages): OCR is
-       * required". That is the one refusal a user can act on, so it is translated into
-       * the same sentence the rest of the upload path uses. */
-      await expect(upload(pdfFile('sample-scanned.pdf'))).rejects.toThrow(
-        /image-based and requires an OCR service to process/,
-      );
-    });
-
-    test('reports an empty PDF conversion as needing an OCR service', async () => {
-      const toMarkdownBytes = jest.fn().mockResolvedValue('   ');
+  describe('PDF routing boundary', () => {
+    test('refuses PDFs so the page-aware pdf-inspector path is always used', async () => {
+      const toMarkdownBytes = jest.fn();
 
       await withAnydocSpy(toMarkdownBytes, async (run) => {
         await expect(run(pdfFile('sample.pdf'))).rejects.toThrow(
-          /image-based and requires an OCR service to process/,
+          /PDF files are handled by pdf-inspector, not anydoc/,
         );
+        expect(toMarkdownBytes).not.toHaveBeenCalled();
       });
-    });
-
-    test('surfaces a malformed PDF as a provider failure, not as an OCR prompt', async () => {
-      await expect(upload(pdfFile('sample-badxref.pdf'))).rejects.toThrow(
-        /anydoc failed to extract text from "sample-badxref\.pdf"/,
-      );
     });
   });
 

@@ -240,18 +240,49 @@ export const defaultOCRMimeTypes = [
   /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
 ];
 
-/** MIME types handled by the built-in document parser (pdf, docx, pptx, excel variants, ods/odt) */
-export const documentParserMimeTypes = [
+/** MIME types routed to the local AnyDoc engine. */
+export const anydocDocumentMimeTypes = [
   excelMimeTypes,
-  /^application\/pdf$/,
-  /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/,
-  /^application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation$/,
-  /^application\/vnd\.oasis\.opendocument\.spreadsheet$/,
-  /^application\/vnd\.oasis\.opendocument\.text$/,
+  /^application\/msword$/i,
+  /^application\/vnd\.ms-word\.document\.macroenabled\.12$/i,
+  /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/i,
+  /^application\/(?:rtf|epub\+zip|csv)$/i,
+  /^text\/(?:rtf|csv)$/i,
+  /^application\/vnd\.ms-powerpoint$/i,
+  /^application\/vnd\.ms-powerpoint\.presentation\.macroenabled\.12$/i,
+  /^application\/vnd\.ms-powerpoint\.slideshow\.macroenabled\.12$/i,
+  /^application\/vnd\.openxmlformats-officedocument\.presentationml\.(?:presentation|slideshow)$/i,
+  /^application\/vnd\.ms-excel\.sheet\.(?:macroenabled|binary\.macroenabled)\.12$/i,
+  /^application\/vnd\.oasis\.opendocument\.(?:text|spreadsheet|presentation)$/i,
 ];
 
-/** Extension fallback for uploads whose MIME type arrives generic or missing */
-const parsedDocumentExtensions = new Set(['pdf', 'docx', 'pptx', 'xlsx', 'xls', 'ods', 'odt']);
+/** MIME types handled by local document extraction. PDFs use pdf-inspector; the rest use AnyDoc. */
+export const documentParserMimeTypes = [/^application\/pdf$/i, ...anydocDocumentMimeTypes];
+
+/** Extension fallback for uploads whose MIME type arrives generic or missing. */
+const parsedDocumentExtensions = new Set([
+  'pdf',
+  'doc',
+  'docx',
+  'docm',
+  'odt',
+  'rtf',
+  'epub',
+  'ppt',
+  'pps',
+  'pot',
+  'pptx',
+  'pptm',
+  'ppsx',
+  'ppsm',
+  'odp',
+  'xls',
+  'xlsx',
+  'xlsm',
+  'xlsb',
+  'ods',
+  'csv',
+]);
 
 /**
  * Whether the document parser extracts text for this file, resolved the way the
@@ -277,6 +308,7 @@ export const supportedMimeTypes = [
   textMimeTypes,
   excelMimeTypes,
   applicationMimeTypes,
+  ...documentParserMimeTypes,
   imageMimeTypes,
   videoMimeTypes,
   audioMimeTypes,

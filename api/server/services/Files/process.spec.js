@@ -245,7 +245,7 @@ describe('processAgentFileUpload', () => {
     mergeFileConfig.mockReturnValue(makeFileConfig());
   });
 
-  describe('OCR strategy selection', () => {
+  describe('local document extraction and OCR selection', () => {
     test.each([
       ['PDF', PDF_MIME],
       ['DOCX', DOCX_MIME],
@@ -346,10 +346,8 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile.mock.calls[0][0].type).toBe(PDF_MIME);
     });
 
-    test.each([
-      ['an image', 'image/png'],
-      ['a PDF', PDF_MIME],
-    ])('keeps configured OCR results on text/plain for %s', async (_, mime) => {
+    test('keeps configured OCR results on text/plain for an image', async () => {
+      const mime = 'image/png';
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [mime] }));
       getStrategyFunctions.mockReturnValue({
         handleFileUpload: jest.fn().mockResolvedValue({
@@ -370,6 +368,35 @@ describe('processAgentFileUpload', () => {
       expect(created.filepath).toBe(FileSources.mistral_ocr);
     });
 
+    test('keeps an OCR fallback result on text/plain for a partially readable PDF', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
+      const localUpload = jest.fn().mockResolvedValue({
+        text: 'local page one',
+        bytes: 14,
+        filepath: FileSources.pdf_inspector,
+        pagesNeedingOcr: [2],
+      });
+      const remoteUpload = jest.fn().mockResolvedValue({
+        text: 'OCR recovered both pages',
+        bytes: 24,
+        filepath: FileSources.mistral_ocr,
+      });
+      getStrategyFunctions.mockImplementation((source) => ({
+        handleFileUpload: source === FileSources.document_parser ? localUpload : remoteUpload,
+      }));
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      const created = db.createFile.mock.calls[0][0];
+      expect(created.type).toBe('text/plain');
+      expect(created.filepath).toBe(FileSources.mistral_ocr);
+      expect(created.text).toBe('OCR recovered both pages');
+    });
+
     test('leaves text and byte count untouched when every page was extracted', async () => {
       getStrategyFunctions.mockReturnValue({
         handleFileUpload: jest.fn().mockResolvedValue({
@@ -387,8 +414,21 @@ describe('processAgentFileUpload', () => {
       expect(created.bytes).toBe(42);
     });
 
-    test('uses the configured OCR strategy when OCR is set up for the file type', async () => {
+    test('uses local document extraction before configured OCR for a text-based PDF', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
+      const localUpload = jest.fn().mockResolvedValue({
+        text: 'local PDF text',
+        bytes: 14,
+        filepath: FileSources.pdf_inspector,
+      });
+      const remoteOCR = jest.fn().mockResolvedValue({
+        text: 'remote OCR text',
+        bytes: 15,
+        filepath: FileSources.mistral_ocr,
+      });
+      getStrategyFunctions.mockImplementation((source) => ({
+        handleFileUpload: source === FileSources.document_parser ? localUpload : remoteOCR,
+      }));
       const req = makeReq({
         mimetype: PDF_MIME,
         ocrConfig: { strategy: FileSources.mistral_ocr },
@@ -396,12 +436,66 @@ describe('processAgentFileUpload', () => {
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
 
-      expect(checkCapability).toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
-      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.mistral_ocr);
+      expect(localUpload).toHaveBeenCalledTimes(1);
+      expect(remoteOCR).not.toHaveBeenCalled();
+      expect(checkCapability).not.toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
+      expect(db.createFile.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          text: 'local PDF text',
+          filepath: FileSources.pdf_inspector,
+          type: PDF_MIME,
+        }),
+      );
     });
 
-    test('uses document_parser as default when OCR is configured but no strategy is specified', async () => {
+    test.each([
+      FileSources.mistral_ocr,
+      FileSources.azure_mistral_ocr,
+      FileSources.vertexai_mistral_ocr,
+    ])(
+      'uses configured OCR service %s after local extraction reports a missing page',
+      async (strategy) => {
+        mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
+        const localUpload = jest.fn().mockResolvedValue({
+          text: 'local page one',
+          bytes: 14,
+          filepath: FileSources.pdf_inspector,
+          pagesNeedingOcr: [2],
+        });
+        const remoteUpload = jest.fn().mockResolvedValue({
+          text: 'OCR recovered both pages',
+          bytes: 24,
+          filepath: strategy,
+        });
+        getStrategyFunctions.mockImplementation((source) => ({
+          handleFileUpload: source === FileSources.document_parser ? localUpload : remoteUpload,
+        }));
+        const req = makeReq({
+          mimetype: PDF_MIME,
+          ocrConfig: { strategy },
+        });
+
+        await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+        expect(getStrategyFunctions).toHaveBeenNthCalledWith(1, FileSources.document_parser);
+        expect(getStrategyFunctions).toHaveBeenNthCalledWith(2, strategy);
+        expect(localUpload).toHaveBeenCalledTimes(1);
+        expect(remoteUpload).toHaveBeenCalledTimes(1);
+        expect(checkCapability).toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
+      },
+    );
+
+    test('defaults missing OCR strategy to Mistral after local extraction needs OCR', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
+      const localUpload = jest.fn().mockRejectedValue(new Error('No text found in document'));
+      const remoteUpload = jest.fn().mockResolvedValue({
+        text: 'OCR text',
+        bytes: 8,
+        filepath: FileSources.mistral_ocr,
+      });
+      getStrategyFunctions.mockImplementation((source) => ({
+        handleFileUpload: source === FileSources.document_parser ? localUpload : remoteUpload,
+      }));
       const req = makeReq({
         mimetype: PDF_MIME,
         ocrConfig: { supportedMimeTypes: [PDF_MIME] },
@@ -410,12 +504,16 @@ describe('processAgentFileUpload', () => {
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
 
       expect(checkCapability).toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
-      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+      expect(getStrategyFunctions).toHaveBeenNthCalledWith(1, FileSources.document_parser);
+      expect(getStrategyFunctions).toHaveBeenNthCalledWith(2, FileSources.mistral_ocr);
     });
 
-    test('throws when configured OCR capability is not enabled for the agent', async () => {
+    test('throws when OCR is needed but the agent capability is not enabled', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
       checkCapability.mockResolvedValue(false);
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockRejectedValue(new Error('No text found in document')),
+      });
       const req = makeReq({
         mimetype: PDF_MIME,
         ocrConfig: { strategy: FileSources.mistral_ocr },
@@ -463,9 +561,13 @@ describe('processAgentFileUpload', () => {
     test.each([
       ['ODT', ODT_MIME],
       ['ODP', ODP_MIME],
-      ['ODG', ODG_MIME],
-    ])('routes %s through configured OCR when OCR supports the type', async (_, mime) => {
-      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [mime] }));
+    ])('extracts %s locally before considering configured OCR', async (_, mime) => {
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({
+          ocrSupportedMimeTypes: [mime],
+          documentParserSupportedMimeTypes: [mime],
+        }),
+      );
       const req = makeReq({
         mimetype: mime,
         ocrConfig: { strategy: FileSources.mistral_ocr },
@@ -473,7 +575,29 @@ describe('processAgentFileUpload', () => {
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
 
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.mistral_ocr);
+      expect(checkCapability).not.toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
+    });
+
+    test('routes ODG directly through configured OCR because it is not a local document type', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [ODG_MIME] }));
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockResolvedValue({
+          text: 'OCR text',
+          bytes: 8,
+          filepath: FileSources.mistral_ocr,
+        }),
+      });
+      const req = makeReq({
+        mimetype: ODG_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
       expect(checkCapability).toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
+      expect(getStrategyFunctions).toHaveBeenCalledTimes(1);
       expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.mistral_ocr);
     });
 
@@ -491,17 +615,17 @@ describe('processAgentFileUpload', () => {
       expect(parseText).not.toHaveBeenCalled();
     });
 
-    test('falls back to document_parser when configured OCR fails for a document MIME type', async () => {
+    test('uses configured OCR when local extraction fails for a document MIME type', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
-      const failingUpload = jest.fn().mockRejectedValue(new Error('OCR API returned 500'));
-      const fallbackUpload = jest.fn().mockResolvedValue({
-        text: 'parsed text',
-        bytes: 11,
-        filepath: FileSources.document_parser,
+      const localUpload = jest.fn().mockRejectedValue(new Error('No text found in document'));
+      const remoteUpload = jest.fn().mockResolvedValue({
+        text: 'OCR text',
+        bytes: 8,
+        filepath: FileSources.mistral_ocr,
       });
-      getStrategyFunctions
-        .mockReturnValueOnce({ handleFileUpload: failingUpload })
-        .mockReturnValueOnce({ handleFileUpload: fallbackUpload });
+      getStrategyFunctions.mockImplementation((source) => ({
+        handleFileUpload: source === FileSources.document_parser ? localUpload : remoteUpload,
+      }));
       const req = makeReq({
         mimetype: PDF_MIME,
         ocrConfig: { strategy: FileSources.mistral_ocr },
@@ -511,11 +635,36 @@ describe('processAgentFileUpload', () => {
         processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
       ).resolves.not.toThrow();
 
-      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.mistral_ocr);
-      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+      expect(getStrategyFunctions).toHaveBeenNthCalledWith(1, FileSources.document_parser);
+      expect(getStrategyFunctions).toHaveBeenNthCalledWith(2, FileSources.mistral_ocr);
+      expect(db.createFile.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ text: 'OCR text', filepath: FileSources.mistral_ocr }),
+      );
     });
 
-    test('throws when both configured OCR and document_parser fallback fail', async () => {
+    test('does not bypass the document-parser allowlist when configured OCR fails', async () => {
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({
+          ocrSupportedMimeTypes: [PDF_MIME],
+          documentParserSupportedMimeTypes: [DOCX_MIME],
+        }),
+      );
+      const failingUpload = jest.fn().mockRejectedValue(new Error('OCR API returned 500'));
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: failingUpload });
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow(/configured OCR service/);
+
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.mistral_ocr);
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.document_parser);
+    });
+
+    test('throws when both local extraction and configured OCR fail', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
       getStrategyFunctions.mockReturnValue({
         handleFileUpload: jest.fn().mockRejectedValue(new Error('failure')),

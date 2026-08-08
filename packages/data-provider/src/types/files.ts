@@ -86,7 +86,7 @@ export type FileConfig = {
     supportedMimeTypes?: RegexLike[];
   };
   documentParser?: {
-    supportedMimeTypes?: RegExp[];
+    supportedMimeTypes?: RegexLike[];
   };
   text?: {
     supportedMimeTypes?: RegexLike[];
