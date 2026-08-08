@@ -122,7 +122,57 @@ describe('loadPluginsFromDirectory', () => {
     expect(registry.list()).toHaveLength(1);
   });
 
+  it('isolates a plugin whose data directory cannot be created', async () => {
+    const dataRoot = path.join(base, 'data/plugins');
+    await fs.promises.mkdir(dataRoot, { recursive: true });
+    await fs.promises.writeFile(path.join(dataRoot, 'alpha'), 'occupied by a file');
+    await writePlugin('alpha', {});
+    await writePlugin('beta', { 'skills/beta-skill/SKILL.md': skillDocument('beta-skill') });
+
+    const registry = await load();
+    expect(registry.list().map((plugin) => plugin.manifest.name)).toEqual(['beta']);
+    expect(registry.skills().map((skill) => skill.name)).toEqual(['beta-skill']);
+    expect(registry.diagnostics().map((issue) => issue.code)).toContain(
+      'data_directory_unavailable',
+    );
+  });
+
+  it('identifies a rejected plugin by its directory', async () => {
+    await writePlugin('broken-one', { 'plugin.json': '{ not json' }, null);
+    await writePlugin('broken-two', { 'plugin.json': '{ also not json' }, null);
+
+    const registry = await load();
+    const locations = registry.diagnostics().map((issue) => issue.location);
+    expect(locations).toContain(path.join(pluginsDir, 'broken-one') + '/plugin.json');
+    expect(locations).toContain(path.join(pluginsDir, 'broken-two') + '/plugin.json');
+  });
+
   describe('name conflicts', () => {
+    it('refuses a second plugin claiming the same manifest name', async () => {
+      await writePlugin('first', {}, { name: 'shared-name' });
+      await writePlugin('second', {}, { name: 'shared-name' });
+
+      const registry = await load();
+      expect(registry.list()).toHaveLength(1);
+      expect(registry.diagnostics().map((issue) => issue.code)).toContain('manifest_name_conflict');
+    });
+
+    it('does not let a refused duplicate contribute components', async () => {
+      await writePlugin(
+        'first',
+        { 'skills/from-first/SKILL.md': skillDocument('from-first') },
+        { name: 'shared-name' },
+      );
+      await writePlugin(
+        'second',
+        { 'skills/from-second/SKILL.md': skillDocument('from-second') },
+        { name: 'shared-name' },
+      );
+
+      const registry = await load();
+      expect(registry.skills().map((skill) => skill.name)).toEqual(['from-first']);
+    });
+
     it('keeps the first skill and reports the duplicate', async () => {
       await writePlugin('alpha', { 'skills/shared/SKILL.md': skillDocument('shared') });
       await writePlugin('beta', { 'skills/shared/SKILL.md': skillDocument('shared') });

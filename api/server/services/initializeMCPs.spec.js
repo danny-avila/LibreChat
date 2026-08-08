@@ -69,10 +69,14 @@ const mockUpdateMCPServerTools = jest.fn();
 const mockGetMCPToolsCacheGeneration = jest.fn();
 const mockRenewMCPToolsCacheGeneration = jest.fn();
 const mockGetNextAppToolsPublicationRevision = jest.fn();
+const mockGetDeploymentPluginMcpServers = jest.fn(() => ({}));
 
 jest.mock('@librechat/api', () => ({
   get registerShutdownTask() {
     return mockRegisterShutdownTask;
+  },
+  get getDeploymentPluginMcpServers() {
+    return mockGetDeploymentPluginMcpServers;
   },
   get setMCPToolsChangedHandler() {
     return mockSetMCPToolsChangedHandler;

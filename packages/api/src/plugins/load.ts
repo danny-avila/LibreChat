@@ -164,7 +164,19 @@ export async function loadPlugin(
 
   const diagnostics: PluginDiagnostic[] = [...manifestDiagnostics];
   const dataDirectory = path.join(options.dataRoot, manifest.name);
-  await fs.promises.mkdir(dataDirectory, { recursive: true });
+  try {
+    await fs.promises.mkdir(dataDirectory, { recursive: true });
+  } catch (error) {
+    return rejected(realRoot, [
+      ...diagnostics,
+      {
+        code: 'data_directory_unavailable',
+        severity: 'error',
+        message: `The persistent data directory could not be created: ${errorMessage(error)}`,
+        location: dataDirectory,
+      },
+    ]);
+  }
   const realDataDirectory = await realpathAllowingMissing(dataDirectory);
 
   const [skillsResult, mcpDocument, hooksResult] = await Promise.all([

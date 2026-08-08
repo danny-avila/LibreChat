@@ -1,6 +1,6 @@
 import path from 'path';
-import type { MCPOptions } from 'librechat-data-provider';
-import type { PluginDiagnostic, PluginMcpServer } from './types';
+import { normalizeServerName } from 'librechat-data-provider';
+import type { PluginDiagnostic, PluginMcpOptions, PluginMcpServer } from './types';
 import {
   PLUGIN_MCP_FILE,
   PLUGIN_DATA_VAR,
@@ -8,11 +8,12 @@ import {
   PLUGIN_MCP_SCHEMA_ID,
 } from './constants';
 import { isPluginRelativePath, isWithinRoot, realpathAllowingMissing } from './paths';
+import { MCP_PLUGIN_SOURCE } from '~/utils/env';
 
 const PLACEHOLDER_PATTERN = /\$\{(PLUGIN_ROOT|PLUGIN_DATA)\}/g;
 const SCHEMA_VERSION_PATTERN = /\/schemas\/(\d+\.\d+\.\d+)\//;
 const HTTP_TOKEN_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-/** Visible ASCII plus space and horizontal tab; CR, LF, and NUL are rejected. */
+/** RFC 7230 field-value: visible ASCII, space, horizontal tab, and obs-text. CR, LF, and NUL are rejected. */
 const HTTP_FIELD_VALUE_PATTERN = /^[\t\x20-\x7e\x80-\xff]*$/;
 const LOOPBACK_IPV4_PATTERN = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
@@ -20,6 +21,13 @@ const SUPPORTED_TRANSPORTS = new Set(['stdio', 'streamable-http', 'sse']);
 
 const STDIO_FIELDS = new Set(['type', 'command', 'args', 'env', 'cwd']);
 const REMOTE_FIELDS = new Set(['type', 'url', 'headers']);
+
+/**
+ * Server names become keys on plain configuration objects downstream. These
+ * survive tool-name normalization unchanged, so they are refused here to keep a
+ * package from reaching a prototype setter.
+ */
+const RESERVED_SERVER_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
 
 export interface PluginMcpContext {
   /** Filesystem-resolved plugin root. */
@@ -206,7 +214,7 @@ async function readStdioServer(
   name: string,
   server: Record<string, unknown>,
   context: PluginMcpContext,
-): Promise<{ options: MCPOptions } | { error: PluginDiagnostic }> {
+): Promise<{ options: PluginMcpOptions } | { error: PluginDiagnostic }> {
   const foreign = hasForeignFields(server, STDIO_FIELDS);
   if (foreign !== null) {
     return { error: invalidServer(name, `"${foreign}" is not a valid stdio server field`) };
@@ -259,6 +267,7 @@ async function readStdioServer(
 
   return {
     options: {
+      source: MCP_PLUGIN_SOURCE,
       type: 'stdio',
       command: resolvedCommand.command,
       args: rawArgs.map((arg) => expandPluginVariables(arg, realRoot, dataDirectory)),
@@ -272,7 +281,7 @@ function readRemoteServer(
   name: string,
   type: 'streamable-http' | 'sse',
   server: Record<string, unknown>,
-): { options: MCPOptions } | { error: PluginDiagnostic } {
+): { options: PluginMcpOptions } | { error: PluginDiagnostic } {
   const foreign = hasForeignFields(server, REMOTE_FIELDS);
   if (foreign !== null) {
     return { error: invalidServer(name, `"${foreign}" is not a valid ${type} server field`) };
@@ -300,6 +309,7 @@ function readRemoteServer(
 
   return {
     options: {
+      source: MCP_PLUGIN_SOURCE,
       type,
       url: server.url,
       ...(headers !== undefined && { headers }),
@@ -311,7 +321,7 @@ async function readServer(
   name: string,
   value: unknown,
   context: PluginMcpContext,
-): Promise<{ options: MCPOptions } | { error: PluginDiagnostic }> {
+): Promise<{ options: PluginMcpOptions } | { error: PluginDiagnostic }> {
   if (!isPlainObject(value)) {
     return { error: invalidServer(name, 'server configuration must be an object') };
   }
@@ -386,6 +396,25 @@ export async function readMcpConfig(
 
   const servers: PluginMcpServer[] = [];
   for (const [name, value] of Object.entries(document.mcpServers)) {
+    /**
+     * Tool keys embed `normalizeServerName(name)` while request-time resolution
+     * looks the server up by its raw name. A name that changes under
+     * normalization publishes tools nothing can resolve, so it is rejected here
+     * rather than failing silently at request time.
+     */
+    if (RESERVED_SERVER_NAMES.has(name)) {
+      diagnostics.push(invalidServer(name, `"${name}" is a reserved MCP server name`));
+      continue;
+    }
+    if (normalizeServerName(name) !== name) {
+      diagnostics.push(
+        invalidServer(
+          name,
+          `"${name}" is not a stable MCP server name; use only the characters preserved by tool naming (it would become "${normalizeServerName(name)}")`,
+        ),
+      );
+      continue;
+    }
     const result = await readServer(name, value, context);
     if ('error' in result) {
       diagnostics.push(result.error);

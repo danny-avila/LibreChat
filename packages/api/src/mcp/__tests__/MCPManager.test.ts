@@ -37,6 +37,8 @@ jest.mock('~/mcp/oauth', () => ({
 
 jest.mock('~/utils/env', () => ({
   processMCPEnv: jest.fn((params) => params.options),
+  MCP_PLUGIN_SOURCE: 'plugin',
+  isPluginSourced: jest.fn((config) => config?.source === 'plugin'),
 }));
 
 jest.mock('~/auth/domain', () => ({

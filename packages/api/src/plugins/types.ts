@@ -1,5 +1,7 @@
 import type { MCPOptions } from 'librechat-data-provider';
 import type { PluginHookPlan } from '~/agents/hooks';
+import type { MCP_PLUGIN_SOURCE } from '~/utils/env';
+import type { JsonValue } from '~/agents/envelope';
 import type { DeploymentSkill } from '~/skills';
 
 export type PluginDiagnosticSeverity = 'error' | 'warning';
@@ -11,6 +13,8 @@ export type PluginDiagnosticCode =
   | 'manifest_invalid'
   | 'manifest_unknown_field'
   | 'manifest_unsupported_version'
+  | 'manifest_name_conflict'
+  | 'data_directory_unavailable'
   | 'extensions_invalid'
   | 'path_escape'
   | 'component_location_invalid'
@@ -32,6 +36,9 @@ export interface PluginDiagnostic {
   location?: string;
 }
 
+/** Contents of one client extension namespace; JSON that this client does not validate (§8.1). */
+export type PluginExtensionData = Record<string, JsonValue>;
+
 export interface PluginAuthor {
   name?: string;
   email?: string;
@@ -48,13 +55,20 @@ export interface PluginManifest {
   repository?: string;
   license?: string;
   keywords?: string[];
-  extensions?: Record<string, Record<string, unknown>>;
+  extensions?: Record<string, PluginExtensionData>;
 }
+
+/**
+ * Plugin MCP options always carry their provenance so the connection layer can
+ * tell them apart from operator-authored config and leave every placeholder the
+ * plugin declared literal.
+ */
+export type PluginMcpOptions = MCPOptions & { source: typeof MCP_PLUGIN_SOURCE };
 
 export interface PluginMcpServer {
   /** Server name as declared in the plugin's `mcpServers` object. */
   name: string;
-  options: MCPOptions;
+  options: PluginMcpOptions;
 }
 
 /** Hooks contributed through the `ai.librechat` extension directory. */

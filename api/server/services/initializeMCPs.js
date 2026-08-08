@@ -63,9 +63,6 @@ async function refreshChangedServerTools({
 }
 
 /**
- * Initialize MCP servers
- */
-/**
  * Merges Agent Plugins MCP servers under the configured servers. A plugin never
  * displaces a server the operator declared in `librechat.yaml`.
  */
@@ -78,17 +75,27 @@ function withPluginServers(configured) {
 
   const merged = { ...configured };
   for (const name of names) {
-    if (merged[name] !== undefined) {
+    /** Own-property check: an inherited member like `toString` is not a conflict. */
+    if (Object.hasOwn(merged, name)) {
       logger.warn(
         `[MCP] Plugin server "${name}" conflicts with a configured server and was skipped.`,
       );
       continue;
     }
-    merged[name] = pluginServers[name];
+    /** Defined rather than assigned so a name like `__proto__` cannot reach a setter. */
+    Object.defineProperty(merged, name, {
+      value: pluginServers[name],
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
   }
   return merged;
 }
 
+/**
+ * Initialize MCP servers
+ */
 async function initializeMCPs() {
   const appConfig = await getAppConfig({ baseOnly: true });
   const mcpServers = withPluginServers(appConfig.mcpConfig);

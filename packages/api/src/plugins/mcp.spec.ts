@@ -200,6 +200,56 @@ describe('stdio servers', () => {
   });
 });
 
+describe('provenance and name safety', () => {
+  it('marks every emitted server as plugin-sourced', async () => {
+    const result = await readMcpConfig(
+      document({
+        local: { type: 'stdio', command: 'node' },
+        remote: { type: 'streamable-http', url: 'https://example.com/mcp' },
+      }),
+      context,
+    );
+    expect(result.servers.map((server) => server.options.source)).toEqual(['plugin', 'plugin']);
+  });
+
+  it('rejects a package that tries to declare its own provenance', async () => {
+    const result = await readMcpConfig(
+      document({ s: { type: 'stdio', command: 'node', source: 'yaml' } }),
+      context,
+    );
+    expect(result.servers).toHaveLength(0);
+  });
+
+  it.each(['__proto__', 'constructor', 'prototype'])(
+    'rejects the reserved name %s',
+    async (name) => {
+      const result = await readMcpConfig(
+        document({ [name]: { type: 'stdio', command: 'node' } }),
+        context,
+      );
+      expect(result.servers).toHaveLength(0);
+      expect(result.diagnostics[0].message).toContain('reserved');
+    },
+  );
+
+  it('rejects a name that would change under tool-name normalization', async () => {
+    const result = await readMcpConfig(
+      document({ 'sales api': { type: 'stdio', command: 'node' } }),
+      context,
+    );
+    expect(result.servers).toHaveLength(0);
+    expect(result.diagnostics[0].message).toContain('sales_api');
+  });
+
+  it('keeps normalization-stable names', async () => {
+    const result = await readMcpConfig(
+      document({ 'sales-api.v2': { type: 'stdio', command: 'node' } }),
+      context,
+    );
+    expect(result.servers.map((server) => server.name)).toEqual(['sales-api.v2']);
+  });
+});
+
 describe('remote servers', () => {
   it('maps streamable-http and sse entries', async () => {
     const result = await readMcpConfig(
@@ -214,11 +264,13 @@ describe('remote servers', () => {
       context,
     );
     expect(result.servers[0].options).toEqual({
+      source: 'plugin',
       type: 'streamable-http',
       url: 'https://deploy.example.com/mcp',
       headers: { 'X-Tenant': 'public' },
     });
     expect(result.servers[1].options).toEqual({
+      source: 'plugin',
       type: 'sse',
       url: 'https://legacy.example.com/sse',
     });

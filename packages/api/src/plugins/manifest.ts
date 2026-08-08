@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { PluginDiagnostic, PluginManifest } from './types';
+import type { PluginDiagnostic, PluginExtensionData, PluginManifest } from './types';
 import { MAX_PLUGIN_NAME_LENGTH, PLUGIN_MANIFEST_SCHEMA_ID } from './constants';
 
 /**
@@ -75,7 +75,7 @@ function rejected(
 function readExtensions(
   value: unknown,
   diagnostics: PluginDiagnostic[],
-): { extensions?: Record<string, Record<string, unknown>>; invalidNamespace?: string } {
+): { extensions?: Record<string, PluginExtensionData>; invalidNamespace?: string } {
   if (value === undefined) {
     return {};
   }
@@ -88,12 +88,13 @@ function readExtensions(
     return {};
   }
 
-  const extensions: Record<string, Record<string, unknown>> = {};
+  const extensions: Record<string, PluginExtensionData> = {};
   for (const [namespace, contents] of Object.entries(value)) {
     if (!isPlainObject(contents)) {
       return { invalidNamespace: namespace };
     }
-    extensions[namespace] = contents;
+    /** Parsed from JSON, so the contents are JsonValue by construction; §8.1 forbids validating them further. */
+    extensions[namespace] = contents as PluginExtensionData;
   }
   return { extensions };
 }

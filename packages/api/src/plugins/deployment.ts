@@ -62,6 +62,7 @@ export function resolveDeploymentPluginDataDirectory(
  */
 export class DeploymentPluginRegistry {
   private readonly plugins: LoadedPlugin[] = [];
+  private readonly pluginsByName = new Map<string, LoadedPlugin>();
   private readonly skillsByName = new Map<string, DeploymentSkill>();
   private readonly serversByName = new Map<string, MCPOptions>();
   private readonly rejections: PluginDiagnostic[] = [];
@@ -76,6 +77,23 @@ export class DeploymentPluginRegistry {
   }
 
   private add(plugin: LoadedPlugin): void {
+    /**
+     * `PLUGIN_DATA` is derived from the manifest name, so two packages claiming
+     * one name would share a persistent directory and overwrite each other's
+     * state. The later package is refused before any of its components land.
+     */
+    const claimed = this.pluginsByName.get(plugin.manifest.name);
+    if (claimed !== undefined) {
+      this.rejections.push({
+        code: 'manifest_name_conflict',
+        severity: 'error',
+        message: `Plugin name "${plugin.manifest.name}" is already claimed by ${claimed.root}; this package was skipped`,
+        location: plugin.root,
+      });
+      return;
+    }
+    this.pluginsByName.set(plugin.manifest.name, plugin);
+
     for (const skill of plugin.skills) {
       if (this.skillsByName.has(skill.name)) {
         plugin.diagnostics.push({
@@ -193,7 +211,17 @@ export async function loadPluginsFromDirectory(
       loaded.push(result.plugin);
       continue;
     }
-    rejections.push(...result.diagnostics);
+    /**
+     * A rejected package has no manifest name to identify it, so its directory
+     * is the only thing that tells an operator which one to fix.
+     */
+    for (const diagnostic of result.diagnostics) {
+      rejections.push({
+        ...diagnostic,
+        location:
+          diagnostic.location === undefined ? result.root : `${result.root}/${diagnostic.location}`,
+      });
+    }
   }
 
   const nextRegistry = new DeploymentPluginRegistry(directory, loaded);
