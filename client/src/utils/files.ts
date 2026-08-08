@@ -15,6 +15,7 @@ import {
   EToolResources,
   EModelEndpoint,
   retrievalMimeTypes,
+  documentParserMimeTypes,
   isBedrockDocumentType,
   isPermissiveMimeConfig,
   codeInterpreterMimeTypes,
@@ -356,17 +357,12 @@ export const validateFiles = ({
       fileList[i] = newFile;
     }
 
-    let mimeTypesToCheck = supportedMimeTypes;
-    if (toolResource === EToolResources.context) {
-      mimeTypesToCheck = [
-        ...(fileConfig?.text?.supportedMimeTypes || []),
-        ...(fileConfig?.ocr?.supportedMimeTypes || []),
-        ...(fileConfig?.documentParser?.supportedMimeTypes || []),
-        ...(fileConfig?.stt?.supportedMimeTypes || []),
-      ];
-    }
+    const isSupported =
+      toolResource === EToolResources.context
+        ? isContextType(originalFile.type, fileConfig)
+        : checkType(originalFile.type, supportedMimeTypes);
 
-    if (!checkType(originalFile.type, mimeTypesToCheck)) {
+    if (!isSupported) {
       setError(`Unsupported file type: ${originalFile.type}`);
       return false;
     }
@@ -436,13 +432,22 @@ const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean =
   return type.startsWith('image/');
 };
 
-const isContextType = (type: string, fileConfig: FileConfig | null): boolean =>
-  checkType(type, [
+/** Known local document formats are governed by the document-parser allowlist.
+ * General text and OCR matchers apply only to files outside that provider boundary. */
+const isContextType = (type: string, fileConfig: FileConfig | null): boolean => {
+  if (checkType(type, documentParserMimeTypes)) {
+    return checkType(
+      type,
+      fileConfig?.documentParser?.supportedMimeTypes || documentParserMimeTypes,
+    );
+  }
+
+  return checkType(type, [
     ...(fileConfig?.text?.supportedMimeTypes || []),
     ...(fileConfig?.ocr?.supportedMimeTypes || []),
-    ...(fileConfig?.documentParser?.supportedMimeTypes || []),
     ...(fileConfig?.stt?.supportedMimeTypes || []),
   ]);
+};
 
 /**
  * Upload destinations a file set can be routed to, given the active endpoint and agent

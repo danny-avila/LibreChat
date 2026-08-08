@@ -4,6 +4,7 @@ import type { ExtendedFile } from '~/common';
 import { validateFiles, validateFileSizes } from '../files';
 
 const supportedMimeTypes = defaultFileConfig.endpoints.default.supportedMimeTypes;
+const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 function makeEndpointConfig(overrides: Partial<EndpointFileConfig> = {}): EndpointFileConfig {
   return {
@@ -118,6 +119,51 @@ describe('validateFiles', () => {
 
     expect(result).toBe(true);
     expect(setError).not.toHaveBeenCalled();
+  });
+
+  it('canonicalizes a generic document MIME before context validation', () => {
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [] },
+      ocr: { supportedMimeTypes: [] },
+      documentParser: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('report.docx', 'application/octet-stream', 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig,
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+    });
+
+    expect(result).toBe(true);
+    expect(fileList[0].type).toBe(DOCX);
+    expect(setError).not.toHaveBeenCalled();
+  });
+
+  it('rejects a known document excluded by the document-parser allowlist', () => {
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] },
+      ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)] },
+      documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('report.docx', DOCX, 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig,
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+    });
+
+    expect(result).toBe(false);
+    expect(setError).toHaveBeenCalledWith(`Unsupported file type: ${DOCX}`);
   });
 
   it('normalizes Windows ZIP MIME type before validation', () => {

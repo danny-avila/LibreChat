@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
-import { FileSources } from 'librechat-data-provider';
+import { excelFileTypes, FileSources } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
 import { assertSafeZipSizeIfArchive } from '../documents/zipSafety';
 
@@ -28,8 +28,7 @@ export const anydocMimeTypes: ReadonlySet<string> = new Set<string>([
   'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
   'application/vnd.ms-powerpoint.slideshow.macroEnabled.12',
   'application/vnd.oasis.opendocument.presentation',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ...excelFileTypes,
   'application/vnd.ms-excel.sheet.macroEnabled.12',
   'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
   'application/vnd.oasis.opendocument.spreadsheet',

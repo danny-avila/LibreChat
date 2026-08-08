@@ -181,6 +181,29 @@ describe('pdf-inspector local parser', () => {
     }
   });
 
+  test('reports image-only pages when the whole-document pdfjs fallback reads mixed content', async () => {
+    mockPdfjs.numPages = 2;
+    mockPdfjs.pageText = { 1: 'Recovered text page' };
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => {
+            throw new Error('native parser rejected the document');
+          },
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+        const result = await uploadIsolated(context(pdfFile('sample.pdf')));
+
+        expect(result.text).toBe('Recovered text page\n\n');
+        expect(result.pagesNeedingOcr).toEqual([2]);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
   test('bounds the whole-document pdfjs fallback on a page-flooded document', async () => {
     mockPdfjs.numPages = 4000;
     try {

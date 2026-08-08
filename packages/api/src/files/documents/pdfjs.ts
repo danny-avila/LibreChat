@@ -6,6 +6,11 @@ import type {
   PDFDocumentLoadingTask,
 } from 'pdfjs-dist/types/src/display/api';
 
+export type ExtractedDocumentText = {
+  text: string;
+  pagesNeedingOcr?: number[];
+};
+
 /**
  * Flat text extraction with pdfjs, shared by the two callers that need it: the
  * pdf-inspector parser, which repairs the pages that engine drops, and the
@@ -58,10 +63,10 @@ export async function extractPageText(
  * omitted-page array would itself be unbounded for a hostile page count, while
  * silently returning the first pages would make incomplete text look complete.
  */
-export async function extractDocumentText(
+export async function extractDocumentTextWithPages(
   data: Buffer,
   maxPages = Number.POSITIVE_INFINITY,
-): Promise<string> {
+): Promise<ExtractedDocumentText> {
   // Imported inline so that Jest can test other routes without failing due to loading ESM
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
@@ -75,16 +80,32 @@ export async function extractDocumentText(
     }
 
     let fullText = '';
+    const pagesNeedingOcr: number[] = [];
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
-      fullText += joinTextItems(textContent.items) + '\n';
+      const pageText = joinTextItems(textContent.items);
+      if (!pageText.trim()) {
+        pagesNeedingOcr.push(i);
+      }
+      fullText += pageText + '\n';
     }
 
-    return fullText;
+    return {
+      text: fullText,
+      pagesNeedingOcr: pagesNeedingOcr.length ? pagesNeedingOcr : undefined,
+    };
   } finally {
     await loadingTask.destroy();
   }
+}
+
+/** Compatibility wrapper for callers that only need aggregate text. */
+export async function extractDocumentText(
+  data: Buffer,
+  maxPages = Number.POSITIVE_INFINITY,
+): Promise<string> {
+  return (await extractDocumentTextWithPages(data, maxPages)).text;
 }
 
 /** Marked content items carry no `str`, so only genuine text items contribute. */
