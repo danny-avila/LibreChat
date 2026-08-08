@@ -42,15 +42,21 @@ export type ChatSearchStack = Readonly<{
   chatSearch: ChatSearch | null;
   /** Migrations this process applied; empty when another pod got there first. */
   migrated: readonly string[];
-  /** Whether this process won the projector lease. */
-  projecting: boolean;
+  /**
+   * Whether this process holds the projector lease *right now*.
+   *
+   * Deliberately a call rather than a boot-time boolean: leadership moves. A pod
+   * that lost the election wins it when the leader dies, and a leader loses it
+   * to a partition, so a snapshot taken at boot is wrong for most of the
+   * process's life.
+   */
+  isProjecting(): boolean;
   stop(): Promise<void>;
 }>;
 
 type ProjectorHandle = Readonly<{
   projector: Projector;
   pool: SearchPool;
-  leading: boolean;
 }>;
 
 /**
@@ -141,8 +147,8 @@ async function startProjector(
     },
   );
 
-  const leading = await projector.start();
-  return Object.freeze({ projector, pool, leading });
+  await projector.start();
+  return Object.freeze({ projector, pool });
 }
 
 /**
@@ -191,7 +197,7 @@ export async function startChatSearch(options: ChatSearchStackOptions): Promise<
   return Object.freeze({
     chatSearch,
     migrated,
-    projecting: projection?.leading ?? false,
+    isProjecting: (): boolean => projection?.projector.isLeader ?? false,
     async stop(): Promise<void> {
       /**
        * Teardown is the only place a pool is closed. `stop()` clears the standby

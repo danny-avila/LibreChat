@@ -62,6 +62,11 @@ function databaseUrl(database: string): string {
  */
 const SETUP_LOCK_ID = 0x63735f7467;
 
+/** The connection string for a suite's own database, for specs that boot from env. */
+export function isolatedDatabaseUrl(name: string): string {
+  return databaseUrl(`chat_search_test_${name}`);
+}
+
 export async function createIsolatedDatabase(name: string): Promise<SearchPool> {
   const database = `chat_search_test_${name}`;
   const admin = new Pool({ connectionString: requireUrl(), max: 1 });
