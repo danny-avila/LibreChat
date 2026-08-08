@@ -457,6 +457,48 @@ describe('MCPManager', () => {
       expect(drained).toBe(true);
     });
 
+    it('rejoins recovery after leasing cached tool metadata', async () => {
+      const staleConnection = {} as MCPConnection;
+      const recoveredConnection = {} as MCPConnection;
+      let resolveRecovery: (() => void) | undefined;
+      const recovery = new Promise<void>((resolve) => {
+        resolveRecovery = resolve;
+      });
+      (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn().mockResolvedValue({});
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const internals = manager as unknown as {
+        oauthRecoveries: WeakMap<
+          MCPConnection,
+          { promise: Promise<void>; allowsTakeover: boolean }
+        >;
+        userConnections: Map<string, Map<string, MCPConnection>>;
+      };
+      internals.userConnections.set(userId, new Map([[serverName, staleConnection]]));
+      internals.oauthRecoveries.set(staleConnection, {
+        promise: recovery,
+        allowsTakeover: true,
+      });
+
+      const toolsPromise = manager.getServerToolFunctions(userId, serverName);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(MCPServerInspector.getToolFunctions).not.toHaveBeenCalled();
+
+      internals.userConnections.set(userId, new Map([[serverName, recoveredConnection]]));
+      internals.oauthRecoveries.delete(staleConnection);
+      resolveRecovery?.();
+
+      await expect(toolsPromise).resolves.toEqual({});
+      expect(MCPServerInspector.getToolFunctions).toHaveBeenCalledWith(
+        serverName,
+        recoveredConnection,
+      );
+    });
+
     it('should include specific server name in error messages', async () => {
       const specificServerName = 'github_mcp_server';
 
@@ -1190,6 +1232,41 @@ describe('MCPManager', () => {
       await expect(toolPromise).resolves.toBeDefined();
       expect(manager.getConnection).toHaveBeenCalledTimes(2);
       expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    it('reacquires the cached connection after claiming a failed checkout recovery', async () => {
+      const staleRequest = jest.fn();
+      const recoveredRequest = jest.fn().mockResolvedValue(toolResult);
+      const staleConnection = createConnection(staleRequest);
+      const recoveredConnection = createConnection(recoveredRequest);
+      const manager = await createManager(staleConnection);
+      (manager.getConnection as jest.Mock)
+        .mockReset()
+        .mockResolvedValueOnce(staleConnection)
+        .mockResolvedValue(recoveredConnection);
+      let rejectRecovery: ((error: Error) => void) | undefined;
+      const recovery = new Promise<void>((_resolve, reject) => {
+        rejectRecovery = reject;
+      });
+      const internals = manager as unknown as {
+        oauthRecoveries: WeakMap<
+          MCPConnection,
+          { promise: Promise<void>; allowsTakeover: boolean }
+        >;
+      };
+      internals.oauthRecoveries.set(staleConnection, {
+        promise: recovery,
+        allowsTakeover: true,
+      });
+
+      const toolPromise = callTool(manager);
+      await new Promise((resolve) => setImmediate(resolve));
+      rejectRecovery?.(new Error('Shared recovery failed'));
+
+      await expect(toolPromise).resolves.toBeDefined();
+      expect(manager.getConnection).toHaveBeenCalledTimes(2);
+      expect(staleRequest).not.toHaveBeenCalled();
+      expect(recoveredRequest).toHaveBeenCalledTimes(1);
     });
 
     it('disposes a recovered connection that was evicted before recovery', async () => {

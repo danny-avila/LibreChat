@@ -340,20 +340,28 @@ export class MCPManager extends UserConnectionManager {
         return MCPServerInspector.getToolFunctions(serverName, existingAppConnection);
       }
 
-      const userConnections = this.getUserConnections(userId);
-      if (!userConnections || userConnections.size === 0) {
-        return null;
-      }
-      if (!userConnections.has(serverName)) {
-        return null;
-      }
+      let awaitedRecovery: Promise<void> | undefined;
+      while (true) {
+        const userConnections = this.getUserConnections(userId);
+        const connection = userConnections?.get(serverName);
+        if (!connection) {
+          return null;
+        }
 
-      const connection = userConnections.get(serverName)!;
-      this.retainConnection(connection);
-      try {
-        return await MCPServerInspector.getToolFunctions(serverName, connection);
-      } finally {
-        await this.releaseConnection(connection);
+        this.retainConnection(connection);
+        const recovery = this.oauthRecoveries.get(connection)?.promise;
+        if (recovery && recovery !== awaitedRecovery) {
+          awaitedRecovery = recovery;
+          await this.releaseConnection(connection);
+          await this.waitForConnectionRecovery(recovery);
+          continue;
+        }
+
+        try {
+          return await MCPServerInspector.getToolFunctions(serverName, connection);
+        } finally {
+          await this.releaseConnection(connection);
+        }
       }
     } catch (error) {
       logger.warn(
@@ -707,8 +715,10 @@ Please follow these instructions when using tools from the respective MCP server
             throw recoveryError;
           }
           recoveryTakeoverConsumed = true;
-          retainConnectionLease();
-          break;
+          if (this.oauthRecoveries.get(connection) === checkoutRecovery) {
+            this.oauthRecoveries.delete(connection);
+          }
+          continue;
         }
       }
 
