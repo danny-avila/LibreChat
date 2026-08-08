@@ -32,7 +32,7 @@ function hasFailedOutput(output: unknown): boolean {
   return typeof output === 'string' && isError(output);
 }
 
-function hasPendingAuth(part: TMessageContentParts, isSubmitting: boolean): boolean {
+function hasPendingAuth(part: TMessageContentParts): boolean {
   if (part.type !== ContentTypes.TOOL_CALL) {
     return false;
   }
@@ -44,10 +44,7 @@ function hasPendingAuth(part: TMessageContentParts, isSubmitting: boolean): bool
   const progress = standardToolCall.progress ?? 0.1;
 
   return (
-    typeof standardToolCall.auth === 'string' &&
-    standardToolCall.auth.length > 0 &&
-    progress < 1 &&
-    (isSubmitting || hasFailedOutput(standardToolCall.output))
+    typeof standardToolCall.auth === 'string' && standardToolCall.auth.length > 0 && progress < 1
   );
 }
 
@@ -457,8 +454,8 @@ export default function ToolCallGroup({
     [toolMetadata, isSubmitting],
   );
   const hasPendingAuthRequest = useMemo(
-    () => parts.some(({ part }) => hasPendingAuth(part, isSubmitting)),
-    [parts, isSubmitting],
+    () => parts.some(({ part }) => hasPendingAuth(part)),
+    [parts],
   );
 
   useEffect(() => {

@@ -115,7 +115,7 @@ describe('useAskAnswerMode', () => {
     expect(result.current.liveAsk).toBeNull();
   });
 
-  it('carries the composer answer into shared card state when collapsed', () => {
+  it('moves the composer answer into the card and clears it when drafts are disabled', () => {
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
     const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
 
@@ -125,6 +125,17 @@ describe('useAskAnswerMode', () => {
       actionId: 'a1',
       text: 'answer from A',
     });
+    expect(mockResetComposer).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets draft handoff restore the conversation composer when drafts are enabled', () => {
+    mockSaveDrafts = true;
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => result.current.collapse());
+
+    expect(mockResetComposer).not.toHaveBeenCalled();
   });
 
   it('restores the card answer into the composer when drafts are disabled', () => {
