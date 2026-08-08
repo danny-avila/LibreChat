@@ -1,4 +1,4 @@
-import { megabyte, fileConfig as defaultFileConfig } from 'librechat-data-provider';
+import { megabyte, EToolResources, fileConfig as defaultFileConfig } from 'librechat-data-provider';
 import type { EndpointFileConfig, FileConfig } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { validateFiles, validateFileSizes } from '../files';
@@ -96,6 +96,28 @@ describe('validateFiles', () => {
     const result = validateFiles({ files, fileList, setError, endpointFileConfig, fileConfig });
     expect(result).toBe(false);
     expect(setError).toHaveBeenCalledWith('Unsupported file type: application/x-unknown');
+  });
+
+  it('accepts a document-parser-only MIME type for context uploads', () => {
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [/^text\/plain$/] },
+      ocr: { supportedMimeTypes: [] },
+      documentParser: { supportedMimeTypes: [/^application\/rtf$/] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('notes.rtf', 'application/rtf', 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig,
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+    });
+
+    expect(result).toBe(true);
+    expect(setError).not.toHaveBeenCalled();
   });
 
   it('normalizes Windows ZIP MIME type before validation', () => {
