@@ -222,6 +222,38 @@ describe('useDictation', () => {
     expect(currentText()).toBe('my unsent draft');
   });
 
+  it('exits a cancelled external transcription while its request is still loading', () => {
+    mockSpeechEndpoint = 'external';
+    const { result, rerender, currentText } = setup({ draft: 'my unsent draft' });
+    act(() => result.current.start());
+    mockIsListening = false;
+    mockIsLoading = true;
+    act(() => rerender());
+
+    expect(result.current.transcribing).toBe(true);
+    act(() => result.current.cancel());
+
+    expect(result.current.transcribing).toBe(false);
+    expect(result.current.startDisabled).toBe(true);
+    expect(currentText()).toBe('my unsent draft');
+
+    mockStart.mockClear();
+    act(() => result.current.start());
+    expect(mockStart).not.toHaveBeenCalled();
+
+    act(() => mockOnTranscriptionComplete('discarded words'));
+    expect(ask).not.toHaveBeenCalled();
+    expect(currentText()).toBe('my unsent draft');
+
+    mockIsLoading = false;
+    act(() => rerender());
+    expect(result.current.startDisabled).toBe(false);
+    act(() => result.current.start());
+    act(() => mockOnTranscriptionComplete('new words'));
+
+    expect(currentText()).toBe('my unsent draft new words');
+  });
+
   /* A run in flight has nothing to send into, so the take is refused outright.
      `ChatForm` reports a paused `ask_user_question` as NOT submitting for
      exactly this reason: the run is still open, but the composer has become the

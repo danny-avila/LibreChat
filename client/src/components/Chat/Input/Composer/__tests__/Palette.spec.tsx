@@ -84,6 +84,7 @@ const entry = (over: Partial<PaletteEntry> & Pick<PaletteEntry, 'key'>): Palette
   icon: null,
   section: 'tool',
   active: false,
+  pinned: false,
   onSelect: jest.fn(),
   ...over,
 });
