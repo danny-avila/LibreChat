@@ -576,14 +576,13 @@ describe('DataTable', () => {
         </TestWrapper>,
       );
 
-      const sortableHeader = screen.getAllByTestId('table-head')[1]; // Skip select column
-      fireEvent.click(sortableHeader);
+      const sortButton = screen.getByRole('button', { name: 'Name' });
+      fireEvent.click(sortButton);
 
       expect(mockOnSortingChange).toHaveBeenCalled();
     });
 
-    it('should trigger sort on Enter key', () => {
-      const mockOnSortingChange = jest.fn();
+    it('should expose sorting through a native button', () => {
       const columns: TableColumn<TestData, string>[] = [
         {
           accessorKey: 'name',
@@ -595,47 +594,13 @@ describe('DataTable', () => {
 
       render(
         <TestWrapper>
-          <DataTable
-            columns={columns}
-            data={data}
-            sorting={[]}
-            onSortingChange={mockOnSortingChange}
-          />
+          <DataTable columns={columns} data={data} sorting={[]} onSortingChange={jest.fn()} />
         </TestWrapper>,
       );
 
-      const sortableHeader = screen.getAllByTestId('table-head')[1];
-      fireEvent.keyDown(sortableHeader, { key: 'Enter' });
-
-      expect(mockOnSortingChange).toHaveBeenCalled();
-    });
-
-    it('should trigger sort on Space key', () => {
-      const mockOnSortingChange = jest.fn();
-      const columns: TableColumn<TestData, string>[] = [
-        {
-          accessorKey: 'name',
-          header: 'Name',
-          enableSorting: true,
-        },
-      ];
-      const data = createTestData(5);
-
-      render(
-        <TestWrapper>
-          <DataTable
-            columns={columns}
-            data={data}
-            sorting={[]}
-            onSortingChange={mockOnSortingChange}
-          />
-        </TestWrapper>,
-      );
-
-      const sortableHeader = screen.getAllByTestId('table-head')[1];
-      fireEvent.keyDown(sortableHeader, { key: ' ' });
-
-      expect(mockOnSortingChange).toHaveBeenCalled();
+      const sortButton = screen.getByRole('button', { name: 'Name' });
+      expect(sortButton.tagName).toBe('BUTTON');
+      expect(sortButton).toHaveAttribute('type', 'button');
     });
 
     it('should show ascending icon when sorted ascending', () => {
@@ -694,8 +659,8 @@ describe('DataTable', () => {
         </TestWrapper>,
       );
 
-      const sortableHeader = screen.getAllByTestId('table-head')[1];
-      fireEvent.click(sortableHeader);
+      const sortButton = screen.getByRole('button', { name: 'Name' });
+      fireEvent.click(sortButton);
 
       // Should show ascending icon after click
       expect(screen.getByTestId('arrow-up')).toBeInTheDocument();
@@ -978,7 +943,7 @@ describe('DataTable', () => {
       expect(table).toHaveAttribute('aria-label', 'com_ui_data_table');
     });
 
-    it('should have proper role on sortable headers', () => {
+    it('should preserve column-header semantics and use a nested sort button', () => {
       const columns: TableColumn<TestData, string>[] = [
         {
           accessorKey: 'name',
@@ -995,8 +960,9 @@ describe('DataTable', () => {
       );
 
       const sortableHeader = screen.getAllByTestId('table-head')[1];
-      expect(sortableHeader).toHaveAttribute('role', 'button');
-      expect(sortableHeader).toHaveAttribute('tabIndex', '0');
+      expect(sortableHeader).toHaveAttribute('scope', 'col');
+      expect(sortableHeader).not.toHaveAttribute('role', 'button');
+      expect(screen.getByRole('button', { name: 'Name' })).toBeInTheDocument();
     });
   });
 });

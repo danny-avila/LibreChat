@@ -133,6 +133,7 @@ const {
   getSharedMessages,
   createSharedLink,
   updateSharedLink,
+  getSharedLinks,
   getSharedLinkFile,
   backfillSharedLinkFiles,
   getRoleByName,
@@ -233,6 +234,41 @@ describe('share routes', () => {
     expect(response.headers['cache-control']).toBe('private, no-store');
   });
 
+  it('normalizes shared-link list parameters without double-decoding search text', async () => {
+    getSharedLinks.mockResolvedValue({ links: [], hasNextPage: false });
+    const cursor = '2030-01-01T00:00:00.000Z';
+
+    const response = await request(buildApp()).get(
+      `/api/share?pageSize=1000&sortBy=createdAt&sortDirection=asc&search=100%25%20ready&cursor=${encodeURIComponent(cursor)}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(getSharedLinks).toHaveBeenCalledWith(
+      'user-123',
+      cursor,
+      100,
+      'createdAt',
+      'asc',
+      '100% ready',
+    );
+  });
+
+  it('rejects an invalid createdAt cursor before querying', async () => {
+    const response = await request(buildApp()).get('/api/share?cursor=not-a-date');
+
+    expect(response.status).toBe(400);
+    expect(getSharedLinks).not.toHaveBeenCalled();
+  });
+
+  it('does not expose internal list errors in the response', async () => {
+    getSharedLinks.mockRejectedValue(new Error('mongodb.internal:27017'));
+
+    const response = await request(buildApp()).get('/api/share');
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: 'Error getting shared links' });
+  });
+
   it('expires new shares for retained non-temporary conversations', async () => {
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
     createSharedLink.mockResolvedValue({ _id: 'link-123', shareId: 'share-123' });
@@ -289,6 +325,32 @@ describe('share routes', () => {
       expect.anything(),
       true,
     );
+  });
+
+  it('rejects invalid create options before resolving retention', async () => {
+    const invalidTarget = await request(buildApp())
+      .post('/api/share/convo-123')
+      .send({ targetMessageId: '' });
+    const invalidSnapshot = await request(buildApp())
+      .post('/api/share/convo-123')
+      .send({ snapshotFiles: 'false' });
+
+    expect(invalidTarget.status).toBe(400);
+    expect(invalidSnapshot.status).toBe(400);
+    expect(mockGetSharedLinkExpiration).not.toHaveBeenCalled();
+    expect(createSharedLink).not.toHaveBeenCalled();
+  });
+
+  it('maps an existing-share domain error to conflict', async () => {
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    createSharedLink.mockRejectedValue(
+      Object.assign(new Error('Share already exists'), { code: 'SHARE_EXISTS' }),
+    );
+
+    const response = await request(buildApp()).post('/api/share/convo-123').send({});
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({ message: 'Share already exists' });
   });
 
   it('does not snapshot files when the user opts out (snapshotFiles=false)', async () => {
@@ -441,7 +503,18 @@ describe('share routes', () => {
     expect(response.status).toBe(200);
     expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null, true);
     expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith('link-456', null);
-    expect(mockSharedLinksAccess).not.toHaveBeenCalled();
+    expect(mockSharedLinksAccess).toHaveBeenCalled();
+  });
+
+  it('gates updates on the CREATE permission so revoking it stops link updates', async () => {
+    mockSharedLinksAccess.mockImplementationOnce((_req, res) =>
+      res.status(403).json({ message: 'Forbidden' }),
+    );
+
+    const response = await request(buildApp()).patch('/api/share/share-123');
+
+    expect(response.status).toBe(403);
+    expect(updateSharedLink).not.toHaveBeenCalled();
   });
 
   it('preserves updated share expiration when the conversation cannot be found', async () => {
@@ -510,6 +583,27 @@ describe('share routes', () => {
     expect(updateSharedLink).not.toHaveBeenCalled();
   });
 
+  it('rejects invalid snapshot options on update', async () => {
+    const response = await request(buildApp())
+      .patch('/api/share/share-123')
+      .send({ snapshotFiles: 'false' });
+
+    expect(response.status).toBe(400);
+    expect(updateSharedLink).not.toHaveBeenCalled();
+  });
+
+  it('maps a missing-share update domain error to not found', async () => {
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean(null));
+    updateSharedLink.mockRejectedValue(
+      Object.assign(new Error('Share not found'), { code: 'SHARE_NOT_FOUND' }),
+    );
+
+    const response = await request(buildApp()).patch('/api/share/share-123').send({});
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ message: 'Share not found' });
+  });
+
   it('allows deleting existing shares without CREATE permission gate', async () => {
     deleteSharedLinkWithCleanup.mockResolvedValue({ shareId: 'share-123' });
 
@@ -518,6 +612,15 @@ describe('share routes', () => {
     expect(response.status).toBe(200);
     expect(mockSharedLinksAccess).not.toHaveBeenCalled();
     expect(deleteSharedLinkWithCleanup).toHaveBeenCalledWith('user-123', 'share-123');
+  });
+
+  it('returns an internal error status when deletion fails', async () => {
+    deleteSharedLinkWithCleanup.mockRejectedValue(new Error('database unavailable'));
+
+    const response = await request(buildApp()).delete('/api/share/share-123');
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: 'Error deleting shared link' });
   });
 });
 
@@ -656,6 +759,31 @@ describe('share-scoped file routes', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers['content-disposition']).toContain('attachment');
+  });
+
+  it('returns 500 when the backing stream fails before sending bytes', async () => {
+    const failingStream = new Readable({
+      read() {
+        this.destroy(new Error('storage unavailable'));
+      },
+    });
+    mockGetStrategyFunctions.mockReturnValue({
+      getDownloadStream: jest.fn(async () => failingStream),
+    });
+    getSharedLinkFile.mockResolvedValue({
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/uploads/owner/file-1',
+        type: 'application/pdf',
+        filename: 'report.pdf',
+      },
+      hasSnapshots: true,
+    });
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(500);
   });
 
   it('returns preview status read live from the file record', async () => {

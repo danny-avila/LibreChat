@@ -99,7 +99,7 @@ export interface SharedLinksResult {
     createdAt: Date;
     conversationId: string;
   }>;
-  nextCursor?: Date;
+  nextCursor?: Date | string;
   hasNextPage: boolean;
 }
 

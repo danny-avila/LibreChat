@@ -1,13 +1,17 @@
 import { RetentionMode } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
-import type { AppConfig, IChatProjectDocument, IConversation } from '~/types';
+import type { AppConfig, IChatProjectDocument, IConversation, ISharedLink } from '~/types';
 import type { MessageMethods } from './message';
+import {
+  activeExpirationFilter,
+  buildRetentionVisibilityFilter,
+  createFallbackRetentionDate,
+} from '~/utils/retention';
 import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
-import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
@@ -520,6 +524,36 @@ export function createConversationMethods(
   }
 
   /**
+   * Flags which conversations on a page currently have an active shared link, in one
+   * batched lookup instead of a query per row. The flag lives in another collection, so
+   * it is derived per request rather than projected; a failure here degrades the badge
+   * but must never fail the conversation list itself.
+   */
+  async function attachSharedFlags(user: string, conversations: IConversation[]): Promise<void> {
+    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink> | undefined;
+    if (!SharedLink || conversations.length === 0) {
+      return;
+    }
+
+    try {
+      const shares = await SharedLink.find({
+        user,
+        conversationId: { $in: conversations.map((convo) => convo.conversationId) },
+        ...activeExpirationFilter<ISharedLink>(),
+      })
+        .select('conversationId')
+        .lean();
+
+      const shared = new Set(shares.map((share) => share.conversationId));
+      for (const convo of conversations) {
+        convo.isShared = shared.has(convo.conversationId);
+      }
+    } catch (error) {
+      logger.error('[attachSharedFlags] Error resolving shared conversations', error);
+    }
+  }
+
+  /**
    * Retrieves conversations using cursor-based pagination.
    */
   async function getConvosByCursor(
@@ -664,6 +698,8 @@ export function createConversationMethods(
         nextCursor = Buffer.from(JSON.stringify(composite)).toString('base64');
       }
 
+      await attachSharedFlags(user, convos);
+
       return { conversations: convos, nextCursor };
     } catch (error) {
       logger.error('[getConvosByCursor] Error getting conversations', error);
@@ -710,6 +746,8 @@ export function createConversationMethods(
         limited.pop();
         nextCursor = (limited[limited.length - 1].updatedAt as Date).toISOString();
       }
+
+      await attachSharedFlags(user, limited);
 
       const convoMap: Record<string, unknown> = {};
       limited.forEach((convo) => {

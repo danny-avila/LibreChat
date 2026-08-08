@@ -4,7 +4,6 @@ import type { Collection, ObjectId } from 'mongodb';
 import { applyRuntimeEnv } from '../../setup/runtimeEnv';
 import {
   MOCK_ENDPOINTS,
-  MOCK_REPLY_TEXT,
   NEW_CHAT_PATH,
   mockReply,
   selectMockEndpoint,
@@ -95,7 +94,7 @@ test.describe('shared links', () => {
       throw new Error(`Could not parse conversation id from ${conversationUrl.href}`);
     }
 
-    await page.getByRole('button', { name: 'Export options' }).click();
+    await page.getByRole('button', { name: 'Export/Share' }).click();
     await page.getByTestId('share-conversation-menu-item').click();
     await expect(page.getByRole('dialog', { name: 'Share link to chat' })).toBeVisible();
 
@@ -115,12 +114,17 @@ test.describe('shared links', () => {
       throw new Error('Expected create-share response to include a shareId');
     }
 
-    await expect(page.getByTestId('shared-link-url')).toContainText('/share/');
+    /** The share URL is rendered into a read-only <input>, so assert on its value. */
+    const sharedLinkInput = page.getByTestId('shared-link-url');
+    await expect(sharedLinkInput).toHaveValue(/\/share\//);
     await expect(page.getByRole('button', { name: 'Manage Access' })).toBeVisible();
-    const sharedLinkUrl = (await page.getByTestId('shared-link-url').textContent())?.trim();
+    const sharedLinkUrl = (await sharedLinkInput.inputValue()).trim();
     if (!sharedLinkUrl) {
       throw new Error('Expected shared-link URL to be rendered after creating a link');
     }
+
+    /** The header trigger flips to the "link active" label once a share exists. */
+    await expect(page.getByTestId('header-shared-link-indicator')).toBeVisible();
 
     await page.goto(new URL(sharedLinkUrl, baseURL).pathname, { timeout: 10000 });
     await expect(page).toHaveURL(/\/share\/.+/);

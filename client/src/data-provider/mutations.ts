@@ -5,7 +5,7 @@ import {
   defaultAssistantsVersion,
   ConversationListResponse,
 } from 'librechat-data-provider';
-import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
+import type { InfiniteData, QueryClient, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
   logger,
@@ -170,6 +170,44 @@ export const usePinConversationMutation = (
   );
 };
 
+/**
+ * The sidebar badge reads `isShared` off the conversation list, which the server derives
+ * from a different collection. Share mutations therefore have to flip it locally, or the
+ * badge lags until the next conversation-list refetch.
+ */
+const setConversationSharedFlag = (
+  queryClient: QueryClient,
+  conversationId: string | null | undefined,
+  isShared: boolean,
+): void => {
+  if (conversationId == null || conversationId === '') {
+    return;
+  }
+
+  updateConvoInAllQueries(queryClient, conversationId, (convo) => ({ ...convo, isShared }));
+};
+
+/**
+ * Create and update return a bare `TSharedLinkResponse`, so the per-conversation
+ * cache entry has to be lifted into the `TSharedLinkGetResponse` shape the UI reads
+ * (`success` gates the dialog's copy and the header badge). `snapshotFiles` is never
+ * echoed back and the settings list lives under a sibling key, so both are refetched
+ * from the server rather than guessed at.
+ */
+const syncSharedLinkQueries = (queryClient: QueryClient, data: t.TSharedLinkResponse): void => {
+  queryClient.setQueryData<t.TSharedLinkGetResponse>(
+    [QueryKeys.sharedLinks, data.conversationId],
+    (previous) => ({
+      ...previous,
+      ...data,
+      success: true,
+    }),
+  );
+
+  setConversationSharedFlag(queryClient, data.conversationId, true);
+  queryClient.invalidateQueries({ queryKey: [QueryKeys.sharedLinks], exact: false });
+};
+
 export const useCreateSharedLinkMutation = (
   options?: t.MutationOptions<
     t.TCreateShareLinkRequest,
@@ -202,7 +240,7 @@ export const useCreateSharedLinkMutation = (
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
-        queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
+        syncSharedLinkQueries(queryClient, _data);
 
         onSuccess?.(_data, vars, context);
       },
@@ -234,7 +272,7 @@ export const useUpdateSharedLinkMutation = (
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
-        queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
+        syncSharedLinkQueries(queryClient, _data);
 
         onSuccess?.(_data, vars, context);
       },
@@ -262,11 +300,23 @@ export const useDeleteSharedLinkMutation = (
       });
 
       const previousQueries = new Map();
+      const unsharedConversationIds = new Set<string | null>();
       const queryKeys = queryClient.getQueryCache().findAll([QueryKeys.sharedLinks]);
 
       queryKeys.forEach((query) => {
         const previousData = queryClient.getQueryData(query.queryKey);
         previousQueries.set(query.queryKey, previousData);
+
+        const sharedLink = previousData as t.TSharedLinkGetResponse | undefined;
+        if (sharedLink?.shareId === vars.shareId) {
+          unsharedConversationIds.add(sharedLink.conversationId);
+          queryClient.setQueryData<t.TSharedLinkGetResponse>(query.queryKey, {
+            ...sharedLink,
+            success: false,
+            shareId: null,
+          });
+          return;
+        }
 
         queryClient.setQueryData<t.SharedLinkQueryData>(query.queryKey, (old) => {
           if (!old?.pages) {
@@ -275,7 +325,13 @@ export const useDeleteSharedLinkMutation = (
 
           const updatedPages = old.pages.map((page) => ({
             ...page,
-            links: page.links.filter((link) => link.shareId !== vars.shareId),
+            links: page.links.filter((link) => {
+              if (link.shareId !== vars.shareId) {
+                return true;
+              }
+              unsharedConversationIds.add(link.conversationId);
+              return false;
+            }),
           }));
 
           const nonEmptyPages = updatedPages.filter((page) => page.links.length > 0);
@@ -286,6 +342,10 @@ export const useDeleteSharedLinkMutation = (
           };
         });
       });
+
+      for (const conversationId of unsharedConversationIds) {
+        setConversationSharedFlag(queryClient, conversationId, false);
+      }
 
       return { previousQueries };
     },

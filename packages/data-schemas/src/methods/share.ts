@@ -15,6 +15,41 @@ class ShareServiceError extends Error {
   }
 }
 
+type ShareOrder = Pick<t.ISharedLink, '_id' | 'createdAt'>;
+
+const isEarlierShare = (candidate: ShareOrder, subject: ShareOrder): boolean => {
+  const candidateTime = candidate.createdAt?.getTime() ?? 0;
+  const subjectTime = subject.createdAt?.getTime() ?? 0;
+  if (candidateTime !== subjectTime) {
+    return candidateTime < subjectTime;
+  }
+  return String(candidate._id) < String(subject._id);
+};
+
+/**
+ * `createSharedLink` checks for an existing share and inserts in two round trips, so two
+ * concurrent creates can both clear the check. Re-reading after the insert closes that:
+ * every racer that sees an earlier rival retracts its own document, and since they all
+ * evaluate the same total order (createdAt, then `_id`), exactly one survives.
+ */
+async function findOlderActiveShare(
+  SharedLink: Model<t.ISharedLink>,
+  created: ShareOrder,
+  key: { conversationId: string; user: string; targetMessageId?: string },
+): Promise<boolean> {
+  const rivals = (await SharedLink.find({
+    conversationId: key.conversationId,
+    user: key.user,
+    _id: { $ne: created._id },
+    ...activeExpirationFilter<t.ISharedLink>(),
+    ...(key.targetMessageId && { targetMessageId: key.targetMessageId }),
+  })
+    .select('_id createdAt')
+    .lean()) as ShareOrder[];
+
+  return rivals.some((rival) => isEarlierShare(rival, created));
+}
+
 function memoizedAnonymizeId(prefix: string) {
   const memo = new Map<string, string>();
   return (id: string) => {
@@ -23,23 +58,6 @@ function memoizedAnonymizeId(prefix: string) {
     }
     return memo.get(id) as string;
   };
-}
-
-const anonymizeConvoId = memoizedAnonymizeId('convo');
-const anonymizeAssistantId = memoizedAnonymizeId('a');
-const anonymizeMessageId = (id: string) =>
-  id === Constants.NO_PARENT ? id : memoizedAnonymizeId('msg')(id);
-
-function anonymizeConvo(conversation: Partial<t.IConversation> & Partial<t.ISharedLink>) {
-  if (!conversation) {
-    return null;
-  }
-
-  const newConvo = { ...conversation };
-  if (newConvo.assistant_id) {
-    newConvo.assistant_id = anonymizeAssistantId(newConvo.assistant_id);
-  }
-  return newConvo;
 }
 
 /**
@@ -291,7 +309,10 @@ export function anonymizeSharedContent(
  * Only surface a model name when it is an (already-anonymized) assistant id;
  * otherwise omit it so the underlying provider/model is not disclosed.
  */
-function anonymizeSharedModel(model?: string): string | undefined {
+function anonymizeSharedModel(
+  model: string | undefined,
+  anonymizeAssistantId: (id: string) => string,
+): string | undefined {
   if (!model?.startsWith('asst_')) {
     return undefined;
   }
@@ -312,6 +333,8 @@ function anonymizeMessages(
   shareId: string,
   snapshotIds: Set<string>,
   includeFiles: boolean,
+  anonymizeMessageId: (id: string) => string,
+  anonymizeAssistantId: (id: string) => string,
 ): t.SharedMessage[] {
   if (!Array.isArray(messages)) {
     return [];
@@ -352,7 +375,7 @@ function anonymizeMessages(
           ),
         )
       : undefined;
-    const model = anonymizeSharedModel(message.model);
+    const model = anonymizeSharedModel(message.model, anonymizeAssistantId);
 
     return {
       messageId: newMessageId,
@@ -414,8 +437,9 @@ function getMessagesUpToTarget(messages: t.IMessage[], targetMessageId: string):
   // Find the target message
   const targetMessage = messages.find((msg) => msg.messageId === targetMessageId);
   if (!targetMessage) {
-    // If target not found, return all messages for backwards compatibility
-    return messages;
+    // Fail closed: a stale or malformed target must never widen the share from a
+    // selected branch/level to the entire conversation.
+    return [];
   }
 
   const visited = new Set<string>();
@@ -463,7 +487,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   getSharedLink: (user: string, conversationId: string) => Promise<t.GetShareLinkResult>;
   getSharedLinks: (
     user: string,
-    pageParam?: Date,
+    pageParam?: Date | string,
     pageSize?: number,
     sortBy?: string,
     sortDirection?: string,
@@ -537,6 +561,14 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         messagesToShare = getMessagesUpToTarget(share.messages, share.targetMessageId);
       }
 
+      // Keep anonymous ids consistent within a response without retaining a
+      // process-global map. Global maps let viewers correlate the same private
+      // conversation/assistant across distinct links and grow without bounds.
+      const anonymizeConvoId = memoizedAnonymizeId('convo');
+      const anonymizeAssistantId = memoizedAnonymizeId('a');
+      const memoizedMessageId = memoizedAnonymizeId('msg');
+      const anonymizeMessageId = (id: string) =>
+        !id || id === Constants.NO_PARENT ? Constants.NO_PARENT : memoizedMessageId(id);
       const newConvoId = anonymizeConvoId(share.conversationId);
       const resolvedShareId = share.shareId || shareId;
 
@@ -570,6 +602,8 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
           resolvedShareId,
           snapshotIds,
           includeFiles,
+          anonymizeMessageId,
+          anonymizeAssistantId,
         ),
       };
 
@@ -588,7 +622,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
    */
   async function getSharedLinks(
     user: string,
-    pageParam?: Date,
+    pageParam?: Date | string,
     pageSize: number = 10,
     sortBy: string = 'createdAt',
     sortDirection: string = 'desc',
@@ -652,7 +686,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const links = sharedLinks.slice(0, pageSize);
 
       const nextCursor = hasNextPage
-        ? (links[links.length - 1][sortBy as keyof t.ISharedLink] as Date)
+        ? (links[links.length - 1][sortBy as keyof t.ISharedLink] as Date | string)
         : undefined;
 
       return {
@@ -786,6 +820,13 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         throw new ShareServiceError('No messages to share', 'NO_MESSAGES');
       }
 
+      if (
+        targetMessageId &&
+        !conversationMessages.some((message) => message.messageId === targetMessageId)
+      ) {
+        throw new ShareServiceError('Target message not found', 'TARGET_MESSAGE_NOT_FOUND');
+      }
+
       const title = conversation.title || 'Untitled';
 
       const messagesForSnapshot = conversationMessages as unknown as t.IMessage[];
@@ -811,6 +852,21 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         ...(expiredAt && { expiredAt }),
         ...(snapshotFiles && { fileSnapshots }),
       });
+
+      const supersededBy = await findOlderActiveShare(SharedLink, created, {
+        conversationId,
+        user,
+        targetMessageId,
+      });
+      if (supersededBy) {
+        await SharedLink.deleteOne({ _id: created._id });
+        logger.warn('[createSharedLink] Concurrent create lost to an earlier share', {
+          user,
+          conversationId,
+          targetMessageId,
+        });
+        throw new ShareServiceError('Share already exists', 'SHARE_EXISTS');
+      }
 
       return { _id: created._id.toString(), shareId, conversationId, targetMessageId };
     } catch (error) {
@@ -904,9 +960,18 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         .sort({ createdAt: 1 })
         .lean();
 
-      const newShareId = nanoid();
+      if (updatedMessages.length === 0) {
+        throw new ShareServiceError('No messages to share', 'NO_MESSAGES');
+      }
+
       const hasNewExpiration = expiredAt instanceof Date;
       const resolvedTargetMessageId = targetMessageId ?? share.targetMessageId;
+      if (
+        resolvedTargetMessageId &&
+        !updatedMessages.some((message) => message.messageId === resolvedTargetMessageId)
+      ) {
+        throw new ShareServiceError('Target message not found', 'TARGET_MESSAGE_NOT_FOUND');
+      }
       const messagesForSnapshot = updatedMessages as unknown as t.IMessage[];
       const fileSnapshots = snapshotFiles
         ? await buildFileSnapshots(
@@ -927,7 +992,6 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         $set: {
           messages: updatedMessages,
           user,
-          shareId: newShareId,
           snapshotFiles,
           ...(resolvedTargetMessageId && { targetMessageId: resolvedTargetMessageId }),
           ...(hasNewExpiration && { expiredAt }),
@@ -946,11 +1010,9 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         throw new ShareServiceError('Share update failed', 'SHARE_UPDATE_ERROR');
       }
 
-      anonymizeConvo(updatedShare);
-
       return {
         _id: updatedShare._id?.toString(),
-        shareId: newShareId,
+        shareId,
         conversationId: updatedShare.conversationId,
         targetMessageId: updatedShare.targetMessageId,
       };

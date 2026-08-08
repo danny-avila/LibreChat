@@ -1198,6 +1198,43 @@ describe('Conversation Operations', () => {
       return Conversation.findOne({ conversationId }).lean<IConversation>();
     };
 
+    it('should flag conversations that have an active shared link', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<{
+        conversationId: string;
+        user: string;
+        shareId: string;
+        expiredAt?: Date | null;
+      }>;
+      const baseTime = new Date('2026-03-01T00:00:00.000Z');
+      const shared = await createConvoWithTimestamps(1, baseTime, baseTime);
+      const unshared = await createConvoWithTimestamps(2, baseTime, baseTime);
+      const expiredShare = await createConvoWithTimestamps(3, baseTime, baseTime);
+
+      await SharedLink.create([
+        {
+          conversationId: shared!.conversationId,
+          user: 'user123',
+          shareId: `share-${uuidv4()}`,
+        },
+        {
+          conversationId: expiredShare!.conversationId,
+          user: 'user123',
+          shareId: `share-${uuidv4()}`,
+          expiredAt: new Date('2020-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+      const result = await methods.getConvosByCursor('user123', { limit: 25 });
+      const byId = new Map(result.conversations.map((convo) => [convo.conversationId, convo]));
+
+      expect(byId.get(shared!.conversationId)?.isShared).toBe(true);
+      expect(byId.get(unshared!.conversationId)?.isShared).toBe(false);
+      expect(byId.get(expiredShare!.conversationId)?.isShared).toBe(false);
+
+      await SharedLink.deleteMany({ user: 'user123' });
+      await Conversation.deleteMany({ user: 'user123' });
+    });
+
     it('should not skip conversations at page boundaries', async () => {
       // Create 30 conversations to ensure pagination (limit is 25)
       const baseTime = new Date('2026-01-01T00:00:00.000Z');

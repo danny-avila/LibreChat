@@ -192,6 +192,39 @@ describe('Share Methods', () => {
       );
     });
 
+    test('should leave a single active share when creates race the existence check', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+
+      await Conversation.create({ conversationId, user: userId, title: 'Racing Conversation' });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Test message',
+        isCreatedByUser: true,
+      });
+
+      const results = await Promise.allSettled([
+        shareMethods.createSharedLink(userId, conversationId),
+        shareMethods.createSharedLink(userId, conversationId),
+        shareMethods.createSharedLink(userId, conversationId),
+      ]);
+
+      const fulfilled = results.filter((result) => result.status === 'fulfilled');
+      expect(fulfilled).toHaveLength(1);
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          expect(result.reason).toMatchObject({ code: 'SHARE_EXISTS' });
+        }
+      }
+
+      const surviving = await SharedLink.find({ conversationId, user: userId }).lean();
+      expect(surviving).toHaveLength(1);
+      const winner = fulfilled[0] as PromiseFulfilledResult<t.CreateShareResult>;
+      expect(surviving[0].shareId).toBe(winner.value.shareId);
+    });
+
     test('should ignore expired shares when checking for duplicates', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
@@ -327,6 +360,28 @@ describe('Share Methods', () => {
       const shares = await SharedLink.find({ conversationId });
       expect(shares).toHaveLength(0);
     });
+
+    test('should reject a target message that is not in the owned conversation', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+
+      await Conversation.create({ conversationId, title: 'Targeted Share', user: userId });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Existing message',
+        isCreatedByUser: true,
+      });
+
+      await expect(
+        shareMethods.createSharedLink(userId, conversationId, 'missing-message'),
+      ).rejects.toMatchObject({
+        code: 'TARGET_MESSAGE_NOT_FOUND',
+        message: 'Target message not found',
+      });
+      expect(await SharedLink.countDocuments({ conversationId })).toBe(0);
+    });
   });
 
   describe('getSharedMessages', () => {
@@ -398,6 +453,34 @@ describe('Share Methods', () => {
 
       const result = await shareMethods.getSharedMessages(shareId);
       expect(result).toBeNull();
+    });
+
+    test('fails closed when a stored target message no longer exists', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const messages = await Message.create([
+        {
+          messageId: `msg_${nanoid()}`,
+          conversationId,
+          user: userId,
+          text: 'Must not be widened into the share',
+          isCreatedByUser: true,
+          parentMessageId: Constants.NO_PARENT,
+        },
+      ]);
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        targetMessageId: 'missing-message',
+        messages: messages.map((message) => message._id),
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+
+      expect(result?.messages).toEqual([]);
     });
 
     test('should handle messages with attachments', async () => {
@@ -912,7 +995,7 @@ describe('Share Methods', () => {
   });
 
   describe('updateSharedLink', () => {
-    test('should update shared link with new messages', async () => {
+    test('should update the existing shared link with new messages', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
       const oldShareId = `share_${nanoid()}`;
@@ -948,7 +1031,7 @@ describe('Share Methods', () => {
       const result = await shareMethods.updateSharedLink(userId, oldShareId);
 
       expect(result._id).toBeDefined();
-      expect(result.shareId).not.toBe(oldShareId); // Should generate new shareId
+      expect(result.shareId).toBe(oldShareId);
       expect(result.conversationId).toBe(conversationId);
 
       // Verify updated share
@@ -1022,6 +1105,28 @@ describe('Share Methods', () => {
       await expect(shareMethods.updateSharedLink('', 'share123')).rejects.toThrow(
         'Missing required parameters',
       );
+    });
+
+    test('should reject a refresh target that is not in the current conversation', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({ shareId, conversationId, user: userId, messages: [] });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Current message',
+        isCreatedByUser: true,
+      });
+
+      await expect(
+        shareMethods.updateSharedLink(userId, shareId, 'missing-message'),
+      ).rejects.toMatchObject({
+        code: 'TARGET_MESSAGE_NOT_FOUND',
+        message: 'Target message not found',
+      });
+      expect(await SharedLink.findOne({ shareId })).not.toBeNull();
     });
 
     test('should only update with messages from the same user', async () => {
@@ -1134,7 +1239,7 @@ describe('Share Methods', () => {
       );
       const sharedMessages = await shareMethods.getSharedMessages(result.shareId);
 
-      expect(result.shareId).not.toBe(shareId);
+      expect(result.shareId).toBe(shareId);
       expect(result.targetMessageId).toBe(rerunAnswerId);
       expect(updatedShare?.targetMessageId).toBe(rerunAnswerId);
       expect(updatedShare?.messages).toHaveLength(4);
@@ -1158,6 +1263,14 @@ describe('Share Methods', () => {
         user: userId,
         messages: [],
         targetMessageId,
+      });
+      await Message.create({
+        messageId: targetMessageId,
+        conversationId,
+        user: userId,
+        text: 'Existing target',
+        isCreatedByUser: true,
+        parentMessageId: Constants.NO_PARENT,
       });
 
       const result = await shareMethods.updateSharedLink(userId, shareId);
@@ -1650,6 +1763,40 @@ describe('Share Methods', () => {
       // Both messages should have the same anonymized conversationId
       expect(result?.messages[0].conversationId).toBe(result?.conversationId);
       expect(result?.messages[1].conversationId).toBe(result?.conversationId);
+    });
+
+    test('does not correlate the same private conversation across separate links', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const firstShareId = `share_${nanoid()}`;
+      const secondShareId = `share_${nanoid()}`;
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Same private conversation',
+        isCreatedByUser: true,
+        parentMessageId: Constants.NO_PARENT,
+      });
+      await SharedLink.create([
+        {
+          shareId: firstShareId,
+          conversationId,
+          user: userId,
+          messages: [message._id],
+        },
+        {
+          shareId: secondShareId,
+          conversationId,
+          user: userId,
+          messages: [message._id],
+        },
+      ]);
+
+      const first = await shareMethods.getSharedMessages(firstShareId);
+      const second = await shareMethods.getSharedMessages(secondShareId);
+
+      expect(first?.conversationId).not.toBe(second?.conversationId);
     });
 
     test('should handle NO_PARENT constant correctly', async () => {

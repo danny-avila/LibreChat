@@ -60,6 +60,10 @@ module.exports = {
           '0%, 100%': { opacity: '1' },
           '50%': { opacity: '0' },
         },
+        'refresh-link-spin': {
+          from: { transform: 'rotate(0deg)' },
+          to: { transform: 'rotate(360deg)' },
+        },
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-out forwards',
@@ -71,6 +75,7 @@ module.exports = {
         'slide-out-right': 'slide-out-right 300ms cubic-bezier(0.25, 0.1, 0.25, 1)',
         'shortcut-shake': 'shortcut-shake 0.25s ease-in-out',
         'logo-blink': 'logo-blink 3s infinite',
+        'refresh-link-spin': 'refresh-link-spin 650ms cubic-bezier(0.42, 0, 0.58, 1)',
       },
       colors: createTailwindColors(),
       borderRadius: {

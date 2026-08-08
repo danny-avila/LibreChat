@@ -1,6 +1,6 @@
 import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Pin } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { Link2, Pin } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
 import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
@@ -215,9 +215,15 @@ function Conversation({
       )}
       role="button"
       tabIndex={renaming ? -1 : 0}
-      aria-label={localize('com_ui_conversation_label', {
-        title: title || localize('com_ui_untitled'),
-      })}
+      aria-label={
+        conversation.isShared === true
+          ? localize('com_ui_conversation_label_shared', {
+              title: title || localize('com_ui_untitled'),
+            })
+          : localize('com_ui_conversation_label', {
+              title: title || localize('com_ui_untitled'),
+            })
+      }
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onFocus={handleMouseEnter}
@@ -264,6 +270,9 @@ function Conversation({
         >
           <ConversationEndpointIcon conversation={conversation} size={20} context="menu-item" />
         </ConvoLink>
+      )}
+      {conversation.isShared === true && (
+        <Link2 className="icon-sm mr-1 shrink-0 text-text-secondary" aria-hidden="true" />
       )}
       {conversation.pinned === true && (
         <Pin className="icon-sm mr-1 shrink-0 text-text-primary" aria-hidden="true" />
