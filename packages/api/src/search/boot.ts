@@ -5,9 +5,11 @@ import {
   deleteSearchEvents,
   dedupeSearchEvents,
 } from '@librechat/data-schemas';
-import type { SearchPool } from './types';
+import type { ChatSearch, SearchPool } from './types';
+import type { QueryEmbedder } from './search';
 import { applyRolePasswords, migrate } from './migrate';
 import { createMongoSourceReader } from './source';
+import { createChatSearch } from './service';
 import { createSearchPool } from './pool';
 import { Projector } from './projector';
 
@@ -22,13 +24,22 @@ import { Projector } from './projector';
  * stack the same stack.
  *
  * Order is load-bearing, which is the other reason this is a single function: the
- * projector must not start against a schema that has not been migrated.
+ * schema must exist before a pool is asked to serve from it, and the projector
+ * must not start against a schema that has not been migrated.
  */
 export type ChatSearchStackOptions = Readonly<{
   mongoose: typeof import('mongoose');
+  /**
+   * Supplies query vectors for the dense arm. Absent, the vector arm reports
+   * itself unavailable rather than quietly contributing nothing — see
+   * `PostgresChatSearch`.
+   */
+  embedder?: QueryEmbedder;
 }>;
 
 export type ChatSearchStack = Readonly<{
+  /** What the routes resolve candidates through. Null when nothing is configured. */
+  chatSearch: ChatSearch | null;
   /** Migrations this process applied; empty when another pod got there first. */
   migrated: readonly string[];
   /**
@@ -49,7 +60,7 @@ type ProjectorHandle = Readonly<{
 }>;
 
 /**
- * Applies the schema before anything connects to project into it.
+ * Applies the schema before anything connects to serve or project it.
  *
  * The migrate connection is a separate variable because it has to be:
  * `002_roles.sql` issues `CREATE ROLE` and `ALTER TABLE ... OWNER TO`, and the
@@ -141,17 +152,19 @@ async function startProjector(
 }
 
 /**
- * Builds and starts the stack: schema, then projector.
+ * Builds and starts the whole stack: schema, reader, projector.
  *
  * Never throws. A deployment that configured none of this boots exactly as it did
- * before, and a deployment that misconfigured it boots without projection and
- * says so — refusing to start would turn a projection outage into a total one.
+ * before, and a deployment that misconfigured it serves without search and says
+ * so — refusing to start would turn a search outage into a total one.
  */
 export async function startChatSearch(options: ChatSearchStackOptions): Promise<ChatSearchStack> {
   /**
-   * Gated on the migrate URL alone, deliberately. Supplying a provisioning
-   * connection is the operator saying "migrate this", and it is the only signal
-   * that means that.
+   * Gated on the migrate URL alone, deliberately. Gating on the *reader* being
+   * configured would leave a pod that runs only the projector — sync on, writer
+   * URL set, no reader URL — projecting against a schema nobody migrated.
+   * Supplying a provisioning connection is the operator saying "migrate this",
+   * and it is the only signal that means that.
    */
   let migrated: readonly string[] = [];
   try {
@@ -163,6 +176,18 @@ export async function startChatSearch(options: ChatSearchStackOptions): Promise<
     );
   }
 
+  let chatSearch: ChatSearch | null = null;
+  let closeReader: () => Promise<void> = async () => undefined;
+  try {
+    const runtime = createChatSearch({ mongoose: options.mongoose, embedder: options.embedder });
+    chatSearch = runtime?.chatSearch ?? null;
+    if (runtime) {
+      closeReader = () => runtime.close();
+    }
+  } catch (error) {
+    logger.error('[chatSearch] failed to initialize; search will be unavailable', error);
+  }
+
   let projection: ProjectorHandle | null = null;
   try {
     projection = await startProjector(options.mongoose);
@@ -170,7 +195,12 @@ export async function startChatSearch(options: ChatSearchStackOptions): Promise<
     logger.error('[chatSearch] failed to start the projector; projection will not run', error);
   }
 
+  if (!chatSearch) {
+    logger.info('[chatSearch] no search backend is configured');
+  }
+
   return Object.freeze({
+    chatSearch,
     migrated,
     isProjecting: (): boolean => projection?.projector.isLeader ?? false,
     async stop(): Promise<void> {
@@ -181,6 +211,7 @@ export async function startChatSearch(options: ChatSearchStackOptions): Promise<
        */
       await projection?.projector.stop().catch(() => undefined);
       await projection?.pool.end().catch(() => undefined);
+      await closeReader().catch(() => undefined);
     },
   });
 }

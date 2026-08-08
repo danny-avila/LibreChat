@@ -40,6 +40,8 @@ describePg('chat search composition root', () => {
       CHAT_SEARCH_SYNC: 'true',
       CHAT_SEARCH_MIGRATE_URL: url,
       CHAT_SEARCH_WRITER_URL: url,
+      CHAT_SEARCH_DATABASE_URL: url,
+      CHAT_SEARCH_CURSOR_SECRET: 'boot-secret',
     };
     delete process.env.MEILI_HOST;
     delete process.env.MEILI_MASTER_KEY;
@@ -53,6 +55,7 @@ describePg('chat search composition root', () => {
     const stack = await startChatSearch({ mongoose });
     try {
       expect(stack.migrated).toContain('001_schema.sql');
+      expect(stack.chatSearch).not.toBeNull();
 
       const { rows } = await admin.query<{ count: string }>(
         `SELECT count(*) AS count FROM information_schema.tables
@@ -64,13 +67,14 @@ describePg('chat search composition root', () => {
     }
   }, 120_000);
 
-  it('is idempotent, so a second pod applies nothing and still projects', async () => {
+  it('is idempotent, so a second pod applies nothing and still serves', async () => {
     const first = await startChatSearch({ mongoose });
     await first.stop();
 
     const second = await startChatSearch({ mongoose });
     try {
       expect(second.migrated).toEqual([]);
+      expect(second.chatSearch).not.toBeNull();
       expect(second.isProjecting()).toBe(true);
     } finally {
       await second.stop();
@@ -110,16 +114,18 @@ describePg('chat search composition root', () => {
   }, 180_000);
 
   /**
-   * Provisioning is gated on the migrate URL and nothing else. A pod that only
-   * projects still needs a schema to project into, so gating it on anything the
-   * serving side supplies would leave exactly that deployment writing to nothing.
+   * A pod that only projects — sync on, writer URL set, no reader URL — still
+   * needs a schema to project into. Gating provisioning on the *reader* being
+   * configured would have left exactly this deployment writing to nothing.
    */
-  it('provisions the schema for a pod that only projects', async () => {
+  it('provisions the schema for a pod that projects but does not serve', async () => {
     await admin.query('DROP SCHEMA IF EXISTS chat_search CASCADE');
+    delete process.env.CHAT_SEARCH_DATABASE_URL;
 
     const stack = await startChatSearch({ mongoose });
     try {
       expect(stack.migrated).toContain('001_schema.sql');
+      expect(stack.chatSearch).toBeNull();
       expect(stack.isProjecting()).toBe(true);
     } finally {
       await stack.stop();
@@ -132,11 +138,13 @@ describePg('chat search composition root', () => {
    */
   it('installs nothing when the feature is unconfigured', async () => {
     delete process.env.CHAT_SEARCH_ENABLED;
+    delete process.env.CHAT_SEARCH_DATABASE_URL;
     delete process.env.CHAT_SEARCH_MIGRATE_URL;
     delete process.env.CHAT_SEARCH_WRITER_URL;
 
     const stack = await startChatSearch({ mongoose });
     try {
+      expect(stack.chatSearch).toBeNull();
       expect(stack.migrated).toEqual([]);
       expect(stack.isProjecting()).toBe(false);
     } finally {

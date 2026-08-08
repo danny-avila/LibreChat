@@ -1,3 +1,5 @@
+import type { SearchKind, SearchTarget } from './types';
+
 /** Transaction-local GUCs the RLS policies read. */
 export const TENANT_GUC = 'chat_search.tenant_id';
 export const USER_GUC = 'chat_search.user_id';
@@ -33,3 +35,25 @@ export const STANDBY_MAX_RETRY_MS = 60_000;
 export const EMBEDDING_DIMENSIONS = 1024;
 export const DEFAULT_EMBEDDING_SPACE = 'chat-v1';
 export const FORMATTER_VERSION = 'v1';
+
+export const CURSOR_VERSION = 1;
+
+/** Reciprocal-rank-fusion tuning. */
+export const RRF_K = 60;
+export const ARM_LIMIT = 50;
+export const CANDIDATE_CAP = 200;
+
+/** The vector arm does not engage below this normalized query length. */
+export const MIN_QUERY_LENGTH = 3;
+
+export const TARGET_KIND: Readonly<Record<SearchTarget, SearchKind>> = Object.freeze({
+  messages: 'message',
+  conversations: 'conversation',
+  'shared-links': 'shared-link',
+});
+
+export const KIND_TARGET: Readonly<Record<SearchKind, SearchTarget>> = Object.freeze({
+  message: 'messages',
+  conversation: 'conversations',
+  'shared-link': 'shared-links',
+});

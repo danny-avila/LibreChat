@@ -40,7 +40,8 @@ export interface ConversationMethods {
       limit?: number;
       isArchived?: boolean;
       tags?: string[];
-      search?: string;
+      /** Externally resolved candidate conversation ids; `[]` means no matches. */
+      searchIds?: string[] | null;
       sortBy?: string;
       sortDirection?: string;
       projectId?: string;
@@ -530,7 +531,7 @@ export function createConversationMethods(
       limit = 25,
       isArchived = false,
       tags,
-      search,
+      searchIds,
       sortBy = 'updatedAt',
       sortDirection = 'desc',
       projectId,
@@ -539,7 +540,7 @@ export function createConversationMethods(
       limit?: number;
       isArchived?: boolean;
       tags?: string[];
-      search?: string;
+      searchIds?: string[] | null;
       sortBy?: string;
       sortDirection?: string;
       projectId?: string;
@@ -569,29 +570,20 @@ export function createConversationMethods(
 
     filters.push(getVisibleConversationRetentionFilter());
 
-    if (search) {
-      try {
-        const meiliResults = await (
-          Conversation as unknown as {
-            meiliSearch: (
-              query: string,
-              options: Record<string, string>,
-            ) => Promise<{
-              hits: Array<{ conversationId: string }>;
-            }>;
-          }
-        ).meiliSearch(search, { filter: `user = "${user}"` });
-        const matchingIds = Array.isArray(meiliResults.hits)
-          ? meiliResults.hits.map((result) => result.conversationId)
-          : [];
-        if (!matchingIds.length) {
-          return { conversations: [], nextCursor: null };
-        }
-        filters.push({ conversationId: { $in: matchingIds } } as FilterQuery<IConversation>);
-      } catch (error) {
-        logger.error('[getConvosByCursor] Error during meiliSearch', error);
-        throw new Error('Error during meiliSearch');
+    /**
+     * Candidate ids are resolved by the caller, not here. This method owns
+     * filtering, ordering and pagination over the primary store; whichever search
+     * store produced the candidates is the route adapter's concern, which is what
+     * lets this package stay independent of it.
+     *
+     * An empty array means "searched, matched nothing" and must return nothing —
+     * distinct from `undefined`, which means "not a search".
+     */
+    if (searchIds) {
+      if (searchIds.length === 0) {
+        return { conversations: [], nextCursor: null };
       }
+      filters.push({ conversationId: { $in: searchIds } } as FilterQuery<IConversation>);
     }
 
     const validSortFields = ['title', 'createdAt', 'updatedAt'];

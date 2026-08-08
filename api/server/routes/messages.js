@@ -18,6 +18,7 @@ const {
   prepareMessageRequestValidation,
 } = require('~/server/middleware');
 const db = require('~/models');
+const { resolveCandidates } = require('~/server/services/Search/candidates');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -51,49 +52,54 @@ router.get('/', async (req, res) => {
         { sortField, sortOrder, limit: pageSize, cursor },
       );
     } else if (search) {
-      const searchResults = await db.searchMessages(search, { filter: `user = "${user}"` }, true);
-
-      const messages = searchResults.hits || [];
-
-      const result = await db.getConvosQueried(req.user.id, messages, cursor);
-
-      const messageIds = [];
-      const cleanedMessages = [];
-      for (let i = 0; i < messages.length; i++) {
-        let message = messages[i];
-        if (result.convoMap[message.conversationId]) {
-          messageIds.push(message.messageId);
-          cleanedMessages.push(message);
-        }
-      }
-
-      const dbMessages = await db.getMessages({
-        user,
-        messageId: { $in: messageIds },
+      /**
+       * The search branch lives in the route, not in the persistence method: the
+       * data-schemas package cannot reach the search module, so it takes resolved
+       * candidate ids and owns only hydration.
+       *
+       * Message search pages on the search backend's own cursor rather than on a
+       * primary-store one, because ranked order is the order being paged and a
+       * Mongo cursor cannot express it. The snapshot cursor freezes the fused list
+       * on page one and slices it afterwards, so pages are gap-free at any depth;
+       * returning null here instead made every message search single-page.
+       */
+      const { recordIds, nextCursor } = await resolveCandidates('messages', search, {
+        limit: pageSize,
+        cursor,
       });
+      const candidates = await db.searchMessages(user, recordIds);
 
-      const dbMessageMap = {};
-      for (const dbMessage of dbMessages) {
-        dbMessageMap[dbMessage.messageId] = dbMessage;
-      }
+      /** Keeps only candidates whose conversation is still visible to this user. */
+      /**
+       * Sized by the candidate list so the visibility map covers every candidate:
+       * `getConvosQueried` truncates to its own limit, and a truncated map would
+       * silently drop hydrated messages from the page.
+       */
+      const result = await db.getConvosQueried(
+        req.user.id,
+        candidates.map((message) => ({ conversationId: message.conversationId })),
+        null,
+        Math.max(1, candidates.length),
+      );
 
       const activeMessages = [];
-      for (const message of cleanedMessages) {
+      for (const message of candidates) {
         const convo = result.convoMap[message.conversationId];
-        const dbMessage = dbMessageMap[message.messageId];
-
+        if (!convo) {
+          continue;
+        }
         activeMessages.push({
           ...message,
           title: convo.title,
           conversationId: message.conversationId,
           model: convo.model,
-          isCreatedByUser: dbMessage?.isCreatedByUser,
-          endpoint: dbMessage?.endpoint,
-          iconURL: dbMessage?.iconURL,
+          isCreatedByUser: message.isCreatedByUser,
+          endpoint: message.endpoint,
+          iconURL: message.iconURL,
         });
       }
 
-      response = { messages: activeMessages, nextCursor: null };
+      response = { messages: activeMessages, nextCursor };
     } else {
       response = { messages: [], nextCursor: null };
     }

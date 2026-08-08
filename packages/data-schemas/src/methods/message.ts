@@ -1,8 +1,8 @@
 import { RetentionMode } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import type { AppConfig, IMessage } from '~/types';
+import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
-import { createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
@@ -66,11 +66,8 @@ export interface MessageMethods {
       cursor?: string | null;
     },
   ): Promise<{ messages: IMessage[]; nextCursor: string | null }>;
-  searchMessages(
-    query: string,
-    searchOptions: Partial<IMessage>,
-    hydrate?: boolean,
-  ): Promise<unknown>;
+  /** Hydrates externally resolved candidate ids, preserving ranked order. */
+  searchMessages(user: string, messageIds: readonly string[], limit?: number): Promise<IMessage[]>;
   deleteMessages(filter: FilterQuery<IMessage>): Promise<DeleteResult>;
 }
 
@@ -581,21 +578,34 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }
 
   /**
-   * Performs a MeiliSearch query on the Message collection.
-   * Requires the meilisearch plugin to be registered on the Message model.
+   * Hydrates externally resolved message candidates, preserving their order.
+   *
+   * This is a passthrough, not a search: candidate ids come from whichever search
+   * store the route adapter consulted, and this package neither knows nor cares
+   * which. Ranked order is preserved because the search store ranked it and a
+   * Mongo `$in` does not.
    */
-  async function searchMessages(
-    query: string,
-    searchOptions: Record<string, unknown>,
-    hydrate?: boolean,
-  ) {
-    const Message = mongoose.models.Message as Model<IMessage> & {
-      meiliSearch?: (q: string, opts: Record<string, unknown>, h?: boolean) => Promise<unknown>;
-    };
-    if (typeof Message.meiliSearch !== 'function') {
-      throw new Error('MeiliSearch plugin not registered on Message model');
+  async function searchMessages(user: string, messageIds: readonly string[], limit?: number) {
+    if (messageIds.length === 0) {
+      return [];
     }
-    return Message.meiliSearch(query, searchOptions, hydrate);
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const ids = limit != null ? messageIds.slice(0, limit) : messageIds;
+    const messages = await Message.find({
+      user,
+      messageId: { $in: [...ids] },
+      ...buildRetentionVisibilityFilter<IMessage>(),
+    }).lean<IMessage[]>();
+
+    const byId = new Map(messages.map((message) => [message.messageId, message]));
+    const ordered: IMessage[] = [];
+    for (const messageId of ids) {
+      const message = byId.get(messageId);
+      if (message) {
+        ordered.push(message);
+      }
+    }
+    return ordered;
   }
 
   return {
