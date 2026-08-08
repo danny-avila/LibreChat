@@ -13,6 +13,19 @@ const mockResolveAllMcpConfigsFresh = jest.fn();
 const mockDisconnectUserConnection = jest.fn();
 const mockReleaseDetachedUserConnection = jest.fn();
 const mockFindUser = jest.fn();
+const mockFindPluginAuthsByKeys = jest.fn().mockResolvedValue([]);
+const mockMCPAuthorityResolver = {
+  bootRevision: { digest: 'test-boot-revision' },
+  useIssuedResolution: jest.fn(async (resolution, action) => await action(resolution)),
+  bindWithCurrentAuthority: jest.fn(async (resolution, action) => await action(resolution)),
+  executeWithCurrentAuthority: jest.fn(async (resolution, action) => await action(resolution)),
+  publishWithCurrentAuthority: jest.fn(async (resolution, action) => await action(resolution)),
+  resolve: jest.fn(async ({ parsedConfig, schemas }) => ({
+    parsedConfig,
+    schemas,
+    authorityProof: { revision: 'test-proof' },
+  })),
+};
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
@@ -37,26 +50,34 @@ jest.mock('~/config', () => ({
 jest.mock('~/models', () => ({
   findUser: (...args) => mockFindUser(...args),
   findToken: jest.fn(),
-  findTokens: jest.fn(),
+  findTokens: jest.fn().mockResolvedValue([]),
   createToken: jest.fn(),
   updateToken: jest.fn(),
   deleteTokens: jest.fn(),
-  findPluginAuthsByKeys: jest.fn(),
+  findPluginAuthsByKeys: (...args) => mockFindPluginAuthsByKeys(...args),
+}));
+jest.mock('~/server/services/MCPAuthority', () => ({
+  calculateMCPAuthorityArtifactRevision: jest.fn(() => 'test-artifact'),
+  getMCPAuthorityResolver: () => mockMCPAuthorityResolver,
 }));
 jest.mock('~/server/services/Config', () => ({
   updateMCPServerTools: mockUpdateMCPServerTools,
 }));
 jest.mock('~/server/services/MCPConfigResolver', () => ({
   resolveAllMcpConfigsFresh: (...args) => mockResolveAllMcpConfigsFresh(...args),
-  resolveMCPDiscoveryConfigSnapshot: async (userId, user) => ({
-    configs: await mockResolveAllMcpConfigsFresh(userId, user),
-    securityPolicy: await mockResolveCatalogSecurityPolicy({
-      userId,
-      role: user.role,
-      tenantId: user.tenantId ?? null,
-      refresh: true,
-    }),
-  }),
+  resolveMCPDiscoveryConfigSnapshot: async (userId, user, options = {}) => {
+    const configs = await mockResolveAllMcpConfigsFresh(userId, user);
+    return {
+      configs: Object.keys(configs).length > 0 ? configs : (options.expectedServerConfigs ?? {}),
+      sourceDocuments: [],
+      securityPolicy: await mockResolveCatalogSecurityPolicy({
+        userId,
+        role: user.role,
+        tenantId: user.tenantId ?? null,
+        refresh: true,
+      }),
+    };
+  },
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: mockGetGraphApiToken,
@@ -77,8 +98,10 @@ const originalCredsKey = process.env.CREDS_KEY;
 const originalJwtSecret = process.env.JWT_SECRET;
 
 beforeEach(() => {
-  delete process.env.CREDS_KEY;
+  process.env.CREDS_KEY = 'mcp-authority-test-key';
   delete process.env.JWT_SECRET;
+  mockGetUserMCPAuthMap.mockResolvedValue({});
+  mockFindPluginAuthsByKeys.mockResolvedValue([]);
   mockResolveAllMcpConfigsFresh.mockImplementation(async () => {
     const config = await mockGetServerConfig();
     return config ? { Thingy: config } : {};
@@ -170,7 +193,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
         serverName,
         expect.any(Object),
       );
-      expect(mockGetMCPAuthorizationIdentity).toHaveBeenCalledTimes(1);
+      expect(mockGetMCPAuthorizationIdentity).toHaveBeenCalledTimes(2);
     } finally {
       if (originalCredsKey == null) {
         delete process.env.CREDS_KEY;
@@ -296,7 +319,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       }),
     );
     expect(provenance.authorizationKind).toBe('oauth');
-    expect(mockGetMCPAuthorizationIdentity).toHaveBeenCalledTimes(1);
+    expect(mockGetMCPAuthorizationIdentity).toHaveBeenCalledTimes(2);
     expect(mockResolveAllMcpConfigsFresh).toHaveBeenCalledWith(
       user.id,
       expect.objectContaining({ id: user.id, idOnTheSource: null }),
@@ -358,6 +381,58 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
         discoveryProvenance: provenance,
       }),
     );
+  });
+
+  it('does not open a connection when the mandatory bind fence rejects', async () => {
+    const config = {
+      type: 'streamable-http',
+      url: 'https://thingy.example.com/mcp',
+    };
+    mockGetServerConfig.mockResolvedValue(config);
+    mockMCPAuthorityResolver.useIssuedResolution.mockRejectedValueOnce(
+      new Error('authority revoked'),
+    );
+
+    const result = await reinitMCPServer({ user, serverName, serverConfig: config });
+
+    expect(result).toMatchObject({ success: false, failureReason: 'initialization_failed' });
+    expect(mockGetConnection).not.toHaveBeenCalled();
+  });
+
+  it('does not start unauthenticated discovery when its bind fence rejects', async () => {
+    const config = {
+      type: 'streamable-http',
+      url: 'https://thingy.example.com/mcp',
+    };
+    mockGetServerConfig.mockResolvedValue(config);
+    mockGetConnection.mockRejectedValueOnce(new Error('OAuth authentication required'));
+    mockMCPAuthorityResolver.useIssuedResolution
+      .mockImplementationOnce(async (resolution, action) => await action(resolution))
+      .mockRejectedValueOnce(new Error('authority revoked before discovery'));
+
+    const result = await reinitMCPServer({ user, serverName, serverConfig: config });
+
+    expect(result).toMatchObject({ success: false, failureReason: 'oauth_required' });
+    expect(mockDiscoverServerTools).not.toHaveBeenCalled();
+    expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
+  });
+
+  it('does not fetch tools when the execution fence rejects after connection binding', async () => {
+    const config = {
+      type: 'streamable-http',
+      url: 'https://thingy.example.com/mcp',
+    };
+    const fetchTools = jest.fn().mockResolvedValue([]);
+    mockGetServerConfig.mockResolvedValue(config);
+    mockGetConnection.mockResolvedValue({ fetchTools });
+    mockMCPAuthorityResolver.useIssuedResolution
+      .mockImplementationOnce(async (resolution, action) => await action(resolution))
+      .mockRejectedValueOnce(new Error('authority revoked before fetch'));
+
+    await reinitMCPServer({ user, serverName, serverConfig: config });
+
+    expect(fetchTools).not.toHaveBeenCalled();
+    expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
   });
 
   it('rejects live tools when custom credentials rotate after connection discovery', async () => {
@@ -543,6 +618,10 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 
   it('does not connect when the stored value for a required customUserVar is empty', async () => {
+    mockGetUserMCPAuthMap.mockResolvedValue({
+      [`${Constants.mcp_prefix}${serverName}`]: { THINGY_TOKEN: '' },
+    });
+
     const result = await reinitMCPServer({
       user,
       serverName,
@@ -556,6 +635,9 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 
   it('proceeds to connect once every required customUserVar is provided', async () => {
+    mockGetUserMCPAuthMap.mockResolvedValue({
+      [`${Constants.mcp_prefix}${serverName}`]: { THINGY_TOKEN: 'secret-token' },
+    });
     mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
 
     await reinitMCPServer({
@@ -577,12 +659,34 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 
   it('updates the cache with an empty catalog after a successful connection', async () => {
-    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
+    const currentConfig = { type: 'streamable-http', url: 'https://thingy.example.com/mcp' };
+    mockGetServerConfig.mockResolvedValue(currentConfig);
+    const provenance = createMCPConnectionProvenance(
+      {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig: currentConfig,
+        effectiveServerConfig: currentConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: 'none',
+        authorizationKind: 'none',
+      },
+      'user',
+      'none',
+    );
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue([]),
+      getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+    });
 
     await reinitMCPServer({
       user,
       serverName,
-      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      serverConfig: currentConfig,
       userMCPAuthMap: undefined,
     });
 
@@ -591,7 +695,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
         userId: user.id,
         serverName,
         tools: [],
-        serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+        serverConfig: currentConfig,
       }),
     );
     expect(mockGetMCPAuthorizationIdentity).not.toHaveBeenCalled();
@@ -618,14 +722,39 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 
   it('passes request body and Graph resolver into OAuth discovery fallback', async () => {
+    const currentConfig = { type: 'streamable-http', url: 'https://thingy.example.com/mcp' };
+    const detectedConfig = { ...currentConfig, requiresOAuth: true };
+    const provenance = createMCPConnectionProvenance(
+      {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig: detectedConfig,
+        effectiveServerConfig: detectedConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: 'none',
+        authorizationKind: 'oauth',
+      },
+      'user',
+      'oauth',
+    );
+    mockGetServerConfig.mockResolvedValue(currentConfig);
     mockGetConnection.mockRejectedValue(new Error('OAuth authentication required'));
-    mockDiscoverServerTools.mockResolvedValue({ tools: [], oauthRequired: true, oauthUrl: null });
+    mockDiscoverServerTools.mockResolvedValue({
+      tools: [],
+      oauthRequired: true,
+      oauthUrl: null,
+      provenance,
+    });
     const requestBody = { conversationId: 'conv-456', messageId: 'msg-456' };
 
     const result = await reinitMCPServer({
       user,
       serverName,
-      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      serverConfig: currentConfig,
       requestBody,
       userMCPAuthMap: undefined,
     });
@@ -655,9 +784,32 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       url: 'https://thingy.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
       source: 'yaml',
     };
+    mockGetServerConfig.mockResolvedValue(serverConfig);
+    const effectiveServerConfig = {
+      ...serverConfig,
+      url: 'https://thingy.example.com/messages/msg-789/mcp',
+    };
+    const provenance = createMCPConnectionProvenance(
+      {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig,
+        effectiveServerConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: 'none',
+        authorizationKind: 'none',
+      },
+      'user',
+      'none',
+    );
     mockGetConnection.mockResolvedValue({
       disconnect,
       fetchTools: jest.fn().mockResolvedValue(tools),
+      getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
     });
 
     await reinitMCPServer({
@@ -704,6 +856,7 @@ describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)'
   beforeEach(() => {
     jest.clearAllMocks();
     mockUpdateMCPServerTools.mockResolvedValue({});
+    mockGetServerConfig.mockResolvedValue(undefined);
   });
 
   it('defers connection without failing when body placeholders cannot resolve outside a chat turn', async () => {
@@ -802,16 +955,41 @@ describe('reinitMCPServer — OAuth attempt lifetime', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUpdateMCPServerTools.mockResolvedValue({});
+    mockGetServerConfig.mockResolvedValue(serverConfig);
+    mockGetMCPAuthorizationIdentity.mockResolvedValue('oauth-attempt-grant');
   });
 
   it('returns the expiry supplied when a pending OAuth URL is replayed', async () => {
     const expiresAt = Date.now() + 45_000;
+    const detectedConfig = { ...serverConfig, requiresOAuth: true };
+    const provenance = createMCPConnectionProvenance(
+      {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig: detectedConfig,
+        effectiveServerConfig: detectedConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: 'oauth-attempt-grant',
+        authorizationKind: 'oauth',
+      },
+      'user',
+      'oauth',
+    );
     mockGetConnection.mockImplementation(async ({ oauthStart }) => {
       await oauthStart('https://oauth.example.com/authorize', { expiresAt });
       await oauthStart('https://oauth.example.com/authorize');
       throw new Error('OAuth flow initiated - return early');
     });
-    mockDiscoverServerTools.mockResolvedValue({ tools: [], oauthRequired: true, oauthUrl: null });
+    mockDiscoverServerTools.mockResolvedValue({
+      tools: [],
+      oauthRequired: true,
+      oauthUrl: null,
+      provenance,
+    });
 
     const result = await reinitMCPServer({
       user,

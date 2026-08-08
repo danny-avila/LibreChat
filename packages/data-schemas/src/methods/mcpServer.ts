@@ -3,6 +3,10 @@ import { normalizeServerName } from 'librechat-data-provider';
 import type { Model, RootFilterQuery, Types } from 'mongoose';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { MCPServerDocument } from '../types';
+import {
+  getMCPAuthorityConsistencyModule,
+  runMCPAuthorityMutation,
+} from './mcpAuthority/consistency';
 import logger from '~/config/winston';
 
 const NORMALIZED_LIMIT_DEFAULT = 20;
@@ -78,6 +82,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
   ) => Promise<MCPServerDocument | null>;
   deleteMCPServer: (serverName: string) => Promise<MCPServerDocument | null>;
 } {
+  const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
   /**
    * Finds the next available server name by checking DB and reserved-name collisions.
    * If baseName is taken or reserved, returns baseName-2, baseName-3, etc.
@@ -363,14 +368,17 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
   }
 
   return {
-    createMCPServer,
+    createMCPServer: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, () => createMCPServer(...args)),
     findMCPServerByServerName,
     findMCPServerByObjectId,
     findMCPServersByAuthor,
     getListMCPServersByIds,
     getListMCPServersByNames,
-    updateMCPServer,
-    deleteMCPServer,
+    updateMCPServer: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, () => updateMCPServer(...args)),
+    deleteMCPServer: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, () => deleteMCPServer(...args)),
   };
 }
 

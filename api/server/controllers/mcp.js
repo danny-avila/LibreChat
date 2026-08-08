@@ -6,20 +6,22 @@
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
 const { randomUUID } = require('crypto');
-const { logger, SystemCapabilities } = require('@librechat/data-schemas');
+const {
+  logger,
+  SystemCapabilities,
+  MAX_MCP_AUTHORITY_TARGETS,
+} = require('@librechat/data-schemas');
 const {
   checkAccess,
   getUserMCPAuthMap,
   getMCPAuthorizationIdentities,
   MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+  isUserSourced,
   createMCPToolCatalogSecurityPolicyIdentity,
   createMCPToolCatalogScope,
   matchesMCPConnectionProvenance,
   isOAuthServer,
   shouldDetectRuntimeOAuth,
-  isUserSourced,
-  preProcessGraphTokens,
-  processMCPEnv,
   MCPConnection,
   MCPErrorCodes,
   splitMCPToolKey,
@@ -51,7 +53,6 @@ const { cacheScopedMCPServerTools, getMCPServerCatalog } = require('~/server/ser
 const { getResourcePermissionsMap } = require('~/server/services/PermissionService');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
-const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const {
   matchesMCPToolAuthorityScope,
   resolveCurrentMCPAuthoritySnapshot,
@@ -59,6 +60,7 @@ const {
   resolveCurrentMCPToolAuthority,
 } = require('~/server/services/MCPDiscoveryScope');
 const db = require('~/models');
+const { getMCPAuthorityResolver } = require('~/server/services/MCPAuthority');
 
 /**
  * Handles MCP-specific errors and sends appropriate HTTP responses.
@@ -126,22 +128,18 @@ function getServerAuthorizationIdentity(serverName, config, oauthIdentities, pro
   return 'none';
 }
 
-async function resolveEffectiveMCPServerConfig({ serverConfig, user, body, customUserVars }) {
-  const dbSourced = isUserSourced(serverConfig);
-  const graphProcessedConfig = dbSourced
-    ? serverConfig
-    : await preProcessGraphTokens(serverConfig, {
-        user,
-        graphTokenResolver: getGraphApiToken,
-        scopes: process.env.GRAPH_API_SCOPES,
-      });
-  return processMCPEnv({
-    user,
-    body,
-    dbSourced,
-    options: graphProcessedConfig,
-    customUserVars,
-  });
+function getMCPAuthorityScopeInput(parsedConfig) {
+  return {
+    tenantId: parsedConfig.actor.tenantId,
+    userId: parsedConfig.actor.userId,
+    serverName: parsedConfig.serverName,
+    serverConfig: parsedConfig.sourceConfig,
+    effectiveServerConfig: parsedConfig.effectiveConfig,
+    securityPolicyIdentity: parsedConfig.securityPolicyIdentity,
+    customUserVars: parsedConfig.customUserVars,
+    authorizationIdentity: parsedConfig.authorization.identity,
+    authorizationKind: parsedConfig.authorization.kind,
+  };
 }
 
 /**
@@ -164,13 +162,61 @@ const getMCPTools = async (req, res) => {
       logger.warn('[getMCPTools] Current MCP permission is unavailable');
       return res.status(200).json({ servers: {} });
     }
-    if (authoritySnapshot.missingConfigServerNames?.length > 0) {
-      authoritySnapshot = await resolveCurrentMCPAuthoritySnapshot(
-        authoritySnapshot.user,
-        'tool catalog activation',
-        { initializeMissing: true },
+    const scopedServerNames = new Set([
+      ...Object.keys(authoritySnapshot.configs),
+      ...Object.keys(authoritySnapshot.pendingConfigs ?? {}),
+    ]);
+    if (scopedServerNames.size > MAX_MCP_AUTHORITY_TARGETS) {
+      logger.warn(
+        `[getMCPTools] Scoped catalog exceeds the ${MAX_MCP_AUTHORITY_TARGETS}-server authority bound`,
       );
-      if (!authoritySnapshot || !(await userCanUseMCPServersFresh(authoritySnapshot.user))) {
+      return res.status(503).json({ message: 'MCP catalog authority exceeds its safe bound' });
+    }
+    if (authoritySnapshot.missingConfigServerNames?.length > 0) {
+      try {
+        const registry = getMCPServersRegistry();
+        for (const serverName of authoritySnapshot.missingConfigServerNames) {
+          const pendingConfig = authoritySnapshot.pendingConfigs?.[serverName];
+          if (!pendingConfig) {
+            throw new Error(`Cold MCP config is unavailable for ${serverName}`);
+          }
+          const activationAuthority = await resolveCurrentMCPToolAuthority({
+            user: authoritySnapshot.user,
+            serverName,
+            requestBody: req.body,
+            allowMissingAuthorization: true,
+            allowMissingCredentials: true,
+            bounded: true,
+            expectedServerConfig: pendingConfig,
+          });
+          if (!activationAuthority) {
+            throw new Error(`Cold MCP activation authority is unavailable for ${serverName}`);
+          }
+          await getMCPAuthorityResolver().useIssuedResolution(
+            activationAuthority,
+            async (current) => {
+              const parsedConfig = current.parsedConfig;
+              return await registry.activateIssuedConfigServer(
+                parsedConfig.serverName,
+                parsedConfig.sourceConfig,
+                parsedConfig.securityPolicy,
+              );
+            },
+          );
+        }
+        authoritySnapshot = await resolveCurrentMCPAuthoritySnapshot(
+          authoritySnapshot.user,
+          'tool catalog activation',
+        );
+      } catch (error) {
+        logger.warn('[getMCPTools] Cold Config MCP activation failed', error);
+        authoritySnapshot = null;
+      }
+      if (
+        !authoritySnapshot ||
+        authoritySnapshot.missingConfigServerNames?.length > 0 ||
+        !(await userCanUseMCPServersFresh(authoritySnapshot.user))
+      ) {
         logger.warn('[getMCPTools] Cold Config MCP activation authority is unavailable');
         return res.status(200).json({ servers: {} });
       }
@@ -200,7 +246,6 @@ const getMCPTools = async (req, res) => {
     if (!configuredServers.length) {
       return res.status(200).json({ servers: {} });
     }
-
     let userMCPAuthMap = {};
     let customUserVarsAvailable = true;
     try {
@@ -241,6 +286,7 @@ const getMCPTools = async (req, res) => {
     const serverToolsMap = new Map();
     const serverAuthorityScopes = new Map();
     const serverAuthorizationKinds = new Map();
+    const liveDiscoveryProvenances = new Map();
     const cacheResults = await Promise.all(
       configuredServers.map(async (serverName) => {
         try {
@@ -338,42 +384,36 @@ const getMCPTools = async (req, res) => {
       let serverTools;
       let discoveryProvenance = null;
       let expectedScope = null;
-      const authorizationIdentityBeforeDiscovery = authorizationIdentities.get(serverName);
       try {
+        const liveAuthority = await resolveCurrentMCPToolAuthority({
+          user: authorityUser,
+          serverName,
+          requestBody: req.body,
+          oauthRequiredHint: authorizationKind === 'oauth',
+          allowMissingAuthorization: true,
+          bounded: true,
+          expectedServerConfig: mcpConfig[serverName],
+        });
+        if (!liveAuthority) {
+          continue;
+        }
+        expectedScope = getMCPAuthorityScopeInput(liveAuthority.parsedConfig);
         if (typeof mcpManager.getServerToolFunctionsWithProvenance === 'function') {
-          if (
-            authorizationIdentityBeforeDiscovery == null ||
-            catalogSecurityPolicyIdentity == null
-          ) {
-            continue;
-          }
-          const serverConfig = mcpConfig[serverName];
-          const customUserVars = userMCPAuthMap[`${Constants.mcp_prefix}${serverName}`];
-          const effectiveServerConfig = await resolveEffectiveMCPServerConfig({
-            serverConfig,
-            user: authorityUser,
-            body: req.body,
-            customUserVars,
-          });
-          expectedScope = {
-            tenantId,
-            userId,
-            serverName,
-            serverConfig,
-            effectiveServerConfig,
-            securityPolicyIdentity: catalogSecurityPolicyIdentity,
-            customUserVars,
-            authorizationIdentity: authorizationIdentityBeforeDiscovery,
-          };
-          const discovery = await mcpManager.getServerToolFunctionsWithProvenance(
-            userId,
-            serverName,
-            expectedScope,
+          const discovery = await getMCPAuthorityResolver().useIssuedResolution(
+            liveAuthority,
+            async (current) => {
+              const parsedConfig = current.parsedConfig;
+              return await mcpManager.getServerToolFunctionsWithProvenance(
+                parsedConfig.actor.userId,
+                parsedConfig.serverName,
+                getMCPAuthorityScopeInput(parsedConfig),
+              );
+            },
           );
           serverTools = discovery?.tools ?? null;
           discoveryProvenance = discovery?.provenance ?? null;
         } else {
-          serverTools = await mcpManager.getServerToolFunctions(userId, serverName);
+          throw new Error('Proof-bound MCP provenance reads are unavailable');
         }
       } catch (error) {
         logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
@@ -407,6 +447,7 @@ const getMCPTools = async (req, res) => {
         const { configs, securityPolicy } = await resolveMCPDiscoveryConfigSnapshot(
           userId,
           currentUser,
+          { initializeMissing: false },
         );
         currentMcpConfig = configs;
         currentCatalogSecurityPolicyIdentity =
@@ -460,9 +501,23 @@ const getMCPTools = async (req, res) => {
       expectedScope,
     } of liveDiscoveryResults) {
       let currentScope = null;
+      let proofAuthority = null;
       try {
         if (expectedScope == null) {
           throw new Error('MCP discovery provenance is unavailable');
+        }
+        proofAuthority = await resolveCurrentMCPToolAuthority({
+          user: authorityUser,
+          serverName,
+          requestBody: req.body,
+          schemas: serverTools,
+          discoveryProvenance,
+          oauthRequiredHint: discoveryProvenance?.authorizationKind === 'oauth',
+          bounded: true,
+          expectedServerConfig: mcpConfig[serverName],
+        });
+        if (!proofAuthority) {
+          throw new Error('Current MCP discovery proof is unavailable');
         }
         const currentServerConfig = currentMcpConfig?.[serverName];
         const requiresCustomUserVars =
@@ -491,12 +546,7 @@ const getMCPTools = async (req, res) => {
           shouldDetectRuntimeOAuth(currentServerConfig)
             ? { ...currentServerConfig, requiresOAuth: true }
             : currentServerConfig;
-        const currentEffectiveServerConfig = await resolveEffectiveMCPServerConfig({
-          serverConfig: provenanceServerConfig,
-          user: currentUser,
-          body: req.body,
-          customUserVars: currentCustomUserVars,
-        });
+        const currentEffectiveServerConfig = proofAuthority.parsedConfig.effectiveConfig;
         currentScope = {
           tenantId: currentTenantId,
           userId,
@@ -510,7 +560,15 @@ const getMCPTools = async (req, res) => {
       } catch (error) {
         logger.warn(`[getMCPTools] Failed to validate current scope for ${serverName}`, error);
       }
-      if (!currentScope || !matchesMCPConnectionProvenance(discoveryProvenance, currentScope)) {
+      if (
+        !currentScope ||
+        !proofAuthority ||
+        !matchesMCPConnectionProvenance(discoveryProvenance, currentScope) ||
+        !matchesMCPToolAuthorityScope(
+          createMCPToolCatalogScope(currentScope),
+          proofAuthority.parsedConfig.catalogScope,
+        )
+      ) {
         if (
           discoveryProvenance?.principalKind !== 'app' &&
           typeof mcpManager.disconnectUserConnectionIfProvenanceMatches === 'function'
@@ -527,22 +585,7 @@ const getMCPTools = async (req, res) => {
       serverToolsMap.set(serverName, serverTools);
       serverAuthorityScopes.set(serverName, createMCPToolCatalogScope(currentScope));
       serverAuthorizationKinds.set(serverName, discoveryProvenance?.authorizationKind ?? 'none');
-
-      // Cache asynchronously without blocking
-      cacheScopedMCPServerTools({
-        tenantId: currentScope.tenantId,
-        userId,
-        serverName,
-        serverTools,
-        serverConfig: currentScope.serverConfig,
-        customUserVars: currentScope.customUserVars,
-        role: currentUser.role,
-        authorizationIdentity: currentScope.authorizationIdentity,
-        authoritative: true,
-        discoveryProvenance,
-      }).catch((err) =>
-        logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
-      );
+      liveDiscoveryProvenances.set(serverName, discoveryProvenance);
     }
 
     for (const serverName of [...serverToolsMap.keys()]) {
@@ -550,20 +593,48 @@ const getMCPTools = async (req, res) => {
         user: authorityUser,
         serverName,
         requestBody: req.body,
+        schemas: serverToolsMap.get(serverName) ?? null,
+        discoveryProvenance: liveDiscoveryProvenances.get(serverName),
         oauthRequiredHint: serverAuthorizationKinds.get(serverName) === 'oauth',
       });
+      const currentParsedConfig = currentAuthority?.parsedConfig;
       if (
-        !currentAuthority?.catalogScope ||
-        !(await userCanUseMCPServersFresh(currentAuthority.user)) ||
+        !currentParsedConfig?.catalogScope ||
+        !(await userCanUseMCPServersFresh(currentParsedConfig.actor.user)) ||
         !matchesMCPToolAuthorityScope(
           serverAuthorityScopes.get(serverName),
-          currentAuthority.catalogScope,
+          currentParsedConfig.catalogScope,
         )
       ) {
         serverToolsMap.delete(serverName);
         logger.warn(
           `[getMCPTools] Rejected MCP tool schemas changed before response: ${serverName}`,
         );
+        continue;
+      }
+      const discoveryProvenance = liveDiscoveryProvenances.get(serverName);
+      if (discoveryProvenance) {
+        try {
+          await getMCPAuthorityResolver().useIssuedResolution(currentAuthority, async (current) => {
+            const parsedConfig = current.parsedConfig;
+            return await cacheScopedMCPServerTools({
+              tenantId: parsedConfig.actor.tenantId,
+              userId: parsedConfig.actor.userId,
+              serverName: parsedConfig.serverName,
+              serverTools: current.schemas,
+              serverConfig: parsedConfig.sourceConfig,
+              customUserVars: parsedConfig.customUserVars,
+              role: parsedConfig.actor.user.role,
+              authorizationIdentity: parsedConfig.authorization.identity,
+              authorizationKind: parsedConfig.authorization.kind,
+              authoritative: true,
+              discoveryProvenance: parsedConfig.discoveryProvenance,
+            });
+          });
+        } catch (error) {
+          serverToolsMap.delete(serverName);
+          logger.warn(`[getMCPTools] Failed to publish current tools for ${serverName}`, error);
+        }
       }
     }
 
@@ -624,7 +695,36 @@ const getMCPTools = async (req, res) => {
       }
     }
 
-    res.status(200).json({ servers: mcpServers });
+    const responseAuthorities = await Promise.all(
+      configuredServers.map(async (serverName) => ({
+        serverName,
+        authority: await resolveCurrentMCPToolAuthority({
+          user: authorityUser,
+          serverName,
+          requestBody: req.body,
+          schemas: serverToolsMap.get(serverName) ?? null,
+          oauthRequiredHint: serverAuthorizationKinds.get(serverName) === 'oauth',
+          allowMissingAuthorization: true,
+          allowMissingCredentials: true,
+          bounded: true,
+          expectedServerConfig: mcpConfig[serverName],
+        }),
+      })),
+    );
+    const resolutions = [];
+    for (const { serverName, authority } of responseAuthorities) {
+      if (!authority) {
+        delete mcpServers[serverName];
+        continue;
+      }
+      resolutions.push(authority);
+    }
+    if (resolutions.length === 0) {
+      return res.status(200).json({ servers: {} });
+    }
+    return await getMCPAuthorityResolver().useIssuedResolutions(resolutions, () =>
+      res.status(200).json({ servers: mcpServers }),
+    );
   } catch (error) {
     logger.error('[getMCPTools]', error);
     res.status(500).json({ message: error.message });

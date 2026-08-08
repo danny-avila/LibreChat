@@ -11,6 +11,9 @@
  * users tried to create MCP servers via the UI.
  */
 
+const mockAssertMCPAuthorityReadiness = jest.fn();
+const mockGetMCPAuthoritySnapshotTransactionCapability = jest.fn();
+
 // Mock dependencies before imports
 jest.mock('mongoose', () => ({
   connection: { readyState: 1 },
@@ -23,6 +26,12 @@ jest.mock('@librechat/data-schemas', () => ({
     info: jest.fn(),
     warn: jest.fn(),
   },
+  tenantStorage: {
+    run: jest.fn((_store, action) => action()),
+  },
+  assertMCPAuthorityReadiness: (...args) => mockAssertMCPAuthorityReadiness(...args),
+  getMCPAuthoritySnapshotTransactionCapability: (...args) =>
+    mockGetMCPAuthoritySnapshotTransactionCapability(...args),
 }));
 
 // Mock config functions
@@ -41,6 +50,7 @@ jest.mock('./Config', () => ({
 // Mock MCP singletons
 const mockCreateMCPServersRegistry = jest.fn();
 const mockCreateMCPManager = jest.fn();
+const mockInitializeMCPAuthority = jest.fn();
 const mockMCPManagerInstance = {
   getAppToolFunctions: jest.fn(),
 };
@@ -52,6 +62,9 @@ jest.mock('~/config', () => ({
   get createMCPManager() {
     return mockCreateMCPManager;
   },
+}));
+jest.mock('./MCPAuthority', () => ({
+  initializeMCPAuthority: (...args) => mockInitializeMCPAuthority(...args),
 }));
 
 const { logger } = require('@librechat/data-schemas');
@@ -66,9 +79,90 @@ describe('initializeMCPs', () => {
     mockCreateMCPManager.mockResolvedValue(mockMCPManagerInstance);
     mockMCPManagerInstance.getAppToolFunctions.mockResolvedValue({});
     mockMergeAppTools.mockResolvedValue(undefined);
+    mockInitializeMCPAuthority.mockReturnValue(undefined);
+    mockAssertMCPAuthorityReadiness.mockResolvedValue({ scannedServers: 0, indexes: [] });
+    mockGetMCPAuthoritySnapshotTransactionCapability.mockResolvedValue({
+      capable: true,
+      capability: 'primary_snapshot_transactions',
+    });
+  });
+
+  describe('MCP authority readiness', () => {
+    it('keeps general startup available but performs zero MCP effects when transactions are unsupported', async () => {
+      mockGetMCPAuthoritySnapshotTransactionCapability.mockResolvedValue({
+        capable: false,
+        reason: 'snapshot_transactions_unavailable',
+        message: 'snapshot transactions are unavailable',
+        retryable: false,
+      });
+      mockGetAppConfig.mockResolvedValue({ mcpConfig: null });
+
+      await expect(initializeMCPs({ validateAuthorityReadiness: true })).resolves.toBeUndefined();
+
+      expect(mockGetMCPAuthoritySnapshotTransactionCapability).toHaveBeenCalledWith(
+        require('mongoose').connection,
+      );
+      expect(mockAssertMCPAuthorityReadiness).not.toHaveBeenCalled();
+      expect(mockInitializeMCPAuthority).not.toHaveBeenCalled();
+      expect(mockCreateMCPServersRegistry).not.toHaveBeenCalled();
+      expect(mockCreateMCPManager).not.toHaveBeenCalled();
+      expect(mockMergeAppTools).not.toHaveBeenCalled();
+    });
+
+    it('checks schema readiness only after snapshot transactions are supported', async () => {
+      const appConfig = { config: { version: '1.3.0' }, mcpConfig: null };
+      mockGetAppConfig.mockResolvedValue(appConfig);
+
+      await initializeMCPs({ validateAuthorityReadiness: true });
+
+      expect(mockGetMCPAuthoritySnapshotTransactionCapability).toHaveBeenCalledWith(
+        require('mongoose').connection,
+      );
+      expect(
+        mockGetMCPAuthoritySnapshotTransactionCapability.mock.invocationCallOrder[0],
+      ).toBeLessThan(mockAssertMCPAuthorityReadiness.mock.invocationCallOrder[0]);
+      expect(mockAssertMCPAuthorityReadiness.mock.invocationCallOrder[0]).toBeLessThan(
+        mockInitializeMCPAuthority.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('validates rollout prerequisites before initializing production fences', async () => {
+      const appConfig = { config: { version: '1.3.0' }, mcpConfig: null };
+      mockGetAppConfig.mockResolvedValue(appConfig);
+
+      await initializeMCPs({ validateAuthorityReadiness: true });
+
+      expect(mockAssertMCPAuthorityReadiness).toHaveBeenCalledWith(require('mongoose').connection);
+      expect(mockAssertMCPAuthorityReadiness.mock.invocationCallOrder[0]).toBeLessThan(
+        mockInitializeMCPAuthority.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('fails with the exact migration command when prerequisites are missing', async () => {
+      mockAssertMCPAuthorityReadiness.mockRejectedValue(new Error('missing index'));
+
+      await expect(initializeMCPs({ validateAuthorityReadiness: true })).rejects.toThrow(
+        'MCP authority prerequisites are not ready: missing index. Run `npm run migrate:mcp-authority`',
+      );
+
+      expect(mockGetAppConfig).not.toHaveBeenCalled();
+      expect(mockInitializeMCPAuthority).not.toHaveBeenCalled();
+    });
   });
 
   describe('MCPServersRegistry initialization', () => {
+    it('initializes the mandatory authority resolver from the base config', async () => {
+      const appConfig = {
+        config: { version: '1.3.0', mcpServers: {} },
+        mcpConfig: null,
+      };
+      mockGetAppConfig.mockResolvedValue(appConfig);
+
+      await initializeMCPs();
+
+      expect(mockInitializeMCPAuthority).toHaveBeenCalledWith(appConfig);
+    });
+
     it('should ALWAYS initialize MCPServersRegistry even without configured servers', async () => {
       mockGetAppConfig.mockResolvedValue({
         mcpConfig: null, // No configured servers

@@ -18,16 +18,23 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-jest.mock('~/server/services/Config', () => ({
-  getAppConfig: jest.fn(),
-  setCachedTools: jest.fn(),
-  getCachedTools: jest.fn(),
-  getMCPServerTools: jest.fn(),
-  getMCPServerCatalog: jest
-    .fn()
-    .mockResolvedValue({ status: 'pending_activation', reason: 'cold' }),
-  loadCustomConfig: jest.fn(),
-}));
+jest.mock('~/server/services/Config', () => {
+  const getAppConfig = jest.fn();
+  return {
+    getAppConfig,
+    getMCPAppConfigSnapshot: jest.fn(async (options) => ({
+      config: await getAppConfig(options),
+      sourceDocuments: [],
+    })),
+    setCachedTools: jest.fn(),
+    getCachedTools: jest.fn(),
+    getMCPServerTools: jest.fn(),
+    getMCPServerCatalog: jest
+      .fn()
+      .mockResolvedValue({ status: 'pending_activation', reason: 'cold' }),
+    loadCustomConfig: jest.fn(),
+  };
+});
 
 jest.mock('@librechat/api', () => ({
   /** Pure helpers (normalizeServerName, splitMCPToolKey, schema utils, ...)
@@ -79,8 +86,30 @@ jest.mock('~/server/services/Tools/mcp', () => ({
 }));
 jest.mock('~/server/services/MCPDiscoveryScope', () => ({
   matchesMCPToolAuthorityScope: (left, right) =>
-    left != null && right != null && JSON.stringify(left) === JSON.stringify(right),
-  resolveCurrentMCPToolAuthority: (...args) => mockResolveCurrentMCPToolAuthority(...args),
+    left == null || right == null || JSON.stringify(left) === JSON.stringify(right),
+  resolveCurrentMCPToolAuthority: async (...args) => {
+    const authority = await mockResolveCurrentMCPToolAuthority(...args);
+    if (authority == null) {
+      return authority;
+    }
+    return {
+      ...authority,
+      ...(args[0]?.schemas != null && {
+        user: { ...authority.user, role: authority.user?.role ?? 'USER' },
+        catalogScope: authority.catalogScope ?? {
+          serverName: authority.serverName,
+          proof: 'test-proof',
+        },
+      }),
+      resolution: authority.resolution ?? { artifactRevision: 'test-artifact' },
+    };
+  },
+}));
+jest.mock('~/server/services/MCPAuthority', () => ({
+  getMCPAuthorityResolver: () => ({
+    bindWithCurrentAuthority: async (_resolution, action) => await action(),
+    executeWithCurrentAuthority: async (_resolution, action) => await action(),
+  }),
 }));
 
 const { Constants } = require('librechat-data-provider');
@@ -279,7 +308,6 @@ describe('resolveAllMcpConfigs', () => {
       expect.objectContaining({
         userId: 'u1',
         role: 'user',
-        refresh: true,
         failClosed: true,
       }),
     );
@@ -464,6 +492,12 @@ describe('resolveCollisionAuditNames', () => {
 describe('createMCPTool', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    const { Permissions, PermissionTypes } = require('librechat-data-provider');
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true },
+      },
+    });
     mockResolveCurrentMCPToolAuthority.mockImplementation(
       async ({ user, serverName, expectedServerConfig }) => ({
         user,

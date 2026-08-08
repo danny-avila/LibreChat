@@ -13,6 +13,7 @@ export * from './apiKeys';
 export * from './mcp/mcpConfig';
 export * from './mcp/authority';
 export * from './mcp/registry/MCPServersRegistry';
+export * from './mcp/registry/MCPServerInspector';
 export * from './mcp/MCPManager';
 export * from './mcp/connection';
 export * from './mcp/oauth';
@@ -21,6 +22,7 @@ export * from './mcp/zod';
 export * from './mcp/errors';
 export * from './mcp/cache';
 export * from './mcp/catalog';
+export * from './mcp/provenance';
 export * from './mcp/tools';
 export * from './mcp/request';
 /* Utilities */

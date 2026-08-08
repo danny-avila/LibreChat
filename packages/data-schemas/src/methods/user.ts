@@ -6,8 +6,34 @@ import {
 } from 'librechat-data-provider';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
 import type { CacheStore } from '~/types';
+import {
+  getMCPAuthorityConsistencyModule,
+  runMCPAuthorityMutation,
+} from './mcpAuthority/consistency';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
+
+const MCP_AUTHORITY_USER_FIELDS = new Set<keyof IUser>([
+  'tenantId',
+  'role',
+  'provider',
+  'idOnTheSource',
+  'openidIssuer',
+  'googleId',
+  'facebookId',
+  'openidId',
+  'samlId',
+  'ldapId',
+  'githubId',
+  'discordId',
+  'appleId',
+]);
+
+function userUpdateAffectsMCPAuthority(updateData: Partial<IUser>): boolean {
+  return Object.keys(updateData).some((field) =>
+    MCP_AUTHORITY_USER_FIELDS.has(field as keyof IUser),
+  );
+}
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
@@ -124,6 +150,7 @@ export function createUserMethods(
   ) => Promise<IUser | null>;
   toggleUserMemories: (userId: string, memoriesEnabled: boolean) => Promise<IUser | null>;
 } {
+  const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
   /**
    * Normalizes email fields in search criteria to lowercase and trimmed.
    * Handles both direct email fields and $or arrays containing email conditions.
@@ -599,12 +626,18 @@ export function createUserMethods(
     findUsers,
     countUsers,
     createUser,
-    updateUser,
+    updateUser: async (...args) => {
+      if (!userUpdateAffectsMCPAuthority(args[1])) {
+        return await updateUser(...args);
+      }
+      return await runMCPAuthorityMutation(authorityMutationGate, () => updateUser(...args));
+    },
     acceptTerms,
     searchUsers,
     getUserById,
     generateToken,
-    deleteUserById,
+    deleteUserById: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, () => deleteUserById(...args)),
     updateUserPlugins,
     toggleUserMemories,
   };

@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
-const { logger, tenantStorage } = require('@librechat/data-schemas');
+const { logger, tenantStorage, assertMCPAuthorityReadiness } = require('@librechat/data-schemas');
 const { mergeAppTools, getAppConfig } = require('./Config');
+const { initializeMCPAuthority } = require('./MCPAuthority');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
 
 /**
@@ -31,9 +32,23 @@ async function resolveMCPAllowlists(ctx) {
 /**
  * Initialize MCP servers
  */
-async function initializeMCPs() {
+async function initializeMCPs(options = {}) {
+  const validateAuthorityReadiness =
+    process.env.NODE_ENV !== 'test' || options.validateAuthorityReadiness === true;
+  if (validateAuthorityReadiness) {
+    try {
+      await assertMCPAuthorityReadiness(mongoose.connection);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown readiness failure';
+      throw new Error(
+        `MCP authority prerequisites are not ready: ${reason}. Run \`npm run migrate:mcp-authority\` before starting LibreChat.`,
+        { cause: error },
+      );
+    }
+  }
   const appConfig = await getAppConfig({ baseOnly: true });
   const mcpServers = appConfig.mcpConfig;
+  initializeMCPAuthority(appConfig);
 
   try {
     createMCPServersRegistry(

@@ -1,5 +1,4 @@
 import type { MCPOptions, TCustomConfig } from 'librechat-data-provider';
-import type { ClientSession } from 'mongoose';
 
 export const MCP_AUTHORITY_PROOF_VERSION = 1 as const;
 
@@ -31,7 +30,6 @@ export interface MCPAuthorityResolveInput {
   readonly tenantId?: string;
   readonly boot: MCPAuthorityBootRevision;
   readonly targets: readonly MCPAuthorityTargetInput[];
-  readonly session?: ClientSession;
 }
 
 export interface MCPAuthorityUserProof {
@@ -103,6 +101,7 @@ export interface MCPAuthorityServerProofV1 {
 
 export interface MCPAuthorityProofV1 {
   readonly version: typeof MCP_AUTHORITY_PROOF_VERSION;
+  readonly generation: number;
   readonly shared: MCPAuthoritySharedProofV1;
   readonly servers: readonly MCPAuthorityServerProofV1[];
   readonly revision: string;
@@ -111,7 +110,6 @@ export interface MCPAuthorityProofV1 {
 export interface MCPAuthorityAssertInput {
   readonly proofs: MCPAuthorityProofV1 | readonly MCPAuthorityProofV1[];
   readonly boot: MCPAuthorityBootRevision;
-  readonly session?: ClientSession;
 }
 
 export interface MCPAuthorityDatabaseMethods {
@@ -126,6 +124,7 @@ export type MCPAuthorityImmutableConfig = Readonly<
 export type MCPAuthorityRejectionReason =
   | 'malformed_input'
   | 'proof_unavailable'
+  | 'authority_changed'
   | 'user_revoked'
   | 'principal_changed'
   | 'groups_changed'

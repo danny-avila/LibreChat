@@ -1,5 +1,5 @@
 import type { QueryOptions } from 'mongoose';
-import {
+import type {
   IToken,
   TokenQuery,
   TokenCreateData,
@@ -7,7 +7,29 @@ import {
   TokenDeleteResult,
   TokenIdentityRecord,
 } from '~/types';
+import {
+  MCP_AUTHORITY_OAUTH_TOKEN_TYPES,
+  isMCPAuthorityOAuthTokenType,
+} from './mcpAuthority/classification';
+import {
+  getMCPAuthorityConsistencyModule,
+  runMCPAuthorityMutation,
+} from './mcpAuthority/consistency';
 import logger from '~/config/winston';
+
+function selectorCanMatchMCPAuthority(type: TokenQuery['type']): boolean {
+  if (typeof type === 'string') {
+    return isMCPAuthorityOAuthTokenType(type);
+  }
+  if (type instanceof RegExp) {
+    const stableExpression = new RegExp(type.source, type.flags.replace(/[gy]/g, ''));
+    return MCP_AUTHORITY_OAUTH_TOKEN_TYPES.some((candidate) => stableExpression.test(candidate));
+  }
+  if (type && typeof type === 'object') {
+    return type.$in.some(isMCPAuthorityOAuthTokenType);
+  }
+  return true;
+}
 
 // Factory function that takes mongoose instance and returns the methods
 export function createTokenMethods(mongoose: typeof import('mongoose')): {
@@ -17,6 +39,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
   updateToken: (query: TokenQuery, updateData: TokenUpdateData) => Promise<IToken | null>;
   deleteTokens: (query: TokenQuery) => Promise<TokenDeleteResult>;
 } {
+  const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
   /**
    * Creates a new Token instance.
    */
@@ -187,9 +210,28 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
   return {
     findToken,
     findTokens,
-    createToken,
-    updateToken,
-    deleteTokens,
+    createToken: async (tokenData) => {
+      if (!isMCPAuthorityOAuthTokenType(tokenData.type)) {
+        return await createToken(tokenData);
+      }
+      return await runMCPAuthorityMutation(authorityMutationGate, () => createToken(tokenData));
+    },
+    updateToken: async (query, updateData) => {
+      const affectsMCPAuthority =
+        isMCPAuthorityOAuthTokenType(updateData.type) || selectorCanMatchMCPAuthority(query.type);
+      if (!affectsMCPAuthority) {
+        return await updateToken(query, updateData);
+      }
+      return await runMCPAuthorityMutation(authorityMutationGate, () =>
+        updateToken(query, updateData),
+      );
+    },
+    deleteTokens: async (query) => {
+      if (!selectorCanMatchMCPAuthority(query.type)) {
+        return await deleteTokens(query);
+      }
+      return await runMCPAuthorityMutation(authorityMutationGate, () => deleteTokens(query));
+    },
   };
 }
 

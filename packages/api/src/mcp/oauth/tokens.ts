@@ -9,6 +9,7 @@ import type {
 } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthStoredClientMetadata } from './types';
+import type { MCPRefreshAuthorityLifecycle } from '~/mcp/types';
 import { isInvalidClientMessage } from '~/mcp/utils';
 import { isSystemUserId } from '~/mcp/enum';
 
@@ -80,6 +81,7 @@ interface GetTokensParams {
   onRefreshSuccess?: (tokens: MCPOAuthTokens) => Promise<void>;
   /** Separates in-flight redemptions for the same named server under different OAuth bindings. */
   singleFlightScope?: string;
+  refreshAuthorityLifecycle?: MCPRefreshAuthorityLifecycle;
 }
 
 /**
@@ -867,6 +869,7 @@ export class MCPTokenStorage {
     refreshTokens,
     existingAccessToken,
     onRefreshSuccess,
+    refreshAuthorityLifecycle,
     signal,
   }: GetTokensParams & {
     existingAccessToken?: IToken | null;
@@ -893,8 +896,8 @@ export class MCPTokenStorage {
     try {
       logger.info(`${logPrefix} Attempting to refresh token`);
 
-      let clientInfo;
-      let clientInfoData;
+      let clientInfo: OAuthClientInformation | undefined;
+      let clientInfoData: IToken | null = null;
       let storedClientMetadata: Partial<OAuthStoredClientMetadata> | undefined;
       let storedTokenEndpoint: string | undefined;
       let storedAuthMethods: string[] | undefined;
@@ -909,10 +912,10 @@ export class MCPTokenStorage {
         });
         if (clientInfoData) {
           const decryptedClientInfo = await decryptV2(clientInfoData.token);
-          clientInfo = JSON.parse(decryptedClientInfo);
+          clientInfo = JSON.parse(decryptedClientInfo) as OAuthClientInformation;
           logger.debug(`${logPrefix} Retrieved client info:`, {
-            client_id: clientInfo.client_id,
-            has_client_secret: !!clientInfo.client_secret,
+            client_id: clientInfo?.client_id,
+            has_client_secret: !!clientInfo?.client_secret,
           });
 
           if (clientInfoData.metadata) {
@@ -972,7 +975,10 @@ export class MCPTokenStorage {
         throw new Error('Token refresh aborted before reaching the token endpoint');
       }
 
-      const newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
+      const exchange = async () => await refreshTokens(decryptedRefreshToken, metadata, signal);
+      const newTokens = refreshAuthorityLifecycle
+        ? await refreshAuthorityLifecycle.exchange(exchange)
+        : await exchange();
 
       logger.debug(`${logPrefix} Refresh completed`, {
         has_new_access_token: !!newTokens.access_token,
@@ -983,23 +989,28 @@ export class MCPTokenStorage {
 
       // Store the refreshed tokens (handles both create and update)
       // Pass existing token state to avoid duplicate DB calls
-      const storedTokens = await this.storeTokens({
-        userId,
-        serverName,
-        tokens: newTokens,
-        createToken,
-        updateToken,
-        deleteTokens,
-        findToken,
-        clientInfo,
-        existingTokens: {
-          accessToken: existingAccessToken ?? undefined,
-          refreshToken: refreshTokenData,
-          clientInfoToken: clientInfoData,
-        },
-        metadata: storedClientMetadata,
-        expectedCredentialSetId: refreshCredentialSetId,
-      });
+      const store = async () =>
+        await this.storeTokens({
+          userId,
+          serverName,
+          tokens: newTokens,
+          createToken,
+          updateToken,
+          deleteTokens,
+          findToken,
+          clientInfo,
+          existingTokens: {
+            accessToken: existingAccessToken ?? undefined,
+            refreshToken: refreshTokenData,
+            clientInfoToken: clientInfoData,
+          },
+          metadata: storedClientMetadata,
+          expectedCredentialSetId: refreshCredentialSetId,
+        });
+      const storedTokens = refreshAuthorityLifecycle
+        ? await refreshAuthorityLifecycle.store(newTokens, store)
+        : await store();
+      await refreshAuthorityLifecycle?.accept(storedTokens);
 
       if (onRefreshSuccess) {
         try {

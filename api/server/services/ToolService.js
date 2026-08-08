@@ -34,7 +34,6 @@ const {
   isNormalizationSensitiveName,
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isFatalAgentInitializationError,
-  isOAuthServer,
   shouldDetectRuntimeOAuth,
   normalizeServerName,
 } = require('@librechat/api');
@@ -92,10 +91,11 @@ const {
   resolveCurrentMCPAuthoritySnapshot,
   resolveCurrentMCPToolAuthority,
 } = require('~/server/services/MCPDiscoveryScope');
+const { getMCPAuthorityResolver } = require('~/server/services/MCPAuthority');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { findPluginAuthsByKeys } = require('~/models');
-const { getFlowStateManager } = require('~/config');
+const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
@@ -762,27 +762,34 @@ async function loadToolDefinitionsWrapper({
   /** @type {Record<string, import('@librechat/api').LCAvailableTools>} */
   const mcpAvailableTools = {};
   const mcpAuthorityConfigs = new Map();
+  const mcpAuthorityAuthorizationKinds = new Map();
   const requestScopedConnections = getMCPRequestContext(req, res);
-  const rememberMCPAvailableTools = (serverName, availableTools) => {
+  const rememberMCPAvailableTools = (serverName, availableTools, authority) => {
     if (!availableTools || Object.keys(availableTools).length === 0) {
       return;
     }
+    const parsedConfig = authority.parsedConfig;
     mcpAvailableTools[serverName] = availableTools;
+    mcpAuthorityConfigs.set(serverName, parsedConfig.sourceConfig);
+    mcpAuthorityAuthorizationKinds.set(serverName, parsedConfig.authorization.kind);
   };
   const resolvePostDiscoveryAuthority = async (authority, result) => {
-    if (!result?.availableTools || !authority.catalogScope) {
+    const parsedConfig = authority.parsedConfig;
+    if (!result?.availableTools || !parsedConfig.catalogScope) {
       return authority;
     }
     const currentAuthority = await resolveCurrentMCPToolAuthority({
-      user: authority.user,
-      serverName: authority.serverName,
+      user: parsedConfig.actor.user,
+      serverName: parsedConfig.serverName,
       requestBody: req.body,
+      schemas: result.availableTools,
       oauthRequiredHint:
         result.discoveryProvenance?.authorizationKind === 'oauth' || result.oauthRequired === true,
     });
-    return currentAuthority?.catalogScope &&
-      (await userCanUseMCPServersFresh(currentAuthority.user)) &&
-      matchesMCPToolAuthorityScope(currentAuthority.catalogScope, result.authorityScope)
+    const currentParsedConfig = currentAuthority?.parsedConfig;
+    return currentParsedConfig?.catalogScope &&
+      (await userCanUseMCPServersFresh(currentParsedConfig.actor.user)) &&
+      matchesMCPToolAuthorityScope(currentParsedConfig.catalogScope, result.authorityScope)
       ? currentAuthority
       : null;
   };
@@ -792,53 +799,90 @@ async function loadToolDefinitionsWrapper({
       user: mcpAuthoritySnapshot.user,
       serverName,
       requestBody: req.body,
+      allowMissingAuthorization: true,
       ...(options.oauthRequiredHint === true && { oauthRequiredHint: true }),
     });
     if (authority || options.activateMissing !== true) {
       return authority;
     }
 
-    const activationSnapshot = await resolveCurrentMCPAuthoritySnapshot(
-      mcpAuthoritySnapshot.user,
-      `${serverName} activation`,
-      { serverNames: [serverName], initializeMissing: true },
+    const pendingEntry = Object.entries(mcpAuthoritySnapshot.pendingConfigs ?? {}).find(
+      ([pendingServerName]) =>
+        pendingServerName === serverName || normalizeServerName(pendingServerName) === serverName,
     );
-    if (!activationSnapshot || !(await userCanUseMCPServersFresh(activationSnapshot.user))) {
+    if (!pendingEntry) {
       return null;
     }
-    return await resolveCurrentMCPToolAuthority({
-      user: activationSnapshot.user,
-      serverName,
+    const [pendingServerName, pendingConfig] = pendingEntry;
+    if (pendingServerName !== serverName) {
+      return null;
+    }
+    const activationAuthority = await resolveCurrentMCPToolAuthority({
+      user: mcpAuthoritySnapshot.user,
+      serverName: pendingServerName,
       requestBody: req.body,
-      snapshot: activationSnapshot,
+      allowMissingAuthorization: true,
+      allowMissingCredentials: true,
+      bounded: true,
+      expectedServerConfig: pendingConfig,
       ...(options.oauthRequiredHint === true && { oauthRequiredHint: true }),
     });
+    const activationParsedConfig = activationAuthority?.parsedConfig;
+    if (
+      !activationParsedConfig ||
+      !(await userCanUseMCPServersFresh(activationParsedConfig.actor.user))
+    ) {
+      return null;
+    }
+    await getMCPAuthorityResolver().useIssuedResolution(activationAuthority, async (current) => {
+      const parsedConfig = current.parsedConfig;
+      return await getMCPServersRegistry().activateIssuedConfigServer(
+        parsedConfig.serverName,
+        parsedConfig.sourceConfig,
+        parsedConfig.securityPolicy,
+      );
+    });
+    const currentAuthority = await resolveCurrentMCPToolAuthority({
+      user: activationParsedConfig.actor.user,
+      serverName: pendingServerName,
+      requestBody: req.body,
+      allowMissingAuthorization: true,
+      ...(options.oauthRequiredHint === true && { oauthRequiredHint: true }),
+    });
+    return currentAuthority &&
+      (await userCanUseMCPServersFresh(currentAuthority.parsedConfig.actor.user))
+      ? currentAuthority
+      : null;
   };
 
   const readReadyCatalog = async (initialAuthority) => {
     const read = async (authority) =>
-      await getMCPServerCatalog({
-        userId: authority.user.id,
-        serverName: authority.serverName,
-        serverConfig: authority.provenanceServerConfig,
-        customUserVars: authority.customUserVars,
-        tenantId: authority.tenantId,
-        role: authority.user.role,
-        authorizationIdentity: authority.authorizationIdentity,
-        authorizationKind: authority.authorizationKind,
-        securityPolicyIdentity: authority.securityPolicyIdentity,
+      await getMCPAuthorityResolver().useIssuedResolution(authority, async (current) => {
+        const parsedConfig = current.parsedConfig;
+        return await getMCPServerCatalog({
+          userId: parsedConfig.actor.userId,
+          serverName: parsedConfig.serverName,
+          serverConfig: parsedConfig.sourceConfig,
+          customUserVars: parsedConfig.customUserVars,
+          tenantId: parsedConfig.actor.tenantId,
+          role: parsedConfig.actor.user.role,
+          authorizationIdentity: parsedConfig.authorization.identity,
+          authorizationKind: parsedConfig.authorization.kind,
+          securityPolicyIdentity: parsedConfig.securityPolicyIdentity,
+        });
       });
 
     const initialResult = await read(initialAuthority);
+    const initialParsedConfig = initialAuthority.parsedConfig;
     if (
       initialResult.status === 'ready' &&
-      initialResult.metadata.authorizationKind === initialAuthority.authorizationKind
+      initialResult.metadata.authorizationKind === initialParsedConfig.authorization.kind
     ) {
       return { authority: initialAuthority, result: initialResult };
     }
     if (
-      initialAuthority.authorizationKind !== 'none' ||
-      !shouldDetectRuntimeOAuth(initialAuthority.serverConfig)
+      initialParsedConfig.authorization.kind !== 'none' ||
+      !shouldDetectRuntimeOAuth(initialParsedConfig.sourceConfig)
     ) {
       return {
         authority: initialAuthority,
@@ -849,7 +893,7 @@ async function loadToolDefinitionsWrapper({
       };
     }
 
-    const oauthAuthority = await resolveServerAuthority(initialAuthority.serverName, {
+    const oauthAuthority = await resolveServerAuthority(initialParsedConfig.serverName, {
       oauthRequiredHint: true,
     });
     if (!oauthAuthority) {
@@ -995,7 +1039,8 @@ async function loadToolDefinitionsWrapper({
       );
       return null;
     }
-    const { customUserVars } = authority;
+    let authorityParsedConfig = authority.parsedConfig;
+    const { customUserVars } = authorityParsedConfig;
     if (customUserVars) {
       userMCPAuthMap = {
         ...userMCPAuthMap,
@@ -1004,7 +1049,10 @@ async function loadToolDefinitionsWrapper({
     }
     if (mcpAvailableTools[serverName]) {
       if (
-        matchesMCPAvailableToolsAuthority(mcpAvailableTools[serverName], authority.catalogScope)
+        matchesMCPAvailableToolsAuthority(
+          mcpAvailableTools[serverName],
+          authorityParsedConfig.catalogScope,
+        )
       ) {
         return mcpAvailableTools[serverName];
       }
@@ -1012,14 +1060,14 @@ async function loadToolDefinitionsWrapper({
     }
     const catalogRead = await readReadyCatalog(authority);
     authority = catalogRead.authority;
+    authorityParsedConfig = authority.parsedConfig;
     if (catalogRead.result.status === 'ready') {
       const cached = catalogRead.result.tools;
       readyCatalogServers.add(serverName);
-      stampMCPAvailableToolsAuthority(cached, authority.catalogScope, {
+      stampMCPAvailableToolsAuthority(cached, authorityParsedConfig.catalogScope, {
         authorizationKind: catalogRead.result.metadata.authorizationKind,
       });
-      rememberMCPAvailableTools(serverName, cached);
-      mcpAuthorityConfigs.set(serverName, authority.serverConfig);
+      rememberMCPAvailableTools(serverName, cached, authority);
       return cached;
     }
 
@@ -1034,27 +1082,39 @@ async function loadToolDefinitionsWrapper({
       }
     };
 
-    const result = await reinitMCPServer({
-      user: authority.user,
-      oauthStart,
-      flowManager,
-      serverName,
-      configServers: { ...configServers, [serverName]: authority.serverConfig },
-      userMCPAuthMap,
-      requestBody: req.body,
-      requestScopedConnections,
-      oauthAuthorityScope: authority.catalogScope,
-    });
+    const result = await getMCPAuthorityResolver().useIssuedResolution(
+      authority,
+      async (current) => {
+        const parsedConfig = current.parsedConfig;
+        return await reinitMCPServer({
+          authorityResolution: current,
+          user: parsedConfig.actor.user,
+          oauthStart,
+          flowManager,
+          serverName: parsedConfig.serverName,
+          configServers: { [parsedConfig.serverName]: parsedConfig.sourceConfig },
+          userMCPAuthMap: parsedConfig.customUserVars
+            ? {
+                [`${Constants.mcp_prefix}${parsedConfig.serverName}`]: parsedConfig.customUserVars,
+              }
+            : {},
+          requestBody: req.body,
+          requestScopedConnections,
+          oauthAuthorityScope: parsedConfig.catalogScope,
+        });
+      },
+    );
 
     const acceptedAuthority = await resolvePostDiscoveryAuthority(authority, result);
     if (!acceptedAuthority) {
       authorityRejectedServers.add(serverName);
       return null;
     }
-    if (acceptedAuthority.customUserVars) {
+    const acceptedParsedConfig = acceptedAuthority.parsedConfig;
+    if (acceptedParsedConfig.customUserVars) {
       userMCPAuthMap = {
         ...userMCPAuthMap,
-        [`${Constants.mcp_prefix}${serverName}`]: acceptedAuthority.customUserVars,
+        [`${Constants.mcp_prefix}${serverName}`]: acceptedParsedConfig.customUserVars,
       };
     }
     stampMCPAvailableToolsAuthority(
@@ -1062,8 +1122,7 @@ async function loadToolDefinitionsWrapper({
       result?.authorityScope,
       result?.discoveryProvenance,
     );
-    rememberMCPAvailableTools(serverName, result?.availableTools);
-    mcpAuthorityConfigs.set(serverName, acceptedAuthority.serverConfig);
+    rememberMCPAvailableTools(serverName, result?.availableTools, acceptedAuthority);
     return result?.availableTools || null;
   };
 
@@ -1077,10 +1136,11 @@ async function loadToolDefinitionsWrapper({
       authorityRejectedServers.add(serverName);
       return null;
     }
-    if (authority.customUserVars) {
+    const authorityParsedConfig = authority.parsedConfig;
+    if (authorityParsedConfig.customUserVars) {
       userMCPAuthMap = {
         ...userMCPAuthMap,
-        [`${Constants.mcp_prefix}${serverName}`]: authority.customUserVars,
+        [`${Constants.mcp_prefix}${serverName}`]: authorityParsedConfig.customUserVars,
       };
     }
 
@@ -1090,28 +1150,40 @@ async function loadToolDefinitionsWrapper({
         pendingOAuthStarts.set(serverName, { authURL, options });
       }
     };
-    const result = await reinitMCPServer({
-      user: authority.user,
-      forceNew: true,
-      oauthStart,
-      flowManager,
-      serverName,
-      configServers: { ...configServers, [serverName]: authority.serverConfig },
-      userMCPAuthMap,
-      requestBody: req.body,
-      requestScopedConnections,
-      oauthAuthorityScope: authority.catalogScope,
-    });
+    const result = await getMCPAuthorityResolver().useIssuedResolution(
+      authority,
+      async (current) => {
+        const parsedConfig = current.parsedConfig;
+        return await reinitMCPServer({
+          authorityResolution: current,
+          user: parsedConfig.actor.user,
+          forceNew: true,
+          oauthStart,
+          flowManager,
+          serverName: parsedConfig.serverName,
+          configServers: { [parsedConfig.serverName]: parsedConfig.sourceConfig },
+          userMCPAuthMap: parsedConfig.customUserVars
+            ? {
+                [`${Constants.mcp_prefix}${parsedConfig.serverName}`]: parsedConfig.customUserVars,
+              }
+            : {},
+          requestBody: req.body,
+          requestScopedConnections,
+          oauthAuthorityScope: parsedConfig.catalogScope,
+        });
+      },
+    );
 
     const acceptedAuthority = await resolvePostDiscoveryAuthority(authority, result);
     if (!acceptedAuthority) {
       authorityRejectedServers.add(serverName);
       return null;
     }
-    if (acceptedAuthority.customUserVars) {
+    const acceptedParsedConfig = acceptedAuthority.parsedConfig;
+    if (acceptedParsedConfig.customUserVars) {
       userMCPAuthMap = {
         ...userMCPAuthMap,
-        [`${Constants.mcp_prefix}${serverName}`]: acceptedAuthority.customUserVars,
+        [`${Constants.mcp_prefix}${serverName}`]: acceptedParsedConfig.customUserVars,
       };
     }
     stampMCPAvailableToolsAuthority(
@@ -1119,8 +1191,7 @@ async function loadToolDefinitionsWrapper({
       result?.authorityScope,
       result?.discoveryProvenance,
     );
-    rememberMCPAvailableTools(serverName, result?.availableTools);
-    mcpAuthorityConfigs.set(serverName, acceptedAuthority.serverConfig);
+    rememberMCPAvailableTools(serverName, result?.availableTools, acceptedAuthority);
     return result?.availableTools || null;
   };
 
@@ -1246,36 +1317,50 @@ async function loadToolDefinitionsWrapper({
         if (!authority) {
           return { serverName, success: false };
         }
-        if (authority.customUserVars) {
+        const authorityParsedConfig = authority.parsedConfig;
+        if (authorityParsedConfig.customUserVars) {
           userMCPAuthMap = {
             ...userMCPAuthMap,
-            [`${Constants.mcp_prefix}${serverName}`]: authority.customUserVars,
+            [`${Constants.mcp_prefix}${serverName}`]: authorityParsedConfig.customUserVars,
           };
         }
 
-        const result = await reinitMCPServer({
-          user: authority.user,
-          serverName,
-          configServers: { ...configServers, [serverName]: authority.serverConfig },
-          userMCPAuthMap,
-          flowManager,
-          requestBody: req.body,
-          returnOnOAuth: false,
-          oauthStart,
-          oauthEnd: createOAuthEndEmitter(serverName),
-          connectionTimeout: Time.TWO_MINUTES,
-          oauthAuthorityScope: authority.catalogScope,
-        });
+        const result = await getMCPAuthorityResolver().useIssuedResolution(
+          authority,
+          async (current) => {
+            const parsedConfig = current.parsedConfig;
+            return await reinitMCPServer({
+              authorityResolution: current,
+              user: parsedConfig.actor.user,
+              serverName: parsedConfig.serverName,
+              configServers: { [parsedConfig.serverName]: parsedConfig.sourceConfig },
+              userMCPAuthMap: parsedConfig.customUserVars
+                ? {
+                    [`${Constants.mcp_prefix}${parsedConfig.serverName}`]:
+                      parsedConfig.customUserVars,
+                  }
+                : {},
+              flowManager,
+              requestBody: req.body,
+              returnOnOAuth: false,
+              oauthStart,
+              oauthEnd: createOAuthEndEmitter(parsedConfig.serverName),
+              connectionTimeout: Time.TWO_MINUTES,
+              oauthAuthorityScope: parsedConfig.catalogScope,
+            });
+          },
+        );
 
         if (result?.availableTools) {
           const acceptedAuthority = await resolvePostDiscoveryAuthority(authority, result);
           if (!acceptedAuthority) {
             return { serverName, success: false };
           }
-          if (acceptedAuthority.customUserVars) {
+          const acceptedParsedConfig = acceptedAuthority.parsedConfig;
+          if (acceptedParsedConfig.customUserVars) {
             userMCPAuthMap = {
               ...userMCPAuthMap,
-              [`${Constants.mcp_prefix}${serverName}`]: acceptedAuthority.customUserVars,
+              [`${Constants.mcp_prefix}${serverName}`]: acceptedParsedConfig.customUserVars,
             };
           }
           stampMCPAvailableToolsAuthority(
@@ -1283,8 +1368,7 @@ async function loadToolDefinitionsWrapper({
             result.authorityScope,
             result.discoveryProvenance,
           );
-          rememberMCPAvailableTools(serverName, result.availableTools);
-          mcpAuthorityConfigs.set(serverName, acceptedAuthority.serverConfig);
+          rememberMCPAvailableTools(serverName, result.availableTools, acceptedAuthority);
           logger.info(`[Tool Definitions] OAuth completed for ${serverName}, tools available`);
           return { serverName, success: true };
         }
@@ -1339,13 +1423,18 @@ async function loadToolDefinitionsWrapper({
         user: mcpAuthoritySnapshot.user,
         serverName,
         requestBody: req.body,
+        schemas: availableTools,
+        ...(mcpAuthorityAuthorizationKinds.get(serverName) === 'oauth' && {
+          oauthRequiredHint: true,
+        }),
         bounded: true,
         expectedServerConfig: mcpAuthorityConfigs.get(serverName),
       });
+      const currentParsedConfig = currentAuthority?.parsedConfig;
       if (
-        !currentAuthority?.catalogScope ||
-        !(await userCanUseMCPServersFresh(currentAuthority.user)) ||
-        !matchesMCPAvailableToolsAuthority(availableTools, currentAuthority.catalogScope)
+        !currentParsedConfig?.catalogScope ||
+        !(await userCanUseMCPServersFresh(currentParsedConfig.actor.user)) ||
+        !matchesMCPAvailableToolsAuthority(availableTools, currentParsedConfig.catalogScope)
       ) {
         changed.add(serverName);
       }
@@ -1481,7 +1570,7 @@ async function loadToolDefinitionsWrapper({
     }
   }
 
-  return {
+  const result = {
     toolRegistry,
     mcpAvailableTools,
     requestScopedConnections,
@@ -1493,6 +1582,28 @@ async function loadToolDefinitionsWrapper({
     actionsEnabled,
     primedCodeFiles,
   };
+  if (Object.keys(mcpAvailableTools).length === 0) {
+    return result;
+  }
+  const definitionAuthorities = await Promise.all(
+    Object.entries(mcpAvailableTools).map(async ([serverName, availableTools]) =>
+      resolveCurrentMCPToolAuthority({
+        user: mcpAuthoritySnapshot.user,
+        serverName,
+        requestBody: req.body,
+        schemas: availableTools,
+        ...(mcpAuthorityAuthorizationKinds.get(serverName) === 'oauth' && {
+          oauthRequiredHint: true,
+        }),
+        bounded: true,
+        expectedServerConfig: mcpAuthorityConfigs.get(serverName),
+      }),
+    ),
+  );
+  if (definitionAuthorities.some((authority) => !authority)) {
+    throw createExpectedMCPToolsUnavailableError(agent.name);
+  }
+  return await getMCPAuthorityResolver().useIssuedResolutions(definitionAuthorities, () => result);
 }
 
 /**

@@ -1157,6 +1157,10 @@ export class MCPOAuthHandler {
     flowManager: FlowStateManager<MCPOAuthTokens>,
     oauthHeaders: Record<string, string>,
     persistBeforeComplete?: (tokens: MCPOAuthTokens) => Promise<MCPOAuthTokens>,
+    authorityFences?: {
+      exchange?: <Result>(action: () => Promise<Result>) => Promise<Result>;
+      complete?: <Result>(action: () => Promise<Result>) => Promise<Result>;
+    },
   ): Promise<MCPOAuthTokens> {
     try {
       /** Flow state which contains our metadata */
@@ -1171,7 +1175,10 @@ export class MCPOAuthHandler {
       }
 
       const metadata = flowMetadata;
-      if (!metadata.metadata || !metadata.clientInfo || !metadata.codeVerifier) {
+      const oauthMetadata = metadata.metadata;
+      const clientInfo = metadata.clientInfo;
+      const codeVerifier = metadata.codeVerifier;
+      if (!oauthMetadata || !clientInfo || !codeVerifier) {
         throw new Error('Invalid flow metadata');
       }
 
@@ -1191,20 +1198,24 @@ export class MCPOAuthHandler {
         }
       }
 
-      const tokens = await exchangeAuthorization(metadata.serverUrl, {
-        redirectUri: metadata.clientInfo.redirect_uris?.[0] || this.getDefaultRedirectUri(),
-        metadata: metadata.metadata as unknown as SDKOAuthMetadata,
-        clientInformation: metadata.clientInfo,
-        codeVerifier: metadata.codeVerifier,
-        authorizationCode,
-        resource,
-        fetchFn: this.createOAuthFetch(
-          oauthHeaders,
-          metadata.clientInfo,
-          metadata.allowedDomains,
-          metadata.allowedAddresses,
-        ),
-      });
+      const exchange = async () =>
+        await exchangeAuthorization(metadata.serverUrl, {
+          redirectUri: clientInfo.redirect_uris?.[0] || this.getDefaultRedirectUri(),
+          metadata: oauthMetadata as unknown as SDKOAuthMetadata,
+          clientInformation: clientInfo,
+          codeVerifier,
+          authorizationCode,
+          resource,
+          fetchFn: this.createOAuthFetch(
+            oauthHeaders,
+            clientInfo,
+            metadata.allowedDomains,
+            metadata.allowedAddresses,
+          ),
+        });
+      const tokens = authorityFences?.exchange
+        ? await authorityFences.exchange(exchange)
+        : await exchange();
 
       logger.debug('[MCPOAuth] Token exchange successful', {
         flowId,
@@ -1231,7 +1242,13 @@ export class MCPOAuthHandler {
       }
 
       /** Now wake flow waiters with the persisted token snapshot. */
-      await flowManager.completeFlow(flowId, this.FLOW_TYPE, mcpTokens);
+      const complete = async () =>
+        await flowManager.completeFlow(flowId, this.FLOW_TYPE, mcpTokens);
+      if (authorityFences?.complete) {
+        await authorityFences.complete(complete);
+      } else {
+        await complete();
+      }
 
       return mcpTokens;
     } catch (error) {

@@ -30,6 +30,7 @@ export {
   MAX_AUDIT_VERIFY_ROWS,
   MAX_TOOL_FAVORITES,
   MCPAuthorityProofError,
+  MCP_AUTHORITY_PROOF_COLLECTIONS,
   MAX_MCP_AUTHORITY_TARGETS,
   createMCPAuthorityBootRevision,
   createMCPAuthorityConfigSourceRevision,
@@ -66,7 +67,10 @@ export {
 export type { TenantContext } from './config/tenantContext';
 export {
   MCPServerNameMigrationError,
+  MCPAuthorityReadinessError,
+  assertMCPAuthorityReadiness,
   createMCPAuthorityLookupIndexes,
+  createMCPAuthorityProofCollections,
   dropSupersededTenantIndexes,
   dropSupersededPromptGroupIndexes,
   backfillMCPServerNormalizedNames,

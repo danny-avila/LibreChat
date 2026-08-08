@@ -9,7 +9,7 @@ import {
   PermissionTypes,
   normalizeServerName,
 } from 'librechat-data-provider';
-import type { Model, ClientSession, RootFilterQuery } from 'mongoose';
+import type { Model, RootFilterQuery } from 'mongoose';
 import type {
   IRole,
   IUser,
@@ -32,13 +32,15 @@ import type {
   MCPAuthorityImmutableConfig,
   MCPAuthorityServerSource,
 } from '~/types';
+import type { MCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
+import {
+  MCP_AUTHORITY_OAUTH_TOKEN_TYPES,
+  type MCPAuthorityOAuthTokenType,
+} from './mcpAuthority/classification';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { MCP_AUTHORITY_PROOF_VERSION } from '~/types';
 import { getTenantId } from '~/config/tenantContext';
-
-interface PinnableQuery {
-  session(session: ClientSession): this;
-}
 
 interface PreparedTarget {
   readonly serverName: string;
@@ -68,16 +70,12 @@ interface UserProjection {
   githubId?: string;
   discordId?: string;
   appleId?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
 }
 
 interface GroupProjection {
   _id: Types.ObjectId;
   source: string;
   idOnTheSource?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
 }
 
 interface ConfigProjection {
@@ -85,6 +83,7 @@ interface ConfigProjection {
   principalType: PrincipalType;
   principalId: string | Types.ObjectId;
   priority: number;
+  mcpServersOverride?: object;
   mcpSettingsOverride?: object;
   tombstones?: string[];
   isActive: boolean;
@@ -112,8 +111,6 @@ interface AgentProjection {
   _id: Types.ObjectId;
   id: string;
   mcpServerNames?: string[];
-  createdAt?: Date;
-  updatedAt?: Date;
 }
 
 interface AclProjection {
@@ -152,8 +149,19 @@ interface AggregateBatch<Projection> {
   count: number;
 }
 
-const OAUTH_TOKEN_TYPES = ['mcp_oauth', 'mcp_oauth_refresh', 'mcp_oauth_client'] as const;
-type OAuthTokenType = (typeof OAUTH_TOKEN_TYPES)[number];
+const OAUTH_TOKEN_TYPES = MCP_AUTHORITY_OAUTH_TOKEN_TYPES;
+type OAuthTokenType = MCPAuthorityOAuthTokenType;
+export const MCP_AUTHORITY_PROOF_COLLECTIONS = [
+  'users',
+  'roles',
+  'groups',
+  'configs',
+  'mcpservers',
+  'agents',
+  'pluginauths',
+  'tokens',
+  'aclentries',
+] as const;
 export const MAX_MCP_AUTHORITY_TARGETS = 32;
 const MAX_MCP_AUTHORITY_GROUPS = 64;
 const MAX_MCP_AUTHORITY_AGENTS = 64;
@@ -165,7 +173,7 @@ const MAX_MCP_AUTHORITY_CREDENTIAL_FIELDS = 64;
 const MAX_MCP_AUTHORITY_SOURCE_REVISION_LENGTH = 256;
 const MAX_MCP_AUTHORITY_CONFIG_TOMBSTONES = 64;
 
-export type MCPAuthorityMethods = MCPAuthorityDatabaseMethods;
+export type MCPAuthorityMethods = MCPAuthorityDatabaseMethods & MCPAuthorityConsistencyModule;
 
 export interface MCPAuthorityMethodHooks {
   afterPrincipalSnapshot?: () => void | Promise<void>;
@@ -306,7 +314,13 @@ export function createMCPAuthorityConfigSourceRevision(
         reject('malformed_input', 'MCP config source revision inputs are malformed');
       }
       const tombstones = rawTombstones
-        .filter((path) => path === 'mcpSettings' || path.startsWith('mcpSettings.'))
+        .filter(
+          (path) =>
+            path === 'mcpServers' ||
+            path.startsWith('mcpServers.') ||
+            path === 'mcpSettings' ||
+            path.startsWith('mcpSettings.'),
+        )
         .sort();
       if (
         !Types.ObjectId.isValid(id) ||
@@ -321,7 +335,9 @@ export function createMCPAuthorityConfigSourceRevision(
         reject('malformed_input', 'MCP config source revision inputs are malformed');
       }
       principals.add(key);
+      const mcpServersOverride = document.overrides?.mcpServers;
       const mcpSettingsOverride = document.overrides?.mcpSettings;
+      const hasMCPOverride = mcpServersOverride !== undefined || mcpSettingsOverride !== undefined;
       return {
         id,
         principalType: document.principalType,
@@ -329,8 +345,12 @@ export function createMCPAuthorityConfigSourceRevision(
         priority: document.priority,
         isActive: document.isActive,
         configVersion: document.configVersion,
-        mcpSettingsOverrideDigest:
-          mcpSettingsOverride === undefined ? null : digestMCPAuthorityValue(mcpSettingsOverride),
+        mcpOverrideDigest: hasMCPOverride
+          ? digestMCPAuthorityValue({
+              mcpServers: mcpServersOverride ?? null,
+              mcpSettings: mcpSettingsOverride ?? null,
+            })
+          : null,
         tombstones,
         updatedAt: document.updatedAt ?? null,
       };
@@ -412,14 +432,6 @@ export function createMCPAuthorityCredentialRevision(
     })
     .sort((left, right) => left.authField.localeCompare(right.authField));
   return digestMCPAuthorityValue({ expectedFields: fields, rows });
-}
-
-function pinAuthoritativeRead<QueryType extends PinnableQuery>(
-  query: QueryType,
-  session: ClientSession,
-): QueryType {
-  query.session(session);
-  return query;
 }
 
 function normalizeCredentialFields(
@@ -576,6 +588,9 @@ function assertProofIntegrity(proof: MCPAuthorityProofV1): void {
   }
   if (!proof.shared || typeof proof.shared !== 'object' || !Array.isArray(proof.servers)) {
     reject('malformed_input', 'MCP authority proof contents are invalid');
+  }
+  if (!Number.isSafeInteger(proof.generation) || proof.generation < 0) {
+    reject('malformed_input', 'MCP authority proof generation is invalid');
   }
   const shared = proof.shared;
   if (
@@ -791,8 +806,6 @@ function buildGroupProof(group: GroupProjection): MCPAuthorityGroupProof {
     revision: digestMCPAuthorityValue({
       id,
       sourceIdentityDigest,
-      createdAt: group.createdAt ?? null,
-      updatedAt: group.updatedAt ?? null,
     }),
   };
 }
@@ -837,15 +850,25 @@ function buildConfigProofs(
       return { ...absent, revision: digestMCPAuthorityValue(absent) };
     }
     const tombstones = (document.tombstones ?? [])
-      .filter((path) => path === 'mcpSettings' || path.startsWith('mcpSettings.'))
+      .filter(
+        (path) =>
+          path === 'mcpServers' ||
+          path.startsWith('mcpServers.') ||
+          path === 'mcpSettings' ||
+          path.startsWith('mcpSettings.'),
+      )
       .sort();
     if (tombstones.length > MAX_MCP_AUTHORITY_CONFIG_TOMBSTONES) {
       reject('proof_unavailable', 'Applicable MCP configuration tombstones exceed the proof limit');
     }
-    const mcpOverrideDigest =
-      document.mcpSettingsOverride === undefined
-        ? null
-        : digestMCPAuthorityValue(document.mcpSettingsOverride);
+    const hasMCPOverride =
+      document.mcpServersOverride !== undefined || document.mcpSettingsOverride !== undefined;
+    const mcpOverrideDigest = hasMCPOverride
+      ? digestMCPAuthorityValue({
+          mcpServers: document.mcpServersOverride ?? null,
+          mcpSettings: document.mcpSettingsOverride ?? null,
+        })
+      : null;
     const present = {
       principalType: slot.principalType,
       principalId: slot.principalId,
@@ -1001,13 +1024,15 @@ function asMCPError(error: unknown): MCPAuthorityProofError {
 export function createMCPAuthorityMethods(
   mongoose: typeof import('mongoose'),
   hooks: MCPAuthorityMethodHooks = {},
-): MCPAuthorityDatabaseMethods {
+): MCPAuthorityMethods {
+  const consistency = getMCPAuthorityConsistencyModule(mongoose);
+
   async function loadCurrentProof(
     userId: string,
     tenantId: string | undefined,
     boot: MCPAuthorityBootRevision,
     targets: readonly PreparedTarget[],
-    session: ClientSession,
+    generation: number,
   ): Promise<MCPAuthorityProofV1> {
     if (!Types.ObjectId.isValid(userId)) {
       reject('malformed_input', 'MCP authority user identity is invalid');
@@ -1020,9 +1045,9 @@ export function createMCPAuthorityMethods(
 
     const User = mongoose.models.User as Model<IUser>;
     const userQuery = User.findOne({ _id: new Types.ObjectId(userId), ...tenantScope }).select(
-      '_id tenantId role provider idOnTheSource openidIssuer googleId facebookId openidId samlId ldapId githubId discordId appleId createdAt updatedAt',
+      '_id tenantId role provider idOnTheSource openidIssuer googleId facebookId openidId samlId ldapId githubId discordId appleId',
     );
-    const user = await pinAuthoritativeRead(userQuery, session).lean<UserProjection>();
+    const user = await userQuery.lean<UserProjection>();
     if (!user) {
       reject('user_revoked', 'MCP authority user no longer exists');
     }
@@ -1042,15 +1067,15 @@ export function createMCPAuthorityMethods(
     const groupFilter = { memberIds: memberId, ...tenantScope };
     const groupCountQuery = Group.countDocuments(groupFilter).limit(MAX_MCP_AUTHORITY_GROUPS + 1);
     const groupQuery = Group.find(groupFilter)
-      .select('_id source idOnTheSource createdAt updatedAt')
+      .select('_id source idOnTheSource')
       .limit(MAX_MCP_AUTHORITY_GROUPS + 1)
       .setOptions({ singleBatch: true });
     const roleQuery = Role.findOne({ name: roleName, ...tenantScope }).select(
       '_id name permissions.MCP_SERVERS.USE',
     );
-    const groupCount = await pinAuthoritativeRead(groupCountQuery, session);
-    const groups = await pinAuthoritativeRead(groupQuery, session).lean<GroupProjection[]>();
-    const role = await pinAuthoritativeRead(roleQuery, session).lean<RoleProjection>();
+    const groupCount = await groupCountQuery;
+    const groups = await groupQuery.lean<GroupProjection[]>();
+    const role = await roleQuery.lean<RoleProjection>();
     assertCompleteBatch(groups, groupCount, MAX_MCP_AUTHORITY_GROUPS, 'MCP group membership');
     if (!role || role.name !== roleName) {
       reject('role_changed', 'MCP authority role no longer exists');
@@ -1081,6 +1106,8 @@ export function createMCPAuthorityMethods(
       .filter((target) => target.source === 'database')
       .map((target) => target.serverName);
     const tombstoneConditions = [
+      { $eq: ['$$path', 'mcpServers'] },
+      { $eq: [{ $indexOfCP: ['$$path', 'mcpServers.'] }, 0] },
       { $eq: ['$$path', 'mcpSettings'] },
       { $eq: [{ $indexOfCP: ['$$path', 'mcpSettings.'] }, 0] },
     ];
@@ -1095,6 +1122,7 @@ export function createMCPAuthorityMethods(
           isActive: 1,
           configVersion: 1,
           updatedAt: 1,
+          mcpServersOverride: '$overrides.mcpServers',
           mcpSettingsOverride: '$overrides.mcpSettings',
           tombstones: {
             $slice: [
@@ -1139,8 +1167,6 @@ export function createMCPAuthorityMethods(
         $project: {
           _id: 1,
           id: 1,
-          createdAt: 1,
-          updatedAt: 1,
           mcpServerNames: {
             $filter: {
               input: { $ifNull: ['$mcpServerNames', []] },
@@ -1183,34 +1209,32 @@ export function createMCPAuthorityMethods(
       .select('_id type identifier token metadata createdAt expiresAt')
       .limit(MAX_MCP_AUTHORITY_TARGETS * OAUTH_TOKEN_TYPES.length + 1)
       .setOptions({ singleBatch: true });
-    const configBatch = await pinAuthoritativeRead(configQuery, session);
+    const configBatch = await configQuery;
     const configs = unwrapAggregateBatch(configBatch, slots.length, 'Applicable MCP configuration');
-    const serverCount = await pinAuthoritativeRead(serverCountQuery, session);
-    const servers = await pinAuthoritativeRead(serverQuery, session).lean<ServerProjection[]>();
+    const serverCount = await serverCountQuery;
+    const servers = await serverQuery.lean<ServerProjection[]>();
     assertCompleteBatch(
       servers,
       serverCount,
       MAX_MCP_AUTHORITY_TARGETS * 2,
       'Selected MCP servers',
     );
-    const agentBatch = await pinAuthoritativeRead(agentQuery, session);
+    const agentBatch = await agentQuery;
     const agents = unwrapAggregateBatch(
       agentBatch,
       MAX_MCP_AUTHORITY_AGENTS,
       'Selected MCP Agent linkage',
     );
-    const credentialCount = await pinAuthoritativeRead(credentialCountQuery, session);
-    const credentials = await pinAuthoritativeRead(credentialQuery, session).lean<
-      PluginAuthProjection[]
-    >();
+    const credentialCount = await credentialCountQuery;
+    const credentials = await credentialQuery.lean<PluginAuthProjection[]>();
     assertCompleteBatch(
       credentials,
       credentialCount,
       MAX_MCP_AUTHORITY_CREDENTIALS,
       'Selected MCP credentials',
     );
-    const tokenCount = await pinAuthoritativeRead(tokenCountQuery, session);
-    const tokens = await pinAuthoritativeRead(tokenQuery, session).lean<TokenProjection[]>();
+    const tokenCount = await tokenCountQuery;
+    const tokens = await tokenQuery.lean<TokenProjection[]>();
     assertCompleteBatch(
       tokens,
       tokenCount,
@@ -1251,8 +1275,8 @@ export function createMCPAuthorityMethods(
         )
         .limit(MAX_MCP_AUTHORITY_ACL_ENTRIES + 1)
         .setOptions({ singleBatch: true });
-      const aclCount = await pinAuthoritativeRead(aclCountQuery, session);
-      aclEntries = await pinAuthoritativeRead(aclQuery, session).lean<AclProjection[]>();
+      const aclCount = await aclCountQuery;
+      aclEntries = await aclQuery.lean<AclProjection[]>();
       assertCompleteBatch(
         aclEntries,
         aclCount,
@@ -1339,8 +1363,6 @@ export function createMCPAuthorityMethods(
         role: roleName,
         provider,
         sourceIdentityDigest: userSourceIdentityDigest,
-        createdAt: user.createdAt ?? null,
-        updatedAt: user.updatedAt ?? null,
       }),
     };
     const groupProofs = sortedGroups.map(buildGroupProof);
@@ -1355,9 +1377,12 @@ export function createMCPAuthorityMethods(
         principalId: config.principalId,
         priority: config.priority,
         overrides:
-          config.mcpSettingsOverride === undefined
+          config.mcpServersOverride === undefined && config.mcpSettingsOverride === undefined
             ? undefined
-            : { mcpSettings: config.mcpSettingsOverride },
+            : {
+                mcpServers: config.mcpServersOverride,
+                mcpSettings: config.mcpSettingsOverride,
+              },
         tombstones: config.tombstones,
         isActive: config.isActive,
         configVersion: config.configVersion,
@@ -1449,8 +1474,6 @@ export function createMCPAuthorityMethods(
           id: agent._id.toHexString(),
           agentId: agent.id,
           serverNames: [...(agent.mcpServerNames ?? [])].sort(),
-          createdAt: agent.createdAt ?? null,
-          updatedAt: agent.updatedAt ?? null,
         })),
         directAcl: directAcl
           .map(aclRevision)
@@ -1519,6 +1542,7 @@ export function createMCPAuthorityMethods(
     });
     const proofWithoutRevision = {
       version: MCP_AUTHORITY_PROOF_VERSION,
+      generation,
       shared,
       servers: serverProofs,
     };
@@ -1533,39 +1557,15 @@ export function createMCPAuthorityMethods(
     tenantId: string | undefined,
     boot: MCPAuthorityBootRevision,
     targets: readonly PreparedTarget[],
-    suppliedSession?: ClientSession,
   ): Promise<MCPAuthorityProofV1> {
     if ((getTenantId() ?? null) !== (tenantId ?? null)) {
       reject('proof_unavailable', 'MCP authority tenant context does not match its principal');
     }
-    if (suppliedSession?.inTransaction()) {
-      reject('proof_unavailable', 'MCP authority reads cannot use a caller transaction snapshot');
-    }
-    const session = suppliedSession ?? (await mongoose.startSession());
-    const ownsSession = suppliedSession == null;
-    try {
-      session.startTransaction({
-        readPreference: 'primary',
-        readConcern: { level: 'snapshot' },
-        writeConcern: { w: 'majority' },
-      });
-      const proof = await loadCurrentProof(userId, tenantId, boot, targets, session);
-      await session.commitTransaction();
-      return proof;
-    } catch (error) {
-      if (session.inTransaction()) {
-        try {
-          await session.abortTransaction();
-        } catch {
-          /** The authoritative read already failed closed. */
-        }
-      }
-      throw error;
-    } finally {
-      if (ownsSession) {
-        await session.endSession();
-      }
-    }
+    await consistency.initialize();
+    const stable = await consistency.readStableSnapshot(async (generation) =>
+      loadCurrentProof(userId, tenantId, boot, targets, generation),
+    );
+    return stable.snapshot;
   }
 
   async function resolveMCPAuthorityProof(
@@ -1573,13 +1573,7 @@ export function createMCPAuthorityMethods(
   ): Promise<MCPAuthorityProofV1> {
     try {
       const targets = prepareTargets(input.targets);
-      return await loadAuthoritativeSnapshot(
-        input.userId,
-        input.tenantId,
-        input.boot,
-        targets,
-        input.session,
-      );
+      return await loadAuthoritativeSnapshot(input.userId, input.tenantId, input.boot, targets);
     } catch (error) {
       throw asMCPError(error);
     }
@@ -1627,6 +1621,7 @@ export function createMCPAuthorityMethods(
       const proof = proofs[index];
       if (
         proof.shared.revision !== first.shared.revision ||
+        proof.generation !== first.generation ||
         proof.shared.user.userId !== first.shared.user.userId ||
         proof.shared.user.tenantId !== first.shared.user.tenantId
       ) {
@@ -1640,6 +1635,9 @@ export function createMCPAuthorityMethods(
     current: MCPAuthorityProofV1,
   ): void {
     const expectedShared = expectedProofs[0].shared;
+    if (current.generation !== expectedProofs[0].generation) {
+      reject('authority_changed', 'MCP authority generation changed');
+    }
     if (current.shared.user.revision !== expectedShared.user.revision) {
       reject('principal_changed', 'MCP authority principal identity changed');
     }
@@ -1722,7 +1720,6 @@ export function createMCPAuthorityMethods(
         expectedShared.user.tenantId ?? undefined,
         input.boot,
         targets,
-        input.session,
       );
       compareProofs(proofs, current);
     } catch (error) {
@@ -1731,6 +1728,7 @@ export function createMCPAuthorityMethods(
   }
 
   return {
+    ...consistency,
     resolveMCPAuthorityProof,
     assertMCPAuthorityProofsCurrent,
   };

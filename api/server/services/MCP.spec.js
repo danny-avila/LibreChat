@@ -31,7 +31,68 @@ const mockGetMCPServerCatalog = jest
   .fn()
   .mockResolvedValue({ status: 'pending_activation', reason: 'cold' });
 const mockResolveCurrentMCPToolAuthority = jest.fn();
+const mockMCPAuthorityResolver = {
+  useIssuedResolution: jest.fn(async (resolution, action) => await action(resolution)),
+  bindWithCurrentAuthority: jest.fn(async (resolution, action) => await action(resolution)),
+  executeWithCurrentAuthority: jest.fn(async (resolution, action) => await action(resolution)),
+};
+const mockAuthorityScopes = new Map();
+const mockAuthorityUsers = new Map();
 const mockGetRoleByName = jest.fn();
+
+const mockAsMCPAuthorityResolution = (authority, args = {}) => {
+  if (authority == null || authority.parsedConfig) {
+    return authority;
+  }
+  const serverName = authority.serverName ?? args.serverName;
+  let catalogScope = authority.catalogScope;
+  if (catalogScope == null && args.schemas != null) {
+    catalogScope = mockAuthorityScopes.get(serverName) ?? { serverName, proof: 'test-proof' };
+    mockAuthorityScopes.set(serverName, catalogScope);
+  }
+  let authorityUser = authority.user ?? args.user ?? { id: 'test-user' };
+  if (authorityUser?.role == null && args.schemas != null) {
+    authorityUser = { ...authorityUser, role: 'USER' };
+    mockAuthorityUsers.set(serverName, authorityUser);
+  } else if (authorityUser?.role == null && mockAuthorityUsers.has(serverName)) {
+    authorityUser = mockAuthorityUsers.get(serverName);
+  }
+  const sourceConfig =
+    authority.sourceConfig ??
+    authority.provenanceServerConfig ??
+    authority.serverConfig ??
+    args.serverConfig;
+  const authorizationKind = authority.authorizationKind ?? 'none';
+  const authorizationIdentity = authority.authorizationIdentity ?? 'none';
+  return {
+    parsedConfig: {
+      actor: {
+        userId: authorityUser.id,
+        tenantId: authority.tenantId ?? authorityUser.tenantId ?? null,
+        user: authorityUser,
+      },
+      serverName,
+      sourceConfig,
+      effectiveConfig: authority.effectiveServerConfig ?? sourceConfig,
+      securityPolicy: {
+        ...(authority.securityPolicy ?? {}),
+        useSSRFProtection: authority.securityPolicy?.useSSRFProtection ?? false,
+      },
+      securityPolicyIdentity: authority.securityPolicyIdentity ?? 'test-policy',
+      customUserVars: authority.customUserVars,
+      authorization: {
+        kind: authorizationKind,
+        identity: authorizationIdentity,
+        credentialSetId: authorizationIdentity === 'none' ? null : authorizationIdentity,
+        generation: null,
+      },
+      catalogScope,
+      discoveryProvenance: authority.discoveryProvenance ?? null,
+    },
+    schemas: args.schemas ?? null,
+    authorityProof: { revision: 'test-proof' },
+  };
+};
 
 jest.mock('@librechat/api', () => {
   const actual = jest.requireActual('@librechat/api');
@@ -101,8 +162,15 @@ jest.mock('./Tools/mcp', () => ({
 
 jest.mock('./MCPDiscoveryScope', () => ({
   matchesMCPToolAuthorityScope: (left, right) =>
-    left != null && right != null && JSON.stringify(left) === JSON.stringify(right),
-  resolveCurrentMCPToolAuthority: (...args) => mockResolveCurrentMCPToolAuthority(...args),
+    left == null || right == null || JSON.stringify(left) === JSON.stringify(right),
+  resolveCurrentMCPToolAuthority: async (...args) => {
+    const authority = await mockResolveCurrentMCPToolAuthority(...args);
+    return mockAsMCPAuthorityResolution(authority, args[0]);
+  },
+}));
+
+jest.mock('./MCPAuthority', () => ({
+  getMCPAuthorityResolver: () => mockMCPAuthorityResolver,
 }));
 
 jest.mock('./GraphTokenService', () => ({
@@ -117,6 +185,8 @@ describe('tests for the new helper functions used by the MCP connection status e
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAuthorityScopes.clear();
+    mockAuthorityUsers.clear();
     jest.spyOn(MCPOAuthHandler, 'generateFlowId');
     mockGetTenantId.mockReturnValue(undefined);
     mockGetMCPServerCatalog.mockResolvedValue({ status: 'pending_activation', reason: 'cold' });
@@ -1330,6 +1400,8 @@ describe('User parameter passing tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAuthorityScopes.clear();
+    mockAuthorityUsers.clear();
     mockGetTenantId.mockReturnValue(undefined);
     mockReinitMCPServer = require('./Tools/mcp').reinitMCPServer;
     mockGetMCPManager = require('~/config').getMCPManager;
@@ -1354,8 +1426,17 @@ describe('User parameter passing tests', () => {
     // Reset getAppConfig mock to default (no restrictions)
     mockGetAppConfig.mockReset();
     mockGetAppConfig.mockResolvedValue({});
+    mockGetRoleByName.mockReset();
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true },
+      },
+    });
     mockResolveCurrentMCPToolAuthority.mockImplementation(
       async ({ user, serverName, expectedServerConfig }) => {
+        if (!user?.id) {
+          return null;
+        }
         const appConfig = await mockGetAppConfig({
           role: user?.role,
           tenantId: user?.tenantId,
@@ -1521,7 +1602,7 @@ describe('User parameter passing tests', () => {
       );
     });
 
-    it('should throw error if user is not provided', async () => {
+    it('fails closed if user is not provided', async () => {
       const mockRes = { write: jest.fn(), flush: jest.fn() };
 
       mockReinitMCPServer.mockResolvedValue({
@@ -1529,7 +1610,6 @@ describe('User parameter passing tests', () => {
         availableTools: {},
       });
 
-      // Call without user should throw error
       await expect(
         createMCPTools({
           res: mockRes,
@@ -1538,9 +1618,8 @@ describe('User parameter passing tests', () => {
           provider: 'openai',
           userMCPAuthMap: {},
         }),
-      ).rejects.toThrow("Cannot read properties of undefined (reading 'id')");
+      ).resolves.toEqual([]);
 
-      // Verify reinitMCPServer was not called due to early error
       expect(mockReinitMCPServer).not.toHaveBeenCalled();
     });
   });
@@ -1583,6 +1662,7 @@ describe('User parameter passing tests', () => {
         securityPolicy: { allowedDomains: ['mcp.example.com'], allowedAddresses: null },
       });
       mockResolveCurrentMCPToolAuthority
+        .mockResolvedValueOnce(authority(scopeA))
         .mockResolvedValueOnce(authority(scopeA))
         .mockResolvedValueOnce(authority(scopeB));
       const { getRoleByName } = require('~/models');
@@ -1636,17 +1716,31 @@ describe('User parameter passing tests', () => {
     });
 
     it('rechecks authority after connection work and before the remote tool call', async () => {
+      const originalCredsKey = process.env.CREDS_KEY;
+      process.env.CREDS_KEY = 'mcp-authority-connect-race-key';
+      const {
+        createMCPConnectionProvenance,
+        createMCPToolCatalogScope,
+        createMCPToolCatalogSecurityPolicyIdentity,
+      } = jest.requireActual('@librechat/api');
       const user = { id: 'during-connect-user', role: 'USER' };
       const serverName = 'during-connect-server';
       const serverConfig = { type: 'streamable-http', url: 'https://mcp.example.com/mcp' };
-      const catalogScope = {
-        tenant: 'tenant',
-        principal: 'principal',
-        server: 'server',
-        policy: 'policy',
-        config: 'config',
-        credentials: 'credentials',
+      const scopeInput = {
+        tenantId: null,
+        userId: user.id,
+        serverName,
+        serverConfig,
+        effectiveServerConfig: serverConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: null,
+          allowedAddresses: null,
+        }),
+        authorizationIdentity: 'none',
+        authorizationKind: 'none',
       };
+      const catalogScope = createMCPToolCatalogScope(scopeInput);
+      const connectionProvenance = createMCPConnectionProvenance(scopeInput, 'user');
       const authority = {
         user,
         tenantId: null,
@@ -1657,25 +1751,28 @@ describe('User parameter passing tests', () => {
         authorizationIdentity: 'none',
         authorizationKind: 'none',
         catalogScope,
+        scopeInput,
         securityPolicyIdentity: 'policy',
         securityPolicy: { allowedDomains: null, allowedAddresses: null },
       };
-      mockResolveCurrentMCPToolAuthority
-        .mockResolvedValueOnce(authority)
-        .mockResolvedValueOnce(authority)
-        .mockResolvedValueOnce(null);
+      mockResolveCurrentMCPToolAuthority.mockResolvedValue(authority);
       mockGetRoleByName.mockResolvedValue({
         permissions: {
           [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true },
         },
       });
+      const openConnection = jest.fn().mockResolvedValue(undefined);
       const remoteCall = jest.fn();
       mockGetMCPManager.mockReturnValue({
-        callTool: jest.fn(async ({ beforeExecute }) => {
-          await beforeExecute({ connectionProvenance: null });
-          return remoteCall();
+        callTool: jest.fn(async ({ bindWithCurrentAuthority, executeWithCurrentAuthority }) => {
+          await bindWithCurrentAuthority(openConnection);
+          return await executeWithCurrentAuthority(remoteCall, { connectionProvenance });
         }),
       });
+      mockMCPAuthorityResolver.useIssuedResolution
+        .mockImplementationOnce(async (resolution, action) => await action(resolution))
+        .mockImplementationOnce(async (resolution, action) => await action(resolution))
+        .mockRejectedValueOnce(new Error('revoked after connection'));
       const availableTools = {
         [`search${D}${serverName}`]: {
           function: {
@@ -1686,26 +1783,36 @@ describe('User parameter passing tests', () => {
         },
       };
       stampMCPAvailableToolsAuthority(availableTools, catalogScope);
-      const tool = await createMCPTool({
-        user,
-        authority,
-        config: serverConfig,
-        toolKey: `search${D}${serverName}`,
-        provider: 'openai',
-        userMCPAuthMap: {},
-        availableTools,
-      });
-      await expect(
-        tool.invoke(
-          {},
-          {
-            configurable: { user },
-            metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
-            toolCall: {},
-          },
-        ),
-      ).rejects.toThrow('Forbidden: MCP server authority changed before execution');
-      expect(remoteCall).not.toHaveBeenCalled();
+      try {
+        const tool = await createMCPTool({
+          user,
+          authority: mockAsMCPAuthorityResolution(authority),
+          config: serverConfig,
+          toolKey: `search${D}${serverName}`,
+          provider: 'openai',
+          userMCPAuthMap: {},
+          availableTools,
+        });
+        await expect(
+          tool.invoke(
+            {},
+            {
+              configurable: { user },
+              metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+              toolCall: {},
+            },
+          ),
+        ).rejects.toThrow('revoked after connection');
+        expect(openConnection).toHaveBeenCalledTimes(1);
+        expect(remoteCall).not.toHaveBeenCalled();
+        expect(mockMCPAuthorityResolver.useIssuedResolution).toHaveBeenCalledTimes(3);
+      } finally {
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+      }
     });
 
     it('does not bind definitions stamped under an older authority scope', async () => {
@@ -1815,7 +1922,12 @@ describe('User parameter passing tests', () => {
         tenantId: null,
         serverName: 'runtime-oauth-server',
         serverConfig,
+        sourceConfig: serverConfig,
         provenanceServerConfig,
+        effectiveServerConfig: {
+          ...provenanceServerConfig,
+          url: `https://mcp.example.com/users/${user.id}`,
+        },
         customUserVars: undefined,
         authorizationIdentity,
         authorizationKind: 'oauth',
@@ -1834,6 +1946,7 @@ describe('User parameter passing tests', () => {
       };
       stampMCPAvailableToolsAuthority(availableTools, scopeA, { authorizationKind: 'oauth' });
       mockResolveCurrentMCPToolAuthority
+        .mockResolvedValueOnce(authority('grant-a', scopeA))
         .mockResolvedValueOnce(authority('grant-a', scopeA))
         .mockResolvedValueOnce(authority('grant-b', scopeB));
       mockGetRoleByName.mockResolvedValue({
@@ -1923,7 +2036,9 @@ describe('User parameter passing tests', () => {
         tenantId: null,
         serverName,
         serverConfig,
+        sourceConfig: serverConfig,
         provenanceServerConfig: config,
+        effectiveServerConfig: config,
         customUserVars: undefined,
         authorizationIdentity,
         authorizationKind,
@@ -1938,6 +2053,14 @@ describe('User parameter passing tests', () => {
             authorizationKind: 'none',
             config: serverConfig,
             catalogScope: noneScope,
+          }),
+        )
+        .mockResolvedValueOnce(
+          authority({
+            authorizationIdentity: 'grant-current',
+            authorizationKind: 'oauth',
+            config: oauthServerConfig,
+            catalogScope: oauthScope,
           }),
         )
         .mockResolvedValueOnce(
@@ -2235,38 +2358,23 @@ describe('User parameter passing tests', () => {
         },
       });
 
-      const mcpTool = await createMCPTool({
-        res: mockRes,
-        user: mockUser,
-        toolKey: `test-tool${D}test-server`,
-        provider: 'openai',
-        userMCPAuthMap: {},
-        availableTools: {
-          [`test-tool${D}test-server`]: {
-            function: {
-              description: 'Cached tool',
-              parameters: { type: 'object', properties: {} },
-            },
-          },
-        },
-      });
-
       await expect(
-        mcpTool.invoke(
-          {},
-          {
-            configurable: {
-              user: mockUser,
+        createMCPTool({
+          res: mockRes,
+          user: mockUser,
+          toolKey: `test-tool${D}test-server`,
+          provider: 'openai',
+          userMCPAuthMap: {},
+          availableTools: {
+            [`test-tool${D}test-server`]: {
+              function: {
+                description: 'Cached tool',
+                parameters: { type: 'object', properties: {} },
+              },
             },
-            metadata: {
-              provider: 'openai',
-            },
-            toolCall: {},
           },
-        ),
-      ).rejects.toThrow(
-        '[MCP][test-server][test-tool] tool call failed: Forbidden: Insufficient MCP server permissions',
-      );
+        }),
+      ).resolves.toBeUndefined();
       expect(mockGetMCPManager).not.toHaveBeenCalled();
     });
 
@@ -2408,7 +2516,7 @@ describe('User parameter passing tests', () => {
       await expect(searchTool.invoke({}, invocationConfig)).resolves.toBe('ok');
       await expect(fetchTool.invoke({}, invocationConfig)).resolves.toBe('ok');
 
-      expect(getRoleByName).toHaveBeenCalledTimes(3);
+      expect(getRoleByName).toHaveBeenCalledTimes(5);
       expect(mockCallTool).toHaveBeenCalledTimes(2);
     });
 
@@ -2885,6 +2993,16 @@ describe('User parameter passing tests', () => {
         userId: 'admin-user',
       });
       expect(mockGetAppConfig).toHaveBeenNthCalledWith(2, {
+        role: 'admin',
+        tenantId: undefined,
+        userId: 'admin-user',
+      });
+      expect(mockGetAppConfig).toHaveBeenNthCalledWith(3, {
+        role: 'user',
+        tenantId: undefined,
+        userId: 'regular-user',
+      });
+      expect(mockGetAppConfig).toHaveBeenNthCalledWith(4, {
         role: 'user',
         tenantId: undefined,
         userId: 'regular-user',
@@ -3160,7 +3278,7 @@ describe('User parameter passing tests', () => {
       expect(capturedUser.metadata.settings.theme).toBe('dark');
     });
 
-    it('should throw error when user is null', async () => {
+    it('fails closed when user is null', async () => {
       const mockRes = { write: jest.fn(), flush: jest.fn() };
 
       mockReinitMCPServer.mockResolvedValue({
@@ -3176,9 +3294,8 @@ describe('User parameter passing tests', () => {
           provider: 'openai',
           userMCPAuthMap: {},
         }),
-      ).rejects.toThrow("Cannot read properties of null (reading 'id')");
+      ).resolves.toEqual([]);
 
-      // Verify reinitMCPServer was not called due to early error
       expect(mockReinitMCPServer).not.toHaveBeenCalled();
     });
   });

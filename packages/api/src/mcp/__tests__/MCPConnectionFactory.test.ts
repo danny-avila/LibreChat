@@ -1001,6 +1001,14 @@ describe('MCPConnectionFactory', () => {
           type: 'sse' as const,
         } as t.SSEOptions,
       };
+      const oauthAuthorityScope = {
+        tenant: 'tenant-revision',
+        principal: 'principal-revision',
+        server: 'server-revision',
+        policy: 'policy-revision',
+        config: 'config-revision',
+        credentials: 'credential-revision',
+      };
 
       const oauthOptions = {
         useOAuth: true as const,
@@ -1014,6 +1022,7 @@ describe('MCPConnectionFactory', () => {
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
         },
+        oauthAuthorityScope,
       };
 
       const mockFlowData = {
@@ -1070,7 +1079,11 @@ describe('MCPConnectionFactory', () => {
       expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
         'flow123',
         'mcp_oauth',
-        expect.objectContaining({ ...mockFlowData.flowMetadata, tenantId: 'test-tenant' }),
+        expect.objectContaining({
+          ...mockFlowData.flowMetadata,
+          tenantId: 'test-tenant',
+          authorityScope: oauthAuthorityScope,
+        }),
       );
       const initCallOrder = mockFlowManager.initFlow.mock.invocationCallOrder[0];
       const oauthStartCallOrder = (oauthOptions.oauthStart as jest.Mock).mock

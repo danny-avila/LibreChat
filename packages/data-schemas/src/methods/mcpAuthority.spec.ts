@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
   Permissions,
   PermissionBits,
@@ -29,7 +29,7 @@ const USER_ROLE = 'MCP_USER';
 const SERVER_NAME = 'selected-server';
 const PLUGIN_KEY = `mcp_${SERVER_NAME}`;
 
-let mongoServer: MongoMemoryReplSet;
+let mongoServer: MongoMemoryServer;
 let models: ReturnType<typeof createModels>;
 let methods: ReturnType<typeof createMCPAuthorityMethods>;
 let userId: mongoose.Types.ObjectId;
@@ -218,7 +218,7 @@ function expectReason(reason: MCPAuthorityProofError['reason']) {
 }
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  mongoServer = await MongoMemoryServer.create({ instance: { ip: '127.0.0.1' } });
   const uri = new URL(mongoServer.getUri());
   uri.searchParams.set('readPreference', 'secondaryPreferred');
   await mongoose.connect(uri.href);
@@ -273,64 +273,24 @@ describe('MCP authority proofs', () => {
     await expect(assertCurrent(proof)).resolves.toBeUndefined();
   });
 
-  test('pins every mutable collection read to one primary snapshot transaction', async () => {
-    const session = await mongoose.startSession();
-    const startTransactionSpy = jest.spyOn(session, 'startTransaction');
+  test('uses bounded primary reads inside one generation fence without sessions', async () => {
+    const startSessionSpy = jest.spyOn(mongoose, 'startSession');
     const querySessionSpy = jest.spyOn(mongoose.Query.prototype, 'session');
     const aggregateSessionSpy = jest.spyOn(mongoose.Aggregate.prototype, 'session');
     const readSpy = jest.spyOn(mongoose.Query.prototype, 'read');
     const readConcernSpy = jest.spyOn(mongoose.Query.prototype, 'readConcern');
     const findSpy = jest.spyOn(mongoose.mongo.Collection.prototype, 'find');
 
-    try {
-      await inTenant(() =>
-        methods.resolveMCPAuthorityProof({
-          userId: userId.toHexString(),
-          tenantId: TENANT_ID,
-          boot,
-          targets: [target()],
-          session,
-        }),
-      );
-    } finally {
-      await session.endSession();
-    }
+    await resolve();
 
-    expect(startTransactionSpy).toHaveBeenCalledWith({
-      readPreference: 'primary',
-      readConcern: { level: 'snapshot' },
-      writeConcern: { w: 'majority' },
-    });
-    expect(querySessionSpy).toHaveBeenCalledTimes(12);
-    expect(querySessionSpy.mock.calls.every(([attached]) => attached === session)).toBe(true);
-    expect(aggregateSessionSpy).toHaveBeenCalledTimes(2);
-    expect(aggregateSessionSpy.mock.calls.every(([attached]) => attached === session)).toBe(true);
+    expect(startSessionSpy).not.toHaveBeenCalled();
+    expect(querySessionSpy).not.toHaveBeenCalled();
+    expect(aggregateSessionSpy).not.toHaveBeenCalled();
     expect(readSpy).not.toHaveBeenCalled();
     expect(readConcernSpy).not.toHaveBeenCalled();
-    expect(findSpy).toHaveBeenCalledTimes(7);
-    expect(findSpy.mock.calls.every(([, options]) => options?.singleBatch === true)).toBe(true);
-  });
-
-  test('commits an owned snapshot on a supplied non-transaction session', async () => {
-    const session = await mongoose.startSession();
-    const commitSpy = jest.spyOn(session, 'commitTransaction');
-
-    try {
-      await inTenant(() =>
-        methods.resolveMCPAuthorityProof({
-          userId: userId.toHexString(),
-          tenantId: TENANT_ID,
-          boot,
-          targets: [target()],
-          session,
-        }),
-      );
-    } finally {
-      await session.endSession();
-    }
-
-    expect(commitSpy).toHaveBeenCalledTimes(1);
-    expect(session.inTransaction()).toBe(false);
+    expect(findSpy).toHaveBeenCalledTimes(9);
+    const boundedReads = findSpy.mock.calls.filter(([, options]) => options?.singleBatch === true);
+    expect(boundedReads).toHaveLength(9);
   });
 
   test('fails closed without an exact active tenant context', async () => {
@@ -378,31 +338,65 @@ describe('MCP authority proofs', () => {
     ).rejects.toEqual(expectReason('role_changed'));
   });
 
-  test('rejects a previously pinned active transaction snapshot', async () => {
-    const proof = await resolve();
-    const session = await mongoose.startSession();
-    session.startTransaction({
-      readPreference: 'primary',
-      readConcern: { level: 'snapshot' },
-    });
+  test('resolves authority without opening a database transaction', async () => {
+    const startSession = jest
+      .spyOn(mongoose, 'startSession')
+      .mockRejectedValue(new Error('authority must not start a transaction'));
     try {
-      await inTenant(() =>
-        models.AclEntry.findOne({ resourceId: serverId }).session(session).lean(),
-      );
-      await inTenant(() =>
-        models.AclEntry.deleteMany({ resourceId: serverId }).then(() => undefined),
-      );
       await expect(
-        inTenant(() => models.AclEntry.findOne({ resourceId: serverId }).session(session).lean()),
-      ).resolves.not.toBeNull();
-
-      await expect(
-        inTenant(() => methods.assertMCPAuthorityProofsCurrent({ proofs: proof, boot, session })),
-      ).rejects.toEqual(expectReason('proof_unavailable'));
+        inTenant(() =>
+          methods.resolveMCPAuthorityProof({
+            userId: userId.toHexString(),
+            tenantId: TENANT_ID,
+            boot,
+            targets: [target()],
+          }),
+        ),
+      ).resolves.toEqual(expect.objectContaining({ version: 1 }));
+      expect(startSession).not.toHaveBeenCalled();
     } finally {
-      await session.abortTransaction();
-      await session.endSession();
+      startSession.mockRestore();
     }
+  });
+
+  test('exposes the same mutation gate used by authority proof reads', async () => {
+    await expect(methods.initialize()).resolves.toEqual({ generation: 0 });
+    await expect(methods.mutateMCPAuthority(async () => 'published')).resolves.toEqual({
+      generation: 1,
+      result: 'published',
+    });
+  });
+
+  test('invalidates an authority proof when its global generation advances', async () => {
+    const proof = await resolve();
+    await methods.mutateMCPAuthority(async () => undefined);
+
+    await expect(assertCurrent(proof)).rejects.toEqual(
+      expect.objectContaining({ reason: 'authority_changed' }),
+    );
+  });
+
+  test('rejects a gated authority mutation that interleaves with proof construction', async () => {
+    let mutationPublished = false;
+    const snapshotMethods = createMCPAuthorityMethods(mongoose, {
+      afterPrincipalSnapshot: async () => {
+        await snapshotMethods.mutateMCPAuthority(async () => undefined);
+        mutationPublished = true;
+      },
+    });
+    await snapshotMethods.initialize();
+
+    await expect(
+      inTenant(() =>
+        snapshotMethods.resolveMCPAuthorityProof({
+          userId: userId.toHexString(),
+          tenantId: TENANT_ID,
+          boot,
+          targets: [target()],
+        }),
+      ),
+    ).rejects.toEqual(expectReason('proof_unavailable'));
+    expect(mutationPublished).toBe(true);
   });
 
   test('does not combine an early group snapshot with a later injected ACL grant', async () => {
@@ -410,19 +404,25 @@ describe('MCP authority proofs', () => {
       models.AclEntry.deleteMany({ resourceId: serverId }).then(() => undefined),
     );
     const snapshotMethods = createMCPAuthorityMethods(mongoose, {
-      afterPrincipalSnapshot: () =>
-        inTenant(async () => {
-          await models.Group.updateOne({ _id: groupId }, { $pull: { memberIds: 'source-user-1' } });
-          await models.AclEntry.create({
-            principalType: PrincipalType.GROUP,
-            principalId: groupId,
-            principalModel: PrincipalModel.GROUP,
-            resourceType: ResourceType.MCPSERVER,
-            resourceId: serverId,
-            permBits: PermissionBits.VIEW,
-            grantedBy: userId,
+      afterPrincipalSnapshot: async () => {
+        await snapshotMethods.mutateMCPAuthority(async () => {
+          await inTenant(async () => {
+            await models.Group.updateOne(
+              { _id: groupId },
+              { $pull: { memberIds: 'source-user-1' } },
+            );
+            await models.AclEntry.create({
+              principalType: PrincipalType.GROUP,
+              principalId: groupId,
+              principalModel: PrincipalModel.GROUP,
+              resourceType: ResourceType.MCPSERVER,
+              resourceId: serverId,
+              permBits: PermissionBits.VIEW,
+              grantedBy: userId,
+            });
           });
-        }),
+        });
+      },
     });
 
     await expect(
@@ -434,7 +434,7 @@ describe('MCP authority proofs', () => {
           targets: [target()],
         }),
       ),
-    ).rejects.toEqual(expectReason('access_revoked'));
+    ).rejects.toEqual(expectReason('proof_unavailable'));
   });
 
   test('keeps query count bounded by collection for many selected servers', async () => {
@@ -510,9 +510,10 @@ describe('MCP authority proofs', () => {
 
     mongoose.set('debug', false);
     expect(proof.servers).toHaveLength(25);
-    expect(operations).toHaveLength(14);
+    expect(operations).toHaveLength(16);
     expect(new Set(operations)).toEqual(
       new Set([
+        'mcpAuthorityConsistency.findOne',
         'users.findOne',
         'groups.countDocuments',
         'groups.find',
@@ -634,7 +635,13 @@ describe('MCP authority proofs', () => {
     ]);
 
     expect(first.shared.revision).toBe(second.shared.revision);
-    expect(first.shared.configs.every((config) => config.mcpOverrideDigest === null)).toBe(true);
+    expect(
+      first.shared.configs.find(
+        (config) =>
+          config.principalType === PrincipalType.USER &&
+          config.principalId === userId.toHexString(),
+      )?.mcpOverrideDigest,
+    ).not.toBeNull();
     await expect(
       inTenant(() => methods.assertMCPAuthorityProofsCurrent({ proofs: [first, second], boot })),
     ).resolves.toBeUndefined();
@@ -788,6 +795,41 @@ describe('MCP authority proofs', () => {
         ),
       ]),
     ).rejects.toEqual(expectReason('config_changed'));
+  });
+
+  test('rejects a raw mcpServers mutation that preserves Config version metadata', async () => {
+    const sourceRevision = await currentConfigSourceRevision();
+    const proof = await resolve([
+      configAuthorityTarget(
+        'operator-server',
+        sourceRevision,
+        immutableConfig.mcpServers['operator-server'],
+      ),
+    ]);
+    const filter = {
+      principalType: PrincipalType.USER,
+      principalId: userId.toHexString(),
+    };
+    const before = await inTenant(() =>
+      models.Config.findOne(filter).select({ configVersion: 1, updatedAt: 1 }).lean(),
+    );
+
+    await inTenant(() =>
+      models.Config.collection
+        .updateOne(filter, {
+          $set: {
+            'overrides.mcpServers.operator-server.url': 'https://changed.example/mcp',
+          },
+        })
+        .then(() => undefined),
+    );
+
+    const after = await inTenant(() =>
+      models.Config.findOne(filter).select({ configVersion: 1, updatedAt: 1 }).lean(),
+    );
+    expect(after?.configVersion).toBe(before?.configVersion);
+    expect(after?.updatedAt).toEqual(before?.updatedAt);
+    await expect(assertCurrent(proof)).rejects.toEqual(expectReason('config_changed'));
   });
 
   test('requires a new proof after first OAuth generation storage', async () => {
@@ -1103,6 +1145,54 @@ describe('MCP authority proofs', () => {
     await mutate();
 
     await expect(assertCurrent(proof)).rejects.toEqual(expectReason(reason));
+  });
+
+  test('keeps authority current after an unrelated user profile update', async () => {
+    const proof = await resolve();
+
+    await inTenant(() =>
+      models.User.updateOne({ _id: userId }, { $set: { avatar: 'profile-v2.png' } }).then(
+        () => undefined,
+      ),
+    );
+
+    await expect(assertCurrent(proof)).resolves.toBeUndefined();
+  });
+
+  test('keeps authority current after an unrelated group display-name update', async () => {
+    const proof = await resolve();
+
+    await inTenant(() =>
+      models.Group.updateOne({ _id: groupId }, { $set: { name: 'Renamed MCP group' } }).then(
+        () => undefined,
+      ),
+    );
+
+    await expect(assertCurrent(proof)).resolves.toBeUndefined();
+  });
+
+  test('keeps authority current after an unrelated linked Agent display update', async () => {
+    const agentObjectId = new mongoose.Types.ObjectId();
+    await inTenant(() =>
+      models.Agent.create({
+        _id: agentObjectId,
+        id: 'linked-agent-display-update',
+        name: 'Initial Agent name',
+        provider: 'openAI',
+        model: 'test-model',
+        author: userId,
+        mcpServerNames: [SERVER_NAME],
+      }).then(() => undefined),
+    );
+    const proof = await resolve();
+
+    await inTenant(() =>
+      models.Agent.updateOne({ _id: agentObjectId }, { $set: { name: 'Renamed Agent' } }).then(
+        () => undefined,
+      ),
+    );
+
+    await expect(assertCurrent(proof)).resolves.toBeUndefined();
   });
 
   test('rejects targeted Agent linkage revocation when Agent access was the only path', async () => {

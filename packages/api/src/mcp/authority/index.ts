@@ -10,7 +10,6 @@ import type {
   MCPAuthorityBootRevision,
   MCPAuthorityImmutableConfig,
 } from '@librechat/data-schemas';
-import type { ClientSession } from 'mongoose';
 
 export interface MCPAuthorityProofResolverOptions {
   methods: Pick<
@@ -32,7 +31,6 @@ export interface MCPAuthorityResolutionInput<TParsedConfig, TSchemas> {
     parsedConfig: TParsedConfig;
     schemas: TSchemas;
   }) => string;
-  session?: ClientSession;
 }
 
 export interface MCPAuthorityResolution<TParsedConfig, TSchemas> {
@@ -67,7 +65,6 @@ export class MCPAuthorityProofResolver {
     parsedConfig,
     schemas,
     calculateArtifactRevision,
-    session,
   }: MCPAuthorityResolutionInput<TParsedConfig, TSchemas>): Promise<
     MCPAuthorityResolution<TParsedConfig, TSchemas>
   > {
@@ -109,7 +106,6 @@ export class MCPAuthorityProofResolver {
       tenantId,
       targets,
       boot: this.boot,
-      session,
     });
     if (getCurrentRevision() !== artifactRevision) {
       throw new MCPAuthorityProofError(
@@ -124,16 +120,15 @@ export class MCPAuthorityProofResolver {
 
   public async assertCurrent(
     proofs: MCPAuthorityProofV1 | readonly MCPAuthorityProofV1[],
-    session?: ClientSession,
   ): Promise<void> {
-    await this.methods.assertMCPAuthorityProofsCurrent({ proofs, boot: this.boot, session });
+    await this.methods.assertMCPAuthorityProofsCurrent({ proofs, boot: this.boot });
   }
 
-  private async useIssuedResolution<TParsedConfig, TSchemas, Result>(
+  public async useIssuedResolution<TParsedConfig, TSchemas, Result>(
     resolution: MCPAuthorityResolution<TParsedConfig, TSchemas>,
     action: (current: MCPAuthorityResolution<TParsedConfig, TSchemas>) => Result | Promise<Result>,
-    session?: ClientSession,
   ): Promise<Result> {
+    await this.beforeExecute?.();
     const issued = this.issuedResolutions.get(resolution);
     if (!issued) {
       throw new MCPAuthorityProofError(
@@ -150,33 +145,71 @@ export class MCPAuthorityProofResolver {
       }
     };
     assertArtifactsCurrent();
-    await this.assertCurrent(resolution.authorityProof, session);
+    await this.assertCurrent(resolution.authorityProof);
     assertArtifactsCurrent();
     return await action(resolution);
+  }
+
+  public async useIssuedResolutions<TParsedConfig, TSchemas, Result>(
+    resolutions: readonly MCPAuthorityResolution<TParsedConfig, TSchemas>[],
+    action: (
+      current: readonly MCPAuthorityResolution<TParsedConfig, TSchemas>[],
+    ) => Result | Promise<Result>,
+  ): Promise<Result> {
+    await this.beforeExecute?.();
+    const issued = resolutions.map((resolution) => {
+      const current = this.issuedResolutions.get(resolution);
+      if (!current) {
+        throw new MCPAuthorityProofError(
+          'malformed_input',
+          'MCP authority resolution was not issued by this resolver',
+        );
+      }
+      return current;
+    });
+    const assertArtifactsCurrent = (): void => {
+      for (let index = 0; index < resolutions.length; index++) {
+        if (issued[index].getCurrentRevision() !== issued[index].revision) {
+          throw new MCPAuthorityProofError(
+            'malformed_input',
+            'MCP authority resolution artifacts changed after authority was resolved',
+          );
+        }
+      }
+    };
+    assertArtifactsCurrent();
+    await this.assertCurrent(resolutions.map((resolution) => resolution.authorityProof));
+    assertArtifactsCurrent();
+    return await action(resolutions);
+  }
+
+  public async publishManyWithCurrentAuthority<TParsedConfig, TSchemas, Result>(
+    resolutions: readonly MCPAuthorityResolution<TParsedConfig, TSchemas>[],
+    publish: (
+      current: readonly MCPAuthorityResolution<TParsedConfig, TSchemas>[],
+    ) => Result | Promise<Result>,
+  ): Promise<Result> {
+    return await this.useIssuedResolutions(resolutions, publish);
   }
 
   public async publishWithCurrentAuthority<TParsedConfig, TSchemas, Result>(
     resolution: MCPAuthorityResolution<TParsedConfig, TSchemas>,
     publish: (current: MCPAuthorityResolution<TParsedConfig, TSchemas>) => Result | Promise<Result>,
-    session?: ClientSession,
   ): Promise<Result> {
-    return await this.useIssuedResolution(resolution, publish, session);
+    return await this.useIssuedResolution(resolution, publish);
   }
 
   public async bindWithCurrentAuthority<TParsedConfig, TSchemas, Result>(
     resolution: MCPAuthorityResolution<TParsedConfig, TSchemas>,
     bind: (current: MCPAuthorityResolution<TParsedConfig, TSchemas>) => Result | Promise<Result>,
-    session?: ClientSession,
   ): Promise<Result> {
-    return await this.useIssuedResolution(resolution, bind, session);
+    return await this.useIssuedResolution(resolution, bind);
   }
 
   public async executeWithCurrentAuthority<TParsedConfig, TSchemas, Result>(
     resolution: MCPAuthorityResolution<TParsedConfig, TSchemas>,
     execute: (current: MCPAuthorityResolution<TParsedConfig, TSchemas>) => Result | Promise<Result>,
-    session?: ClientSession,
   ): Promise<Result> {
-    await this.beforeExecute?.();
-    return await this.useIssuedResolution(resolution, execute, session);
+    return await this.useIssuedResolution(resolution, execute);
   }
 }

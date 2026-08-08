@@ -3,12 +3,19 @@ import { logger } from '@librechat/data-schemas';
 import type { IToken, TokenMethods } from '@librechat/data-schemas';
 import type {
   LCAvailableTools,
-  MCPConnectionProvenance,
   MCPOptions,
-  MCPServerSource,
   ParsedServerConfig,
-} from './types';
-export type { MCPConnectionProvenance } from './types';
+  MCPConnectionProvenance,
+  MCPToolCatalogScope,
+  MCPToolCatalogMetadata,
+  MCPToolCatalogScopeInput,
+} from './provenance';
+export type {
+  MCPConnectionProvenance,
+  MCPToolCatalogMetadata,
+  MCPToolCatalogScope,
+  MCPToolCatalogScopeInput,
+} from './provenance';
 import { isOAuthServer, isUserSourced } from './utils';
 import { processMCPEnv } from '~/utils/env';
 
@@ -28,25 +35,6 @@ export type MCPToolCatalogPendingReason =
   | 'user_scoped'
   | 'request_scoped';
 
-export interface MCPToolCatalogScope {
-  tenant: string;
-  principal: string;
-  server: string;
-  policy: string;
-  config: string;
-  credentials: string;
-}
-
-export interface MCPToolCatalogMetadata {
-  version: typeof MCP_TOOL_CATALOG_VERSION;
-  source: MCPServerSource | 'unknown';
-  revision: string;
-  authorizationKind: MCPConnectionProvenance['authorizationKind'];
-  cachedAt: number;
-  freshUntil: number;
-  scope: MCPToolCatalogScope;
-}
-
 export interface MCPToolCatalogEnvelope {
   metadata: MCPToolCatalogMetadata;
   tools: LCAvailableTools;
@@ -62,22 +50,6 @@ export type MCPToolCatalogResult =
       status: 'pending_activation';
       reason: MCPToolCatalogPendingReason;
     };
-
-export interface MCPToolCatalogScopeInput {
-  tenantId: string | null;
-  userId: string;
-  serverName: string;
-  serverConfig: ParsedServerConfig;
-  securityPolicyIdentity: string;
-  customUserVars?: Record<string, string>;
-  authorizationIdentity: string;
-  /** Fresh principal/Config document proof for the merged MCP authority. */
-  authorityIdentity?: string;
-  /** Authorization mode proven by the connection that discovered these schemas. */
-  authorizationKind?: MCPConnectionProvenance['authorizationKind'];
-  /** Exact post-placeholder config used to construct the discovering connection. */
-  effectiveServerConfig?: MCPOptions;
-}
 
 const RUNTIME_CONFIG_FIELDS = new Set([
   'requiresOAuth',
@@ -219,7 +191,6 @@ export function createMCPToolCatalogScope({
   securityPolicyIdentity,
   customUserVars,
   authorizationIdentity,
-  authorityIdentity,
   authorizationKind,
   effectiveServerConfig,
 }: MCPToolCatalogScopeInput): MCPToolCatalogScope {
@@ -228,10 +199,7 @@ export function createMCPToolCatalogScope({
     principal: digest(userId),
     server: digest(serverName),
     policy: securityPolicyIdentity,
-    config: fingerprint({
-      authorityIdentity: authorityIdentity ?? null,
-      serverConfig: declarativeConfig(serverConfig),
-    }),
+    config: fingerprint(declarativeConfig(serverConfig)),
     credentials: fingerprint({
       customUserVars: customUserVars ?? {},
       authorizationIdentity: authorizationIdentity ?? 'none',

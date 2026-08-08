@@ -1,6 +1,11 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import type { MCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import type * as t from '~/types';
+import {
+  createMCPAuthorityConsistencyModule,
+  type MCPAuthorityConsistencyFence,
+} from './mcpAuthority/consistency';
 import { createTokenMethods } from './token';
 import tokenSchema from '~/schema/token';
 
@@ -14,6 +19,7 @@ jest.mock('~/config/winston', () => ({
 let mongoServer: MongoMemoryServer;
 let Token: mongoose.Model<t.IToken>;
 let methods: ReturnType<typeof createTokenMethods>;
+let consistency: MCPAuthorityConsistencyModule;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -23,7 +29,12 @@ beforeAll(async () => {
   /** Register models */
   Token = mongoose.models.Token || mongoose.model<t.IToken>('Token', tokenSchema);
 
-  /** Initialize methods */
+  consistency = createMCPAuthorityConsistencyModule({
+    collection:
+      mongoose.connection.collection<MCPAuthorityConsistencyFence>('mcpAuthorityConsistency'),
+    now: () => new Date('2026-08-07T12:00:00.000Z'),
+    createOwnerId: () => new mongoose.Types.ObjectId().toHexString(),
+  });
   methods = createTokenMethods(mongoose);
 });
 
@@ -37,11 +48,43 @@ beforeEach(async () => {
 });
 
 describe('Token Methods - Detailed Tests', () => {
+  test('publishes generations only for operations that can affect MCP OAuth tokens', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    await consistency.initialize();
+
+    await methods.createToken({
+      token: 'reset-secret',
+      userId,
+      type: 'password_reset',
+      expiresIn: 3600,
+    });
+    await expect(consistency.assertGeneration(0)).resolves.toBeUndefined();
+
+    await methods.createToken({
+      token: 'mcp-secret',
+      userId,
+      type: 'mcp_oauth',
+      identifier: 'mcp:database',
+      expiresIn: 3600,
+    });
+    await expect(consistency.assertGeneration(1)).resolves.toBeUndefined();
+
+    await methods.updateToken(
+      { userId, type: 'mcp_oauth', identifier: 'mcp:database' },
+      { token: 'rotated-mcp-secret' },
+    );
+    await expect(consistency.assertGeneration(2)).resolves.toBeUndefined();
+
+    await methods.deleteTokens({ userId });
+    await expect(consistency.assertGeneration(3)).resolves.toBeUndefined();
+  });
+
   test('declares the compound MCP authorization identity lookup index', () => {
     expect(tokenSchema.indexes().map(([fields]) => fields)).toContainEqual({
       userId: 1,
       type: 1,
       identifier: 1,
+      tenantId: 1,
     });
   });
 

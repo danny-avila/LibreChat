@@ -28,6 +28,7 @@ jest.mock('~/server/services/Config', () => ({
 const mockLoadToolDefinitions = jest.fn();
 const mockGetUserMCPAuthMap = jest.fn();
 const mockGetMCPAuthorizationIdentity = jest.fn();
+const mockShouldDetectRuntimeOAuth = jest.fn();
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
@@ -36,7 +37,7 @@ jest.mock('@librechat/api', () => ({
   loadToolDefinitions: (...args) => mockLoadToolDefinitions(...args),
   getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
   getMCPAuthorizationIdentity: (...args) => mockGetMCPAuthorizationIdentity(...args),
-  shouldDetectRuntimeOAuth: () => false,
+  shouldDetectRuntimeOAuth: (...args) => mockShouldDetectRuntimeOAuth(...args),
   sendEvent: (...args) => mockSendEvent(...args),
   GenerationJobManager: {
     emitChunk: (...args) => mockEmitChunk(...args),
@@ -54,6 +55,7 @@ const mockLegacyDomainEncode = jest.fn();
 const mockDecryptMetadata = jest.fn();
 const mockCreateActionTool = jest.fn();
 const mockGetServerConfig = jest.fn();
+const mockEnsureConfigServers = jest.fn();
 const mockFlowManager = { getFlowState: jest.fn() };
 const mockResolveConfigServers = jest.fn();
 const mockResolveMcpServerNames = jest.fn();
@@ -61,6 +63,53 @@ const mockUserCanUseMCPServers = jest.fn().mockResolvedValue(true);
 const mockUserCanUseMCPServersFresh = jest.fn().mockResolvedValue(true);
 const mockResolveCurrentMCPAuthoritySnapshot = jest.fn();
 const mockResolveCurrentMCPToolAuthority = jest.fn();
+const mockMCPAuthorityResolver = {
+  useIssuedResolution: jest.fn(async (resolution, action) => await action(resolution)),
+  useIssuedResolutions: jest.fn(async (resolutions, action) => await action(resolutions)),
+  bindWithCurrentAuthority: jest.fn(async (resolution, action) => await action(resolution)),
+  executeWithCurrentAuthority: jest.fn(async (resolution, action) => await action(resolution)),
+  publishManyWithCurrentAuthority: jest.fn(
+    async (resolutions, action) => await action(resolutions),
+  ),
+  publishWithCurrentAuthority: jest.fn(async (resolution, action) => await action(resolution)),
+};
+const mockAsMCPAuthorityResolution = (authority, schemas = null) => {
+  if (authority == null || authority.parsedConfig) {
+    return authority;
+  }
+  const sourceConfig = authority.provenanceServerConfig ?? authority.serverConfig;
+  const user = authority.user ?? { id: 'user_123' };
+  const authorizationKind = authority.authorizationKind ?? 'none';
+  const authorizationIdentity = authority.authorizationIdentity ?? 'none';
+  return {
+    parsedConfig: {
+      actor: {
+        userId: user.id,
+        tenantId: authority.tenantId ?? user.tenantId ?? null,
+        user,
+      },
+      serverName: authority.serverName,
+      sourceConfig,
+      effectiveConfig: authority.effectiveServerConfig ?? sourceConfig,
+      securityPolicy: {
+        ...(authority.securityPolicy ?? {}),
+        useSSRFProtection: authority.securityPolicy?.useSSRFProtection ?? false,
+      },
+      securityPolicyIdentity: authority.securityPolicyIdentity ?? 'current-policy-identity',
+      customUserVars: authority.customUserVars,
+      authorization: {
+        kind: authorizationKind,
+        identity: authorizationIdentity,
+        credentialSetId: authorizationIdentity === 'none' ? null : authorizationIdentity,
+        generation: null,
+      },
+      catalogScope: authority.catalogScope,
+      discoveryProvenance: authority.discoveryProvenance ?? null,
+    },
+    schemas,
+    authorityProof: { revision: 'test-proof' },
+  };
+};
 const mockAvailableToolsAuthorityScopes = new WeakMap();
 jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn().mockResolvedValue({}),
@@ -98,6 +147,12 @@ jest.mock('~/models', () => ({
 jest.mock('~/config', () => ({
   getFlowStateManager: jest.fn(() => mockFlowManager),
   getMCPServersRegistry: jest.fn(() => ({
+    ensureConfigServers: (...args) => mockEnsureConfigServers(...args),
+    activateIssuedConfigServer: (serverName, serverConfig, securityPolicy) =>
+      mockEnsureConfigServers(
+        { [serverName]: serverConfig },
+        { failClosed: true, allowlists: securityPolicy },
+      ),
     getServerConfig: (...args) => mockGetServerConfig(...args),
   })),
 }));
@@ -134,7 +189,13 @@ jest.mock('~/server/services/MCPDiscoveryScope', () => ({
   matchesMCPToolAuthorityScope: (left, right) =>
     left != null && right != null && JSON.stringify(left) === JSON.stringify(right),
   resolveCurrentMCPAuthoritySnapshot: (...args) => mockResolveCurrentMCPAuthoritySnapshot(...args),
-  resolveCurrentMCPToolAuthority: (...args) => mockResolveCurrentMCPToolAuthority(...args),
+  resolveCurrentMCPToolAuthority: async (...args) => {
+    const authority = await mockResolveCurrentMCPToolAuthority(...args);
+    return mockAsMCPAuthorityResolution(authority, args[0]?.schemas ?? null);
+  },
+}));
+jest.mock('~/server/services/MCPAuthority', () => ({
+  getMCPAuthorityResolver: () => mockMCPAuthorityResolver,
 }));
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({})),
@@ -172,6 +233,9 @@ function createEndpointsConfig(capabilities) {
 describe('ToolService - Action Capability Gating', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetMCPServerCatalog.mockReset();
+    mockLoadToolDefinitions.mockReset();
+    mockResolveCurrentMCPToolAuthority.mockReset();
     mockLoadToolDefinitions.mockResolvedValue({
       toolDefinitions: [],
       toolRegistry: new Map(),
@@ -197,7 +261,10 @@ describe('ToolService - Action Capability Gating', () => {
     mockGetCachedTools.mockResolvedValue(null);
     mockGetUserMCPAuthMap.mockResolvedValue({});
     mockGetMCPAuthorizationIdentity.mockResolvedValue('none');
+    mockShouldDetectRuntimeOAuth.mockReset();
+    mockShouldDetectRuntimeOAuth.mockReturnValue(false);
     mockGetServerConfig.mockResolvedValue(undefined);
+    mockEnsureConfigServers.mockResolvedValue({});
     mockFlowManager.getFlowState.mockResolvedValue(undefined);
     mockResolveConfigServers.mockResolvedValue({});
     mockResolveMcpServerNames.mockResolvedValue([]);
@@ -260,7 +327,7 @@ describe('ToolService - Action Capability Gating', () => {
           customUserVars,
           authorizationIdentity,
           authorizationKind: configuredOAuth || authorizationIdentity !== 'none' ? 'oauth' : 'none',
-          catalogScope: null,
+          catalogScope: { serverName, authorizationIdentity },
         };
       },
     );
@@ -1015,23 +1082,32 @@ describe('ToolService - Action Capability Gating', () => {
         url: 'https://mcp.example.com',
         source: 'config',
       };
+      const activationSecurityPolicy = {
+        allowedDomains: ['mcp.example.com'],
+        allowedAddresses: null,
+      };
+      let activated = false;
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
-      mockResolveCurrentMCPAuthoritySnapshot.mockImplementation(
-        async (user, _label, options = {}) => ({
-          configs: options.initializeMissing === true ? { [serverName]: serverConfig } : {},
-          collisionServerNames: [serverName],
-          securityPolicy: { allowedDomains: null, allowedAddresses: null },
-          securityPolicyIdentity: 'current-policy-identity',
-          tenantId: null,
-          user,
-        }),
-      );
+      mockResolveCurrentMCPAuthoritySnapshot.mockImplementation(async (user) => ({
+        configs: {},
+        pendingConfigs: { [serverName]: serverConfig },
+        collisionServerNames: [serverName],
+        securityPolicy: { allowedDomains: null, allowedAddresses: null },
+        securityPolicyIdentity: 'current-policy-identity',
+        tenantId: null,
+        user,
+      }));
+      mockEnsureConfigServers.mockImplementation(async () => {
+        activated = true;
+        return { [serverName]: serverConfig };
+      });
       mockResolveCurrentMCPToolAuthority.mockImplementation(
-        async ({ user, snapshot, serverName: requestedServerName }) =>
-          requestedServerName !== serverName || (snapshot && !snapshot.configs?.[serverName])
+        async ({ user, expectedServerConfig, serverName: requestedServerName }) =>
+          requestedServerName !== serverName || (!activated && !expectedServerConfig)
             ? null
             : {
                 configs: { [serverName]: serverConfig },
+                securityPolicy: activationSecurityPolicy,
                 securityPolicyIdentity: 'current-policy-identity',
                 tenantId: null,
                 user,
@@ -1063,12 +1139,68 @@ describe('ToolService - Action Capability Gating', () => {
       expect(result.toolDefinitions).toEqual([
         expect.objectContaining({ name: mcpTool, serverName }),
       ]);
-      expect(mockResolveCurrentMCPAuthoritySnapshot).toHaveBeenCalledWith(
-        expect.any(Object),
-        `${normalizedServerName} activation`,
-        { serverNames: [normalizedServerName], initializeMissing: true },
+      expect(mockEnsureConfigServers).toHaveBeenCalledWith(
+        { [serverName]: serverConfig },
+        {
+          failClosed: true,
+          allowlists: { ...activationSecurityPolicy, useSSRFProtection: false },
+        },
       );
-      expect(reinitMCPServer).toHaveBeenCalledTimes(1);
+      expect(mockMCPAuthorityResolver.useIssuedResolution).toHaveBeenCalled();
+      expect(reinitMCPServer.mock.calls.map(([params]) => params.serverName)).toEqual([serverName]);
+    });
+
+    it('does not inspect a selected cold Config server when its bind fence rejects', async () => {
+      const serverName = 'cold-revoked';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com',
+        source: 'config',
+      };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockResolveCurrentMCPAuthoritySnapshot.mockImplementation(async (user) => ({
+        configs: {},
+        pendingConfigs: { [serverName]: serverConfig },
+        collisionServerNames: [serverName],
+        securityPolicy: { allowedDomains: null, allowedAddresses: null },
+        securityPolicyIdentity: 'current-policy-identity',
+        tenantId: null,
+        user,
+      }));
+      mockResolveCurrentMCPToolAuthority.mockImplementation(
+        async ({ user, expectedServerConfig }) =>
+          expectedServerConfig
+            ? {
+                user,
+                serverName,
+                serverConfig,
+                authorizationIdentity: 'none',
+                authorizationKind: 'none',
+                catalogScope: { config: 'stable' },
+              }
+            : null,
+      );
+      mockLoadToolDefinitions.mockImplementation(
+        jest.requireActual('@librechat/api').loadToolDefinitions,
+      );
+      mockMCPAuthorityResolver.useIssuedResolution.mockRejectedValueOnce(
+        new Error('authority revoked before cold inspection'),
+      );
+
+      await expect(
+        loadAgentTools({
+          req,
+          res: {},
+          agent: { id: 'agent_123', tools: [mcpTool] },
+          definitionsOnly: true,
+          accessibleMcpServerNames: [serverName],
+        }),
+      ).rejects.toThrow('none are available');
+      expect(mockEnsureConfigServers).not.toHaveBeenCalled();
+      expect(reinitMCPServer).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -1143,6 +1275,7 @@ describe('ToolService - Action Capability Gating', () => {
       };
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
       mockResolveConfigServers.mockResolvedValue({ [serverName]: serverConfig });
+      mockShouldDetectRuntimeOAuth.mockReturnValue(true);
       mockFlowManager.getFlowState.mockResolvedValue({
         status: 'PENDING',
         createdAt: Date.now(),
@@ -1574,7 +1707,10 @@ describe('ToolService - Action Capability Gating', () => {
           hasDeferredTools: false,
         };
       });
-      reinitMCPServer.mockResolvedValue({ availableTools });
+      reinitMCPServer.mockResolvedValue({
+        availableTools,
+        authorityScope: { serverName, authorizationIdentity: 'none' },
+      });
 
       const result = await loadAgentTools({
         req,

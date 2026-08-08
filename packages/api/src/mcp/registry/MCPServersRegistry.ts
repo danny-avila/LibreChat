@@ -699,6 +699,28 @@ export class MCPServersRegistry {
     return result;
   }
 
+  /** Activates one exact Config-tier input without rereading config or allowlist state. */
+  public async activateIssuedConfigServer(
+    serverName: string,
+    rawConfig: t.MCPOptions,
+    allowlists: ResolvedMCPAllowlists,
+  ): Promise<t.ParsedServerConfig | undefined> {
+    const cacheKey = this.configCacheKey(serverName, rawConfig, allowlists);
+    const pending = this.pendingConfigInits.get(cacheKey);
+    if (pending) {
+      return await pending;
+    }
+    const activation = this.lazyInitConfigServer(cacheKey, serverName, rawConfig, allowlists);
+    this.pendingConfigInits.set(cacheKey, activation);
+    try {
+      return await activation;
+    } finally {
+      if (this.pendingConfigInits.get(cacheKey) === activation) {
+        this.pendingConfigInits.delete(cacheKey);
+      }
+    }
+  }
+
   /**
    * Returns true when `rawConfig` matches the YAML cache entry for this server
    * on every admin-configurable field, so an unmodified YAML-defined server

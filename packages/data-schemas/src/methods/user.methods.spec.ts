@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { AUTH_USER_DOC_BY_ID_PREFIX, CacheKeys } from 'librechat-data-provider';
+import type { MCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import type * as t from '~/types';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import balanceSchema from '~/schema/balance';
 import { createUserMethods } from './user';
 import userSchema from '~/schema/user';
@@ -15,6 +17,7 @@ let mongoServer: MongoMemoryServer;
 let User: mongoose.Model<t.IUser>;
 let Balance: mongoose.Model<t.IBalance>;
 let methods: ReturnType<typeof createUserMethods>;
+let consistency: MCPAuthorityConsistencyModule;
 
 const ORIGINAL_AUTH_USER_CACHE_ENV = {
   AUTH_USER_CACHE_MODE: process.env.AUTH_USER_CACHE_MODE,
@@ -45,6 +48,7 @@ beforeAll(async () => {
 
   /** Initialize methods */
   methods = createUserMethods(mongoose);
+  consistency = getMCPAuthorityConsistencyModule(mongoose);
 });
 
 afterAll(async () => {
@@ -107,6 +111,25 @@ describe('User schema indexes', () => {
 });
 
 describe('User Methods - Database Tests', () => {
+  test('publishes generations only for user identity and role mutations', async () => {
+    const user = await User.create({
+      name: 'Authority User',
+      email: 'authority@example.com',
+      provider: 'local',
+      role: 'USER',
+    });
+    await consistency.initialize();
+
+    await methods.updateUser(user._id.toString(), { avatar: 'avatar.png' });
+    await expect(consistency.assertGeneration(0)).resolves.toBeUndefined();
+
+    await methods.updateUser(user._id.toString(), { role: 'ADMIN' });
+    await expect(consistency.assertGeneration(1)).resolves.toBeUndefined();
+
+    await methods.deleteUserById(user._id.toString());
+    await expect(consistency.assertGeneration(2)).resolves.toBeUndefined();
+  });
+
   describe('findUser', () => {
     test('should find user by exact email', async () => {
       await User.create({

@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import { PrincipalType } from 'librechat-data-provider';
 import {
   logger,
@@ -10,7 +9,6 @@ import type { AppConfig, IConfig } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 
 const BASE_CONFIG_KEY = '_BASE_';
-export const MCP_AUTHORITY_IDENTITY_KEY = '__mcpAuthorityIdentity';
 
 export const DEFAULT_OVERRIDE_CACHE_TTL = 60_000;
 
@@ -40,7 +38,7 @@ export interface AppConfigServiceDeps {
   /** Fetch applicable DB config overrides for a set of principals. */
   getApplicableConfigs: (
     principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
-    options?: { paths?: string[] },
+    options?: { paths?: string[]; includeInactive?: boolean },
   ) => Promise<IConfig[]>;
   /** Resolve full principal list (user + role + groups) from userId/role. */
   getUserPrincipals: (params: {
@@ -77,56 +75,9 @@ export interface AppConfigUserLike {
   idOnTheSource?: string | null;
 }
 
-function canonicalizeAuthorityValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(canonicalizeAuthorityValue);
-  }
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  if (value != null && typeof value === 'object') {
-    if ('toHexString' in value && typeof value.toHexString === 'function') {
-      return value.toHexString();
-    }
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, entry]) => [key, canonicalizeAuthorityValue(entry)]),
-    );
-  }
-  return value;
-}
-
-function withMCPAuthorityIdentity(
-  config: AppConfig,
-  baseConfig: AppConfig,
-  principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
-  configs: IConfig[],
-): AppConfig {
-  const authorityProof = canonicalizeAuthorityValue({
-    base: {
-      mcpConfig: baseConfig.mcpConfig ?? null,
-      mcpSettings: baseConfig.mcpSettings ?? null,
-    },
-    configs: configs.map((entry) => ({
-      _id: entry._id,
-      configVersion: entry.configVersion,
-      isActive: entry.isActive,
-      principalId: entry.principalId,
-      principalType: entry.principalType,
-      priority: entry.priority,
-      tombstones: entry.tombstones ?? [],
-      overrides: entry.overrides,
-    })),
-    principals,
-  });
-  const identity = createHash('sha256').update(JSON.stringify(authorityProof)).digest('base64url');
-  Object.defineProperty(config, MCP_AUTHORITY_IDENTITY_KEY, {
-    configurable: false,
-    enumerable: false,
-    value: identity,
-  });
-  return config;
+export interface MCPAppConfigSnapshot {
+  config: AppConfig;
+  sourceDocuments: IConfig[];
 }
 
 export function getAppConfigOptionsFromUser(
@@ -180,6 +131,7 @@ function overrideCacheKey(role?: string, userId?: string, tenantId?: string): st
 
 export function createAppConfigService(deps: AppConfigServiceDeps): {
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
+  getMCPAppConfigSnapshot: (options?: GetAppConfigOptions) => Promise<MCPAppConfigSnapshot>;
   clearAppConfigCache: () => Promise<void>;
   clearOverrideCache: (tenantId?: string) => Promise<void>;
 } {
@@ -247,6 +199,36 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     return baseConfig;
   }
 
+  async function resolveMCPAppConfigSnapshot(
+    baseConfig: AppConfig,
+    options: GetAppConfigOptions,
+  ): Promise<MCPAppConfigSnapshot> {
+    const { role, userId, idOnTheSource, tenantId } = options;
+    if (!tenantId && !getTenantId() && isStrictOverrideMode()) {
+      throw new Error('MCP authority resolution requires a tenant in strict isolation mode.');
+    }
+    const principals = await buildPrincipals(role, userId, idOnTheSource, true);
+    const sourceDocuments = await getApplicableConfigs(principals, {
+      paths: ['mcpServers', 'mcpSettings'],
+      includeInactive: true,
+    });
+    const activeDocuments = sourceDocuments.filter((document) => document.isActive);
+    return {
+      config:
+        activeDocuments.length === 0
+          ? { ...baseConfig }
+          : mergeConfigOverrides(baseConfig, activeDocuments),
+      sourceDocuments,
+    };
+  }
+
+  async function getMCPAppConfigSnapshot(
+    options: GetAppConfigOptions = {},
+  ): Promise<MCPAppConfigSnapshot> {
+    const baseConfig = await ensureBaseConfig(options.refresh);
+    return await resolveMCPAppConfigSnapshot(baseConfig, options);
+  }
+
   /**
    * Get the app configuration, optionally merged with DB overrides for the given principal.
    *
@@ -275,6 +257,18 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
 
     if (baseOnly) {
       return baseConfig;
+    }
+
+    if (mcpOnly) {
+      try {
+        return (await resolveMCPAppConfigSnapshot(baseConfig, options)).config;
+      } catch (error) {
+        logger.error('[getAppConfig] Error resolving MCP config overrides:', error);
+        if (failClosed) {
+          throw error;
+        }
+        return baseConfig;
+      }
     }
 
     const cacheKey = overrideCacheKey(role, userId, tenantId);
@@ -317,15 +311,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     }
 
     try {
-      const configs = mcpOnly
-        ? await getApplicableConfigs(principals, { paths: ['mcpConfig', 'mcpSettings'] })
-        : await getApplicableConfigs(principals);
-
-      if (mcpOnly) {
-        const merged =
-          configs.length === 0 ? { ...baseConfig } : mergeConfigOverrides(baseConfig, configs);
-        return withMCPAuthorityIdentity(merged, baseConfig, principals, configs);
-      }
+      const configs = await getApplicableConfigs(principals);
 
       if (configs.length === 0) {
         await cache.set(cacheKey, baseConfig, overrideCacheTtl);
@@ -401,6 +387,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
 
   return {
     getAppConfig,
+    getMCPAppConfigSnapshot,
     clearAppConfigCache,
     clearOverrideCache,
   };

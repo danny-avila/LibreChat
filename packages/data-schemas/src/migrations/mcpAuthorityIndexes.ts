@@ -1,13 +1,13 @@
 import type { IndexSpecification } from 'mongodb';
 import type { Connection } from 'mongoose';
 
-interface AuthorityIndexDefinition {
+export interface AuthorityIndexDefinition {
   collection: string;
   keys: IndexSpecification;
   name: string;
 }
 
-const AUTHORITY_INDEXES: readonly AuthorityIndexDefinition[] = [
+export const MCP_AUTHORITY_LOOKUP_INDEXES: readonly AuthorityIndexDefinition[] = [
   {
     collection: 'groups',
     keys: { memberIds: 1, tenantId: 1 },
@@ -35,7 +35,7 @@ export async function createMCPAuthorityLookupIndexes(
   connection: Connection,
 ): Promise<readonly string[]> {
   const created: string[] = [];
-  for (const definition of AUTHORITY_INDEXES) {
+  for (const definition of MCP_AUTHORITY_LOOKUP_INDEXES) {
     const name = await connection
       .db!.collection(definition.collection)
       .createIndex(definition.keys, { name: definition.name });

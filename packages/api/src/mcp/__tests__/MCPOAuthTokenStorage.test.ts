@@ -1514,6 +1514,91 @@ describe('MCPTokenStorage', () => {
       });
     });
 
+    it('fails closed before refresh exchange when no authority lifecycle is issued', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+      const refreshTokens = jest.fn().mockResolvedValue({
+        access_token: 'unproved-access-token',
+        refresh_token: 'unproved-refresh-token',
+        token_type: 'Bearer',
+      });
+
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          updateToken: store.updateToken,
+          deleteTokens: store.deleteTokens,
+          refreshTokens,
+        }),
+      ).rejects.toThrow('MCP refresh authority lifecycle is required');
+
+      expect(refreshTokens).not.toHaveBeenCalled();
+    });
+
+    it('deletes only the refreshed generation when post-store authority is revoked', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:old-access-token',
+        expiresIn: -1,
+      });
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:old-refresh-token',
+        expiresIn: 86400,
+      });
+      const deleteTokens = jest.fn(store.deleteTokens);
+      let rejectedGeneration: string | undefined;
+
+      const result = await MCPTokenStorage.forceRefreshTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        findToken: store.findToken,
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        deleteTokens,
+        refreshTokens: jest.fn().mockResolvedValue({
+          access_token: 'new-access-token',
+          refresh_token: 'new-refresh-token',
+          token_type: 'Bearer',
+        }),
+        refreshAuthorityLifecycle: {
+          exchange: async (action) => await action(),
+          store: async (_tokens, action) => await action(),
+          accept: async (tokens) => {
+            rejectedGeneration = tokens.credential_set_id;
+            throw new Error('authority revoked after refresh storage');
+          },
+        },
+      });
+
+      expect(result).toBeNull();
+      expect(rejectedGeneration).toEqual(expect.any(String));
+      expect(deleteTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ metadataCredentialSetId: rejectedGeneration }),
+      );
+      expect(
+        store.getAll().filter((record) => {
+          const generation =
+            record.metadata instanceof Map
+              ? record.metadata.get('credential_set_id')
+              : record.metadata?.credential_set_id;
+          return generation === rejectedGeneration;
+        }),
+      ).toHaveLength(0);
+    });
+
     it('fails closed before invoking refresh for legacy client metadata', async () => {
       await createBoundToken(store, {
         userId: 'u1',

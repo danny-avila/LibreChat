@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { createMCPAuthorityProofCollections } from './mcpAuthorityCollections';
 import { createMCPAuthorityLookupIndexes } from './mcpAuthorityIndexes';
 
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
@@ -26,6 +27,7 @@ test('creates every bounded MCP authority lookup index idempotently', async () =
     ['tokens', 'userId_1_type_1_identifier_1_tenantId_1'],
   ] as const;
 
+  await createMCPAuthorityProofCollections(mongoose.connection);
   await expect(createMCPAuthorityLookupIndexes(mongoose.connection)).resolves.toEqual(
     expected.map(([, name]) => name),
   );

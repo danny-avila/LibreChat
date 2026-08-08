@@ -1,4 +1,5 @@
 const mockGetAppConfig = jest.fn();
+const mockGetMCPAppConfigSnapshot = jest.fn();
 const mockEnsureConfigServers = jest.fn();
 const mockGetAllServerConfigsFresh = jest.fn();
 const mockResolveAllowlists = jest.fn();
@@ -33,7 +34,10 @@ jest.mock('~/config', () => ({
   }),
 }));
 
-jest.mock('./Config', () => ({ getAppConfig: mockGetAppConfig }));
+jest.mock('./Config', () => ({
+  getAppConfig: mockGetAppConfig,
+  getMCPAppConfigSnapshot: mockGetMCPAppConfigSnapshot,
+}));
 
 const { resolveMCPDiscoveryConfigSnapshot } = require('./MCPConfigResolver');
 
@@ -55,31 +59,32 @@ describe('MCPConfigResolver', () => {
       allowedDomains: ['mcp.example.com'],
       allowedAddresses: ['10.0.0.0/8'],
     };
-    mockGetAppConfig.mockResolvedValue({
-      __mcpAuthorityIdentity: 'proof-a',
-      mcpConfig: { search: rawConfig },
-      mcpSettings: securityPolicy,
+    const sourceDocuments = [{ _id: 'config-a', updatedAt: '2026-08-07T00:00:00.000Z' }];
+    mockGetMCPAppConfigSnapshot.mockResolvedValue({
+      config: {
+        mcpConfig: { search: rawConfig },
+        mcpSettings: securityPolicy,
+      },
+      sourceDocuments,
     });
     mockEnsureConfigServers.mockResolvedValue({ search: parsedConfig });
     mockGetAllServerConfigsFresh.mockResolvedValue({ search: parsedConfig });
 
     await expect(resolveMCPDiscoveryConfigSnapshot(user.id, user)).resolves.toEqual({
-      authorityIdentity: 'proof-a',
       collisionServerNames: ['search'],
       configs: { search: parsedConfig },
       missingConfigServerNames: [],
       securityPolicy,
+      sourceDocuments,
     });
 
-    expect(mockGetAppConfig).toHaveBeenCalledTimes(1);
-    expect(mockGetAppConfig).toHaveBeenCalledWith({
+    expect(mockGetMCPAppConfigSnapshot).toHaveBeenCalledTimes(1);
+    expect(mockGetMCPAppConfigSnapshot).toHaveBeenCalledWith({
       userId: user.id,
       role: user.role,
       idOnTheSource: user.idOnTheSource,
       tenantId: user.tenantId,
-      refreshOverrides: true,
       failClosed: true,
-      mcpOnly: true,
     });
     expect(mockEnsureConfigServers).toHaveBeenCalledWith(
       { search: rawConfig },
@@ -97,9 +102,12 @@ describe('MCPConfigResolver', () => {
     const user = { id: 'user-1', role: 'USER', tenantId: 'tenant-a' };
     const rawConfig = { type: 'streamable-http', url: 'https://mcp.example.com' };
     const securityPolicy = { allowedDomains: ['mcp.example.com'], allowedAddresses: null };
-    mockGetAppConfig.mockResolvedValue({
-      mcpConfig: { search: rawConfig },
-      mcpSettings: securityPolicy,
+    mockGetMCPAppConfigSnapshot.mockResolvedValue({
+      config: {
+        mcpConfig: { search: rawConfig },
+        mcpSettings: securityPolicy,
+      },
+      sourceDocuments: [],
     });
     mockEnsureConfigServers.mockResolvedValue({});
     mockGetAllServerConfigsFresh.mockResolvedValue({});
@@ -116,8 +124,9 @@ describe('MCPConfigResolver', () => {
     const user = { id: 'user-1', role: 'USER', tenantId: 'tenant-a' };
     const requested = { type: 'streamable-http', url: 'https://requested.example.com' };
     const unrelated = { type: 'streamable-http', url: 'https://cold.example.com' };
-    mockGetAppConfig.mockResolvedValue({
-      mcpConfig: { 'Requested: Server': requested, cold: unrelated },
+    mockGetMCPAppConfigSnapshot.mockResolvedValue({
+      config: { mcpConfig: { 'Requested: Server': requested, cold: unrelated } },
+      sourceDocuments: [],
     });
     mockEnsureConfigServers.mockResolvedValue({
       'Requested: Server': { ...requested, source: 'config' },
@@ -136,7 +145,9 @@ describe('MCPConfigResolver', () => {
       collisionServerNames: ['Requested: Server', 'yaml', 'cold'],
       configs: { 'Requested: Server': { ...requested, source: 'config' } },
       missingConfigServerNames: [],
+      pendingConfigs: {},
       securityPolicy: { allowedDomains: undefined, allowedAddresses: undefined },
+      sourceDocuments: [],
     });
     expect(mockEnsureConfigServers).toHaveBeenCalledWith(
       { 'Requested: Server': requested },
@@ -149,7 +160,10 @@ describe('MCPConfigResolver', () => {
     const warm = { type: 'streamable-http', url: 'https://warm.example.com' };
     const cold = { type: 'streamable-http', url: 'https://new.example.com' };
     const warmParsed = { ...warm, source: 'config' };
-    mockGetAppConfig.mockResolvedValue({ mcpConfig: { warm, cold } });
+    mockGetMCPAppConfigSnapshot.mockResolvedValue({
+      config: { mcpConfig: { warm, cold } },
+      sourceDocuments: [],
+    });
     mockEnsureConfigServers.mockResolvedValue({ warm: warmParsed });
     mockGetAllServerConfigsFresh.mockResolvedValue({
       warm: warmParsed,
@@ -166,7 +180,9 @@ describe('MCPConfigResolver', () => {
         stable: { type: 'stdio', command: 'node', source: 'yaml' },
       },
       missingConfigServerNames: ['cold'],
+      pendingConfigs: { cold },
       securityPolicy: { allowedDomains: undefined, allowedAddresses: undefined },
+      sourceDocuments: [],
     });
   });
 
@@ -174,9 +190,10 @@ describe('MCPConfigResolver', () => {
     const user = { id: 'user-1', role: 'USER', tenantId: 'tenant-a' };
     const rawConfig = { type: 'streamable-http', url: 'https://mcp.example.com' };
     const parsedConfig = { ...rawConfig, source: 'config' };
-    mockGetAppConfig.mockResolvedValue({
-      __mcpAuthorityIdentity: 'proof-b',
-      mcpConfig: { search: rawConfig },
+    const sourceDocuments = [{ _id: 'config-b', updatedAt: '2026-08-07T00:00:00.000Z' }];
+    mockGetMCPAppConfigSnapshot.mockResolvedValue({
+      config: { mcpConfig: { search: rawConfig } },
+      sourceDocuments,
     });
     mockGetUserServerConfigFresh.mockResolvedValue(undefined);
 
@@ -187,13 +204,15 @@ describe('MCPConfigResolver', () => {
         expectedServerConfigs: { search: parsedConfig },
       }),
     ).resolves.toMatchObject({
-      authorityIdentity: 'proof-b',
       collisionServerNames: ['search'],
       configs: { search: parsedConfig },
+      sourceDocuments,
     });
 
-    expect(mockGetAppConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ refreshOverrides: true, mcpOnly: true }),
+    expect(mockGetMCPAppConfigSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failClosed: true,
+      }),
     );
     expect(mockGetUserServerConfigFresh).toHaveBeenCalledWith('search', user.id, user.role);
     expect(mockGetAccessibleUserServerNamesFresh).not.toHaveBeenCalled();
@@ -205,7 +224,10 @@ describe('MCPConfigResolver', () => {
     const user = { id: 'user-1', role: 'USER', tenantId: 'tenant-a' };
     const rawConfig = { type: 'streamable-http', url: 'https://mcp.example.com' };
     const parsedConfig = { ...rawConfig, source: 'config' };
-    mockGetAppConfig.mockResolvedValue({ mcpConfig: { 'Sales Force': rawConfig } });
+    mockGetMCPAppConfigSnapshot.mockResolvedValue({
+      config: { mcpConfig: { 'Sales Force': rawConfig } },
+      sourceDocuments: [],
+    });
     mockGetAccessibleUserServerNamesFresh.mockResolvedValue(['Sales_Force']);
     mockGetUserServerConfigFresh.mockResolvedValue(undefined);
 

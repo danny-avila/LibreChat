@@ -56,6 +56,7 @@ const {
 const db = require('~/models');
 const { findToken, createToken, updateToken, deleteTokens } = db;
 const { getGraphApiToken } = require('./GraphTokenService');
+const { getMCPAuthorityResolver } = require('./MCPAuthority');
 const { exchangeOboToken } = require('./OboTokenService');
 const { createOboTrustChecker } = require('./OboPolicyService');
 const { reinitMCPServer } = require('./Tools/mcp');
@@ -98,43 +99,48 @@ function matchesMCPAvailableToolsAuthority(availableTools, authorityScope) {
 }
 
 async function resolveMCPAvailableToolsAuthority(availableTools, authority, requestBody) {
-  if (!availableTools || !authority.catalogScope) {
+  const parsedConfig = authority.parsedConfig;
+  if (!availableTools || !parsedConfig.catalogScope) {
     return authority;
   }
 
   const stampedScope = mcpAvailableToolsAuthorityScopes.get(availableTools)?.scope;
   if (stampedScope) {
-    return matchesMCPAvailableToolsAuthority(availableTools, authority.catalogScope)
+    return matchesMCPAvailableToolsAuthority(availableTools, parsedConfig.catalogScope)
       ? authority
       : null;
   }
 
   const readCatalog = async (currentAuthority) =>
-    await getMCPServerCatalog({
-      userId: currentAuthority.user.id,
-      serverName: currentAuthority.serverName,
-      serverConfig: currentAuthority.provenanceServerConfig,
-      customUserVars: currentAuthority.customUserVars,
-      tenantId: currentAuthority.tenantId,
-      role: currentAuthority.user.role,
-      authorizationIdentity: currentAuthority.authorizationIdentity,
-      authorizationKind: currentAuthority.authorizationKind,
-      securityPolicyIdentity: currentAuthority.securityPolicyIdentity,
+    await getMCPAuthorityResolver().useIssuedResolution(currentAuthority, async (current) => {
+      const currentParsedConfig = current.parsedConfig;
+      return await getMCPServerCatalog({
+        userId: currentParsedConfig.actor.userId,
+        serverName: currentParsedConfig.serverName,
+        serverConfig: currentParsedConfig.sourceConfig,
+        customUserVars: currentParsedConfig.customUserVars,
+        tenantId: currentParsedConfig.actor.tenantId,
+        role: currentParsedConfig.actor.user.role,
+        authorizationIdentity: currentParsedConfig.authorization.identity,
+        authorizationKind: currentParsedConfig.authorization.kind,
+        securityPolicyIdentity: currentParsedConfig.securityPolicyIdentity,
+      });
     });
 
   let currentAuthority = authority;
   let catalog = await readCatalog(currentAuthority);
+  let currentParsedConfig = currentAuthority.parsedConfig;
   const currentKindMatches =
     catalog.status === 'ready' &&
-    catalog.metadata.authorizationKind === currentAuthority.authorizationKind;
+    catalog.metadata.authorizationKind === currentParsedConfig.authorization.kind;
   if (
     !currentKindMatches &&
-    currentAuthority.authorizationKind === 'none' &&
-    shouldDetectRuntimeOAuth(currentAuthority.serverConfig)
+    currentParsedConfig.authorization.kind === 'none' &&
+    shouldDetectRuntimeOAuth(currentParsedConfig.sourceConfig)
   ) {
     const oauthAuthority = await resolveCurrentMCPToolAuthority({
-      user: currentAuthority.user,
-      serverName: currentAuthority.serverName,
+      user: currentParsedConfig.actor.user,
+      serverName: currentParsedConfig.serverName,
       requestBody,
       oauthRequiredHint: true,
     });
@@ -142,36 +148,41 @@ async function resolveMCPAvailableToolsAuthority(availableTools, authority, requ
       return null;
     }
     currentAuthority = oauthAuthority;
+    currentParsedConfig = currentAuthority.parsedConfig;
     catalog = await readCatalog(currentAuthority);
   }
 
   if (
     catalog.status !== 'ready' ||
-    catalog.metadata.authorizationKind !== currentAuthority.authorizationKind ||
+    catalog.metadata.authorizationKind !== currentParsedConfig.authorization.kind ||
     !isDeepStrictEqual(catalog.tools, availableTools)
   ) {
     return null;
   }
 
-  stampMCPAvailableToolsAuthority(availableTools, currentAuthority.catalogScope, {
+  stampMCPAvailableToolsAuthority(availableTools, currentParsedConfig.catalogScope, {
     authorizationKind: catalog.metadata.authorizationKind,
   });
   return currentAuthority;
 }
 
 async function resolvePostDiscoveryToolAuthority(authority, result, requestBody) {
-  if (!result?.availableTools || !authority.catalogScope) {
+  const parsedConfig = authority.parsedConfig;
+  if (!result?.availableTools || !parsedConfig.catalogScope) {
     return authority;
   }
   const currentAuthority = await resolveCurrentMCPToolAuthority({
-    user: authority.user,
-    serverName: authority.serverName,
+    user: parsedConfig.actor.user,
+    serverName: parsedConfig.serverName,
     requestBody,
+    schemas: result.availableTools,
+    discoveryProvenance: result.discoveryProvenance,
     oauthRequiredHint:
       result.discoveryProvenance?.authorizationKind === 'oauth' || result.oauthRequired === true,
   });
-  return currentAuthority?.catalogScope &&
-    matchesMCPToolAuthorityScope(currentAuthority.catalogScope, result.authorityScope)
+  const currentParsedConfig = currentAuthority?.parsedConfig;
+  return currentParsedConfig?.catalogScope &&
+    matchesMCPToolAuthorityScope(currentParsedConfig.catalogScope, result.authorityScope)
     ? currentAuthority
     : null;
 }
@@ -722,7 +733,7 @@ async function reconnectServer({
   userMCPAuthMap,
   requestBody,
   requestScopedConnections,
-  authorityScope,
+  authorityResolution,
   streamId = null,
   jobCreatedAt,
 }) {
@@ -795,6 +806,7 @@ async function reconnectServer({
       flowManager,
     });
     return await reinitMCPServer({
+      authorityResolution,
       user,
       signal,
       serverName,
@@ -804,7 +816,6 @@ async function reconnectServer({
       userMCPAuthMap,
       requestBody,
       requestScopedConnections,
-      oauthAuthorityScope: authorityScope,
       forceNew: true,
       returnOnOAuth: false,
       connectionTimeout: Time.THIRTY_SECONDS,
@@ -869,34 +880,35 @@ async function createMCPTools({
     logger.warn(`[MCP][${serverName}] Current MCP authority is unavailable, skipping all tools`);
     return [];
   }
+  const authorityParsedConfig = authority.parsedConfig;
   if (
     suppliedServerConfig &&
-    authority.catalogScope &&
+    authorityParsedConfig.catalogScope &&
     getMCPToolCatalogRevision(suppliedServerConfig) !==
-      getMCPToolCatalogRevision(authority.serverConfig)
+      getMCPToolCatalogRevision(authorityParsedConfig.sourceConfig)
   ) {
     logger.warn(`[MCP][${serverName}] Rejecting stale MCP server config`);
     return [];
   }
   const suppliedCustomUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
   if (
-    Object.keys(authority.serverConfig.customUserVars ?? {}).length > 0 &&
-    !isDeepStrictEqual(suppliedCustomUserVars ?? {}, authority.customUserVars ?? {})
+    Object.keys(authorityParsedConfig.sourceConfig.customUserVars ?? {}).length > 0 &&
+    !isDeepStrictEqual(suppliedCustomUserVars ?? {}, authorityParsedConfig.customUserVars ?? {})
   ) {
     logger.warn(`[MCP][${serverName}] Rejecting stale MCP user credentials`);
     return [];
   }
-  user = authority.user;
-  const serverConfig = authority.serverConfig;
-  if (authority.customUserVars) {
+  user = authorityParsedConfig.actor.user;
+  const serverConfig = authorityParsedConfig.sourceConfig;
+  if (authorityParsedConfig.customUserVars) {
     userMCPAuthMap = {
       ...userMCPAuthMap,
-      [`${Constants.mcp_prefix}${serverName}`]: authority.customUserVars,
+      [`${Constants.mcp_prefix}${serverName}`]: authorityParsedConfig.customUserVars,
     };
   }
 
   if (serverConfig?.url) {
-    const { allowedDomains, allowedAddresses } = authority.securityPolicy;
+    const { allowedDomains, allowedAddresses } = authorityParsedConfig.securityPolicy;
     const isDomainAllowed = await isEarlyDomainAllowed({
       serverConfig,
       user,
@@ -923,7 +935,7 @@ async function createMCPTools({
     userMCPAuthMap,
     requestBody,
     requestScopedConnections,
-    authorityScope: authority.catalogScope,
+    authorityResolution: authority,
     streamId,
     jobCreatedAt,
   });
@@ -1068,7 +1080,8 @@ async function createMCPTool({
     logger.warn(`[MCP][${serverName}][${toolName}] Current MCP authority is unavailable`);
     return undefined;
   }
-  if (serverConfig && authority.catalogScope) {
+  let authorityParsedConfig = authority.parsedConfig;
+  if (serverConfig && authorityParsedConfig.catalogScope) {
     let suppliedConfigRevision;
     try {
       suppliedConfigRevision = getMCPToolCatalogRevision(serverConfig);
@@ -1076,7 +1089,7 @@ async function createMCPTool({
       logger.warn(`[MCP][${serverName}][${toolName}] Config revision is unavailable`, error);
       return undefined;
     }
-    if (suppliedConfigRevision !== getMCPToolCatalogRevision(authority.serverConfig)) {
+    if (suppliedConfigRevision !== getMCPToolCatalogRevision(authorityParsedConfig.sourceConfig)) {
       logger.warn(`[MCP][${serverName}][${toolName}] Rejecting stale MCP server config`);
       return undefined;
     }
@@ -1084,8 +1097,8 @@ async function createMCPTool({
   const suppliedCustomUserVars =
     userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`] ?? undefined;
   if (
-    Object.keys(authority.serverConfig.customUserVars ?? {}).length > 0 &&
-    !isDeepStrictEqual(suppliedCustomUserVars ?? {}, authority.customUserVars ?? {})
+    Object.keys(authorityParsedConfig.sourceConfig.customUserVars ?? {}).length > 0 &&
+    !isDeepStrictEqual(suppliedCustomUserVars ?? {}, authorityParsedConfig.customUserVars ?? {})
   ) {
     logger.warn(`[MCP][${serverName}][${toolName}] Rejecting stale MCP user credentials`);
     return undefined;
@@ -1100,13 +1113,14 @@ async function createMCPTool({
     return undefined;
   }
   authority = validatedAuthority;
-  user = authority.user;
-  serverConfig = authority.serverConfig;
+  authorityParsedConfig = authority.parsedConfig;
+  user = authorityParsedConfig.actor.user;
+  serverConfig = authorityParsedConfig.sourceConfig;
   const requestScopedTools = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
   const useMissingToolCache = !requestScopedTools;
 
   if (serverConfig?.url) {
-    const { allowedDomains, allowedAddresses } = authority.securityPolicy;
+    const { allowedDomains, allowedAddresses } = authorityParsedConfig.securityPolicy;
     const isDomainAllowed = await isEarlyDomainAllowed({
       serverConfig,
       user,
@@ -1158,7 +1172,7 @@ async function createMCPTool({
       userMCPAuthMap,
       requestBody,
       requestScopedConnections,
-      authorityScope: authority.catalogScope,
+      authorityResolution: authority,
       streamId,
       jobCreatedAt,
     });
@@ -1173,8 +1187,9 @@ async function createMCPTool({
         return undefined;
       }
       authority = acceptedAuthority;
-      user = authority.user;
-      serverConfig = authority.serverConfig;
+      authorityParsedConfig = authority.parsedConfig;
+      user = authorityParsedConfig.actor.user;
+      serverConfig = authorityParsedConfig.sourceConfig;
       stampMCPAvailableToolsAuthority(
         result.availableTools,
         result.authorityScope,
@@ -1198,40 +1213,45 @@ async function createMCPTool({
   }
 
   const bindingAuthority = await resolveCurrentMCPToolAuthority({
-    user: authority.user,
+    user: authorityParsedConfig.actor.user,
     serverName,
     requestBody,
-    oauthRequiredHint: authority.authorizationKind === 'oauth',
+    schemas: toolDefinition,
+    oauthRequiredHint: authorityParsedConfig.authorization.kind === 'oauth',
     bounded: true,
-    expectedServerConfig: authority.serverConfig,
+    expectedServerConfig: authorityParsedConfig.sourceConfig,
   });
+  const bindingParsedConfig = bindingAuthority?.parsedConfig;
   if (
-    !bindingAuthority?.catalogScope ||
-    !(await userCanUseMCPServersFresh(bindingAuthority.user)) ||
-    !matchesMCPToolAuthorityScope(authority.catalogScope, bindingAuthority.catalogScope)
+    !bindingParsedConfig?.catalogScope ||
+    !(await userCanUseMCPServersFresh(bindingParsedConfig.actor.user)) ||
+    !matchesMCPToolAuthorityScope(
+      authorityParsedConfig.catalogScope,
+      bindingParsedConfig.catalogScope,
+    )
   ) {
     logger.warn(`[MCP][${serverName}][${toolName}] Authority changed before tool binding`);
     return undefined;
   }
   authority = bindingAuthority;
-  user = authority.user;
-  serverConfig = authority.serverConfig;
-
-  return createToolInstance({
-    res,
-    mcpPermissionContext,
-    user,
-    requestBody,
-    requestScopedConnections,
-    provider,
-    toolName,
-    serverName,
-    serverConfig,
-    authorityScope: authority.catalogScope,
-    oauthRequiredHint: authority.authorizationKind === 'oauth',
-    toolDefinition,
-    streamId,
-    jobCreatedAt,
+  return await getMCPAuthorityResolver().useIssuedResolution(authority, (current) => {
+    const parsedConfig = current.parsedConfig;
+    return createToolInstance({
+      res,
+      mcpPermissionContext,
+      user: parsedConfig.actor.user,
+      requestBody,
+      requestScopedConnections,
+      provider,
+      toolName,
+      serverName: parsedConfig.serverName,
+      serverConfig: parsedConfig.sourceConfig,
+      authorityScope: parsedConfig.catalogScope,
+      oauthRequiredHint: parsedConfig.authorization.kind === 'oauth',
+      toolDefinition: current.schemas,
+      streamId,
+      jobCreatedAt,
+    });
   });
 }
 
@@ -1291,20 +1311,24 @@ function createToolInstance({
         user: requestedUser,
         serverName,
         requestBody,
+        schemas: toolDefinition,
         oauthRequiredHint: capturedOAuthRequiredHint,
         expectedServerConfig: capturedServerConfig,
       });
+      const currentParsedConfig = currentAuthority?.parsedConfig;
       if (
-        !currentAuthority ||
+        !currentParsedConfig ||
         (capturedAuthorityScope &&
-          !matchesMCPToolAuthorityScope(capturedAuthorityScope, currentAuthority.catalogScope))
+          !matchesMCPToolAuthorityScope(capturedAuthorityScope, currentParsedConfig.catalogScope))
       ) {
         throw new Error('Forbidden: MCP server authority changed');
       }
       const requestPermissionAllowed = mcpPermissionContext
-        ? await mcpPermissionContext.canUseServers(currentAuthority.user)
+        ? await mcpPermissionContext.canUseServers(currentParsedConfig.actor.user)
         : true;
-      const currentPermissionAllowed = await userCanUseMCPServersFresh(currentAuthority.user);
+      const currentPermissionAllowed = await userCanUseMCPServersFresh(
+        currentParsedConfig.actor.user,
+      );
       if (!requestPermissionAllowed || !currentPermissionAllowed) {
         throw new Error('Forbidden: Insufficient MCP server permissions');
       }
@@ -1343,18 +1367,18 @@ function createToolInstance({
 
       const result = await mcpManager.callTool({
         serverName,
-        serverConfig: currentAuthority.serverConfig,
+        serverConfig: currentParsedConfig.sourceConfig,
         toolName,
         provider,
         toolArguments,
         options: {
           signal: derivedSignal,
         },
-        user: currentAuthority.user,
+        user: currentParsedConfig.actor.user,
         requestBody,
         requestScopedConnections:
           config?.configurable?.requestScopedConnections ?? capturedRequestScopedConnections,
-        customUserVars: currentAuthority.customUserVars,
+        customUserVars: currentParsedConfig.customUserVars,
         flowManager,
         tokenMethods: {
           findToken,
@@ -1367,27 +1391,35 @@ function createToolInstance({
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
-        oauthAuthorityScope: currentAuthority.catalogScope,
-        beforeExecute: async ({ connectionProvenance }) => {
-          const executionAuthority = await resolveCurrentMCPToolAuthority({
-            user: currentAuthority.user,
-            serverName,
-            requestBody,
-            oauthRequiredHint: currentAuthority.authorizationKind === 'oauth',
-            bounded: true,
-            expectedServerConfig: currentAuthority.serverConfig,
-          });
-          if (
-            !executionAuthority?.catalogScope ||
-            !(await userCanUseMCPServersFresh(executionAuthority.user)) ||
-            !matchesMCPToolAuthorityScope(
-              currentAuthority.catalogScope,
-              executionAuthority.catalogScope,
-            ) ||
-            !matchesMCPConnectionProvenance(connectionProvenance, executionAuthority.scopeInput)
-          ) {
-            throw new Error('Forbidden: MCP server authority changed before execution');
-          }
+        effectiveServerConfig: currentParsedConfig.effectiveConfig,
+        securityPolicy: currentParsedConfig.securityPolicy,
+        oauthAuthorityScope: currentParsedConfig.catalogScope,
+        authorityAuthorizationKind: currentParsedConfig.authorization.kind,
+        bindWithCurrentAuthority: async (bind) =>
+          await getMCPAuthorityResolver().useIssuedResolution(currentAuthority, bind),
+        executeWithCurrentAuthority: async (execute, { connectionProvenance }) => {
+          return await getMCPAuthorityResolver().useIssuedResolution(
+            currentAuthority,
+            async (current) => {
+              const parsedConfig = current.parsedConfig;
+              if (
+                !matchesMCPConnectionProvenance(connectionProvenance, {
+                  tenantId: parsedConfig.actor.tenantId,
+                  userId: parsedConfig.actor.userId,
+                  serverName: parsedConfig.serverName,
+                  serverConfig: parsedConfig.sourceConfig,
+                  effectiveServerConfig: parsedConfig.effectiveConfig,
+                  securityPolicyIdentity: parsedConfig.securityPolicyIdentity,
+                  customUserVars: parsedConfig.customUserVars,
+                  authorizationIdentity: parsedConfig.authorization.identity,
+                  authorizationKind: parsedConfig.authorization.kind,
+                })
+              ) {
+                throw new Error('Forbidden: MCP server authority changed before execution');
+              }
+              return await execute();
+            },
+          );
         },
       });
 

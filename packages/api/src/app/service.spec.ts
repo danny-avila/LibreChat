@@ -1,7 +1,6 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import {
   createAppConfigService,
-  MCP_AUTHORITY_IDENTITY_KEY,
   _resetOverrideStrictCache,
   getAppConfigOptionsFromUser,
 } from './service';
@@ -499,18 +498,16 @@ describe('createAppConfigService', () => {
         fresh: true,
       });
       expect(deps.getApplicableConfigs).toHaveBeenCalledWith(expect.any(Array), {
-        paths: ['mcpConfig', 'mcpSettings'],
+        paths: ['mcpServers', 'mcpSettings'],
+        includeInactive: true,
       });
       expect(deps._cache.set).toHaveBeenCalledTimes(1);
       expect(first).not.toBe(deps._baseConfig);
       expect(second).not.toBe(first);
-      expect(Object.getOwnPropertyDescriptor(first, MCP_AUTHORITY_IDENTITY_KEY)?.value).toEqual(
-        expect.any(String),
-      );
     });
 
-    it('changes MCP authority proof when principal or Config document authority changes', async () => {
-      const config = {
+    it('returns active and inactive MCP source documents from the effective-config read', async () => {
+      const activeConfig = {
         _id: 'config-a',
         principalType: 'role',
         principalId: 'USER',
@@ -518,39 +515,29 @@ describe('createAppConfigService', () => {
         isActive: true,
         configVersion: 1,
         tombstones: [],
-        overrides: { mcpConfig: {} },
+        overrides: { mcpServers: { active: { type: 'sse', url: 'https://active.test' } } },
+      };
+      const inactiveConfig = {
+        ...activeConfig,
+        _id: 'config-b',
+        priority: 20,
+        isActive: false,
+        overrides: { mcpServers: { inactive: { type: 'sse', url: 'https://inactive.test' } } },
       };
       const deps = createDeps({
-        getApplicableConfigs: jest
-          .fn()
-          .mockResolvedValueOnce([config])
-          .mockResolvedValueOnce([{ ...config, priority: 20 }]),
-        getUserPrincipals: jest
-          .fn()
-          .mockResolvedValueOnce([{ principalType: 'role', principalId: 'USER' }])
-          .mockResolvedValueOnce([
-            { principalType: 'role', principalId: 'USER' },
-            { principalType: 'group', principalId: 'group-a' },
-          ]),
+        getApplicableConfigs: jest.fn().mockResolvedValue([activeConfig, inactiveConfig]),
       });
-      const { getAppConfig } = createAppConfigService(deps);
+      const { getMCPAppConfigSnapshot } = createAppConfigService(deps);
 
-      const first = await getAppConfig({
+      const snapshot = await getMCPAppConfigSnapshot({
         role: 'USER',
         userId: 'uid1',
-        refreshOverrides: true,
-        mcpOnly: true,
-      });
-      const second = await getAppConfig({
-        role: 'USER',
-        userId: 'uid1',
-        refreshOverrides: true,
-        mcpOnly: true,
       });
 
-      expect(Object.getOwnPropertyDescriptor(first, MCP_AUTHORITY_IDENTITY_KEY)?.value).not.toBe(
-        Object.getOwnPropertyDescriptor(second, MCP_AUTHORITY_IDENTITY_KEY)?.value,
-      );
+      expect(snapshot.sourceDocuments).toEqual([activeConfig, inactiveConfig]);
+      expect(snapshot.config.mcpConfig).toEqual({
+        active: { type: 'sse', url: 'https://active.test' },
+      });
     });
   });
 

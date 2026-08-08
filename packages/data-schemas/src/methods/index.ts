@@ -104,6 +104,7 @@ import { createConfigMethods, type ConfigMethods } from './config';
 import {
   createMCPAuthorityMethods,
   MCPAuthorityProofError,
+  MCP_AUTHORITY_PROOF_COLLECTIONS,
   MAX_MCP_AUTHORITY_TARGETS,
   createMCPAuthorityBootRevision,
   createMCPAuthorityConfigSourceRevision,
@@ -119,6 +120,7 @@ import {
 export {
   RoleConflictError,
   MCPAuthorityProofError,
+  MCP_AUTHORITY_PROOF_COLLECTIONS,
   MAX_MCP_AUTHORITY_TARGETS,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
   DEFAULT_SESSION_EXPIRY,
@@ -274,6 +276,8 @@ export function createMethods(
     isExternalSkillId: deps.isExternalSkillId,
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
+  const mcpAuthorityMethods = createMCPAuthorityMethods(mongoose);
+  const pluginAuthMethods = createPluginAuthMethods(mongoose);
 
   return {
     ...createUserMethods(mongoose, { getCache: deps.getCache }),
@@ -293,7 +297,7 @@ export function createMethods(
     ...systemGrantMethods,
     ...createAuditLogMethods(mongoose),
     ...createShareMethods(mongoose),
-    ...createPluginAuthMethods(mongoose),
+    ...pluginAuthMethods,
     /* Tier 1 */
     ...actionMethods,
     ...createAssistantMethods(mongoose),
@@ -318,7 +322,7 @@ export function createMethods(
     /* Config */
     ...createConfigMethods(mongoose),
     /* MCP authority proofs */
-    ...createMCPAuthorityMethods(mongoose),
+    ...mcpAuthorityMethods,
   };
 }
 

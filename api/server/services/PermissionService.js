@@ -717,15 +717,18 @@ const hasPublicPermission = async ({ resourceType, resourceId, requiredPermissio
  * @param {mongoose.ClientSession} [params.session] - Optional MongoDB session for transactions
  * @returns {Promise<Object>} Results object with granted, updated, revoked arrays and error details
  */
-const bulkUpdateResourcePermissions = async ({
+const bulkUpdateResourcePermissionsInternal = async ({
   resourceType,
   resourceId,
   updatedPrincipals = [],
   revokedPrincipals = [],
   grantedBy,
   session,
+  mcpAuthorityMutation = false,
 }) => {
-  const supportsTransactions = await getTransactionSupport(mongoose, transactionSupportCache);
+  const supportsTransactions = mcpAuthorityMutation
+    ? false
+    : await getTransactionSupport(mongoose, transactionSupportCache);
   transactionSupportCache = supportsTransactions;
   let localSession = session;
   let shouldEndSession = false;
@@ -948,6 +951,22 @@ const bulkUpdateResourcePermissions = async ({
       localSession.endSession();
     }
   }
+};
+
+const bulkUpdateResourcePermissions = async (params) => {
+  const affectsMCPAuthority =
+    params.resourceType === ResourceType.MCPSERVER || params.resourceType === ResourceType.AGENT;
+  if (!affectsMCPAuthority) {
+    return await bulkUpdateResourcePermissionsInternal(params);
+  }
+  if (params.session?.inTransaction()) {
+    throw new Error('MCP authority permission changes cannot join a caller-owned transaction');
+  }
+  return (
+    await db.mutateMCPAuthority(async () =>
+      bulkUpdateResourcePermissionsInternal({ ...params, mcpAuthorityMutation: true }),
+    )
+  ).result;
 };
 
 /**

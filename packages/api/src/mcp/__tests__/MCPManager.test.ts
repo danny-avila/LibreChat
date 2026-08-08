@@ -95,6 +95,34 @@ const mockIsMCPDomainAllowed = isMCPDomainAllowed as jest.MockedFunction<typeof 
 describe('MCPManager', () => {
   const userId = 'test-user-123';
   const serverName = 'test_server';
+  const securityPolicy = {
+    allowedDomains: null,
+    allowedAddresses: null,
+    useSSRFProtection: false,
+  };
+  const authorityScope: t.MCPToolCatalogScope = {
+    tenant: 'tenant-revision',
+    principal: 'principal-revision',
+    server: 'server-revision',
+    policy: 'policy-revision',
+    config: 'config-revision',
+    credentials: 'credential-revision',
+  };
+
+  function issuedConnectionInput(
+    sourceConfig: t.ParsedServerConfig,
+    effectiveServerConfig: t.MCPOptions = sourceConfig,
+    authorityAuthorizationKind: t.MCPConnectionProvenance['authorizationKind'] = 'none',
+    oauthAuthorityScope: t.MCPToolCatalogScope = authorityScope,
+  ) {
+    return {
+      serverConfig: sourceConfig,
+      effectiveServerConfig,
+      securityPolicy,
+      oauthAuthorityScope,
+      authorityAuthorizationKind,
+    };
+  }
 
   beforeEach(() => {
     // Reset MCPManager singleton state
@@ -542,6 +570,87 @@ describe('MCPManager', () => {
       expect(manager.getConnectionStats().activityEntries).toBe(0);
     });
 
+    it('opens the connection inside the current-authority bind wrapper', async () => {
+      const manager = new MCPManager();
+      const connection = createConnection();
+      const getConnection = jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
+      let wrapperCalls = 0;
+      const bindWithCurrentAuthority = async <Result>(
+        bind: () => Promise<Result>,
+      ): Promise<Result> => {
+        wrapperCalls++;
+        expect(getConnection).not.toHaveBeenCalled();
+        const result = await bind();
+        expect(getConnection).toHaveBeenCalledTimes(1);
+        return result;
+      };
+
+      await manager.callTool({
+        user: mockUser,
+        serverName,
+        serverConfig,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager,
+        bindWithCurrentAuthority,
+      });
+
+      expect(wrapperCalls).toBe(1);
+      expect(connection.client.request).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not open a connection when the current-authority bind wrapper rejects', async () => {
+      const manager = new MCPManager();
+      const getConnection = jest.spyOn(manager, 'getConnection');
+
+      await expect(
+        manager.callTool({
+          user: mockUser,
+          serverName,
+          serverConfig,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager,
+          bindWithCurrentAuthority: async () => {
+            throw new Error('revoked before connect');
+          },
+        }),
+      ).rejects.toThrow('revoked before connect');
+
+      expect(getConnection).not.toHaveBeenCalled();
+    });
+
+    it('propagates stable MCP-unavailable state before any manager effect', async () => {
+      const manager = new MCPManager();
+      const getConnection = jest.spyOn(manager, 'getConnection');
+      const unavailable = Object.assign(new Error('snapshot transactions are unavailable'), {
+        code: 'MCP_UNAVAILABLE',
+        reason: 'snapshot_transactions_unavailable',
+        status: 503,
+      });
+
+      await expect(
+        manager.callTool({
+          ...issuedConnectionInput(serverConfig),
+          user: mockUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager,
+          bindWithCurrentAuthority: async () => {
+            throw unavailable;
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: 'MCP_UNAVAILABLE',
+        reason: 'snapshot_transactions_unavailable',
+        status: 503,
+      });
+
+      expect(getConnection).not.toHaveBeenCalled();
+      expect(mockResolveOboToken).not.toHaveBeenCalled();
+    });
+
     it('runs the host authority fence immediately before the remote tool request', async () => {
       const manager = new MCPManager();
       const connection = createConnection();
@@ -582,6 +691,56 @@ describe('MCPManager', () => {
           provider: 'openai',
           flowManager: mockFlowManager,
           beforeExecute: jest.fn().mockRejectedValue(new Error('revoked')),
+        }),
+      ).rejects.toThrow('revoked');
+
+      expect(connection.client.request).not.toHaveBeenCalled();
+    });
+
+    it('executes the exact remote request inside the current-authority wrapper', async () => {
+      const manager = new MCPManager();
+      const connection = createConnection();
+      let wrapperCalls = 0;
+      const executeWithCurrentAuthority = async <Result>(
+        execute: () => Promise<Result>,
+      ): Promise<Result> => {
+        wrapperCalls++;
+        expect(connection.client.request).not.toHaveBeenCalled();
+        const result = await execute();
+        expect(connection.client.request).toHaveBeenCalledTimes(1);
+        return result;
+      };
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
+
+      await manager.callTool({
+        user: mockUser,
+        serverName,
+        serverConfig,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager,
+        executeWithCurrentAuthority,
+      });
+
+      expect(wrapperCalls).toBe(1);
+    });
+
+    it('does not send a remote request when the current-authority wrapper rejects', async () => {
+      const manager = new MCPManager();
+      const connection = createConnection();
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(connection);
+
+      await expect(
+        manager.callTool({
+          user: mockUser,
+          serverName,
+          serverConfig,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager,
+          executeWithCurrentAuthority: async () => {
+            throw new Error('revoked');
+          },
         }),
       ).rejects.toThrow('revoked');
 
@@ -656,8 +815,15 @@ describe('MCPManager', () => {
       (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
     });
 
-    it('should call preProcessGraphTokens with graphTokenResolver when provided', async () => {
+    it('uses the issued materialized Graph config without minting again', async () => {
       const serverConfig = createServerConfigWithGraphPlaceholder();
+      const effectiveServerConfig = {
+        ...serverConfig,
+        headers: {
+          ...serverConfig.headers,
+          Authorization: 'Bearer resolved-graph-token',
+        },
+      };
 
       mockAppConnections({
         get: jest.fn().mockResolvedValue(mockConnection),
@@ -668,6 +834,7 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
 
       await manager.callTool({
+        ...issuedConnectionInput(serverConfig, effectiveServerConfig),
         user: mockUser as IUser,
         serverName,
         toolName: 'test_tool',
@@ -678,17 +845,21 @@ describe('MCPManager', () => {
         graphTokenResolver: mockGraphTokenResolver,
       });
 
-      expect(graphUtils.preProcessGraphTokens).toHaveBeenCalledWith(
-        serverConfig,
-        expect.objectContaining({
-          user: mockUser,
-          graphTokenResolver: mockGraphTokenResolver,
-        }),
+      expect(graphUtils.preProcessGraphTokens).not.toHaveBeenCalled();
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
+        expect.objectContaining({ Authorization: 'Bearer resolved-graph-token' }),
       );
     });
 
     it('should resolve graph token placeholders in headers before tool call', async () => {
       const serverConfig = createServerConfigWithGraphPlaceholder();
+      const effectiveServerConfig = {
+        ...serverConfig,
+        headers: {
+          ...serverConfig.headers,
+          Authorization: 'Bearer resolved-graph-token',
+        },
+      };
 
       mockAppConnections({
         get: jest.fn().mockResolvedValue(mockConnection),
@@ -699,6 +870,7 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
 
       await manager.callTool({
+        ...issuedConnectionInput(serverConfig, effectiveServerConfig),
         user: mockUser as IUser,
         serverName,
         toolName: 'test_tool',
@@ -751,6 +923,7 @@ describe('MCPManager', () => {
       const oauthStart = jest.fn();
 
       await manager.callTool({
+        ...issuedConnectionInput(rawServerConfig, processedServerConfig, 'oauth'),
         user: mockUser as IUser,
         serverName,
         toolName: 'test_tool',
@@ -761,8 +934,7 @@ describe('MCPManager', () => {
         >[0]['flowManager'],
       });
 
-      /** One pass from user-connection runtime resolution, one from callTool — none from the handler attach */
-      expect(mockProcessMCPEnv).toHaveBeenCalledTimes(2);
+      expect(mockProcessMCPEnv).not.toHaveBeenCalled();
       expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledWith(
         expect.objectContaining({
           serverConfig: processedServerConfig,
@@ -797,6 +969,7 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
 
       await manager.callTool({
+        ...issuedConnectionInput(serverConfig),
         user: mockUser as IUser,
         serverName,
         toolName: 'test_tool',
@@ -838,6 +1011,7 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
 
       await manager.callTool({
+        ...issuedConnectionInput(serverConfig),
         user: mockUser as IUser,
         serverName,
         toolName: 'test_tool',
@@ -848,17 +1022,10 @@ describe('MCPManager', () => {
         // No graphTokenResolver provided
       });
 
-      // Verify preProcessGraphTokens was still called (to check for placeholders)
-      expect(graphUtils.preProcessGraphTokens).toHaveBeenCalledWith(
-        serverConfig,
-        expect.objectContaining({
-          user: mockUser,
-          graphTokenResolver: undefined,
-        }),
-      );
+      expect(graphUtils.preProcessGraphTokens).not.toHaveBeenCalled();
     });
 
-    it('should handle graph token resolution failure gracefully', async () => {
+    it('fails closed when issued Graph credentials are not materialized', async () => {
       const serverConfig = createServerConfigWithGraphPlaceholder();
 
       // Simulate resolution failure - returns original value unchanged
@@ -874,9 +1041,9 @@ describe('MCPManager', () => {
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
 
-      // Should not throw, even when token resolution fails
       await expect(
         manager.callTool({
+          ...issuedConnectionInput(serverConfig),
           user: mockUser as IUser,
           serverName,
           toolName: 'test_tool',
@@ -886,14 +1053,9 @@ describe('MCPManager', () => {
           >[0]['flowManager'],
           graphTokenResolver: mockGraphTokenResolver,
         }),
-      ).resolves.toBeDefined();
-
-      // Headers should contain the unresolved placeholder
-      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
-        }),
-      );
+      ).rejects.toThrow('Graph credentials were not materialized by the MCP authority resolver');
+      expect(graphUtils.preProcessGraphTokens).not.toHaveBeenCalled();
+      expect(mockConnection.client.request).not.toHaveBeenCalled();
     });
 
     it('should resolve graph tokens in env variables', async () => {
@@ -930,6 +1092,10 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
 
       await manager.callTool({
+        ...issuedConnectionInput(serverConfig, {
+          ...serverConfig,
+          env: { ...serverConfig.env, GRAPH_TOKEN: 'resolved-graph-token' },
+        }),
         user: mockUser as IUser,
         serverName,
         toolName: 'test_tool',
@@ -940,12 +1106,7 @@ describe('MCPManager', () => {
         graphTokenResolver: mockGraphTokenResolver,
       });
 
-      expect(graphUtils.preProcessGraphTokens).toHaveBeenCalledWith(
-        serverConfig,
-        expect.objectContaining({
-          graphTokenResolver: mockGraphTokenResolver,
-        }),
-      );
+      expect(graphUtils.preProcessGraphTokens).not.toHaveBeenCalled();
     });
 
     it('should resolve graph tokens in URL', async () => {
@@ -974,6 +1135,10 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
 
       await manager.callTool({
+        ...issuedConnectionInput(serverConfig, {
+          ...serverConfig,
+          url: 'https://api.example.com?token=resolved-graph-token',
+        }),
         user: mockUser as IUser,
         serverName,
         toolName: 'test_tool',
@@ -984,12 +1149,7 @@ describe('MCPManager', () => {
         graphTokenResolver: mockGraphTokenResolver,
       });
 
-      expect(graphUtils.preProcessGraphTokens).toHaveBeenCalledWith(
-        serverConfig,
-        expect.objectContaining({
-          graphTokenResolver: mockGraphTokenResolver,
-        }),
-      );
+      expect(graphUtils.preProcessGraphTokens).not.toHaveBeenCalled();
     });
 
     it('should pass scopes from environment variable to preProcessGraphTokens', async () => {
@@ -1007,6 +1167,13 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
 
       await manager.callTool({
+        ...issuedConnectionInput(serverConfig, {
+          ...serverConfig,
+          headers: {
+            ...serverConfig.headers,
+            Authorization: 'Bearer resolved-graph-token',
+          },
+        }),
         user: mockUser as IUser,
         serverName,
         toolName: 'test_tool',
@@ -1017,12 +1184,7 @@ describe('MCPManager', () => {
         graphTokenResolver: mockGraphTokenResolver,
       });
 
-      expect(graphUtils.preProcessGraphTokens).toHaveBeenCalledWith(
-        serverConfig,
-        expect.objectContaining({
-          scopes: 'custom.scope.read custom.scope.write',
-        }),
-      );
+      expect(graphUtils.preProcessGraphTokens).not.toHaveBeenCalled();
 
       // Restore environment
       if (originalEnv !== undefined) {
@@ -1055,6 +1217,7 @@ describe('MCPManager', () => {
       const manager = await MCPManager.createInstance(newMCPServersConfig());
 
       const result = await manager.callTool({
+        ...issuedConnectionInput(serverConfig),
         user: mockUser as IUser,
         serverName,
         toolName: 'test_tool',
@@ -1161,6 +1324,7 @@ describe('MCPManager', () => {
         .mockResolvedValue(userConnection);
 
       await manager.callTool({
+        ...issuedConnectionInput(serverConfig, serverConfig, 'obo'),
         user: mockUser as IUser,
         serverName,
         toolName: 'test_tool',
@@ -1211,6 +1375,7 @@ describe('MCPManager', () => {
         .mockResolvedValue(mockConnection);
 
       await manager.callTool({
+        ...issuedConnectionInput(serverConfig, serverConfig, 'obo'),
         user: mockUser as IUser,
         serverName,
         toolName: 'test_tool',
@@ -1234,6 +1399,42 @@ describe('MCPManager', () => {
         }),
       );
       expect(mockConnection.client.request).toHaveBeenCalled();
+    });
+
+    it('fails closed before minting OBO for a user-authored server without author trust proof', async () => {
+      const userAuthoredServerConfig = {
+        ...serverConfig,
+        source: 'user',
+        dbId: 'server-record-id',
+        author: 'server-author-id',
+      } as t.ParsedServerConfig;
+      mockResolveOboToken.mockResolvedValue({
+        access_token: 'unproved-obo-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        expires_at: Date.now() + 3600_000,
+      });
+      mockAppConnections({ get: jest.fn().mockResolvedValue(mockConnection) });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getUserConnection').mockResolvedValue(mockConnection);
+
+      await expect(
+        manager.callTool({
+          ...issuedConnectionInput(userAuthoredServerConfig, userAuthoredServerConfig, 'obo'),
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+          oboTokenResolver: mockOboTokenResolver,
+        }),
+      ).rejects.toThrow('OBO author trust proof is required');
+
+      expect(mockResolveOboToken).not.toHaveBeenCalled();
+      expect(mockConnection.client.request).not.toHaveBeenCalled();
     });
 
     it('should fail closed with a retryable message when per-call OBO refresh has a transient failure', async () => {
@@ -1260,6 +1461,7 @@ describe('MCPManager', () => {
 
       await expect(
         manager.callTool({
+          ...issuedConnectionInput(serverConfig, serverConfig, 'obo'),
           user: mockUser as IUser,
           serverName,
           toolName: 'test_tool',
@@ -1306,6 +1508,7 @@ describe('MCPManager', () => {
 
       await expect(
         manager.callTool({
+          ...issuedConnectionInput(serverConfig, serverConfig, 'obo'),
           user: mockUser as IUser,
           serverName,
           toolName: 'test_tool',
@@ -1354,6 +1557,7 @@ describe('MCPManager', () => {
       const getUserConnectionSpy = jest.spyOn(manager, 'getUserConnection');
 
       const connection = await manager.getConnection({
+        ...issuedConnectionInput(nonOboConfig),
         serverName,
         user: mockUser as IUser,
       });
@@ -1396,6 +1600,7 @@ describe('MCPManager', () => {
           ),
         ),
       } as unknown as MCPConnection;
+      const appProvenance = appConnection.getDiscoveryProvenance();
       const tenantUser = { ...mockUser, tenantId: 'tenant-c' } as IUser;
       const tenantPolicy = {
         allowedDomains: ['tenant-c.example.com'],
@@ -1456,12 +1661,14 @@ describe('MCPManager', () => {
 
         await expect(
           manager.getConnection({
+            ...issuedConnectionInput(nonOboConfig, nonOboConfig, 'none', appProvenance!.scope),
             serverName,
             user: { ...mockUser, tenantId: 'tenant-a' } as IUser,
           }),
         ).resolves.toBe(appConnection);
         await expect(
           manager.getConnection({
+            ...issuedConnectionInput(nonOboConfig, nonOboConfig, 'none', appProvenance!.scope),
             serverName,
             user: { ...mockUser, tenantId: 'tenant-b' } as IUser,
           }),
@@ -1475,8 +1682,16 @@ describe('MCPManager', () => {
           }),
         ).rejects.toThrow('Trying to create user-specific connection for app-level server');
 
-        const discovery = await manager.discoverServerTools({ serverName, user: tenantUser });
+        const tenantSecurityPolicy = { ...tenantPolicy, useSSRFProtection: false };
+        const discovery = await manager.discoverServerTools({
+          ...issuedConnectionInput(nonOboConfig, nonOboConfig, 'none', isolatedProvenance!.scope),
+          securityPolicy: tenantSecurityPolicy,
+          serverName,
+          user: tenantUser,
+        });
         await manager.callTool({
+          ...issuedConnectionInput(nonOboConfig, nonOboConfig, 'none', isolatedProvenance!.scope),
+          securityPolicy: tenantSecurityPolicy,
           user: tenantUser,
           serverName,
           serverConfig: nonOboConfig,
@@ -1545,6 +1760,10 @@ describe('MCPManager', () => {
         .mockResolvedValue(userConnection);
 
       const connection = await manager.getConnection({
+        ...issuedConnectionInput(runtimeHeaderConfig, {
+          ...runtimeHeaderConfig,
+          headers: { 'X-LibreChat-User-Email': 'user@example.com' },
+        }),
         serverName,
         user: mockUser as IUser,
       });
@@ -1589,27 +1808,29 @@ describe('MCPManager', () => {
         get: jest.fn().mockResolvedValue(mockConnection),
       });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(appConfig);
-      mockConnection.getDiscoveryProvenance = jest.fn().mockReturnValue(
-        createMCPConnectionProvenance(
-          {
-            tenantId: null,
-            userId: '__app__',
-            serverName,
-            serverConfig: appConfig,
-            effectiveServerConfig: appConfig,
-            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
-              allowedDomains: null,
-              allowedAddresses: null,
-            }),
-            authorizationIdentity: 'none',
-          },
-          'app',
-        ),
+      const appProvenance = createMCPConnectionProvenance(
+        {
+          tenantId: null,
+          userId: '__app__',
+          serverName,
+          serverConfig: appConfig,
+          effectiveServerConfig: appConfig,
+          securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+            allowedDomains: null,
+            allowedAddresses: null,
+          }),
+          authorizationIdentity: 'none',
+        },
+        'app',
       );
+      mockConnection.getDiscoveryProvenance = jest.fn().mockReturnValue(appProvenance);
 
       try {
         const manager = await MCPManager.createInstance(newMCPServersConfig());
-        const result = await manager.discoverServerTools({ serverName });
+        const result = await manager.discoverServerTools({
+          ...issuedConnectionInput(appConfig, appConfig, 'none', appProvenance!.scope),
+          serverName,
+        });
 
         expect(result.tools).toEqual(mockTools);
         expect(result.oauthRequired).toBe(false);
@@ -1675,6 +1896,12 @@ describe('MCPManager', () => {
       try {
         const manager = await MCPManager.createInstance(newMCPServersConfig());
         const result = await manager.discoverServerTools({
+          ...issuedConnectionInput(appConfig),
+          securityPolicy: {
+            allowedDomains: ['tenant-only.example.com'],
+            allowedAddresses: null,
+            useSSRFProtection: true,
+          },
           serverName,
           user: { id: 'tenant-user' } as IUser,
         });
@@ -1682,9 +1909,7 @@ describe('MCPManager', () => {
         expect(result.tools).toEqual(isolatedTools);
         expect(appConnection.fetchTools).not.toHaveBeenCalled();
         expect(MCPConnectionFactory.discoverTools).toHaveBeenCalled();
-        expect(mockRegistryInstance.resolveAllowlists).toHaveBeenCalledWith(
-          expect.objectContaining({ tenantId: 'tenant-a' }),
-        );
+        expect(mockRegistryInstance.resolveAllowlists).not.toHaveBeenCalled();
       } finally {
         if (originalCredsKey == null) {
           delete process.env.CREDS_KEY;
@@ -1702,11 +1927,12 @@ describe('MCPManager', () => {
         get: jest.fn().mockResolvedValue(null),
       });
 
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+      const serverConfig: t.ParsedServerConfig = {
         type: 'stdio',
         command: 'test',
         args: [],
-      });
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
 
       (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
         tools: mockTools,
@@ -1716,7 +1942,10 @@ describe('MCPManager', () => {
       });
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const result = await manager.discoverServerTools({ serverName });
+      const result = await manager.discoverServerTools({
+        ...issuedConnectionInput(serverConfig),
+        serverName,
+      });
 
       expect(result.tools).toEqual(mockTools);
       expect(result.oauthRequired).toBe(false);
@@ -1733,10 +1962,15 @@ describe('MCPManager', () => {
         get: jest.fn().mockResolvedValue(null),
       });
 
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+      const serverConfig: t.ParsedServerConfig = {
         type: 'streamable-http',
         url: 'https://my-mcp.server.com?key={{MY_CUSTOM_KEY}}',
-      });
+      };
+      const effectiveServerConfig: t.ParsedServerConfig = {
+        ...serverConfig,
+        url: `https://my-mcp.server.com?key=${customUserVars.MY_CUSTOM_KEY}`,
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
 
       (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
         tools: mockTools,
@@ -1747,6 +1981,7 @@ describe('MCPManager', () => {
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       await manager.discoverServerTools({
+        ...issuedConnectionInput(serverConfig, effectiveServerConfig),
         serverName,
         user: mockUser,
         customUserVars,
@@ -1759,14 +1994,13 @@ describe('MCPManager', () => {
         expect.objectContaining({
           serverName,
           serverConfig: expect.objectContaining({
-            url: 'https://my-mcp.server.com?key={{MY_CUSTOM_KEY}}',
+            url: `https://my-mcp.server.com?key=${customUserVars.MY_CUSTOM_KEY}`,
           }),
         }),
         expect.objectContaining({
           user: mockUser,
           customUserVars,
           requestBody: { conversationId: 'conv-123' },
-          graphTokenResolver,
           connectionTimeout: 10000,
         }),
       );
@@ -1777,14 +2011,18 @@ describe('MCPManager', () => {
         get: jest.fn().mockResolvedValue(null),
       });
 
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+      const serverConfig: t.ParsedServerConfig = {
         type: 'streamable-http',
         url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
         source: 'yaml',
-      });
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const result = await manager.discoverServerTools({ serverName });
+      const result = await manager.discoverServerTools({
+        ...issuedConnectionInput(serverConfig),
+        serverName,
+      });
 
       expect(result).toEqual({
         tools: null,
@@ -1799,7 +2037,7 @@ describe('MCPManager', () => {
       expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('messageId'));
     });
 
-    it('should return null tools when server config not found', async () => {
+    it('fails closed instead of reading a missing discovery config from the registry', async () => {
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
       });
@@ -1807,13 +2045,10 @@ describe('MCPManager', () => {
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(null);
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const result = await manager.discoverServerTools({ serverName });
-
-      expect(result.tools).toBeNull();
-      expect(result.oauthRequired).toBe(false);
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Server config not found'),
+      await expect(manager.discoverServerTools({ serverName })).rejects.toThrow(
+        'Proof-bound discovery input is required',
       );
+      expect(mockRegistryInstance.getServerConfig).not.toHaveBeenCalled();
     });
 
     it('should treat configured oauth as OAuth when requiresOAuth is unset', async () => {
@@ -1821,17 +2056,21 @@ describe('MCPManager', () => {
         get: jest.fn().mockResolvedValue(null),
       });
 
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+      const serverConfig: t.ParsedServerConfig = {
         type: 'sse',
         url: 'https://api.example.com',
         oauth: {
           authorization_url: 'https://auth.example.com/oauth/authorize',
           token_url: 'https://auth.example.com/oauth/token',
         },
-      });
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const result = await manager.discoverServerTools({ serverName });
+      const result = await manager.discoverServerTools({
+        ...issuedConnectionInput(serverConfig, serverConfig, 'oauth'),
+        serverName,
+      });
 
       expect(result.tools).toBeNull();
       expect(result.oauthRequired).toBe(true);
@@ -1843,14 +2082,18 @@ describe('MCPManager', () => {
         get: jest.fn().mockResolvedValue(null),
       });
 
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+      const serverConfig: t.ParsedServerConfig = {
         type: 'sse',
         url: 'https://api.example.com',
         requiresOAuth: true,
-      });
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
-      const result = await manager.discoverServerTools({ serverName });
+      const result = await manager.discoverServerTools({
+        ...issuedConnectionInput(serverConfig, serverConfig, 'oauth'),
+        serverName,
+      });
 
       expect(result.tools).toBeNull();
       expect(result.oauthRequired).toBe(true);
@@ -1871,11 +2114,12 @@ describe('MCPManager', () => {
         get: jest.fn().mockResolvedValue(null),
       });
 
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+      const serverConfig: t.ParsedServerConfig = {
         type: 'sse',
         url: 'https://api.example.com',
         requiresOAuth: true,
-      });
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
 
       (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
         tools: mockTools,
@@ -1886,6 +2130,7 @@ describe('MCPManager', () => {
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       const result = await manager.discoverServerTools({
+        ...issuedConnectionInput(serverConfig, serverConfig, 'oauth'),
         serverName,
         user: mockUser,
         flowManager: mockFlowManager as unknown as t.ToolDiscoveryOptions['flowManager'],
@@ -1900,8 +2145,11 @@ describe('MCPManager', () => {
         expect.objectContaining({
           user: mockUser,
           useOAuth: true,
-          graphTokenResolver: expect.any(Function),
         }),
+      );
+      expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ graphTokenResolver: expect.anything() }),
       );
     });
   });
@@ -1945,6 +2193,47 @@ describe('MCPManager', () => {
       expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
         expect.objectContaining({ serverName }),
         expect.objectContaining({ useOAuth: true }),
+      );
+    });
+
+    it('passes the captured OAuth authority scope to the connection factory', async () => {
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+
+      const serverConfig: t.ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://oauth-mcp.example.com',
+        oauth: {
+          authorization_url: 'https://auth.example.com/oauth/authorize',
+          token_url: 'https://auth.example.com/oauth/token',
+        },
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+      const oauthAuthorityScope = {
+        tenant: 'tenant-revision',
+        principal: 'principal-revision',
+        server: 'server-revision',
+        policy: 'policy-revision',
+        config: 'config-revision',
+        credentials: 'credential-revision',
+      };
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({
+        ...issuedConnectionInput(serverConfig, serverConfig, 'oauth', oauthAuthorityScope),
+        serverName,
+        user: mockUser,
+        flowManager: mockFlowManager as unknown as t.UserMCPConnectionOptions['flowManager'],
+      });
+
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName }),
+        expect.objectContaining({
+          useOAuth: true,
+          oauthAuthorityScope,
+        }),
       );
     });
 

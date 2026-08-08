@@ -2,11 +2,10 @@ const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   getAppConfigOptionsFromUser,
   getMCPToolCatalogRevision,
-  MCP_AUTHORITY_IDENTITY_KEY,
   normalizeServerName,
 } = require('@librechat/api');
 const { getMCPServersRegistry } = require('~/config');
-const { getAppConfig } = require('./Config');
+const { getAppConfig, getMCPAppConfigSnapshot } = require('./Config');
 
 async function getAppConfigForUser(userId, user, refreshOverrides = false) {
   return await getAppConfig({
@@ -41,12 +40,15 @@ async function resolveAllMcpConfigsFresh(userId, user) {
 
 async function resolveMCPDiscoveryConfigSnapshot(userId, user, options = {}) {
   const registry = getMCPServersRegistry();
-  const appConfig = await getAppConfigForUser(userId, user, true);
+  const appConfigOptions = {
+    ...getAppConfigOptionsFromUser({ ...user, id: userId }, user?.tenantId ?? getTenantId()),
+    failClosed: true,
+  };
+  const { config: appConfig, sourceDocuments } = await getMCPAppConfigSnapshot(appConfigOptions);
   const securityPolicy = {
     allowedDomains: appConfig?.mcpSettings?.allowedDomains,
     allowedAddresses: appConfig?.mcpSettings?.allowedAddresses,
   };
-  const authorityIdentity = appConfig?.[MCP_AUTHORITY_IDENTITY_KEY];
   const selectedServerNames = options.serverNames ? new Set(options.serverNames) : null;
   const includesServer = (serverName) =>
     selectedServerNames == null ||
@@ -97,7 +99,7 @@ async function resolveMCPDiscoveryConfigSnapshot(userId, user, options = {}) {
     }
     return {
       configs,
-      authorityIdentity,
+      sourceDocuments,
       securityPolicy,
       collisionServerNames: [...collisionServerNames],
       missingConfigServerNames: Object.keys(currentMcpConfig).filter(
@@ -142,9 +144,16 @@ async function resolveMCPDiscoveryConfigSnapshot(userId, user, options = {}) {
   const missingConfigServerNames = Object.keys(currentMcpConfig).filter(
     (serverName) => !configServers[serverName] && !allConfigs[serverName],
   );
+  const pendingConfigs =
+    options.initializeMissing === false
+      ? Object.fromEntries(
+          missingConfigServerNames.map((serverName) => [serverName, currentMcpConfig[serverName]]),
+        )
+      : {};
   return {
     configs,
-    authorityIdentity,
+    ...(options.initializeMissing === false && { pendingConfigs }),
+    sourceDocuments,
     securityPolicy,
     collisionServerNames: collisionServerNames ?? [
       ...new Set([...Object.keys(allConfigs), ...Object.keys(appConfig?.mcpConfig || {})]),
