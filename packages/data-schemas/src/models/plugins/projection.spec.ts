@@ -172,6 +172,36 @@ describe('search-sync projection plugin', () => {
   });
 
   describe('Meilisearch as an optional sink', () => {
+    /**
+     * The upgrade case, stated as the environment an existing deployment
+     * actually has: Mongo, Meilisearch credentials, and not one of the new
+     * variables. Writes have to keep reaching Meilisearch, because nothing would
+     * tell an operator otherwise — `indexSync` skips its catch-up until the
+     * backlog passes `MEILI_SYNC_THRESHOLD`, so a silent write-path default
+     * would lose a thousand messages before it surfaced.
+     */
+    it('keeps indexing writes for a deployment that upgrades and sets nothing new', async () => {
+      process.env = {
+        ...OLD_ENV,
+        MEILI_HOST: 'http://meili.test',
+        MEILI_MASTER_KEY: 'key',
+      };
+      delete process.env.MEILI_WRITES_ENABLED;
+      delete process.env.CHAT_SEARCH_ENABLED;
+
+      await models.Message.create({
+        messageId: 'm-brownfield',
+        conversationId: 'c1',
+        user: 'u1',
+        text: 'still indexed',
+        isCreatedByUser: true,
+      });
+
+      expect(mockAddDocuments).toHaveBeenCalledTimes(1);
+      /** And no projection events, since chat search was never configured. */
+      expect(await drain(models.SearchEvent)).toEqual([]);
+    });
+
     it('writes nothing to Meili while MEILI_WRITES_ENABLED is false, even with credentials set', async () => {
       await models.Message.create({
         methodless: undefined,

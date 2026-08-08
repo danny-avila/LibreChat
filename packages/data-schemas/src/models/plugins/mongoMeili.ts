@@ -77,19 +77,28 @@ export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
 }
 
 /**
- * Meilisearch is decoupled from the write path: every sink call is gated by
- * `MEILI_WRITES_ENABLED` (default **false**), including the three post hooks
- * that used to fire unconditionally whenever credentials were present. This
- * takes precedence over `MEILI_NO_SYNC`, which keeps its narrower meaning of
- * "skip the startup catch-up job only".
+ * Meilisearch is decoupled from the write path: every sink call is gated here,
+ * including the three post hooks that used to fire unconditionally.
+ *
+ * Credentials remain the switch, exactly as they always were — an existing
+ * deployment that upgrades and changes nothing keeps indexing every write.
+ * Defaulting this off would have stopped indexing silently on upgrade, and
+ * `indexSync` would not have rescued it: the startup catch-up skips unless the
+ * backlog exceeds `MEILI_SYNC_THRESHOLD` (1000 by default), so a deployment
+ * would drift for a thousand messages before anything noticed.
+ *
+ * `MEILI_WRITES_ENABLED=false` is therefore an opt-*out*: the switch that stops
+ * double-writing once a migration to another store is complete. It takes
+ * precedence over `MEILI_NO_SYNC`, which keeps its narrower meaning of "skip the
+ * startup catch-up job only".
  *
  * Evaluated per call rather than cached at module load so a deployment can flip
- * the flag for a legacy rollback without a code change.
+ * it without a redeploy.
  */
 export const meiliWritesEnabled = (): boolean =>
   process.env.MEILI_HOST != null &&
   process.env.MEILI_MASTER_KEY != null &&
-  process.env.MEILI_WRITES_ENABLED === 'true';
+  process.env.MEILI_WRITES_ENABLED !== 'false';
 
 /** Model factories are re-entrant; one sink per schema, created once. */
 const MEILI_SINK = Symbol.for('librechat:meiliSink');
@@ -557,8 +566,9 @@ const createMeiliMongooseModel = ({
  * every hook on the schema and Meilisearch is one sink it may fan out to, which
  * is what removes the three post hooks that used to fire unconditionally
  * whenever credentials were present. Every write here is gated by
- * `MEILI_WRITES_ENABLED` (default false); the statics stay registered so the
- * startup catch-up job and a legacy rollback still have something to call.
+ * `meiliWritesEnabled()`, which stays true for any deployment that has
+ * configured Meilisearch and not explicitly opted out; the statics stay
+ * registered so the startup catch-up job still has something to call.
  */
 export function createMeiliSink(schema: Schema, options: MongoMeiliOptions): SearchSink {
   const cached = schema as Schema & { [MEILI_SINK]?: SearchSink };
