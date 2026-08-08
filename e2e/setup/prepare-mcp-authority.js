@@ -9,10 +9,19 @@ function prepareMCPAuthority(mongoUri) {
     throw new Error('[e2e] MCP authority preparation requires MONGO_URI');
   }
 
+  const migrationEnv = {
+    ...process.env,
+    MONGO_URI: mongoUri,
+    USE_REDIS: 'false',
+    USE_REDIS_CLUSTER: 'false',
+    USE_REDIS_STREAMS: 'false',
+  };
+  delete migrationEnv.REDIS_URI;
+
   return new Promise((resolve, reject) => {
     const migration = spawn(process.execPath, [migrationPath], {
       cwd: rootPath,
-      env: { ...process.env, MONGO_URI: mongoUri },
+      env: migrationEnv,
       stdio: 'inherit',
     });
     migration.once('error', reject);
