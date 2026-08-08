@@ -49,6 +49,12 @@ jest.mock('~/components/Chat/Input/Files/Image', () => {
   };
 });
 
+jest.mock('~/components/Chat/Input/Files/FileTextDialog', () => {
+  return function MockFileTextDialog() {
+    return null;
+  };
+});
+
 /** Mirrors the shape `utils/forms.tsx` builds for agent Context/File Search panels */
 const makeFile = (file_id: string): ExtendedFile =>
   ({
