@@ -32,8 +32,11 @@ async function initializeOAuthReconnectManager() {
         return {
           user: parsedConfig.actor.user,
           serverConfig: parsedConfig.sourceConfig,
+          effectiveServerConfig: parsedConfig.effectiveConfig,
+          securityPolicy: parsedConfig.securityPolicy,
           customUserVars: parsedConfig.customUserVars,
           oauthAuthorityScope: parsedConfig.catalogScope,
+          authorityAuthorizationKind: parsedConfig.authorization.kind,
           bind: async (action) =>
             await getMCPAuthorityResolver().useIssuedResolution(authority, action),
         };

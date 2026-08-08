@@ -1,6 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
-import type { MCPToolCatalogScope, ParsedServerConfig } from '~/mcp/provenance';
+import type {
+  MCPConnectionProvenance,
+  MCPToolCatalogScope,
+  ParsedServerConfig,
+} from '~/mcp/provenance';
+import type { UserConnectionContext } from '~/mcp/types';
 import type { MCPConnection } from '~/mcp/connection';
 import type { MCPOAuthTokens } from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
@@ -14,8 +19,11 @@ const RECONNECT_STAGGER_MS = 500; // ms between each server reconnection
 export interface OAuthReconnectAuthority {
   user: IUser;
   serverConfig: ParsedServerConfig;
+  effectiveServerConfig: ParsedServerConfig;
+  securityPolicy: NonNullable<UserConnectionContext['securityPolicy']>;
   customUserVars?: Record<string, string>;
   oauthAuthorityScope: MCPToolCatalogScope;
+  authorityAuthorizationKind: MCPConnectionProvenance['authorizationKind'];
   bind<Result>(action: () => Promise<Result>): Promise<Result>;
 }
 
@@ -220,8 +228,11 @@ export class OAuthReconnectionManager {
           flowManager: this.flowManager,
           tokenMethods: this.tokenMethods,
           serverConfig: authority?.serverConfig,
+          effectiveServerConfig: authority?.effectiveServerConfig,
+          securityPolicy: authority?.securityPolicy,
           customUserVars: authority?.customUserVars,
           oauthAuthorityScope: authority?.oauthAuthorityScope,
+          authorityAuthorizationKind: authority?.authorityAuthorizationKind,
           // don't force new connection, let it reuse existing or create new as needed
           forceNew: false,
           // set a reasonable timeout for reconnection attempts

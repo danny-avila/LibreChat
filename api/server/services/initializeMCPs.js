@@ -17,6 +17,11 @@ function unavailableFromReadiness(error) {
   };
 }
 
+async function initializeUnavailableMCPRuntime() {
+  createMCPServersRegistry(mongoose, undefined, undefined, resolveMCPAllowlists);
+  await createMCPManager({});
+}
+
 /**
  * Resolves the current request's effective MCP allowlists from the merged (tenant-scoped)
  * config. The registry calls this per inspection/connection so admin-panel `mcpSettings`
@@ -60,6 +65,7 @@ async function initializeMCPs(options = {}) {
       logger.error(
         `[MCP] Authority unavailable (${unavailable.reason}): ${unavailable.message}. Run \`npm run migrate:mcp-authority\` after reconciling any interrupted authority mutation.`,
       );
+      await initializeUnavailableMCPRuntime();
       return;
     }
   }

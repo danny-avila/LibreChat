@@ -90,7 +90,7 @@ describe('initializeMCPs', () => {
   });
 
   describe('MCP authority readiness', () => {
-    it('keeps general startup available but performs zero MCP effects when prerequisites are unavailable', async () => {
+    it('keeps inert MCP infrastructure available when authority prerequisites are unavailable', async () => {
       mockAssertMCPAuthorityReadiness.mockRejectedValue(new Error('missing authority index'));
       mockGetAppConfig.mockResolvedValue({ mcpConfig: null });
 
@@ -107,8 +107,13 @@ describe('initializeMCPs', () => {
         retryable: false,
       });
       expect(mockInitializeMCPAuthority).not.toHaveBeenCalled();
-      expect(mockCreateMCPServersRegistry).not.toHaveBeenCalled();
-      expect(mockCreateMCPManager).not.toHaveBeenCalled();
+      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
+        expect.anything(),
+        undefined,
+        undefined,
+        expect.any(Function),
+      );
+      expect(mockCreateMCPManager).toHaveBeenCalledWith({});
       expect(mockMergeAppTools).not.toHaveBeenCalled();
     });
 

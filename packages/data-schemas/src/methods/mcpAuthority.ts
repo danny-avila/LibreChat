@@ -1171,9 +1171,11 @@ export function createMCPAuthorityMethods(
       '_id name permissions.MCP_SERVERS.USE',
     );
     roleQuery.read('primary').readConcern('majority');
-    const groupCount = await groupCountQuery;
-    const groups = await groupQuery.lean<GroupProjection[]>();
-    const role = await roleQuery.lean<RoleProjection>();
+    const [groupCount, groups, role] = await Promise.all([
+      groupCountQuery.exec(),
+      groupQuery.lean<GroupProjection[]>().exec(),
+      roleQuery.lean<RoleProjection>().exec(),
+    ]);
     assertCompleteBatch(groups, groupCount, MAX_MCP_AUTHORITY_GROUPS, 'MCP group membership');
     if (!role || role.name !== roleName) {
       reject('role_changed', 'MCP authority role no longer exists');
@@ -1319,32 +1321,43 @@ export function createMCPAuthorityMethods(
       .limit(MAX_MCP_AUTHORITY_TARGETS * OAUTH_TOKEN_TYPES.length + 1)
       .setOptions({ singleBatch: true });
     tokenQuery.read('primary').readConcern('majority');
-    const configBatch = await configQuery;
+    const [
+      configBatch,
+      serverCount,
+      servers,
+      agentBatch,
+      credentialCount,
+      credentials,
+      tokenCount,
+      tokens,
+    ] = await Promise.all([
+      configQuery.exec(),
+      serverCountQuery.exec(),
+      serverQuery.lean<ServerProjection[]>().exec(),
+      agentQuery.exec(),
+      credentialCountQuery.exec(),
+      credentialQuery.lean<PluginAuthProjection[]>().exec(),
+      tokenCountQuery.exec(),
+      tokenQuery.lean<TokenProjection[]>().exec(),
+    ]);
     const configs = unwrapAggregateBatch(configBatch, slots.length, 'Applicable MCP configuration');
-    const serverCount = await serverCountQuery;
-    const servers = await serverQuery.lean<ServerProjection[]>();
     assertCompleteBatch(
       servers,
       serverCount,
       MAX_MCP_AUTHORITY_TARGETS * 2,
       'Selected MCP servers',
     );
-    const agentBatch = await agentQuery;
     const agents = unwrapAggregateBatch(
       agentBatch,
       MAX_MCP_AUTHORITY_AGENTS,
       'Selected MCP Agent linkage',
     );
-    const credentialCount = await credentialCountQuery;
-    const credentials = await credentialQuery.lean<PluginAuthProjection[]>();
     assertCompleteBatch(
       credentials,
       credentialCount,
       MAX_MCP_AUTHORITY_CREDENTIALS,
       'Selected MCP credentials',
     );
-    const tokenCount = await tokenCountQuery;
-    const tokens = await tokenQuery.lean<TokenProjection[]>();
     assertCompleteBatch(
       tokens,
       tokenCount,
@@ -1387,8 +1400,11 @@ export function createMCPAuthorityMethods(
         .limit(MAX_MCP_AUTHORITY_ACL_ENTRIES + 1)
         .setOptions({ singleBatch: true });
       aclQuery.read('primary').readConcern('majority');
-      const aclCount = await aclCountQuery;
-      aclEntries = await aclQuery.lean<AclProjection[]>();
+      const [aclCount, currentAclEntries] = await Promise.all([
+        aclCountQuery.exec(),
+        aclQuery.lean<AclProjection[]>().exec(),
+      ]);
+      aclEntries = currentAclEntries;
       assertCompleteBatch(
         aclEntries,
         aclCount,

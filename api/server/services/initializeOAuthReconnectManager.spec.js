@@ -51,6 +51,11 @@ describe('initializeOAuthReconnectManager', () => {
         },
         sourceConfig: { type: 'streamable-http', url: 'https://mcp.example.com' },
         effectiveConfig: { type: 'streamable-http', url: 'https://mcp.example.com' },
+        securityPolicy: {
+          useSSRFProtection: true,
+          allowedDomains: ['mcp.example.com'],
+          allowedAddresses: null,
+        },
         customUserVars: {},
         catalogScope: {
           tenant: 'tenant-revision',
@@ -59,6 +64,12 @@ describe('initializeOAuthReconnectManager', () => {
           policy: 'policy-revision',
           config: 'config-revision',
           credentials: 'credential-revision',
+        },
+        authorization: {
+          kind: 'oauth',
+          identity: 'oauth-identity',
+          credentialSetId: 'credential-set-1',
+          generation: 'generation-1',
         },
       },
       authorityProof: { revision: 'proof-revision' },
@@ -74,7 +85,7 @@ describe('initializeOAuthReconnectManager', () => {
       user: { id: 'user-1', tenantId: 'tenant-1', role: 'USER' },
     };
 
-    await resolveAuthority(actor, 'server-1');
+    const resolved = await resolveAuthority(actor, 'server-1');
 
     expect(mockTenantStorageRun).toHaveBeenCalledWith(
       { tenantId: 'tenant-1', userId: 'user-1' },
@@ -85,5 +96,19 @@ describe('initializeOAuthReconnectManager', () => {
       serverName: 'server-1',
       oauthRequiredHint: true,
     });
+    expect(resolved).toEqual(
+      expect.objectContaining({
+        effectiveServerConfig: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com',
+        },
+        securityPolicy: {
+          useSSRFProtection: true,
+          allowedDomains: ['mcp.example.com'],
+          allowedAddresses: null,
+        },
+        authorityAuthorizationKind: 'oauth',
+      }),
+    );
   });
 });

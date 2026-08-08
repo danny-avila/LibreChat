@@ -521,6 +521,15 @@ describe('OAuthReconnectionManager', () => {
         url: 'https://example.com/mcp',
         initTimeout: 4321,
       } as MCPOptions;
+      const effectiveServerConfig = {
+        ...serverConfig,
+        url: 'https://resolved.example.com/mcp',
+      };
+      const securityPolicy = {
+        useSSRFProtection: true,
+        allowedDomains: ['resolved.example.com'],
+        allowedAddresses: null,
+      };
       const oauthAuthorityScope = {
         tenant: 'tenant',
         principal: 'principal',
@@ -533,8 +542,11 @@ describe('OAuthReconnectionManager', () => {
       const resolveAuthority = jest.fn().mockResolvedValue({
         user: { id: userId, role: 'USER' },
         serverConfig,
+        effectiveServerConfig,
+        securityPolicy,
         customUserVars: { API_KEY: 'secret' },
         oauthAuthorityScope,
+        authorityAuthorizationKind: 'oauth',
         bind,
       });
       const authorityManager = new OAuthReconnectionManager(
@@ -559,8 +571,11 @@ describe('OAuthReconnectionManager', () => {
         flowManager,
         tokenMethods,
         serverConfig,
+        effectiveServerConfig,
+        securityPolicy,
         customUserVars: { API_KEY: 'secret' },
         oauthAuthorityScope,
+        authorityAuthorizationKind: 'oauth',
         forceNew: false,
         connectionTimeout: 4321,
         returnOnOAuth: true,
