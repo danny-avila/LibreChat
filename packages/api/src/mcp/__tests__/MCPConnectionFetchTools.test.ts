@@ -103,6 +103,33 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(mockLogger.warn).not.toHaveBeenCalled();
   });
 
+  it('returns the notification snapshot when a request snapshot races list_changed', async () => {
+    let releaseStale: ((value: { tools: ReturnType<typeof makeTool>[] }) => void) | undefined;
+    const stale = new Promise<{ tools: ReturnType<typeof makeTool>[] }>((resolve) => {
+      releaseStale = resolve;
+    });
+    const listTools = jest
+      .fn()
+      .mockReturnValueOnce(stale)
+      .mockResolvedValueOnce({ tools: [makeTool('current')] });
+    const conn = createConnectionWithListTools(listTools);
+    Reflect.set(conn, 'connectionState', 'connected');
+    jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({
+      tools: { listChanged: true },
+    });
+
+    const requested = conn.fetchOrderedToolsSnapshot();
+    await Promise.resolve();
+    const notified = conn.refreshToolList();
+    await notified;
+    releaseStale?.({ tools: [makeTool('stale')] });
+
+    await expect(requested).resolves.toEqual({
+      tools: [makeTool('current')],
+      complete: true,
+    });
+  });
+
   it('follows nextCursor across pages, concatenating every tool and passing the cursor back', async () => {
     const listTools = jest.fn(async (params?: { cursor?: string }) => {
       switch (params?.cursor) {

@@ -410,7 +410,7 @@ describe('MCPServerInspector', () => {
 
       // Mock server with no tools
       mockConnection.fetchTools = jest.fn().mockResolvedValue([]);
-      mockConnection.fetchToolsSnapshot = jest
+      mockConnection.fetchOrderedToolsSnapshot = jest
         .fn()
         .mockResolvedValue({ tools: [], complete: true });
 
@@ -498,7 +498,7 @@ describe('MCPServerInspector', () => {
 
   describe('getToolFunctions()', () => {
     it('should convert MCP tools to LibreChat tool functions format', async () => {
-      mockConnection.fetchToolsSnapshot = jest.fn().mockResolvedValue({
+      mockConnection.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
         complete: true,
         tools: [
           {
@@ -555,7 +555,7 @@ describe('MCPServerInspector', () => {
     });
 
     it('should handle empty tools list', async () => {
-      mockConnection.fetchToolsSnapshot = jest
+      mockConnection.fetchOrderedToolsSnapshot = jest
         .fn()
         .mockResolvedValue({ tools: [], complete: true });
 
@@ -565,7 +565,7 @@ describe('MCPServerInspector', () => {
     });
 
     it('builds keys with the normalized server name (model-facing contract)', async () => {
-      mockConnection.fetchToolsSnapshot = jest.fn().mockResolvedValue({
+      mockConnection.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
         complete: true,
         tools: [
           {
@@ -584,7 +584,7 @@ describe('MCPServerInspector', () => {
     });
 
     it('rejects an incomplete snapshot before it can replace cached tools', async () => {
-      mockConnection.fetchToolsSnapshot = jest.fn().mockResolvedValue({
+      mockConnection.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
         tools: [{ name: 'partial', inputSchema: { type: 'object' } }],
         complete: false,
       });

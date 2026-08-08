@@ -33,6 +33,7 @@ export function createMockConnection(serverName: string): jest.Mocked<MCPConnect
     client: mockClient,
     fetchTools: jest.fn().mockResolvedValue(tools),
     fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools, complete: true }),
+    fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({ tools, complete: true }),
     disconnect: jest.fn().mockResolvedValue(undefined),
     dispose: jest.fn().mockResolvedValue(undefined),
   } as unknown as jest.Mocked<MCPConnection>;

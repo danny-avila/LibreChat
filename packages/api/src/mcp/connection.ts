@@ -1165,6 +1165,12 @@ export class MCPConnection extends EventEmitter {
   private toolListRefreshRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private toolListRefreshEpoch = 0;
   private toolListRefreshSuspended = false;
+  private publishedToolListSnapshot: {
+    epoch: number;
+    generation: number;
+    tools: MCPListToolsResult['tools'];
+  } | null = null;
+
   private hasConnected = false;
   private isDisposed = false;
   iconPath?: string;
@@ -1994,6 +2000,11 @@ export class MCPConnection extends EventEmitter {
 
       this.toolListRefreshFailures = 0;
       this.handledToolListChangeGeneration = targetGeneration;
+      this.publishedToolListSnapshot = {
+        epoch: refreshEpoch,
+        generation: targetGeneration,
+        tools: snapshot.tools,
+      };
       this.dispatchToolsChanged(snapshot.tools);
     }
   }
@@ -2525,6 +2536,50 @@ export class MCPConnection extends EventEmitter {
       `${this.getLogPrefix()} Reached the tools/list pagination limit of ${maxPages} page(s); some tools may be omitted. Set MCP_TOOLS_LIST_MAX_PAGES higher if this server legitimately exposes more.`,
     );
     return { tools: allTools, complete: true };
+  }
+
+  /**
+   * Returns a complete snapshot that cannot precede a concurrent `list_changed` refresh.
+   * If the notification refresh cannot complete, the caller receives an incomplete snapshot
+   * instead of publishing a request result that may already be stale.
+   */
+  public async fetchOrderedToolsSnapshot(): Promise<MCPToolsSnapshot> {
+    const startEpoch = this.toolListRefreshEpoch;
+    const startGeneration = this.toolListChangeGeneration;
+    const snapshot = await this.fetchToolsSnapshot();
+
+    if (
+      startEpoch === this.toolListRefreshEpoch &&
+      startGeneration === this.toolListChangeGeneration
+    ) {
+      return snapshot;
+    }
+
+    while (
+      startEpoch === this.toolListRefreshEpoch &&
+      this.handledToolListChangeGeneration < this.toolListChangeGeneration
+    ) {
+      this.startToolListRefresh();
+      const refresh = this.toolListRefreshPromise;
+      if (!refresh) {
+        break;
+      }
+      await refresh;
+      if (this.toolListRefreshRetryTimer) {
+        break;
+      }
+    }
+
+    const published = this.publishedToolListSnapshot;
+    if (
+      published?.epoch === this.toolListRefreshEpoch &&
+      published.generation === this.toolListChangeGeneration &&
+      this.handledToolListChangeGeneration === this.toolListChangeGeneration
+    ) {
+      return { tools: published.tools, complete: true };
+    }
+
+    return { tools: [], complete: false };
   }
 
   private warnToolsListBudgetExceeded(reason: string, toolCount: number): void {

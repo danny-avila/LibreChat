@@ -1,5 +1,6 @@
 import {
   Constants,
+  MCPOptionsSchema,
   normalizeServerName,
   normalizeMCPToolKey,
   buildServerNameAliases,
@@ -9,6 +10,18 @@ import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
 
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
+
+function isMCPServerConfig(config: unknown): config is ParsedServerConfig {
+  return MCPOptionsSchema.safeParse(config).success;
+}
+
+/** Validates an effective MCP config without stripping its server-managed metadata. */
+export function validateMCPServerConfig(config: unknown): ParsedServerConfig {
+  if (!isMCPServerConfig(config)) {
+    throw new Error('Invalid effective MCP server configuration');
+  }
+  return config;
+}
 
 /**
  * Prefix of the lazily-expanded MCP placeholder `mcp_all<delim><server>`,

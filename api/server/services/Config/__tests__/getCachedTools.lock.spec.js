@@ -157,6 +157,7 @@ describe('global tool cache write lock', () => {
     mockCache.get
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(legacy)
       .mockResolvedValueOnce('generation-current')
       .mockResolvedValueOnce('generation-current');

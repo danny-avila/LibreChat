@@ -78,6 +78,9 @@ const ToolCacheKeys = {
   /** Leased generation fencing stale publications from replaced user connections */
   MCP_SERVER_GENERATION: (userId, serverName) =>
     `tools:metadata:mcp:user-generation:{${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}}`,
+  /** Prevents a mixed-version replica from reviving a fenced legacy catalog. */
+  MCP_SERVER_LEGACY_FENCE: (userId, serverName) =>
+    `tools:metadata:mcp:user-legacy-fence:{${encodeURIComponent(userId)}:${encodeURIComponent(serverName)}}`,
 };
 
 function usesSharedRedisToolCache() {
@@ -236,6 +239,12 @@ async function getCachedTools(options = {}) {
         const current = await cache.get(toolsKey);
         if (current != null) {
           return current;
+        }
+        const legacyFence = await cache.get(
+          ToolCacheKeys.MCP_SERVER_LEGACY_FENCE(userId, serverName),
+        );
+        if (legacyFence != null) {
+          return null;
         }
         const legacy = await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName));
         if (legacy == null) {
@@ -443,6 +452,11 @@ async function invalidateCachedTools(options = {}) {
   if (serverName && userId) {
     await runWithUserToolsQueue(userId, serverName, async () => {
       const generationKey = ToolCacheKeys.MCP_SERVER_GENERATION(userId, serverName);
+      if (
+        (await cache.set(ToolCacheKeys.MCP_SERVER_LEGACY_FENCE(userId, serverName), true)) === false
+      ) {
+        throw new Error('Tool cache rejected the legacy migration fence');
+      }
       if ((await cache.set(generationKey, randomUUID(), MCP_SERVER_GENERATION_TTL_MS)) === false) {
         throw new Error('Tool publication generation cache rejected invalidation');
       }
