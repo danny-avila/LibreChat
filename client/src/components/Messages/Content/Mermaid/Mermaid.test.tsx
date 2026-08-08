@@ -334,6 +334,27 @@ describe('Mermaid Artifact expansion', () => {
     );
   });
 
+  it('withdraws the export payload when the preview unmounts', async () => {
+    const onExportReady = jest.fn();
+
+    const { unmount } = render(
+      <MermaidRenderer
+        exportFilename="Flow chart"
+        onExportReady={onExportReady}
+        showExpandButton={false}
+        showHeader={false}
+      >
+        {'graph TD\nA-->B'}
+      </MermaidRenderer>,
+    );
+
+    await waitFor(() => expect(onExportReady).toHaveBeenCalledWith(expect.objectContaining({})));
+
+    unmount();
+
+    expect(onExportReady).toHaveBeenLastCalledWith(null);
+  });
+
   it('announces loading without exposing source in the native Artifact preview', () => {
     mockSvgProcessingState = {
       ...mockSvgProcessingState,

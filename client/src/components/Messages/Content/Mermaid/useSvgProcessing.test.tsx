@@ -36,6 +36,34 @@ describe('useSvgProcessing', () => {
     });
   });
 
+  it('observes the diagram canvas once it replaces the loading placeholder', () => {
+    const observerConstructor = window.ResizeObserver as unknown as jest.Mock;
+    observerConstructor.mockClear();
+
+    /* The placeholder shown while the first diagram renders carries no ref, so
+     * the canvas only exists from the render that has a blob URL. */
+    mockMermaidResult = { svg: undefined, isLoading: true, error: undefined };
+    const containerRef: { current: HTMLDivElement | null } = { current: null };
+    const { rerender } = renderHook(
+      ({ content }) => useSvgProcessing({ content, id: 'diagram', retryCount: 0, containerRef }),
+      { initialProps: { content: 'graph TD' } },
+    );
+
+    expect(observerConstructor).not.toHaveBeenCalled();
+
+    const canvas = document.createElement('div');
+    containerRef.current = canvas;
+    mockMermaidResult = {
+      svg: '<svg width="400" height="200"><path /></svg>',
+      isLoading: false,
+      error: undefined,
+    };
+    rerender({ content: 'graph TD\nA-->B' });
+
+    const observer = observerConstructor.mock.results.at(-1)?.value as { observe: jest.Mock };
+    expect(observer.observe).toHaveBeenCalledWith(canvas);
+  });
+
   it('keeps the last diagram URL while streaming and revokes it after replacement', () => {
     const containerRef = { current: null };
     const { result, rerender, unmount } = renderHook(

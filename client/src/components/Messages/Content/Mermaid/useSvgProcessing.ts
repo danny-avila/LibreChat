@@ -41,6 +41,10 @@ export default function useSvgProcessing({
     }
   }, [svg]);
 
+  /* The canvas only mounts once there is a diagram to show, so the first run
+   * of this effect sees a null ref while the placeholder is up. Re-running it
+   * on `blobUrl` picks the real element up; without that, the fit calculation
+   * below keeps the default width and clips wide diagrams in narrow panels. */
   useEffect(() => {
     if (!containerRef.current) {
       return;
@@ -52,7 +56,7 @@ export default function useSvgProcessing({
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [containerRef]);
+  }, [containerRef, blobUrl]);
 
   const { svg: processedSvg, dimensions: parsedDimensions } = useMemo(() => {
     if (!svg) {

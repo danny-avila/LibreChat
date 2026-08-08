@@ -43,6 +43,12 @@ function MermaidArtifactTabs({
   const monacoRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const lastIdRef = useRef<string | null>(null);
 
+  /* The reset below only lands after commit, so on the render that switches
+   * artifacts `currentCode` still holds the previous artifact's editor text.
+   * Ignore it until the reset catches up, or the freshly keyed renderer would
+   * mount showing (and exporting) the diagram we just navigated away from. */
+  const hasCurrentArtifactCode = lastIdRef.current === artifact.id;
+
   useEffect(() => {
     if (artifact.id !== lastIdRef.current) {
       setCurrentCode(undefined);
@@ -50,7 +56,7 @@ function MermaidArtifactTabs({
     lastIdRef.current = artifact.id;
   }, [artifact.id, setCurrentCode]);
 
-  const content = currentCode ?? artifact.content ?? '';
+  const content = (hasCurrentArtifactCode ? currentCode : undefined) ?? artifact.content ?? '';
   const isReadOnly = isSharedConvo === true || artifact.index == null;
 
   return (

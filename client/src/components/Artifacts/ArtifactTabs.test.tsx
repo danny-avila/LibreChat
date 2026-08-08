@@ -124,18 +124,28 @@ describe('ArtifactTabs Mermaid editing', () => {
     const testGlobal = globalThis as typeof globalThis & {
       nativeMermaidRenderer?: jest.Mock;
     };
-    mockCurrentCode = 'graph TD\nA-->C';
+    const artifact: Artifact = {
+      id: 'mermaid-persisted-1',
+      type: 'application/vnd.mermaid',
+      title: 'Flow chart',
+      content: 'graph TD\nA-->B',
+      index: 0,
+      lastUpdateTime: 1,
+    };
 
-    renderArtifact(
-      {
-        id: 'mermaid-persisted-1',
-        type: 'application/vnd.mermaid',
-        title: 'Flow chart',
-        content: 'graph TD\nA-->B',
-        index: 0,
-        lastUpdateTime: 1,
-      },
-      'preview',
+    const { rerender } = render(
+      <Tabs.Root value="preview">
+        <ArtifactTabs artifact={artifact} previewRef={previewRef} />
+      </Tabs.Root>,
+    );
+
+    /* Editor text only belongs to the preview once it was typed against the
+     * artifact on screen, so it is applied on a later render, not on mount. */
+    mockCurrentCode = 'graph TD\nA-->C';
+    rerender(
+      <Tabs.Root value="preview">
+        <ArtifactTabs artifact={artifact} previewRef={previewRef} />
+      </Tabs.Root>,
     );
 
     expect(testGlobal.nativeMermaidRenderer?.mock.calls.at(-1)?.[0]).toEqual(
@@ -197,6 +207,69 @@ describe('ArtifactTabs Mermaid editing', () => {
     );
 
     expect(getByTestId('mermaid-renderer').getAttribute('data-instance')).not.toBe(initialInstance);
+  });
+
+  it('does not seed the next diagram with the previous artifact editor text', () => {
+    const testGlobal = globalThis as typeof globalThis & {
+      nativeMermaidRenderer?: jest.Mock;
+    };
+    const first: Artifact = {
+      id: 'mermaid-a',
+      type: 'application/vnd.mermaid',
+      title: 'First',
+      content: 'graph TD\nA-->B',
+      index: 0,
+      lastUpdateTime: 1,
+    };
+    const second: Artifact = {
+      id: 'mermaid-b',
+      type: 'application/vnd.mermaid',
+      title: 'Second',
+      content: 'graph TD\nC-->D',
+      index: 1,
+      lastUpdateTime: 2,
+    };
+
+    mockCurrentCode = 'graph TD\nEDITED-->A';
+    const { rerender } = render(
+      <Tabs.Root value="preview">
+        <ArtifactTabs artifact={first} previewRef={previewRef} />
+      </Tabs.Root>,
+    );
+
+    rerender(
+      <Tabs.Root value="preview">
+        <ArtifactTabs artifact={second} previewRef={previewRef} />
+      </Tabs.Root>,
+    );
+
+    const renderedContent = testGlobal.nativeMermaidRenderer?.mock.calls.map(
+      (call) => (call[0] as { children: string }).children,
+    );
+    expect(renderedContent).not.toContain('graph TD\nEDITED-->A');
+    expect(testGlobal.nativeMermaidRenderer?.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ children: 'graph TD\nC-->D' }),
+    );
+  });
+
+  it('does not mount the Mermaid renderer on the code tab', () => {
+    const testGlobal = globalThis as typeof globalThis & {
+      nativeMermaidRenderer?: jest.Mock;
+    };
+    testGlobal.nativeMermaidRenderer?.mockClear();
+
+    renderArtifact(
+      {
+        id: 'mermaid-a',
+        type: 'application/vnd.mermaid',
+        title: 'First',
+        content: 'graph TD\nA-->B',
+        lastUpdateTime: 1,
+      },
+      'code',
+    );
+
+    expect(testGlobal.nativeMermaidRenderer).not.toHaveBeenCalled();
   });
 
   it('does not remount the renderer while the same Artifact is edited', () => {

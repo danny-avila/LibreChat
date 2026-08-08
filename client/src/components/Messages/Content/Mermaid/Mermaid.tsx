@@ -187,9 +187,17 @@ export const MermaidRenderer = memo(function MermaidRenderer({
     calculatedHeight,
   } = useSvgProcessing({ content: children, id, theme, retryCount, containerRef });
 
+  const exportReadyRef = useRef(onExportReady);
+
   useEffect(() => {
+    exportReadyRef.current = onExportReady;
     onExportReady?.(processedSvg == null ? null : { svg: processedSvg, dimensions: svgDimensions });
   }, [onExportReady, processedSvg, svgDimensions]);
+
+  /* The preview tab unmounts when the panel switches to the code view, which
+   * would otherwise leave the toolbar exporting a payload no longer on screen
+   * and no longer matching an edited source. */
+  useEffect(() => () => exportReadyRef.current?.(null), []);
 
   const { zoom, pan, isPanning, handleZoomIn, handleZoomOut, handleResetZoom, handleMouseDown } =
     useMermaidZoom({ containerRef, wheelDep: blobUrl });

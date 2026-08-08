@@ -482,7 +482,7 @@ export default function Artifacts() {
                 portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
                 onClick={handleCopyArtifact}
               />
-              {isMermaidArtifact && (
+              {isMermaidArtifact && displayedTab === 'preview' && (
                 <MermaidExport artifact={currentArtifact} exportData={mermaidExportData} />
               )}
               <DownloadArtifact artifact={currentArtifact} />

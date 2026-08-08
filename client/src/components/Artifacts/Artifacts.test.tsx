@@ -70,7 +70,7 @@ jest.mock('./DownloadArtifact', () => ({
 
 jest.mock('./Mermaid/Export', () => ({
   __esModule: true,
-  default: () => null,
+  default: () => <div data-testid="mermaid-export" />,
 }));
 
 jest.mock('~/components/Messages/Content/CopyButton', () => ({
@@ -134,6 +134,18 @@ describe('Artifacts panel accessibility', () => {
 
     await screen.findByRole('region', { name: 'Diagram' });
     expect(screen.queryByRole('button', { name: 'com_ui_refresh' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('mermaid-export')).toBeInTheDocument();
+  });
+
+  it('hides the Mermaid export action outside the preview tab', async () => {
+    render(
+      <RecoilRoot>
+        <Artifacts />
+      </RecoilRoot>,
+    );
+
+    await screen.findByRole('region', { name: 'Diagram' });
+    expect(screen.queryByTestId('mermaid-export')).not.toBeInTheDocument();
   });
 
   it('keeps the refresh action for sandboxed previews', async () => {

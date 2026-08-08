@@ -31,6 +31,10 @@ export default function SandboxArtifactTabs({
   const monacoRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const lastIdRef = useRef<string | null>(null);
 
+  /* The reset lands only after commit, so the render that switches artifacts
+   * still sees the previous artifact's editor text. */
+  const hasCurrentArtifactCode = lastIdRef.current === artifact.id;
+
   useEffect(() => {
     if (artifact.id !== lastIdRef.current) {
       setCurrentCode(undefined);
@@ -66,7 +70,7 @@ export default function SandboxArtifactTabs({
           template={template}
           previewRef={previewRef}
           sharedProps={sharedProps}
-          currentCode={currentCode}
+          currentCode={hasCurrentArtifactCode ? currentCode : undefined}
           startupConfig={resolvedStartupConfig}
         />
       </Tabs.Content>
