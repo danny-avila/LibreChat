@@ -204,7 +204,7 @@ export class MCPConnectionFactory {
       );
 
       if (await connection.isConnected()) {
-        const snapshot = await connection.fetchToolsSnapshot();
+        const snapshot = await connection.fetchOrderedToolsSnapshot();
         connection.removeListener('oauthRequired', oauthHandler);
         return {
           tools: snapshot.complete ? snapshot.tools : null,
@@ -277,7 +277,7 @@ export class MCPConnectionFactory {
       await withTimeout(unauthConnection.connect(), connectTimeout, `Unauth connection timeout`);
 
       if (await unauthConnection.isConnected()) {
-        const snapshot = await unauthConnection.fetchToolsSnapshot();
+        const snapshot = await unauthConnection.fetchOrderedToolsSnapshot();
         await unauthConnection.dispose();
         return snapshot.complete ? snapshot.tools : null;
       }

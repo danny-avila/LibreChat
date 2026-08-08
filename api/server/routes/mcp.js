@@ -543,7 +543,10 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           const oauthReconnectionManager = getOAuthReconnectionManager();
           oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
 
-          const snapshot = await userConnection.fetchToolsSnapshot();
+          const snapshot =
+            typeof userConnection.fetchOrderedToolsSnapshot === 'function'
+              ? await userConnection.fetchOrderedToolsSnapshot()
+              : await userConnection.fetchToolsSnapshot();
           if (snapshot.complete) {
             const publicationGeneration = mcpManager.getToolPublicationGeneration?.(userConnection);
             await updateMCPServerTools({

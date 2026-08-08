@@ -286,6 +286,19 @@ async function reinitMCPServer({
       }
     }
 
+    if (tools && !ephemeralServer && publicationGeneration) {
+      const currentGeneration = await getMCPToolsCacheGeneration({
+        userId: user.id,
+        serverName,
+      });
+      if (currentGeneration !== publicationGeneration) {
+        logger.warn(
+          `[MCP Reinitialize] Discarding stale tools for ${serverName} because its publication generation changed during discovery`,
+        );
+        tools = null;
+      }
+    }
+
     if (tools) {
       availableTools = await updateMCPServerTools({
         userId: user.id,
@@ -294,6 +307,9 @@ async function reinitMCPServer({
         serverConfig,
         ...(publicationGeneration && { publicationGeneration }),
       });
+      if (availableTools == null) {
+        tools = null;
+      }
     }
 
     logger.debug(

@@ -266,6 +266,23 @@ describe('createMCPToolCacheService', () => {
       });
     });
 
+    it('does not return definitions rejected by the publication-generation fence', async () => {
+      const deps = createMockDeps({
+        getServerConfig: jest.fn().mockResolvedValue(tenantConfig),
+        getAllServerConfigs: jest.fn().mockResolvedValue({}),
+        setCachedToolsIfCurrent: jest.fn().mockResolvedValue(false),
+      });
+
+      await expect(
+        createMCPToolCacheService(deps).updateMCPServerTools({
+          userId: 'u1',
+          serverName: 'tenant',
+          tools: [{ name: 'stale' }],
+          publicationGeneration: 'stale-generation',
+        }),
+      ).resolves.toBeNull();
+    });
+
     it('keeps a late old-config publication invisible to current readers', async () => {
       const userCache = new Map<string, LCAvailableTools>();
       const oldConfig = tenantConfig;
@@ -337,7 +354,7 @@ describe('createMCPToolCacheService', () => {
       });
       const expected = toolName('search', 'Connector: Company');
 
-      expect(result[expected]?.['function'].name).toBe(expected);
+      expect(result?.[expected]?.['function'].name).toBe(expected);
       expect(deps.setCachedTools).toHaveBeenCalledWith(result, {
         userId: 'u1',
         serverName: 'Connector: Company',
@@ -355,7 +372,7 @@ describe('createMCPToolCacheService', () => {
         tools: [{ name: 'search' }],
       });
 
-      expect(result[toolName('search', 'body-scoped')]).toBeDefined();
+      expect(result?.[toolName('search', 'body-scoped')]).toBeDefined();
       expect(deps.setCachedTools).not.toHaveBeenCalled();
       expect(deps.setCachedAppServerTools).not.toHaveBeenCalled();
     });

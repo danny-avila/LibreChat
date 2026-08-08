@@ -970,11 +970,12 @@ describe('MCP Routes', () => {
         mockRegistryInstance.getServerConfig.mockResolvedValue({});
         mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'test-server': mergedServerConfig });
 
+        const fetchOrderedToolsSnapshot = jest
+          .fn()
+          .mockResolvedValue({ tools: fetchedTools, complete: true });
         const mockMcpManager = {
           getUserConnection: jest.fn().mockResolvedValue({
-            fetchToolsSnapshot: jest
-              .fn()
-              .mockResolvedValue({ tools: fetchedTools, complete: true }),
+            fetchOrderedToolsSnapshot,
           }),
         };
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -990,6 +991,7 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(302);
         expect(mockResolveAllMcpConfigs).toHaveBeenCalledWith('test-user-id');
+        expect(fetchOrderedToolsSnapshot).toHaveBeenCalledTimes(1);
         expect(mockMcpManager.getUserConnection).toHaveBeenCalledWith(
           expect.objectContaining({ serverConfig: mergedServerConfig }),
         );

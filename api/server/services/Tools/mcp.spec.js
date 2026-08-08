@@ -145,6 +145,47 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
   });
 
+  it('discards a snapshot when another replica rotates its generation during discovery', async () => {
+    mockGetMCPToolsCacheGeneration
+      .mockResolvedValueOnce('generation-current')
+      .mockResolvedValueOnce('generation-replaced');
+    mockGetConnection.mockResolvedValue({
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'stale', inputSchema: { type: 'object' } }],
+        complete: true,
+      }),
+    });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(result.tools).toBeNull();
+    expect(result.availableTools).toBeNull();
+    expect(mockUpdateMCPServerTools).not.toHaveBeenCalled();
+  });
+
+  it('does not return tools when the guarded publication loses its generation race', async () => {
+    mockGetConnection.mockResolvedValue({
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'stale', inputSchema: { type: 'object' } }],
+        complete: true,
+      }),
+    });
+    mockUpdateMCPServerTools.mockResolvedValue(null);
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(result.tools).toBeNull();
+    expect(result.availableTools).toBeNull();
+  });
+
   it('passes request body and Graph resolver into connection creation', async () => {
     mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
     const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };

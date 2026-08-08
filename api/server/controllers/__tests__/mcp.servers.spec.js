@@ -286,7 +286,7 @@ describe('DB-backed server mutation fencing', () => {
     source: 'user',
   };
 
-  it('inspects, fences, commits, and then disconnects old connections', async () => {
+  it('inspects, fences, commits, fences cross-replica creations, and disconnects', async () => {
     const user = await createUser();
     mockRegistryInstance.getServerConfig.mockResolvedValue(
       createDbConfig(new mongoose.Types.ObjectId()),
@@ -302,6 +302,7 @@ describe('DB-backed server mutation fencing', () => {
 
     const { invalidateCachedTools } = require('~/server/services/Config');
     expect(invalidateCachedTools).toHaveBeenCalledWith({ userId: user.id, serverName: 'github' });
+    expect(invalidateCachedTools).toHaveBeenCalledTimes(2);
     expect(mockMcpManager.disconnectUserConnection).toHaveBeenCalledWith(user.id, 'github');
     expect(mockRegistryInstance.inspectServerUpdate.mock.invocationCallOrder[0]).toBeLessThan(
       invalidateCachedTools.mock.invocationCallOrder[0],
@@ -310,6 +311,9 @@ describe('DB-backed server mutation fencing', () => {
       mockRegistryInstance.commitServerUpdate.mock.invocationCallOrder[0],
     );
     expect(mockRegistryInstance.commitServerUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+      invalidateCachedTools.mock.invocationCallOrder[1],
+    );
+    expect(invalidateCachedTools.mock.invocationCallOrder[1]).toBeLessThan(
       mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0],
     );
     expect(res.status).toHaveBeenCalledWith(200);
@@ -401,7 +405,7 @@ describe('DB-backed server mutation fencing', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
-  it('fences and disconnects before deleting the registry entry', async () => {
+  it('fences before deletion and fences cross-replica creations before disconnecting', async () => {
     const user = await createUser();
     mockRegistryInstance.removeServer.mockResolvedValue(undefined);
     const res = createRes();
@@ -410,8 +414,15 @@ describe('DB-backed server mutation fencing', () => {
 
     const { invalidateCachedTools } = require('~/server/services/Config');
     expect(invalidateCachedTools).toHaveBeenCalledWith({ userId: user.id, serverName: 'github' });
+    expect(invalidateCachedTools).toHaveBeenCalledTimes(2);
     expect(mockMcpManager.disconnectUserConnection).toHaveBeenCalledWith(user.id, 'github');
+    expect(invalidateCachedTools.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRegistryInstance.removeServer.mock.invocationCallOrder[0],
+    );
     expect(mockRegistryInstance.removeServer.mock.invocationCallOrder[0]).toBeLessThan(
+      invalidateCachedTools.mock.invocationCallOrder[1],
+    );
+    expect(invalidateCachedTools.mock.invocationCallOrder[1]).toBeLessThan(
       mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0],
     );
     expect(res.status).toHaveBeenCalledWith(200);

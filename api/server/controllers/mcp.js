@@ -577,6 +577,9 @@ const updateMCPServerController = async (req, res) => {
       });
       throw error;
     }
+    /** Fence connections another replica could have created from the old DB
+     * config between the pre-commit fence and the committed update. */
+    await invalidateCachedTools({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
 
     res.status(200).json(redactServerSecrets(parsedConfig, { canEdit: true }));
@@ -613,6 +616,8 @@ const deleteMCPServerController = async (req, res) => {
       });
       throw error;
     }
+    /** Fence connections another replica could have created before deletion committed. */
+    await invalidateCachedTools({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {

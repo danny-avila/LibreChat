@@ -29,6 +29,7 @@ getLogStores.mockReturnValue(mockCache);
 
 const {
   getCachedTools,
+  getMCPToolsCacheGeneration,
   setCachedTools,
   setCachedToolsIfCurrent,
   runWithGlobalCacheLock,
@@ -209,15 +210,36 @@ describe('global tool cache write lock', () => {
       30_000,
       'NX',
     );
-    expect(mockCache.set).toHaveBeenCalledWith(
-      'tools:mcp:user:{user-1:server-1}:config-current',
-      {
-        version: 1,
-        publicationGeneration: 'generation-current',
-        tools: legacy,
-      },
-      expect.any(Number),
+    expect(mockKeyvRedisClient.eval).toHaveBeenCalledWith(
+      expect.stringContaining("redis.call('EXISTS', KEYS[2])"),
+      expect.objectContaining({
+        keys: [
+          `tools:mcp:write-fence:{user-1:server-1}`,
+          `${CacheKeys.TOOL_CACHE}:tools:metadata:mcp:user-legacy-fence:{user-1:server-1}`,
+          `${CacheKeys.TOOL_CACHE}:tools:metadata:mcp:user-generation:{user-1:server-1}`,
+          `${CacheKeys.TOOL_CACHE}:tools:mcp:user:{user-1:server-1}:config-current`,
+        ],
+      }),
     );
+    expect(mockCache.set).not.toHaveBeenCalled();
+  });
+
+  it('rejects first-generation creation after its distributed lock ownership is lost', async () => {
+    mockCache.get.mockResolvedValue(null);
+    mockKeyvRedisClient.eval
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(-1)
+      .mockResolvedValue(1);
+
+    await expect(
+      getMCPToolsCacheGeneration({ userId: 'user-1', serverName: 'server-1' }),
+    ).rejects.toThrow('Tool cache lock ownership was lost before generation creation');
+
+    const createCall = mockKeyvRedisClient.eval.mock.calls.find(([script]) =>
+      script.includes("redis.call('EXISTS', KEYS[2])"),
+    );
+    expect(calculateSlot(createCall[1].keys[0])).toBe(calculateSlot(createCall[1].keys[1]));
+    expect(mockCache.set).not.toHaveBeenCalled();
   });
 
   it('waits through the full abandoned Redis lease before giving up', async () => {

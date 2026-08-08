@@ -49,7 +49,7 @@ export interface MCPToolCacheService {
     tools: MCPToolInput[] | null;
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
-  }) => Promise<LCAvailableTools>;
+  }) => Promise<LCAvailableTools | null>;
   mergeAppTools: (appTools: LCAvailableTools) => Promise<void>;
   replaceAppServerTools: (params: {
     serverName: string;
@@ -206,7 +206,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     tools: MCPToolInput[] | null;
     serverConfig?: ParsedServerConfig;
     publicationGeneration?: string;
-  }): Promise<LCAvailableTools> {
+  }): Promise<LCAvailableTools | null> {
     const { userId, serverName, tools, serverConfig, publicationGeneration } = params;
     try {
       const serverTools: LCAvailableTools = {};
@@ -255,7 +255,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
             logger.debug(
               `[MCP Cache] Skipped unfenced or unaddressed tool publication for ${serverName} (user: ${userId})`,
             );
-            return serverTools;
+            return null;
           }
           const current = await setCachedToolsIfCurrent(serverTools, {
             userId,
@@ -267,7 +267,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
             logger.debug(
               `[MCP Cache] Ignored stale tool publication for ${serverName} (user: ${userId})`,
             );
-            return serverTools;
+            return null;
           }
         } else {
           await writeCachedTools(serverTools, { userId, serverName, configGeneration });
@@ -283,7 +283,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           publicationGeneration: appConfigGeneration,
         });
         if (!replaced) {
-          return serverTools;
+          return null;
         }
       }
       logger.debug(

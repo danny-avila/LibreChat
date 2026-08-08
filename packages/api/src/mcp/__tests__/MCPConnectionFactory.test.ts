@@ -3758,7 +3758,7 @@ describe('MCPConnectionFactory', () => {
 
       mockConnectionInstance.connect.mockResolvedValue(undefined);
       mockConnectionInstance.isConnected.mockResolvedValue(true);
-      mockConnectionInstance.fetchToolsSnapshot = jest
+      mockConnectionInstance.fetchOrderedToolsSnapshot = jest
         .fn()
         .mockResolvedValue({ tools: mockTools, complete: true });
 
@@ -3778,7 +3778,7 @@ describe('MCPConnectionFactory', () => {
 
       mockConnectionInstance.connect.mockResolvedValue(undefined);
       mockConnectionInstance.isConnected.mockResolvedValue(true);
-      mockConnectionInstance.fetchToolsSnapshot = jest.fn().mockResolvedValue({
+      mockConnectionInstance.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
         tools: [mockTools[0]],
         complete: false,
       });
@@ -3808,7 +3808,7 @@ describe('MCPConnectionFactory', () => {
 
       mockConnectionInstance.connect.mockResolvedValue(undefined);
       mockConnectionInstance.isConnected.mockResolvedValue(true);
-      mockConnectionInstance.fetchToolsSnapshot = jest
+      mockConnectionInstance.fetchOrderedToolsSnapshot = jest
         .fn()
         .mockResolvedValue({ tools: mockTools, complete: true });
 
@@ -4363,7 +4363,7 @@ describe('MCPConnectionFactory', () => {
       mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
       mockConnectionInstance.connect.mockResolvedValue(undefined);
       mockConnectionInstance.isConnected.mockResolvedValue(true);
-      mockConnectionInstance.fetchToolsSnapshot = jest
+      mockConnectionInstance.fetchOrderedToolsSnapshot = jest
         .fn()
         .mockResolvedValue({ tools: mockTools, complete: true });
 

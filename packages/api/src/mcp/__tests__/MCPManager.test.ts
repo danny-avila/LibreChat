@@ -1492,6 +1492,7 @@ describe('MCPManager', () => {
       isConnected: jest.fn().mockResolvedValue(true),
       fetchTools: jest.fn().mockResolvedValue(mockTools),
       fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: mockTools, complete: true }),
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({ tools: mockTools, complete: true }),
       disconnect: jest.fn().mockResolvedValue(undefined),
       dispose: jest.fn().mockResolvedValue(undefined),
     } as unknown as MCPConnection;
