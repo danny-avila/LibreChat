@@ -310,6 +310,17 @@ describe('ToolCallGroup image hoisting', () => {
     expect(screen.getAllByText('Only allow sites you trust')).toHaveLength(1);
   });
 
+  it('keeps the trust warning for a persisted incomplete authentication call', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [{ part: makeAuthPart('auth-persisted', 'zapier'), idx: 0 }],
+      lastContentIdx: 0,
+      renderPart: () => <ToolAuthWarning key="auth-persisted" />,
+    });
+
+    expect(screen.getByText('Only allow sites you trust')).toBeInTheDocument();
+  });
+
   it('does not render a shared trust warning for completed authentication calls', () => {
     renderGroup({
       ...baseProps,
