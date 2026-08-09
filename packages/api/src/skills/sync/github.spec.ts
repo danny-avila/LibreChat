@@ -1373,6 +1373,11 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.grantPermission).toHaveBeenCalledWith(
       expect.objectContaining({ resourceId: restoredSkill?._id }),
     );
+    /* The deletion was undone, and the run no longer stops here, so the status
+       must not persist a count for work that was rolled back. */
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deletedSkillCount: 0, deletedFileCount: 0 }),
+    );
   });
 
   it("does not mirror-delete another tenant's skills from an ambient source run", async () => {
@@ -1856,6 +1861,47 @@ describe('createGitHubSkillSyncRunner', () => {
       }),
     );
     expect(deps.deleteSkill).not.toHaveBeenCalled();
+  });
+
+  it('keeps a moved skill mirror when its move fails part way through', async () => {
+    /* The mirror still carries the old upstream id until the update lands, so
+       a failed move must not leave the reconcile pass reading it as stale. */
+    const existing = makeSkill({
+      name: 'research',
+      description: 'Old description',
+      author: makeSourceAuthorId(),
+      authorName: 'GitHub Sync',
+      frontmatter: {},
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/old-research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/old-research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const deps = createDeps({
+      findSkillBySourceIdentity: jest.fn(async () => null),
+      listSkillsBySource: jest.fn(async () => [existing]),
+      getSkillById: jest.fn(async () => existing),
+      listSkillFiles: jest.fn(async () => []),
+      getSkillFileByPath: jest.fn(async () => null),
+      saveBuffer: jest.fn(async () => {
+        throw new Error('storage unavailable');
+      }),
+      updateSkill: jest.fn(),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.deleteSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deletedSkillCount: 0, skippedSkillCount: 1 }),
+    );
   });
 
   it('refreshes an existing skill version after file sync before updating metadata', async () => {

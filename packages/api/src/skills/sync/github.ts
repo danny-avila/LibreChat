@@ -1640,6 +1640,16 @@ async function syncSource(params: {
             existingSyncedSkills: await getExistingSyncedSkills(),
             excludedUpstreamIds: discoveredUpstreamIds,
           });
+      if (movedExisting) {
+        /* A moved skill's mirror still carries its old upstream id until the
+           update lands, and only the new path was marked as seen. Mark the old
+           id too, so a failure here leaves the copy in place for the next run
+           to move rather than letting the reconcile pass read it as stale. */
+        const movedUpstreamId = getSourceMetadataString(movedExisting, 'upstreamId');
+        if (movedUpstreamId) {
+          seenUpstreamIds.add(movedUpstreamId);
+        }
+      }
       const effectivePrepared: PreparedRemoteSkill = movedExisting
         ? { ...prepared, existing: movedExisting }
         : prepared;
@@ -1714,13 +1724,25 @@ async function syncSource(params: {
             ),
           );
           if (staleConflictCleanup?.deletedSkill) {
-            await restoreDeletedSyncedSkill(deps, staleConflictCleanup.deletedSkill).catch(
-              (cleanupError) =>
+            const restored = await restoreDeletedSyncedSkill(
+              deps,
+              staleConflictCleanup.deletedSkill,
+            )
+              .then(() => true)
+              .catch((cleanupError) => {
                 logger.error(
                   '[GitHubSkillSync] Failed to restore stale mirrored skill after sync failure:',
                   cleanupError,
-                ),
-            );
+                );
+                return false;
+              });
+            /* The run continues past this skill now, so the provisional counts
+               would otherwise be persisted for work that was undone, and the
+               reconcile pass would count the restored mirror a second time. */
+            if (restored) {
+              counts.deletedSkillCount -= staleConflictCleanup.deletedSkillCount;
+              counts.deletedFileCount -= staleConflictCleanup.deletedFileCount;
+            }
           }
           throw error;
         }
