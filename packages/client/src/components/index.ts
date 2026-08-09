@@ -40,16 +40,7 @@ export { default as Badge } from './Badge';
 export { default as Avatar } from './Avatar';
 export { default as Combobox } from './Combobox';
 export { default as Dropdown } from './Dropdown';
-export { default as LegacyDataTable } from './DataTable';
-export { default as DataTable } from './DataTable/DataTable';
-export type {
-  DataTableConfig,
-  DataTableProps,
-  DataTableSearchProps,
-  ProcessedDataRow,
-  TableColumn,
-  TableColumnDef,
-} from './DataTable/DataTable.types';
+export { default as DataTable } from './DataTable';
 export { default as SplitText } from './SplitText';
 export { default as FormInput } from './FormInput';
 export { default as PixelCard } from './PixelCard';
@@ -66,3 +57,12 @@ export { default as ControlCombobox } from './ControlCombobox';
 export { default as OGDialogTemplate } from './OGDialogTemplate';
 export { default as InputWithDropdown } from './InputWithDropDown';
 export { default as AnimatedSearchInput } from './AnimatedSearchInput';
+export { default as VirtualizedDataTable } from './DataTable/DataTable';
+export type {
+  TableColumn,
+  TableColumnDef,
+  DataTableConfig,
+  ProcessedDataRow,
+  DataTableSearchProps,
+  DataTableProps as VirtualizedDataTableProps,
+} from './DataTable/DataTable.types';

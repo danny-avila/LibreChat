@@ -67,6 +67,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   const lastScrollTopRef = useRef(0);
   const lastScrollTimeRef = useRef(performance.now());
   const fastScrollTimeoutRef = useRef<number | null>(null);
+  const autoFillRowCountRef = useRef(-1);
 
   useEffect(() => {
     setDynamicOverscan(overscan);
@@ -345,6 +346,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
   useEffect(() => {
     setSearchTerm(filterValue);
+    autoFillRowCountRef.current = -1;
   }, [filterValue]);
 
   useEffect(() => {
@@ -435,6 +437,30 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       cleanupTimers();
     };
   }, [handleScroll, cleanupTimers]);
+
+  /**
+   * Pagination is driven by the scroll handler, so a first page too short to
+   * overflow a tall container would strand the table on page one. Keep pulling
+   * pages until the rows overflow or the source runs dry; the row-count guard
+   * stops the loop when a page adds nothing.
+   */
+  useEffect(() => {
+    const container = tableContainerRef.current;
+    if (!container || !fetchNextPage || !hasNextPage || isFetchingNextPage || isLoading) {
+      return;
+    }
+    if (container.clientHeight === 0 || container.scrollHeight > container.clientHeight) {
+      return;
+    }
+    if (autoFillRowCountRef.current === data.length) {
+      return;
+    }
+
+    autoFillRowCountRef.current = data.length;
+    void fetchNextPage().catch((error) => {
+      logger.error('DataTable: Unable to fetch the next page', error);
+    });
+  }, [data.length, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading]);
 
   return (
     <div

@@ -1,3 +1,4 @@
+const { createHash } = require('crypto');
 const mongoose = require('mongoose');
 const express = require('express');
 const {
@@ -206,6 +207,26 @@ const resolveShareFile = async (req, res, next) => {
   }
 };
 
+/**
+ * Cache validator for a snapshotted file. Beyond the fields `resolveShareFile`
+ * pins the snapshot on (`previewRevision`, `bytes`), it folds in the stored
+ * location: a re-publish that swaps the object without changing size or revision
+ * still moves `storageKey`/`filepath` (regenerated code outputs carry a `?v=`
+ * cache-buster), so the viewer revalidates instead of keeping its stale copy.
+ * A same-path, same-size, same-revision replacement stays the best-effort gap
+ * inherent to the no-byte-copy snapshot design.
+ */
+const buildShareFileEtag = (file) => {
+  const identity = [
+    file.file_id,
+    file.previewRevision ?? '',
+    file.bytes ?? '',
+    file.storageKey ?? '',
+    file.filepath ?? '',
+  ].join('\u0000');
+  return `"share-${createHash('sha256').update(identity).digest('hex').slice(0, 32)}"`;
+};
+
 /** Stream (or redirect to) a snapshotted file from its original stored object. */
 const streamSharedFile = async (req, res, file, requestedDisposition) => {
   const source = file.source || FileSources.local;
@@ -213,9 +234,8 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
 
   // An update keeps the shareId, so these URLs are stable across re-publishes. Without
   // revalidation a viewer's cached copy would outlive a revoked "share files" choice or a
-  // replaced snapshot by the max-age. The tag mirrors the fields resolveShareFile pins the
-  // snapshot on, so unchanged files still settle on a 304 rather than re-sending bytes.
-  const etag = `"share-${file.file_id}-${file.previewRevision ?? 0}-${file.bytes ?? 0}"`;
+  // replaced snapshot by the max-age.
+  const etag = buildShareFileEtag(file);
   res.setHeader('ETag', etag);
   res.setHeader('Cache-Control', 'private, no-cache');
   if (req.headers['if-none-match'] === etag) {

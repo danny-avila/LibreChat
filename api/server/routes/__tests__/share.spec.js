@@ -741,7 +741,7 @@ describe('share-scoped file routes', () => {
     expect(response.status).toBe(200);
     // The shareId is stable across updates now, so the URL alone can no longer bust caches.
     expect(response.headers['cache-control']).toBe('private, no-cache');
-    expect(response.headers['etag']).toBe('"share-file-1-0-1234"');
+    expect(response.headers['etag']).toMatch(/^"share-[0-9a-f]{32}"$/);
   });
 
   it('answers an unchanged snapshot with 304 instead of re-sending bytes', async () => {
@@ -759,38 +759,78 @@ describe('share-scoped file routes', () => {
       hasSnapshots: true,
     });
 
-    const response = await request(buildApp())
+    const app = buildApp();
+    const first = await request(app).get('/api/share/share-123/files/file-1');
+    expect(first.status).toBe(200);
+
+    getDownloadStream.mockClear();
+    const response = await request(app)
       .get('/api/share/share-123/files/file-1')
-      .set('If-None-Match', '"share-file-1-0-1234"');
+      .set('If-None-Match', first.headers['etag']);
 
     expect(response.status).toBe(304);
     expect(getDownloadStream).not.toHaveBeenCalled();
   });
 
   it('changes the validator when the snapshot revision moves', async () => {
-    const getDownloadStream = jest.fn(async () => Readable.from(['new-bytes']));
+    const getDownloadStream = jest.fn(async () => Readable.from(['file-bytes']));
     mockGetStrategyFunctions.mockReturnValue({ getDownloadStream });
+    const snapshot = {
+      file_id: 'file-1',
+      source: 'local',
+      filepath: '/images/owner/pic.png',
+      type: 'image/png',
+      filename: 'pic.png',
+      bytes: 1234,
+    };
+    getSharedLinkFile.mockResolvedValue({ file: snapshot, hasSnapshots: true });
+
+    const app = buildApp();
+    const first = await request(app).get('/api/share/share-123/files/file-1');
+
     // Must match the snapshot, or resolveShareFile 404s on the version mismatch first.
     getFiles.mockResolvedValue([{ status: 'ready', previewRevision: 7, bytes: 1234 }]);
     getSharedLinkFile.mockResolvedValue({
-      file: {
-        file_id: 'file-1',
-        source: 'local',
-        filepath: '/images/owner/pic.png',
-        type: 'image/png',
-        filename: 'pic.png',
-        bytes: 1234,
-        previewRevision: 7,
-      },
+      file: { ...snapshot, previewRevision: 7 },
       hasSnapshots: true,
     });
 
-    const response = await request(buildApp())
+    const response = await request(app)
       .get('/api/share/share-123/files/file-1')
-      .set('If-None-Match', '"share-file-1-0-1234"');
+      .set('If-None-Match', first.headers['etag']);
 
     expect(response.status).toBe(200);
-    expect(response.headers['etag']).toBe('"share-file-1-7-1234"');
+    expect(response.headers['etag']).not.toBe(first.headers['etag']);
+  });
+
+  it('changes the validator when a same-size replacement moves the stored object', async () => {
+    const getDownloadStream = jest.fn(async () => Readable.from(['file-bytes']));
+    mockGetStrategyFunctions.mockReturnValue({ getDownloadStream });
+    const snapshot = {
+      file_id: 'file-1',
+      source: 'local',
+      filepath: '/images/owner/plot.png?v=1',
+      type: 'image/png',
+      filename: 'plot.png',
+      bytes: 1234,
+    };
+    getSharedLinkFile.mockResolvedValue({ file: snapshot, hasSnapshots: true });
+
+    const app = buildApp();
+    const first = await request(app).get('/api/share/share-123/files/file-1');
+
+    // Re-published output: same file_id, same size, no revision, new stored path.
+    getSharedLinkFile.mockResolvedValue({
+      file: { ...snapshot, filepath: '/images/owner/plot.png?v=2' },
+      hasSnapshots: true,
+    });
+
+    const response = await request(app)
+      .get('/api/share/share-123/files/file-1')
+      .set('If-None-Match', first.headers['etag']);
+
+    expect(response.status).toBe(200);
+    expect(response.headers['etag']).not.toBe(first.headers['etag']);
   });
 
   it('forces attachment for unsafe inline types (no stored XSS)', async () => {

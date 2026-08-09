@@ -8,7 +8,6 @@ import {
   Button,
   Spinner,
   OGDialog,
-  DataTable,
   useMediaQuery,
   OGDialogTitle,
   TooltipAnchor,
@@ -17,6 +16,7 @@ import {
   OGDialogContent,
   useToastContext,
   OGDialogTemplate,
+  VirtualizedDataTable,
 } from '@librechat/client';
 import type { SharedLinkItem, SharedLinksListParams } from 'librechat-data-provider';
 import type { SortingState, Updater } from '@tanstack/react-table';
@@ -284,7 +284,7 @@ export default function SharedLinks() {
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_nav_shared_links')}</OGDialogTitle>
           </OGDialogHeader>
-          <DataTable
+          <VirtualizedDataTable
             columns={columns}
             data={allLinks}
             getRowId={(row) => row.shareId}

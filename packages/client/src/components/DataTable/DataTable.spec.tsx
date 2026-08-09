@@ -811,6 +811,110 @@ describe('DataTable', () => {
 
       expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
     });
+
+    describe('auto-fill when the first page cannot scroll', () => {
+      const stubLayout = ({
+        clientHeight,
+        scrollHeight,
+      }: {
+        clientHeight: number;
+        scrollHeight: number;
+      }) => {
+        jest.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(clientHeight);
+        jest.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(scrollHeight);
+      };
+
+      afterEach(() => {
+        jest.restoreAllMocks();
+      });
+
+      it('fetches the next page when the rows do not overflow the container', () => {
+        stubLayout({ clientHeight: 600, scrollHeight: 300 });
+        const fetchNextPage = jest.fn().mockResolvedValue(undefined);
+
+        render(
+          <TestWrapper>
+            <DataTable
+              columns={createTestColumns()}
+              data={createTestData(3)}
+              hasNextPage={true}
+              isFetchingNextPage={false}
+              fetchNextPage={fetchNextPage}
+            />
+          </TestWrapper>,
+        );
+
+        expect(fetchNextPage).toHaveBeenCalledTimes(1);
+      });
+
+      it('leaves pagination to the scroll handler once the rows overflow', () => {
+        stubLayout({ clientHeight: 600, scrollHeight: 1200 });
+        const fetchNextPage = jest.fn().mockResolvedValue(undefined);
+
+        render(
+          <TestWrapper>
+            <DataTable
+              columns={createTestColumns()}
+              data={createTestData(30)}
+              hasNextPage={true}
+              isFetchingNextPage={false}
+              fetchNextPage={fetchNextPage}
+            />
+          </TestWrapper>,
+        );
+
+        expect(fetchNextPage).not.toHaveBeenCalled();
+      });
+
+      it('does not fetch while the container is unmeasured', () => {
+        stubLayout({ clientHeight: 0, scrollHeight: 0 });
+        const fetchNextPage = jest.fn().mockResolvedValue(undefined);
+
+        render(
+          <TestWrapper>
+            <DataTable
+              columns={createTestColumns()}
+              data={createTestData(3)}
+              hasNextPage={true}
+              isFetchingNextPage={false}
+              fetchNextPage={fetchNextPage}
+            />
+          </TestWrapper>,
+        );
+
+        expect(fetchNextPage).not.toHaveBeenCalled();
+      });
+
+      it('stops after a page that adds no rows', () => {
+        stubLayout({ clientHeight: 600, scrollHeight: 300 });
+        const fetchNextPage = jest.fn().mockResolvedValue(undefined);
+        const props = {
+          columns: createTestColumns(),
+          data: createTestData(3),
+          hasNextPage: true,
+          fetchNextPage,
+        };
+
+        const { rerender } = render(
+          <TestWrapper>
+            <DataTable {...props} isFetchingNextPage={false} />
+          </TestWrapper>,
+        );
+
+        rerender(
+          <TestWrapper>
+            <DataTable {...props} isFetchingNextPage={true} />
+          </TestWrapper>,
+        );
+        rerender(
+          <TestWrapper>
+            <DataTable {...props} isFetchingNextPage={false} />
+          </TestWrapper>,
+        );
+
+        expect(fetchNextPage).toHaveBeenCalledTimes(1);
+      });
+    });
   });
 
   describe('Custom Actions', () => {

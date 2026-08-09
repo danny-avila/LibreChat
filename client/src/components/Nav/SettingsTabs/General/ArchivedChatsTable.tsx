@@ -7,13 +7,13 @@ import {
   Button,
   Spinner,
   OGDialog,
-  DataTable,
   TooltipAnchor,
   useMediaQuery,
   OGDialogTitle,
   OGDialogHeader,
   useToastContext,
   OGDialogContent,
+  VirtualizedDataTable,
 } from '@librechat/client';
 import type { ConversationListParams, TConversation } from 'librechat-data-provider';
 import type { SortingState, Updater } from '@tanstack/react-table';
@@ -251,7 +251,7 @@ export default function ArchivedChatsTable() {
       {/* Fixed height keeps the loading (skeleton) and loaded states the same
           size, so the virtualized table can't reflow the dialog on load. */}
       <div className="h-[60vh]">
-        <DataTable
+        <VirtualizedDataTable
           columns={columns}
           data={allConversations}
           getRowId={(row, index) => row.conversationId ?? `archived-${index}`}
