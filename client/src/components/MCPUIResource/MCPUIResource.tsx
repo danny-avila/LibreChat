@@ -1,6 +1,11 @@
 import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react';
+import {
+  getMCPSandboxUrl,
+  buildAppToolResult,
+  isMcpAppResource,
+  getInlineResourceHtml,
+} from '~/utils/mcpApps';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
-import { getMCPSandboxUrl, buildAppToolResult, isMcpAppResource } from '~/utils/mcpApps';
 import { useOptionalMessagesConversation, useIsMessagesViewReadOnly } from '~/Providers';
 import { useAppBridge } from '~/hooks/MCP';
 import { useLocalize } from '~/hooks';
@@ -31,6 +36,10 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   const [tornDown, setTornDown] = useState(false);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
+  const inlineHtml = useMemo(
+    () => (uiResource ? getInlineResourceHtml(uiResource) : undefined),
+    [uiResource],
+  );
 
   useEffect(() => {
     if (loaded) {
@@ -77,7 +86,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   }
 
   try {
-    if (isMcpAppResource(uiResource) && !uiResource.text && readOnly) {
+    if (isMcpAppResource(uiResource) && !inlineHtml && readOnly) {
       return (
         <span className="mx-1 inline-flex w-full items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 align-middle text-sm text-text-secondary">
           {localize('com_ui_mcp_app_shared_unavailable')}
@@ -116,11 +125,11 @@ export function MCPUIResource(props: MCPUIResourceProps) {
       );
     }
 
-    if (uiResource.text) {
+    if (inlineHtml) {
       return (
         <span className="mx-1 inline-block w-full align-middle">
           <iframe
-            srcDoc={uiResource.text}
+            srcDoc={inlineHtml}
             sandbox=""
             style={{ width: '100%', minHeight: '200px', border: 'none' }}
             title={uiResource.uri}

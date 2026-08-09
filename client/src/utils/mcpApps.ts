@@ -111,6 +111,65 @@ export function decodeBase64Utf8(b64: string): string {
   return new TextDecoder('utf-8').decode(bytes);
 }
 
+const APP_LINK_HOST_PATTERN =
+  /^(?:(?:https?|wss?):\/\/)?(\*\.)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::\d{1,5})?$/;
+
+function hostMatchesDeclaredDomain(hostname: string, entry: string): boolean {
+  const match = APP_LINK_HOST_PATTERN.exec(entry.trim());
+  if (!match) {
+    return false;
+  }
+  const [, wildcard, declaredHost] = match;
+  const host = hostname.toLowerCase();
+  const target = declaredHost.toLowerCase();
+  return wildcard ? host === target || host.endsWith(`.${target}`) : host === target;
+}
+
+/**
+ * A host-opened link is not bound by the sandbox CSP, so an app holding proxied MCP data could
+ * encode it into a URL and exfiltrate it through the host page. Only hosts the resource declared
+ * for egress are opened; a resource declaring none gets no host-opened links, matching the
+ * `connect-src 'none'` default applied inside the sandbox.
+ */
+export function isAllowedAppLink(url: string, csp: UIResource['csp']): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return false;
+  }
+  const declared = [
+    ...(csp?.connectDomains ?? []),
+    ...(csp?.resourceDomains ?? []),
+    ...(csp?.frameDomains ?? []),
+  ];
+  return declared.some(
+    (entry) => typeof entry === 'string' && hostMatchesDeclaredDomain(parsed.hostname, entry),
+  );
+}
+
+/**
+ * Inline HTML persisted on a UI resource, carried either as `text` or as a base64 `blob`. Read-only
+ * views render only inline HTML, so both encodings must count as persisted or blob-embedded apps
+ * would be dropped from shared transcripts.
+ */
+export function getInlineResourceHtml(resource: UIResource): string | undefined {
+  if (typeof resource.text === 'string' && resource.text) {
+    return resource.text;
+  }
+  if (typeof resource.blob === 'string' && resource.blob) {
+    try {
+      return decodeBase64Utf8(resource.blob);
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 export async function fetchMCPResourceHtml(
   serverName: string,
   uri: string,

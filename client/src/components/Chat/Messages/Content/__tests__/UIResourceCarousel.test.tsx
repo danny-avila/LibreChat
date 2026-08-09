@@ -13,6 +13,11 @@ jest.mock('~/Providers', () => ({
 }));
 
 jest.mock('~/utils/mcpApps', () => ({
+  getInlineResourceHtml: (r: any) =>
+    r?.text ||
+    (typeof r?.blob === 'string' && r.blob
+      ? Buffer.from(r.blob, 'base64').toString('utf-8')
+      : undefined),
   isMcpAppResource: (r) =>
     !!(r && r.toolName && r.serverName) && (r.mimeType ?? '').includes('profile=mcp-app'),
   buildAppToolResult: jest.fn(),

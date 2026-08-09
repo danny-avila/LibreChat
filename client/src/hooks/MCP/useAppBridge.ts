@@ -16,7 +16,8 @@ import {
   readMCPResource,
   listMCPResources,
   listMCPResourceTemplates,
-  decodeBase64Utf8,
+  getInlineResourceHtml,
+  isAllowedAppLink,
 } from '~/utils/mcpApps';
 import { useOptionalMessagesOperations, useIsMessagesViewReadOnly } from '~/Providers';
 import { logger } from '~/utils';
@@ -141,15 +142,10 @@ export function useAppBridge(
       );
 
       bridge.onopenlink = async ({ url }) => {
-        try {
-          const { protocol } = new URL(url);
-          if (protocol === 'http:' || protocol === 'https:') {
-            window.open(url, '_blank', 'noopener,noreferrer');
-          } else {
-            logger.warn('[MCP App] Blocked open-link with unsupported scheme', protocol);
-          }
-        } catch {
-          logger.warn('[MCP App] Blocked malformed open-link url');
+        if (isAllowedAppLink(url, resource.csp)) {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        } else {
+          logger.warn('[MCP App] Blocked open-link outside the declared egress domains');
         }
         return {};
       };
@@ -190,16 +186,7 @@ export function useAppBridge(
           return;
         }
         sandboxReadyHandled = true;
-        // Inline HTML may arrive as `text` or as a base64 `blob`; decode the blob so blob-embedded
-        // apps are treated as persisted (rendered in read-only) rather than resourceUri-only.
-        let inlineHtml = resource.text;
-        if (!inlineHtml && typeof resource.blob === 'string' && resource.blob) {
-          try {
-            inlineHtml = decodeBase64Utf8(resource.blob);
-          } catch {
-            inlineHtml = undefined;
-          }
-        }
+        const inlineHtml = getInlineResourceHtml(resource);
         // Read-only views must not resolve app HTML from the viewer's MCP server, so only inline
         // (persisted) HTML renders here.
         if (!inlineHtml && readOnlyRef.current) {

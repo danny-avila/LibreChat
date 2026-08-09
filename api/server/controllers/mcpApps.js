@@ -30,11 +30,16 @@ const MCP_INVALID_REQUEST = -32600;
 const resolveAppContext = async (req, serverName) => {
   const userId = req.user?.id;
   // Fail closed on both config and auth resolution: a transient lookup failure must reject rather
-  // than fall back to the base config (wrong server) or to unresolved/stale credentials. A user
-  // who genuinely has no vars resolves to undefined without throwing, so that path still proceeds.
+  // than fall back to the base config (wrong server) or to unresolved/stale credentials. A user who
+  // genuinely has no vars still resolves to an empty map without throwing, so that path proceeds.
   const [configServers, userMCPAuthMap] = await Promise.all([
     resolveConfigServers(req, { throwOnError: true }),
-    getUserMCPAuthMap({ userId, servers: [serverName], findPluginAuthsByKeys }).catch((err) => {
+    getUserMCPAuthMap({
+      userId,
+      servers: [serverName],
+      findPluginAuthsByKeys,
+      throwOnError: true,
+    }).catch((err) => {
       logger.error(
         `[resolveAppContext] Failed to resolve MCP auth values for user ${userId}, server ${serverName}; failing closed`,
         err,

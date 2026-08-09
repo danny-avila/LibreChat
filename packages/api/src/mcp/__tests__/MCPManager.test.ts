@@ -1268,10 +1268,14 @@ describe('MCPManager', () => {
     const mockUser: Partial<IUser> = { id: 'user-123' };
 
     it('rejects when the server config needs request body placeholders unavailable to app calls', async () => {
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+      const config = {
         source: 'yaml',
         type: 'sse',
         url: 'https://example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(config);
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        'body-server': config,
       });
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
@@ -1288,12 +1292,16 @@ describe('MCPManager', () => {
     });
 
     it('preserves resolved headers for customUserVars servers when the route supplies no vars', async () => {
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+      const config = {
         source: 'yaml',
         type: 'sse',
         url: 'https://example.com/mcp',
         headers: { Authorization: 'Bearer {{API_KEY}}' },
         customUserVars: { API_KEY: { title: 'API Key' } },
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(config);
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        'cuv-server': config,
       });
 
       const mockConnection = {
@@ -1320,12 +1328,16 @@ describe('MCPManager', () => {
     });
 
     it('resolves headers with customUserVars when the app route supplies them', async () => {
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+      const config = {
         source: 'yaml',
         type: 'sse',
         url: 'https://example.com/mcp',
         headers: { Authorization: 'Bearer {{API_KEY}}' },
         customUserVars: { API_KEY: { title: 'API Key' } },
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(config);
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        'cuv-server': config,
       });
       mockProcessMCPEnv.mockImplementation((params) => ({
         ...params.options,
@@ -1359,11 +1371,15 @@ describe('MCPManager', () => {
       });
     });
 
-    it('forwards configServers, flowManager, and tokenMethods to getConnection', async () => {
-      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+    it('resolves the config with the user role and forwards flowManager/tokenMethods to getConnection', async () => {
+      const config = {
         source: 'yaml',
         type: 'sse',
         url: 'https://example.com/mcp',
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(config);
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        'cfg-server': config,
       });
 
       const mockConnection = {
@@ -1388,16 +1404,17 @@ describe('MCPManager', () => {
         serverName: 'cfg-server',
         toolName: 'do_thing',
         toolArguments: {},
-        user: mockUser as IUser,
+        user: { ...mockUser, role: 'ADMIN' } as IUser,
         configServers,
         flowManager,
         tokenMethods,
       });
 
-      expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
-        'cfg-server',
+      // Role-aware lookup: a server shared to the user's role must resolve for app follow-ups.
+      expect(mockRegistryInstance.getAllServerConfigs).toHaveBeenCalledWith(
         'user-123',
         configServers,
+        'ADMIN',
       );
       expect(getConnectionSpy).toHaveBeenCalledWith(
         expect.objectContaining({ flowManager, tokenMethods }),

@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import type { UIResource } from 'librechat-data-provider';
-import { getMCPSandboxUrl, buildAppToolResult, isMcpAppResource } from '~/utils/mcpApps';
+import {
+  getMCPSandboxUrl,
+  buildAppToolResult,
+  isMcpAppResource,
+  getInlineResourceHtml,
+} from '~/utils/mcpApps';
 import { useIsMessagesViewReadOnly } from '~/Providers';
 import { useAppBridge } from '~/hooks/MCP';
 import { useLocalize } from '~/hooks';
@@ -25,6 +30,7 @@ function MCPAppCard({
   const [timedOut, setTimedOut] = useState(false);
   const [tornDown, setTornDown] = useState(false);
   const sandboxUrl = React.useMemo(() => getMCPSandboxUrl(), []);
+  const inlineHtml = React.useMemo(() => getInlineResourceHtml(resource), [resource]);
 
   React.useEffect(() => {
     if (loaded) {
@@ -60,7 +66,7 @@ function MCPAppCard({
     return null;
   }
 
-  if (isMcpAppResource(resource) && !resource.text && readOnly) {
+  if (isMcpAppResource(resource) && !inlineHtml && readOnly) {
     return (
       <div className="flex h-full w-full items-center justify-center rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-center text-sm text-text-secondary">
         {localize('com_ui_mcp_app_shared_unavailable')}
@@ -97,10 +103,10 @@ function MCPAppCard({
     );
   }
 
-  if (resource.text) {
+  if (inlineHtml) {
     return (
       <iframe
-        srcDoc={resource.text}
+        srcDoc={inlineHtml}
         sandbox=""
         style={{ width: '100%', height: '100%', border: 'none' }}
         title={resource.uri}

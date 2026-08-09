@@ -807,11 +807,16 @@ Please follow these instructions when using tools from the respective MCP server
     tokenMethods?: TokenMethods;
   }): Promise<MCPConnection> {
     const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
-    const rawConfig = await MCPServersRegistry.getInstance().getServerConfig(
-      serverName,
+    // Resolved through the role-aware path (as discovery does) rather than the single-server lookup,
+    // whose ACL check is user-only: a server or agent shared to the user's role would otherwise look
+    // inaccessible here and the app's follow-up reads and tool calls would be rejected. Precedence
+    // matches getServerConfig by contract.
+    const allConfigs = await MCPServersRegistry.getInstance().getAllServerConfigs(
       userId,
       configServers,
+      user?.role,
     );
+    const rawConfig = allConfigs[serverName];
     const isDbSourced = rawConfig ? isUserSourced(rawConfig) : false;
     if (rawConfig) {
       if (rawConfig.obo) {

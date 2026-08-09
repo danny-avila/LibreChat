@@ -11,7 +11,12 @@ import {
   splitToolCallName,
 } from 'librechat-data-provider';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
-import { getMCPSandboxUrl, buildAppToolResult, isMcpAppResource } from '~/utils/mcpApps';
+import {
+  getMCPSandboxUrl,
+  buildAppToolResult,
+  isMcpAppResource,
+  getInlineResourceHtml,
+} from '~/utils/mcpApps';
 import { useMCPIconMap, useAppBridge, useMCPServerNames } from '~/hooks/MCP';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
@@ -40,6 +45,7 @@ const MCPAppView = React.memo(function MCPAppView({
   const [timedOut, setTimedOut] = useState(false);
   const [tornDown, setTornDown] = useState(false);
   const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
+  const inlineHtml = useMemo(() => getInlineResourceHtml(app), [app]);
 
   useEffect(() => {
     if (loaded) return;
@@ -80,18 +86,18 @@ const MCPAppView = React.memo(function MCPAppView({
 
   const isAppBacked = isMcpAppResource(app);
   // Read-only views don't fetch app HTML, so a resourceUri-only app shows a placeholder.
-  if (isAppBacked && !app.text && readOnly) {
+  if (isAppBacked && !inlineHtml && readOnly) {
     return (
       <div className="my-2 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
         {localize('com_ui_mcp_app_shared_unavailable')}
       </div>
     );
   }
-  if (!isAppBacked && app.text) {
+  if (!isAppBacked && inlineHtml) {
     return (
       <div className="my-2">
         <iframe
-          srcDoc={app.text}
+          srcDoc={inlineHtml}
           sandbox=""
           style={{ width: '100%', minHeight: '200px', border: 'none' }}
           title={app.uri}
@@ -290,7 +296,9 @@ export default function ToolCall({
         ?.filter((a) => a.type === Tools.ui_resources)
         .flatMap((a) => (a[Tools.ui_resources] ?? []) as UIResource[]) ?? [];
     return uiResources.filter(
-      (r) => isMcpAppResource(r) || (r.text && (r.mimeType ?? 'text/html').includes('html')),
+      (r) =>
+        isMcpAppResource(r) ||
+        (getInlineResourceHtml(r) != null && (r.mimeType ?? 'text/html').includes('html')),
     );
   }, [attachments]);
 
