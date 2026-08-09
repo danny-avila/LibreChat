@@ -38,11 +38,25 @@ export type SkillSource = 'inline' | 'deployment' | 'github' | 'notion';
  */
 export type SkillFileCategory = 'script' | 'reference' | 'asset' | 'other';
 
+/** Nested object inside a structured frontmatter key. */
+export type SkillFrontmatterObject = { [key: string]: SkillFrontmatterValue | undefined };
+
 /**
- * Allowed value types inside a skill's YAML frontmatter.
- * Kept strict so callers cannot slip arbitrary `unknown` payloads through the API.
+ * Allowed value types inside a skill's YAML frontmatter. Scalars cover the
+ * documented keys; nested arrays and objects describe the structured ones
+ * (`hooks`, `metadata`, `references`), which real `SKILL.md` files write as a
+ * list, a list of objects, or a map.
+ *
+ * Still no `unknown` or `any`: the payload is JSON-safe by construction, and
+ * the server bounds depth, string length and array size when validating it.
  */
-export type SkillFrontmatterValue = string | number | boolean | string[] | null;
+export type SkillFrontmatterValue =
+  | string
+  | number
+  | boolean
+  | null
+  | SkillFrontmatterValue[]
+  | SkillFrontmatterObject;
 
 /**
  * Structured YAML frontmatter for a skill. All keys are optional on the wire
