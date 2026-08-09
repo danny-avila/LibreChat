@@ -486,12 +486,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           ...(closingTextPhase != null && { closingTextPhase }),
           phaseIndex,
           totalActivityCount,
-          status:
-            failedCount === totalActivityCount
-              ? 'failed'
-              : failedCount > 0 || partialCount > 0
-                ? 'partial'
-                : 'completed',
+          status: phaseStatus === 'ok' ? 'completed' : phaseStatus,
           agentIds,
           charLimit,
           prompt: deps.prompt ?? ACTIVITY_PHASE_INSTRUCTION,
@@ -555,12 +550,17 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       status: entry.status,
     }));
     const failures = entries.filter((entry) => entry.status === 'error').length;
+    let activityStatus: TrackedActivity['status'] = 'success';
+    if (failures === entries.length) {
+      activityStatus = 'error';
+    } else if (failures > 0) {
+      activityStatus = 'partial';
+    }
     trackActivity({
       entries,
       ...(reasoning ? { thinkingExcerpts: [reasoning.slice(0, MAX_EXCERPT_CHARS)] } : {}),
       ...(input.executingAgentId != null && { agentId: input.executingAgentId }),
-      status:
-        failures === 0 ? 'success' : failures === entries.length ? 'error' : 'partial',
+      status: activityStatus,
       startIndex: findBatchStart(parts, ids),
       toolCallIds: [...ids],
       ...(childLabelIndex != null && { childLabelIndex }),
