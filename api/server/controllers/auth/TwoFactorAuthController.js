@@ -6,6 +6,7 @@ const {
   verifyBackupCode,
 } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
+const { isTokenIssuedBeforeCredentialChange } = require('~/strategies/credentials');
 const { getUserById } = require('~/models');
 
 /**
@@ -29,6 +30,15 @@ const verify2FAWithTempToken = async (req, res) => {
     const user = await getUserById(payload.userId, '+totpSecret +backupCodes');
     if (!user || !user.twoFactorEnabled) {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
+    }
+
+    /**
+     * The first factor was proven before the reset, so honouring this token would let a
+     * password reset be survived by anyone who also holds the second factor.
+     */
+    if (isTokenIssuedBeforeCredentialChange(payload, user)) {
+      logger.warn('[verify2FAWithTempToken] Rejected a token issued before a credential change');
+      return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
 
     const secret = await getTOTPSecret(user.totpSecret);

@@ -43,7 +43,7 @@ function Passkeys() {
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
 
-  const { data, isLoading } = usePasskeysQuery({ enabled: isDialogOpen });
+  const { data, isLoading, isError } = usePasskeysQuery({ enabled: isDialogOpen });
   const { registerPasskey, isRegistering, passwordErrorKey, clearPasswordError } =
     usePasskeyRegistration();
   const { mutate: renameMutate } = useRenamePasskeyMutation();
@@ -168,7 +168,16 @@ function Passkeys() {
               <Skeleton className="h-16 w-full rounded-xl" />
             </div>
           )}
-          {!isLoading && passkeys.length === 0 && (
+          {!isLoading && isError && (
+            <div
+              role="alert"
+              className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border-light p-8 text-center"
+            >
+              <PasskeyIcon className="h-6 w-6 text-text-tertiary" aria-hidden="true" />
+              <p className="text-sm text-text-secondary">{localize('com_ui_passkey_load_error')}</p>
+            </div>
+          )}
+          {!isLoading && !isError && passkeys.length === 0 && (
             <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border-light p-8 text-center">
               <PasskeyIcon className="h-6 w-6 text-text-tertiary" />
               <p className="text-sm text-text-secondary">{localize('com_ui_passkey_empty')}</p>

@@ -1641,6 +1641,7 @@
   "com_ui_passkey_empty": "You have not added any passkeys yet",
   "com_ui_passkey_last_used": "Last used {{date}}",
   "com_ui_passkey_limit_reached": "You have reached the maximum number of passkeys",
+  "com_ui_passkey_load_error": "Your passkeys could not be loaded, so this list may be incomplete",
   "com_ui_passkey_name": "Passkey name",
   "com_ui_passkey_never_used": "Never used",
   "com_ui_passkey_password_incorrect": "Incorrect password. Please try again.",
