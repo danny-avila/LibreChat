@@ -129,6 +129,30 @@ describe('shared-link mutation cache updates', () => {
     queryClient.clear();
   });
 
+  it('keeps the file opt-out in the cached link after creating it', async () => {
+    const queryClient = createQueryClient();
+    mockCreateSharedLink.mockResolvedValue({
+      _id: 'shared-link-id',
+      shareId: 'share-1',
+      conversationId: 'conversation-1',
+    });
+    const { result } = renderHook(() => useCreateSharedLinkMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: 'conversation-1', snapshotFiles: false });
+    });
+
+    // The response never echoes the choice; without it the dialog reads the entry as
+    // the enabled default and flips the switch back on.
+    expect(
+      queryClient.getQueryData<TSharedLinkGetResponse>([QueryKeys.sharedLinks, 'conversation-1'])
+        ?.snapshotFiles,
+    ).toBe(false);
+    queryClient.clear();
+  });
+
   it('updates the active conversation link query after creating a link', async () => {
     const queryClient = createQueryClient();
     mockCreateSharedLink.mockResolvedValue({

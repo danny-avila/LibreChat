@@ -194,12 +194,20 @@ const setConversationSharedFlag = (
  * echoed back and the settings list lives under a sibling key, so both are refetched
  * from the server rather than guessed at.
  */
-const syncSharedLinkQueries = (queryClient: QueryClient, data: t.TSharedLinkResponse): void => {
+const syncSharedLinkQueries = (
+  queryClient: QueryClient,
+  data: t.TSharedLinkResponse,
+  requestedSnapshotFiles?: boolean,
+): void => {
   queryClient.setQueryData<t.TSharedLinkGetResponse>(
     [QueryKeys.sharedLinks, data.conversationId],
     (previous) => ({
       ...previous,
       ...data,
+      // The response never echoes the file choice, and the dialog reads a resolved
+      // entry with no choice as the enabled default, so an opt-out would flip back on
+      // between here and the refetch.
+      ...(requestedSnapshotFiles !== undefined && { snapshotFiles: requestedSnapshotFiles }),
       success: true,
     }),
   );
@@ -240,7 +248,7 @@ export const useCreateSharedLinkMutation = (
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
-        syncSharedLinkQueries(queryClient, _data);
+        syncSharedLinkQueries(queryClient, _data, vars.snapshotFiles);
 
         onSuccess?.(_data, vars, context);
       },
@@ -272,7 +280,7 @@ export const useUpdateSharedLinkMutation = (
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
-        syncSharedLinkQueries(queryClient, _data);
+        syncSharedLinkQueries(queryClient, _data, vars.snapshotFiles);
 
         onSuccess?.(_data, vars, context);
       },

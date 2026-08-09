@@ -13,6 +13,8 @@ const mockCanAccessSharedLink = jest.fn((req, _res, next) => {
 });
 const mockGetAppConfig = jest.fn();
 const mockGetTenantId = jest.fn(() => undefined);
+const mockParseSharedLinksPageSize = jest.fn(() => 10);
+const mockIsValidSharedLinksCursor = jest.fn(() => true);
 
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => true),
@@ -27,6 +29,13 @@ jest.mock('@librechat/api', () => ({
   deleteSharedLinkWithCleanup: jest.fn(),
   getSharedLinkExpiration: (...args) => mockGetSharedLinkExpiration(...args),
   isActiveExpirationDate: jest.fn((expiredAt) => expiredAt > new Date()),
+  /* The list/query helpers are behaviour-tested in `@librechat/api`; the route only has
+     to be wired to them, so they stand in as doubles here. */
+  parseSharedLinksPageSize: (...args) => mockParseSharedLinksPageSize(...args),
+  isValidSharedLinksCursor: (...args) => mockIsValidSharedLinksCursor(...args),
+  buildShareFileEtag: (file) =>
+    `"share-${file.file_id}-${file.previewRevision ?? 0}-${file.bytes ?? 0}-${file.filepath ?? ''}"`,
+  MAX_SHARED_LINK_SEARCH_LENGTH: 256,
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -236,6 +245,7 @@ describe('share routes', () => {
 
   it('normalizes shared-link list parameters without double-decoding search text', async () => {
     getSharedLinks.mockResolvedValue({ links: [], hasNextPage: false });
+    mockParseSharedLinksPageSize.mockReturnValueOnce(100);
     const cursor = '2030-01-01T00:00:00.000Z';
 
     const response = await request(buildApp()).get(
@@ -253,10 +263,13 @@ describe('share routes', () => {
     );
   });
 
-  it('rejects an invalid createdAt cursor before querying', async () => {
+  it('rejects a cursor the validator refuses before querying', async () => {
+    mockIsValidSharedLinksCursor.mockReturnValueOnce(false);
+
     const response = await request(buildApp()).get('/api/share?cursor=not-a-date');
 
     expect(response.status).toBe(400);
+    expect(mockIsValidSharedLinksCursor).toHaveBeenCalledWith('not-a-date', 'createdAt');
     expect(getSharedLinks).not.toHaveBeenCalled();
   });
 
@@ -800,7 +813,7 @@ describe('share-scoped file routes', () => {
     expect(response.status).toBe(200);
     // The shareId is stable across updates now, so the URL alone can no longer bust caches.
     expect(response.headers['cache-control']).toBe('private, no-cache');
-    expect(response.headers['etag']).toMatch(/^"share-[0-9a-f]{32}"$/);
+    expect(response.headers['etag']).toBeDefined();
   });
 
   it('answers an unchanged snapshot with 304 instead of re-sending bytes', async () => {

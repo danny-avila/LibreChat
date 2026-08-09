@@ -1,4 +1,3 @@
-const { createHash } = require('crypto');
 const mongoose = require('mongoose');
 const express = require('express');
 const {
@@ -13,6 +12,10 @@ const {
   updateSharedLinkPermissionsExpiration,
   isActiveExpirationDate,
   getSharedLinkExpiration,
+  buildShareFileEtag,
+  parseSharedLinksPageSize,
+  isValidSharedLinksCursor,
+  MAX_SHARED_LINK_SEARCH_LENGTH,
 } = require('@librechat/api');
 const {
   logger,
@@ -47,11 +50,6 @@ const configMiddleware = require('~/server/middleware/config/app');
 const { getAppConfig } = require('~/server/services/Config/app');
 const router = express.Router();
 
-const DEFAULT_SHARED_LINKS_PAGE_SIZE = 10;
-const MAX_SHARED_LINKS_PAGE_SIZE = 100;
-const MAX_SHARED_LINK_SEARCH_LENGTH = 256;
-const MAX_SHARED_LINK_CURSOR_LENGTH = 512;
-
 const SHARE_SERVICE_ERROR_STATUS = {
   INVALID_PARAMS: 400,
   TARGET_MESSAGE_NOT_FOUND: 400,
@@ -66,50 +64,6 @@ const sendShareServiceError = (res, error, fallbackMessage) => {
   const status = SHARE_SERVICE_ERROR_STATUS[error?.code] ?? 500;
   const message = status === 500 ? fallbackMessage : error.message;
   return res.status(status).json({ message });
-};
-
-/**
- * The list cursor is opaque: base64 `{ primary, id }`, where `id` is the `_id` that
- * breaks ties on a repeated title or timestamp. Links issued before that encoding
- * carry the bare sort value, so a plain date still passes for a `createdAt` page.
- */
-const isValidSharedLinksCursor = (cursor, sortBy) => {
-  if (cursor.length > MAX_SHARED_LINK_CURSOR_LENGTH) {
-    return false;
-  }
-
-  try {
-    const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString());
-    const primary = decoded?.primary;
-    if (
-      (typeof primary === 'string' || primary === null) &&
-      /^[a-f\d]{24}$/i.test(decoded?.id ?? '')
-    ) {
-      // A titleless boundary encodes `primary: null`; a createdAt page never can,
-      // since the field is always stamped.
-      if (primary === null) {
-        return sortBy !== 'createdAt';
-      }
-      return sortBy !== 'createdAt' || !Number.isNaN(Date.parse(primary));
-    }
-  } catch {
-    /* Not a composite cursor; fall through to the legacy plain-value check. */
-  }
-
-  return sortBy !== 'createdAt' || !Number.isNaN(Date.parse(cursor));
-};
-
-const parseSharedLinksPageSize = (value) => {
-  if (typeof value !== 'string' || !/^-?\d+$/.test(value)) {
-    return DEFAULT_SHARED_LINKS_PAGE_SIZE;
-  }
-
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed)) {
-    return DEFAULT_SHARED_LINKS_PAGE_SIZE;
-  }
-
-  return Math.min(MAX_SHARED_LINKS_PAGE_SIZE, Math.max(1, parsed));
 };
 
 const checkSharedLinksAccess = generateCheckAccess({
@@ -238,26 +192,6 @@ const resolveShareFile = async (req, res, next) => {
     logger.error('[shareFileAccess] Error resolving shared file:', error);
     return res.status(500).json({ message: 'Error resolving shared file' });
   }
-};
-
-/**
- * Cache validator for a snapshotted file. Beyond the fields `resolveShareFile`
- * pins the snapshot on (`previewRevision`, `bytes`), it folds in the stored
- * location: a re-publish that swaps the object without changing size or revision
- * still moves `storageKey`/`filepath` (regenerated code outputs carry a `?v=`
- * cache-buster), so the viewer revalidates instead of keeping its stale copy.
- * A same-path, same-size, same-revision replacement stays the best-effort gap
- * inherent to the no-byte-copy snapshot design.
- */
-const buildShareFileEtag = (file) => {
-  const identity = [
-    file.file_id,
-    file.previewRevision ?? '',
-    file.bytes ?? '',
-    file.storageKey ?? '',
-    file.filepath ?? '',
-  ].join('\u0000');
-  return `"share-${createHash('sha256').update(identity).digest('hex').slice(0, 32)}"`;
 };
 
 /** Stream (or redirect to) a snapshotted file from its original stored object. */
