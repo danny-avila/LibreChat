@@ -1,6 +1,22 @@
 import React, { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { Check, Pencil, Trash2, X } from 'lucide-react';
-import { Button, Input, Label, PasskeyIcon, Spinner, TooltipAnchor } from '@librechat/client';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+  Button,
+  Input,
+  Label,
+  PasskeyIcon,
+  SecretInput,
+  Spinner,
+  TooltipAnchor,
+} from '@librechat/client';
 import type { TPasskey } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -11,11 +27,6 @@ const focusOnMount = (input: HTMLInputElement | null): void => {
   input?.select();
 };
 
-/** Keeps focus inside the row when it swaps into confirmation mode. */
-const focusButtonOnMount = (button: HTMLButtonElement | null): void => {
-  button?.focus();
-};
-
 const formatDate = (value: string | null): string | null => {
   if (value == null || value === '') {
     return null;
@@ -24,17 +35,12 @@ const formatDate = (value: string | null): string | null => {
   return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString();
 };
 
-type RowMode = 'idle' | 'renaming' | 'confirming';
-
-/**
- * Callback ref that restores focus to the control which opened the mode named by
- * `from`, once that control is back in the tree.
- */
-const returnFocusRef =
-  (pending: React.MutableRefObject<RowMode | null>, from: RowMode) =>
+/** Restores focus to the rename control after the inline editor unmounts. */
+const returnRenameFocusRef =
+  (pending: React.MutableRefObject<boolean>) =>
   (button: HTMLButtonElement | null): void => {
-    if (button && pending.current === from) {
-      pending.current = null;
+    if (button && pending.current) {
+      pending.current = false;
       button.focus();
     }
   };
@@ -69,36 +75,19 @@ function PasskeyItem({
   const [hasPasswordError, setHasPasswordError] = useState(false);
   /**
    * The server waives the step-up only for accounts carrying no password hash, which the
-   * client cannot see: an account moved to an identity provider without its old hash
-   * cleared still has to prove it. Reveal the field when the server actually asks, so
-   * those credentials stay removable instead of failing on every attempt.
+   * client cannot see. Reveal the field when the server actually asks, so credentials
+   * from an account that changed providers remain removable.
    */
   const [serverDemandedPassword, setServerDemandedPassword] = useState(false);
   const showPasswordField = requiresPassword || serverDemandedPassword;
   const passwordRef = useRef<HTMLInputElement | null>(null);
-  /**
-   * Leaving a mode unmounts the control that opened it, so focus cannot be
-   * restored inline: the element is gone by the time the handler runs. The flag
-   * is read by the callback ref below, which fires once the control is back.
-   */
-  const returnFocusTo = useRef<RowMode | null>(null);
+  const returnFocusToRename = useRef(false);
   const rowId = useId();
   const passwordFieldId = `${rowId}-password`;
   const passwordErrorId = `${rowId}-password-error`;
 
   const added = formatDate(passkey.createdAt);
   const lastUsed = formatDate(passkey.lastUsedAt);
-  /**
-   * Confirmation is inline rather than an `AlertDialog`: this row already lives
-   * inside a dialog, and stacking a modal on a modal both traps focus twice and
-   * renders beneath the parent's depth-aware z-index.
-   */
-  let mode: RowMode = 'idle';
-  if (isRenaming) {
-    mode = 'renaming';
-  } else if (isConfirming) {
-    mode = 'confirming';
-  }
 
   const beginRename = useCallback(() => {
     setDraftName(passkey.name);
@@ -107,7 +96,7 @@ function PasskeyItem({
 
   const cancelRename = useCallback(() => {
     setDraftName(passkey.name);
-    returnFocusTo.current = 'renaming';
+    returnFocusToRename.current = true;
     onStartRename(null);
   }, [passkey.name, onStartRename]);
 
@@ -120,27 +109,30 @@ function PasskeyItem({
     onRename(passkey.id, trimmed);
   }, [draftName, passkey.id, passkey.name, onRename, cancelRename]);
 
-  /** Callback ref so the step-up field takes focus the moment the row swaps mode. */
+  /** Callback ref so the step-up field takes focus as soon as it appears. */
   const bindPasswordField = useCallback((input: HTMLInputElement | null) => {
     passwordRef.current = input;
     input?.focus();
   }, []);
 
-  const bindRenameButton = useMemo(() => returnFocusRef(returnFocusTo, 'renaming'), []);
-  const bindDeleteButton = useMemo(() => returnFocusRef(returnFocusTo, 'confirming'), []);
+  const bindRenameButton = useMemo(() => returnRenameFocusRef(returnFocusToRename), []);
 
-  const beginDelete = useCallback(() => {
+  const handleDeleteOpenChange = useCallback((open: boolean) => {
+    setIsConfirming(open);
     setPassword('');
     setHasPasswordError(false);
-    setIsConfirming(true);
   }, []);
 
-  const cancelDelete = useCallback(() => {
-    setPassword('');
-    setHasPasswordError(false);
-    returnFocusTo.current = 'confirming';
-    setIsConfirming(false);
-  }, []);
+  const handleDeleteOpenAutoFocus = useCallback(
+    (event: Event) => {
+      if (!showPasswordField) {
+        return;
+      }
+      event.preventDefault();
+      passwordRef.current?.focus();
+    },
+    [showPasswordField],
+  );
 
   const submitDelete = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -148,13 +140,13 @@ function PasskeyItem({
       setHasPasswordError(false);
       const result = await onDelete(passkey.id, password);
       if (result === 'removed') {
+        setPassword('');
+        setIsConfirming(false);
         return;
       }
       if (result === 'incorrect-password') {
         setHasPasswordError(true);
         setServerDemandedPassword(true);
-      } else {
-        setHasPasswordError(false);
       }
       /** Put focus back on the field the error describes so it can be corrected. */
       passwordRef.current?.focus();
@@ -175,85 +167,131 @@ function PasskeyItem({
     [submitRename, cancelRename],
   );
 
-  const onConfirmKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLFormElement>) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        cancelDelete();
-      }
-    },
-    [cancelDelete],
-  );
-
   return (
-    <div
-      className={`flex gap-3 rounded-xl border border-border-light bg-surface-secondary p-3 ${
-        mode === 'confirming' ? 'items-start' : 'items-center'
-      }`}
-    >
-      <PasskeyIcon className="h-5 w-5 shrink-0 text-text-secondary" />
+    <AlertDialog open={isConfirming} onOpenChange={handleDeleteOpenChange}>
+      <div
+        className="flex items-center gap-3 rounded-xl border border-border-light bg-surface-secondary px-3 py-2"
+        data-testid="passkey-item"
+      >
+        <PasskeyIcon className="h-5 w-5 shrink-0 text-text-secondary" />
 
-      {mode === 'renaming' && (
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Input
-            ref={focusOnMount}
-            value={draftName}
-            maxLength={MAX_NAME_LENGTH}
-            onChange={(event) => setDraftName(event.target.value)}
-            onKeyDown={onRenameKeyDown}
-            aria-label={localize('com_ui_passkey_name')}
-            className="h-9"
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={submitRename}
-            disabled={isBusy}
-            aria-label={localize('com_ui_save')}
-          >
-            <Check className="h-4 w-4" aria-hidden="true" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={cancelRename}
-            aria-label={localize('com_ui_cancel')}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        </div>
-      )}
+        {isRenaming ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Input
+              ref={focusOnMount}
+              value={draftName}
+              maxLength={MAX_NAME_LENGTH}
+              onChange={(event) => setDraftName(event.target.value)}
+              onKeyDown={onRenameKeyDown}
+              aria-label={localize('com_ui_passkey_name')}
+              className="h-10"
+            />
+            <TooltipAnchor
+              description={localize('com_ui_save')}
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={submitRename}
+                  disabled={isBusy}
+                  aria-label={localize('com_ui_save')}
+                >
+                  <Check className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              }
+            />
+            <TooltipAnchor
+              description={localize('com_ui_cancel')}
+              render={
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={cancelRename}
+                  aria-label={localize('com_ui_cancel')}
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              }
+            />
+          </div>
+        ) : (
+          <>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-text-primary">{passkey.name}</p>
+              <p className="truncate text-xs text-text-secondary">
+                {added != null && localize('com_ui_passkey_added_on', { date: added })}
+                {added != null && ' · '}
+                {lastUsed != null
+                  ? localize('com_ui_passkey_last_used', { date: lastUsed })
+                  : localize('com_ui_passkey_never_used')}
+              </p>
+            </div>
 
-      {mode === 'confirming' && (
-        <form
-          aria-label={localize('com_ui_passkey_remove')}
-          onSubmit={submitDelete}
-          onKeyDown={onConfirmKeyDown}
-          className="flex min-w-0 flex-1 flex-col gap-2"
-        >
-          <p className="min-w-0 text-sm text-text-primary">
+            {passkey.backedUp && (
+              <span className="shrink-0 rounded-full bg-status-success-subtle px-2 py-0.5 text-xs font-medium text-status-success">
+                {localize('com_ui_passkey_synced')}
+              </span>
+            )}
+
+            <TooltipAnchor
+              description={localize('com_ui_passkey_rename')}
+              render={
+                <Button
+                  ref={bindRenameButton}
+                  variant="ghost"
+                  size="icon"
+                  onClick={beginRename}
+                  aria-label={localize('com_ui_passkey_rename')}
+                >
+                  <Pencil className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              }
+            />
+            <TooltipAnchor
+              description={localize('com_ui_passkey_remove')}
+              render={
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={localize('com_ui_passkey_remove')}
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </AlertDialogTrigger>
+              }
+            />
+          </>
+        )}
+      </div>
+
+      <AlertDialogContent className="w-11/12" onOpenAutoFocus={handleDeleteOpenAutoFocus}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
             {localize('com_ui_passkey_remove_confirm', { name: passkey.name })}
-          </p>
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {localize('com_ui_passkey_remove_description')}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
 
+        <form onSubmit={submitDelete} className="flex flex-col gap-2">
           {showPasswordField && (
             <>
-              <Label htmlFor={passwordFieldId} className="text-xs font-medium text-text-primary">
+              <Label htmlFor={passwordFieldId} className="text-sm font-medium text-text-primary">
                 {localize('com_ui_passkey_confirm_password')}
               </Label>
-              <p className="text-xs text-text-secondary">
-                {localize('com_ui_passkey_remove_password_description')}
-              </p>
-              <Input
+              <SecretInput
                 id={passwordFieldId}
                 ref={bindPasswordField}
-                type="password"
                 name="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 aria-invalid={hasPasswordError}
                 aria-describedby={hasPasswordError ? passwordErrorId : undefined}
-                className="h-9"
               />
               {hasPasswordError && (
                 <p id={passwordErrorId} role="alert" className="text-xs text-text-destructive">
@@ -263,78 +301,23 @@ function PasskeyItem({
             </>
           )}
 
-          <div className="flex justify-end gap-2">
-            <Button
-              ref={showPasswordField ? undefined : focusButtonOnMount}
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={cancelDelete}
-            >
-              {localize('com_ui_cancel')}
-            </Button>
+          <AlertDialogFooter className="mt-2">
+            <AlertDialogCancel asChild>
+              <Button type="button" variant="outline">
+                {localize('com_ui_cancel')}
+              </Button>
+            </AlertDialogCancel>
             <Button
               type="submit"
               variant="destructive"
-              size="sm"
               disabled={isBusy || (showPasswordField && password === '')}
             >
               {isBusy ? <Spinner className="h-4 w-4" /> : localize('com_ui_delete')}
             </Button>
-          </div>
+          </AlertDialogFooter>
         </form>
-      )}
-
-      {mode === 'idle' && (
-        <>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-text-primary">{passkey.name}</p>
-            <p className="truncate text-xs text-text-secondary">
-              {added != null && localize('com_ui_passkey_added_on', { date: added })}
-              {added != null && ' · '}
-              {lastUsed != null
-                ? localize('com_ui_passkey_last_used', { date: lastUsed })
-                : localize('com_ui_passkey_never_used')}
-            </p>
-          </div>
-
-          {passkey.backedUp && (
-            <span className="shrink-0 rounded-full bg-status-success-subtle px-2 py-0.5 text-xs font-medium text-status-success">
-              {localize('com_ui_passkey_synced')}
-            </span>
-          )}
-
-          <TooltipAnchor
-            description={localize('com_ui_passkey_rename')}
-            render={
-              <Button
-                ref={bindRenameButton}
-                variant="ghost"
-                size="icon"
-                onClick={beginRename}
-                aria-label={localize('com_ui_passkey_rename')}
-              >
-                <Pencil className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            }
-          />
-          <TooltipAnchor
-            description={localize('com_ui_passkey_remove')}
-            render={
-              <Button
-                ref={bindDeleteButton}
-                variant="ghost"
-                size="icon"
-                onClick={beginDelete}
-                aria-label={localize('com_ui_passkey_remove')}
-              >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            }
-          />
-        </>
-      )}
-    </div>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

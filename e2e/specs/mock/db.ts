@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import type { Db } from 'mongodb';
 
 const DEFAULT_MONGO_URI = 'mongodb://127.0.0.1:27017/LibreChat-e2e';
@@ -128,5 +128,37 @@ export async function clearUserConversations(userEmail: string): Promise<void> {
   await withMongo(async (db) => {
     const userId = await resolveUserId(db, userEmail);
     await db.collection('conversations').deleteMany({ user: userId });
+  });
+}
+
+export async function seedPasskey(
+  userEmail: string,
+  credentialId: string,
+  name: string,
+): Promise<void> {
+  await withMongo(async (db) => {
+    const userId = new ObjectId(await resolveUserId(db, userEmail));
+    const now = new Date();
+    await db.collection('passkeys').insertOne({
+      user: userId,
+      credentialId,
+      publicKey: Buffer.from('e2e-passkey-public-key'),
+      counter: 0,
+      transports: ['internal'],
+      deviceType: 'singleDevice',
+      backedUp: false,
+      name,
+      lastUsedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      __v: 0,
+    });
+  });
+}
+
+export async function clearUserPasskeys(userEmail: string): Promise<void> {
+  await withMongo(async (db) => {
+    const userId = new ObjectId(await resolveUserId(db, userEmail));
+    await db.collection('passkeys').deleteMany({ user: userId });
   });
 }

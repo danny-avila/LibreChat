@@ -4,15 +4,17 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import {
   Button,
-  Input,
   Label,
   OGDialog,
+  OGDialogClose,
   OGDialogContent,
   OGDialogDescription,
+  OGDialogFooter,
   OGDialogHeader,
   OGDialogTitle,
   OGDialogTrigger,
   PasskeyIcon,
+  SecretInput,
   Skeleton,
   Spinner,
   useToastContext,
@@ -30,18 +32,20 @@ import PasskeyItem from './PasskeyItem';
 const PASSWORD_FIELD_ID = 'passkey-confirm-password';
 const PASSWORD_ERROR_ID = 'passkey-confirm-password-error';
 const PASSWORD_FORM_ID = 'passkey-confirm-password-form';
+const ADD_DIALOG_ID = 'add-passkey-dialog';
 
 function Passkeys() {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { showToast } = useToastContext();
   const [isDialogOpen, setDialogOpen] = useState(false);
+  const [isAddDialogOpen, setAddDialogOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [isConfirming, setIsConfirming] = useState(false);
   const [password, setPassword] = useState('');
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
+  const renameAfterCloseRef = useRef<string | null>(null);
 
   const { data, isLoading, isError } = usePasskeysQuery({ enabled: isDialogOpen });
   const { registerPasskey, isRegistering, passwordErrorKey, clearPasswordError } =
@@ -68,21 +72,32 @@ function Passkeys() {
   }, []);
 
   const handleAdd = useCallback(() => {
-    if (isConfirming) {
-      passwordRef.current?.focus();
+    clearPasswordError();
+    setPassword('');
+    setAddDialogOpen(true);
+  }, [clearPasswordError]);
+
+  const handleAddOpenChange = useCallback(
+    (open: boolean) => {
+      setAddDialogOpen(open);
+      if (!open) {
+        setPassword('');
+        clearPasswordError();
+      }
+    },
+    [clearPasswordError],
+  );
+
+  const handleAddCloseAutoFocus = useCallback((event: Event) => {
+    event.preventDefault();
+    const passkeyId = renameAfterCloseRef.current;
+    renameAfterCloseRef.current = null;
+    if (passkeyId != null) {
+      setRenamingId(passkeyId);
       return;
     }
-    clearPasswordError();
-    setPassword('');
-    setIsConfirming(true);
-  }, [isConfirming, clearPasswordError]);
-
-  const handleCancelAdd = useCallback(() => {
-    setIsConfirming(false);
-    setPassword('');
-    clearPasswordError();
     addButtonRef.current?.focus();
-  }, [clearPasswordError]);
+  }, []);
 
   const handleConfirmAdd = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -94,9 +109,9 @@ function Passkeys() {
         return;
       }
       setPassword('');
-      setIsConfirming(false);
-      /** Drop straight into rename so the default label is easy to replace. */
-      setRenamingId(passkey.id);
+      /** Start rename after the child dialog releases its focus trap. */
+      renameAfterCloseRef.current = passkey.id;
+      setAddDialogOpen(false);
     },
     [password, registerPasskey],
   );
@@ -149,8 +164,9 @@ function Passkeys() {
         return;
       }
       setPassword('');
-      setIsConfirming(false);
+      setAddDialogOpen(false);
       setRenamingId(null);
+      renameAfterCloseRef.current = null;
       clearPasswordError();
     },
     [clearPasswordError],
@@ -203,7 +219,7 @@ function Passkeys() {
             </div>
           )}
           {!isLoading && passkeys.length > 0 && (
-            <ul className="space-y-2">
+            <ul className="space-y-1.5">
               <AnimatePresence initial={false}>
                 {passkeys.map((passkey) => (
                   <motion.li
@@ -238,8 +254,9 @@ function Passkeys() {
               variant="submit"
               onClick={handleAdd}
               disabled={isRegistering || atLimit || isLoading}
-              aria-expanded={isConfirming}
-              aria-controls={isConfirming ? PASSWORD_FORM_ID : undefined}
+              aria-haspopup="dialog"
+              aria-expanded={isAddDialogOpen}
+              aria-controls={ADD_DIALOG_ID}
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               {localize('com_ui_passkey_add')}
@@ -251,23 +268,29 @@ function Passkeys() {
             )}
           </div>
         )}
+      </OGDialogContent>
 
-        {isConfirming && (
-          <form
-            id={PASSWORD_FORM_ID}
-            onSubmit={handleConfirmAdd}
-            className="mt-4 flex flex-col gap-2 rounded-xl border border-border-light p-4"
-          >
+      <OGDialog open={isAddDialogOpen} onOpenChange={handleAddOpenChange}>
+        <OGDialogContent
+          id={ADD_DIALOG_ID}
+          className="w-11/12 max-w-md"
+          showCloseButton={false}
+          onCloseAutoFocus={handleAddCloseAutoFocus}
+        >
+          <OGDialogHeader>
+            <OGDialogTitle>{localize('com_ui_passkey_add')}</OGDialogTitle>
+            <OGDialogDescription>
+              {localize('com_ui_passkey_confirm_password_description')}
+            </OGDialogDescription>
+          </OGDialogHeader>
+
+          <form id={PASSWORD_FORM_ID} onSubmit={handleConfirmAdd} className="flex flex-col gap-2">
             <Label htmlFor={PASSWORD_FIELD_ID} className="text-sm font-medium text-text-primary">
               {localize('com_ui_passkey_confirm_password')}
             </Label>
-            <p className="text-xs text-text-secondary">
-              {localize('com_ui_passkey_confirm_password_description')}
-            </p>
-            <Input
+            <SecretInput
               id={PASSWORD_FIELD_ID}
               ref={bindPasswordField}
-              type="password"
               name="password"
               autoComplete="current-password"
               value={password}
@@ -280,18 +303,20 @@ function Passkeys() {
                 {localize(passwordErrorKey)}
               </p>
             )}
-            <div className="mt-2 flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={handleCancelAdd}>
-                {localize('com_ui_cancel')}
-              </Button>
+            <OGDialogFooter className="mt-2">
+              <OGDialogClose asChild>
+                <Button type="button" variant="outline">
+                  {localize('com_ui_cancel')}
+                </Button>
+              </OGDialogClose>
               <Button type="submit" variant="submit" disabled={isRegistering || password === ''}>
                 {isRegistering && <Spinner className="h-4 w-4" />}
                 {localize('com_ui_confirm')}
               </Button>
-            </div>
+            </OGDialogFooter>
           </form>
-        )}
-      </OGDialogContent>
+        </OGDialogContent>
+      </OGDialog>
     </OGDialog>
   );
 }

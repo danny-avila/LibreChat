@@ -18,14 +18,15 @@ const passkey: TPasskey = {
 type Overrides = {
   requiresPassword?: boolean;
   onDelete?: jest.Mock<Promise<PasskeyRemovalResult>>;
+  isRenaming?: boolean;
 };
 
-function setup({ requiresPassword = true, onDelete }: Overrides = {}) {
+function setup({ requiresPassword = true, onDelete, isRenaming = false }: Overrides = {}) {
   const deleteMock = onDelete ?? jest.fn().mockResolvedValue('removed');
   render(
     <PasskeyItem
       passkey={passkey}
-      isRenaming={false}
+      isRenaming={isRenaming}
       isBusy={false}
       requiresPassword={requiresPassword}
       onStartRename={jest.fn()}
@@ -37,8 +38,36 @@ function setup({ requiresPassword = true, onDelete }: Overrides = {}) {
 }
 
 const openConfirmation = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.click(screen.getByRole('button', { name: 'Remove passkey' }));
+  const removeButton = screen.getByRole('button', { name: 'Remove passkey' });
+  expect(removeButton).toHaveClass('hover:bg-surface-hover');
+  expect(removeButton).not.toHaveClass('bg-surface-destructive');
+  await user.click(removeButton);
+  expect(await screen.findByRole('alertdialog', { name: /Remove/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Delete' })).toHaveClass('bg-surface-destructive');
 };
+
+describe('PasskeyItem rename controls', () => {
+  it('matches the input height with square save and cancel buttons and labels both tooltips', async () => {
+    const { user } = setup({ isRenaming: true });
+    const input = screen.getByRole('textbox', { name: 'Passkey name' });
+    const saveButton = screen.getByRole('button', { name: 'Save' });
+    const cancelButton = screen.getByRole('button', { name: 'Cancel' });
+
+    expect(input).toHaveClass('h-10');
+    expect(input.parentElement?.parentElement).toHaveClass('py-2');
+    expect(saveButton).toHaveClass('size-10');
+    expect(cancelButton).toHaveClass('size-10');
+    expect(cancelButton).toHaveClass('bg-surface-secondary');
+
+    await user.hover(saveButton);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Save');
+    await user.unhover(saveButton);
+    await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument());
+
+    await user.hover(cancelButton);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Cancel');
+  });
+});
 
 describe('PasskeyItem removal step-up', () => {
   it('asks for the password before removing the credential', async () => {
@@ -48,6 +77,12 @@ describe('PasskeyItem removal step-up', () => {
     const field = screen.getByLabelText('Confirm your password');
     expect(field).toHaveAttribute('type', 'password');
     expect(field).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Show secret' })).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'Removing a passkey takes away a way to sign in, so we need your password first.',
+      ),
+    ).not.toBeInTheDocument();
 
     await user.type(field, 'correct horse');
     await user.click(screen.getByRole('button', { name: 'Delete' }));
@@ -124,9 +159,11 @@ describe('PasskeyItem removal step-up', () => {
     await user.type(screen.getByLabelText('Confirm your password'), 'typed');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    expect(screen.queryByLabelText('Confirm your password')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(deleteMock).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Remove passkey' })).toHaveFocus();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Remove passkey' })).toHaveFocus(),
+    );
   });
 
   it('clears a typed password when the confirmation is reopened', async () => {
