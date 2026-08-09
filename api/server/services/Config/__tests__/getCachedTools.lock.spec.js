@@ -8,13 +8,20 @@ const mockRedisClient = {
 const mockKeyvRedisClient = {
   eval: jest.fn(),
 };
+let mockRedisReadyPromise = Promise.resolve();
+const mockRedisReady = {
+  then: (...args) => mockRedisReadyPromise.then(...args),
+};
+const mockWaitForRedis = jest.fn(() => mockRedisReady);
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   cacheConfig: { FORCED_IN_MEMORY_CACHE_NAMESPACES: [] },
+  evalKeyvRedisScript: (...args) => mockKeyvRedisClient.eval(...args),
   mcpConfig: { USER_CONNECTION_IDLE_TIMEOUT: 15 * 60 * 1000 },
   ioredisClient: mockRedisClient,
   keyvRedisClient: mockKeyvRedisClient,
+  waitForKeyvRedisClient: mockWaitForRedis,
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -47,11 +54,49 @@ describe('global tool cache write lock', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRedisReadyPromise = Promise.resolve();
     mockRedisClient.set.mockResolvedValue('OK');
     mockRedisClient.eval.mockResolvedValue(1);
     mockKeyvRedisClient.eval.mockResolvedValue(1);
     mockCache.set.mockResolvedValue(true);
     mockCache.delete.mockResolvedValue(true);
+  });
+
+  it('waits for the shared Redis client before accessing the catalog', async () => {
+    mockCache.get.mockResolvedValue(null);
+    let resolveRedisReady;
+    mockRedisReadyPromise = new Promise((resolve) => {
+      resolveRedisReady = resolve;
+    });
+
+    const update = updateCachedGlobalTools(() => ({ builtin: {} }));
+    await Promise.resolve();
+
+    expect(mockRedisClient.set).not.toHaveBeenCalled();
+    expect(mockCache.get).not.toHaveBeenCalled();
+
+    resolveRedisReady();
+    await expect(update).resolves.toBeUndefined();
+
+    expect(mockRedisClient.set).toHaveBeenCalledTimes(1);
+    expect(mockCache.get).toHaveBeenCalledWith('tools:global');
+  });
+
+  it('waits for the shared Redis client before reading the catalog', async () => {
+    mockCache.get.mockResolvedValue({ builtin: {} });
+    let resolveRedisReady;
+    mockRedisReadyPromise = new Promise((resolve) => {
+      resolveRedisReady = resolve;
+    });
+
+    const read = getCachedTools();
+    await Promise.resolve();
+
+    expect(mockCache.get).not.toHaveBeenCalled();
+
+    resolveRedisReady();
+    await expect(read).resolves.toEqual({ builtin: {} });
+    expect(mockCache.get).toHaveBeenCalledWith('tools:global');
   });
 
   it('acquires and safely releases the Redis lock around an aggregate update', async () => {

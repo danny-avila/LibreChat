@@ -1,4 +1,5 @@
 import IoRedis from 'ioredis';
+import calculateSlot from 'cluster-key-slot';
 import { logger } from '@librechat/data-schemas';
 import { createClient, createCluster } from '@keyv/redis';
 import type { ScanCommandOptions } from '@redis/client/dist/lib/commands/SCAN';
@@ -131,6 +132,41 @@ let keyvRedisClientReady:
   | Promise<RedisClientType<Record<string, never>, Record<string, never>, Record<string, never>>>
   | null = null;
 
+/**
+ * Waits for the shared Keyv Redis client without exposing its mutable initialization state.
+ * Callers may import this function through a circular module graph before the connection
+ * promise is assigned; the promise itself must therefore be read when the function runs.
+ */
+async function waitForKeyvRedisClient(): Promise<void> {
+  await keyvRedisClientReady;
+}
+
+type RedisEvalOptions = { keys: string[]; arguments: string[] };
+
+/**
+ * Runs a Lua script on the master that owns its keys. Node Redis can execute a
+ * cluster EVAL through an arbitrary node while the slot map is settling, which
+ * leaks a MOVED reply instead of following it. Catalog scripts are deliberately
+ * single-slot, so selecting the owning master also makes that invariant explicit.
+ */
+async function evalKeyvRedisScript(script: string, options: RedisEvalOptions): Promise<unknown> {
+  await waitForKeyvRedisClient();
+  if (!keyvRedisClient) {
+    throw new Error('Keyv Redis client is not configured');
+  }
+  if (!('masters' in keyvRedisClient) || options.keys.length === 0) {
+    return keyvRedisClient.eval(script, options);
+  }
+
+  const slot = calculateSlot(options.keys[0]);
+  if (options.keys.some((key) => calculateSlot(key) !== slot)) {
+    throw new Error('Redis catalog script keys must share one cluster slot');
+  }
+  const master = keyvRedisClient.getSlotMaster(slot);
+  const nodeClient = await keyvRedisClient.nodeClient(master);
+  return nodeClient.eval(script, options);
+}
+
 if (cacheConfig.USE_REDIS) {
   /**
    * ** WARNING ** Keyv Redis client does not support Prefix like ioredis above.
@@ -220,4 +256,10 @@ if (cacheConfig.USE_REDIS) {
   });
 }
 
-export { ioredisClient, keyvRedisClient, keyvRedisClientReady };
+export {
+  ioredisClient,
+  keyvRedisClient,
+  keyvRedisClientReady,
+  waitForKeyvRedisClient,
+  evalKeyvRedisScript,
+};
