@@ -27,7 +27,7 @@ env:
 
 jobs:
   e2e_shards:
-    name: e2e (${{ matrix.stream_store }}, shard ${{ matrix.shard }}/4)
+    name: e2e (${{ matrix.stream_store }}, shard ${{ matrix.shard }}/2)
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
@@ -39,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         stream_store: [memory, redis]
-        shard: [1, 2, 3, 4]
+        shard: [1, 2]
     services:
       redis:
         image: redis:7-alpine
@@ -142,7 +142,7 @@ jobs:
           npx playwright install-deps chrome
 
       - name: Run mock-LLM Tier-1 e2e
-        run: npx playwright test --config=e2e/playwright.config.mock.ts --shard=${{ matrix.shard }}/4
+        run: npx playwright test --config=e2e/playwright.config.mock.ts --shard=${{ matrix.shard }}/2
         env:
           CI: 'true'
 
