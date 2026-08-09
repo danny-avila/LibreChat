@@ -402,6 +402,25 @@ describe('passkey authentication ban enforcement', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
   });
+
+  /**
+   * `checkBan` swallows its own errors into a no-op `next`, so a failed check leaves
+   * `req.banned` unset. Falling through there would issue tokens to an account the
+   * ban list was never able to answer for.
+   */
+  it('refuses when the ban check cannot complete', async () => {
+    mockCheckBan.mockImplementation(async (req, res, cb) => {
+      cb(new Error('ban store unavailable'));
+    });
+    const req = buildReq();
+    const res = buildRes();
+    const next = jest.fn();
+
+    await authenticatePasskey(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
 });
 
 describe('passkey registration password confirmation (step-up)', () => {
