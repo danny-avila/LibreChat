@@ -1,4 +1,5 @@
 import IoRedis from 'ioredis';
+import calculateSlot from 'cluster-key-slot';
 import { logger } from '@librechat/data-schemas';
 import { createClient, createCluster } from '@keyv/redis';
 import type { ScanCommandOptions } from '@redis/client/dist/lib/commands/SCAN';
@@ -10,6 +11,20 @@ const urls = cacheConfig.REDIS_URI?.split(',').map((uri) => new URL(uri)) || [];
 const username = urls?.[0]?.username || cacheConfig.REDIS_USERNAME;
 const password = urls?.[0]?.password || cacheConfig.REDIS_PASSWORD;
 const ca = cacheConfig.REDIS_CA;
+
+let resolveKeyvRedisClientReady: (() => void) | undefined;
+let rejectKeyvRedisClientReady: ((reason?: unknown) => void) | undefined;
+const keyvRedisClientReady: Promise<void> | null = cacheConfig.USE_REDIS
+  ? new Promise<void>((resolve, reject) => {
+      resolveKeyvRedisClientReady = resolve;
+      rejectKeyvRedisClientReady = reject;
+    })
+  : null;
+
+/** Waits for the stable shared Keyv Redis readiness gate. */
+async function waitForKeyvRedisClient(): Promise<void> {
+  await keyvRedisClientReady;
+}
 
 let ioredisClient: Redis | Cluster | null = null;
 if (cacheConfig.USE_REDIS) {
@@ -126,10 +141,32 @@ if (cacheConfig.USE_REDIS) {
 }
 
 let keyvRedisClient: RedisClientType | RedisClusterType | null = null;
-let keyvRedisClientReady:
-  | Promise<void>
-  | Promise<RedisClientType<Record<string, never>, Record<string, never>, Record<string, never>>>
-  | null = null;
+
+type RedisEvalOptions = { keys: string[]; arguments: string[] };
+
+/**
+ * Runs a Lua script on the master that owns its keys. Node Redis can execute a
+ * cluster EVAL through an arbitrary node while the slot map is settling, which
+ * leaks a MOVED reply instead of following it. Catalog scripts are deliberately
+ * single-slot, so selecting the owning master also makes that invariant explicit.
+ */
+async function evalKeyvRedisScript(script: string, options: RedisEvalOptions): Promise<unknown> {
+  await waitForKeyvRedisClient();
+  if (!keyvRedisClient) {
+    throw new Error('Keyv Redis client is not configured');
+  }
+  if (!('masters' in keyvRedisClient) || options.keys.length === 0) {
+    return keyvRedisClient.eval(script, options);
+  }
+
+  const slot = calculateSlot(options.keys[0]);
+  if (options.keys.some((key) => calculateSlot(key) !== slot)) {
+    throw new Error('Redis catalog script keys must share one cluster slot');
+  }
+  const master = keyvRedisClient.getSlotMaster(slot);
+  const nodeClient = await keyvRedisClient.nodeClient(master);
+  return nodeClient.eval(script, options);
+}
 
 if (cacheConfig.USE_REDIS) {
   /**
@@ -212,12 +249,18 @@ if (cacheConfig.USE_REDIS) {
     logger.warn('@keyv/redis client disconnected');
   });
 
-  // Start connection immediately
-  keyvRedisClientReady = keyvRedisClient.connect();
+  // Start connection immediately and settle the gate created before client initialization.
+  void keyvRedisClient.connect().then(resolveKeyvRedisClientReady, rejectKeyvRedisClientReady);
 
-  keyvRedisClientReady.catch((err): void => {
+  void keyvRedisClientReady?.catch((err): void => {
     logger.error('@keyv/redis initial connection failed:', err);
   });
 }
 
-export { ioredisClient, keyvRedisClient, keyvRedisClientReady };
+export {
+  ioredisClient,
+  keyvRedisClient,
+  keyvRedisClientReady,
+  waitForKeyvRedisClient,
+  evalKeyvRedisScript,
+};

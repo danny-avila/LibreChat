@@ -37,6 +37,7 @@ const {
   updateInterfacePermissions,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -115,6 +116,7 @@ const configureGenerationStreams = () => {
 };
 
 const startServer = async () => {
+  await waitForKeyvRedisClient();
   const { metricsMiddleware, metricsRouter } = createMetrics();
   if (!process.env.METRICS_SECRET) {
     logger.warn('[metrics] METRICS_SECRET is not set - /metrics will return 401 for all requests');
