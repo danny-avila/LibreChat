@@ -944,16 +944,28 @@ export default function useStepHandler({
             if (contentPart == null) {
               continue;
             }
+            const messageCreation =
+              runStep.stepDetails.type === StepTypes.MESSAGE_CREATION
+                ? (runStep.stepDetails.message_creation as {
+                    phase?: 'commentary' | 'final_answer';
+                  })
+                : undefined;
+            const phase = messageCreation?.phase;
+            const phasedContentPart =
+              contentPart.type === ContentTypes.TEXT &&
+              (phase === 'commentary' || phase === 'final_answer')
+                ? { ...contentPart, phase }
+                : contentPart;
             const currentIndex = calculateContentIndex(
               runStep.index,
               editPrefixOffset,
-              contentPart.type || '',
+              phasedContentPart.type || '',
               updatedResponse.content,
             );
             updatedResponse = updateContent(
               updatedResponse,
               currentIndex,
-              contentPart,
+              phasedContentPart,
               false,
               getStepMetadata(runStep),
             );

@@ -225,6 +225,7 @@ type ParallelContentRendererProps = {
    * carries per-agent identity.
    */
   renderResumeAttribution?: (idx: number) => React.ReactNode;
+  showDecorations?: boolean;
 };
 
 /**
@@ -241,6 +242,7 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   isSubmitting,
   renderPart,
   renderResumeAttribution,
+  showDecorations = true,
 }: ParallelContentRendererProps) {
   const { parallelSections, sequentialParts } = useMemo(
     () => groupParallelContent(content),
@@ -272,8 +274,10 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
 
   return (
     <SearchContext.Provider value={{ searchResults }}>
-      <MemoryArtifacts attachments={attachments} />
-      <Sources messageId={messageId} conversationId={conversationId || undefined} />
+      {showDecorations && <MemoryArtifacts attachments={attachments} />}
+      {showDecorations && (
+        <Sources messageId={messageId} conversationId={conversationId || undefined} />
+      )}
 
       {/* Sequential content BEFORE parallel sections */}
       {before.flatMap(({ part, idx }) => {

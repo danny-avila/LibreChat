@@ -1,6 +1,10 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TActivityLabelEvent, TMessage, TMessageContentParts } from 'librechat-data-provider';
-import { applyActivityLabelPart, lastVisibleContentIdx } from '../activityLabels';
+import {
+  applyActivityLabelPart,
+  groupActivityPhases,
+  lastVisibleContentIdx,
+} from '../activityLabels';
 
 const buildMessage = (content: TMessage['content']): TMessage =>
   ({ messageId: 'm1', isCreatedByUser: false, content }) as TMessage;
@@ -74,5 +78,41 @@ describe('lastVisibleContentIdx', () => {
     expect(lastVisibleContentIdx([text, tool])).toBe(1);
     expect(lastVisibleContentIdx([])).toBe(-1);
     expect(lastVisibleContentIdx(undefined)).toBe(-1);
+  });
+
+  it('skips sparse trailing slots used by phase slices', () => {
+    expect(lastVisibleContentIdx([undefined, tool, undefined, undefined])).toBe(1);
+  });
+});
+
+describe('groupActivityPhases', () => {
+  const text = { type: ContentTypes.TEXT, text: 'final answer' } as TMessageContentParts;
+  const tool = {
+    type: ContentTypes.TOOL_CALL,
+    tool_call: { id: 't1', name: 'web_search', args: '{}', output: 'ok' },
+  } as unknown as TMessageContentParts;
+
+  it('keeps absolute indices while consuming a completed parent marker', () => {
+    const phase = labelPart({ activity_label: 'Compared both release paths', pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 1,
+      activity_count: 2,
+    });
+    const segments = groupActivityPhases([text, tool, tool, phase as never, text]);
+    expect(segments).toHaveLength(3);
+    expect(segments?.[1]).toMatchObject({ type: 'phase', labelIndex: 3 });
+    if (segments?.[1]?.type === 'phase') {
+      expect(segments[1].content[0]).toBeUndefined();
+      expect(segments[1].content[1]).toBe(tool);
+      expect(segments[1].content[2]).toBe(tool);
+      expect(segments[1].content[3]).toBeUndefined();
+    }
+  });
+
+  it('leaves pending or empty parent markers on the feature-off path', () => {
+    const pending = labelPart();
+    Object.assign(pending, { activity_label_type: 'phase', activity_start_index: 0 });
+    expect(groupActivityPhases([tool, pending as never])).toBeUndefined();
   });
 });

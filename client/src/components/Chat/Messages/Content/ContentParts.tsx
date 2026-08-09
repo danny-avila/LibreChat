@@ -11,12 +11,14 @@ import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { EditTextPart, EmptyText, AgentUpdate } from './Parts';
-import { lastVisibleContentIdx } from '~/utils/activityLabels';
+import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabels';
+import Sources from '~/components/Web/Sources';
 import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ApprovalProvider from './ApprovalContext';
 import MemoryArtifacts from './MemoryArtifacts';
 import ToolCallGroup from './ToolCallGroup';
+import ActivityPhaseGroup from './ActivityPhaseGroup';
 import Container from './Container';
 import Part from './Part';
 
@@ -147,6 +149,8 @@ type ContentPartsProps = {
     | ((value: number) => void | React.Dispatch<React.SetStateAction<number>>)
     | null
     | undefined;
+  /** Internal recursion guard for sparse phase slices. */
+  nestedActivityPhase?: boolean;
 };
 
 /**
@@ -172,6 +176,7 @@ const ContentParts = memo(function ContentParts({
   isCreatedByUser,
   isLatestMessage,
   createdAt,
+  nestedActivityPhase = false,
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
@@ -434,6 +439,54 @@ const ContentParts = memo(function ContentParts({
     );
   }
 
+  const phaseSegments = nestedActivityPhase ? undefined : groupActivityPhases(content);
+  if (phaseSegments != null) {
+    const renderSegment = (
+      segmentContent: Array<TMessageContentParts | undefined>,
+      key: string,
+    ) => (
+      <ContentParts
+        key={key}
+        content={segmentContent}
+        messageId={messageId}
+        createdAt={createdAt}
+        authorHeader={authorHeader}
+        conversationId={conversationId}
+        attachments={attachments}
+        searchResults={searchResults}
+        isCreatedByUser={isCreatedByUser}
+        isLast={isLast}
+        isSubmitting={isSubmitting}
+        isLatestMessage={isLatestMessage}
+        nestedActivityPhase
+      />
+    );
+    const hasParallelContent = content?.some((part) => part?.groupId != null) === true;
+    return (
+      <ApprovalProvider>
+        <SearchContext.Provider value={{ searchResults }}>
+          <MemoryArtifacts attachments={attachments} />
+          {hasParallelContent && (
+            <Sources messageId={messageId} conversationId={conversationId || undefined} />
+          )}
+          {renderPendingSkills()}
+          {phaseSegments.map((segment, index) =>
+            segment.type === 'phase' ? (
+              <ActivityPhaseGroup
+                key={`activity-phase-${messageId}-${segment.labelIndex}`}
+                labelPart={segment.labelPart}
+              >
+                {renderSegment(segment.content, `phase-content-${index}`)}
+              </ActivityPhaseGroup>
+            ) : (
+              renderSegment(segment.content, `phase-adjacent-${index}`)
+            ),
+          )}
+        </SearchContext.Provider>
+      </ApprovalProvider>
+    );
+  }
+
   const safeContent = content ?? [];
   const showEmptyCursor = safeContent.length === 0 && effectiveIsSubmitting;
   /** Skips trailing BLANK label reservations — they render nothing, and
@@ -457,6 +510,7 @@ const ContentParts = memo(function ContentParts({
           isSubmitting={effectiveIsSubmitting}
           renderPart={renderPart}
           renderResumeAttribution={renderResumeAttribution}
+          showDecorations={!nestedActivityPhase}
         />
       </ApprovalProvider>
     );
@@ -466,8 +520,8 @@ const ContentParts = memo(function ContentParts({
   return (
     <ApprovalProvider>
       <SearchContext.Provider value={{ searchResults }}>
-        <MemoryArtifacts attachments={attachments} />
-        {renderPendingSkills()}
+        {!nestedActivityPhase && <MemoryArtifacts attachments={attachments} />}
+        {!nestedActivityPhase && renderPendingSkills()}
         {showEmptyCursor && (
           <Container>
             <EmptyText />

@@ -17,6 +17,7 @@ export interface LooseContentPart {
   groupId?: unknown;
   tool_call?: { id?: unknown };
   pending?: boolean;
+  phase?: unknown;
   [key: string]: unknown;
 }
 
@@ -48,6 +49,7 @@ export function captureActivityBlockContext(
 ): ActivityLabelBlockContext {
   const thinkingExcerpts: string[] = [];
   let lastAssistantText: string | undefined;
+  let lastAssistantPhase: ActivityLabelBlockContext['lastAssistantPhase'];
   let collectThinking = true;
   for (let i = parts.length - 1; i >= 0; i--) {
     const part = parts[i];
@@ -68,6 +70,9 @@ export function captureActivityBlockContext(
       const text = textValue(part.text).trim();
       if (text.length > 0) {
         lastAssistantText = text.slice(-INTENT_CHARS);
+        if (part.phase === 'commentary' || part.phase === 'final_answer') {
+          lastAssistantPhase = part.phase;
+        }
         break;
       }
       continue;
@@ -84,7 +89,7 @@ export function captureActivityBlockContext(
       }
     }
   }
-  return { thinkingExcerpts, lastAssistantText };
+  return { thinkingExcerpts, lastAssistantText, lastAssistantPhase };
 }
 
 /**
@@ -147,6 +152,7 @@ export function synthesizeActivityLabelGapEvents(
     const isSameLabel =
       snapshot?.type === ContentTypes.ACTIVITY_LABEL &&
       snapshot[ContentTypes.ACTIVITY_LABEL] === part[ContentTypes.ACTIVITY_LABEL] &&
+      snapshot.activity_label_type === part.activity_label_type &&
       snapshot.pending === part.pending;
     if (isSameLabel) {
       continue;
@@ -218,7 +224,7 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
   const initialLabels: Array<{ index: number; text: string }> = [];
   for (let i = 0; i < resumedParts.length; i++) {
     const part = resumedParts[i];
-    if (part?.type !== ContentTypes.ACTIVITY_LABEL) {
+    if (part?.type !== ContentTypes.ACTIVITY_LABEL || part.activity_label_type === 'phase') {
       continue;
     }
     initialGeneratedCount += 1;

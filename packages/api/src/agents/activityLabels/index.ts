@@ -23,12 +23,15 @@ export type { ActivityLabelHostDeps, LooseContentPart } from './wiring';
 export {
   mapCollectedMetadataToUsage,
   resolveActivityConfig,
+  resolveActivityPhaseConfig,
   resolveActivityLabelModel,
+  resolveActivityPhaseLabelModel,
   settlePendingLabelFills,
 } from './host';
 export type {
   ActivityLabelAgent,
   ResolvedActivityConfig,
+  ResolvedActivityPhaseConfig,
   ActivityLabelUsage,
   CollectedMetadataEntry,
   ResolveActivityLabelModelParams,

@@ -49,6 +49,7 @@ export interface ActivityLabelBatchMeta {
 export interface ActivityLabelBlockContext {
   thinkingExcerpts?: string[];
   lastAssistantText?: string;
+  lastAssistantPhase?: 'commentary' | 'final_answer';
 }
 
 /**
@@ -398,7 +399,7 @@ export function buildPrompt(
           .join('\n'),
     );
   }
-  if (context?.lastAssistantText) {
+  if (context?.lastAssistantText && context.lastAssistantPhase !== 'final_answer') {
     sections.push(
       `Intent (assistant's last message): ${truncate(context.lastAssistantText, INTENT_CHAR_LIMIT)}`,
     );
