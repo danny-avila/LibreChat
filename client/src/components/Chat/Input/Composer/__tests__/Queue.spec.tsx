@@ -53,6 +53,7 @@ const mockRemoveQueued = jest.fn();
 const mockReorderQueued = jest.fn();
 const mockRestoreQueuedOrder = jest.fn();
 const mockDiscardQueued = jest.fn().mockResolvedValue(true);
+const mockRewakeDrain = jest.fn();
 
 /** Only what the rail reads, filled out against the real type so a change to
  *  the contract breaks compilation rather than passing quietly. */
@@ -67,6 +68,7 @@ const steeringWith = (over: Partial<SteeringControls> = {}): SteeringControls =>
     reorderQueued: mockReorderQueued,
     restoreQueuedOrder: mockRestoreQueuedOrder,
     discardQueued: mockDiscardQueued,
+    rewakeDrain: mockRewakeDrain,
     ...over,
   }) as SteeringControls;
 
@@ -247,6 +249,10 @@ describe('Queue', () => {
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'com_ui_queue_remove_blocked' }),
     );
+    /* A run end that landed while this row was claimed had no unclaimed row to
+       drain and spent its one-shot signal. The row is back in the queue, so a
+       signal has to go back with it or these words wait for another run. */
+    expect(mockRewakeDrain).toHaveBeenCalledWith(CONVO_ID);
   });
 
   it('hands the whole message to the composer to edit', async () => {
