@@ -14,6 +14,8 @@ const mockPdfjs: {
   destroy: jest.Mock<Promise<void>, []>;
   /** 1-indexed pages pdfjs was asked for, so tests can prove the walk is bounded. */
   requestedPages: number[];
+  /** Fires as each page is read, so a test can interrupt the walk from inside it. */
+  onPage?: (pageNumber: number) => void;
 } = {
   numPages: 1,
   pageText: {},
@@ -30,6 +32,7 @@ jest.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
       },
       getPage: (pageNumber: number) => {
         mockPdfjs.requestedPages.push(pageNumber);
+        mockPdfjs.onPage?.(pageNumber);
         return Promise.resolve({
           getTextContent: () =>
             Promise.resolve({
@@ -59,6 +62,7 @@ describe('pdf-inspector local parser', () => {
     mockPdfjs.pageText = {};
     mockPdfjs.destroy.mockClear();
     mockPdfjs.requestedPages = [];
+    mockPdfjs.onPage = undefined;
   });
 
   describe('supported types', () => {
@@ -445,6 +449,71 @@ describe('pdf-inspector local parser', () => {
       jest.dontMock('./native');
     }
   }, 30_000);
+
+  /**
+   * Cancellation is the sharpest case of "this is not a document the engine could not
+   * read": nobody is waiting for the answer, so starting a second engine would hold the
+   * admission slot to produce something no one reads.
+   */
+  test('does not start the pdfjs fallback for a cancelled parse', async () => {
+    mockPdfjs.numPages = 3;
+    mockPdfjs.pageText = { 1: 'recovered', 2: 'recovered', 3: 'recovered' };
+    const cancellation = new AbortController();
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => {
+            cancellation.abort();
+            throw new Error('Document parsing was cancelled');
+          },
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+
+        await expect(
+          uploadIsolated(context(pdfFile('sample.pdf')), cancellation.signal),
+        ).rejects.toThrow(/cancelled/);
+        expect(mockPdfjs.requestedPages).toHaveLength(0);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
+  test('stops the per-page recovery walk when the caller cancels', async () => {
+    /* The recovery walk is the long half of a parse, so an abandoned one has to stop at
+     * the next page rather than run to the cap. */
+    const flooded = Array.from({ length: 200 }, (_, page) => ({ page, markdown: '' }));
+    mockPdfjs.pageText = Object.fromEntries(
+      Array.from({ length: 200 }, (_, i) => [i + 1, 'recovered line']),
+    );
+    const cancellation = new AbortController();
+    /* Aborted from inside the walk: the caller's own timeout fires while pages are being
+     * read, which is the only moment the check has anything to catch. */
+    mockPdfjs.onPage = (pageNumber) => {
+      if (pageNumber === 5) {
+        cancellation.abort();
+      }
+    };
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, scannedPages: [] }),
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+
+        await expect(
+          uploadIsolated(context(pdfFile('sample.pdf')), cancellation.signal),
+        ).rejects.toThrow(/cancelled/);
+        expect(mockPdfjs.requestedPages.length).toBeLessThan(20);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
 
   test('bounds the whole-document pdfjs walk by output size', async () => {
     /* Page count says nothing about how much text a page holds, and this walk runs in

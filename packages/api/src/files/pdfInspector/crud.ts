@@ -63,8 +63,11 @@ export async function parseWithPdfInspector(
     /* Refusals are not "this engine could not read it", and pdfjs is not the answer to
      * any of them: it would run the walk inline for a request the limiter just refused,
      * rebuild in the API process the string the child declined to send, or accept a page
-     * count this parser has already decided not to hand onward. */
+     * count this parser has already decided not to hand onward. A cancelled parse is the
+     * same story at its sharpest: nobody is waiting for the answer, so starting a second
+     * engine would hold the admission slot to produce something no one reads. */
     if (
+      signal?.aborted ||
       error instanceof ConcurrencyLimitError ||
       error instanceof PdfPageLimitError ||
       isParserOutputLimit(error)
@@ -79,7 +82,7 @@ export async function parseWithPdfInspector(
      * walk's: they bound different work, and reusing the smaller one meant a PDF this
      * parser accepts with a good xref was refused with a damaged one, or on a platform
      * with no native binding at all. */
-    parsed = await extractDocumentTextWithPages(data, MAX_PDF_PAGES);
+    parsed = await extractDocumentTextWithPages(data, MAX_PDF_PAGES, undefined, signal);
   }
   const { text, pagesNeedingOcr, mayEmbedMedia } = parsed;
 
@@ -178,6 +181,7 @@ export async function extractPdf(
     data,
     recoverablePages.map((page) => page.page),
     Math.max(0, MAX_PARSER_OUTPUT_BYTES - nativeBytes),
+    signal,
   );
   /* Probed pages were empirically shown to hold no text layer at all. Pages past the
    * cap were never read, so they are only missing from output that skips them. Kept
