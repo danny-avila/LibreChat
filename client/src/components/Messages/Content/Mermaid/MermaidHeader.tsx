@@ -1,6 +1,6 @@
 import React, { memo, useState, useCallback, useRef, useEffect } from 'react';
-import copy from 'copy-to-clipboard';
 import { Eye, Code2 } from 'lucide';
+import copy from 'copy-to-clipboard';
 import { Expand } from 'lucide-react';
 import { MorphIcon, TooltipAnchor } from '@librechat/client';
 import type { MermaidDimensions } from '~/utils/diagram/export';
