@@ -89,6 +89,14 @@ const hasCodeEnvRef = (file) =>
 const resolveUploadMimeType = (file) =>
   resolveEffectiveMimeType(file?.originalname ?? '', file?.mimetype ?? '');
 
+/**
+ * Document types the parser only reformats, whose raw bytes are already the content.
+ * Converting a dense CSV to a Markdown table adds pipes and padding to every cell, so a
+ * source file inside the storage limit can convert to one that is not.
+ */
+const delimitedTextTypes = /^(?:text|application)\/csv$/i;
+const isDelimitedTextType = (mimetype) => delimitedTextTypes.test(mimetype);
+
 const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';
 const isPdfPageLimitError = (err) =>
   err?.code === 'PDF_PAGE_LIMIT' || err?.name === 'PdfPageLimitError';
@@ -1011,6 +1019,17 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
       if (documentResult?.text?.trim()) {
         return await createDocumentTextFile(documentResult);
+      }
+
+      /* A delimited file is already text: the parser only reformats it as a table, and
+       * that table can outgrow the storage limit on a source file well inside it. Falling
+       * back to the bytes is what this path did before the parser claimed the type, and
+       * it is the whole document either way, so there is nothing to warn about. */
+      if (isDelimitedTextType(effectiveMimeType)) {
+        const { text, bytes } = await parseText({ req, file, file_id });
+        if (text?.trim()) {
+          return await createTextFile({ text, bytes, type: effectiveMimeType });
+        }
       }
 
       throw new Error(

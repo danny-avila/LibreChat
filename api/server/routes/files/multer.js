@@ -5,7 +5,7 @@ const multer = require('multer');
 const { sanitizeFilename, createCustomError } = require('@librechat/api');
 const {
   mergeFileConfig,
-  inferMimeType,
+  resolveEffectiveMimeType,
   getEndpointFileConfig,
   fileConfig: defaultFileConfig,
 } = require('librechat-data-provider');
@@ -38,8 +38,13 @@ const importFileFilter = (req, file, cb) => {
   }
 };
 
+/**
+ * Admission reads the upload exactly as routing does. A client that types by magic bytes
+ * calls a `.docx` an archive, and resolving that here keeps a narrowed endpoint allowlist
+ * from refusing a document the parser downstream would have accepted.
+ */
 const normalizeUploadMimeType = (file) => {
-  const mimeType = inferMimeType(file.originalname || '', file.mimetype || '');
+  const mimeType = resolveEffectiveMimeType(file.originalname || '', file.mimetype || '');
   if (mimeType && file.mimetype !== mimeType) {
     file.mimetype = mimeType;
   }
