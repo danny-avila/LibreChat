@@ -84,7 +84,7 @@ export default function useAttachExisting(context: AttachExistingContext): (file
         return;
       }
 
-      if (fileData.bytes >= (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
+      if (fileData.bytes > (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
         showToast({
           message: `${localize('com_ui_attach_error_size')} ${
             (endpointFileConfig.fileSizeLimit ?? 0) / megabyte

@@ -174,6 +174,14 @@ describe('useAttachExisting', () => {
       refused('com_ui_attach_error_size');
     });
 
+    /* The upload path rejects only `size > fileSizeLimit` and the backend filter
+       accepts `bytes <= fileSizeLimit`, so a file sitting exactly on the limit
+       uploads fine and has to stay re-attachable from the palette. */
+    it('accepts a file sitting exactly on the endpoint limit', () => {
+      attach(file({ bytes: 5 * MB }));
+      expect(mockAddFile).toHaveBeenCalled();
+    });
+
     it('refuses a type the endpoint does not accept', () => {
       const zip = file({ type: 'application/zip' });
       attach(zip);

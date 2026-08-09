@@ -8,25 +8,11 @@ import {
   defaultOrderQuery,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { QueryClient, UseMutationResult } from '@tanstack/react-query';
+import type { UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
+import { invalidateRecentFiles } from '~/utils/files';
 import { useGetStartupConfig } from '../Endpoints';
 import { useLocalize } from '~/hooks';
-
-/**
- * Matches every `[QueryKeys.files, 'recent', limit]` cache entry regardless of
- * the requested limit, so upload/delete mutations can keep the composer
- * palette's recent-files list in sync alongside the plain `[QueryKeys.files]`
- * cache they already patch.
- */
-const isRecentFilesQueryKey = (queryKey: readonly unknown[]): boolean =>
-  queryKey[0] === QueryKeys.files && queryKey[1] === 'recent';
-
-const invalidateRecentFilesQueries = (queryClient: QueryClient): void => {
-  queryClient.invalidateQueries({
-    predicate: (query) => isRecentFilesQueryKey(query.queryKey),
-  });
-};
 
 export const useUploadFileMutation = (
   _options?: t.UploadMutationOptions,
@@ -73,7 +59,7 @@ export const useUploadFileMutation = (
         file,
         ...(_files ?? []),
       ]);
-      invalidateRecentFilesQueries(queryClient);
+      invalidateRecentFiles(queryClient);
 
       const endpoint = formData.get('endpoint');
       const message_file = formData.get('message_file');
@@ -227,7 +213,7 @@ export const useDeleteFilesMutation = (
           (file) => !requested.has(file.file_id) || failed.has(file.file_id),
         );
       });
-      invalidateRecentFilesQueries(queryClient);
+      invalidateRecentFiles(queryClient);
 
       /** A storage failure still answers 200, so reporting success off the status alone would
        * tell the user a file is gone while it is sitting on disk and back in their list. */
