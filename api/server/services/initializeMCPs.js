@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   registerShutdownTask,
   setMCPToolsChangedHandler,
+  getDeploymentPluginMcpServers,
   setMCPToolsChangedGenerationHandler,
   setMCPToolsChangedGenerationRenewalHandler,
   setMCPToolsChangedRevisionHandler,
@@ -62,11 +63,42 @@ async function refreshChangedServerTools({
 }
 
 /**
+ * Merges Agent Plugins MCP servers under the configured servers. A plugin never
+ * displaces a server the operator declared in `librechat.yaml`.
+ */
+function withPluginServers(configured) {
+  const pluginServers = getDeploymentPluginMcpServers();
+  const names = Object.keys(pluginServers);
+  if (names.length === 0) {
+    return configured;
+  }
+
+  const merged = { ...configured };
+  for (const name of names) {
+    /** Own-property check: an inherited member like `toString` is not a conflict. */
+    if (Object.hasOwn(merged, name)) {
+      logger.warn(
+        `[MCP] Plugin server "${name}" conflicts with a configured server and was skipped.`,
+      );
+      continue;
+    }
+    /** Defined rather than assigned so a name like `__proto__` cannot reach a setter. */
+    Object.defineProperty(merged, name, {
+      value: pluginServers[name],
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return merged;
+}
+
+/**
  * Initialize MCP servers
  */
 async function initializeMCPs() {
   const appConfig = await getAppConfig({ baseOnly: true });
-  const mcpServers = appConfig.mcpConfig;
+  const mcpServers = withPluginServers(appConfig.mcpConfig);
 
   try {
     createMCPServersRegistry(

@@ -27,6 +27,8 @@ const {
   agentStartupTelemetryMiddleware,
   initializeFileStorage,
   initializeDeploymentSkills,
+  initializeDeploymentPlugins,
+  getDeploymentPluginSkills,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
@@ -152,7 +154,12 @@ const startServer = async () => {
   });
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
-  await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
+  const projectRoot = path.resolve(__dirname, '../..');
+  await initializeDeploymentPlugins({ projectRoot });
+  await initializeDeploymentSkills({
+    projectRoot,
+    additionalSkills: getDeploymentPluginSkills(),
+  });
   initializeGitHubSkillSync(appConfig);
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   // Register any programmatic tool-approval policy hooks declared in

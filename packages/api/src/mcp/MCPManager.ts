@@ -27,10 +27,10 @@ import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
+import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
-import { processMCPEnv } from '~/utils/env';
 
 function createOboToolCallErrorMessage(
   logPrefix: string,
@@ -514,14 +514,19 @@ Please follow these instructions when using tools from the respective MCP server
       const ephemeralConnection = !!userId && requiresEphemeralUserConnection(rawConfig);
       disconnectAfterCall = ephemeralConnection && !requestScopedConnections;
 
-      /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
-      const graphProcessedConfig = isDbSourced
-        ? (rawConfig as t.MCPOptions)
-        : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
-            user,
-            graphTokenResolver,
-            scopes: process.env.GRAPH_API_SCOPES,
-          });
+      /**
+       * Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass.
+       * Plugin-sourced configs are excluded for the same reason processMCPEnv excludes them:
+       * a placeholder a plugin authored must never resolve against the user's Graph token.
+       */
+      const graphProcessedConfig =
+        isDbSourced || isPluginSourced(rawConfig)
+          ? (rawConfig as t.MCPOptions)
+          : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
+              user,
+              graphTokenResolver,
+              scopes: process.env.GRAPH_API_SCOPES,
+            });
       const currentOptions = processMCPEnv({
         user,
         body: requestBody,
