@@ -14,6 +14,7 @@ process.once('message', async (request) => {
     if (bytes > request.maxOutputBytes) {
       process.send({
         ok: false,
+        code: 'PARSER_OUTPUT_LIMIT',
         message:
           'extracted ' +
           Math.round(bytes / (1024 * 1024)) +

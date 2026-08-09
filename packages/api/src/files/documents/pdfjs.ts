@@ -1,10 +1,12 @@
 import { logger } from '@librechat/data-schemas';
+import { megabyte } from 'librechat-data-provider';
 import type {
   TextItem,
   PDFDocumentProxy,
   TextMarkedContent,
   PDFDocumentLoadingTask,
 } from 'pdfjs-dist/types/src/display/api';
+import { MAX_PARSER_OUTPUT_BYTES, ParserOutputLimitError } from './nativeProcess';
 
 export type ExtractedDocumentText = {
   text: string;
@@ -75,10 +77,15 @@ export async function extractPageText(
  * A document above the limit is rejected before visiting any page. Building an
  * omitted-page array would itself be unbounded for a hostile page count, while
  * silently returning the first pages would make incomplete text look complete.
+ *
+ * Output is bounded as it accumulates, for the same reason the native children bound
+ * theirs: page count says nothing about how much text a page holds, and this one runs
+ * in the API process, where the string is built before any caller can reject it.
  */
 export async function extractDocumentTextWithPages(
   data: Buffer,
   maxPages = Number.POSITIVE_INFINITY,
+  maxBytes = MAX_PARSER_OUTPUT_BYTES,
 ): Promise<ExtractedDocumentText> {
   // Imported inline so that Jest can test other routes without failing due to loading ESM
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -91,6 +98,7 @@ export async function extractDocumentTextWithPages(
     }
 
     let fullText = '';
+    let textBytes = 0;
     const pagesNeedingOcr: number[] = [];
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
@@ -98,6 +106,12 @@ export async function extractDocumentTextWithPages(
       const pageText = joinTextItems(textContent.items);
       if (!pageText.trim()) {
         pagesNeedingOcr.push(i);
+      }
+      textBytes += Buffer.byteLength(pageText, 'utf8') + 1;
+      if (textBytes > maxBytes) {
+        throw new ParserOutputLimitError(
+          `pdfjs extracted over the ${Math.round(maxBytes / megabyte)}MB limit by page ${i}`,
+        );
       }
       fullText += pageText + '\n';
     }

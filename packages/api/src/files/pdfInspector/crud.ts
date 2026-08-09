@@ -4,6 +4,7 @@ import { FileSources } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
 import { extractDocumentTextWithPages, extractPageText } from '../documents/pdfjs';
 import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
+import { isParserOutputLimit } from '../documents/nativeProcess';
 import { ConcurrencyLimitError } from '~/utils/promise';
 
 type ParsedDocument = Pick<ParsedDocumentUploadResult, 'text' | 'pagesNeedingOcr'>;
@@ -41,10 +42,11 @@ export async function parseWithPdfInspector(
   try {
     parsed = await extractPdf(file.path, data);
   } catch (error) {
-    /* Shed load is not a document this engine cannot read. Falling back would run the
-     * pdfjs walk inline for a request the limiter just refused, spending on the event
-     * loop exactly the work the cap exists to defer. */
-    if (error instanceof ConcurrencyLimitError) {
+    /* Neither shed load nor an oversized extraction is a document this engine cannot
+     * read, and pdfjs is not the answer to either: it would run the walk inline for a
+     * request the limiter just refused, or rebuild in the API process the very string
+     * the child declined to send. */
+    if (error instanceof ConcurrencyLimitError || isParserOutputLimit(error)) {
       throw error;
     }
     logger.warn(

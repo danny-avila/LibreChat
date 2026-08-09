@@ -105,9 +105,17 @@ const isPdfPageLimitError = (err) =>
  * configured OCR service, or into "no text found" for a perfectly readable file. */
 const isParserBusyError = (err) =>
   err?.code === 'CONCURRENCY_LIMIT' || err?.name === 'ConcurrencyLimitError';
+/* The parser declined to hand back an extraction that would not fit. Surfaced rather
+ * than swallowed so the file is not reported as unreadable, and so no fallback rebuilds
+ * in this process the string a child process just declined to send. */
+const isParserOutputLimitError = (err) =>
+  err?.code === 'PARSER_OUTPUT_LIMIT' || err?.name === 'ParserOutputLimitError';
 
 const isDocumentParserRefusal = (err) =>
-  isZipBombError(err) || isPdfPageLimitError(err) || isParserBusyError(err);
+  isZipBombError(err) ||
+  isPdfPageLimitError(err) ||
+  isParserBusyError(err) ||
+  isParserOutputLimitError(err);
 
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -987,11 +995,31 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       });
     };
 
+    /** Resolves a delimited file as the bytes it already was when conversion cannot ship. */
+    const resolveDelimitedTextAsIs = async () => {
+      const { text, bytes } = await parseText({ req, file, file_id });
+      if (!text?.trim()) {
+        return;
+      }
+      return { text, bytes, rawDelimitedText: true };
+    };
+
     if (shouldUseDocumentParser) {
       const documentResult = await extractInspectableFileText({
         filters: appConfig?.filters,
         extract: async () => {
-          const localResult = await resolveDocumentText();
+          let localResult;
+          try {
+            localResult = await resolveDocumentText();
+          } catch (err) {
+            if (isParserOutputLimitError(err) && isDelimitedTextType(effectiveMimeType)) {
+              const rawResult = await resolveDelimitedTextAsIs();
+              if (rawResult) {
+                return rawResult;
+              }
+            }
+            throw err;
+          }
           const hasLocalText = !!localResult?.text?.trim();
           /* pdf-inspector names unreadable pages. AnyDoc cannot, so it reports whether
            * the document embeds artwork that may carry content it converted to nothing. */
@@ -1013,23 +1041,24 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
             }
           }
 
-          return hasLocalText ? localResult : undefined;
+          if (hasLocalText) {
+            return localResult;
+          }
+          return isDelimitedTextType(effectiveMimeType)
+            ? await resolveDelimitedTextAsIs()
+            : undefined;
         },
       });
 
       if (documentResult?.text?.trim()) {
-        return await createDocumentTextFile(documentResult);
-      }
-
-      /* A delimited file is already text: the parser only reformats it as a table, and
-       * that table can outgrow the storage limit on a source file well inside it. Falling
-       * back to the bytes is what this path did before the parser claimed the type, and
-       * it is the whole document either way, so there is nothing to warn about. */
-      if (isDelimitedTextType(effectiveMimeType)) {
-        const { text, bytes } = await parseText({ req, file, file_id });
-        if (text?.trim()) {
-          return await createTextFile({ text, bytes, type: effectiveMimeType });
+        if (documentResult.rawDelimitedText === true) {
+          return await createTextFile({
+            text: documentResult.text,
+            bytes: documentResult.bytes,
+            type: effectiveMimeType,
+          });
         }
+        return await createDocumentTextFile(documentResult);
       }
 
       throw new Error(

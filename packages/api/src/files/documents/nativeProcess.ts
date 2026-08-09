@@ -38,6 +38,28 @@ export const PARSER_PAGE_OVERHEAD_BYTES = 64;
 export const MAX_PARSER_PAGES = 10_000;
 
 /**
+ * A parser refused because its own output would not fit, not because the document is
+ * unreadable. Tag-distinct so callers do not answer it by handing the same document to
+ * another unbounded extractor, which is how a bound enforced in a child process gets
+ * spent in the API process instead.
+ */
+export class ParserOutputLimitError extends Error {
+  readonly code = 'PARSER_OUTPUT_LIMIT';
+  constructor(message: string) {
+    super(message);
+    this.name = 'ParserOutputLimitError';
+  }
+}
+
+/**
+ * Matched on the code rather than the class: it arrives from a child process as a wire
+ * field, and the same string is what the upload path reads to decide the response.
+ */
+export function isParserOutputLimit(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === 'PARSER_OUTPUT_LIMIT';
+}
+
+/**
  * Uploads waiting for one of those slots. Each waiter is a separate request that has
  * already read its document into memory (up to the parser's 15MB cap) and holds it for
  * the whole wait, and the timeout below only starts once a slot frees, so an unbounded
@@ -57,6 +79,8 @@ interface NativeParserResponse<T> {
   ok: boolean;
   result?: T;
   message?: string;
+  /** Set by a child that refused on its own output bounds rather than on the document. */
+  code?: string;
 }
 
 interface NativeParserChildOptions {
@@ -113,7 +137,12 @@ export function runNativeParserChild<T>({
             finish(null, message.result);
             return;
           }
-          finish(new Error(message.message ?? `${parserName} failed`));
+          const failure = message.message ?? `${parserName} failed`;
+          finish(
+            message.code === 'PARSER_OUTPUT_LIMIT'
+              ? new ParserOutputLimitError(`${parserName} ${failure}`)
+              : new Error(failure),
+          );
         });
         child.on('error', (error: Error) => finish(error));
         child.on('exit', (code: number | null, signal: NodeJS.Signals | null) =>

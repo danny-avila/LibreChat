@@ -965,7 +965,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       }
 
       if (shouldPersistFileSnapshots) {
-        await persistBackfilledSnapshots(SharedLink, { _id: share._id }, fileSnapshots ?? []);
+        await persistBackfilledSnapshots(
+          SharedLink,
+          { _id: share._id, shareId: resolvedShareId },
+          fileSnapshots ?? [],
+        );
       }
 
       return result;
