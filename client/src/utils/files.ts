@@ -198,9 +198,31 @@ export function formatDate(dateString: string, isSmallScreen = false) {
 }
 
 /**
+ * Matches every `[QueryKeys.files, 'recent', limit]` cache entry regardless of
+ * the requested limit, so any writer that patches the plain `[QueryKeys.files]`
+ * list can keep the composer palette's recent-files list in step with it.
+ */
+export const isRecentFilesQueryKey = (queryKey: readonly unknown[]): boolean =>
+  queryKey[0] === QueryKeys.files && queryKey[1] === 'recent';
+
+/**
+ * The recent-files query is server-sorted and mounted with refetching off, so a
+ * new file only reaches it when something invalidates it explicitly.
+ */
+export const invalidateRecentFiles = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({
+    predicate: (query) => isRecentFilesQueryKey(query.queryKey),
+  });
+};
+
+/**
  * Adds a file to the query cache
  */
 export function addFileToCache(queryClient: QueryClient, newfile: TFile) {
+  /* Ahead of the early returns below: the full list may not be cached at all
+     while the palette's recent list is, and that list still has to learn about
+     the new file. */
+  invalidateRecentFiles(queryClient);
   const currentFiles = queryClient.getQueryData<TFile[]>([QueryKeys.files]);
 
   if (!currentFiles) {
