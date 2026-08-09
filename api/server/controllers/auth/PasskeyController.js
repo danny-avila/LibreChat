@@ -461,7 +461,18 @@ const authenticatePasskey = async (req, res, next) => {
       return failure();
     }
 
-    await recordPasskeyUse(passkey.credentialId, result.newCounter);
+    /**
+     * The counter write is the compare-and-swap for clone detection: losing it means
+     * another assertion already consumed this counter value, so this one is a replay
+     * or a clone even though the signature verified.
+     */
+    const counterAdvanced = await recordPasskeyUse(passkey.credentialId, result.newCounter);
+    if (!counterAdvanced) {
+      logger.warn(
+        '[authenticatePasskey] Rejected an assertion that did not advance the signature counter',
+      );
+      return failure();
+    }
 
     req.user = user;
 

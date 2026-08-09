@@ -597,7 +597,7 @@ export const registry: SettingEntry[] = [
     section: 'security',
     labelKey: 'com_ui_passkeys',
     keywords: ['passkey', 'webauthn', 'fido', 'security key', 'passwordless'],
-    show: (ctx) => ctx.isLocalProvider && ctx.passkeyLoginEnabled,
+    show: (ctx) => ctx.passkeyLoginEnabled,
     Component: Passkeys,
   },
   // Account · Billing
