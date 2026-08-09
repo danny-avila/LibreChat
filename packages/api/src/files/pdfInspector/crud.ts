@@ -141,19 +141,31 @@ export async function extractPdf(
     throw new PdfPageLimitError(pages.length, MAX_PDF_PAGES);
   }
 
-  /* The engine flags pages whose text it considers unreliable. Where it produced no
-   * markdown the empirical probe below is the better judge, but a page that came back
-   * with text and a flag is the one case nothing else can see: selectable text next to
-   * a scan holding more of it. PDFs have no media manifest to consult, so this is the
-   * signal that a configured OCR service may still have something to recover. */
+  /* A page the classifier attributes to a scan that still ends up with text is the one
+   * case nothing else can see: selectable text sitting next to a scan that holds more of
+   * it. PDFs have no media manifest to consult, so this is the signal that a configured
+   * OCR service may still have something to recover.
+   *
+   * Text recovered by pdfjs counts as much as native markdown here. A scanned page whose
+   * embedded OCR layer this engine rejected as too poor to use still leaves the page with
+   * text after recovery, which drops it out of the omission report; without the flag the
+   * upload would read as complete and keep a garbled layer that OCR could have replaced. */
   const scanned = new Set(extraction.scannedPages);
-  const mayEmbedMedia = pages.some((page) => !!page.markdown?.trim() && scanned.has(page.page + 1));
-  const withMediaSignal = (parsed: ParsedDocument): ParsedDocument =>
-    mayEmbedMedia ? { ...parsed, mayEmbedMedia } : parsed;
+  const hasScanUnderText = (recoveredText: Map<number, string>): boolean =>
+    pages.some(
+      (page) =>
+        scanned.has(page.page + 1) &&
+        (!!page.markdown?.trim() || !!recoveredText.get(page.page)?.trim()),
+    );
+  const withMediaSignal = (
+    parsed: ParsedDocument,
+    recoveredText: Map<number, string>,
+  ): ParsedDocument =>
+    hasScanUnderText(recoveredText) ? { ...parsed, mayEmbedMedia: true } : parsed;
 
   const droppedPages = pages.filter((page) => !page.markdown?.trim());
   if (!droppedPages.length) {
-    return withMediaSignal({ text: pages.map((page) => page.markdown).join('\n\n') });
+    return withMediaSignal({ text: pages.map((page) => page.markdown).join('\n\n') }, new Map());
   }
 
   /* Recovery reads one page at a time and cannot be batched, so its cost is linear
@@ -210,7 +222,7 @@ export async function extractPdf(
     try {
       const plain = await extractTextIsolated(filePath, signal);
       if (plain.trim()) {
-        return withMediaSignal({ text: plain, pagesNeedingOcr: ocrResult });
+        return withMediaSignal({ text: plain, pagesNeedingOcr: ocrResult }, recovered);
       }
     } catch {
       /* fall through to per-page interleaving */
@@ -229,8 +241,11 @@ export async function extractPdf(
     }
   }
 
-  return withMediaSignal({
-    text: parts.join('\n\n'),
-    pagesNeedingOcr: ocrResult,
-  });
+  return withMediaSignal(
+    {
+      text: parts.join('\n\n'),
+      pagesNeedingOcr: ocrResult,
+    },
+    recovered,
+  );
 }
