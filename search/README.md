@@ -178,6 +178,37 @@ CREATE POLICY ... ON chat_search.documents ...  -- tenant_id/user_id predicate
 exists, so this script can't do it - but the reader role, schema, and
 extensions it needs are already in place.
 
+## How much of a document is indexed
+
+`chat_search.documents` stores `title` and `body` in full and returns them in
+full. The *indexes* over them are bounded, and the bounds are a behavioural
+boundary worth knowing about rather than an implementation detail:
+
+| Arm | Column | Indexed extent |
+|---|---|---|
+| Full text (`search_vector`, weight A) | `title` | first 8,192 characters |
+| Full text (`search_vector`, weight B) | `body` | first 192,000 characters |
+| Trigram (`documents_title_trgm_idx`) | `title` | whole column |
+| Title sort (`documents_scope_title_idx`) | `left(title, 512)` | first 512 characters |
+
+The two full-text bounds are not tuning. A `tsvector` addresses its lexeme
+buffer with a 20-bit offset, so one value's distinct lexemes must fit in
+1,048,575 bytes, and `search_vector` is a `STORED` generated column - past
+that limit the write itself fails, so an oversized document would stop being
+*stored*, not merely stop being *indexed*. 8,192 + 192,000 characters is
+800,768 bytes at the widest UTF-8 encoding, about 76% of the limit. The
+consequence: a word that appears only beyond that prefix does not match the
+full-text arm. It is still reachable through the trigram arm, which indexes
+the whole title.
+
+The title-sort bound is the B-tree index tuple limit (~2,704 bytes, and index
+tuples are never moved out of line), which an unbounded `title` can exceed at
+roughly 900 CJK characters - inside the 1,024-character cap the rename path
+already allows. Because the index is on the expression, a title-sorted query
+has to sort by `left(title, 512), record_id` to use it; `ORDER BY title` falls
+back to a sequential scan and a sort. `record_id` stays the final tiebreak, so
+the order is still total and stable.
+
 ## What depends on this stack
 
 - **Track 2 (FerretDB compatibility)** differentially tests against a

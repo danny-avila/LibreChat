@@ -159,6 +159,7 @@ const HeaderActions = React.memo(
     return (
       <div className="flex items-center gap-2">
         <CategorySelector
+          className="h-10"
           currentCategory={groupCategory}
           onValueChange={canEdit ? onCategoryChange : undefined}
         />

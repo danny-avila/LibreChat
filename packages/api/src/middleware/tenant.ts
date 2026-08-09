@@ -29,7 +29,8 @@ export type ContextRequest = {
   };
 };
 
-const SYSTEM_TENANT_REJECTION_MESSAGE = 'Reserved tenant is not allowed for request-scoped routes';
+const RESERVED_TENANT_REJECTION_MESSAGE =
+  'Reserved tenant is not allowed for request-scoped routes';
 
 let _checkedThread = false;
 
@@ -150,7 +151,7 @@ export function tenantContextMiddleware(
     logger.warn('[tenantContextMiddleware] Rejected reserved tenant for request route', {
       path: req.path,
     });
-    res.status(403).json({ error: SYSTEM_TENANT_REJECTION_MESSAGE });
+    res.status(403).json({ error: RESERVED_TENANT_REJECTION_MESSAGE });
     return;
   }
 
@@ -284,7 +285,7 @@ export function restoreTenantContextFromReq(
     logger.warn('[restoreTenantContextFromReq] Rejected reserved tenant for request route', {
       path: req.path,
     });
-    return rejectRequestWithUploadCleanup(req, res, SYSTEM_TENANT_REJECTION_MESSAGE);
+    return rejectRequestWithUploadCleanup(req, res, RESERVED_TENANT_REJECTION_MESSAGE);
   }
 
   const currentContext = tenantStorage.getStore();

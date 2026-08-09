@@ -1,4 +1,4 @@
-import { logger, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import { logger, isReservedTenantId } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
 import { buildRequestContext, runWithTenantContext } from './tenant';
 
@@ -28,7 +28,10 @@ import { buildRequestContext, runWithTenantContext } from './tenant';
  * 3. Layer additional resolution on top (e.g., OpenID `tenant` claim → header).
  *
  * If no header is present, downstream runs without tenant ALS context (same as
- * single-tenant mode), while request logging context can still propagate.
+ * single-tenant mode), while request logging context can still propagate. A
+ * header naming a reserved sentinel, or one that is malformed, is discarded the
+ * same way rather than failing the request: an unauthenticated caller must never
+ * be able to seed a reserved tenant that later gets stamped onto new records.
  */
 const MAX_TENANT_ID_LENGTH = 128;
 const VALID_TENANT_ID = /^[-a-zA-Z0-9_.]+$/;
@@ -49,9 +52,9 @@ export function preAuthTenantMiddleware(req: Request, res: Response, next: NextF
     return;
   }
 
-  if (tenantId === SYSTEM_TENANT_ID) {
+  if (isReservedTenantId(tenantId)) {
     runWithTenantContext(requestContext, () => {
-      logger.warn('[preAuthTenant] Rejected __SYSTEM__ sentinel in X-Tenant-Id header', {
+      logger.warn(`[preAuthTenant] Rejected reserved sentinel ${tenantId} in X-Tenant-Id header`, {
         ip: req.ip,
         path: req.path,
       });

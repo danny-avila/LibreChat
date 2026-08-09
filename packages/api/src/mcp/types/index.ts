@@ -152,7 +152,7 @@ export type FormattedToolResponse = FormattedContentResult;
  * - `'config'` — admin-defined via Config override, full trust, lazy init
  * - `'user'`   — user-provided via UI, sandboxed (restricted placeholder resolution)
  */
-export type MCPServerSource = 'yaml' | 'config' | 'user';
+export type MCPServerSource = 'yaml' | 'config' | 'user' | 'plugin';
 
 export type ParsedServerConfig = MCPOptions & {
   url?: string;

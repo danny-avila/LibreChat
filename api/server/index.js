@@ -27,6 +27,8 @@ const {
   agentStartupTelemetryMiddleware,
   initializeFileStorage,
   initializeDeploymentSkills,
+  initializeDeploymentPlugins,
+  getDeploymentPluginSkills,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
@@ -37,6 +39,7 @@ const {
   updateInterfacePermissions,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -116,6 +119,7 @@ const configureGenerationStreams = () => {
 };
 
 const startServer = async () => {
+  await waitForKeyvRedisClient();
   const { metricsMiddleware, metricsRouter } = createMetrics();
   if (!process.env.METRICS_SECRET) {
     logger.warn('[metrics] METRICS_SECRET is not set - /metrics will return 401 for all requests');
@@ -163,7 +167,12 @@ const startServer = async () => {
   });
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
-  await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
+  const projectRoot = path.resolve(__dirname, '../..');
+  await initializeDeploymentPlugins({ projectRoot });
+  await initializeDeploymentSkills({
+    projectRoot,
+    additionalSkills: getDeploymentPluginSkills(),
+  });
   initializeGitHubSkillSync(appConfig);
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   // Register any programmatic tool-approval policy hooks declared in

@@ -1,4 +1,7 @@
 import { Pool } from 'pg';
+import { logger } from '@librechat/data-schemas';
+import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'crypto';
+import type { PoolClient } from 'pg';
 import type { SearchPool } from './types';
 import {
   applyRolePasswords,
@@ -7,13 +10,16 @@ import {
   migrate,
   readMigrations,
   REQUIRED_EXTENSIONS,
+  scramSha256Verifier,
 } from './migrate';
 import {
   createIsolatedDatabase,
   describePg,
   dropIsolatedDatabase,
+  isolatedDatabaseUrl,
   migrateFresh,
   roleDatabaseUrl,
+  TEST_URL,
 } from './pg.helper';
 import { findRoleViolations, READER_ROLE, WRITER_ROLE } from './roles';
 
@@ -96,6 +102,39 @@ describe('role credentials', () => {
   });
 });
 
+const SCRAM_VERIFIER = /^SCRAM-SHA-256\$(\d+):([\w+/=]+)\$([\w+/=]+):([\w+/=]+)$/;
+
+describe('role password verifiers', () => {
+  const PASSWORD = 'correct horse battery staple';
+
+  it('carries no trace of the cleartext and salts every derivation separately', () => {
+    const verifier = scramSha256Verifier(PASSWORD);
+    expect(verifier).toMatch(SCRAM_VERIFIER);
+    expect(verifier).not.toContain(PASSWORD);
+    expect(Number(SCRAM_VERIFIER.exec(verifier)?.[1])).toBeGreaterThanOrEqual(4096);
+    expect(scramSha256Verifier(PASSWORD)).not.toBe(verifier);
+  });
+
+  /** The two keys PostgreSQL checks an authentication attempt against, in order. */
+  it('publishes the StoredKey and the ServerKey for the salt it chose', () => {
+    const parsed = SCRAM_VERIFIER.exec(scramSha256Verifier(PASSWORD));
+    expect(parsed).not.toBeNull();
+    const [, iterations, salt, storedKey, serverKey] = parsed ?? [];
+    const saltedPassword = pbkdf2Sync(
+      PASSWORD,
+      Buffer.from(salt, 'base64'),
+      Number(iterations),
+      32,
+      'sha256',
+    );
+    const clientKey = createHmac('sha256', saltedPassword).update('Client Key').digest();
+    expect(createHash('sha256').update(clientKey).digest('base64')).toBe(storedKey);
+    expect(createHmac('sha256', saltedPassword).update('Server Key').digest('base64')).toBe(
+      serverKey,
+    );
+  });
+});
+
 const DB_NAME = 'migrate';
 
 describePg('chat_search migrations (live PostgreSQL)', () => {
@@ -137,8 +176,8 @@ describePg('chat_search migrations (live PostgreSQL)', () => {
     );
     expect(rows[0].is_generated).toBe('s');
     expect(rows[0].expression).toContain("setweight(to_tsvector('simple'::regconfig");
-    expect(rows[0].expression).toMatch(/COALESCE\(title, ''::text\)\), 'A'::"char"/);
-    expect(rows[0].expression).toMatch(/COALESCE\(body, ''::text\)\), 'B'::"char"/);
+    expect(rows[0].expression).toMatch(/COALESCE\(title, ''::text\)[^|]*'A'::"char"/);
+    expect(rows[0].expression).toMatch(/COALESCE\(body, ''::text\)[^|]*'B'::"char"/);
   });
 
   it('creates the FTS, trigram and expiration indexes', async () => {
@@ -260,7 +299,13 @@ describePg('chat_search migrations (live PostgreSQL)', () => {
  * happen silently.
  */
 const PROVISION_DB = 'provision';
-const PROVISION_PASSWORD = 'provision-test-secret';
+/**
+ * Generated per run, never written down. The three role names are production
+ * names in a cluster-global namespace, so a literal here is a working credential
+ * on every shared development and CI server this suite has ever run against, and
+ * one published in the repository at that.
+ */
+const PROVISION_PASSWORD = randomBytes(24).toString('base64url');
 /** A non-superuser role that is not one of the three the migrations manage. */
 const BOOTSTRAP_ROLE = 'chat_search_test_bootstrap';
 
@@ -275,11 +320,54 @@ function rolePool(database: string, role: string): SearchPool {
   return pool;
 }
 
+/**
+ * Roles outlive the databases these suites create, so the run takes them with it
+ * however it ends. A role still owning objects in another suite's database
+ * cannot be dropped; clearing its password is what stops a login surviving the
+ * run in that case.
+ */
+async function removeClusterRoles(): Promise<void> {
+  if (!TEST_URL) {
+    return;
+  }
+  const admin = new Pool({ connectionString: TEST_URL, max: 1 });
+  try {
+    for (const role of [...MANAGED_ROLES, BOOTSTRAP_ROLE]) {
+      const dropped = await admin
+        .query(`DROP ROLE IF EXISTS ${role}`)
+        .then(() => true)
+        .catch(() => false);
+      if (dropped) {
+        continue;
+      }
+      await admin.query(`ALTER ROLE ${role} WITH PASSWORD NULL`).catch(() => undefined);
+    }
+  } finally {
+    await admin.end().catch(() => undefined);
+  }
+}
+
+afterAll(removeClusterRoles);
+
+/** Every statement and bind value the runner puts on the wire, in order. */
+function recordingPool(database: string, sent: string[]): SearchPool {
+  const pool = new Pool({ connectionString: isolatedDatabaseUrl(database), max: 1 });
+  pool.on('connect', (client: PoolClient) => {
+    const send = client.query.bind(client);
+    client.query = ((text: string, values?: string[]) => {
+      sent.push(text, ...(values ?? []));
+      return send(text, values);
+    }) as typeof client.query;
+  });
+  return pool;
+}
+
 describePg('provisioning from an empty database', () => {
   const OLD_ENV = process.env;
   let pool: SearchPool;
   let writer: SearchPool | null = null;
   let reader: SearchPool | null = null;
+  let owner: SearchPool | null = null;
 
   beforeAll(async () => {
     process.env = {
@@ -295,6 +383,7 @@ describePg('provisioning from an empty database', () => {
     process.env = OLD_ENV;
     await writer?.end().catch(() => undefined);
     await reader?.end().catch(() => undefined);
+    await owner?.end().catch(() => undefined);
     if (pool) {
       await dropIsolatedDatabase(pool, PROVISION_DB);
     }
@@ -347,6 +436,30 @@ describePg('provisioning from an empty database', () => {
 
     /** Still exactly the reader: nothing at all on the projector-only tables. */
     await expect(reader.query('SELECT 1 FROM chat_search.outbox')).rejects.toThrow(/permission/);
+  }, 60_000);
+
+  /**
+   * `ALTER ROLE` is DDL, so its text lands in the server log on any cluster
+   * auditing DDL, and on the `STATEMENT:` line of any failure regardless. The
+   * password therefore has to be hashed before it is sent, not merely kept out of
+   * this process's own logs — and the role still has to be able to log in with it.
+   */
+  it('puts no cleartext password on the wire, and the role still authenticates', async () => {
+    const sent: string[] = [];
+    const recorder = recordingPool(PROVISION_DB, sent);
+    try {
+      expect(await applyRolePasswords(recorder)).toContain('chat_search_owner');
+    } finally {
+      await recorder.end().catch(() => undefined);
+    }
+
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent.filter((statement) => statement.includes(PROVISION_PASSWORD))).toEqual([]);
+    expect(sent.filter((statement) => statement.includes('SCRAM-SHA-256$'))).not.toEqual([]);
+
+    owner = rolePool(PROVISION_DB, 'chat_search_owner');
+    const { rows } = await owner.query<{ role: string }>('SELECT current_user AS role');
+    expect(rows[0].role).toBe('chat_search_owner');
   }, 60_000);
 });
 
@@ -449,5 +562,142 @@ describePg('provisioning preflight', () => {
     } finally {
       await asReader.end().catch(() => undefined);
     }
+  }, 60_000);
+});
+
+const EXTENSION_DB = 'extschema';
+/** Where an operator who keeps extensions out of `public` typically puts them. */
+const EXTENSION_SCHEMA = 'extensions';
+
+describePg('provisioning against extensions installed elsewhere', () => {
+  let pool: SearchPool;
+
+  beforeAll(async () => {
+    pool = await createIsolatedDatabase(EXTENSION_DB);
+    await pool.query(`CREATE SCHEMA ${EXTENSION_SCHEMA}`);
+    for (const extension of REQUIRED_EXTENSIONS) {
+      await pool.query(`CREATE EXTENSION IF NOT EXISTS ${extension} SCHEMA ${EXTENSION_SCHEMA}`);
+    }
+  }, 60_000);
+
+  afterAll(async () => {
+    if (pool) {
+      await dropIsolatedDatabase(pool, EXTENSION_DB);
+    }
+  });
+
+  /**
+   * Both extensions are present, so a check matching on `extname` alone sees
+   * nothing to say. The schema they are in is the whole problem: the types and
+   * operator classes they own resolve through `search_path` and nothing else,
+   * and the application roles connect without one.
+   */
+  it('names the extension and the schema it is in before applying anything', async () => {
+    const warn = jest.spyOn(logger, 'warn');
+    await expect(migrate(pool)).resolves.toContain('001_schema.sql');
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `pg_trgm (schema ${EXTENSION_SCHEMA}) and vector (schema ${EXTENSION_SCHEMA}) are ` +
+          'installed outside the search_path',
+      ),
+    );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('chat_search_reader'));
+  }, 60_000);
+
+  it('says nothing once the extension schema is one the connection searches', async () => {
+    await pool.query(
+      `ALTER DATABASE chat_search_test_${EXTENSION_DB} SET search_path TO public, ${EXTENSION_SCHEMA}`,
+    );
+    await pool.query('DELETE FROM chat_search.migrations');
+
+    const warn = jest.spyOn(logger, 'warn');
+    const searching = new Pool({ connectionString: isolatedDatabaseUrl(EXTENSION_DB), max: 1 });
+    try {
+      await expect(migrate(searching)).resolves.toContain('001_schema.sql');
+    } finally {
+      await searching.end().catch(() => undefined);
+    }
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.stringContaining('installed outside the search_path'),
+    );
+  }, 60_000);
+
+  /** USAGE is not what resolves the objects, but without it nothing can. */
+  it('refuses outright when the extension schema is one it may not use', async () => {
+    await pool.query(`ALTER DATABASE chat_search_test_${EXTENSION_DB} RESET search_path`);
+    await pool.query(
+      `DO $$ BEGIN
+         BEGIN CREATE ROLE ${BOOTSTRAP_ROLE} LOGIN CREATEROLE;
+         EXCEPTION WHEN duplicate_object THEN NULL; END;
+       END $$`,
+    );
+    await pool.query(`ALTER ROLE ${BOOTSTRAP_ROLE} WITH PASSWORD '${PROVISION_PASSWORD}'`);
+    await pool.query(
+      `GRANT CREATE ON DATABASE chat_search_test_${EXTENSION_DB} TO ${BOOTSTRAP_ROLE}`,
+    );
+    await pool.query(`REVOKE ALL ON SCHEMA ${EXTENSION_SCHEMA} FROM ${BOOTSTRAP_ROLE}`);
+    /** Only the schema file is outstanding, so the superuser-only role gate is not what fires. */
+    await pool.query(`DELETE FROM chat_search.migrations WHERE filename = '001_schema.sql'`);
+    await pool.query(`GRANT USAGE ON SCHEMA chat_search TO ${BOOTSTRAP_ROLE}`);
+    await pool.query(`GRANT SELECT ON chat_search.migrations TO ${BOOTSTRAP_ROLE}`);
+
+    const asBootstrap = rolePool(EXTENSION_DB, BOOTSTRAP_ROLE);
+    try {
+      await expect(migrate(asBootstrap)).rejects.toThrow(
+        new RegExp(
+          `pg_trgm \\(schema ${EXTENSION_SCHEMA}\\) and vector \\(schema ${EXTENSION_SCHEMA}\\) ` +
+            `are installed in a schema role ${BOOTSTRAP_ROLE} may not use`,
+        ),
+      );
+    } finally {
+      await asBootstrap.end().catch(() => undefined);
+      await pool
+        .query(`REVOKE ALL ON DATABASE chat_search_test_${EXTENSION_DB} FROM ${BOOTSTRAP_ROLE}`)
+        .catch(() => undefined);
+    }
+  }, 60_000);
+});
+
+const FOREIGN_ROLE_DB = 'foreignroles';
+
+describePg('provisioning a database whose roles the cluster already has', () => {
+  let pool: SearchPool;
+
+  beforeAll(async () => {
+    pool = await createIsolatedDatabase(FOREIGN_ROLE_DB);
+    for (const role of MANAGED_ROLES) {
+      await pool.query(
+        `DO $$ BEGIN
+           BEGIN CREATE ROLE ${role} LOGIN NOSUPERUSER NOBYPASSRLS;
+           EXCEPTION WHEN duplicate_object THEN NULL; END;
+         END $$`,
+      );
+    }
+  }, 60_000);
+
+  afterAll(async () => {
+    if (pool) {
+      await dropIsolatedDatabase(pool, FOREIGN_ROLE_DB);
+    }
+  });
+
+  /**
+   * The role names are fixed and cluster-global while every grant is
+   * per-database, so a second deployment on the same server silently rotates the
+   * first one's credentials. Roles that predate this database's own role
+   * migration are the only sign of it available before the damage is done.
+   */
+  it('warns that the roles are cluster-global, and only while they are unclaimed here', async () => {
+    const warn = jest.spyOn(logger, 'warn');
+    await migrate(pool);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('already exist on this server, but 002_roles.sql has never been'),
+    );
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/cluster-global/));
+
+    warn.mockClear();
+    await migrate(pool);
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('already exist on this server'));
   }, 60_000);
 });

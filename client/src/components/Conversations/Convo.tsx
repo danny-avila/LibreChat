@@ -1,13 +1,13 @@
 import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Pin } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { Link2, Pin } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
 import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
+import { useGetStartupConfig, useUpdateConversationMutation } from '~/data-provider';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
-import { useUpdateConversationMutation } from '~/data-provider';
 import { areConversationRenderPropsEqual } from './utils';
 import { NotificationSeverity } from '~/common';
 import { ConvoOptions } from './ConvoOptions';
@@ -37,6 +37,11 @@ function Conversation({
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  /* A deployment with shared links off leaves existing links in the database but stops
+     serving them, so the row must not advertise one that no longer resolves. */
+  const { data: startupConfig } = useGetStartupConfig();
+  const sharedLinksEnabled = startupConfig?.sharedLinksEnabled === true;
+  const isSharedBadgeVisible = conversation.isShared === true && sharedLinksEnabled;
   const isShiftHeld = useShiftKey();
   const { conversationId, title = '' } = conversation;
 
@@ -215,9 +220,15 @@ function Conversation({
       )}
       role="button"
       tabIndex={renaming ? -1 : 0}
-      aria-label={localize('com_ui_conversation_label', {
-        title: title || localize('com_ui_untitled'),
-      })}
+      aria-label={
+        isSharedBadgeVisible
+          ? localize('com_ui_conversation_label_shared', {
+              title: title || localize('com_ui_untitled'),
+            })
+          : localize('com_ui_conversation_label', {
+              title: title || localize('com_ui_untitled'),
+            })
+      }
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onFocus={handleMouseEnter}
@@ -264,6 +275,9 @@ function Conversation({
         >
           <ConversationEndpointIcon conversation={conversation} size={20} context="menu-item" />
         </ConvoLink>
+      )}
+      {isSharedBadgeVisible && (
+        <Link2 className="icon-sm mr-1 shrink-0 text-text-secondary" aria-hidden="true" />
       )}
       {conversation.pinned === true && (
         <Pin className="icon-sm mr-1 shrink-0 text-text-primary" aria-hidden="true" />
