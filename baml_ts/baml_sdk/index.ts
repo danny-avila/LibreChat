@@ -20,6 +20,7 @@ setTypeMap(_TYPE_MAP);
 
 export * as baml from "./baml/index.js";
 export * as spike from "./spike/index.js";
+export * as toolloop from "./toolloop/index.js";
 export * as vendor from "./vendor/index.js";
 
 export const main = defineFunction("user.main", "sync", []) as () => string;

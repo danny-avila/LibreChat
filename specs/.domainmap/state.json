@@ -1,0 +1,155 @@
+{
+  "tool": "DomainMap harness",
+  "specsDir": "/home/maceo/Dev/silmari-chat/specs",
+  "integrity": {
+    "ok": true,
+    "files": [
+      {
+        "path": "validate.ts",
+        "expected": "d767d64099568f6490df056bb59dee28f7de312eb97ffd4c3e8386254efdb4b9",
+        "actual": "d767d64099568f6490df056bb59dee28f7de312eb97ffd4c3e8386254efdb4b9",
+        "match": true
+      },
+      {
+        "path": "domainmap-spec.test.ts",
+        "expected": "5c029a57efa07e546fae9af9e76a235e4e5a1e2576654b6ba9a15188a6c8c051",
+        "actual": "5c029a57efa07e546fae9af9e76a235e4e5a1e2576654b6ba9a15188a6c8c051",
+        "match": true
+      },
+      {
+        "path": "run.ts",
+        "expected": "048dd21ca6a83b062c1ebfb4bca2fad492b5d3d66030599cdc3a6103dcd1111e",
+        "actual": "048dd21ca6a83b062c1ebfb4bca2fad492b5d3d66030599cdc3a6103dcd1111e",
+        "match": true
+      }
+    ],
+    "errors": []
+  },
+  "gate": "passed",
+  "steps": [
+    {
+      "id": 1,
+      "name": "Implicit domains + ubiquitous language",
+      "status": "pass",
+      "checks": [
+        "§1 across 13 domain spec(s)"
+      ],
+      "errors": []
+    },
+    {
+      "id": 2,
+      "name": "Aggregates",
+      "status": "pass",
+      "checks": [
+        "§4 across 13 domain spec(s)"
+      ],
+      "errors": []
+    },
+    {
+      "id": 3,
+      "name": "Business logic placement",
+      "status": "pass",
+      "checks": [
+        "§5 across 13 domain spec(s)"
+      ],
+      "errors": []
+    },
+    {
+      "id": 4,
+      "name": "Existing flow trace",
+      "status": "pass",
+      "checks": [
+        "§6 across 13 domain spec(s)"
+      ],
+      "errors": []
+    },
+    {
+      "id": 5,
+      "name": "Integration patterns & ownership",
+      "status": "pass",
+      "checks": [
+        "§7 across 13 domain spec(s)"
+      ],
+      "errors": []
+    },
+    {
+      "id": 6,
+      "name": "Architectural gaps",
+      "status": "pass",
+      "checks": [
+        "§8 across 13 domain spec(s)"
+      ],
+      "errors": []
+    },
+    {
+      "id": 7,
+      "name": "Target design for the feature",
+      "status": "pass",
+      "checks": [
+        "§9 across 13 domain spec(s)"
+      ],
+      "errors": []
+    },
+    {
+      "id": 8,
+      "name": "Incremental refactor plan",
+      "status": "pass",
+      "checks": [
+        "§10 across 13 domain spec(s)"
+      ],
+      "errors": []
+    },
+    {
+      "id": 9,
+      "name": "Transition validation",
+      "status": "pass",
+      "checks": [
+        "§11 across 13 domain spec(s)"
+      ],
+      "errors": []
+    },
+    {
+      "id": 10,
+      "name": "Required changes",
+      "status": "pass",
+      "checks": [
+        "§12 across 13 domain spec(s)"
+      ],
+      "errors": []
+    }
+  ],
+  "invariants": [
+    {
+      "id": "ID-LINKAGE",
+      "status": "pass",
+      "errors": []
+    },
+    {
+      "id": "CONTRACT-TARGETS",
+      "status": "pass",
+      "errors": []
+    },
+    {
+      "id": "BOUNDARY-MAP",
+      "status": "pass",
+      "errors": []
+    },
+    {
+      "id": "INDEX-STRUCTURE",
+      "status": "pass",
+      "errors": []
+    },
+    {
+      "id": "NO-CODE",
+      "status": "pass",
+      "errors": []
+    }
+  ],
+  "summary": {
+    "ok": true,
+    "stepsPassed": 10,
+    "stepsFailed": 0,
+    "invariantsFailed": 0,
+    "bunTestExit": 0
+  }
+}
