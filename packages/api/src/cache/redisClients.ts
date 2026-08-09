@@ -1,7 +1,7 @@
 import IoRedis from 'ioredis';
+import { createClient, createCluster } from '@keyv/redis';
 import calculateSlot from 'cluster-key-slot';
 import { logger } from '@librechat/data-schemas';
-import { createClient, createCluster } from '@keyv/redis';
 import type { ScanCommandOptions } from '@redis/client/dist/lib/commands/SCAN';
 import type { RedisClientType, RedisClusterType } from '@redis/client';
 import type { Redis, Cluster } from 'ioredis';
@@ -11,6 +11,20 @@ const urls = cacheConfig.REDIS_URI?.split(',').map((uri) => new URL(uri)) || [];
 const username = urls?.[0]?.username || cacheConfig.REDIS_USERNAME;
 const password = urls?.[0]?.password || cacheConfig.REDIS_PASSWORD;
 const ca = cacheConfig.REDIS_CA;
+
+let resolveKeyvRedisClientReady: (() => void) | undefined;
+let rejectKeyvRedisClientReady: ((reason?: unknown) => void) | undefined;
+const keyvRedisClientReady = cacheConfig.USE_REDIS
+  ? new Promise<void>((resolve, reject) => {
+      resolveKeyvRedisClientReady = resolve;
+      rejectKeyvRedisClientReady = reject;
+    })
+  : null;
+
+/** Waits for the stable shared Keyv Redis readiness gate. */
+async function waitForKeyvRedisClient(): Promise<void> {
+  await keyvRedisClientReady;
+}
 
 let ioredisClient: Redis | Cluster | null = null;
 if (cacheConfig.USE_REDIS) {
@@ -127,19 +141,6 @@ if (cacheConfig.USE_REDIS) {
 }
 
 let keyvRedisClient: RedisClientType | RedisClusterType | null = null;
-let keyvRedisClientReady:
-  | Promise<void>
-  | Promise<RedisClientType<Record<string, never>, Record<string, never>, Record<string, never>>>
-  | null = null;
-
-/**
- * Waits for the shared Keyv Redis client without exposing its mutable initialization state.
- * Callers may import this function through a circular module graph before the connection
- * promise is assigned; the promise itself must therefore be read when the function runs.
- */
-async function waitForKeyvRedisClient(): Promise<void> {
-  await keyvRedisClientReady;
-}
 
 type RedisEvalOptions = { keys: string[]; arguments: string[] };
 
@@ -248,10 +249,10 @@ if (cacheConfig.USE_REDIS) {
     logger.warn('@keyv/redis client disconnected');
   });
 
-  // Start connection immediately
-  keyvRedisClientReady = keyvRedisClient.connect();
+  // Start connection immediately and settle the gate created before client initialization.
+  void keyvRedisClient.connect().then(resolveKeyvRedisClientReady, rejectKeyvRedisClientReady);
 
-  keyvRedisClientReady.catch((err): void => {
+  void keyvRedisClientReady?.catch((err): void => {
     logger.error('@keyv/redis initial connection failed:', err);
   });
 }
