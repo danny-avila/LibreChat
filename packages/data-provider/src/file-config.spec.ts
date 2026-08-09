@@ -199,6 +199,9 @@ describe('defaultOCRMimeTypes coverage of parser-supported containers', () => {
    * recovered in a DOCX and silently kept as partial text in a DOCM.
    */
   it.each([
+    ['legacy Word', 'application/msword'],
+    ['RTF', 'application/rtf'],
+    ['RTF as text', 'text/rtf'],
     ['DOCM', 'application/vnd.ms-word.document.macroEnabled.12'],
     ['PPTM', 'application/vnd.ms-powerpoint.presentation.macroEnabled.12'],
     ['PPSM', 'application/vnd.ms-powerpoint.slideshow.macroEnabled.12'],

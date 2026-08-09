@@ -234,7 +234,12 @@ export const defaultOCRMimeTypes = [
   excelMimeTypes,
   /^application\/pdf$/,
   /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.(presentation|slideshow|template))$/,
-  /^application\/vnd\.ms-(word|powerpoint)$/,
+  /* `application/msword` is the canonical legacy Word type; `vnd.ms-word` is not, and
+   * matching only the latter left every `.doc` outside the OCR defaults while the parser
+   * happily read it. */
+  /^application\/(msword|vnd\.ms-(word|powerpoint))$/,
+  /* RTF embeds pictures the same way, and the parser reports them. */
+  /^(application|text)\/rtf$/,
   /* The same document families in their macro-enabled and binary containers. The local
    * parser reads these, and a scan inside one is exactly what it hands to OCR, so
    * leaving them out would mean a DOCM's scanned page is silently kept as partial text
