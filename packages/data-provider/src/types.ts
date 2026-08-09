@@ -492,6 +492,10 @@ export type TForkSharedConvoRequest = {
    *  fork to that branch. An index is used because shared ids are re-anonymized
    *  per request and `createdAt` can collide, while the payload order is stable. */
   targetMessageIndex?: number;
+  /** `updatedAt` of the shared payload being forked. The shareId survives an
+   *  owner update, so the server rejects a fork whose payload has since moved
+   *  instead of resolving the index against different messages. */
+  shareRevision?: string;
 };
 
 export type TSearchResults = {
@@ -535,8 +539,7 @@ export type TConfig = {
 };
 
 export type TEndpointsConfig =
-  | Record<EModelEndpoint | string, TConfig | null | undefined>
-  | undefined;
+  Record<EModelEndpoint | string, TConfig | null | undefined> | undefined;
 
 export type TModelsConfig = Record<string, string[]>;
 
@@ -934,5 +937,4 @@ export type TLangfuseConnectionTestErrorCode =
   | 'unexpected_response';
 
 export type TLangfuseConnectionTestResponse =
-  | { success: true }
-  | { success: false; errorCode: TLangfuseConnectionTestErrorCode };
+  { success: true } | { success: false; errorCode: TLangfuseConnectionTestErrorCode };

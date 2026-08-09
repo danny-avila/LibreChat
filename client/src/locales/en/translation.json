@@ -1872,6 +1872,7 @@
   "com_ui_shared_link_delete_success": "Successfully deleted shared link",
   "com_ui_shared_link_manage_access": "Manage Access",
   "com_ui_shared_link_not_found": "Shared link not found",
+  "com_ui_shared_link_updated": "This shared link was updated. Reloading the latest version, then try again",
   "com_ui_shared_prompts": "Shared Prompts",
   "com_ui_shop": "Shopping",
   "com_ui_show": "Show",

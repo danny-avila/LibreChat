@@ -421,10 +421,17 @@ function anonymizeMessages(
  * Note `getMessagesUpToTarget` bounds the snapshot by the target's *level*, not by a single
  * path, so this widens the shared depth; it stays bounded by the branch's own tail rather
  * than clearing the target, which would drop the bound entirely.
+ *
+ * A regeneration or edit replaces the target with a *sibling* rather than a child, so the
+ * turns that follow hang off the replacement. Descendants alone would leave the walk parked
+ * on the obsolete branch and publish none of them, so a childless target hops once to the
+ * newest sibling that the conversation actually continued under.
  */
 function advanceTargetToBranchTail(messages: t.IMessage[], targetMessageId: string): string {
+  const messagesById = new Map<string, t.IMessage>();
   const childrenByParent = new Map<string, t.IMessage[]>();
   for (const message of messages) {
+    messagesById.set(message.messageId, message);
     const parentMessageId = message.parentMessageId;
     if (!parentMessageId) {
       continue;
@@ -437,28 +444,45 @@ function advanceTargetToBranchTail(messages: t.IMessage[], targetMessageId: stri
     childrenByParent.set(parentMessageId, [message]);
   }
 
+  const newestOf = (candidates: t.IMessage[]): t.IMessage | undefined => {
+    let newest: t.IMessage | undefined;
+    for (const candidate of candidates) {
+      const candidateTime = candidate.createdAt?.getTime() ?? 0;
+      const newestTime = newest?.createdAt?.getTime() ?? 0;
+      if (!newest || candidateTime > newestTime) {
+        newest = candidate;
+      }
+    }
+    return newest;
+  };
+
+  const replacementFor = (messageId: string): t.IMessage | undefined => {
+    const parentMessageId = messagesById.get(messageId)?.parentMessageId;
+    if (!parentMessageId) {
+      return undefined;
+    }
+    const continued = (childrenByParent.get(parentMessageId) ?? []).filter(
+      (sibling) => sibling.messageId !== messageId && childrenByParent.has(sibling.messageId),
+    );
+    return newestOf(continued);
+  };
+
   let current = targetMessageId;
   const visited = new Set([current]);
   for (;;) {
     const children = childrenByParent.get(current);
-    if (!children?.length) {
-      return current;
+    let next: t.IMessage | undefined;
+    if (children?.length) {
+      next = newestOf(children);
+    } else if (current === targetMessageId) {
+      next = replacementFor(current);
     }
 
-    let newest = children[0];
-    for (const child of children) {
-      const childTime = child.createdAt?.getTime() ?? 0;
-      const newestTime = newest.createdAt?.getTime() ?? 0;
-      if (childTime > newestTime) {
-        newest = child;
-      }
-    }
-
-    if (!newest?.messageId || visited.has(newest.messageId)) {
+    if (!next?.messageId || visited.has(next.messageId)) {
       return current;
     }
-    visited.add(newest.messageId);
-    current = newest.messageId;
+    visited.add(next.messageId);
+    current = next.messageId;
   }
 }
 

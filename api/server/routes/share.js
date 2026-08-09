@@ -58,6 +58,7 @@ const SHARE_SERVICE_ERROR_STATUS = {
   CONVERSATION_NOT_FOUND: 404,
   SHARE_NOT_FOUND: 404,
   SHARE_EXISTS: 409,
+  SHARE_REVISION_MISMATCH: 409,
 };
 
 const sendShareServiceError = (res, error, fallbackMessage) => {
@@ -364,6 +365,7 @@ if (allowSharedLinks) {
           userRole: req.user.role,
           userTenantId: req.user.tenantId,
           targetMessageIndex: req.body?.targetMessageIndex,
+          shareRevision: req.body?.shareRevision,
           // Viewer-independent: honor the global shared-file kill switch, matching
           // the GET share route so disabled file snapshots aren't copied into forks.
           snapshotFiles: !isFileSnapshotKillSwitchActive(),
@@ -371,10 +373,12 @@ if (allowSharedLinks) {
         if (!result) {
           return res.status(404).json({ message: 'Shared conversation not found' });
         }
-        res.status(201).json(result);
+        return res.status(201).json(result);
       } catch (error) {
-        logger.error('Error forking shared conversation:', error);
-        res.status(500).json({ message: 'Error forking shared conversation' });
+        if (error?.code !== 'SHARE_REVISION_MISMATCH') {
+          logger.error('Error forking shared conversation:', error);
+        }
+        return sendShareServiceError(res, error, 'Error forking shared conversation');
       }
     },
   );

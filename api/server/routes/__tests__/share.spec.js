@@ -671,7 +671,7 @@ describe('share fork route', () => {
       buildApp({ user: { id: 'user-123', role: 'USER', tenantId: 'tenant-viewer' } }),
     )
       .post('/api/share/share-123/fork')
-      .send({ targetMessageIndex: 3 });
+      .send({ targetMessageIndex: 3, shareRevision: '2026-01-01T00:00:00.000Z' });
 
     expect(response.status).toBe(201);
     expect(response.body).toEqual(forkResult);
@@ -682,6 +682,7 @@ describe('share fork route', () => {
       userRole: 'USER',
       userTenantId: 'tenant-viewer',
       targetMessageIndex: 3,
+      shareRevision: '2026-01-01T00:00:00.000Z',
       snapshotFiles: true,
     });
   });
@@ -714,6 +715,19 @@ describe('share fork route', () => {
     const response = await request(buildApp()).post('/api/share/share-123/fork');
 
     expect(response.status).toBe(500);
+  });
+
+  it('answers 409 when the viewer forks a payload the owner has republished', async () => {
+    const conflict = new Error('Shared link was updated');
+    conflict.code = 'SHARE_REVISION_MISMATCH';
+    forkSharedConversation.mockRejectedValue(conflict);
+
+    const response = await request(buildApp())
+      .post('/api/share/share-123/fork')
+      .send({ targetMessageIndex: 3, shareRevision: '2026-01-01T00:00:00.000Z' });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({ message: 'Shared link was updated' });
   });
 });
 

@@ -1416,6 +1416,70 @@ describe('Share Methods', () => {
       expect(texts).toContain('Discarded regeneration');
     });
 
+    test('should follow the regeneration that replaced the stored target', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const questionId = `msg_${nanoid()}`;
+      const sharedAnswerId = `msg_${nanoid()}`;
+      const regeneratedAnswerId = `msg_${nanoid()}`;
+      const followUpId = `msg_${nanoid()}`;
+
+      await Conversation.create({ conversationId, title: 'Regenerated', user: userId });
+      const question = await Message.create({
+        messageId: questionId,
+        conversationId,
+        user: userId,
+        text: 'Question',
+        isCreatedByUser: true,
+        parentMessageId: Constants.NO_PARENT,
+      });
+      const sharedAnswer = await Message.create({
+        messageId: sharedAnswerId,
+        conversationId,
+        user: userId,
+        text: 'Shared answer',
+        isCreatedByUser: false,
+        parentMessageId: questionId,
+        createdAt: new Date(Date.now() - 60_000),
+      });
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [question._id, sharedAnswer._id],
+        targetMessageId: sharedAnswerId,
+      });
+
+      // A regeneration lands as a sibling of the shared answer, not as its child.
+      await Message.create({
+        messageId: regeneratedAnswerId,
+        conversationId,
+        user: userId,
+        text: 'Regenerated answer',
+        isCreatedByUser: false,
+        parentMessageId: questionId,
+        createdAt: new Date(),
+      });
+      await Message.create({
+        messageId: followUpId,
+        conversationId,
+        user: userId,
+        text: 'Turn added after the regeneration',
+        isCreatedByUser: true,
+        parentMessageId: regeneratedAnswerId,
+      });
+
+      const result = await shareMethods.updateSharedLink(userId, shareId);
+      const sharedMessages = await shareMethods.getSharedMessages(result.shareId);
+      const texts = sharedMessages?.messages.map((message) => message.text) ?? [];
+
+      expect(result.targetMessageId).toBe(followUpId);
+      expect(texts).toContain('Regenerated answer');
+      expect(texts).toContain('Turn added after the regeneration');
+    });
+
     test('should not allow user to update shared link they do not own', async () => {
       const ownerUserId = new mongoose.Types.ObjectId().toString();
       const otherUserId = new mongoose.Types.ObjectId().toString();

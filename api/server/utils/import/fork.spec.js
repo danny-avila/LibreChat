@@ -349,6 +349,42 @@ describe('forkSharedConversation', () => {
     bulkIncrementTagCounts.mockResolvedValue(null);
   });
 
+  test('should reject a fork aimed at a payload the owner has since republished', async () => {
+    getSharedMessages.mockResolvedValue({
+      ...mockShare,
+      updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+    });
+
+    await expect(
+      forkSharedConversation({
+        shareId: 'share123',
+        shareResourceId: 'resource123',
+        requestUserId: 'user1',
+        targetMessageIndex: 1,
+        shareRevision: '2026-01-01T00:00:00.000Z',
+      }),
+    ).rejects.toMatchObject({ code: 'SHARE_REVISION_MISMATCH' });
+
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
+
+  test('should fork when the held revision still matches the published one', async () => {
+    getSharedMessages.mockResolvedValue({
+      ...mockShare,
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    const result = await forkSharedConversation({
+      shareId: 'share123',
+      shareResourceId: 'resource123',
+      requestUserId: 'user1',
+      shareRevision: '2026-01-01T00:00:00.000Z',
+    });
+
+    expect(result).toBeTruthy();
+    expect(bulkSaveMessages).toHaveBeenCalled();
+  });
+
   test('should clone shared messages into a conversation owned by the requesting user', async () => {
     const result = await forkSharedConversation({
       shareId: 'share123',
