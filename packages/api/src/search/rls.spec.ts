@@ -1,8 +1,9 @@
 import { createScope } from '@librechat/data-schemas';
+import type { Scope } from '@librechat/data-schemas';
 import type { SearchClient, SearchPool } from './types';
 import { describePg, dropIsolatedDatabase, migrateFresh } from './pg.helper';
+import { findRoleViolations, READER_ROLE } from './roles';
 import { scopeGucStatement } from './scope';
-import { READER_ROLE } from './roles';
 import { applyScope } from './pool';
 
 const SEED = `
@@ -107,21 +108,51 @@ describePg('chat_search row level security', () => {
     expect(rows).toEqual(['m-s1']);
   });
 
-  it('scopes embeddings identically', async () => {
-    await pool.query(
-      `INSERT INTO chat_search.embeddings
-         (tenant_id, user_id, kind, record_id, space, embedding_input_hash, model,
-          dimensions, normalized, formatter_version, embedding)
-       VALUES ('__BASE__','bob','message','m-b1','chat-v1','h','m',1024,true,'v1',$1::vector)
-       ON CONFLICT DO NOTHING`,
-      [`[${new Array(1024).fill(0.01).join(',')}]`],
-    );
-    const rows = await asReader(pool, async (client) => {
-      await applyScope(client, createScope({ tenantId: '__BASE__', userId: 'alice' }));
-      const result = await client.query('SELECT record_id FROM chat_search.embeddings');
-      return result.rows;
+  /**
+   * Every embeddings assertion below needs the positive half. Forced RLS plus a
+   * bare SELECT grant makes "sees nothing" the default outcome, so an absent-rows
+   * expectation on its own passes just as happily against a deleted policy or one
+   * rewritten `USING (false)`. Seeing the right rows is what distinguishes a
+   * scoped policy from no policy at all.
+   */
+  describe('embeddings', () => {
+    beforeAll(async () => {
+      const embedding = `[${new Array(1024).fill(0.01).join(',')}]`;
+      await pool.query(
+        `INSERT INTO chat_search.embeddings
+           (tenant_id, user_id, kind, record_id, space, embedding_input_hash, model,
+            dimensions, normalized, formatter_version, embedding)
+         VALUES
+           ('__BASE__','alice','message','m-a1','chat-v1','h','m',1024,true,'v1',$1::vector),
+           ('__BASE__','bob',  'message','m-b1','chat-v1','h','m',1024,true,'v1',$1::vector),
+           ('acme',    'alice','message','m-c1','chat-v1','h','m',1024,true,'v1',$1::vector)
+         ON CONFLICT DO NOTHING`,
+        [embedding],
+      );
     });
-    expect(rows).toEqual([]);
+
+    const readAs = (tenantId: string, userId: string): Promise<string[]> =>
+      asReader(pool, async (client) => {
+        await applyScope(client, createScope({ tenantId, userId }));
+        const result = await client.query<{ record_id: string }>(
+          'SELECT record_id FROM chat_search.embeddings ORDER BY record_id',
+        );
+        return result.rows.map((r) => r.record_id);
+      });
+
+    it('returns the scoped rows and only those, on both axes', async () => {
+      expect(await readAs('__BASE__', 'alice')).toEqual(['m-a1']);
+      expect(await readAs('__BASE__', 'bob')).toEqual(['m-b1']);
+      expect(await readAs('acme', 'alice')).toEqual(['m-c1']);
+    });
+
+    it('returns zero rows when no scope GUC is set', async () => {
+      const rows = await asReader(pool, async (client) => {
+        const result = await client.query('SELECT record_id FROM chat_search.embeddings');
+        return result.rows;
+      });
+      expect(rows).toEqual([]);
+    });
   });
 
   it('does not carry scope across transactions on a pooled connection', async () => {
@@ -147,9 +178,7 @@ describePg('chat_search row level security', () => {
      * The compiler rejects this at the call site; the runtime gate is what
      * protects a JavaScript caller and a bad `as` cast.
      */
-    const forged = { tenantId: 'acme', userId: 'alice' } as unknown as Parameters<
-      typeof applyScope
-    >[1];
+    const forged = { tenantId: 'acme', userId: 'alice' } as Scope;
     expect(() => scopeGucStatement(forged)).toThrow(/no Scope supplied/);
   });
 
@@ -161,5 +190,49 @@ describePg('chat_search row level security', () => {
     expect(() => createScope({ tenantId: '__SYSTEM__', userId: 'alice' })).toThrow(
       /query-time wildcard/,
     );
+  });
+
+  /**
+   * The gate has to catch a table nobody thought to enumerate, because the tables
+   * it must catch are the ones a future migration adds. Each case grants the
+   * reader something and expects the gate to name it.
+   */
+  describe('reader privilege derivation', () => {
+    afterEach(async () => {
+      await pool.query('DROP TABLE IF EXISTS chat_search.gate_probe');
+      await pool.query(`REVOKE ALL ON chat_search.poll_cursor FROM ${READER_ROLE}`);
+    });
+
+    it('starts from a clean gate', async () => {
+      await expect(findRoleViolations(pool)).resolves.toEqual([]);
+    });
+
+    it('catches a grant on the poll cursor', async () => {
+      await pool.query(`GRANT SELECT ON chat_search.poll_cursor TO ${READER_ROLE}`);
+      await expect(findRoleViolations(pool)).resolves.toEqual([
+        { role: READER_ROLE, problem: 'has SELECT on chat_search.poll_cursor' },
+      ]);
+    });
+
+    it('catches a grant on a table added after the gate was written', async () => {
+      await pool.query('CREATE TABLE chat_search.gate_probe (id text PRIMARY KEY)');
+      await pool.query('ALTER TABLE chat_search.gate_probe OWNER TO chat_search_owner');
+      await pool.query(`GRANT SELECT, UPDATE ON chat_search.gate_probe TO ${READER_ROLE}`);
+      await expect(findRoleViolations(pool)).resolves.toEqual([
+        { role: READER_ROLE, problem: 'has SELECT on chat_search.gate_probe' },
+        { role: READER_ROLE, problem: 'has UPDATE on chat_search.gate_probe' },
+      ]);
+    });
+
+    it('catches a write grant on a serving table the reader may only read', async () => {
+      await pool.query(`GRANT INSERT ON chat_search.documents TO ${READER_ROLE}`);
+      try {
+        await expect(findRoleViolations(pool)).resolves.toEqual([
+          { role: READER_ROLE, problem: 'has INSERT on chat_search.documents' },
+        ]);
+      } finally {
+        await pool.query(`REVOKE INSERT ON chat_search.documents FROM ${READER_ROLE}`);
+      }
+    });
   });
 });

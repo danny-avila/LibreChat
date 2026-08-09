@@ -1,12 +1,16 @@
+import type { Scope } from './tenantContext';
 import {
   tenantStorage,
   getUserId,
+  assertScope,
+  createScope,
   getRequestId,
   runAsSystem,
   scopedCacheKey,
   normalizeTenantId,
   isReservedTenantId,
   RESERVED_TENANT_IDS,
+  UnscopedAccessError,
   SYSTEM_TENANT_ID,
   BASE_TENANT_ID,
 } from './tenantContext';
@@ -38,6 +42,41 @@ describe('reserved tenant sentinels', () => {
 
   it('never rewrites a real tenant id', () => {
     expect(normalizeTenantId('acme')).toBe('acme');
+  });
+});
+
+/**
+ * Pins what the brand actually guarantees, which is narrower than "unforgeable":
+ * a structurally identical object is refused, and every accepted value came out
+ * of a constructor that normalized it and failed closed. Authorization is not
+ * among the guarantees — that is what RLS is for.
+ */
+describe('scope brand', () => {
+  it('refuses a structurally identical but unbranded object', () => {
+    expect(() => assertScope({ tenantId: 'acme', userId: 'alice' } as Scope)).toThrow(
+      UnscopedAccessError,
+    );
+  });
+
+  it('refuses an absent scope rather than widening', () => {
+    expect(() => assertScope(null)).toThrow(/no Scope supplied/);
+    expect(() => assertScope(undefined)).toThrow(/no Scope supplied/);
+  });
+
+  it('passes through a value a constructor produced', () => {
+    const scope = createScope({ tenantId: 'acme', userId: 'alice' });
+    expect(assertScope(scope)).toBe(scope);
+  });
+
+  it('normalizes and trims before it fails closed', () => {
+    expect(createScope({ tenantId: '  ', userId: ' alice ' })).toMatchObject({
+      tenantId: BASE_TENANT_ID,
+      userId: 'alice',
+    });
+  });
+
+  it('freezes the value it hands back', () => {
+    expect(Object.isFrozen(createScope({ tenantId: 'acme', userId: 'alice' }))).toBe(true);
   });
 });
 

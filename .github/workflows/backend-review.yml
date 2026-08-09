@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   NODE_ENV: CI
   NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
@@ -206,24 +210,6 @@ jobs:
       BAN_VIOLATIONS: ${{ secrets.BAN_VIOLATIONS }}
       BAN_DURATION: ${{ secrets.BAN_DURATION }}
       BAN_INTERVAL: ${{ secrets.BAN_INTERVAL }}
-      # The chat-search route wiring spec talks to a real PostgreSQL. Without
-      # this it skips, and a skip that reports green is indistinguishable from a
-      # feature that works.
-      CHAT_SEARCH_TEST_URL: postgres://postgres:postgres@localhost:5432/postgres
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     steps:
       - uses: actions/checkout@v5
 

@@ -39,11 +39,20 @@ export function normalizeTenantId(tenantId?: string | null): string {
  * Structural scope enforcement, shared by every search tier.
  *
  * Messages and files are user-scoped, not merely tenant-scoped, and they are the
- * kinds whose leakage exposes raw content rather than metadata. Scope is
- * therefore a value you cannot fabricate: the brand is a module-private symbol,
- * so an object merely shaped like a scope cannot be substituted for one, and the
- * only constructor throws rather than ever returning a widened result. There is
- * no "scope optional" path to fall through.
+ * kinds whose leakage exposes raw content rather than metadata. The brand is a
+ * module-private symbol, which buys exactly one thing: an unbranded object that
+ * merely has the right shape cannot be substituted for a scope, so no code path
+ * reaches a store without having gone through a constructor that normalizes its
+ * input and throws rather than ever returning a widened result. There is no
+ * "scope optional" path to fall through.
+ *
+ * What the brand is not is a capability token. `createScope` is exported, so any
+ * caller already holding a tenant and a user id can mint a valid scope, and a
+ * branded value can be copied. Holding a `Scope` therefore says the value is
+ * well-formed, never that its bearer was authorized for it. RLS is the
+ * enforcement boundary; above it the discipline is that request paths take scope
+ * from the ambient request context via `resolveScope()` instead of calling
+ * `createScope()` with ids read off the request.
  *
  * Each tier renders this same value in its own dialect — PostgreSQL `$n`
  * predicates plus RLS session GUCs, ClickHouse `{name:Type}` bindings — but none

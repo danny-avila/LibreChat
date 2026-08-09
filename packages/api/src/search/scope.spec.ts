@@ -12,6 +12,9 @@ import { scopeGucStatement } from './scope';
 
 const asScope = (tenantId: string, userId: string): Scope => createScope({ tenantId, userId });
 
+/** Everything a caller could put on a hand-rolled scope except the brand itself. */
+type ScopeShaped = Partial<Scope> & { predicateSql?: string };
+
 describe('scope resolution', () => {
   it('normalizes an absent tenant to the base sentinel before failing closed', async () => {
     await tenantStorage.run({ userId: 'alice' }, async () => {
@@ -73,17 +76,17 @@ describe('RLS session settings', () => {
   });
 
   it('refuses to bind an unbranded scope', () => {
-    expect(() => scopeGucStatement({ tenantId: 'a', userId: 'b' } as unknown as Scope)).toThrow(
+    expect(() => scopeGucStatement({ tenantId: 'a', userId: 'b' } as Scope)).toThrow(
       /no Scope supplied/,
     );
   });
 
   it('refuses to bind a scope-shaped object carrying a permissive predicate', () => {
-    const forged = {
+    const forged: ScopeShaped = {
       tenantId: 'acme',
       userId: 'alice',
       predicateSql: '1 = 1',
-    } as unknown as Scope;
-    expect(() => scopeGucStatement(forged)).toThrow(/no Scope supplied/);
+    };
+    expect(() => scopeGucStatement(forged as Scope)).toThrow(/no Scope supplied/);
   });
 });

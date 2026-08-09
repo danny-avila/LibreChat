@@ -80,10 +80,7 @@ export const getSharedLinks = (
   sortDirection: 'asc' | 'desc',
   search?: string,
   cursor?: string,
-) =>
-  `${shareRoot}?pageSize=${pageSize}&sortBy=${sortBy}&sortDirection=${sortDirection}${
-    search ? `&search=${search}` : ''
-  }${cursor ? `&cursor=${cursor}` : ''}`;
+) => `${shareRoot}${buildQuery({ pageSize, sortBy, sortDirection, search, cursor })}`;
 export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;
 export const updateSharedLink = (shareId: string) => `${shareRoot}/${shareId}`;
 /** Share-scoped file routes: serve snapshotted files via shared-link permission. */

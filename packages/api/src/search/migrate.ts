@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { createHash } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'crypto';
 import type { SearchClient, SearchPool } from './types';
 import { withTransaction } from './pool';
 
@@ -92,6 +92,12 @@ export const MANAGED_ROLES: readonly string[] = Object.freeze([
  */
 export const REQUIRED_EXTENSIONS: readonly string[] = Object.freeze(['pg_trgm', 'vector']);
 
+/** Where an installed extension actually lives, which is not implied by its name. */
+type ExtensionPlacement = {
+  name: string;
+  schema: string;
+};
+
 /**
  * Refuses a connection that cannot finish the run, before it starts one.
  *
@@ -122,21 +128,45 @@ async function assertCanProvision(
     return;
   }
 
+  /**
+   * Extensions are matched by name *and* schema: an installation this connection
+   * does not search, or may not use, is not the same thing as one it can build
+   * on, and `pg_extension` alone cannot tell them apart.
+   */
   const { rows } = await client.query<{
     role: string;
     is_superuser: boolean;
     can_create_in_database: boolean;
     schema_exists: boolean;
+    search_path: string[];
     missing_extensions: string[] | null;
+    offpath_extensions: ExtensionPlacement[] | null;
+    unusable_extensions: ExtensionPlacement[] | null;
+    existing_managed_roles: string[] | null;
   }>(
-    `SELECT current_user AS role,
+    `WITH required AS (
+       SELECT e.extname::text AS name, n.nspname::text AS schema,
+              n.nspname = ANY (current_schemas(true)) AS searched,
+              has_schema_privilege(n.nspname, 'USAGE') AS usable
+         FROM pg_extension e
+         JOIN pg_namespace n ON n.oid = e.extnamespace
+        WHERE e.extname = ANY($1::text[])
+     )
+     SELECT current_user AS role,
             rolsuper AS is_superuser,
             has_database_privilege(current_database(), 'CREATE') AS can_create_in_database,
             to_regnamespace('chat_search') IS NOT NULL AS schema_exists,
+            current_schemas(true)::text[] AS search_path,
             ARRAY(SELECT unnest($1::text[])
-                   EXCEPT SELECT extname FROM pg_extension) AS missing_extensions
+                   EXCEPT SELECT name FROM required) AS missing_extensions,
+            (SELECT json_agg(json_build_object('name', name, 'schema', schema) ORDER BY name)
+               FROM required WHERE NOT searched) AS offpath_extensions,
+            (SELECT json_agg(json_build_object('name', name, 'schema', schema) ORDER BY name)
+               FROM required WHERE NOT searched AND NOT usable) AS unusable_extensions,
+            ARRAY(SELECT rolname::text FROM pg_roles
+                   WHERE rolname = ANY($2::text[])) AS existing_managed_roles
        FROM pg_roles WHERE rolname = current_user`,
-    [[...REQUIRED_EXTENSIONS]],
+    [[...REQUIRED_EXTENSIONS], [...MANAGED_ROLES]],
   );
   const state = rows[0];
   if (!state) {
@@ -176,12 +206,77 @@ async function assertCanProvision(
     );
   }
 
+  const unusable = state.unusable_extensions ?? [];
+  if (schemaPending && unusable.length > 0) {
+    const placements = unusable.map((ext) => `${ext.name} (schema ${ext.schema})`).join(' and ');
+    const verb = unusable.length === 1 ? 'is' : 'are';
+    throw new Error(
+      `[chatSearch] ${placements} ${verb} installed in a schema role ${state.role} may not use, ` +
+        `so ${SCHEMA_MIGRATION} cannot resolve the types and operator classes involved and ` +
+        'CREATE EXTENSION IF NOT EXISTS will not install a second copy. Grant USAGE on that ' +
+        'schema, or reinstall the extension into one this connection can reach.',
+    );
+  }
+
   if (!state.schema_exists && !state.can_create_in_database) {
     throw new Error(
       `[chatSearch] role ${state.role} cannot CREATE in this database, so the chat_search schema ` +
         'cannot be created; point CHAT_SEARCH_MIGRATE_URL at a role that can',
     );
   }
+
+  warnOnUnsearchedExtensions(schemaPending, state.offpath_extensions ?? [], state.search_path);
+  warnOnForeignManagedRoles(rolesPending, state.existing_managed_roles ?? []);
+}
+
+/**
+ * An extension is only half-found by name. `CREATE EXTENSION IF NOT EXISTS` is
+ * satisfied by the name alone and will not install a second copy, while the
+ * types and operator classes it owns resolve through `search_path` and nothing
+ * else — USAGE on the schema is necessary and not sufficient. `001_schema.sql`
+ * puts the extension schemas on the path for its own run, so provisioning
+ * succeeds; the application roles get no such help and their queries cast to
+ * `vector` and order by `<=>`, so the placement is named here while an operator
+ * is still watching.
+ */
+function warnOnUnsearchedExtensions(
+  schemaPending: boolean,
+  offPath: readonly ExtensionPlacement[],
+  searchPath: readonly string[],
+): void {
+  if (!schemaPending || offPath.length === 0) {
+    return;
+  }
+  const placements = offPath.map((ext) => `${ext.name} (schema ${ext.schema})`).join(' and ');
+  logger.warn(
+    `[chatSearch] ${placements} ${offPath.length === 1 ? 'is' : 'are'} installed outside the ` +
+      `search_path of this connection (${searchPath.join(', ')}). ${SCHEMA_MIGRATION} resolves ` +
+      'them for its own run, but the application roles do not inherit that: give ' +
+      `${MANAGED_ROLES.join(', ')} a search_path covering that schema ` +
+      '(ALTER ROLE <role> IN DATABASE <database> SET search_path = ...), or reinstall the ' +
+      'extension into a schema they already search.',
+  );
+}
+
+/**
+ * Role names are cluster-global while every grant these migrations issue is
+ * per-database, so two deployments sharing one cluster do not get one set of
+ * roles each: the second provisioning run rotates the first's credentials, and
+ * the credential that survives can read both databases. Roles that already exist
+ * before this database has ever applied the role migration are the one visible
+ * sign of that, so the run says so rather than silently taking them over.
+ */
+function warnOnForeignManagedRoles(rolesPending: boolean, existing: readonly string[]): void {
+  if (!rolesPending || existing.length === 0) {
+    return;
+  }
+  logger.warn(
+    `[chatSearch] ${existing.join(', ')} already exist on this server, but ${ROLE_MIGRATION} has ` +
+      'never been applied to this database. Role names are fixed and cluster-global: if another ' +
+      'deployment or an earlier installation owns these roles, provisioning here rotates its ' +
+      'credentials and leaves one credential able to read both databases. Give each deployment ' +
+      'its own PostgreSQL server.',
+  );
 }
 
 /**
@@ -244,14 +339,49 @@ const ROLE_PASSWORD_ENV: Readonly<Record<string, string>> = Object.freeze({
   chat_search_reader: 'CHAT_SEARCH_READER_PASSWORD',
 });
 
+/** PostgreSQL's own default. Every login pays this cost, so it is not raised idly. */
+const SCRAM_ITERATIONS = 4096;
+const SCRAM_SALT_BYTES = 16;
+const SHA256_BYTES = 32;
+
+/**
+ * Derives the SCRAM-SHA-256 verifier PostgreSQL stores for a role.
+ *
+ * `ALTER ROLE` is DDL, so a server running with `log_statement = 'ddl'` or
+ * `'all'` — the audit preset offered by several managed providers — writes the
+ * statement text to its log, and the default `log_min_error_statement` puts the
+ * same text on the `STATEMENT:` line of any failure. A password sent as a
+ * literal is therefore in the log before this process can catch anything.
+ * Sending a verifier removes that entirely: the server recognises this shape and
+ * stores it verbatim instead of deriving one, which is what `psql \password`
+ * does for the same reason.
+ *
+ * The password bytes are hashed as supplied, matching the SCRAM client in `pg`
+ * that every consumer here authenticates with. A password that SASLprep would
+ * rewrite — non-ASCII whitespace, an unnormalised composition — hashes
+ * differently under libpq and would not authenticate from `psql`.
+ */
+export function scramSha256Verifier(password: string): string {
+  const salt = randomBytes(SCRAM_SALT_BYTES);
+  const saltedPassword = pbkdf2Sync(password, salt, SCRAM_ITERATIONS, SHA256_BYTES, 'sha256');
+  const clientKey = createHmac('sha256', saltedPassword).update('Client Key').digest();
+  const storedKey = createHash('sha256').update(clientKey).digest();
+  const serverKey = createHmac('sha256', saltedPassword).update('Server Key').digest();
+  return (
+    `SCRAM-SHA-256$${SCRAM_ITERATIONS}:${salt.toString('base64')}` +
+    `$${storedKey.toString('base64')}:${serverKey.toString('base64')}`
+  );
+}
+
 /**
  * Sets role passwords from the environment.
  *
  * Passwords are operator-supplied and never appear in the SQL files, in a
- * default, or in a log line. Quoting is delegated to the server's own
- * `format()` so nothing has to be escaped by hand — and the rendered statement,
- * which contains the literal, is never logged and never allowed into an error
- * message: a failing `ALTER ROLE` is re-thrown naming only the role.
+ * default, or in a log line. The cleartext never leaves this process either:
+ * what is sent is the SCRAM verifier derived above, so neither the statement nor
+ * its parameters carry anything the server could log. Quoting is still delegated
+ * to the server's own `format()`, and a failing `ALTER ROLE` is re-thrown naming
+ * only the role.
  */
 export async function applyRolePasswords(pool: SearchPool): Promise<readonly string[]> {
   const updated: string[] = [];
@@ -263,7 +393,7 @@ export async function applyRolePasswords(pool: SearchPool): Promise<readonly str
       }
       const { rows } = await client.query<{ statement: string }>(
         'SELECT format($1, $2::text, $3::text) AS statement',
-        ['ALTER ROLE %I WITH LOGIN PASSWORD %L', role, password],
+        ['ALTER ROLE %I WITH LOGIN PASSWORD %L', role, scramSha256Verifier(password)],
       );
       try {
         await client.query(rows[0].statement);

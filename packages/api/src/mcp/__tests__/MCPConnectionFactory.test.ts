@@ -3758,13 +3758,34 @@ describe('MCPConnectionFactory', () => {
 
       mockConnectionInstance.connect.mockResolvedValue(undefined);
       mockConnectionInstance.isConnected.mockResolvedValue(true);
-      mockConnectionInstance.fetchTools = jest.fn().mockResolvedValue(mockTools);
+      mockConnectionInstance.fetchOrderedToolsSnapshot = jest
+        .fn()
+        .mockResolvedValue({ tools: mockTools, complete: true });
 
       const result = await MCPConnectionFactory.discoverTools(basicOptions);
 
       expect(result.tools).toEqual(mockTools);
       expect(result.oauthRequired).toBe(false);
       expect(result.oauthUrl).toBeNull();
+      expect(result.connection).toBe(mockConnectionInstance);
+    });
+
+    it('does not expose an incomplete discovery snapshot as authoritative', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+      mockConnectionInstance.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
+        tools: [mockTools[0]],
+        complete: false,
+      });
+
+      const result = await MCPConnectionFactory.discoverTools(basicOptions);
+
+      expect(result.tools).toBeNull();
       expect(result.connection).toBe(mockConnectionInstance);
     });
 
@@ -3787,7 +3808,9 @@ describe('MCPConnectionFactory', () => {
 
       mockConnectionInstance.connect.mockResolvedValue(undefined);
       mockConnectionInstance.isConnected.mockResolvedValue(true);
-      mockConnectionInstance.fetchTools = jest.fn().mockResolvedValue(mockTools);
+      mockConnectionInstance.fetchOrderedToolsSnapshot = jest
+        .fn()
+        .mockResolvedValue({ tools: mockTools, complete: true });
 
       const result = await MCPConnectionFactory.discoverTools(basicOptions, userContext);
 
@@ -4340,7 +4363,9 @@ describe('MCPConnectionFactory', () => {
       mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
       mockConnectionInstance.connect.mockResolvedValue(undefined);
       mockConnectionInstance.isConnected.mockResolvedValue(true);
-      mockConnectionInstance.fetchTools = jest.fn().mockResolvedValue(mockTools);
+      mockConnectionInstance.fetchOrderedToolsSnapshot = jest
+        .fn()
+        .mockResolvedValue({ tools: mockTools, complete: true });
 
       const result = await MCPConnectionFactory.discoverTools(
         { serverName: 'bigquery', serverConfig },

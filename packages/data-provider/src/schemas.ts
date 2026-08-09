@@ -946,6 +946,8 @@ export const tConversationSchema = z.object({
   endpointType: eModelEndpointSchema.nullable().optional(),
   isArchived: z.boolean().optional(),
   pinned: z.boolean().optional(),
+  /** Server-derived: an active shared link exists for this conversation. Not persisted. */
+  isShared: z.boolean().optional(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
   messages: z.array(z.string()).optional(),
