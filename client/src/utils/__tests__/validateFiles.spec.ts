@@ -224,6 +224,56 @@ describe('validateFiles', () => {
     expect(setError).not.toHaveBeenCalled();
   });
 
+  /**
+   * The upload options already refuse this combination; validation did not, so an agent
+   * without the OCR capability could still pick Context explicitly and be told by the
+   * server what the client already knew.
+   */
+  it('rejects a configured-OCR document when the agent lacks the OCR capability', () => {
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [] },
+      ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)], enabled: true },
+      documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('report.docx', DOCX, 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig,
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+      ocrEnabled: false,
+    });
+
+    expect(result).toBe(false);
+    expect(setError).toHaveBeenCalledWith(`Unsupported file type: ${DOCX}`);
+  });
+
+  it('accepts the same document when the agent may use OCR', () => {
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [] },
+      ocr: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)], enabled: true },
+      documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('report.docx', DOCX, 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig,
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+      ocrEnabled: true,
+    });
+
+    expect(result).toBe(true);
+  });
+
   it('rejects a locally excluded document when no RAG service is configured', () => {
     const contextFileConfig = {
       text: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)] },
