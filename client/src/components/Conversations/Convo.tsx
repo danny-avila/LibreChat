@@ -5,9 +5,9 @@ import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
 import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
+import { useGetStartupConfig, useUpdateConversationMutation } from '~/data-provider';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
-import { useUpdateConversationMutation } from '~/data-provider';
 import { areConversationRenderPropsEqual } from './utils';
 import { NotificationSeverity } from '~/common';
 import { ConvoOptions } from './ConvoOptions';
@@ -37,6 +37,10 @@ function Conversation({
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  /* A deployment with shared links off leaves existing links in the database but stops
+     serving them, so the row must not advertise one that no longer resolves. */
+  const { data: startupConfig } = useGetStartupConfig();
+  const sharedLinksEnabled = startupConfig?.sharedLinksEnabled === true;
   const isShiftHeld = useShiftKey();
   const { conversationId, title = '' } = conversation;
 
@@ -271,7 +275,7 @@ function Conversation({
           <ConversationEndpointIcon conversation={conversation} size={20} context="menu-item" />
         </ConvoLink>
       )}
-      {conversation.isShared === true && (
+      {conversation.isShared === true && sharedLinksEnabled && (
         <Link2 className="icon-sm mr-1 shrink-0 text-text-secondary" aria-hidden="true" />
       )}
       {conversation.pinned === true && (

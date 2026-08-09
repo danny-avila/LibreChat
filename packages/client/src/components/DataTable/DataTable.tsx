@@ -448,9 +448,16 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
         const { scrollTop, scrollHeight, clientHeight } = loaderContainer;
         if (scrollTop + clientHeight >= scrollHeight - 200) {
-          void fetchNextPage().catch((error) => {
-            logger.error('DataTable: Unable to fetch the next page', error);
-          });
+          // Resolves with a failed result rather than rejecting, so both shapes count.
+          void fetchNextPage()
+            .then((result) => {
+              if (isFailedFetchResult(result)) {
+                logger.error('DataTable: Unable to fetch the next page', result.error);
+              }
+            })
+            .catch((error) => {
+              logger.error('DataTable: Unable to fetch the next page', error);
+            });
         }
       }, 100);
 

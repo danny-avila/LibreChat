@@ -1865,7 +1865,7 @@
   "com_ui_share_files_update_note": "Choose your setting, then select Update link. The same URL will include the latest messages and file choice.",
   "com_ui_share_link_to_chat": "Share link to chat",
   "com_ui_share_qr_code_description": "QR code for sharing this conversation link",
-  "com_ui_share_update_message": "The link is a snapshot. Your name and custom instructions stay private; select Update link to include new messages without changing the URL.",
+  "com_ui_share_update_message": "Your name and custom instructions stay private. Edits to shared messages appear right away; select Update link to include new messages without changing the URL.",
   "com_ui_share_var": "Share {{0}}",
   "com_ui_shared_link": "shared link",
   "com_ui_shared_link_bulk_delete_success": "Successfully deleted shared links",
