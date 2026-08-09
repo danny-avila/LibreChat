@@ -10,6 +10,7 @@ const {
 } = require('~/server/services/Files/Code/process');
 const {
   checkAccess,
+  isMemoryEnabled,
   getStorageMetadata,
   resolveRequestTenantId,
   enrichWithSkillConfigurable,
@@ -26,6 +27,7 @@ const {
   AccessRoleIds,
   PrincipalType,
   PermissionTypes,
+  AgentCapabilities,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
 const { checkPermission, grantPermission } = require('~/server/services/PermissionService');
@@ -298,6 +300,23 @@ function buildAgentToolContext({ agent, config }) {
   };
 }
 
+/** Resolves the full run-level gate used to expose inline memory tools. */
+function resolveMemoryAvailability({ enabledCapabilities, memoryConfig, user, getRoleByName }) {
+  if (
+    !enabledCapabilities.has(AgentCapabilities.memory) ||
+    !isMemoryEnabled(memoryConfig) ||
+    user?.personalization?.memories === false
+  ) {
+    return false;
+  }
+  return checkAccess({
+    user,
+    permissionType: PermissionTypes.MEMORIES,
+    permissions: [Permissions.USE, Permissions.CREATE, Permissions.UPDATE],
+    getRoleByName,
+  });
+}
+
 function hasOwn(value, key) {
   return Object.prototype.hasOwnProperty.call(value ?? {}, key);
 }
@@ -385,5 +404,6 @@ module.exports = {
   enrichWithSkillConfigurable,
   buildSkillPrimedIdsByName,
   buildAgentToolContext,
+  resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 };

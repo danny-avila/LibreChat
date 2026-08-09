@@ -1415,16 +1415,23 @@ class AgentClient extends BaseClient {
       return agent;
     };
 
-    /** Collect all agents for unified processing while preserving stable/dynamic instruction fields. */
-    const allAgents = [
-      { agent: normalizeInstructions(this.options.agent), agentId: this.options.agent.id },
-      ...(this.agentConfigs?.size > 0
-        ? Array.from(this.agentConfigs.entries()).map(([agentId, agent]) => ({
-            agent: normalizeInstructions(agent),
-            agentId,
-          }))
-        : []),
-    ];
+    /** Collect all runtime agents without promoting isolated subagents into the top-level graph. */
+    const agentsById = new Map();
+    const pendingAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+    for (let i = 0; i < pendingAgents.length; i++) {
+      const agent = pendingAgents[i];
+      if (!agent?.id || agentsById.has(agent.id)) {
+        continue;
+      }
+      agentsById.set(agent.id, normalizeInstructions(agent));
+      for (const subagent of agent.subagentAgentConfigs?.values() ?? []) {
+        pendingAgents.push(subagent);
+      }
+      for (const graph of agent.subagentGraphConfigs ?? []) {
+        pendingAgents.push(...graph.memberConfigs);
+      }
+    }
+    const allAgents = [...agentsById].map(([agentId, agent]) => ({ agent, agentId }));
 
     /**
      * Memory authorization/loading and MCP config resolution do not depend on

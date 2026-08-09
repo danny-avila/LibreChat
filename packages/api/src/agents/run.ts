@@ -19,6 +19,7 @@ import type {
   LCToolRegistry,
   SubagentConfig,
   SubagentResolveContext,
+  SubagentConfigEntry,
   HookCallback,
   AgentInputs,
   GenericTool,
@@ -31,12 +32,14 @@ import type {
   TAgentsEndpoint,
   AgentModelParameters,
   AgentSubagentsConfig,
+  AgentSubagentGraph,
   ReasoningResponseKey,
   SummarizationConfig,
 } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
+import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import {
@@ -410,6 +413,13 @@ type RunAgent = Omit<Agent, 'tools'> & {
    * may use the active request's authorization and tool-loading context.
    */
   lazySubagentConfigs?: LazySubagentAgent[];
+  /** All-or-nothing saved-agent teams resolved by initialize.js. */
+  subagentGraphConfigs?: Array<{
+    definition: AgentSubagentGraph;
+    memberConfigs: RunAgent[];
+  }>;
+  /** Member-scoped always-apply skills resolved during agent initialization. */
+  alwaysApplySkillPrimes?: ResolvedAlwaysApplySkill[];
   /** Source subagent spawning configuration (enabled / allowSelf / agent_ids). */
   subagents?: AgentSubagentsConfig;
 };
@@ -450,6 +460,7 @@ type SubagentTreeNode = Pick<
 > & {
   subagentAgentConfigs?: SubagentTreeNode[];
   lazySubagentConfigs?: SubagentTreeNode[];
+  subagentGraphConfigs?: Array<{ memberConfigs: SubagentTreeNode[] }>;
 };
 
 function isNonEmptyString(value: unknown): value is string {
@@ -794,34 +805,6 @@ function assertSubagentDepth(depth: number, agentId: string): void {
   }
 }
 
-function buildIsolatedSubagentInputs(
-  child: RunAgent,
-  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
-): AgentInputs {
-  const childInputs = toInput(child, { isSubagent: true });
-  if ((child.backgroundToolNames?.length ?? 0) > 0) {
-    childInputs.toolDefinitions = stripBackgroundFromToolDefinitions(
-      childInputs.toolDefinitions,
-      child.backgroundToolNames,
-    );
-    childInputs.toolRegistry = stripBackgroundFromToolRegistry(
-      childInputs.toolRegistry,
-      child.backgroundToolNames,
-    );
-  }
-  if ((child.intentToolNames?.length ?? 0) > 0) {
-    childInputs.toolDefinitions = stripIntentFromToolDefinitions(
-      childInputs.toolDefinitions,
-      child.intentToolNames,
-    );
-    childInputs.toolRegistry = stripIntentFromToolRegistry(
-      childInputs.toolRegistry,
-      child.intentToolNames,
-    );
-  }
-  return childInputs;
-}
-
 function createLazySubagentConfig(
   child: LazySubagentAgent,
   toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
@@ -868,6 +851,30 @@ function createLazySubagentConfig(
   };
 }
 
+function enqueueSubagentChildren(
+  agent: SubagentTreeNode,
+  pending: Array<SubagentTreeNode | null | undefined>,
+  visited: ReadonlySet<string>,
+): void {
+  for (const child of agent.subagentAgentConfigs ?? []) {
+    if (child != null && !visited.has(child.id)) {
+      pending.push(child);
+    }
+  }
+  for (const child of agent.lazySubagentConfigs ?? []) {
+    if (!visited.has(child.id)) {
+      pending.push(child);
+    }
+  }
+  for (const graph of agent.subagentGraphConfigs ?? []) {
+    for (const member of graph.memberConfigs) {
+      if (member != null && !visited.has(member.id)) {
+        pending.push(member);
+      }
+    }
+  }
+}
+
 /**
  * Recursive any-true check across the agent tree: returns `true` if this
  * agent or any subagent (transitively) has the per-agent codeenv gate
@@ -898,16 +905,7 @@ function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
     if (agent.codeEnvAvailable === true) {
       return true;
     }
-    for (const child of agent.subagentAgentConfigs ?? []) {
-      if (!visited.has(child.id)) {
-        pending.push(child);
-      }
-    }
-    for (const child of agent.lazySubagentConfigs ?? []) {
-      if (!visited.has(child.id)) {
-        pending.push(child);
-      }
-    }
+    enqueueSubagentChildren(agent, pending, visited);
   }
   return false;
 }
@@ -975,16 +973,7 @@ export function anyAgentReplaysReasoningContent(
     if (shouldReplayReasoningContent(agent)) {
       return true;
     }
-    for (const child of agent.subagentAgentConfigs ?? []) {
-      if (!visited.has(child.id)) {
-        pending.push(child);
-      }
-    }
-    for (const child of agent.lazySubagentConfigs ?? []) {
-      if (!visited.has(child.id)) {
-        pending.push(child);
-      }
-    }
+    enqueueSubagentChildren(agent, pending, visited);
   }
   return false;
 }
@@ -994,6 +983,43 @@ export function anyAgentReplaysReasoningContent(
  * explicit eager children and inert lazy descriptors. Returns an empty array
  * when subagents are disabled or no spawn targets are available.
  */
+function buildIsolatedAgentInputs(
+  child: RunAgent,
+  toInput: (agent: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
+): AgentInputs {
+  const childInputs = toInput(child, { isSubagent: true });
+  const alwaysApplySkillPrimes = child.alwaysApplySkillPrimes;
+  if (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0) {
+    const skillInstructions = alwaysApplySkillPrimes
+      .map((prime) => `# Always-apply skill: ${prime.name}\n${prime.body}`)
+      .join('\n\n');
+    childInputs.additional_instructions = [childInputs.additional_instructions, skillInstructions]
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      .join('\n\n');
+  }
+  if ((child.backgroundToolNames?.length ?? 0) > 0) {
+    childInputs.toolDefinitions = stripBackgroundFromToolDefinitions(
+      childInputs.toolDefinitions,
+      child.backgroundToolNames,
+    );
+    childInputs.toolRegistry = stripBackgroundFromToolRegistry(
+      childInputs.toolRegistry,
+      child.backgroundToolNames,
+    );
+  }
+  if ((child.intentToolNames?.length ?? 0) > 0) {
+    childInputs.toolDefinitions = stripIntentFromToolDefinitions(
+      childInputs.toolDefinitions,
+      child.intentToolNames,
+    );
+    childInputs.toolRegistry = stripIntentFromToolRegistry(
+      childInputs.toolRegistry,
+      child.intentToolNames,
+    );
+  }
+  return childInputs;
+}
+
 function buildSubagentConfigs(
   agent: RunAgent,
   agentInput: AgentInputs,
@@ -1002,12 +1028,13 @@ function buildSubagentConfigs(
   agentsEConfig: Partial<TAgentsEndpoint> | undefined,
   ancestors: Set<string> = new Set(),
   depth = 0,
-): SubagentConfig[] {
+  prebuiltGraphInputs?: ReadonlyMap<string, AgentInputs>,
+): SubagentConfigEntry[] {
   if (!agent.subagents?.enabled) {
     return [];
   }
 
-  const configs: SubagentConfig[] = [];
+  const configs: SubagentConfigEntry[] = [];
   const allowSelf = agent.subagents.allowSelf !== false;
 
   if (allowSelf) {
@@ -1087,6 +1114,7 @@ function buildSubagentConfigs(
       agentsEConfig,
       nextAncestors,
       childDepth,
+      prebuiltGraphInputs,
     );
     if (grandchildConfigs.length > 0) {
       childInputs.subagentConfigs = grandchildConfigs;
@@ -1115,6 +1143,30 @@ function buildSubagentConfigs(
     configs.push(
       createLazySubagentConfig(child, toInput, agentsEConfig, nextAncestors, childDepth),
     );
+  }
+
+  for (const { definition, memberConfigs } of agent.subagentGraphConfigs ?? []) {
+    if (memberConfigs.length === 0) {
+      continue;
+    }
+    countSubagentConfig(state);
+    const maxTurns = Math.min(
+      ...memberConfigs.map((member) => resolveSubagentMaxTurns(agentsEConfig, member)),
+    );
+    configs.push({
+      kind: 'graph',
+      type: definition.type,
+      name: definition.name,
+      description: definition.description,
+      agents: memberConfigs.map(
+        (member) =>
+          prebuiltGraphInputs?.get(member.id) ?? buildIsolatedAgentInputs(member, toInput),
+      ),
+      edges: definition.edges,
+      entryAgentId: definition.entry_agent_id,
+      resultAgentId: definition.result_agent_id,
+      maxTurns,
+    });
   }
 
   return configs;
@@ -1489,6 +1541,24 @@ export async function createRun({
     configCount: 0,
     rootAgentIds: agents.map((agent) => agent.id),
   };
+  const prebuiltGraphInputs = new Map<string, AgentInputs>();
+  const visitedConfigIds = new Set<string>();
+  const pendingConfigs: Array<RunAgent | null | undefined> = [...agents];
+  for (let index = 0; index < pendingConfigs.length; index++) {
+    const config = pendingConfigs[index];
+    if (!config?.id || visitedConfigIds.has(config.id)) {
+      continue;
+    }
+    visitedConfigIds.add(config.id);
+    for (const graph of config.subagentGraphConfigs ?? []) {
+      for (const member of graph.memberConfigs) {
+        if (!prebuiltGraphInputs.has(member.id)) {
+          prebuiltGraphInputs.set(member.id, buildIsolatedAgentInputs(member, buildAgentInput));
+        }
+      }
+    }
+    enqueueSubagentChildren(config, pendingConfigs, visitedConfigIds);
+  }
   for (const agent of agents) {
     const agentInput = buildAgentInput(agent);
     const subagentConfigs = buildSubagentConfigs(
@@ -1497,6 +1567,9 @@ export async function createRun({
       buildAgentInput,
       subagentBuildState,
       agentsEndpointConfig,
+      undefined,
+      0,
+      prebuiltGraphInputs,
     );
     if (subagentConfigs.length > 0) {
       agentInput.subagentConfigs = subagentConfigs;
