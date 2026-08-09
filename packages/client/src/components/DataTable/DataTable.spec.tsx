@@ -885,6 +885,27 @@ describe('DataTable', () => {
         expect(fetchNextPage).not.toHaveBeenCalled();
       });
 
+      it('retries a rejected fetch, then gives up instead of hammering', async () => {
+        stubLayout({ clientHeight: 600, scrollHeight: 300 });
+        const fetchNextPage = jest.fn().mockRejectedValue(new Error('offline'));
+
+        render(
+          <TestWrapper>
+            <DataTable
+              columns={createTestColumns()}
+              data={createTestData(3)}
+              hasNextPage={true}
+              isFetchingNextPage={false}
+              fetchNextPage={fetchNextPage}
+            />
+          </TestWrapper>,
+        );
+
+        await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(3));
+        await Promise.resolve();
+        expect(fetchNextPage).toHaveBeenCalledTimes(3);
+      });
+
       it('stops after a page that adds no rows', () => {
         stubLayout({ clientHeight: 600, scrollHeight: 300 });
         const fetchNextPage = jest.fn().mockResolvedValue(undefined);

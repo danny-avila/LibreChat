@@ -631,6 +631,13 @@ router.patch(
         return res.status(404).end();
       }
 
+      // Re-scope the grants before re-publishing. The shareId survives an update, so a
+      // failed ACL write after the write-through would leave the new messages and file
+      // snapshot readable at the same URL while the owner is told the update failed.
+      if (existing?._id && expiredAt !== undefined) {
+        await updateSharedLinkPermissionsExpiration(existing._id, expiredAt);
+      }
+
       const updatedShare = await updateSharedLink(
         req.user.id,
         req.params.shareId,
@@ -638,14 +645,11 @@ router.patch(
         expiredAt,
         isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false,
       );
-      if (updatedShare) {
-        if (updatedShare._id && expiredAt !== undefined) {
-          await updateSharedLinkPermissionsExpiration(updatedShare._id, expiredAt);
-        }
-        res.status(200).json(updatedShare);
-      } else {
-        res.status(404).end();
+      if (!updatedShare) {
+        return res.status(404).end();
       }
+
+      return res.status(200).json(updatedShare);
     } catch (error) {
       logger.error('Error updating shared link:', error);
       return sendShareServiceError(res, error, 'Error updating shared link');

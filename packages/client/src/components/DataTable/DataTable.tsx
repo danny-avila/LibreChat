@@ -23,6 +23,8 @@ import { Button } from '../Button';
 import { Label } from '../Label';
 import { Spinner } from '~/svgs';
 
+const MAX_AUTO_FILL_ATTEMPTS = 3;
+
 function DataTable<TData extends Record<string, unknown>, TValue>({
   columns,
   data,
@@ -68,6 +70,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   const lastScrollTimeRef = useRef(performance.now());
   const fastScrollTimeoutRef = useRef<number | null>(null);
   const autoFillRowCountRef = useRef(-1);
+  const [autoFillAttempt, setAutoFillAttempt] = useState(0);
 
   useEffect(() => {
     setDynamicOverscan(overscan);
@@ -347,6 +350,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   useEffect(() => {
     setSearchTerm(filterValue);
     autoFillRowCountRef.current = -1;
+    setAutoFillAttempt(0);
   }, [filterValue]);
 
   useEffect(() => {
@@ -442,11 +446,16 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
    * Pagination is driven by the scroll handler, so a first page too short to
    * overflow a tall container would strand the table on page one. Keep pulling
    * pages until the rows overflow or the source runs dry; the row-count guard
-   * stops the loop when a page adds nothing.
+   * stops the loop when a page adds nothing. A rejected fetch is retried, since
+   * an unscrollable table offers no other way back, but only a bounded number of
+   * times so a failing endpoint can't be hammered.
    */
   useEffect(() => {
     const container = tableContainerRef.current;
     if (!container || !fetchNextPage || !hasNextPage || isFetchingNextPage || isLoading) {
+      return;
+    }
+    if (autoFillAttempt >= MAX_AUTO_FILL_ATTEMPTS) {
       return;
     }
     if (container.clientHeight === 0 || container.scrollHeight > container.clientHeight) {
@@ -459,8 +468,10 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     autoFillRowCountRef.current = data.length;
     void fetchNextPage().catch((error) => {
       logger.error('DataTable: Unable to fetch the next page', error);
+      autoFillRowCountRef.current = -1;
+      setAutoFillAttempt((attempt) => attempt + 1);
     });
-  }, [data.length, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading]);
+  }, [data.length, autoFillAttempt, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading]);
 
   return (
     <div
