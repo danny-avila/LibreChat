@@ -1592,11 +1592,14 @@ function filterFile({ req, image, isAvatar }) {
 
   /* Admission and routing both honor `documentParser.supportedMimeTypes`, so this gate
    * has to as well: an admin who names a vendor MIME there has said the server parses
-   * it, and a second check that disagrees only moves the refusal one step later. */
+   * it, and a second check that disagrees only moves the refusal one step later. The
+   * request body is complete here, so this is the authoritative place to scope it to
+   * the context path, the only one that reaches the parser. */
   const parserTypes = fileConfig.documentParser?.supportedMimeTypes;
+  const isContextUpload = req.body?.tool_resource === EToolResources.context;
   const isSupportedMimeType =
     fileConfig.checkType(file.mimetype, endpointFileConfig.supportedMimeTypes) ||
-    (parserTypes != null && fileConfig.checkType(file.mimetype, parserTypes));
+    (isContextUpload && parserTypes != null && fileConfig.checkType(file.mimetype, parserTypes));
 
   if (!isSupportedMimeType) {
     throw new Error('Unsupported file type');

@@ -434,12 +434,13 @@ describe('Multer Configuration', () => {
      * the user and then refused at the door.
      */
     it('should admit a vendor MIME the document-parser allowlist names', () => {
-      const { mergeFileConfig } = require('librechat-data-provider');
+      const { mergeFileConfig, EToolResources } = require('librechat-data-provider');
       const fileFilter = createFileFilter(
         mergeFileConfig({
           documentParser: { supportedMimeTypes: ['^application/vnd\\.vendor\\.word$'] },
         }),
       );
+      mockReq.body.tool_resource = EToolResources.context;
       const documentFile = {
         ...mockFile,
         originalname: 'report.docx',
@@ -450,6 +451,34 @@ describe('Multer Configuration', () => {
       fileFilter(mockReq, documentFile, cb);
 
       expect(cb).toHaveBeenCalledWith(null, true);
+    });
+
+    /**
+     * The parser only runs on the context path. Admitting its allowlist everywhere would
+     * let a caller past an endpoint's own MIME restriction and hand the file to a
+     * provider that was never meant to see it.
+     */
+    it.each([
+      ['a different tool resource', 'file_search'],
+      ['no tool resource at all', undefined],
+    ])('should not admit a parser-only MIME for %s', (_label, toolResource) => {
+      const { mergeFileConfig } = require('librechat-data-provider');
+      const fileFilter = createFileFilter(
+        mergeFileConfig({
+          documentParser: { supportedMimeTypes: ['^application/vnd\\.vendor\\.word$'] },
+        }),
+      );
+      mockReq.body.tool_resource = toolResource;
+      const documentFile = {
+        ...mockFile,
+        originalname: 'report.docx',
+        mimetype: 'application/vnd.vendor.word',
+      };
+      const cb = jest.fn();
+
+      fileFilter(mockReq, documentFile, cb);
+
+      expect(cb).toHaveBeenCalledWith(expect.any(Error), false);
     });
 
     it('should still reject a type no allowlist names', () => {
