@@ -41,12 +41,15 @@ process.once('message', (request) => {
       result = { text: native.extractText(data) };
     } else {
       const extraction = native.extractPagesMarkdown(data);
-      /* The engine's own per-page suspicion travels with the pages: it is the only
-       * thing that can say a page it did produce text for may still hold more. */
-      result = {
-        pages: extraction.pages,
-        flaggedPages: extraction.pagesNeedingOcr || [],
-      };
+      /* Classification is a second, cheaper pass in this same child. Its per-page
+       * reasons are the only place a scan is named: the extraction's own needsOcr flag
+       * reports unreliable text, which is a different question and one that fires on
+       * dot leaders. */
+      const detection = native.detectPdf(data);
+      const scannedPages = (detection.ocrReasonsByPage || [])
+        .filter((entry) => (entry.reasons || []).some((r) => request.scanReasons.includes(r)))
+        .map((entry) => entry.page);
+      result = { pages: extraction.pages, scannedPages };
     }
     /* Bounded here so no oversized extraction crosses IPC into the API process. The
      * page count is its own limit: pages that converted to nothing weigh nothing, so
@@ -94,15 +97,25 @@ process.once('message', (request) => {
 
 interface PdfChildResult {
   pages?: PageMarkdownResult[];
-  /** 1-indexed pages the engine considers unreliable, whether or not it produced text. */
-  flaggedPages?: number[];
+  /** 1-indexed pages the classifier attributes to a scan. */
+  scannedPages?: number[];
   text?: string;
 }
 
 export interface PdfPageExtraction {
   pages: PageMarkdownResult[];
-  flaggedPages: number[];
+  scannedPages: number[];
 }
+
+/**
+ * Classification reasons that mean "a scan holds content here".
+ *
+ * An allowlist, not a denylist: the engine also flags pages for text-quality reasons
+ * such as `suspected_garbled_text`, which false-positives on dot leaders and dense
+ * punctuation. Escalating those would replace a correct extraction with an OCR guess
+ * on any document that has a table of contents.
+ */
+export const SCAN_OCR_REASONS = ['scanned'] as const;
 
 type PdfChildOp = 'pages' | 'text';
 
@@ -118,6 +131,7 @@ function runPdfChild(op: PdfChildOp, filePath: string): Promise<PdfChildResult> 
       maxOutputBytes: MAX_PARSER_OUTPUT_BYTES,
       maxPages: MAX_PARSER_PAGES,
       pageOverheadBytes: PARSER_PAGE_OVERHEAD_BYTES,
+      scanReasons: SCAN_OCR_REASONS,
     },
     timeoutMs: PDF_CHILD_TIMEOUT_MS,
   });
@@ -125,8 +139,8 @@ function runPdfChild(op: PdfChildOp, filePath: string): Promise<PdfChildResult> 
 
 /** Per-page markdown for a PDF, parsed outside the API process. */
 export async function extractPagesMarkdownIsolated(filePath: string): Promise<PdfPageExtraction> {
-  const { pages, flaggedPages } = await runPdfChild('pages', filePath);
-  return { pages: pages ?? [], flaggedPages: flaggedPages ?? [] };
+  const { pages, scannedPages } = await runPdfChild('pages', filePath);
+  return { pages: pages ?? [], scannedPages: scannedPages ?? [] };
 }
 
 /**

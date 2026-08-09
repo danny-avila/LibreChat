@@ -10,13 +10,14 @@ import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
 describe('pdfInspector native', () => {
   const fixture = (name: string) => path.join(__dirname, '..', 'documents', name);
 
-  test("reports the engine's own page flags alongside the markdown", async () => {
-    /* A page the engine produced text for and still flagged is the only signal that
-     * selectable text may be sitting next to a scan holding more of it. */
-    const { pages, flaggedPages } = await extractPagesMarkdownIsolated(fixture('sample-mixed.pdf'));
+  test('reports the pages the classifier attributes to a scan', async () => {
+    /* The extraction's own needsOcr flag answers "is this text reliable", which fires on
+     * dot leaders. Only the classifier names a scan, and that is what an escalation to
+     * OCR should rest on. */
+    const { pages, scannedPages } = await extractPagesMarkdownIsolated(fixture('sample-mixed.pdf'));
 
     expect(pages).toHaveLength(2);
-    expect(flaggedPages).toEqual([2]);
+    expect(scannedPages).toEqual([2]);
   });
 
   test('extracts per-page markdown outside the API process', async () => {
