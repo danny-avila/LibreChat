@@ -149,6 +149,10 @@ function serializeSourceStatus(
     syncedFileCount: status.syncedFileCount,
     deletedSkillCount: status.deletedSkillCount,
     deletedFileCount: status.deletedFileCount,
+    skippedSkillCount: status.skippedSkillCount ?? 0,
+    /* The per-skill entries name repository paths, so they follow the same
+       visibility rule as owner/repo/paths rather than the bare count. */
+    skippedSkills: includePrivateSourceMetadata ? status.skippedSkills : undefined,
     createdAt: toIso(status.createdAt),
     updatedAt: toIso(status.updatedAt),
   };

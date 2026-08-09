@@ -95,6 +95,58 @@ function githubFetch(
   }) as unknown as typeof fetch;
 }
 
+/** Serves one `skills/<dir>/SKILL.md` per entry, in the order given. */
+function multiSkillFetch(
+  skills: Array<{ dir: string; markdown: string }>,
+  { rateLimitedDirs = [] }: { rateLimitedDirs?: string[] } = {},
+): typeof fetch {
+  return jest.fn(async (input: RequestInfo | URL) => {
+    const url = input.toString();
+    if (url.includes('/commits/')) {
+      return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
+    }
+    if (url.includes('/git/trees/tree-sha')) {
+      return response({
+        sha: 'tree-sha',
+        truncated: false,
+        tree: [
+          {
+            path: 'skills',
+            mode: '040000',
+            type: 'tree',
+            sha: 'skills-tree-sha',
+            url: 'https://api.github.test/tree/skills',
+          },
+        ],
+      });
+    }
+    if (url.includes('/git/trees/skills-tree-sha')) {
+      return response({
+        sha: 'skills-tree-sha',
+        truncated: false,
+        tree: skills.map(({ dir, markdown }) => ({
+          path: `${dir}/SKILL.md`,
+          mode: '100644',
+          type: 'blob',
+          sha: `${dir}-skill-sha`,
+          size: Buffer.byteLength(markdown),
+          url: `https://api.github.test/blob/${dir}`,
+        })),
+      });
+    }
+    const requested = skills.find(({ dir }) => url.includes(`/git/blobs/${dir}-skill-sha`));
+    if (requested && rateLimitedDirs.includes(requested.dir)) {
+      return response({ message: 'API rate limit exceeded' }, 403, {
+        'x-ratelimit-remaining': '0',
+      });
+    }
+    if (requested) {
+      return response(blob(requested.markdown));
+    }
+    return response({ message: 'not found' }, 404);
+  }) as unknown as typeof fetch;
+}
+
 function makeSkill(input: CreateSkillInput): ISkill & { _id: Types.ObjectId } {
   return {
     _id: new Types.ObjectId(),
@@ -192,7 +244,8 @@ function createDeps(
         paths: input.paths,
         startedAt: input.startedAt,
         finishedAt: input.finishedAt,
-        lastSuccessAt: input.status === 'succeeded' ? input.finishedAt : undefined,
+        lastSuccessAt:
+          input.status === 'succeeded' || input.status === 'partial' ? input.finishedAt : undefined,
         lastFailureAt: input.status === 'failed' ? input.finishedAt : undefined,
         errorCode: input.errorCode,
         errorMessage: input.errorMessage,
@@ -200,6 +253,8 @@ function createDeps(
         syncedFileCount: input.syncedFileCount ?? 0,
         deletedSkillCount: input.deletedSkillCount ?? 0,
         deletedFileCount: input.deletedFileCount ?? 0,
+        skippedSkillCount: input.skippedSkillCount ?? 0,
+        skippedSkills: input.skippedSkills,
       };
       statuses.push(status);
       return status;
@@ -446,6 +501,139 @@ describe('createGitHubSkillSyncRunner', () => {
         status: 'failed',
         errorCode: 'DUPLICATE_SKILL_NAME',
         errorMessage: 'GitHub source "librechat-skills" contains multiple skills named "duplicate"',
+      }),
+    );
+  });
+
+  it('publishes the healthy skills of a source and records the ones it had to skip', async () => {
+    const deps = createDeps({
+      fetchFn: multiSkillFetch([
+        {
+          dir: 'research',
+          markdown: '---\nname: research\ndescription: Research things\n---\nBody',
+        },
+        { dir: 'broken', markdown: '---\nname: [\n---\nBody' },
+        {
+          dir: 'analysis',
+          markdown: '---\nname: analysis\ndescription: Analyze things\n---\nBody',
+        },
+      ]),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect((deps.createSkill as jest.Mock).mock.calls.map(([input]) => input.name)).toEqual([
+      'research',
+      'analysis',
+    ]);
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'partial',
+        syncedSkillCount: 2,
+        skippedSkillCount: 1,
+        skippedSkills: [
+          expect.objectContaining({
+            path: 'skills/broken',
+            errorCode: 'SKILL_PARSE_FAILED',
+            errorMessage: expect.stringContaining('skills/broken/SKILL.md'),
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('keeps the previously synced mirror of a skipped skill instead of reconciling it away', async () => {
+    const author = makeSourceAuthorId();
+    const brokenMirror = makeSkill({
+      name: 'broken',
+      description: 'Previously valid',
+      author,
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/broken',
+      },
+    });
+    const deps = createDeps({
+      fetchFn: multiSkillFetch([
+        {
+          dir: 'research',
+          markdown: '---\nname: research\ndescription: Research things\n---\nBody',
+        },
+        { dir: 'broken', markdown: '---\nname: [\n---\nBody' },
+      ]),
+      listSkillsBySource: jest.fn(async () => [brokenMirror]),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.deleteSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'partial',
+        deletedSkillCount: 0,
+        skippedSkillCount: 1,
+      }),
+    );
+  });
+
+  it('skips every member of a duplicate name group and still publishes the unique skills', async () => {
+    const deps = createDeps({
+      fetchFn: multiSkillFetch([
+        { dir: 'first', markdown: '---\nname: duplicate\ndescription: First\n---\nBody' },
+        { dir: 'unique', markdown: '---\nname: unique\ndescription: Unique skill\n---\nBody' },
+        { dir: 'second', markdown: '---\nname: duplicate\ndescription: Second\n---\nBody' },
+      ]),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect((deps.createSkill as jest.Mock).mock.calls.map(([input]) => input.name)).toEqual([
+      'unique',
+    ]);
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'partial',
+        syncedSkillCount: 1,
+        skippedSkillCount: 2,
+        skippedSkills: [
+          expect.objectContaining({ path: 'skills/first', errorCode: 'DUPLICATE_SKILL_NAME' }),
+          expect.objectContaining({ path: 'skills/second', errorCode: 'DUPLICATE_SKILL_NAME' }),
+        ],
+      }),
+    );
+  });
+
+  it('fails the whole source when GitHub starts rate limiting part way through', async () => {
+    const deps = createDeps({
+      fetchFn: multiSkillFetch(
+        [
+          {
+            dir: 'research',
+            markdown: '---\nname: research\ndescription: Research things\n---\nBody',
+          },
+          { dir: 'analysis', markdown: '---\nname: analysis\ndescription: Analyze\n---\nBody' },
+        ],
+        { rateLimitedDirs: ['analysis'] },
+      ),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    /* A refusal that will hit every remaining request is not the fault of the
+       skill that ran into it first, so it must not be filed as one skipped
+       skill on an otherwise healthy run. */
+    expect(result.status).toBe('failed');
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'GITHUB_RATE_LIMITED',
+        skippedSkillCount: 0,
       }),
     );
   });
@@ -947,7 +1135,7 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
-  it('does not delete stale name-conflicting mirrors before another skill file sync fails', async () => {
+  it('keeps a failed skill mirror while still reconciling a mirror whose upstream root is gone', async () => {
     const renamedMarkdown = '---\nname: renamed\ndescription: Renamed skill\n---\nBody';
     const brokenMarkdown = '---\nname: broken\ndescription: Broken skill\n---\nBody';
     const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
@@ -1072,12 +1260,17 @@ describe('createGitHubSkillSyncRunner', () => {
     const result = await runner.runOnce();
 
     expect(result.status).toBe('failed');
-    expect(deleteSkill).not.toHaveBeenCalledWith(staleId.toString());
+    /* The failed skill is still present upstream, so its mirror survives for a
+       later run to repair. The stale mirror is a different question: its
+       upstream root is gone, so reconciling it away is correct regardless of
+       which skills failed. */
+    expect(deleteSkill).not.toHaveBeenCalledWith(existingId.toString());
     expect(deps.updateSkill).not.toHaveBeenCalled();
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({
         status: 'failed',
         errorMessage: 'storage unavailable',
+        skippedSkillCount: 2,
       }),
     );
   });
@@ -1341,13 +1534,13 @@ describe('createGitHubSkillSyncRunner', () => {
 
     expect(result.status).toBe('failed');
     expect(deps.createSkill).not.toHaveBeenCalled();
-    expect(deps.listSkillsBySource).not.toHaveBeenCalled();
     expect(deps.deleteSkill).not.toHaveBeenCalled();
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({
         status: 'failed',
         errorCode: 'SKILL_PARSE_FAILED',
         errorMessage: expect.stringContaining('skills/research/SKILL.md'),
+        skippedSkillCount: 1,
       }),
     );
   });
@@ -2142,7 +2335,6 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(fetchedUrls.some((url) => url.includes('/git/blobs/oversized-file-sha'))).toBe(false);
     expect(deps.createSkill).not.toHaveBeenCalled();
     expect(deps.saveBuffer).not.toHaveBeenCalled();
-    expect(deps.listSkillsBySource).not.toHaveBeenCalled();
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({
         status: 'failed',

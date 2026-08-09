@@ -132,6 +132,51 @@ describe('createSkillSyncMethods', () => {
     expect(success.errorMessage).toBeUndefined();
   });
 
+  it('persists the skipped skills of a partial run and treats it as a success timestamp', async () => {
+    const partial = await methods.upsertSkillSyncStatus({
+      provider: 'github',
+      sourceId: 'librechat-skills',
+      status: 'partial',
+      finishedAt: new Date('2026-01-01T00:00:00.000Z'),
+      syncedSkillCount: 11,
+      skippedSkillCount: 2,
+      skippedSkills: [
+        {
+          path: 'skills/broken',
+          name: 'broken',
+          errorCode: 'SKILL_PARSE_FAILED',
+          errorMessage: 'skills/broken/SKILL.md: malformed frontmatter',
+        },
+      ],
+    });
+
+    expect(partial).toMatchObject({
+      status: 'partial',
+      syncedSkillCount: 11,
+      skippedSkillCount: 2,
+      lastSuccessAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    expect(partial.skippedSkills).toEqual([
+      {
+        path: 'skills/broken',
+        name: 'broken',
+        errorCode: 'SKILL_PARSE_FAILED',
+        errorMessage: 'skills/broken/SKILL.md: malformed frontmatter',
+      },
+    ]);
+
+    const clean = await methods.upsertSkillSyncStatus({
+      provider: 'github',
+      sourceId: 'librechat-skills',
+      status: 'succeeded',
+      syncedSkillCount: 13,
+    });
+
+    expect(clean.status).toBe('succeeded');
+    expect(clean.skippedSkillCount).toBe(0);
+    expect(clean.skippedSkills).toEqual([]);
+  });
+
   it('keeps status rows separate for the same source id in different tenants', async () => {
     await methods.upsertSkillSyncStatus({
       provider: 'github',

@@ -215,11 +215,20 @@ export type TGitHubSkillSyncCredentialSummary = {
   createdAt?: string;
 };
 
+/** One upstream skill a sync run dropped, with the reason it was dropped. */
+export type TGitHubSkillSyncSkippedSkill = {
+  path: string;
+  name?: string;
+  errorCode: string;
+  errorMessage: string;
+};
+
 export type TGitHubSkillSyncSourceStatus = {
   provider: 'github';
   sourceId: string;
   tenantId?: string;
-  status: 'idle' | 'running' | 'succeeded' | 'failed' | 'skipped';
+  /** `partial`: some skills published, others were skipped (see `skippedSkills`). */
+  status: 'idle' | 'running' | 'succeeded' | 'partial' | 'failed' | 'skipped';
   credentialKey?: string;
   credentialPresent: boolean;
   owner?: string;
@@ -236,6 +245,8 @@ export type TGitHubSkillSyncSourceStatus = {
   syncedFileCount: number;
   deletedSkillCount: number;
   deletedFileCount: number;
+  skippedSkillCount: number;
+  skippedSkills?: TGitHubSkillSyncSkippedSkill[];
   updatedAt?: string;
   createdAt?: string;
 };

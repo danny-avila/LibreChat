@@ -11,6 +11,8 @@ import {
 import type {
   ISkill,
   ISkillFile,
+  ValidationIssue,
+  ISkillSyncSkippedSkill,
   CreateSkillInput,
   UpdateSkillInput,
   CreateSkillResult,
@@ -37,6 +39,9 @@ function getSystemAuthorId(): Types.ObjectId {
 }
 const PROVIDER: SkillSyncProvider = 'github';
 const LOCK_LEASE_MS = 30 * 60 * 1000;
+/** Keeps a pathological source from writing an unbounded status document. */
+const MAX_RECORDED_SKIPPED_SKILLS = 20;
+const SKIP_MESSAGE_MAX = 500;
 
 export const GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION =
   'Use a GitHub fine-grained personal access token scoped to the selected repository with read-only Contents and Metadata permissions.';
@@ -79,6 +84,7 @@ type SyncCounters = {
   syncedFileCount: number;
   deletedSkillCount: number;
   deletedFileCount: number;
+  skippedSkillCount: number;
 };
 
 type AssertNotCancelled = () => void;
@@ -470,6 +476,26 @@ function sanitizeError(error: unknown): { code: string; message: string } {
   return { code: 'SYNC_FAILED', message: 'Unknown skill sync failure' };
 }
 
+/**
+ * Failures that say nothing more in this run can succeed: the lock is gone, or
+ * GitHub is refusing every request. They abort the source instead of being
+ * charged to the skill that happened to hit them first. Everything else is
+ * scoped to one skill and only skips that skill.
+ */
+const SOURCE_FATAL_ERROR_CODES = new Set([
+  'SYNC_LOCK_LOST',
+  'GITHUB_AUTH_FAILED',
+  'GITHUB_RATE_LIMITED',
+]);
+
+function isSourceFatalError(error: unknown): boolean {
+  return error instanceof SkillSyncError && SOURCE_FATAL_ERROR_CODES.has(error.code);
+}
+
+function truncateSkipMessage(message: string): string {
+  return message.length > SKIP_MESSAGE_MAX ? `${message.slice(0, SKIP_MESSAGE_MAX - 1)}…` : message;
+}
+
 function buildGitHubHeaders(token: string): HeadersInit {
   return {
     Accept: 'application/vnd.github+json',
@@ -771,6 +797,7 @@ function makeStatusInput(params: {
   errorCode?: string;
   errorMessage?: string;
   counts?: Partial<SyncCounters>;
+  skippedSkills?: ISkillSyncSkippedSkill[];
 }): SkillSyncStatusInput {
   return {
     provider: PROVIDER,
@@ -790,6 +817,8 @@ function makeStatusInput(params: {
     syncedFileCount: params.counts?.syncedFileCount ?? 0,
     deletedSkillCount: params.counts?.deletedSkillCount ?? 0,
     deletedFileCount: params.counts?.deletedFileCount ?? 0,
+    skippedSkillCount: params.counts?.skippedSkillCount ?? 0,
+    skippedSkills: params.skippedSkills,
   };
 }
 
@@ -879,6 +908,22 @@ async function prepareRemoteSkill(params: {
   return { existing, update, createInput };
 }
 
+/**
+ * Non-blocking validation issues (an unrecognized frontmatter key, a very short
+ * description) have no user-facing surface on a background sync, so the log is
+ * the only place a maintainer can see why an upstream `SKILL.md` looks off.
+ */
+function logSkillWarnings(name: string, warnings: ValidationIssue[] | undefined): void {
+  if (!warnings?.length) {
+    return;
+  }
+  logger.warn(
+    `[GitHubSkillSync] Skill "${name}" synced with warnings: ${warnings
+      .map((warning) => `${warning.field}: ${warning.message}`)
+      .join('; ')}`,
+  );
+}
+
 async function commitRemoteSkill(
   deps: GitHubSkillSyncDeps,
   prepared: PreparedRemoteSkill,
@@ -890,6 +935,7 @@ async function commitRemoteSkill(
       update: prepared.update,
     });
     if (result.status === 'updated') {
+      logSkillWarnings(result.skill.name, result.warnings);
       return { skill: result.skill, created: false };
     }
     if (result.status === 'conflict') {
@@ -904,6 +950,7 @@ async function commitRemoteSkill(
     );
   }
   const created = await deps.createSkill(prepared.createInput);
+  logSkillWarnings(created.skill.name, created.warnings);
   return { skill: created.skill, created: true };
 }
 
@@ -1205,26 +1252,51 @@ function getMirrorNameKey(params: {
   return `${params.tenantId ?? ''}:${params.author}:${params.name ?? ''}`;
 }
 
-function assertNoDuplicatePreparedSkillNames(
+/**
+ * Two upstream skills claiming one mirror name have no non-arbitrary winner, so
+ * every member of the colliding group is dropped rather than letting tree order
+ * decide which one the mirror ends up holding. Skills with unique names are
+ * unaffected: one bad pair no longer costs the rest of the repository.
+ */
+function partitionDuplicatePreparedSkillNames(
   source: SkillSyncGitHubSourceConfig,
   preparedSkills: PreparedDiscoveredSkill[],
-): void {
+): { unique: PreparedDiscoveredSkill[]; duplicates: PreparedDiscoveredSkill[] } {
   const sourceTenantId = source.tenantId ?? undefined;
-  const seen = new Map<string, string>();
-  for (const { discovered, prepared } of preparedSkills) {
+  const groups = new Map<string, PreparedDiscoveredSkill[]>();
+  for (const entry of preparedSkills) {
     const key = getMirrorNameKey({
       tenantId: sourceTenantId,
-      author: prepared.createInput.author.toString(),
-      name: prepared.createInput.name,
+      author: entry.prepared.createInput.author.toString(),
+      name: entry.prepared.createInput.name,
     });
-    if (seen.has(key)) {
-      throw new SkillSyncError(
-        'DUPLICATE_SKILL_NAME',
-        `GitHub source "${source.id}" contains multiple skills named "${prepared.createInput.name}"`,
-      );
+    const group = groups.get(key);
+    if (group) {
+      group.push(entry);
+      continue;
     }
-    seen.set(key, discovered.rootPath);
+    groups.set(key, [entry]);
   }
+  const unique: PreparedDiscoveredSkill[] = [];
+  const duplicates: PreparedDiscoveredSkill[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      unique.push(group[0]);
+      continue;
+    }
+    duplicates.push(...group);
+  }
+  return { unique, duplicates };
+}
+
+function makeDuplicateNameError(
+  source: SkillSyncGitHubSourceConfig,
+  name: string | undefined,
+): SkillSyncError {
+  return new SkillSyncError(
+    'DUPLICATE_SKILL_NAME',
+    `GitHub source "${source.id}" contains multiple skills named "${name}"`,
+  );
 }
 
 async function deleteNameConflictingStaleSkill(params: {
@@ -1468,46 +1540,98 @@ async function syncSource(params: {
       syncedFileCount: 0,
       deletedSkillCount: 0,
       deletedFileCount: 0,
+      skippedSkillCount: 0,
+    };
+    const skippedSkills: ISkillSyncSkippedSkill[] = [];
+    /**
+     * Charges one skill's failure to that skill and lets the run continue.
+     * Source-level failures are rethrown so the whole source still fails fast
+     * instead of being reported as a long list of skipped skills.
+     */
+    const recordSkippedSkill = ({
+      path,
+      name,
+      error,
+    }: {
+      path: string;
+      name?: string;
+      error: unknown;
+    }): void => {
+      if (isSourceFatalError(error)) {
+        throw error;
+      }
+      const sanitized = sanitizeError(error);
+      counts.skippedSkillCount++;
+      logger.warn(
+        `[GitHubSkillSync] Source "${source.id}" skipped "${path}": ${sanitized.message}`,
+      );
+      if (skippedSkills.length >= MAX_RECORDED_SKIPPED_SKILLS) {
+        return;
+      }
+      skippedSkills.push({
+        path,
+        name,
+        errorCode: sanitized.code,
+        errorMessage: truncateSkipMessage(sanitized.message),
+      });
     };
     const syncedAt = new Date();
     const preparedSkills: PreparedDiscoveredSkill[] = [];
+    /* Built from everything discovered upstream, not just what prepared
+       cleanly: a skill that failed to prepare is still present in the
+       repository, so it must not look stale or like a rename target. */
+    const discoveredUpstreamIds = new Set(
+      discoveredSkills.map((discovered) => makeUpstreamId(source, discovered.rootPath)),
+    );
 
     for (const discovered of discoveredSkills) {
       assertNotCancelled();
-      assertGitHubSkillPackageManifest(discovered);
-      const skillMdPath = getSkillMdPath(discovered);
-      const skillMdBuffer = await fetchBlob({
-        fetchFn,
-        token,
-        source,
-        sha: discovered.skillMd.sha,
-      });
-      assertNotCancelled();
-      assertGitHubBufferSize(skillMdBuffer, skillMdPath);
-      const prepared = await prepareRemoteSkill({
-        deps,
-        source,
-        discovered,
-        skillMdContent: skillMdBuffer.toString('utf-8'),
-        commitSha: commit.sha,
-        syncedAt,
-      });
-      preparedSkills.push({ discovered, prepared });
+      try {
+        assertGitHubSkillPackageManifest(discovered);
+        const skillMdPath = getSkillMdPath(discovered);
+        const skillMdBuffer = await fetchBlob({
+          fetchFn,
+          token,
+          source,
+          sha: discovered.skillMd.sha,
+        });
+        assertNotCancelled();
+        assertGitHubBufferSize(skillMdBuffer, skillMdPath);
+        const prepared = await prepareRemoteSkill({
+          deps,
+          source,
+          discovered,
+          skillMdContent: skillMdBuffer.toString('utf-8'),
+          commitSha: commit.sha,
+          syncedAt,
+        });
+        preparedSkills.push({ discovered, prepared });
+      } catch (error) {
+        seenUpstreamIds.add(makeUpstreamId(source, discovered.rootPath));
+        recordSkippedSkill({ path: discovered.rootPath, error });
+      }
     }
 
-    const discoveredUpstreamIds = new Set(
-      preparedSkills.map(({ discovered }) => makeUpstreamId(source, discovered.rootPath)),
-    );
-    assertNoDuplicatePreparedSkillNames(source, preparedSkills);
+    const { unique, duplicates } = partitionDuplicatePreparedSkillNames(source, preparedSkills);
+    for (const { discovered, prepared } of duplicates) {
+      seenUpstreamIds.add(makeUpstreamId(source, discovered.rootPath));
+      recordSkippedSkill({
+        path: discovered.rootPath,
+        name: prepared.createInput.name,
+        error: makeDuplicateNameError(source, prepared.createInput.name),
+      });
+    }
     const orderedPreparedSkills = orderPreparedSkillsForSafeStaleDeletes({
       source,
-      preparedSkills,
+      preparedSkills: unique,
       existingSyncedSkills: await getExistingSyncedSkills(),
       discoveredUpstreamIds,
     });
 
-    for (const { discovered, prepared } of orderedPreparedSkills) {
-      assertNotCancelled();
+    const syncPreparedSkill = async ({
+      discovered,
+      prepared,
+    }: PreparedDiscoveredSkill): Promise<void> => {
       const movedExisting = prepared.existing
         ? null
         : findMovedSourceSkill({
@@ -1519,7 +1643,6 @@ async function syncSource(params: {
       const effectivePrepared: PreparedRemoteSkill = movedExisting
         ? { ...prepared, existing: movedExisting }
         : prepared;
-      seenUpstreamIds.add(makeUpstreamId(source, discovered.rootPath));
       if (effectivePrepared.existing) {
         // Check for an external edit before mutating files, so a concurrently
         // edited skill fails fast without leaving its bundled files partially
@@ -1612,7 +1735,7 @@ async function syncSource(params: {
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;
-        continue;
+        return;
       }
 
       const upserted = await commitRemoteSkill(deps, effectivePrepared);
@@ -1640,6 +1763,23 @@ async function syncSource(params: {
           ),
         );
         throw error;
+      }
+    };
+
+    for (const entry of orderedPreparedSkills) {
+      assertNotCancelled();
+      /* Marked as seen before the attempt: a skill that fails here is still
+         present upstream, so the reconcile pass below must not mirror-delete
+         a copy that a later run can repair. */
+      seenUpstreamIds.add(makeUpstreamId(source, entry.discovered.rootPath));
+      try {
+        await syncPreparedSkill(entry);
+      } catch (error) {
+        recordSkippedSkill({
+          path: entry.discovered.rootPath,
+          name: entry.prepared.createInput.name,
+          error,
+        });
       }
     }
 
@@ -1669,13 +1809,35 @@ async function syncSource(params: {
       counts.deletedSkillCount++;
     }
 
+    if (counts.skippedSkillCount === 0) {
+      return deps.upsertStatus(
+        makeStatusInput({
+          source,
+          status: 'succeeded',
+          startedAt,
+          finishedAt: new Date(),
+          counts,
+        }),
+      );
+    }
+    /* Nothing published and something skipped means the source produced no
+       usable mirror at all, which is a failure however it is spelled. The
+       first skip carries the reason so the status is actionable. */
+    const publishedNothing = counts.syncedSkillCount === 0;
+    const firstSkip = skippedSkills[0];
+    logger.warn(
+      `[GitHubSkillSync] Source "${source.id}" synced ${counts.syncedSkillCount} skill(s) and skipped ${counts.skippedSkillCount}`,
+    );
     return deps.upsertStatus(
       makeStatusInput({
         source,
-        status: 'succeeded',
+        status: publishedNothing ? 'failed' : 'partial',
         startedAt,
         finishedAt: new Date(),
         counts,
+        skippedSkills,
+        errorCode: publishedNothing ? firstSkip?.errorCode : undefined,
+        errorMessage: publishedNothing ? firstSkip?.errorMessage : undefined,
       }),
     );
   } catch (error) {
@@ -1781,6 +1943,8 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
         syncedFileCount: stored?.syncedFileCount ?? 0,
         deletedSkillCount: stored?.deletedSkillCount ?? 0,
         deletedFileCount: stored?.deletedFileCount ?? 0,
+        skippedSkillCount: stored?.skippedSkillCount ?? 0,
+        skippedSkills: stored?.skippedSkills,
         createdAt: stored?.createdAt,
         updatedAt: stored?.updatedAt,
       } satisfies ISkillSyncStatus & { credentialPresent: boolean };

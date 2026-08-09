@@ -36,6 +36,7 @@ function createSourceStatus(overrides: Partial<SourceStatus> = {}): SourceStatus
     syncedFileCount: 0,
     deletedSkillCount: 0,
     deletedFileCount: 0,
+    skippedSkillCount: 0,
     errorCode: undefined,
     errorMessage: undefined,
     startedAt: undefined,
@@ -59,6 +60,15 @@ function createHandlers({
       runOnStartup: false,
       sources: [
         createSourceStatus({
+          skippedSkillCount: 1,
+          skippedSkills: [
+            {
+              path: 'skills/broken',
+              name: 'broken',
+              errorCode: 'SKILL_PARSE_FAILED',
+              errorMessage: 'skills/broken/SKILL.md: malformed frontmatter',
+            },
+          ],
           errorCode: statusErrorCode,
           errorMessage: statusErrorMessage,
         }),
@@ -77,9 +87,18 @@ function createHandlers({
       status: 'completed' as const,
       sources: [
         createSourceStatus({
-          status: 'succeeded',
+          status: 'partial',
           syncedSkillCount: 1,
           syncedFileCount: 2,
+          skippedSkillCount: 1,
+          skippedSkills: [
+            {
+              path: 'skills/broken',
+              name: 'broken',
+              errorCode: 'SKILL_PARSE_FAILED',
+              errorMessage: 'skills/broken/SKILL.md: malformed frontmatter',
+            },
+          ],
           errorCode: statusErrorCode,
           errorMessage: statusErrorMessage,
         }),
@@ -119,6 +138,10 @@ describe('createAdminSkillsSyncHandlers', () => {
             repo: undefined,
             ref: undefined,
             paths: undefined,
+            /* Skipped entries name repository paths, so they are redacted with
+               the rest of the source metadata; the bare count is not. */
+            skippedSkillCount: 1,
+            skippedSkills: undefined,
           }),
         ],
       }),
@@ -254,6 +277,13 @@ describe('createAdminSkillsSyncHandlers', () => {
             ref: 'main',
             paths: ['skills'],
             errorMessage: 'Missing GitHub credential "github-skills-prod"',
+            skippedSkillCount: 1,
+            skippedSkills: [
+              expect.objectContaining({
+                path: 'skills/broken',
+                errorCode: 'SKILL_PARSE_FAILED',
+              }),
+            ],
           }),
         ],
       }),
