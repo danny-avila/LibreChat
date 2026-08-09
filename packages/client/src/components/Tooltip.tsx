@@ -18,6 +18,7 @@ interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
   className?: string;
   description: string;
   enableHTML?: boolean;
+  portalElement?: Ariakit.TooltipProps['portalElement'];
   side?: 'top' | 'bottom' | 'left' | 'right';
 }
 
@@ -29,10 +30,12 @@ const TooltipPopup = memo(function TooltipPopup({
   store,
   description,
   enableHTML,
+  portalElement,
 }: {
   store: Ariakit.TooltipStore;
   description: string;
   enableHTML: boolean;
+  portalElement?: Ariakit.TooltipProps['portalElement'];
 }) {
   const mounted = Ariakit.useStoreState(store, (state) => state.mounted);
   const placement = Ariakit.useStoreState(store, (state) => state.placement);
@@ -92,6 +95,7 @@ const TooltipPopup = memo(function TooltipPopup({
         <Ariakit.Tooltip
           gutter={4}
           alwaysVisible
+          portalElement={portalElement}
           className="tooltip"
           render={
             <motion.div
@@ -121,7 +125,17 @@ const TooltipPopup = memo(function TooltipPopup({
 export const TooltipAnchor: ForwardRefExoticComponent<
   Omit<TooltipAnchorProps, 'ref'> & RefAttributes<HTMLDivElement>
 > = forwardRef<HTMLDivElement, TooltipAnchorProps>(function TooltipAnchor(
-  { description, side = 'top', className, role, enableHTML = false, onKeyDown, tabIndex, ...props },
+  {
+    description,
+    side = 'top',
+    className,
+    role,
+    enableHTML = false,
+    portalElement,
+    onKeyDown,
+    tabIndex,
+    ...props
+  },
   ref,
 ) {
   const tooltip = Ariakit.useTooltipStore({ placement: side });
@@ -165,7 +179,12 @@ export const TooltipAnchor: ForwardRefExoticComponent<
         onKeyDown={handleKeyDown}
         className={cn('cursor-pointer', className)}
       />
-      <TooltipPopup store={tooltip} description={description} enableHTML={enableHTML} />
+      <TooltipPopup
+        store={tooltip}
+        description={description}
+        enableHTML={enableHTML}
+        portalElement={portalElement}
+      />
     </Ariakit.TooltipProvider>
   );
 });
