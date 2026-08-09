@@ -331,10 +331,13 @@ describe('forkSharedConversation', () => {
     },
   ];
 
+  const SHARE_REVISION = '2026-01-01T00:00:00.000Z';
+
   const mockShare = {
     shareId: 'share123',
     conversationId: 'convo_anon',
     title: 'Shared Title',
+    updatedAt: new Date(SHARE_REVISION),
     messages: mockSharedMessages,
   };
 
@@ -378,7 +381,7 @@ describe('forkSharedConversation', () => {
       shareId: 'share123',
       shareResourceId: 'resource123',
       requestUserId: 'user1',
-      shareRevision: '2026-01-01T00:00:00.000Z',
+      shareRevision: SHARE_REVISION,
     });
 
     expect(result).toBeTruthy();
@@ -627,6 +630,7 @@ describe('forkSharedConversation', () => {
       shareId: 'share123',
       requestUserId: 'user1',
       targetMessageIndex: 1,
+      shareRevision: SHARE_REVISION,
     });
 
     const savedTexts = bulkSaveMessages.mock.calls[0][0].map((message) => message.text);
@@ -664,6 +668,7 @@ describe('forkSharedConversation', () => {
       shareId: 'share123',
       requestUserId: 'user1',
       targetMessageIndex: 2,
+      shareRevision: SHARE_REVISION,
     });
 
     const savedTexts = bulkSaveMessages.mock.calls[0][0].map((message) => message.text);
@@ -676,8 +681,21 @@ describe('forkSharedConversation', () => {
       shareId: 'share123',
       requestUserId: 'user1',
       targetMessageIndex: 999,
+      shareRevision: SHARE_REVISION,
     });
 
+    expect(bulkSaveMessages.mock.calls[0][0]).toHaveLength(mockSharedMessages.length);
+  });
+
+  test('should ignore a positional target that comes without a revision', async () => {
+    await forkSharedConversation({
+      shareId: 'share123',
+      requestUserId: 'user1',
+      targetMessageIndex: 1,
+    });
+
+    // Nothing proves which payload the index was read against, so the whole share
+    // is cloned instead of a branch the caller may never have seen.
     expect(bulkSaveMessages.mock.calls[0][0]).toHaveLength(mockSharedMessages.length);
   });
 

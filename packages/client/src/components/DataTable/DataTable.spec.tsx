@@ -1025,6 +1025,37 @@ describe('DataTable', () => {
     });
   });
 
+  describe('Row memoization', () => {
+    it('re-renders rows when the column definitions change', () => {
+      const makeColumns = (label: string): TableColumn<TestData, string>[] => [
+        {
+          accessorKey: 'name',
+          header: 'Name',
+          cell: () => <span data-testid="action-cell">{label}</span>,
+        },
+      ];
+      // The same rows: only the cells change, which is what a pending row action
+      // looks like to the memo comparator.
+      const data = createTestData(3);
+
+      const { rerender } = render(
+        <TestWrapper>
+          <DataTable columns={makeColumns('Restore')} data={data} />
+        </TestWrapper>,
+      );
+
+      expect(screen.getAllByTestId('action-cell')[0]).toHaveTextContent('Restore');
+
+      rerender(
+        <TestWrapper>
+          <DataTable columns={makeColumns('Restoring')} data={data} />
+        </TestWrapper>,
+      );
+
+      expect(screen.getAllByTestId('action-cell')[0]).toHaveTextContent('Restoring');
+    });
+  });
+
   describe('Custom Actions', () => {
     it('should render customActionsRenderer with selected info', () => {
       const columns = createTestColumns();

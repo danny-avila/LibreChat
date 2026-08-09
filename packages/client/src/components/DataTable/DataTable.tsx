@@ -70,6 +70,15 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   const lastScrollTimeRef = useRef(performance.now());
   const fastScrollTimeoutRef = useRef<number | null>(null);
   const autoFillRowCountRef = useRef(-1);
+  /* Column defs are rebuilt when a consumer's row actions change state (a pending
+     restore, say). Memoized rows compare row data, which has not moved, so they need
+     this marker to know their cells were redefined. */
+  const cellsVersionRef = useRef(0);
+  const renderedColumnsRef = useRef(columns);
+  if (renderedColumnsRef.current !== columns) {
+    renderedColumnsRef.current = columns;
+    cellsVersionRef.current += 1;
+  }
   const [autoFillAttempt, setAutoFillAttempt] = useState(0);
 
   useEffect(() => {
@@ -329,6 +338,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
               row={row as unknown as Row<Record<string, unknown>>}
               virtualIndex={virtualRow.index}
               selected={row.getIsSelected()}
+              cellsVersion={cellsVersionRef.current}
               style={{ height: rowHeight }}
             />
           );
@@ -350,6 +360,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         row={row as unknown as Row<Record<string, unknown>>}
         virtualIndex={row.index}
         selected={row.getIsSelected()}
+        cellsVersion={cellsVersionRef.current}
         style={{ height: rowHeight }}
       />
     ));

@@ -111,13 +111,19 @@ interface GenericRowProps {
   virtualIndex?: number;
   style?: React.CSSProperties;
   selected: boolean;
+  /** Bumped when the column definitions change. Row data alone can't express a cell
+   *  that renders external state (a pending row action, say), so without this the
+   *  memo would keep showing the stale cell until the underlying row object moves. */
+  cellsVersion?: number;
 }
 
 export const MemoizedTableRow: React.MemoExoticComponent<(props: GenericRowProps) => JSX.Element> =
   memo(
     ForwardTableRowComponent as (props: GenericRowProps) => JSX.Element,
     (prev: GenericRowProps, next: GenericRowProps) =>
-      prev.row.original === next.row.original && prev.selected === next.selected,
+      prev.row.original === next.row.original &&
+      prev.selected === next.selected &&
+      prev.cellsVersion === next.cellsVersion,
   );
 
 export const SkeletonRows: React.MemoExoticComponent<

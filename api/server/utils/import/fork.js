@@ -445,6 +445,10 @@ async function forkSharedConversation({
    */
   let sourceMessages = share.messages;
   if (
+    // A positional target only means something against the payload the caller read;
+    // with no revision proving which one that was, fall back to the whole share
+    // rather than resolving the index against a snapshot they never saw.
+    shareRevision != null &&
     Number.isInteger(targetMessageIndex) &&
     targetMessageIndex >= 0 &&
     targetMessageIndex < share.messages.length

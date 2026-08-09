@@ -181,6 +181,22 @@ export async function ensureLinkPermissions(
   sharedLinkId: string | Types.ObjectId,
   userId: string,
 ): Promise<void> {
+  /**
+   * The share badge reads the link on ordinary navigation, so the settled path has to
+   * stay read-only: re-granting on every open would turn a page load into an ACL write
+   * (resetting `grantedAt`) plus a redundant link read. Only a link that still has no
+   * owner grant needs the migration below.
+   */
+  const alreadyGranted = await getAclService().checkPermission({
+    userId,
+    resourceType: ResourceType.SHARED_LINK,
+    resourceId: sharedLinkId.toString(),
+    requiredPermission: PermissionBits.DELETE,
+  });
+  if (alreadyGranted) {
+    return;
+  }
+
   const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
   const rawDoc = await SharedLink.findById(sharedLinkId).lean();
 
