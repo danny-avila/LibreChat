@@ -97,9 +97,17 @@ const isPdfPageLimitError = (err) =>
  * configured OCR service, or into "no text found" for a perfectly readable file. */
 const isParserBusyError = (err) =>
   err?.code === 'CONCURRENCY_LIMIT' || err?.name === 'ConcurrencyLimitError';
+/* The parser declined to hand back an extraction that would not fit. Surfaced rather
+ * than swallowed so the file is not reported as unreadable, and so no fallback rebuilds
+ * in this process the string a child process just declined to send. */
+const isParserOutputLimitError = (err) =>
+  err?.code === 'PARSER_OUTPUT_LIMIT' || err?.name === 'ParserOutputLimitError';
 
 const isDocumentParserRefusal = (err) =>
-  isZipBombError(err) || isPdfPageLimitError(err) || isParserBusyError(err);
+  isZipBombError(err) ||
+  isPdfPageLimitError(err) ||
+  isParserBusyError(err) ||
+  isParserOutputLimitError(err);
 
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -951,8 +959,36 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       });
     };
 
+    /**
+     * Stores a delimited file as the bytes it already was, when conversion cannot ship.
+     * Reports whether it did, since the creators here answer the request rather than
+     * return a value.
+     */
+    const storeDelimitedTextAsIs = async () => {
+      const { text, bytes } = await parseText({ req, file, file_id });
+      if (!text?.trim()) {
+        return false;
+      }
+      await createTextFile({ text, bytes, type: effectiveMimeType });
+      return true;
+    };
+
     if (shouldUseDocumentParser) {
-      const localResult = await resolveDocumentText();
+      let localResult;
+      try {
+        localResult = await resolveDocumentText();
+      } catch (err) {
+        /* A delimited file is already text: the parser only reformats it as a table, and
+         * that table can outgrow the storage limit on a source file well inside it. */
+        if (
+          isParserOutputLimitError(err) &&
+          isDelimitedTextType(effectiveMimeType) &&
+          (await storeDelimitedTextAsIs())
+        ) {
+          return;
+        }
+        throw err;
+      }
       const hasLocalText = !!localResult?.text?.trim();
       /* Two ways a local result can be incomplete. pdf-inspector names the pages it
        * could not read; AnyDoc has no page numbers to name, so it reports whether the
@@ -983,15 +1019,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         return await createDocumentTextFile(localResult);
       }
 
-      /* A delimited file is already text: the parser only reformats it as a table, and
-       * that table can outgrow the storage limit on a source file well inside it. Falling
-       * back to the bytes is what this path did before the parser claimed the type, and
-       * it is the whole document either way, so there is nothing to warn about. */
-      if (isDelimitedTextType(effectiveMimeType)) {
-        const { text, bytes } = await parseText({ req, file, file_id });
-        if (text?.trim()) {
-          return await createTextFile({ text, bytes, type: effectiveMimeType });
-        }
+      /* Same reasoning as the refusal above, for a conversion that failed rather than
+       * one that was declined: the bytes are the whole document either way. */
+      if (isDelimitedTextType(effectiveMimeType) && (await storeDelimitedTextAsIs())) {
+        return;
       }
 
       throw new Error(

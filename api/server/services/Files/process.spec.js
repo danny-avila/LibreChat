@@ -430,6 +430,48 @@ describe('processAgentFileUpload', () => {
       );
     });
 
+    /**
+     * The same reformatting problem, reported as the refusal it is rather than swallowed.
+     * The delimited file still falls back to its bytes; anything else has to surface,
+     * since nothing downstream should rebuild the string the parser declined to hand over.
+     */
+    test('falls back to the bytes when a delimited conversion is refused on size', async () => {
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ textSupportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] }),
+      );
+      const refusal = Object.assign(new Error('anydoc extracted 22MB of text'), {
+        name: 'ParserOutputLimitError',
+        code: 'PARSER_OUTPUT_LIMIT',
+      });
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockRejectedValue(refusal),
+      });
+      const { parseText } = require('@librechat/api');
+      parseText.mockResolvedValueOnce({ text: 'a,b\n1,2\n', bytes: 8 });
+      const req = makeReq({ mimetype: 'text/csv', originalname: 'rows.csv', ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(db.createFile.mock.calls[0][0].text).toBe('a,b\n1,2\n');
+    });
+
+    test('surfaces a size refusal for a document with no readable raw form', async () => {
+      const refusal = Object.assign(new Error('pdf-inspector extracted 22MB of text'), {
+        name: 'ParserOutputLimitError',
+        code: 'PARSER_OUTPUT_LIMIT',
+      });
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockRejectedValue(refusal),
+      });
+      const { parseText } = require('@librechat/api');
+      const req = makeReq({ mimetype: PDF_MIME, originalname: 'huge.pdf', ocrConfig: null });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow('pdf-inspector extracted 22MB of text');
+      expect(parseText).not.toHaveBeenCalled();
+    });
+
     test('still refuses a binary document the parser cannot read', async () => {
       /* The counterpart: a DOCX has no readable raw form, so storing its bytes would
        * hand the model an archive. The refusal is the honest outcome there. */

@@ -888,9 +888,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const includeFiles = adminEnabled && perLinkEnabled;
       let fileSnapshots = share.fileSnapshots;
       if (includeFiles && isSnapshotStale(share) && share._id) {
+        /* Fenced on the share revision this migration read. An owner's concurrent
+         * update rotates `shareId`, so a late backfill cannot restore an older snapshot. */
         fileSnapshots = await persistBackfilledSnapshots(
           SharedLink,
-          { _id: share._id },
+          { _id: share._id, shareId: resolvedShareId },
           mergeFileSnapshots(
             share.fileSnapshots,
             await buildFileSnapshots(mongoose, messagesToShare, share.user),

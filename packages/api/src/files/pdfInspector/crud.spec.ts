@@ -1,5 +1,6 @@
 import path from 'path';
 import * as fs from 'fs';
+import { megabyte } from 'librechat-data-provider';
 import { parseWithPdfInspector, pdfInspectorSupportedMimeTypes } from './crud';
 
 /**
@@ -229,6 +230,66 @@ describe('pdf-inspector local parser', () => {
       jest.dontMock('./native');
     }
   });
+
+  /**
+   * The child refuses an extraction that would not fit, and pdfjs is not the answer to
+   * that: it would rebuild in the API process the very string the child declined to
+   * send, spending the bound where it was supposed to be enforced.
+   */
+  test('does not answer a size refusal with the pdfjs fallback', async () => {
+    mockPdfjs.numPages = 3;
+    mockPdfjs.pageText = { 1: 'recovered text', 2: 'recovered text', 3: 'recovered text' };
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => {
+            throw Object.assign(new Error('pdf-inspector extracted 22MB of text'), {
+              name: 'ParserOutputLimitError',
+              code: 'PARSER_OUTPUT_LIMIT',
+            });
+          },
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+
+        await expect(uploadIsolated(context(pdfFile('sample.pdf')))).rejects.toThrow(
+          /extracted 22MB of text/,
+        );
+        expect(mockPdfjs.requestedPages).toHaveLength(0);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
+  test('bounds the whole-document pdfjs walk by output size', async () => {
+    /* Page count says nothing about how much text a page holds, and this walk runs in
+     * the API process where the string is built before any caller can reject it. */
+    mockPdfjs.numPages = 40;
+    mockPdfjs.pageText = Object.fromEntries(
+      Array.from({ length: 40 }, (_, i) => [i + 1, 'x'.repeat(megabyte)]),
+    );
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => {
+            throw new Error('native parser rejected the document');
+          },
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+
+        await expect(uploadIsolated(context(pdfFile('sample.pdf')))).rejects.toMatchObject({
+          name: 'ParserOutputLimitError',
+          code: 'PARSER_OUTPUT_LIMIT',
+        });
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  }, 30_000);
 
   test('bounds the pdfjs recovery walk on a page-flooded document', async () => {
     /* Recovery is one sequential pdfjs read per dropped page (~20ms), while a page
