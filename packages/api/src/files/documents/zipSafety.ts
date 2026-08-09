@@ -48,6 +48,8 @@ const EOCD_SCAN_BYTES = EOCD_RECORD_BYTES + 65535;
  */
 export class ZipBombError extends Error {
   readonly code = 'ZIP_BOMB';
+  /** The document itself is the problem, so the caller is told to send a smaller one. */
+  readonly userErrorStatusCode = 413;
   constructor(message: string) {
     super(message);
     this.name = 'ZipBombError';
@@ -64,6 +66,8 @@ export class ZipBombError extends Error {
  */
 export class ArchiveValidationError extends Error {
   readonly code = 'ARCHIVE_INVALID';
+  /** Well-formed request, unreadable content: retrying the same bytes cannot help. */
+  readonly userErrorStatusCode = 422;
   constructor(message: string) {
     super(message);
     this.name = 'ArchiveValidationError';

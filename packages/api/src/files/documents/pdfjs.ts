@@ -19,6 +19,8 @@ export type ExtractedDocumentText = {
 
 /** Hard refusal used to stop page-flooded PDFs from entering another parser. */
 export class PdfPageLimitError extends Error {
+  /** The document itself is the problem, so the caller is told to send a smaller one. */
+  readonly userErrorStatusCode = 413;
   readonly code = 'PDF_PAGE_LIMIT';
 
   constructor(

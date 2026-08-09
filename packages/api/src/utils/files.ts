@@ -7,11 +7,21 @@ const USER_FACING_UPLOAD_ERRORS = [
   ['Invalid file format', 'Invalid file format'],
   ['exceeds token limit', 'File content exceeds token limit'],
   ['Unable to extract text from', 'Unable to extract text from file'],
-  /** Shed load and the parser's own refusals: each names something the caller can act on. */
-  ['requests are already waiting', 'Too many document parsing requests are already waiting'],
-  ['over the 15MB limit', 'Extracted document text exceeds the 15MB limit'],
-  ['archive could not be read safely', 'Archive could not be read safely'],
 ] as const;
+
+/**
+ * Refusals that name something the caller can act on: reduce the document, replace it,
+ * or try again later. Matched on the code rather than the message so a wording change
+ * cannot silently turn one back into a generic 500, and so each refusal keeps a single
+ * definition alongside the status it answers with.
+ */
+const USER_FACING_UPLOAD_ERROR_CODES: Readonly<Record<string, string>> = {
+  ZIP_BOMB: 'Archive exceeds the safe extraction limit',
+  ARCHIVE_INVALID: 'Archive could not be read safely',
+  PDF_PAGE_LIMIT: 'PDF exceeds the supported page limit',
+  PARSER_OUTPUT_LIMIT: 'Extracted document text exceeds the supported size limit',
+  CONCURRENCY_LIMIT: 'Too many document parsing requests are already waiting',
+};
 
 const ASCII_FILENAME_SAFE_PATTERN = /^[a-zA-Z0-9._-]$/;
 const UNSAFE_UNICODE_FILENAME_PATTERN = /[^\p{L}\p{M}\p{N}\p{Emoji}\u200d._-]/gu;
@@ -73,13 +83,17 @@ function truncateLeafWithSuffix(leaf: string, suffix: string, maxBytes: number):
  * without exposing provider, filesystem, filename, or submitted-content details.
  */
 export function resolveUploadErrorMessage(
-  error: { message?: string } | null | undefined,
+  error: { message?: string; code?: string } | null | undefined,
   defaultMessage = 'Error processing file',
   redactDetails = false,
 ): string {
   const errorMessage = error?.message;
   if (!errorMessage) {
     return defaultMessage;
+  }
+
+  if (error?.code != null && USER_FACING_UPLOAD_ERROR_CODES[error.code] != null) {
+    return redactDetails ? USER_FACING_UPLOAD_ERROR_CODES[error.code] : errorMessage;
   }
 
   if (errorMessage.includes('file_ids')) {

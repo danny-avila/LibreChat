@@ -225,6 +225,8 @@ describe('pdf-inspector local parser', () => {
         await expect(uploadIsolated(context(pdfFile('sample.pdf')))).rejects.toMatchObject({
           name: 'PdfPageLimitError',
           code: 'PDF_PAGE_LIMIT',
+          /** Permanent for this document, so the route answers with it rather than a 500. */
+          userErrorStatusCode: 413,
         });
         expect(mockPdfjs.requestedPages).toHaveLength(0);
       });
