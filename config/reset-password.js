@@ -2,7 +2,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const readline = require('readline');
 const mongoose = require('mongoose');
-const { User } = require('@librechat/data-schemas').createModels(mongoose);
+const { User, Passkey } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const connect = require('./connect');
 
@@ -55,7 +55,16 @@ const resetPassword = async () => {
       },
     );
 
+    /**
+     * A passkey signs in on its own, so leaving one in place would keep an attacker
+     * logged in after an administrator believes the account has been recovered.
+     */
+    const { deletedCount } = await Passkey.deleteMany({ user: user._id });
+
     console.log('Password successfully reset!');
+    if (deletedCount > 0) {
+      console.log(`Removed ${deletedCount} passkey(s); the user must enroll again.`);
+    }
     process.exit(0);
   } catch (err) {
     console.error('Error resetting password:', err);

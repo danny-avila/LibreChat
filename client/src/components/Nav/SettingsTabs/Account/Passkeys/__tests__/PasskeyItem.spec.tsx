@@ -95,6 +95,28 @@ describe('PasskeyItem removal step-up', () => {
     await waitFor(() => expect(deleteMock).toHaveBeenCalledWith('p1', ''));
   });
 
+  /**
+   * The waiver is keyed on the password hash server-side, which the client cannot see,
+   * so an SSO account that kept its old hash is only discovered by being refused.
+   */
+  it('reveals the password field when the server refuses a passwordless removal', async () => {
+    const deleteMock = jest
+      .fn<Promise<PasskeyRemovalResult>, [string, string]>()
+      .mockResolvedValueOnce('incorrect-password')
+      .mockResolvedValueOnce('removed');
+    const { user } = setup({ requiresPassword: false, onDelete: deleteMock });
+    await openConfirmation(user);
+
+    expect(screen.queryByLabelText('Confirm your password')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    const field = await screen.findByLabelText('Confirm your password');
+    await user.type(field, 'hunter2');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(deleteMock).toHaveBeenLastCalledWith('p1', 'hunter2'));
+  });
+
   it('cancels back to the row and returns focus to the remove control', async () => {
     const { deleteMock, user } = setup();
     await openConfirmation(user);
