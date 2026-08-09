@@ -2221,6 +2221,23 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
     expect(observed).toEqual(['tenant-42', undefined]);
   });
 
+  it('rejects an active caller transaction before dirtying MCP authority', async () => {
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    await consistency.initializeMCPAuthorityConsistency();
+    const before = await consistency.getMCPAuthorityConsistencyStatus();
+    getUserEntraGroups.mockClear();
+
+    await syncUserEntraGroupMemberships(user, 'fake-token', {
+      inTransaction: () => true,
+    });
+
+    expect(getUserEntraGroups).not.toHaveBeenCalled();
+    await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+      dirty: false,
+      generation: before.generation,
+    });
+  });
+
   it('should not modify groups when API returns empty list (early return)', async () => {
     await Group.create([
       {

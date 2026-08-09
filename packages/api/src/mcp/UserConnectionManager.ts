@@ -33,10 +33,10 @@ import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { detectOAuthRequirement, MCPOAuthHandler } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { isMCPDomainAllowed } from '~/auth/domain';
 import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPConnection } from './connection';
-import { processMCPEnv } from '~/utils/env';
 import { mcpConfig } from './mcpConfig';
 
 type PendingOAuthStart = {
@@ -1226,13 +1226,15 @@ export abstract class UserConnectionManager {
     graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
   }): Promise<t.ParsedServerConfig> {
     const dbSourced = isUserSourced(config);
-    const graphProcessedConfig = dbSourced
-      ? config
-      : await preProcessGraphTokens(config, {
-          user,
-          graphTokenResolver,
-          scopes: process.env.GRAPH_API_SCOPES,
-        });
+    /** Plugin-authored placeholders must never resolve against the user's Graph token. */
+    const graphProcessedConfig =
+      dbSourced || isPluginSourced(config)
+        ? config
+        : await preProcessGraphTokens(config, {
+            user,
+            graphTokenResolver,
+            scopes: process.env.GRAPH_API_SCOPES,
+          });
 
     return processMCPEnv({
       user,

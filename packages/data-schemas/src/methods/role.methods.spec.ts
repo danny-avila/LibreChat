@@ -976,6 +976,43 @@ describe('deleteRoleByName', () => {
       `${AUTH_USER_DOC_BY_ID_PREFIX}:${bob._id.toString()}`,
     );
   });
+
+  it('publishes role deletion before waiting for auth cache invalidation', async () => {
+    process.env.AUTH_USER_CACHE_MODE = 'on';
+    await createRoleByName({ name: 'editor' });
+    const user = await User.create({
+      name: 'Alice',
+      email: 'alice@test.com',
+      role: 'editor',
+      username: 'alice',
+    });
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    let releaseCache: (() => void) | undefined;
+    let signalCacheStarted: (() => void) | undefined;
+    const cacheStarted = new Promise<void>((resolve) => {
+      signalCacheStarted = resolve;
+    });
+    const cacheRelease = new Promise<void>((resolve) => {
+      releaseCache = resolve;
+    });
+    mockCache.get.mockImplementation(async () => {
+      signalCacheStarted?.();
+      await cacheRelease;
+      return [];
+    });
+
+    const deletion = deleteRoleByName('editor');
+    await cacheStarted;
+
+    await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+      dirty: false,
+    });
+    await expect(Role.findOne({ name: 'editor' }).lean()).resolves.toBeNull();
+    await expect(User.findById(user._id).lean()).resolves.toMatchObject({ role: SystemRoles.USER });
+
+    releaseCache?.();
+    await expect(deletion).resolves.toMatchObject({ name: 'editor' });
+  });
 });
 
 describe('updateRoleByName - cache on rename', () => {

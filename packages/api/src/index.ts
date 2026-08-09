@@ -61,6 +61,8 @@ export * from './projects';
 /* Skills */
 export * from './skills';
 export * from './favorites';
+/* Agent Plugins */
+export * from './plugins';
 /* Endpoints */
 export * from './endpoints';
 /* Files */
@@ -79,6 +81,7 @@ export * from './cache';
 export * from './shared-links/access';
 export * from './shared-links/service';
 export * from './shared-links/config';
+export * from './shared-links/http';
 /* Stream */
 export * from './stream';
 /* Diagnostics */

@@ -1,20 +1,20 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import * as Tabs from '@radix-ui/react-tabs';
-import { Code, Play, RefreshCw, X } from 'lucide-react';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
+import { Code, Maximize2, Minimize2, Play, RefreshCw, X } from 'lucide-react';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react';
+import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
+import { isCodeOnlyArtifact, isPreviewOnlyArtifact } from '~/utils/artifacts';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
 import ArtifactTabs from './ArtifactTabs';
-import { isCodeOnlyArtifact, isPreviewOnlyArtifact } from '~/utils/artifacts';
-import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, logger } from '~/utils';
 import store from '~/store';
 
 const MAX_BLUR_AMOUNT = 32;
@@ -26,9 +26,12 @@ export default function Artifacts() {
   const { isSharedConvo } = useShareContext();
   const isMobile = useMediaQuery('(max-width: 868px)');
   const previewRef = useRef<SandpackPreviewRef>();
+  const artifactContainerRef = useRef<HTMLDivElement>(null);
+  const fullscreenPortalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [height, setHeight] = useState(90);
   const [isDragging, setIsDragging] = useState(false);
@@ -64,6 +67,16 @@ export default function Artifacts() {
       setIsMounted(false);
     };
   }, [isMobile]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const container = artifactContainerRef.current;
+      setIsFullscreen(container !== null && document.fullscreenElement === container);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   useEffect(() => {
     if (!isMobile) {
@@ -186,6 +199,23 @@ export default function Artifacts() {
     setTimeout(() => setIsRefreshing(false), 750);
   };
 
+  const handleFullscreen = async () => {
+    const container = artifactContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    try {
+      if (document.fullscreenElement === container) {
+        await document.exitFullscreen();
+        return;
+      }
+      await container.requestFullscreen();
+    } catch (error) {
+      logger.error('Failed to toggle artifact fullscreen mode:', error);
+    }
+  };
+
   const closeArtifacts = () => {
     if (isMobile) {
       setIsClosing(true);
@@ -208,7 +238,7 @@ export default function Artifacts() {
 
   return (
     <Tabs.Root value={displayedTab} onValueChange={setActiveTab} asChild>
-      <div className="flex h-full w-full flex-col">
+      <div ref={artifactContainerRef} className="flex h-full w-full flex-col bg-surface-primary">
         {/* Mobile backdrop with dynamic blur */}
         {isMobile && (
           <div
@@ -233,7 +263,8 @@ export default function Artifacts() {
             'flex w-full flex-col bg-surface-primary text-xl text-text-primary',
             isMobile
               ? cn(
-                  'fixed inset-x-0 bottom-0 z-[100] rounded-t-[20px] shadow-[0_-10px_60px_rgba(0,0,0,0.35)]',
+                  'fixed z-[100] shadow-[0_-10px_60px_rgba(0,0,0,0.35)]',
+                  isFullscreen ? 'inset-0 rounded-none' : 'inset-x-0 bottom-0 rounded-t-[20px]',
                   isVisible && !isClosing
                     ? 'translate-y-0 opacity-100'
                     : 'duration-250 translate-y-full opacity-0 transition-all',
@@ -246,9 +277,11 @@ export default function Artifacts() {
                     : 'translate-x-5 opacity-0 transition-all duration-300',
                 ),
           )}
-          style={isMobile ? { height: `${height}vh` } : { overflow: 'hidden' }}
+          style={
+            isMobile ? { height: isFullscreen ? '100%' : `${height}vh` } : { overflow: 'hidden' }
+          }
         >
-          {isMobile && (
+          {isMobile && !isFullscreen && (
             <div
               className="flex flex-shrink-0 cursor-grab items-center justify-center bg-surface-primary-alt pb-1.5 pt-2.5 active:cursor-grabbing"
               onPointerDown={handleDragStart}
@@ -313,6 +346,23 @@ export default function Artifacts() {
                   )}
                 </Button>
               )}
+              {(displayedTab === 'preview' || isFullscreen) && document.fullscreenEnabled && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9"
+                  onClick={handleFullscreen}
+                  aria-label={localize(
+                    isFullscreen ? 'com_ui_exit_full_screen' : 'com_ui_enter_full_screen',
+                  )}
+                >
+                  {isFullscreen ? (
+                    <Minimize2 size={16} aria-hidden="true" />
+                  ) : (
+                    <Maximize2 size={16} aria-hidden="true" />
+                  )}
+                </Button>
+              )}
               {displayedTab !== 'preview' && isMutating && (
                 <RefreshCw size={16} className="animate-spin text-text-secondary" />
               )}
@@ -320,6 +370,7 @@ export default function Artifacts() {
                 <ArtifactVersion
                   currentIndex={currentIndex}
                   totalVersions={orderedArtifactIds.length}
+                  portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
                   onVersionChange={(index) => {
                     const target = orderedArtifactIds[index];
                     if (target) {
@@ -328,7 +379,12 @@ export default function Artifacts() {
                   }}
                 />
               )}
-              <CopyButton isCopied={isCopied} iconOnly onClick={handleCopyArtifact} />
+              <CopyButton
+                isCopied={isCopied}
+                iconOnly
+                portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
+                onClick={handleCopyArtifact}
+              />
               <DownloadArtifact artifact={currentArtifact} />
               <Button
                 size="icon"
@@ -382,6 +438,11 @@ export default function Artifacts() {
             </div>
           )}
         </div>
+        <div
+          ref={fullscreenPortalRef}
+          className="z-[101]"
+          data-testid="artifact-fullscreen-portal"
+        />
       </div>
     </Tabs.Root>
   );

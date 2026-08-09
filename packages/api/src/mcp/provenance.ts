@@ -20,7 +20,7 @@ export interface LCFunctionTool {
 
 export type LCAvailableTools = Record<string, LCFunctionTool>;
 
-export type MCPServerSource = 'yaml' | 'config' | 'user';
+export type MCPServerSource = 'yaml' | 'config' | 'user' | 'plugin';
 
 export type ParsedServerConfig = MCPOptions & {
   url?: string;

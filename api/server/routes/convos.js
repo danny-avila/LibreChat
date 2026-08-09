@@ -39,7 +39,8 @@ router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 25;
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
-  const search = req.query.search ? decodeURIComponent(req.query.search) : undefined;
+  const search =
+    typeof req.query.search === 'string' ? req.query.search.trim() || undefined : undefined;
   const sortBy = req.query.sortBy || 'updatedAt';
   const sortDirection = req.query.sortDirection || 'desc';
   const projectId = Array.isArray(req.query.projectId)

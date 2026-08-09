@@ -534,6 +534,9 @@ const performEntraGroupMembershipSync = async (user, accessToken, session = null
     if (!entraIdPrincipalFeatureEnabled(user) || !accessToken || !user.idOnTheSource) {
       return;
     }
+    if (session?.inTransaction()) {
+      throw new Error('MCP authority group sync cannot join a caller-owned transaction');
+    }
 
     // Step 1: Get all group IDs user should be member of
     const memberGroupIds = await getUserEntraGroups(accessToken, user.openidId);

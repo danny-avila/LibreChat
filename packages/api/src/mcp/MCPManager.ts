@@ -34,10 +34,10 @@ import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
+import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
-import { processMCPEnv } from '~/utils/env';
 
 function createOboToolCallErrorMessage(
   logPrefix: string,
@@ -710,13 +710,14 @@ Please follow these instructions when using tools from the respective MCP server
       if (proofBound) {
         currentOptions = effectiveServerConfig!;
       } else {
-        const graphProcessedConfig = isDbSourced
-          ? (rawConfig as t.MCPOptions)
-          : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
-              user,
-              graphTokenResolver,
-              scopes: process.env.GRAPH_API_SCOPES,
-            });
+        const graphProcessedConfig =
+          isDbSourced || isPluginSourced(rawConfig)
+            ? (rawConfig as t.MCPOptions)
+            : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
+                user,
+                graphTokenResolver,
+                scopes: process.env.GRAPH_API_SCOPES,
+              });
         currentOptions = processMCPEnv({
           user,
           body: requestBody,

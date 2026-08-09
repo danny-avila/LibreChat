@@ -672,25 +672,29 @@ export function createRoleMethods(
     if (isSystemRoleName(roleName)) {
       throw new Error(`Cannot delete system role: ${roleName}`);
     }
-    const deleted = await runMCPAuthorityMutation(authorityMutationGate, async () => {
+    const mutation = await runMCPAuthorityMutation(authorityMutationGate, async () => {
       const Role = mongoose.models.Role;
       const User = mongoose.models.User as Model<IUser>;
       const affectedUserIds = await findUserIdsByRole(roleName);
       await User.updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
-      await invalidateAuthUserDocCache(affectedUserIds);
-      return (await Role.findOneAndDelete({ name: roleName }).lean()) as IRole | null;
+      const deleted = (await Role.findOneAndDelete({ name: roleName }).lean()) as IRole | null;
+      return { affectedUserIds, deleted };
     });
-    await publishRoleCache(roleName, null);
-    return deleted;
+    await Promise.all([
+      publishRoleCache(roleName, null),
+      invalidateAuthUserDocCache(mutation.affectedUserIds),
+    ]);
+    return mutation.deleted;
   }
 
   async function updateUsersByRole(oldRole: string, newRole: string): Promise<void> {
-    await runMCPAuthorityMutation(authorityMutationGate, async () => {
+    const affectedUserIds = await runMCPAuthorityMutation(authorityMutationGate, async () => {
       const User = mongoose.models.User as Model<IUser>;
       const affectedUserIds = await findUserIdsByRole(oldRole);
       await User.updateMany({ role: oldRole }, { $set: { role: newRole } });
-      await invalidateAuthUserDocCache(affectedUserIds);
+      return affectedUserIds;
     });
+    await invalidateAuthUserDocCache(affectedUserIds);
   }
 
   async function findUserIdsByRole(roleName: string): Promise<string[]> {
@@ -706,8 +710,8 @@ export function createRoleMethods(
     await runMCPAuthorityMutation(authorityMutationGate, async () => {
       const User = mongoose.models.User as Model<IUser>;
       await User.updateMany({ _id: { $in: userIds } }, { $set: { role: newRole } });
-      await invalidateAuthUserDocCache(userIds);
     });
+    await invalidateAuthUserDocCache(userIds);
   }
 
   async function invalidateAuthUserDocCache(userIds: string[]): Promise<void> {

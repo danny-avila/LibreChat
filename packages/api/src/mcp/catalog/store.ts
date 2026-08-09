@@ -166,6 +166,7 @@ export interface CatalogStoreDeps {
   };
   ioredisClient?: LockRedisClient | null;
   keyvRedisClient?: KeyvRedisClient | null;
+  waitForRedis?: () => Promise<void>;
   userConnectionIdleTimeout?: number | string;
 }
 
@@ -315,6 +316,13 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     deps.keyvRedisClient != null &&
     !deps.cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(CacheKeys.TOOL_CACHE);
 
+  const getReadyCache = async (): Promise<CatalogCache> => {
+    if (sharedRedis()) {
+      await deps.waitForRedis?.();
+    }
+    return deps.getCache();
+  };
+
   const rawKey = (key: string): string => {
     const namespaced = `${CacheKeys.TOOL_CACHE}:${key}`;
     return deps.cacheConfig.REDIS_KEY_PREFIX
@@ -388,6 +396,7 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     if (!sharedRedis()) {
       return operation();
     }
+    await deps.waitForRedis?.();
     const redis = deps.ioredisClient!;
     const token = randomUUID();
     const deadline = Date.now() + ttl + LOCK_RETRY_MS;
@@ -558,7 +567,7 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
   async function getCachedTools(
     options: CachedToolsOptions = {},
   ): Promise<LCAvailableTools | null> {
-    const cache = deps.getCache();
+    const cache = await getReadyCache();
     const { userId, serverName, configGeneration } = options;
     if (!userId || !serverName) {
       const global = await cache.get(ToolCacheKeys.GLOBAL);
@@ -637,7 +646,7 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     update: (tools: LCAvailableTools) => LCAvailableTools,
   ): Promise<void> {
     await runWithGlobalCacheLock(async () => {
-      const cache = deps.getCache();
+      const cache = await getReadyCache();
       const current = await cache.get(ToolCacheKeys.GLOBAL);
       const currentTools = isTools(current) ? current : {};
       const next = update(currentTools);
@@ -654,7 +663,7 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     tools: LCAvailableTools,
     options: CachedToolsOptions = {},
   ): Promise<boolean> {
-    const cache = deps.getCache();
+    const cache = await getReadyCache();
     const ttl = options.ttl ?? Time.TWELVE_HOURS;
     if (options.userId && options.serverName) {
       return (
@@ -684,7 +693,7 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     userId: string;
     serverName: string;
   }): Promise<string> {
-    const cache = deps.getCache();
+    const cache = await getReadyCache();
     const key = ToolCacheKeys.MCP_SERVER_GENERATION(scope.userId, scope.serverName);
     const existing = await cache.get(key);
     if (typeof existing === 'string' && existing.length > 0) return existing;
@@ -730,7 +739,7 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     serverName: string;
     publicationGeneration: string;
   }): Promise<boolean> {
-    const cache = deps.getCache();
+    const cache = await getReadyCache();
     return withUserQueue(scope.userId, scope.serverName, () =>
       renewIfCurrent(
         cache,
@@ -744,7 +753,7 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     tools: LCAvailableTools,
     options: GuardedToolsOptions,
   ): Promise<boolean> {
-    const cache = deps.getCache();
+    const cache = await getReadyCache();
     return withUserQueue(options.userId, options.serverName, async () => {
       const generationKey = ToolCacheKeys.MCP_SERVER_GENERATION(options.userId, options.serverName);
       const guarded: GuardedEntry = {
@@ -790,9 +799,8 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     serverName: string,
     configGeneration: string,
   ): Promise<LCAvailableTools | null> {
-    const value = await deps
-      .getCache()
-      .get(ToolCacheKeys.MCP_APP_SERVER(serverName, configGeneration));
+    const cache = await getReadyCache();
+    const value = await cache.get(ToolCacheKeys.MCP_APP_SERVER(serverName, configGeneration));
     if (isAppToolsEntry(value)) {
       return value.tools;
     }
@@ -805,7 +813,8 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
   ): Promise<string> {
     const toolsKey = ToolCacheKeys.MCP_APP_SERVER(serverName, configGeneration);
     const scope = JSON.stringify([serverName, configGeneration]);
-    const cached = await deps.getCache().get(toolsKey);
+    const cache = await getReadyCache();
+    const cached = await cache.get(toolsKey);
     const cachedRevision = isAppToolsEntry(cached)
       ? parseAppToolsRevision(cached.publicationRevision)
       : 0;
@@ -840,9 +849,10 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
       tools,
     };
     const scope = JSON.stringify([serverName, configGeneration]);
+    const cache = await getReadyCache();
     if (!sharedRedis()) {
       return withAppWriteQueue(scope, async () => {
-        const cached = await deps.getCache().get(toolsKey);
+        const cached = await cache.get(toolsKey);
         const cachedRevision = isAppToolsEntry(cached)
           ? parseAppToolsRevision(cached.publicationRevision)
           : 0;
@@ -850,7 +860,7 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
         if (currentRevision > nextRevision) {
           return false;
         }
-        if ((await deps.getCache().set(toolsKey, entry, ttl)) === false) {
+        if ((await cache.set(toolsKey, entry, ttl)) === false) {
           throw new Error('App tool cache rejected the write');
         }
         rememberAppRevision(appCommittedRevisions, scope, nextRevision);
@@ -910,7 +920,7 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
       invalidateGlobal?: boolean;
     } = {},
   ): Promise<void> {
-    const cache = deps.getCache();
+    const cache = await getReadyCache();
     if (options.invalidateGlobal) {
       await runWithGlobalCacheLock(() => deleteGlobalWithinLock(cache));
     }

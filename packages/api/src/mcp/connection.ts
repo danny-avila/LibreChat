@@ -1591,6 +1591,7 @@ export class MCPConnection extends EventEmitter {
             // workaround bug of mcp sdk that can't pass env:
             // https://github.com/modelcontextprotocol/typescript-sdk/issues/216
             env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },
+            ...(options.cwd !== undefined && { cwd: options.cwd }),
           });
 
         case 'websocket': {

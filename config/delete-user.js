@@ -6,35 +6,14 @@ const mongoose = require('mongoose');
 const dataSchemas = require('@librechat/data-schemas');
 const { invalidateCachedAuthUserDoc } = require('@librechat/api');
 const { CacheKeys } = require('librechat-data-provider');
-const {
-  Key,
-  User,
-  File,
-  Agent,
-  Token,
-  Group,
-  Action,
-  Preset,
-  Prompt,
-  Balance,
-  Message,
-  Session,
-  AclEntry,
-  ToolCall,
-  Assistant,
-  SharedLink,
-  PluginAuth,
-  MemoryEntry,
-  PromptGroup,
-  AgentApiKey,
-  Transaction,
-  Conversation,
-  ConversationTag,
-} = dataSchemas.createModels(mongoose);
+const models = dataSchemas.createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { deleteUserData } = require('./delete-user-data');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
 const { getLogStores } = require('../api/cache');
+
+const { User } = models;
 
 async function gracefulExit(code = 0) {
   try {
@@ -80,44 +59,15 @@ async function gracefulExit(code = 0) {
 
   const uid = user._id.toString();
 
-  // 5) Build and run deletion tasks
-  const tasks = [
-    Action.deleteMany({ user: uid }),
-    Agent.deleteMany({ author: uid }),
-    AgentApiKey.deleteMany({ user: uid }),
-    Assistant.deleteMany({ user: uid }),
-    Balance.deleteMany({ user: uid }),
-    ConversationTag.deleteMany({ user: uid }),
-    Conversation.deleteMany({ user: uid }),
-    Message.deleteMany({ user: uid }),
-    File.deleteMany({ user: uid }),
-    Key.deleteMany({ userId: uid }),
-    MemoryEntry.deleteMany({ userId: uid }),
-    PluginAuth.deleteMany({ userId: uid }),
-    Prompt.deleteMany({ author: uid }),
-    PromptGroup.deleteMany({ author: uid }),
-    Preset.deleteMany({ user: uid }),
-    Session.deleteMany({ user: uid }),
-    SharedLink.deleteMany({ user: uid }),
-    ToolCall.deleteMany({ user: uid }),
-    Token.deleteMany({ userId: uid }),
-    AclEntry.deleteMany({ principalId: user._id }),
-  ];
-
-  if (deleteTx) {
-    tasks.push(Transaction.deleteMany({ user: uid }));
-  }
-
   const authorityConsistency = dataSchemas.getMCPAuthorityConsistencyModule(mongoose);
-  await authorityConsistency.mutateMCPAuthority(async () => {
-    await Promise.all(tasks);
-
-    // 6) Remove user from all groups
-    await Group.updateMany({ memberIds: uid }, { $pullAll: { memberIds: [uid] } });
-
-    // 7) Finally delete the user document itself
-    await User.deleteOne({ _id: uid });
-    await invalidateCachedAuthUserDoc(getLogStores(CacheKeys.AUTH_USER_DOC), { userId: uid });
+  await deleteUserData({
+    models,
+    uid,
+    userObjectId: user._id,
+    deleteTransactions: deleteTx,
+    authorityConsistency,
+    invalidateAuthUserDoc: (input) =>
+      invalidateCachedAuthUserDoc(getLogStores(CacheKeys.AUTH_USER_DOC), input),
   });
 
   console.green(`✔ Successfully deleted user ${email} and all associated data.`);

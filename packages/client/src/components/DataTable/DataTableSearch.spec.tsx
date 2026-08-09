@@ -94,11 +94,10 @@ describe('DataTableSearch', () => {
     render(<DataTableSearch value="" onChange={jest.fn()} />);
 
     const input = screen.getByTestId('search-input');
-    expect(input).toHaveAttribute('aria-describedby', 'search-description');
 
     // Description should be present
     const description = screen.getByText('com_ui_search_table_description');
-    expect(description).toHaveAttribute('id', 'search-description');
+    expect(input).toHaveAttribute('aria-describedby', description.id);
     expect(description).toHaveClass('sr-only');
   });
 
@@ -137,8 +136,8 @@ describe('DataTableSearch', () => {
     const input = screen.getByTestId('search-input');
     const label = screen.getByText('com_ui_search_table');
 
-    expect(input).toHaveAttribute('id', 'table-search');
-    expect(label).toHaveAttribute('for', 'table-search');
+    expect(input.id).not.toBe('');
+    expect(label).toHaveAttribute('for', input.id);
   });
 
   it('should handle empty string onChange', () => {
