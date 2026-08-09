@@ -34,6 +34,28 @@ describe('MermaidExport', () => {
     mockDownloadMermaidSvg.mockReset();
   });
 
+  it('renders the menu inside the fullscreen element when one is given', async () => {
+    const user = userEvent.setup();
+    const fullscreenHost = document.createElement('div');
+    document.body.appendChild(fullscreenHost);
+
+    render(
+      <MermaidExport
+        svg={'<svg viewBox="0 0 400 200" />'}
+        dimensions={{ width: 400, height: 200 }}
+        filename="flow.mmd"
+        portalElement={fullscreenHost}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'com_ui_export_mermaid' }));
+
+    const menu = await screen.findByRole('menu');
+    expect(fullscreenHost.contains(menu)).toBe(true);
+
+    fullscreenHost.remove();
+  });
+
   it('exports an already-rendered inline diagram as SVG and PNG', async () => {
     const user = userEvent.setup();
     render(

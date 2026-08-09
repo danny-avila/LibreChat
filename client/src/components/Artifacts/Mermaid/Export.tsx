@@ -7,9 +7,11 @@ import { useLocalize } from '~/hooks';
 const ArtifactMermaidExport = memo(function ArtifactMermaidExport({
   artifact,
   exportData,
+  portalElement,
 }: {
   artifact: Artifact;
   exportData?: ProcessedMermaidSvg | null;
+  portalElement?: HTMLElement | null;
 }) {
   const localize = useLocalize();
 
@@ -24,6 +26,7 @@ const ArtifactMermaidExport = memo(function ArtifactMermaidExport({
       dimensions={exportData.dimensions}
       filename={artifact.title ?? localize('com_ui_mermaid_diagram')}
       buttonClassName="h-9 w-9 p-0"
+      portalElement={portalElement}
     />
   );
 });

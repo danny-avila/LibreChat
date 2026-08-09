@@ -13,6 +13,9 @@ interface MermaidExportProps {
   svg?: string | null;
   dimensions?: MermaidDimensions | null;
   buttonClassName?: string;
+  /** Fullscreen re-roots the panel, so a menu portalled to the body would be
+   *  rendered outside the visible fullscreen element. */
+  portalElement?: HTMLElement | null;
 }
 
 function surfaceBackground(): string | undefined {
@@ -33,6 +36,7 @@ const MermaidExport = memo(function MermaidExport({
   svg,
   dimensions,
   buttonClassName,
+  portalElement,
 }: MermaidExportProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -124,9 +128,11 @@ const MermaidExport = memo(function MermaidExport({
         isOpen={isOpen}
         setIsOpen={setIsOpen}
         items={dropdownItems}
+        portalElement={portalElement}
         className="absolute right-0 top-0 mt-2 min-w-52 motion-reduce:!transition-none"
         trigger={
           <TooltipAnchor
+            portalElement={portalElement}
             description={isBusy ? liveMessage : localize('com_ui_export_mermaid')}
             render={
               <Ariakit.MenuButton

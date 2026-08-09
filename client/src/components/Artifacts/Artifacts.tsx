@@ -311,7 +311,6 @@ export default function Artifacts() {
     }
   };
 
-
   const backdropOpacity =
     blurAmount > 0
       ? (Math.min(blurAmount, MAX_BLUR_AMOUNT) / MAX_BLUR_AMOUNT) * MAX_BACKDROP_OPACITY
@@ -483,7 +482,11 @@ export default function Artifacts() {
                 onClick={handleCopyArtifact}
               />
               {isMermaidArtifact && displayedTab === 'preview' && (
-                <MermaidExport artifact={currentArtifact} exportData={mermaidExportData} />
+                <MermaidExport
+                  artifact={currentArtifact}
+                  exportData={mermaidExportData}
+                  portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
+                />
               )}
               <DownloadArtifact artifact={currentArtifact} />
               <Button
