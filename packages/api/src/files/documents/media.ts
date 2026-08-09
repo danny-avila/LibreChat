@@ -2,14 +2,16 @@ import yauzl from 'yauzl';
 import { isZipArchive } from './zipSafety';
 
 /**
- * Where OOXML and ODF keep embedded artwork: every picture sits under `<part>/media/`
- * or `Pictures/`, and the XML parts a converter reads carry references to them, never
- * pixels. EPUB has no such rule, so its resources are matched by extension instead.
+ * Artwork, by extension rather than by location.
+ *
+ * OOXML and ODF do keep pictures in fixed places (`<part>/media/`, `Pictures/`), but
+ * those directories also hold audio and video, and a deck with a soundtrack and no scan
+ * has nothing for OCR to read. EPUB has no fixed place at all. Matching the extension
+ * answers both: it finds an EPUB image wherever the manifest put it, and it leaves
+ * `ppt/media/media1.mp4` alone. EMF and WMF are included because Office routinely wraps
+ * a scanned page in one.
  */
-const MEDIA_ENTRY = /^(?:word|ppt|xl)\/media\/|^Pictures\//i;
-
-/** EPUB puts its resources wherever the manifest says: `OEBPS/images/`, `EPUB/`, root. */
-const IMAGE_ENTRY = /\.(?:jpe?g|png|gif|tiff?|bmp|webp|jp2|jpx|avif|heic|heif)$/i;
+const IMAGE_ENTRY = /\.(?:jpe?g|png|gif|tiff?|bmp|webp|jp2|jpx|avif|heic|heif|emf|wmf)$/i;
 
 /**
  * Renderings of the document itself rather than content within it. Office writes
@@ -20,9 +22,6 @@ const IMAGE_ENTRY = /\.(?:jpe?g|png|gif|tiff?|bmp|webp|jp2|jpx|avif|heic|heif)$/
 const PREVIEW_ENTRY = /^(?:docProps|Thumbnails)\//i;
 
 function isMediaEntry(name: string): boolean {
-  if (MEDIA_ENTRY.test(name)) {
-    return true;
-  }
   return IMAGE_ENTRY.test(name) && !PREVIEW_ENTRY.test(name);
 }
 
@@ -86,9 +85,8 @@ function zipContainsMedia(buffer: Buffer): Promise<boolean> {
  *
  * Each container is answered as precisely as it can be:
  *
- * - Zip-backed (OOXML, ODF, EPUB): the central directory is walked for media entry
- *   names, by fixed path where the format defines one and by image extension where it
- *   does not. No decompression, and a malformed archive reports `false` because the
+ * - Zip-backed (OOXML, ODF, EPUB): the central directory is walked for image entries by
+ *   extension. No decompression, and a malformed archive reports `false` because the
  *   zip-bomb guard owns rejection and the parser owns the read error.
  * - RTF: plain text, so the `\pict` control word answers it exactly.
  * - Legacy Office (`.doc`, `.xls`, `.ppt`): pictures live in Escher records inside a
