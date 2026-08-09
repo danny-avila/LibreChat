@@ -1,8 +1,22 @@
 import { spawn } from 'child_process';
+import { megabyte } from 'librechat-data-provider';
 import { createConcurrencyLimiter } from '~/utils/promise';
 
 /** Native document parsers are CPU and memory intensive even for small uploads. */
 const NATIVE_PARSER_CONCURRENCY = 2;
+
+/**
+ * Largest extraction a child may hand back, matching the limit the upload path applies
+ * to the stored text.
+ *
+ * The caps that bound decompression do not bound conversion: an archive of highly
+ * compressible text passes both the per-entry and total inflate limits and still
+ * converts to tens of megabytes of Markdown. Enforcing only in the parent means every
+ * one of those bytes is serialized through IPC and rebuilt in the API process before
+ * anything rejects it, and two children may be doing that at once. The child measures
+ * its own output first, so an oversized parse costs a message instead of a copy.
+ */
+export const MAX_PARSER_OUTPUT_BYTES = 15 * megabyte;
 
 /**
  * Uploads waiting for one of those slots. Each waiter is a separate request that has

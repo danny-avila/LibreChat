@@ -59,6 +59,7 @@ describe('Share Methods', () => {
         status: { type: String, enum: ['pending', 'ready', 'failed'] },
         previewError: String,
         metadata: mongoose.Schema.Types.Mixed,
+        previewRevision: String,
         tenantId: String,
       },
       { timestamps: true },
@@ -3065,6 +3066,70 @@ describe('Share Methods', () => {
       const current = await shareMethods.getSharedLinkFile(shareId, docId);
       expect(current.hasSnapshots).toBe(true);
       expect(current.file?.hasTextPreview).toBe(true);
+    });
+
+    /**
+     * Every existing entry pins the file as it was at share time, and the file route
+     * refuses to serve when the live document no longer matches. Re-reading those
+     * entries during the version upgrade would re-pin them to whatever the id holds
+     * now, so a link shared before a same-filename code output reused it would start
+     * serving the newer content. The upgrade may only add.
+     */
+    test('keeps the pins of a stale snapshot while adding the records it missed', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const imageId = await createFile(userId, {
+        type: 'image/png',
+        filename: 'pic.png',
+        filepath: `/images/${userId}/pic.png`,
+        bytes: 4096,
+        previewRevision: 'rev-2',
+      });
+      const docId = await createFile(userId, {
+        source: FileSources.text,
+        filepath: FileSources.anydoc,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'report.docx',
+        text: '# Parsed report',
+      });
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'image and parsed document',
+        isCreatedByUser: true,
+        files: [{ file_id: imageId }, { file_id: docId, filepath: FileSources.anydoc }],
+      });
+
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+        fileSnapshots: [
+          {
+            file_id: imageId,
+            source: FileSources.local,
+            filepath: `/images/${userId}/pic.png`,
+            type: 'image/png',
+            filename: 'pic.png',
+            bytes: 512,
+            previewRevision: 'rev-1',
+          },
+        ],
+      });
+
+      await shareMethods.getSharedMessages(shareId);
+
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.snapshotVersion).toBe(FILE_SNAPSHOT_VERSION);
+      const byId = new Map(saved?.fileSnapshots?.map((snapshot) => [snapshot.file_id, snapshot]));
+      expect(byId.get(imageId)).toEqual(
+        expect.objectContaining({ previewRevision: 'rev-1', bytes: 512 }),
+      );
+      expect(byId.get(docId)).toEqual(expect.objectContaining({ hasTextPreview: true }));
     });
 
     test('leaves a current snapshot alone when a referenced file is unsnapshottable', async () => {

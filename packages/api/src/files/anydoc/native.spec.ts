@@ -14,4 +14,17 @@ describe('AnyDoc native isolation', () => {
   test('a missing file rejects instead of leaving the caller hanging', async () => {
     await expect(extractMarkdownIsolated(fixture('does-not-exist.docx'), 'docx')).rejects.toThrow();
   });
+
+  /**
+   * The inflate caps bound decompression, not conversion: an archive well inside them
+   * still converts to tens of megabytes of Markdown. Enforcing that only in the parent
+   * would serialize every byte through IPC and rebuild it in the API process before
+   * anything rejected it, twice over at the child cap. The refusal has to come from the
+   * child, which is why this drives the real one rather than a stub.
+   */
+  test('refuses an extraction larger than the storage limit before returning it', async () => {
+    await expect(extractMarkdownIsolated(fixture('bomb.docx'), 'docx')).rejects.toThrow(
+      /over the 15MB limit/,
+    );
+  }, 60_000);
 });

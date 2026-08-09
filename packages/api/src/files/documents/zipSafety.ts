@@ -204,20 +204,46 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
   });
 }
 
+/** Disk-number field value a zip64 archive writes in place of a real count. */
+const ZIP64_MARKER = 0xffff;
+
+/**
+ * Whether an EOCD candidate's own fields agree with each other and with the buffer.
+ *
+ * The comment-length test below cannot confirm a record followed by trailing bytes, so
+ * this is what separates a real archive from a stray `PK\x05\x06` inside an unrelated
+ * binary: single-disk fields, matching entry counts, and a central directory that fits
+ * within the file. A false positive here costs a legitimate `.xls` its upload, since
+ * detection and enforcement are welded together, so the checks stay strict.
+ */
+function isCoherentEocd(tail: Buffer, index: number, fileBytes: number): boolean {
+  const thisDisk = tail.readUInt16LE(index + 4);
+  const centralDirectoryDisk = tail.readUInt16LE(index + 6);
+  const entriesOnDisk = tail.readUInt16LE(index + 8);
+  const totalEntries = tail.readUInt16LE(index + 10);
+  if (thisDisk !== 0 || centralDirectoryDisk !== 0) {
+    return thisDisk === ZIP64_MARKER && centralDirectoryDisk === ZIP64_MARKER;
+  }
+  if (entriesOnDisk !== totalEntries) {
+    return false;
+  }
+  const centralDirectoryBytes = tail.readUInt32LE(index + 12);
+  const centralDirectoryOffset = tail.readUInt32LE(index + 16);
+  return centralDirectoryOffset + centralDirectoryBytes <= fileBytes;
+}
+
 /**
  * Detects a ZIP archive the way the consuming parsers do: by locating the
  * End-Of-Central-Directory record from the tail.
  *
  * Testing the leading `PK` magic bytes is not enough. Real zip readers (anydoc's
  * Rust zip crate, SheetJS) seek the EOCD backwards from the end of the file and
- * tolerate arbitrary prepended data; that is how self-extracting archives work.
- * Prepending a few junk bytes to a zip bomb therefore makes a magic-byte test
- * report "not a zip" while the parser still happily inflates it.
- *
- * Candidate signatures are confirmed by checking that the record's declared
- * comment length runs exactly to the end of the buffer, so a stray `PK\x05\x06`
- * inside an unrelated binary (a `.xls` CFB container, say) is not mistaken for
- * an archive.
+ * tolerate arbitrary data on either side of the archive; that is how self-extracting
+ * archives work. Padding a zip bomb therefore makes a magic-byte test report "not a
+ * zip" while the parser still happily inflates it, and requiring the record's comment
+ * to run exactly to the end of the buffer leaves the same hole open for a single
+ * appended byte. A candidate is accepted when its comment ends the file or when its
+ * own fields are internally coherent.
  */
 export function isZipArchive(buffer: Buffer): boolean {
   if (buffer.length < EOCD_RECORD_BYTES) {
@@ -228,7 +254,9 @@ export function isZipArchive(buffer: Buffer): boolean {
 
   let index = tail.lastIndexOf(EOCD_SIGNATURE, tail.length - EOCD_RECORD_BYTES);
   while (index >= 0) {
-    if (index + EOCD_RECORD_BYTES + tail.readUInt16LE(index + 20) === tail.length) {
+    const commentEndsTheFile =
+      index + EOCD_RECORD_BYTES + tail.readUInt16LE(index + 20) === tail.length;
+    if (commentEndsTheFile || isCoherentEocd(tail, index, buffer.length)) {
       return true;
     }
     if (index === 0) {

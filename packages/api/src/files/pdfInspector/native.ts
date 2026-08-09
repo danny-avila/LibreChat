@@ -1,5 +1,5 @@
 import type { PageMarkdownResult } from '@firecrawl/pdf-inspector';
-import { runNativeParserChild } from '../documents/nativeProcess';
+import { MAX_PARSER_OUTPUT_BYTES, runNativeParserChild } from '../documents/nativeProcess';
 
 /**
  * Runs pdf-inspector's native bindings in a child process.
@@ -35,6 +35,26 @@ process.once('message', (request) => {
       request.op === 'text'
         ? { text: native.extractText(data) }
         : { pages: native.extractPagesMarkdown(data).pages };
+    /* Measured here so an oversized extraction never crosses IPC into the API process. */
+    const bytes =
+      request.op === 'text'
+        ? Buffer.byteLength(result.text || '', 'utf8')
+        : result.pages.reduce(
+            (total, page) => total + Buffer.byteLength(page.markdown || '', 'utf8'),
+            0,
+          );
+    if (bytes > request.maxOutputBytes) {
+      process.send({
+        ok: false,
+        message:
+          'extracted ' +
+          Math.round(bytes / (1024 * 1024)) +
+          'MB of text, over the ' +
+          Math.round(request.maxOutputBytes / (1024 * 1024)) +
+          'MB limit',
+      });
+      return;
+    }
     process.send({ ok: true, result });
   } catch (error) {
     process.send({ ok: false, message: error && error.message ? error.message : String(error) });
@@ -54,7 +74,7 @@ function runPdfChild(op: PdfChildOp, filePath: string): Promise<PdfChildResult> 
   return runNativeParserChild<PdfChildResult>({
     childSource: CHILD_SOURCE,
     parserName: `pdf-inspector ${op}`,
-    request: { op, path: filePath, modulePath },
+    request: { op, path: filePath, modulePath, maxOutputBytes: MAX_PARSER_OUTPUT_BYTES },
     timeoutMs: PDF_CHILD_TIMEOUT_MS,
   });
 }
