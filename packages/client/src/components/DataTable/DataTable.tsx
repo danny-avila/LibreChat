@@ -490,6 +490,12 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     if (!container || !fetchNextPage || !hasNextPage || isFetchingNextPage || isLoading) {
       return;
     }
+    /* A search or sort swap keeps the previous rows on screen while the replacement
+       first page is in flight, and an infinite query runs one fetch at a time, so
+       asking for page two now would fight the request that is already out. */
+    if (isFetching) {
+      return;
+    }
     if (autoFillAttempt >= MAX_AUTO_FILL_ATTEMPTS) {
       return;
     }
@@ -523,6 +529,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     autoFillAttempt,
     fetchNextPage,
     hasNextPage,
+    isFetching,
     isFetchingNextPage,
     isLoading,
   ]);

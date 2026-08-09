@@ -1017,6 +1017,26 @@ describe('DataTable', () => {
         expect(fetchNextPage).toHaveBeenCalledTimes(3);
       });
 
+      it('waits for the replacement query instead of racing it', () => {
+        stubLayout({ clientHeight: 600, scrollHeight: 300 });
+        const fetchNextPage = jest.fn().mockResolvedValue(undefined);
+
+        render(
+          <TestWrapper>
+            <DataTable
+              columns={createTestColumns()}
+              data={createTestData(3)}
+              hasNextPage={true}
+              isFetching={true}
+              isFetchingNextPage={false}
+              fetchNextPage={fetchNextPage}
+            />
+          </TestWrapper>,
+        );
+
+        expect(fetchNextPage).not.toHaveBeenCalled();
+      });
+
       it('stops after a page that adds no rows', () => {
         stubLayout({ clientHeight: 600, scrollHeight: 300 });
         const fetchNextPage = jest.fn().mockResolvedValue(undefined);

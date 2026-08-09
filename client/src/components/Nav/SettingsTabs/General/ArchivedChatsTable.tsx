@@ -47,7 +47,7 @@ export default function ArchivedChatsTable() {
   const [queryParams, setQueryParams] = useState<ConversationListParams>(DEFAULT_PARAMS);
   const [deleteConversation, setDeleteConversation] = useState<TConversation | null>(null);
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading, isFetching } =
     useConversationsInfiniteQuery(queryParams, {
       staleTime: 0,
       cacheTime: 5 * 60 * 1000,
@@ -261,6 +261,7 @@ export default function ArchivedChatsTable() {
           fetchNextPage={handleFetchNextPage}
           hasNextPage={hasNextPage}
           isFetchingNextPage={isFetchingNextPage}
+          isFetching={isFetching}
           isLoading={isLoading}
           sorting={sorting}
           onSortingChange={handleSortingChange}

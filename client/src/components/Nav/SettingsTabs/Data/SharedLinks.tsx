@@ -48,7 +48,7 @@ export default function SharedLinks() {
   const [deleteRow, setDeleteRow] = useState<SharedLinkItem | null>(null);
   const [queryParams, setQueryParams] = useState<SharedLinksListParams>(DEFAULT_PARAMS);
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading } =
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, refetch, isLoading, isFetching } =
     useSharedLinksQuery(queryParams, {
       enabled: isOpen,
       staleTime: 0,
@@ -291,6 +291,7 @@ export default function SharedLinks() {
             className="scrollbar-gutter-stable h-[60vh]"
             hasNextPage={hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
+            isFetching={isFetching}
             fetchNextPage={handleFetchNextPage}
             sorting={sorting}
             onSortingChange={handleSortingChange}
