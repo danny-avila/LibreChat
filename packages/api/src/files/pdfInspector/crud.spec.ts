@@ -577,12 +577,12 @@ describe('pdf-inspector local parser', () => {
   });
 
   /**
-   * The recovery cap reports unprobed pages as needing OCR because the interleaved
-   * output skips them. Whole-document text does not skip them, so carrying that list
-   * over would spend an OCR call on text already present, or annotate the document
-   * with a notice naming pages it contains.
+   * Whole-document text proves some text exists somewhere, not that each page past the
+   * recovery cap had a layer. Taking it there would either claim included pages were
+   * omitted or, worse, drop scanned ones silently and never reach OCR. Interleaving
+   * keeps the report true, since there an unprobed page really is missing.
    */
-  test('drops unprobed pages from the report when whole-document text ships', async () => {
+  test('keeps unprobed pages accounted for rather than taking whole-document text', async () => {
     const flooded = Array.from({ length: 900 }, (_, page) => ({ page, markdown: '' }));
     mockPdfjs.pageText = Object.fromEntries(
       Array.from({ length: 250 }, (_, i) => [i + 1, 'recovered line']),
@@ -597,8 +597,10 @@ describe('pdf-inspector local parser', () => {
         const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
         const result = await uploadIsolated(context(pdfFile('sample.pdf')));
 
-        expect(result.text).toBe('clean whole document text');
-        expect(result.pagesNeedingOcr).toBeUndefined();
+        expect(result.text).not.toBe('clean whole document text');
+        expect(result.text).toContain('recovered line');
+        /** Every page past the probe is still named, because it really is missing. */
+        expect(result.pagesNeedingOcr).toHaveLength(650);
       });
     } finally {
       jest.dontMock('./native');
@@ -606,11 +608,17 @@ describe('pdf-inspector local parser', () => {
   });
 
   test('keeps probed pages in the report when whole-document text ships', async () => {
-    /* The counterpart: a page both engines found nothing on holds no text layer at
-     * all, so the whole-document extractor cannot have included it either. */
-    const flooded = Array.from({ length: 900 }, (_, page) => ({ page, markdown: '' }));
+    /* The counterpart, on a document small enough that every dropped page was probed:
+     * a page both engines found nothing on holds no text layer at all, so the
+     * whole-document extractor cannot have included it either. */
+    const dropped = Array.from({ length: 200 }, (_, page) => ({ page, markdown: '' }));
+    const structured = Array.from({ length: 100 }, (_, i) => ({
+      page: 200 + i,
+      markdown: '# Structured',
+    }));
+    const flooded = [...dropped, ...structured];
     mockPdfjs.pageText = Object.fromEntries(
-      Array.from({ length: 250 }, (_, i) => [i + 1, i === 4 ? '' : 'recovered line']),
+      Array.from({ length: 200 }, (_, i) => [i + 1, i === 4 ? '' : 'recovered line']),
     );
     try {
       await jest.isolateModulesAsync(async () => {

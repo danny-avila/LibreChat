@@ -87,15 +87,10 @@ const nativeParserLimit = createConcurrencyLimiter(NATIVE_PARSER_CONCURRENCY, {
  * that only ever counted the cheap half.
  */
 export function withParserAdmission<T>(parse: () => Promise<T>, signal?: AbortSignal): Promise<T> {
-  return nativeParserLimit(() => {
-    /* A caller that gave up while queued releases the slot without starting: the point
-     * of the queue is to bound work in flight, and work nobody is waiting for is not
-     * work. */
-    if (signal?.aborted) {
-      return Promise.reject(abortError(signal));
-    }
-    return parse();
-  });
+  /* The signal goes to the limiter, not just around the task: a caller that gives up
+   * while queued has to leave the queue, or it holds a share of the bound against
+   * callers who are still waiting. */
+  return nativeParserLimit(parse, signal);
 }
 
 function abortError(signal: AbortSignal): Error {

@@ -1590,10 +1590,13 @@ function filterFile({ req, image, isAvatar }) {
     );
   }
 
-  const isSupportedMimeType = fileConfig.checkType(
-    file.mimetype,
-    endpointFileConfig.supportedMimeTypes,
-  );
+  /* Admission and routing both honor `documentParser.supportedMimeTypes`, so this gate
+   * has to as well: an admin who names a vendor MIME there has said the server parses
+   * it, and a second check that disagrees only moves the refusal one step later. */
+  const parserTypes = fileConfig.documentParser?.supportedMimeTypes;
+  const isSupportedMimeType =
+    fileConfig.checkType(file.mimetype, endpointFileConfig.supportedMimeTypes) ||
+    (parserTypes != null && fileConfig.checkType(file.mimetype, parserTypes));
 
   if (!isSupportedMimeType) {
     throw new Error('Unsupported file type');
