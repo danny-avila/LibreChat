@@ -69,6 +69,23 @@ describe('Mermaid export', () => {
     expect(resolveCanvasDimensions(10_000, 10_000)).toEqual({ width: 4096, height: 4096 });
   });
 
+  it('keeps lopsided diagrams under the pixel budget after rounding', () => {
+    const cases: Array<[number, number]> = [
+      [3129, 50_000],
+      [50_000, 3129],
+      [1, 90_000],
+      [7777, 33_333],
+      [12_345, 4321],
+    ];
+
+    for (const [width, height] of cases) {
+      const canvas = resolveCanvasDimensions(width, height);
+      expect(canvas.width * canvas.height).toBeLessThanOrEqual(16_777_216);
+      expect(canvas.width).toBeLessThanOrEqual(16_384);
+      expect(canvas.height).toBeLessThanOrEqual(16_384);
+    }
+  });
+
   it('downloads a fresh SVG blob with a format-specific filename', () => {
     createObjectURL.mockReturnValue('blob:svg-download');
 

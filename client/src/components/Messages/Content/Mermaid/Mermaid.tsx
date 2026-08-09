@@ -113,12 +113,20 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme, artifact: a
     setArtifactsVisible(false);
   }, [isSelected, openArtifact, setArtifactsVisible, setCurrentArtifactId]);
 
+  /* Closing the panel unmounts `Artifacts`, whose `useArtifacts` cleanup wipes
+   * `artifactsState`. Subscribing to this diagram's slice re-fires the
+   * registration once it goes missing, so reopening any card restores every
+   * expanded diagram to the version navigator rather than just the one
+   * clicked. `registerArtifact` no-ops when the entry already matches, so this
+   * cannot loop. Mirrors the self-heal in `ToolArtifactCard`. */
+  const existingEntry = useRecoilValue(store.artifactByIdSelector(artifact.id));
+
   useEffect(() => {
     if (!isArtifactCard) {
       return;
     }
     registerArtifact();
-  }, [isArtifactCard, registerArtifact]);
+  }, [existingEntry, isArtifactCard, registerArtifact]);
 
   useEffect(() => {
     if (!isArtifactCard || !shouldFocusArtifactCardRef.current) {

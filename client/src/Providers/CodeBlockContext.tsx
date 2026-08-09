@@ -50,6 +50,9 @@ export function CodeBlockProvider({
     return mermaidBaseIndex + nextIndex;
   }, [mermaidBaseIndex]);
 
+  /* Both counters restart together. A streamed block re-renders its fences on
+   * every token, so restarting is what keeps a diagram's index tied to its
+   * position in the document instead of drifting upward as the message grows. */
   const resetCounter = useCallback(() => {
     counterRef.current = 0;
     mermaidCounterRef.current = 0;

@@ -185,9 +185,12 @@ export function resolveCanvasDimensions(width: number, height: number): MermaidD
     Math.sqrt(MAX_CANVAS_PIXELS / (width * height)),
   );
 
+  /* Round down: rounding each side independently can carry the product back
+   * over the pixel budget the scale was chosen to satisfy, and a canvas above
+   * that area makes `toBlob` fail outright in browsers that enforce it. */
   return {
-    width: Math.max(1, Math.round(width * scale)),
-    height: Math.max(1, Math.round(height * scale)),
+    width: Math.max(1, Math.floor(width * scale)),
+    height: Math.max(1, Math.floor(height * scale)),
   };
 }
 

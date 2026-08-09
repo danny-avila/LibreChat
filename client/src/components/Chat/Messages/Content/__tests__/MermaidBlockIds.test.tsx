@@ -80,6 +80,47 @@ describe('Mermaid block ids', () => {
     expect(new Set(ids).size).toBe(3);
   });
 
+  /**
+   * Fences nested in one top-level block share a provider and re-run their
+   * index on every streamed token, so the counter has to restart per render.
+   * Without that restart the indices climb as the message grows and a diagram
+   * already open in the panel loses the artifact id it was registered under.
+   */
+  it('holds Mermaid ids steady as a nested block keeps streaming', () => {
+    const listWithOne = ['- step one', '', '  ```mermaid', '  graph TD', '  A-->B', '  ```'].join(
+      '\n',
+    );
+    const listWithTwo = [
+      listWithOne,
+      '',
+      '- step two',
+      '',
+      '  ```mermaid',
+      '  graph TD',
+      '  C-->D',
+      '  ```',
+    ].join('\n');
+    const listStillGrowing = [listWithTwo, '', '- step three'].join('\n');
+
+    const { rerender } = renderMarkdown(listWithOne);
+    expect(mermaidIds()).toEqual(['mermaid-0']);
+
+    const view = (content: string) => (
+      <MarkdownBlocks
+        content={content}
+        remarkPlugins={getRemarkPlugins()}
+        rehypePlugins={getRehypePlugins()}
+        components={getMarkdownComponents()}
+      />
+    );
+
+    rerender(view(listWithTwo));
+    expect(mermaidIds()).toEqual(['mermaid-0', 'mermaid-1']);
+
+    rerender(view(listStillGrowing));
+    expect(mermaidIds()).toEqual(['mermaid-0', 'mermaid-1']);
+  });
+
   it('does not let a Mermaid fence disturb executable code block indices', () => {
     renderMarkdown(
       [

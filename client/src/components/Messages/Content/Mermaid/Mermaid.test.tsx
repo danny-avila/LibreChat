@@ -1,7 +1,7 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { RecoilRoot, useRecoilValue } from 'recoil';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { RecoilRoot, useRecoilValue, useResetRecoilState } from 'recoil';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Artifact } from '~/common';
 import Mermaid, { MermaidRenderer } from './Mermaid';
 import { MessageContext } from '~/Providers';
@@ -251,6 +251,45 @@ describe('Mermaid Artifact expansion', () => {
     const selected = screen.getAllByRole('button', { expanded: true });
     expect(cards).toHaveLength(1);
     expect(selected).toHaveLength(1);
+  });
+
+  it('restores its registration after the Artifact store is reset', async () => {
+    let state: ArtifactStateSnapshot = {
+      artifacts: null,
+      currentArtifactId: null,
+      visible: false,
+    };
+    const handleStateChange = (nextState: ArtifactStateSnapshot) => {
+      state = nextState;
+    };
+    let resetStore: () => void = () => undefined;
+    const StoreResetter = () => {
+      resetStore = useResetRecoilState(store.artifactsState);
+      return null;
+    };
+
+    render(
+      <RecoilRoot>
+        <MemoryRouter initialEntries={['/c/conversation-1']}>
+          <StateProbe onChange={handleStateChange} />
+          <StoreResetter />
+          <MessageContext.Provider
+            value={{ messageId: 'message-1', conversationId: 'conversation-1', isExpanded: true }}
+          >
+            <Mermaid id="mermaid-0">{'graph TD\nA-->B'}</Mermaid>
+          </MessageContext.Provider>
+        </MemoryRouter>
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: mockOpenAsArtifactLabel }));
+    await waitFor(() => expect(Object.keys(state.artifacts ?? {})).toHaveLength(1));
+
+    /* Closing the panel unmounts `Artifacts`, whose cleanup wipes the store
+     * while this card stays on screen. */
+    act(() => resetStore());
+
+    await waitFor(() => expect(Object.keys(state.artifacts ?? {})).toHaveLength(1));
   });
 
   it('keeps the dialog expansion on routes without an Artifact panel', () => {
