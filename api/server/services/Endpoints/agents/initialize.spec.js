@@ -1087,9 +1087,10 @@ describe('initializeClient — subagent loading', () => {
     const resolution = agentClientArgs.agent.lazySubagentConfigs[0].resolve({
       signal: controller.signal,
     });
-    while (mockInitializeAgent.mock.calls.length < 2) {
-      await Promise.resolve();
+    for (let attempt = 0; attempt < 20 && mockInitializeAgent.mock.calls.length < 2; attempt++) {
+      await new Promise((resolve) => setImmediate(resolve));
     }
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
     controller.abort(new Error('cancelled in flight'));
 
     await expect(resolution).rejects.toThrow('cancelled in flight');
