@@ -2,7 +2,12 @@ import path from 'path';
 import * as fs from 'fs';
 import JSZip from 'jszip';
 import { megabyte } from 'librechat-data-provider';
-import { assertSafeZipSize, ZipBombError } from './zipSafety';
+import {
+  assertSafeZipSize,
+  assertSafeZipSizeIfArchive,
+  isZipArchive,
+  ZipBombError,
+} from './zipSafety';
 
 const fixturesDir = __dirname;
 const readFixture = (name: string): Buffer => fs.readFileSync(path.join(fixturesDir, name));
@@ -205,5 +210,68 @@ describe('assertSafeZipSize', () => {
     'sample.odt',
   ])('real %s fixture passes the default caps', async (name) => {
     await expect(assertSafeZipSize(readFixture(name))).resolves.toBeUndefined();
+  });
+});
+
+describe('isZipArchive', () => {
+  /**
+   * Real zip readers find the central directory by scanning backwards and tolerate data
+   * on either side of the archive, so padding is not a disguise to them. Detection and
+   * enforcement are welded together here: whatever this misses skips every cap.
+   */
+  test.each([['deck.pptx'], ['sample.docx'], ['sample.xlsx'], ['sample.odt']])(
+    'detects the real %s fixture',
+    (name) => {
+      expect(isZipArchive(readFixture(name))).toBe(true);
+    },
+  );
+
+  test.each([
+    ['a single appended byte', Buffer.from([0x00])],
+    ['an appended block', Buffer.alloc(4096, 0x41)],
+  ])('detects an archive followed by %s', (_label, trailer) => {
+    const padded = Buffer.concat([readFixture('sample.docx'), trailer]);
+    expect(isZipArchive(padded)).toBe(true);
+  });
+
+  test('detects an archive preceded by junk, as a self-extracting archive would be', () => {
+    const padded = Buffer.concat([Buffer.from('JUNKJUNK'), readFixture('sample.docx')]);
+    expect(isZipArchive(padded)).toBe(true);
+  });
+
+  test.each([
+    ['a legacy Compound File workbook', 'sample.xls'],
+    ['a PDF', 'sample.pdf'],
+  ])('does not mistake %s for an archive', (_label, name) => {
+    expect(isZipArchive(readFixture(name))).toBe(false);
+  });
+
+  test('does not mistake a stray EOCD signature inside a binary for an archive', () => {
+    /* The signature with incoherent fields: multi-disk, mismatched entry counts and a
+     * central directory that runs past the end of the file. */
+    const stray = Buffer.alloc(512, 0x7f);
+    stray.write('PK\x05\x06', 100, 'binary');
+    stray.writeUInt16LE(3, 104);
+    stray.writeUInt16LE(9, 106);
+    stray.writeUInt16LE(2, 108);
+    stray.writeUInt16LE(7, 110);
+    stray.writeUInt32LE(0xffffff, 112);
+    stray.writeUInt32LE(0xffffff, 116);
+    stray.writeUInt16LE(64, 120);
+    expect(isZipArchive(stray)).toBe(false);
+  });
+
+  test('runs the decompression guard on a bomb hidden behind trailing bytes', async () => {
+    /* Detection is what matters: before this the padded bomb skipped every cap and went
+     * straight to a parser that tolerates the padding. yauzl does not, so the refusal
+     * arrives as a malformed-archive error rather than the cap message, exactly as it
+     * does for the prepended-junk case. Either way the bytes never reach the parser. */
+    const bomb = await buildBombArchive([
+      { name: 'document.xml', decompressedBytes: 40 * megabyte },
+    ]);
+    const padded = Buffer.concat([bomb, Buffer.from([0x00])]);
+
+    expect(isZipArchive(padded)).toBe(true);
+    await expect(assertSafeZipSizeIfArchive(padded, { name: 'padded.docx' })).rejects.toThrow();
   });
 });

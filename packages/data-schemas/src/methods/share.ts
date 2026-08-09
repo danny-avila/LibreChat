@@ -164,6 +164,29 @@ function isSnapshotStale(share: Pick<t.ISharedLink, 'fileSnapshots' | 'snapshotV
   return share.fileSnapshots === undefined || (share.snapshotVersion ?? 1) < FILE_SNAPSHOT_VERSION;
 }
 
+/**
+ * Raise an existing snapshot to the current version by adding only the records it could
+ * not capture, never by re-reading the ones it did.
+ *
+ * Each existing entry pins `previewRevision` and `bytes` as they were at share time, and
+ * the share file route refuses to serve when the live file no longer matches. Rebuilding
+ * an entry from the live document would re-pin it to whatever that `file_id` holds now,
+ * so a link shared before a same-filename code output reused the id would start serving
+ * the newer content: an upgrade that silently widens what an old link exposes. Entries
+ * the rebuild no longer produces are kept for the same reason; a file that has since
+ * disappeared is the live lookup's answer to give, not this function's.
+ */
+function mergeFileSnapshots(
+  existing: t.SharedFileSnapshot[] | undefined,
+  rebuilt: t.SharedFileSnapshot[],
+): t.SharedFileSnapshot[] {
+  if (existing === undefined) {
+    return rebuilt;
+  }
+  const pinned = new Set(existing.map((snapshot) => snapshot.file_id));
+  return [...existing, ...rebuilt.filter((snapshot) => !pinned.has(snapshot.file_id))];
+}
+
 /** Collect `file_id`s from a message's `files`/`attachments` array into `target`. */
 function collectFileIds(items: unknown, target: Set<string>): void {
   if (!Array.isArray(items)) {
@@ -868,7 +891,10 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         fileSnapshots = await persistBackfilledSnapshots(
           SharedLink,
           { _id: share._id },
-          await buildFileSnapshots(mongoose, messagesToShare, share.user),
+          mergeFileSnapshots(
+            share.fileSnapshots,
+            await buildFileSnapshots(mongoose, messagesToShare, share.user),
+          ),
         );
       }
       const snapshots = includeFiles
@@ -1430,7 +1456,10 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const fileSnapshots = await persistBackfilledSnapshots(
         SharedLink,
         { shareId },
-        await buildFileSnapshots(mongoose, messages, share.user),
+        mergeFileSnapshots(
+          share.fileSnapshots,
+          await buildFileSnapshots(mongoose, messages, share.user),
+        ),
       );
 
       if (fileId) {

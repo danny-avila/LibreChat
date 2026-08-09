@@ -116,6 +116,30 @@ describe('FilePreviewDialog', () => {
     expect(await screen.findByText(EXTRACTED_TEXT)).toBeInTheDocument();
   });
 
+  /**
+   * The parser reads CSV and RTF, but a record stored as an ordinary file (a direct
+   * attachment, a code-generated artifact) has no extracted text to fall back on. Their
+   * bytes are text, so the raw preview is the answer, and excluding them alongside the
+   * binary Office containers would report no preview for a file that renders fine.
+   */
+  test.each([
+    ['text/csv', 'results.csv'],
+    ['application/csv', 'results.csv'],
+    ['text/rtf', 'notes.rtf'],
+  ])('downloads and renders %s stored as an ordinary file', async (fileType, name) => {
+    renderDialog(fileType, name, FileSources.local);
+
+    await waitFor(() => expect(mockDownload).toHaveBeenCalled());
+    expect(screen.queryByText(EXTRACTED_TEXT)).not.toBeInTheDocument();
+  });
+
+  test('still shows extracted text for a parsed CSV record', async () => {
+    renderDialog('text/csv', 'results.csv', FileSources.text);
+
+    expect(await screen.findByText(EXTRACTED_TEXT)).toBeInTheDocument();
+    expect(mockDownload).not.toHaveBeenCalled();
+  });
+
   test('still reports no preview for an unparsed binary', async () => {
     renderDialog('application/octet-stream', 'archive.bin', FileSources.local);
 

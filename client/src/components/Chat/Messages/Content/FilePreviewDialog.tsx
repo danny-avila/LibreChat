@@ -38,9 +38,16 @@ function getFileExtension(filename: string): string {
   return dot > 0 ? filename.slice(dot + 1).toLowerCase() : '';
 }
 
-/** Parsed documents other than PDF, which has its own inline preview. */
+/**
+ * Parsed documents whose bytes still read as text. The parser handles them, but a
+ * record stored as an ordinary file (a direct attachment, a code-generated artifact)
+ * has no extracted text to fall back on and renders perfectly well raw.
+ */
+const textRenderableParsedTypes = /^(?:text|application)\/(?:csv|rtf)$/i;
+
+/** Parsed documents with no readable raw form. PDF has its own inline preview. */
 const isParsedOfficeDoc = (mime: string): boolean =>
-  !mime.includes('pdf') && isParsedDocument(mime);
+  !mime.includes('pdf') && !textRenderableParsedTypes.test(mime) && isParsedDocument(mime);
 
 function canPreviewByMime(mime?: string): 'pdf' | 'text' | false {
   if (!mime) {
