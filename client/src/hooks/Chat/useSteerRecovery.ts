@@ -161,12 +161,19 @@ export default function useSteerRecovery(conversationId: string) {
           })
           .catch((error: unknown) => {
             const code = getSteerErrorCode(error);
-            // The run ended, is paused, or can't accept a steer right now:
-            // none of that means the words are lost, just that a queued
-            // follow-up is the only way left to send them.
+            // The run ended, is paused, was replaced, or can't accept a steer
+            // right now: none of that means the words are lost, just that a
+            // queued follow-up is the only way left to send them. `RUN_REPLACED`
+            // belongs here too, because the retry pins `generationCreatedAt` to
+            // the chip's own generation: once a newer run owns the conversation
+            // every retry earns that same 409 and the chip would be stuck failed
+            // forever. Queueing is what the composer does with it, and unlike
+            // the composer's normal-send fallback it cannot displace the
+            // replacement run.
             if (
               code === 'NO_ACTIVE_RUN' ||
               code === 'RUN_PAUSED' ||
+              code === 'RUN_REPLACED' ||
               code === 'STEER_UNSUPPORTED' ||
               code === 'STEER_QUEUE_FULL'
             ) {

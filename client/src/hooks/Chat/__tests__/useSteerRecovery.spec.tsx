@@ -109,8 +109,11 @@ describe('useSteerRecovery', () => {
       ]);
     });
 
-    it('also routes to the queue on RUN_PAUSED / STEER_UNSUPPORTED / STEER_QUEUE_FULL', async () => {
-      for (const code of ['RUN_PAUSED', 'STEER_UNSUPPORTED', 'STEER_QUEUE_FULL']) {
+    /* RUN_REPLACED belongs with the rest: the retry pins `generationCreatedAt`
+       to the chip's own generation, so once a newer run owns the conversation
+       every retry earns that same 409 and Retry would be dead for good. */
+    it('also routes to the queue on RUN_PAUSED / RUN_REPLACED / STEER_UNSUPPORTED / STEER_QUEUE_FULL', async () => {
+      for (const code of ['RUN_PAUSED', 'RUN_REPLACED', 'STEER_UNSUPPORTED', 'STEER_QUEUE_FULL']) {
         mockMutateAsync.mockRejectedValue({ response: { data: { code } } });
         const { result } = setup(({ set }) => {
           set(store.pendingSteersByConvoId(CONVO_ID), [
