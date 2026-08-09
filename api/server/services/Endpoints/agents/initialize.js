@@ -10,6 +10,7 @@ const {
   extractManualSkills,
   GenerationJobManager,
   getCustomEndpointConfig,
+  getProviderConfig,
   discoverConnectedAgents,
   resolveAgentTokenConfig,
   resolveAgentScopedSkillIds,
@@ -714,16 +715,40 @@ const initializeClient = async ({
       : new Error('Subagent resolution was aborted.');
   };
 
+  const waitForAbort = (promise, abortSignal) => {
+    throwIfAborted(abortSignal);
+    if (!abortSignal) return promise;
+    return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        reject(
+          abortSignal.reason instanceof Error
+            ? abortSignal.reason
+            : new Error('Subagent resolution was aborted.'),
+        );
+      };
+      abortSignal.addEventListener('abort', onAbort, { once: true });
+      if (abortSignal.aborted) {
+        onAbort();
+      }
+      promise.then(resolve, reject).finally(() => {
+        abortSignal.removeEventListener('abort', onAbort);
+      });
+    });
+  };
+
   const hasSubagentViewAccess = async (agent, agentId, abortSignal) => {
     throwIfAborted(abortSignal);
     if (!userId) return false;
-    const hasAccess = await checkPermission({
-      userId,
-      role: userRole,
-      resourceType: ResourceType.AGENT,
-      resourceId: agent._id,
-      requiredPermission: PermissionBits.VIEW,
-    });
+    const hasAccess = await waitForAbort(
+      checkPermission({
+        userId,
+        role: userRole,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        requiredPermission: PermissionBits.VIEW,
+      }),
+      abortSignal,
+    );
     throwIfAborted(abortSignal);
     if (!hasAccess) {
       logger.warn(
@@ -734,11 +759,13 @@ const initializeClient = async ({
   };
 
   const getIncludeReasoningHistory = (agent) => {
-    const customEndpoints = appConfig?.endpoints?.[EModelEndpoint.custom];
-    if (!Array.isArray(customEndpoints) || !agent.provider) return undefined;
-    const provider = agent.provider.toLowerCase();
-    return customEndpoints.find((endpoint) => endpoint.name?.toLowerCase() === provider)
-      ?.customParams?.includeReasoningHistory;
+    if (!agent.provider) return undefined;
+    try {
+      return getProviderConfig({ provider: agent.provider, appConfig }).customEndpointConfig
+        ?.customParams?.includeReasoningHistory;
+    } catch {
+      return undefined;
+    }
   };
 
   const getExplicitSubagentIds = (agent) =>
@@ -776,14 +803,23 @@ const initializeClient = async ({
     if (skippedAgentIds.has(agentId)) return null;
     const cached = lazyMetadataByAgentId.get(agentId);
     if (cached) return cached;
-    const agent = await db.getAgentWithVersionCount({ id: agentId });
-    if (!agent || !(await hasSubagentViewAccess(agent, agentId))) {
+    try {
+      const agent = await db.getAgentWithVersionCount({ id: agentId });
+      if (!agent || !(await hasSubagentViewAccess(agent, agentId))) {
+        skippedAgentIds.add(agentId);
+        return null;
+      }
+      const metadata = toLazySubagentMetadata(agent);
+      lazyMetadataByAgentId.set(agentId, metadata);
+      return metadata;
+    } catch (error) {
+      if (isFatalAgentInitializationError(error)) {
+        throw error;
+      }
+      logger.error(`[initializeClient] Error loading subagent metadata ${agentId}:`, error);
       skippedAgentIds.add(agentId);
       return null;
     }
-    const metadata = toLazySubagentMetadata(agent);
-    lazyMetadataByAgentId.set(agentId, metadata);
-    return metadata;
   };
 
   /**
@@ -794,7 +830,7 @@ const initializeClient = async ({
    */
   const initializeLazySubagent = async ({ agentId, configId, context, lazyChildren }) => {
     throwIfAborted(context.signal);
-    const agent = await db.getAgentWithVersionCount({ id: agentId });
+    const agent = await waitForAbort(db.getAgentWithVersionCount({ id: agentId }), context.signal);
     throwIfAborted(context.signal);
     if (!agent || getLazySubagentConfigId(agent) !== configId) {
       throw new Error(`Subagent ${agentId} changed before it could be initialized.`);
@@ -802,7 +838,10 @@ const initializeClient = async ({
     if (!(await hasSubagentViewAccess(agent, agentId, context.signal))) {
       throw new Error(`You no longer have access to subagent ${agentId}.`);
     }
-    const validation = await validateAgentModel({ req, res, agent, modelsConfig, logViolation });
+    const validation = await waitForAbort(
+      validateAgentModel({ req, res, agent, modelsConfig, logViolation }),
+      context.signal,
+    );
     throwIfAborted(context.signal);
     if (!validation.isValid) {
       throw new Error(validation.error?.message ?? `Subagent ${agentId} failed model validation.`);
@@ -819,47 +858,50 @@ const initializeClient = async ({
       skillsCapabilityEnabled,
       ephemeralSkillsToggle,
     });
-    const config = await initializeAgent(
-      {
-        req,
-        res,
-        agent,
-        loadTools,
-        requestFiles,
-        conversationId,
-        parentMessageId,
-        endpointOption: { ...endpointOption, endpoint: EModelEndpoint.agents },
-        allowedProviders,
-        accessibleSkillIds: scopedSkillIds,
-        skillAuthoringAvailable: canAuthorSkillFiles({
+    const config = await waitForAbort(
+      initializeAgent(
+        {
+          req,
+          res,
           agent,
-          scopedEditableSkillIds,
-          skillCreateAllowed,
-          skillsCapabilityEnabled,
-          ephemeralSkillsToggle,
-        }),
-        codeEnvAvailable,
-        statefulSessionsAvailable,
-        memoryAvailable,
-        skillStates,
-        defaultActiveOnShare,
-      },
-      {
-        getFiles: db.getFiles,
-        getUserKey: db.getUserKey,
-        getMessages: db.getMessages,
-        getConvoFiles: db.getConvoFiles,
-        getAccessibleMcpServerNames,
-        updateFilesUsage: db.updateFilesUsage,
-        getUserKeyValues: db.getUserKeyValues,
-        getUserCodeFiles: db.getUserCodeFiles,
-        getToolFilesByIds: db.getToolFilesByIds,
-        getCodeGeneratedFiles: db.getCodeGeneratedFiles,
-        filterFilesByAgentAccess,
-        listSkillsByAccess: skillDbMethods.listSkillsByAccess,
-        listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
-        getSkillByName: skillDbMethods.getSkillByName,
-      },
+          loadTools: createToolLoader(context.signal, streamId, true, jobCreatedAt),
+          requestFiles,
+          conversationId,
+          parentMessageId,
+          endpointOption: { ...endpointOption, endpoint: EModelEndpoint.agents },
+          allowedProviders,
+          accessibleSkillIds: scopedSkillIds,
+          skillAuthoringAvailable: canAuthorSkillFiles({
+            agent,
+            scopedEditableSkillIds,
+            skillCreateAllowed,
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
+          codeEnvAvailable,
+          statefulSessionsAvailable,
+          memoryAvailable,
+          skillStates,
+          defaultActiveOnShare,
+        },
+        {
+          getFiles: db.getFiles,
+          getUserKey: db.getUserKey,
+          getMessages: db.getMessages,
+          getConvoFiles: db.getConvoFiles,
+          getAccessibleMcpServerNames,
+          updateFilesUsage: db.updateFilesUsage,
+          getUserKeyValues: db.getUserKeyValues,
+          getUserCodeFiles: db.getUserCodeFiles,
+          getToolFilesByIds: db.getToolFilesByIds,
+          getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+          filterFilesByAgentAccess,
+          listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+          listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+          getSkillByName: skillDbMethods.getSkillByName,
+        },
+      ),
+      context.signal,
     );
     throwIfAborted(context.signal);
     config.lazySubagentConfigs = lazyChildren;

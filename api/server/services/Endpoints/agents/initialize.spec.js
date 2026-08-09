@@ -91,6 +91,7 @@ const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logger } = require('@librechat/data-schemas');
 const { User, AclEntry } = require('~/db/models');
 const { createAgent, createSkill, updateAgent } = require('~/models');
+const db = require('~/models');
 
 jest.spyOn(logger, 'warn').mockImplementation(() => {});
 
@@ -816,6 +817,58 @@ describe('initializeClient — subagent loading', () => {
     expect(agentClientArgs.agentConfigs.has(SUBAGENT_ID)).toBe(false);
   });
 
+  it('omits a descriptor when its metadata lookup fails without aborting the primary run', async () => {
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+    jest.spyOn(db, 'getAgentWithVersionCount').mockRejectedValueOnce(new Error('transient read'));
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.agent.lazySubagentConfigs).toEqual([]);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(`Error loading subagent metadata ${SUBAGENT_ID}`),
+      expect.any(Error),
+    );
+  });
+
+  it('uses exact custom-endpoint identity for descriptor reasoning history', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Custom Subagent',
+      provider: 'caseprovider',
+      model: 'custom-model',
+      author: new mongoose.Types.ObjectId(),
+      tools: [],
+    });
+    await grantView(subAgent);
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.custom = [
+      { name: 'CaseProvider', customParams: { includeReasoningHistory: true } },
+      { name: 'caseprovider', customParams: { includeReasoningHistory: false } },
+    ];
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.agent.lazySubagentConfigs[0].includeReasoningHistory).toBe(false);
+  });
+
   it('fails closed when a selected subagent configuration changes after advertisement', async () => {
     await createViewableAgent(SUBAGENT_ID);
     const primaryConfig = makePrimaryConfig({
@@ -1012,6 +1065,37 @@ describe('initializeClient — subagent loading', () => {
       agentClientArgs.agent.lazySubagentConfigs[0].resolve({ signal: controller.signal }),
     ).rejects.toThrow('cancelled');
     expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects promptly when cancellation occurs during lazy initialization', async () => {
+    await createViewableAgent(SUBAGENT_ID);
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+    });
+    const initialization = deferred();
+    mockInitializeAgent
+      .mockResolvedValueOnce(primaryConfig)
+      .mockImplementationOnce(() => initialization.promise);
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const controller = new AbortController();
+    const resolution = agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+      signal: controller.signal,
+    });
+    while (mockInitializeAgent.mock.calls.length < 2) {
+      await Promise.resolve();
+    }
+    controller.abort(new Error('cancelled in flight'));
+
+    await expect(resolution).rejects.toThrow('cancelled in flight');
+    const selectedInitParams = mockInitializeAgent.mock.calls[1][0];
+    expect(selectedInitParams.loadTools).not.toBe(mockInitializeAgent.mock.calls[0][0].loadTools);
+    initialization.resolve(makeSubagentConfig(SUBAGENT_ID));
   });
 
   it('rejects nested subagent chains deeper than MAX_SUBAGENT_DEPTH', async () => {
