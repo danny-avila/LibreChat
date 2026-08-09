@@ -1,7 +1,21 @@
-import { MAX_SUBAGENTS } from 'librechat-data-provider';
+import {
+  MAX_SUBAGENTS,
+  MAX_SUBAGENT_GRAPH_NODES,
+  MAX_GRAPH_SUBAGENT_MEMBERS,
+} from 'librechat-data-provider';
 import { agentCreateSchema, agentUpdateSchema, agentSubagentsSchema } from './validation';
 
 describe('agentSubagentsSchema', () => {
+  const graph = {
+    type: 'research_team',
+    name: 'Research team',
+    description: 'Researches and writes a final answer',
+    agent_ids: ['agent_researcher', 'agent_writer'],
+    edges: [{ from: 'agent_researcher', to: 'agent_writer', edgeType: 'direct' as const }],
+    entry_agent_id: 'agent_researcher',
+    result_agent_id: 'agent_writer',
+  };
+
   it('accepts enabled:true with a list within the cap', () => {
     const result = agentSubagentsSchema.safeParse({
       enabled: true,
@@ -33,6 +47,131 @@ describe('agentSubagentsSchema', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('accepts an explicit bounded graph subagent', () => {
+    expect(
+      agentSubagentsSchema.safeParse({ enabled: true, allowSelf: false, graphs: [graph] }).success,
+    ).toBe(true);
+  });
+
+  it('accepts a one-member graph with no edges', () => {
+    expect(
+      agentSubagentsSchema.safeParse({
+        enabled: true,
+        allowSelf: false,
+        graphs: [
+          {
+            ...graph,
+            agent_ids: ['agent_solo'],
+            edges: [],
+            entry_agent_id: 'agent_solo',
+            result_agent_id: 'agent_solo',
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('accepts excludeResults:false without an edge prompt', () => {
+    expect(
+      agentSubagentsSchema.safeParse({
+        enabled: true,
+        allowSelf: false,
+        graphs: [
+          {
+            ...graph,
+            edges: [{ ...graph.edges[0], excludeResults: false }],
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects configurations above the aggregate unique-agent cap', () => {
+    const firstAgentIds = Array.from(
+      { length: MAX_GRAPH_SUBAGENT_MEMBERS },
+      (_, index) => `first_${index}`,
+    );
+    const secondAgentIds = Array.from(
+      { length: MAX_SUBAGENT_GRAPH_NODES - MAX_GRAPH_SUBAGENT_MEMBERS + 1 },
+      (_, index) => `second_${index}`,
+    );
+    const toChain = (agentIds: string[]) =>
+      agentIds.slice(1).map((agentId, index) => ({
+        from: agentIds[index],
+        to: agentId,
+        edgeType: 'direct' as const,
+      }));
+
+    expect(
+      agentSubagentsSchema.safeParse({
+        enabled: true,
+        allowSelf: false,
+        graphs: [
+          {
+            ...graph,
+            type: 'first_team',
+            agent_ids: firstAgentIds,
+            edges: toChain(firstAgentIds),
+            entry_agent_id: firstAgentIds[0],
+            result_agent_id: firstAgentIds[firstAgentIds.length - 1],
+          },
+          {
+            ...graph,
+            type: 'second_team',
+            agent_ids: secondAgentIds,
+            edges: toChain(secondAgentIds),
+            entry_agent_id: secondAgentIds[0],
+            result_agent_id: secondAgentIds[secondAgentIds.length - 1],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects graph members outside the cap and edges outside the member set', () => {
+    const oversizedAgentIds = Array.from(
+      { length: MAX_GRAPH_SUBAGENT_MEMBERS + 1 },
+      (_, index) => `agent_${index}`,
+    );
+    expect(
+      agentSubagentsSchema.safeParse({
+        enabled: true,
+        allowSelf: false,
+        graphs: [{ ...graph, agent_ids: oversizedAgentIds }],
+      }).success,
+    ).toBe(false);
+    expect(
+      agentSubagentsSchema.safeParse({
+        enabled: true,
+        allowSelf: false,
+        graphs: [
+          {
+            ...graph,
+            edges: [{ from: 'agent_researcher', to: 'agent_unknown', edgeType: 'direct' }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects handoff edges and spawn-type collisions', () => {
+    expect(
+      agentSubagentsSchema.safeParse({
+        enabled: true,
+        allowSelf: false,
+        graphs: [{ ...graph, edges: [{ ...graph.edges[0], edgeType: 'handoff' }] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      agentSubagentsSchema.safeParse({
+        enabled: true,
+        allowSelf: false,
+        agent_ids: ['research_team'],
+        graphs: [graph],
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('agentCreateSchema with subagents', () => {
@@ -52,6 +191,28 @@ describe('agentCreateSchema with subagents', () => {
       ...base,
       subagents: { enabled: true, allowSelf: true, agent_ids: [] },
     });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts the current-agent placeholder in a graph subagent', () => {
+    const result = agentCreateSchema.safeParse({
+      ...base,
+      subagents: {
+        enabled: true,
+        graphs: [
+          {
+            type: 'self_review',
+            name: 'Self review',
+            description: 'Runs the new agent in an isolated context',
+            agent_ids: [''],
+            edges: [],
+            entry_agent_id: '',
+            result_agent_id: '',
+          },
+        ],
+      },
+    });
+
     expect(result.success).toBe(true);
   });
 

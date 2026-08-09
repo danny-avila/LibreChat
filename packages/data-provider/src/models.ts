@@ -10,6 +10,8 @@ import {
 } from './schemas';
 import { MAX_SUBAGENTS } from './limits';
 
+type ModelSpecSubagentsConfig = Omit<AgentSubagentsConfig, 'graphs'>;
+
 export type TModelSpec = {
   name: string;
   label: string;
@@ -79,7 +81,7 @@ export type TModelSpec = {
   artifacts?: string | boolean;
   mcpServers?: string[];
   skills?: boolean | string[];
-  subagents?: AgentSubagentsConfig;
+  subagents?: ModelSpecSubagentsConfig;
 };
 
 export const modelSpecSubagentsSchema = z.object({

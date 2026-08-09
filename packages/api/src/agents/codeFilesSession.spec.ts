@@ -216,6 +216,17 @@ describe('buildInitialToolSessions', () => {
     expect(names).toEqual(['mid.txt', 'nested.txt', 'top.txt']);
   });
 
+  it('includes graph-subagent members pruned from the top-level agent map', () => {
+    const member = agent('graph-member', [file('g1', 'sess-G', 'team.txt')]);
+    const primary = agent('primary');
+    primary.subagentGraphConfigs = [{ memberConfigs: [member] }];
+
+    const result = buildInitialToolSessions({ agents: [primary] });
+
+    const entry = result!.get(Constants.EXECUTE_CODE) as CodeSessionContext;
+    expect(entry.files!.map((item) => item.name)).toEqual(['team.txt']);
+  });
+
   it('preserves the skill side representative session_id when merging', () => {
     const skillSessions: ToolSessionMap = new Map();
     skillSessions.set(Constants.EXECUTE_CODE, {

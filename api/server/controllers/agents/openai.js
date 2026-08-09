@@ -13,6 +13,7 @@ const {
   createRun,
   createChunk,
   buildToolSet,
+  buildInitialToolSessions,
   AgentRunEnvelopeError,
   createAgentRunEnvelope,
   loadSkillStates,
@@ -27,9 +28,11 @@ const {
   recordCollectedUsage,
   createSubagentUsageSink,
   getTransactionsConfig,
+  resolveAgentTokenConfig,
   resolveRecursionLimit,
   findPiiMatchInMessages,
   discoverConnectedAgents,
+  resolveSubagentGraphs,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
   buildNonStreamingResponse,
@@ -61,6 +64,7 @@ const {
   canAuthorSkillFiles,
   withDeploymentSkillIds,
   buildAgentToolContext,
+  resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
@@ -275,6 +279,12 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     };
 
     const enabledCapabilities = new Set(agentsEConfig?.capabilities);
+    const memoryAvailable = await resolveMemoryAvailability({
+      enabledCapabilities,
+      memoryConfig: appConfig?.memory,
+      user: req.user,
+      getRoleByName: db.getRoleByName,
+    });
     const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
     const ephemeralSkillsToggle = request.ephemeralAgent?.skills === true;
     const accessibleSkillIds = skillsCapabilityEnabled
@@ -347,6 +357,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         statefulSessionsAvailable: enabledCapabilities.has(
           AgentCapabilities.stateful_code_sessions,
         ),
+        memoryAvailable,
         skillStates,
         defaultActiveOnShare,
         manualSkills,
@@ -373,90 +384,108 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       buildAgentToolContext({ agent, config: primaryConfig }),
     );
 
-    // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
-    // primary has edges to follow — the common API case is single-agent.
     let handoffAgentConfigs = new Map();
     let discoveredEdges = [];
     let discoveredMCPAuthMap;
-    if (primaryConfig.edges?.length) {
+    const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
+    const primaryHasGraphSubagents =
+      subagentsCapabilityEnabled &&
+      primaryConfig.subagents?.enabled === true &&
+      (primaryConfig.subagents.graphs?.length ?? 0) > 0;
+    if (primaryConfig.edges?.length || primaryHasGraphSubagents) {
       const modelsConfig = await getModelsConfig(req);
-      ({
-        agentConfigs: handoffAgentConfigs,
-        edges: discoveredEdges,
-        userMCPAuthMap: discoveredMCPAuthMap,
-      } = await discoverConnectedAgents(
-        {
-          req,
-          res,
-          primaryConfig,
-          endpointOption,
-          allowedProviders,
-          modelsConfig,
-          loadTools,
-          requestFiles: [],
-          conversationId,
-          parentMessageId,
-          // The route enforces REMOTE_AGENT on the primary; every discovered
-          // sub-agent must clear the same sharing boundary, not the looser
-          // in-app AGENT one.
-          resourceType: ResourceType.REMOTE_AGENT,
-          computeAccessibleSkillIds: (handoffAgent) =>
-            resolveAgentScopedSkillIds({
+      const discoveryParams = {
+        req,
+        res,
+        primaryConfig,
+        endpointOption,
+        allowedProviders,
+        modelsConfig,
+        loadTools,
+        requestFiles: [],
+        conversationId,
+        parentMessageId,
+        resourceType: ResourceType.REMOTE_AGENT,
+        computeAccessibleSkillIds: (handoffAgent) =>
+          resolveAgentScopedSkillIds({
+            agent: handoffAgent,
+            accessibleSkillIds,
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
+        computeSkillAuthoringAvailable: (handoffAgent) =>
+          canAuthorSkillFiles({
+            agent: handoffAgent,
+            scopedEditableSkillIds: resolveAgentScopedSkillIds({
               agent: handoffAgent,
-              accessibleSkillIds,
+              accessibleSkillIds: editableSkillIds,
               skillsCapabilityEnabled,
               ephemeralSkillsToggle,
             }),
-          computeSkillAuthoringAvailable: (handoffAgent) =>
-            canAuthorSkillFiles({
-              agent: handoffAgent,
-              scopedEditableSkillIds: resolveAgentScopedSkillIds({
-                agent: handoffAgent,
-                accessibleSkillIds: editableSkillIds,
-                skillsCapabilityEnabled,
-                ephemeralSkillsToggle,
-              }),
-              skillCreateAllowed,
-              skillsCapabilityEnabled,
-              ephemeralSkillsToggle,
-            }),
-          skillStates,
-          defaultActiveOnShare,
-          /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
-          codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
-          backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
-          toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
-          statefulSessionsAvailable: enabledCapabilities.has(
-            AgentCapabilities.stateful_code_sessions,
-          ),
+            skillCreateAllowed,
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
+        skillStates,
+        defaultActiveOnShare,
+        codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+        backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+        toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
+        statefulSessionsAvailable: enabledCapabilities.has(
+          AgentCapabilities.stateful_code_sessions,
+        ),
+        memoryAvailable,
+      };
+      const discoveryDeps = {
+        getAgent: db.getAgent,
+        checkPermission: async ({ userId, role, resourceId, requiredPermission }) => {
+          const permissions = await getRemoteAgentPermissions(
+            { getEffectivePermissions },
+            userId,
+            role,
+            resourceId,
+          );
+          return hasPermissions(permissions, requiredPermission);
         },
-        {
-          getAgent: db.getAgent,
-          // Use `getRemoteAgentPermissions` so sub-agent authorization
-          // matches what the route's `createCheckRemoteAgentAccess`
-          // middleware does for the primary: AGENT owners with the SHARE
-          // bit are treated as remotely authorized even without an
-          // explicit REMOTE_AGENT grant.
-          checkPermission: async ({ userId, role, resourceId, requiredPermission }) => {
-            const permissions = await getRemoteAgentPermissions(
-              { getEffectivePermissions },
-              userId,
-              role,
-              resourceId,
-            );
-            return hasPermissions(permissions, requiredPermission);
-          },
-          logViolation,
-          db: dbMethods,
-          onAgentInitialized: (agentId, handoffAgent, config) => {
-            agentToolContexts.set(agentId, buildAgentToolContext({ agent: handoffAgent, config }));
-          },
-          initializeAgent,
+        logViolation,
+        db: dbMethods,
+        onAgentInitialized: (loadedAgentId, loadedAgent, config) => {
+          agentToolContexts.set(
+            loadedAgentId,
+            buildAgentToolContext({ agent: loadedAgent, config }),
+          );
         },
-      ));
+        initializeAgent,
+      };
+      if (primaryConfig.edges?.length) {
+        ({
+          agentConfigs: handoffAgentConfigs,
+          edges: discoveredEdges,
+          userMCPAuthMap: discoveredMCPAuthMap,
+        } = await discoverConnectedAgents(discoveryParams, discoveryDeps));
+      }
+      if (subagentsCapabilityEnabled) {
+        discoveredMCPAuthMap = await resolveSubagentGraphs(
+          {
+            ...discoveryParams,
+            rootConfigs: [primaryConfig, ...handoffAgentConfigs.values()],
+          },
+          discoveryDeps,
+        );
+      }
     }
 
     primaryConfig.edges = discoveredEdges;
+    const endpointTokenConfigByAgentId = new Map();
+    for (const [agentId, context] of agentToolContexts) {
+      endpointTokenConfigByAgentId.set(agentId, context.endpointTokenConfig);
+    }
+    const resolveEndpointTokenConfig = (usage) =>
+      resolveAgentTokenConfig({
+        agentId: usage?.agentId,
+        byAgentId: endpointTokenConfigByAgentId,
+        fallback: primaryConfig.endpointTokenConfig,
+      });
 
     // Determine if streaming is enabled (check both request and agent config)
     const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;
@@ -465,6 +494,11 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     // Create tracker for streaming or aggregator for non-streaming
     const tracker = isStreaming ? createOpenAIStreamTracker() : null;
     const aggregator = isStreaming ? null : createOpenAIContentAggregator();
+    const accumulateResponseUsage = (usage) => {
+      const target = isStreaming ? tracker : aggregator;
+      target.usage.promptTokens += usage.input_tokens ?? 0;
+      target.usage.completionTokens += usage.output_tokens ?? 0;
+    };
 
     // Set up response for streaming
     if (isStreaming) {
@@ -720,9 +754,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           if (usage) {
             const taggedUsage = markSummarizationUsage(usage, metadata);
             collectedUsage.push(taggedUsage);
-            const target = isStreaming ? tracker : aggregator;
-            target.usage.promptTokens += taggedUsage.input_tokens ?? 0;
-            target.usage.completionTokens += taggedUsage.output_tokens ?? 0;
+            accumulateResponseUsage(taggedUsage);
           }
         },
       },
@@ -748,11 +780,13 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     const userMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
 
     const runAgents = [primaryConfig, ...handoffAgentConfigs.values()];
+    const initialSessions = buildInitialToolSessions({ agents: runAgents });
 
     const run = await createRun({
       agents: runAgents,
       messages: formattedMessages,
       indexTokenCountMap,
+      initialSessions,
       initialSummary,
       runId: responseId,
       summarizationConfig,
@@ -767,7 +801,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       tenantId: principal.tenantId,
       /** Bills subagent child-run model calls (reported outside the
        *  streamEvents loop) into the same collectedUsage array. */
-      subagentUsageSink: createSubagentUsageSink(collectedUsage),
+      subagentUsageSink: createSubagentUsageSink(collectedUsage, accumulateResponseUsage),
     });
 
     if (!run) {
@@ -819,6 +853,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         balance: balanceConfig,
         transactions: transactionsConfig,
         model: primaryConfig.model || agent.model_parameters?.model,
+        endpointTokenConfig: primaryConfig.endpointTokenConfig,
+        resolveEndpointTokenConfig,
       },
     ).catch((err) => {
       logger.error('[OpenAI API] Error recording usage:', err);

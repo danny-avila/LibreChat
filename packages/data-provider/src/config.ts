@@ -15,7 +15,7 @@ import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-export { MAX_SUBAGENTS } from './limits';
+export { MAX_SUBAGENTS, MAX_GRAPH_SUBAGENT_MEMBERS } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 

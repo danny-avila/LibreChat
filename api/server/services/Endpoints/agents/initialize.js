@@ -1,10 +1,9 @@
 const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
 const {
-  checkAccess,
+  createConcurrencyLimiter,
   loadSkillStates,
   initializeAgent,
-  isMemoryEnabled,
   primeInvokedSkills,
   validateAgentModel,
   extractManualSkills,
@@ -20,11 +19,9 @@ const {
   getLazySubagentConfigId,
 } = require('@librechat/api');
 const {
-  Permissions,
   ResourceType,
   EModelEndpoint,
   PermissionBits,
-  PermissionTypes,
   MAX_SUBAGENT_DEPTH,
   isAgentsEndpoint,
   getResponseSender,
@@ -53,6 +50,7 @@ const {
   canAuthorSkillFiles,
   withDeploymentSkillIds,
   buildAgentToolContext,
+  resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 } = require('./skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
@@ -61,6 +59,8 @@ const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
+
+const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
 
 /**
  * Creates a tool loader function for the agent.
@@ -205,16 +205,12 @@ const initializeClient = async ({
    *  read-only-memory roles that the runtime loader would then refuse to build.
    *  Agents (or the ephemeral memory badge) opt in per-agent via the `memory`
    *  marker on `tools`. */
-  const memoryAvailablePromise =
-    enabledCapabilities.has(AgentCapabilities.memory) &&
-    isMemoryEnabled(appConfig?.memory) &&
-    req.user?.personalization?.memories !== false &&
-    checkAccess({
-      user: req.user,
-      permissionType: PermissionTypes.MEMORIES,
-      permissions: [Permissions.USE, Permissions.CREATE, Permissions.UPDATE],
-      getRoleByName: db.getRoleByName,
-    });
+  const memoryAvailablePromise = resolveMemoryAvailability({
+    enabledCapabilities,
+    memoryConfig: appConfig?.memory,
+    user: req.user,
+    getRoleByName: db.getRoleByName,
+  });
 
   const accessibleSkillIdsPromise = skillsCapabilityEnabled
     ? findAccessibleResources({
@@ -646,7 +642,6 @@ const initializeClient = async ({
   if (updatedMCPAuthMap) {
     userMCPAuthMap = updatedMCPAuthMap;
   }
-
   for (const [agentId, config] of agentConfigs) {
     if (agentToolContexts.has(agentId)) {
       continue;
@@ -980,14 +975,15 @@ const initializeClient = async ({
         includeReasoningHistory: metadata.includeReasoningHistory,
         lazySubagentConfigs: lazyChildren,
         subagentAgentConfigs: eagerChildren,
-        resolve: (context) =>
+        resolve: async (context) =>
           initializeLazySubagent({
             agentId: metadata.id,
             configId: metadata.configId,
             context,
             lazyChildren,
-          }).then((config) => {
+          }).then(async (config) => {
             config.subagentAgentConfigs = eagerChildren;
+            await resolveGraphSubagentsFor(config);
             return config;
           }),
       });
@@ -1007,7 +1003,88 @@ const initializeClient = async ({
     }
   };
 
-  await resolveSubagentTrees([primaryConfig, ...agentConfigs.values()]);
+  const rootSubagentConfigs = [primaryConfig, ...agentConfigs.values()];
+  await resolveSubagentTrees(rootSubagentConfigs);
+
+  const graphMemberConfigsById = new Map(
+    rootSubagentConfigs.filter((config) => config?.id).map((config) => [config.id, config]),
+  );
+  const initializeGraphMember = createConcurrencyLimiter(SUBAGENT_GRAPH_LOAD_CONCURRENCY);
+  const loadGraphMember = async (memberId) => {
+    const cached = graphMemberConfigsById.get(memberId);
+    if (cached) return cached;
+    if (skippedAgentIds.has(memberId)) return null;
+    assertSubagentGraphRoom(memberId);
+    subagentGraphIds.add(memberId);
+    const metadata = await loadSubagentMetadata(memberId);
+    if (!metadata) return null;
+    try {
+      const config = await initializeLazySubagent({
+        agentId: metadata.id,
+        configId: metadata.configId,
+        context: { signal },
+        lazyChildren: [],
+      });
+      graphMemberConfigsById.set(memberId, config);
+      if (config.userMCPAuthMap) {
+        userMCPAuthMap = { ...userMCPAuthMap, ...config.userMCPAuthMap };
+      }
+      return config;
+    } catch (error) {
+      if (isFatalAgentInitializationError(error)) {
+        throw error;
+      }
+      logger.error(`[initializeClient] Error initializing graph member ${memberId}:`, error);
+      skippedAgentIds.add(memberId);
+      return null;
+    }
+  };
+
+  async function resolveGraphSubagentsFor(config) {
+    const definitions =
+      subagentsCapabilityEnabled && config.subagents?.enabled === true
+        ? (config.subagents.graphs ?? [])
+        : [];
+    const resolvedGraphs = [];
+    for (const definition of definitions) {
+      const memberIds = [...new Set(definition.agent_ids ?? [])];
+      const unloadedMemberIds = memberIds.filter(
+        (memberId) => !graphMemberConfigsById.has(memberId) && !subagentGraphIds.has(memberId),
+      );
+      if (subagentGraphIds.size + unloadedMemberIds.length > MAX_SUBAGENT_GRAPH_NODES) {
+        const overflowIndex = MAX_SUBAGENT_GRAPH_NODES - subagentGraphIds.size;
+        logger.warn('[initializeClient] Subagent graph node limit exceeded', {
+          agentId: unloadedMemberIds[Math.max(overflowIndex, 0)],
+          primaryAgentId: primaryConfig.id,
+          loadedSubagentCount: subagentGraphIds.size,
+          stagedSubagentCount: unloadedMemberIds.length,
+          maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+        });
+        continue;
+      }
+      for (const memberId of unloadedMemberIds) {
+        subagentGraphIds.add(memberId);
+      }
+      const memberConfigs = await Promise.all(
+        memberIds.map((memberId) => initializeGraphMember(() => loadGraphMember(memberId))),
+      );
+      if (memberConfigs.some((member) => member == null)) {
+        logger.warn('[initializeClient] Skipping incomplete graph subagent', {
+          parentAgentId: config.id,
+          graphType: definition.type,
+          expectedMemberCount: memberIds.length,
+          resolvedMemberCount: memberConfigs.filter(Boolean).length,
+        });
+        continue;
+      }
+      resolvedGraphs.push({ definition, memberConfigs });
+    }
+    config.subagentGraphConfigs = resolvedGraphs;
+  }
+
+  for (const config of rootSubagentConfigs) {
+    await resolveGraphSubagentsFor(config);
+  }
 
   primaryConfig.subagents = subagentsCapabilityEnabled ? primaryConfig.subagents : undefined;
 
@@ -1019,10 +1096,12 @@ const initializeClient = async ({
    *  has disabled the capability globally. */
   if (!subagentsCapabilityEnabled) {
     primaryConfig.lazySubagentConfigs = undefined;
+    primaryConfig.subagentGraphConfigs = undefined;
     for (const config of agentConfigs.values()) {
       config.subagents = undefined;
       config.subagentAgentConfigs = undefined;
       config.lazySubagentConfigs = undefined;
+      config.subagentGraphConfigs = undefined;
     }
   }
 

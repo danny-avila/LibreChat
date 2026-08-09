@@ -12,6 +12,8 @@ const mockRecordCollectedUsage = jest
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
+const mockResolveMemoryAvailability = jest.fn().mockResolvedValue(true);
+const mockInitialSessions = new Map([['execute_code', { session_id: 'seeded' }]]);
 class MockAgentRunEnvelopeError extends TypeError {
   constructor(message) {
     super(message);
@@ -45,6 +47,7 @@ const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySki
 const mockEnrichWithSkillConfigurable = jest.fn((result) => result);
 const mockBuildAgentToolContext = jest.fn(({ agent, config }) => ({
   agent,
+  endpointTokenConfig: config.endpointTokenConfig,
   toolRegistry: config.toolRegistry,
   userMCPAuthMap: config.userMCPAuthMap,
   tool_resources: config.tool_resources,
@@ -113,6 +116,7 @@ jest.mock('@librechat/api', () => ({
   createRun: jest.fn().mockResolvedValue({
     processStream: jest.fn().mockResolvedValue(undefined),
   }),
+  buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
@@ -148,10 +152,14 @@ jest.mock('@librechat/api', () => ({
       userMCPAuthMap: undefined,
     };
   }),
+  resolveSubagentGraphs: jest.fn().mockResolvedValue(undefined),
   getBalanceConfig: mockGetBalanceConfig,
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
   createSubagentUsageSink: jest.fn().mockReturnValue(jest.fn()),
+  resolveAgentTokenConfig: jest.fn(({ agentId, byAgentId, fallback }) =>
+    agentId != null && byAgentId?.has(agentId) ? byAgentId.get(agentId) : fallback,
+  ),
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
     initialMessages: [],
@@ -262,6 +270,7 @@ jest.mock('~/server/services/Endpoints/agents/skillDeps', () => ({
   enrichWithSkillConfigurable: mockEnrichWithSkillConfigurable,
   buildSkillPrimedIdsByName: mockBuildSkillPrimedIdsByName,
   buildAgentToolContext: mockBuildAgentToolContext,
+  resolveMemoryAvailability: mockResolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext: mockEnrichLoadedToolsWithAgentContext,
 }));
 
@@ -343,6 +352,70 @@ describe('createResponse controller', () => {
       end: jest.fn(),
       write: jest.fn(),
     };
+  });
+
+  it('resolves saved graph subagents for remote Responses API runs', async () => {
+    const { initializeAgent, resolveSubagentGraphs } = require('@librechat/api');
+    const primaryConfig = {
+      id: 'agent-123',
+      model: 'claude-3',
+      endpointTokenConfig: { 'claude-3': { prompt: 1 } },
+      model_parameters: {},
+      toolRegistry: {},
+      edges: [],
+      agentContextAttachments: [],
+      subagents: {
+        enabled: true,
+        graphs: [{ type: 'team', agent_ids: ['agent-123'], edges: [] }],
+      },
+    };
+    initializeAgent.mockResolvedValueOnce(primaryConfig);
+    const memberConfig = {
+      id: 'agent-graph-member',
+      endpointTokenConfig: { 'custom-model': { prompt: 7 } },
+      agentContextAttachments: [{ file_id: 'member-file' }],
+    };
+    resolveSubagentGraphs.mockImplementationOnce(async ({ rootConfigs }, deps) => {
+      rootConfigs[0].subagentGraphConfigs = [
+        { definition: { type: 'team' }, memberConfigs: [memberConfig] },
+      ];
+      deps.onAgentInitialized(memberConfig.id, memberConfig, memberConfig);
+    });
+    req.config.endpoints.agents.capabilities = ['subagents'];
+
+    await createResponse(req, res);
+
+    expect(resolveSubagentGraphs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        primaryConfig,
+        rootConfigs: [primaryConfig],
+        resourceType: ResourceType.REMOTE_AGENT,
+        memoryAvailable: true,
+      }),
+      expect.objectContaining({ getAgent: expect.any(Function) }),
+    );
+    expect(mockBuildAgentContextAttachmentsByAgentId).toHaveBeenCalledWith([
+      primaryConfig,
+      memberConfig,
+    ]);
+    expect(mockBuildAgentScopedContext).toHaveBeenCalledWith(
+      expect.objectContaining({ agentIds: ['agent-123', 'agent-graph-member'] }),
+    );
+    expect(mockApplyContextToAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: memberConfig, agentId: 'agent-graph-member' }),
+    );
+    const usageParams = mockRecordCollectedUsage.mock.calls[0][1];
+    expect(usageParams.endpointTokenConfig).toBe(primaryConfig.endpointTokenConfig);
+    expect(usageParams.resolveEndpointTokenConfig({ agentId: memberConfig.id })).toBe(
+      memberConfig.endpointTokenConfig,
+    );
+    expect(mockResolveMemoryAvailability).toHaveBeenCalledWith(
+      expect.objectContaining({ enabledCapabilities: expect.any(Set), user: req.user }),
+    );
+    const { createRun } = require('@librechat/api');
+    expect(createRun).toHaveBeenCalledWith(
+      expect.objectContaining({ initialSessions: mockInitialSessions }),
+    );
   });
 
   it('returns 503 when an agent expects MCP tools but resolves none', async () => {
@@ -808,6 +881,23 @@ describe('createResponse controller', () => {
             }),
           ]),
         }),
+      );
+    });
+
+    it('adds subagent usage to the response usage handler', async () => {
+      const api = require('@librechat/api');
+
+      await createResponse(req, res);
+
+      const onSubagentUsage = api.createSubagentUsageSink.mock.calls.at(-1)[1];
+      const aggregatorHandlers = api.createAggregatorEventHandlers.mock.results.at(-1).value;
+      onSubagentUsage({ input_tokens: 25, output_tokens: 10 });
+
+      expect(aggregatorHandlers.on_chat_model_end.handle).toHaveBeenCalledWith(
+        'on_chat_model_end',
+        {
+          output: { usage_metadata: { input_tokens: 25, output_tokens: 10 } },
+        },
       );
     });
   });
