@@ -116,7 +116,7 @@ interface NativeParserResponse<T> {
  * times it. Counted in a single pass rather than by stringifying, because building the
  * escaped copy to measure it would allocate the very thing the cap exists to refuse.
  */
-const CHILD_PRELUDE = `
+export const CHILD_PRELUDE = `
 function __serializedBytes(text) {
   let bytes = 2;
   for (let i = 0; i < text.length; i++) {
@@ -129,6 +129,18 @@ function __serializedBytes(text) {
       bytes += 1;
     } else if (code < 0x800) {
       bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdfff) {
+      const low = code <= 0xdbff ? text.charCodeAt(i + 1) : NaN;
+      if (low >= 0xdc00 && low <= 0xdfff) {
+        /* One scalar across two UTF-16 units: four bytes, not three each. Charging both
+         * halves separately made an emoji-heavy extraction look half again as large as
+         * it is, and refused documents comfortably inside the limit. */
+        bytes += 4;
+        i++;
+      } else {
+        /* A half with no partner is not encodable, so JSON escapes it instead. */
+        bytes += 6;
+      }
     } else {
       bytes += 3;
     }
