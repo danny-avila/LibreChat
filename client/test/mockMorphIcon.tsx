@@ -63,6 +63,15 @@ export function createSteerMorphIconMock() {
   ]);
 }
 
+/** Mermaid header: exclusive code/preview view toggle. */
+export function createMermaidViewMorphIconMock() {
+  const { Eye, Code2 } = jest.requireActual('lucide') as Record<string, unknown>;
+  return createMorphIconMock([
+    [Eye, 'eye'],
+    [Code2, 'code-2'],
+  ]);
+}
+
 /** Subagent expand/collapse. */
 export function createSubagentMorphIconMock() {
   const { Minimize2, Maximize2 } = jest.requireActual('lucide') as Record<string, unknown>;
