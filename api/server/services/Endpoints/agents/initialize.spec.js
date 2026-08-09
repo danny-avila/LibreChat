@@ -1073,9 +1073,13 @@ describe('initializeClient — subagent loading', () => {
       subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
     });
     const initialization = deferred();
+    const initializationStarted = deferred();
     mockInitializeAgent
       .mockResolvedValueOnce(primaryConfig)
-      .mockImplementationOnce(() => initialization.promise);
+      .mockImplementationOnce((params) => {
+        initializationStarted.resolve(params);
+        return initialization.promise;
+      });
 
     await initializeClient({
       req: makeSubagentReq(),
@@ -1087,14 +1091,10 @@ describe('initializeClient — subagent loading', () => {
     const resolution = agentClientArgs.agent.lazySubagentConfigs[0].resolve({
       signal: controller.signal,
     });
-    for (let attempt = 0; attempt < 20 && mockInitializeAgent.mock.calls.length < 2; attempt++) {
-      await new Promise((resolve) => setImmediate(resolve));
-    }
-    expect(mockInitializeAgent).toHaveBeenCalledTimes(2);
+    const selectedInitParams = await initializationStarted.promise;
     controller.abort(new Error('cancelled in flight'));
 
     await expect(resolution).rejects.toThrow('cancelled in flight');
-    const selectedInitParams = mockInitializeAgent.mock.calls[1][0];
     expect(selectedInitParams.loadTools).not.toBe(mockInitializeAgent.mock.calls[0][0].loadTools);
     initialization.resolve(makeSubagentConfig(SUBAGENT_ID));
   });
