@@ -91,11 +91,13 @@ export interface ParsedDocumentUploadResult extends ExtractedTextUploadResult {
   /** 1-indexed pages whose text could not be extracted and would need an OCR service. */
   pagesNeedingOcr?: number[];
   /**
-   * The document embeds artwork that this engine converted no text from. AnyDoc has no
-   * page numbers to report, so this is the only signal that its Markdown may be missing
-   * what a scanned image holds; the upload path reads it as "consult OCR if configured".
+   * The document may embed artwork that this engine converted no text from. AnyDoc has
+   * no page numbers to report, so this is the only signal that its Markdown may be
+   * missing what a scanned image holds; the upload path reads it as "consult OCR if
+   * configured". Deliberately "may": containers that cannot be inspected report it
+   * rather than claim completeness they cannot prove.
    */
-  hasEmbeddedMedia?: boolean;
+  mayEmbedMedia?: boolean;
 }
 
 /**

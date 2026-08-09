@@ -4,6 +4,7 @@ import { FileSources } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
 import { extractDocumentTextWithPages, extractPageText } from '../documents/pdfjs';
 import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
+import { ConcurrencyLimitError } from '~/utils/promise';
 
 type ParsedDocument = Pick<ParsedDocumentUploadResult, 'text' | 'pagesNeedingOcr'>;
 
@@ -40,6 +41,12 @@ export async function parseWithPdfInspector(
   try {
     parsed = await extractPdf(file.path, data);
   } catch (error) {
+    /* Shed load is not a document this engine cannot read. Falling back would run the
+     * pdfjs walk inline for a request the limiter just refused, spending on the event
+     * loop exactly the work the cap exists to defer. */
+    if (error instanceof ConcurrencyLimitError) {
+      throw error;
+    }
     logger.warn(
       `[pdfInspector] Native extraction failed for "${file.originalname}", falling back to pdfjs:`,
       error,
@@ -117,10 +124,16 @@ export async function extractPdf(filePath: string, data: Buffer): Promise<Parsed
     data,
     recoverablePages.map((page) => page.page),
   );
-  const pagesNeedingOcr = droppedPages
+  /* Probed pages were empirically shown to hold no text layer at all. Pages past the
+   * cap were never read, so they are only missing from output that skips them. Kept
+   * apart because the two whole-document branches below omit different sets. */
+  const probedMissingPages = recoverablePages
     .filter((page) => !recovered.get(page.page)?.trim())
     .map((page) => page.page + 1);
-  const ocrResult = pagesNeedingOcr.length ? pagesNeedingOcr : undefined;
+  const unprobedPages = droppedPages.slice(recoverablePages.length).map((page) => page.page + 1);
+  const toPageList = (pages: number[]): number[] | undefined => (pages.length ? pages : undefined);
+  const probedResult = toPageList(probedMissingPages);
+  const ocrResult = toPageList([...probedMissingPages, ...unprobedPages]);
 
   /* When most pages were dropped, the letter-spacing baked into this kind of OCR
    * layer makes item-level pdfjs assembly output mush ("m i s s i o n"): the word
@@ -132,7 +145,12 @@ export async function extractPdf(filePath: string, data: Buffer): Promise<Parsed
     try {
       const plain = await extractTextIsolated(filePath);
       if (plain.trim()) {
-        return { text: plain, pagesNeedingOcr: ocrResult };
+        /* This output covers the whole document, including the pages past the recovery
+         * cap that the interleaved branch would have skipped. Reporting those as
+         * omitted would spend an OCR call on text already present, or annotate the
+         * document with a notice naming pages it does contain. Only the pages proven
+         * to hold no text layer are still missing here. */
+        return { text: plain, pagesNeedingOcr: probedResult };
       }
     } catch {
       /* fall through to per-page interleaving */

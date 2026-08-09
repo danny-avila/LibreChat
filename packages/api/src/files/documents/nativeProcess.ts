@@ -4,8 +4,21 @@ import { createConcurrencyLimiter } from '~/utils/promise';
 /** Native document parsers are CPU and memory intensive even for small uploads. */
 const NATIVE_PARSER_CONCURRENCY = 2;
 
+/**
+ * Uploads waiting for one of those slots. Each waiter is a separate request that has
+ * already read its document into memory (up to the parser's 15MB cap) and holds it for
+ * the whole wait, and the timeout below only starts once a slot frees, so an unbounded
+ * queue turns a burst of uploads into unbounded retained memory. Shedding at the door
+ * with a named error is the honest answer: the caller can retry, where an accepted
+ * request would have sat behind a queue with no deadline.
+ */
+const NATIVE_PARSER_MAX_QUEUED = 6;
+
 /** Shared across AnyDoc and pdf-inspector so their child counts cannot add together. */
-const nativeParserLimit = createConcurrencyLimiter(NATIVE_PARSER_CONCURRENCY);
+const nativeParserLimit = createConcurrencyLimiter(NATIVE_PARSER_CONCURRENCY, {
+  maxQueued: NATIVE_PARSER_MAX_QUEUED,
+  label: 'document parsing',
+});
 
 interface NativeParserResponse<T> {
   ok: boolean;

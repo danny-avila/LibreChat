@@ -10,7 +10,7 @@ import {
   megabyte,
   Providers,
   QueryKeys,
-  inferMimeType,
+  resolveEffectiveMimeType,
   excelMimeTypes,
   EToolResources,
   EModelEndpoint,
@@ -342,7 +342,7 @@ export const validateFiles = ({
 
   for (let i = 0; i < fileList.length; i++) {
     let originalFile = fileList[i];
-    const fileType = inferMimeType(originalFile.name, originalFile.type);
+    const fileType = resolveEffectiveMimeType(originalFile.name, originalFile.type);
 
     // Check if the file type is still empty after the extension check
     if (!fileType) {
@@ -472,7 +472,7 @@ export const getViableUploadOptions = (
   if (fileList.length === 0) {
     return [];
   }
-  const types = fileList.map((file) => inferMimeType(file.name, file.type));
+  const types = fileList.map((file) => resolveEffectiveMimeType(file.name, file.type));
   if (types.some((type) => !type)) {
     return [];
   }

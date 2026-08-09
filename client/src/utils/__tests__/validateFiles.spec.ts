@@ -188,6 +188,34 @@ describe('validateFiles', () => {
     expect(setError).toHaveBeenCalledWith(`Unsupported file type: ${DOCX}`);
   });
 
+  /**
+   * A client that types uploads by magic bytes calls a `.docx` an archive. The server
+   * routes it by the same resolution, so leaving the filename out here would reject an
+   * upload the backend parses, or offer one it refuses.
+   */
+  it('resolves a zip-typed office document to its own type before validation', () => {
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)] },
+      ocr: { supportedMimeTypes: [] },
+      documentParser: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('report.docx', 'application/zip', 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig,
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+    });
+
+    expect(result).toBe(true);
+    expect(fileList[0].type).toBe(DOCX);
+    expect(setError).not.toHaveBeenCalled();
+  });
+
   it('normalizes Windows ZIP MIME type before validation', () => {
     const fileList = [makeFile('archive.zip', 'application/x-zip-compressed', 1024)];
     const result = validateFiles({ files, fileList, setError, endpointFileConfig, fileConfig });

@@ -3,7 +3,8 @@ import { logger } from '@librechat/data-schemas';
 import { excelFileTypes, FileSources } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
 import { assertSafeZipSizeIfArchive } from '../documents/zipSafety';
-import { hasEmbeddedMedia } from '../documents/media';
+import { ConcurrencyLimitError } from '~/utils/promise';
+import { mayEmbedMedia } from '../documents/media';
 import { extractMarkdownIsolated } from './native';
 
 /**
@@ -146,12 +147,17 @@ export async function parseWithAnydoc(
   /* Read from the buffer already in hand, before extraction: anydoc converts artwork
    * to nothing at all, so this is the only record that the Markdown below may be
    * missing what an embedded scan holds. */
-  const embedsMedia = await hasEmbeddedMedia(buffer);
+  const embedsMedia = await mayEmbedMedia(buffer);
 
   let markdown: string;
   try {
     markdown = await extractMarkdownIsolated(file.path, format);
   } catch (error) {
+    /* Shed load surfaces as itself. Reporting it as a parse failure would send the
+     * caller down a fallback chain built for documents this engine cannot read. */
+    if (error instanceof ConcurrencyLimitError) {
+      throw error;
+    }
     const message = toMessage(error);
     throw new Error(`anydoc failed to extract text from "${name}": ${message}`);
   }
@@ -166,6 +172,6 @@ export async function parseWithAnydoc(
     filepath: FileSources.anydoc,
     text: markdown,
     images: [],
-    ...(embedsMedia && { hasEmbeddedMedia: true }),
+    ...(embedsMedia && { mayEmbedMedia: true }),
   };
 }

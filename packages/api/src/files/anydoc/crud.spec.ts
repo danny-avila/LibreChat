@@ -84,7 +84,7 @@ describe('parseWithAnydoc', () => {
     test('reports nothing for a document with no artwork', async () => {
       const result = await parse(docxFile('structured.docx'));
 
-      expect(result.hasEmbeddedMedia).toBeUndefined();
+      expect(result.mayEmbedMedia).toBeUndefined();
     });
 
     test('reports media a document embeds', async () => {
@@ -102,7 +102,7 @@ describe('parseWithAnydoc', () => {
           mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         });
 
-        expect(result.hasEmbeddedMedia).toBe(true);
+        expect(result.mayEmbedMedia).toBe(true);
         expect(result.text).toContain('# Quarterly Report');
       } finally {
         await fs.promises.unlink(withMediaPath);

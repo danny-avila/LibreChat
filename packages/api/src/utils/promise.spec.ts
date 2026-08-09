@@ -311,4 +311,67 @@ describe('createConcurrencyLimiter', () => {
     await Promise.all([pHead, pQueued]);
     expect(queuedTaskCalled).toBe(true);
   });
+
+  /**
+   * Capping running tasks caps neither the queue nor what its waiters retain. Where each
+   * caller is an inbound request holding a document in memory, an unbounded queue turns
+   * a burst into unbounded memory, so the limiter has to be able to say no.
+   */
+  describe('bounded queue', () => {
+    it('rejects work past the queue bound instead of accumulating it', async () => {
+      const limit = createConcurrencyLimiter(1, { maxQueued: 1, label: 'document parsing' });
+      const block = deferred<void>();
+      const started: number[] = [];
+      const run = (id: number) =>
+        limit(async () => {
+          started.push(id);
+          await block.promise;
+          return id;
+        });
+
+      const pRunning = run(1);
+      const pQueued = run(2);
+      const rejected = run(3);
+
+      await expect(rejected).rejects.toThrow(/document parsing/);
+      await expect(rejected).rejects.toMatchObject({
+        name: 'ConcurrencyLimitError',
+        code: 'CONCURRENCY_LIMIT',
+      });
+
+      block.resolve();
+      await expect(Promise.all([pRunning, pQueued])).resolves.toEqual([1, 2]);
+      expect(started).toEqual([1, 2]);
+    });
+
+    it('frees room as slots drain, so a refusal is not permanent', async () => {
+      const limit = createConcurrencyLimiter(1, { maxQueued: 0 });
+      const block = deferred<void>();
+
+      const pRunning = limit(() => block.promise);
+      await expect(limit(async () => 'refused')).rejects.toThrow(/already waiting/);
+
+      block.resolve();
+      await pRunning;
+      await expect(limit(async () => 'accepted')).resolves.toBe('accepted');
+    });
+
+    it('queues without bound when maxQueued is omitted', async () => {
+      const limit = createConcurrencyLimiter(1);
+      const block = deferred<void>();
+
+      const pending = [
+        limit(() => block.promise),
+        ...[1, 2, 3, 4].map((id) => limit(async () => id)),
+      ];
+
+      block.resolve();
+      await expect(Promise.all(pending)).resolves.toHaveLength(5);
+    });
+
+    it('throws when maxQueued is not a non-negative integer', () => {
+      expect(() => createConcurrencyLimiter(1, { maxQueued: -1 })).toThrow(/non-negative integer/);
+      expect(() => createConcurrencyLimiter(1, { maxQueued: 1.5 })).toThrow(/non-negative integer/);
+    });
+  });
 });
