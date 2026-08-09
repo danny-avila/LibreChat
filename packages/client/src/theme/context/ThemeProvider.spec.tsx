@@ -24,6 +24,7 @@ function Controls() {
       <output>{themeName}</output>
       <button onClick={() => setTheme('dark')}>Dark</button>
       <button onClick={() => setThemeName('renamed')}>Rename</button>
+      <button onClick={() => setThemeName(undefined)}>Clear name</button>
       <button onClick={() => setThemeRGB({ 'rgb-accent-primary': '4 5 6' })}>Set legacy</button>
       <button onClick={() => setThemeDefinition(undefined)}>Clear definition</button>
       <button onClick={resetTheme}>Reset</button>
@@ -134,6 +135,8 @@ describe('ThemeProvider', () => {
       expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('');
     });
     expect(document.documentElement.style.getPropertyValue('--markdown-font-size')).toBe('18px');
+    expect(localStorage.getItem('theme-definition')).toBeNull();
+    expect(localStorage.getItem('theme-name')).toBeNull();
   });
 
   it('persists legacy prop overrides for later mounts', async () => {
@@ -192,6 +195,30 @@ describe('ThemeProvider', () => {
       name: 'renamed',
     });
     expect(localStorage.getItem('theme-name')).toBe('renamed');
+  });
+
+  it('uses a stable identity when a legacy consumer clears an active theme name', async () => {
+    render(
+      <ThemeProvider
+        initialTheme="light"
+        themeName="legacy"
+        themeRGB={{ 'rgb-accent-primary': '1 2 3' }}
+      >
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    act(() => screen.getByRole('button', { name: 'Clear name' }).click());
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('custom');
+    });
+    expect(screen.getByText('custom')).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toMatchObject({
+      name: 'custom',
+    });
+    expect(localStorage.getItem('theme-name')).toBe('custom');
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
   });
 
   it('removes legacy colors when the authoritative definition is cleared', async () => {

@@ -140,7 +140,10 @@ itself: `color: rgb(var(--text-primary));`.
 Update your `tailwind.config.js`:
 
 ```js
+const libreChatTailwindPreset = require('@librechat/client/tailwind-preset');
+
 module.exports = {
+  presets: [libreChatTailwindPreset],
   content: [
     './src/**/*.{js,jsx,ts,tsx}',
     // Include component library files
@@ -160,6 +163,10 @@ module.exports = {
   },
 };
 ```
+
+The published preset supplies the semantic appearance utilities used by theme-aware component
+variants, including `h-theme-control`, `rounded-theme-control`, `gap-theme-compact`, and
+`duration-theme-fast`. Keep the preset enabled even when defining additional project utilities.
 
 ### 5. Use Theme Colors in Components
 

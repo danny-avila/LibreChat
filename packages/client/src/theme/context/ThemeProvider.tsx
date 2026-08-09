@@ -246,14 +246,15 @@ export function ThemeProvider({
 
   const setThemeName = useCallback(
     (name?: string) => {
-      setThemeNameState(name);
-      writeStorage(THEME_NAME_KEY, name);
+      const nextName = name?.trim() || (themeDefinition ? 'custom' : undefined);
+      setThemeNameState(nextName);
+      writeStorage(THEME_NAME_KEY, nextName);
 
-      if (!name || !themeDefinition) {
+      if (!nextName || !themeDefinition) {
         return;
       }
 
-      const renamedDefinition = { ...themeDefinition, name };
+      const renamedDefinition = { ...themeDefinition, name: nextName };
       setThemeDefinitionState(renamedDefinition);
       writeStorage(THEME_DEFINITION_KEY, JSON.stringify(renamedDefinition));
     },
@@ -301,10 +302,9 @@ export function ThemeProvider({
   const resetTheme = useCallback(() => {
     setTheme('system');
     setThemeDefinition(undefined);
-    setThemeName(undefined);
     writeStorage(THEME_COLORS_KEY);
     clearAppliedTheme();
-  }, [setTheme, setThemeDefinition, setThemeName]);
+  }, [setTheme, setThemeDefinition]);
 
   const themeRGB = themeDefinition?.modes.light?.colors;
   const value = useMemo(
