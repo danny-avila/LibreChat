@@ -95,7 +95,7 @@ export function groupActivityPhases(
       content: phaseContent,
       labelPart: part,
       labelIndex: index,
-      hasContent: phaseContent.some((child) => child != null),
+      hasContent: lastVisibleContentIdx(phaseContent) >= 0,
     });
     cursor = index + 1;
   }

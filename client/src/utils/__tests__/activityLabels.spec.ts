@@ -143,10 +143,10 @@ describe('groupActivityPhases', () => {
       activity_count: 2,
     });
 
-    expect(groupActivityPhases([phase as never])).toEqual([
+    expect(groupActivityPhases([labelPart() as never, phase as never])).toEqual([
       expect.objectContaining({
         type: 'phase',
-        labelIndex: 0,
+        labelIndex: 1,
         hasContent: false,
       }),
     ]);
