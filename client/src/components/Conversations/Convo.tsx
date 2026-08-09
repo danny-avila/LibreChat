@@ -41,6 +41,7 @@ function Conversation({
      serving them, so the row must not advertise one that no longer resolves. */
   const { data: startupConfig } = useGetStartupConfig();
   const sharedLinksEnabled = startupConfig?.sharedLinksEnabled === true;
+  const isSharedBadgeVisible = conversation.isShared === true && sharedLinksEnabled;
   const isShiftHeld = useShiftKey();
   const { conversationId, title = '' } = conversation;
 
@@ -220,7 +221,7 @@ function Conversation({
       role="button"
       tabIndex={renaming ? -1 : 0}
       aria-label={
-        conversation.isShared === true
+        isSharedBadgeVisible
           ? localize('com_ui_conversation_label_shared', {
               title: title || localize('com_ui_untitled'),
             })
@@ -275,7 +276,7 @@ function Conversation({
           <ConversationEndpointIcon conversation={conversation} size={20} context="menu-item" />
         </ConvoLink>
       )}
-      {conversation.isShared === true && sharedLinksEnabled && (
+      {isSharedBadgeVisible && (
         <Link2 className="icon-sm mr-1 shrink-0 text-text-secondary" aria-hidden="true" />
       )}
       {conversation.pinned === true && (
