@@ -2,12 +2,29 @@ import yauzl from 'yauzl';
 import { isZipArchive } from './zipSafety';
 
 /**
- * Where the zip-backed document formats keep embedded artwork. OOXML puts every
- * picture under `<part>/media/` and ODF under `Pictures/`; the XML parts a converter
- * reads carry references to them, never pixels. A scanned page inside a DOCX or a
- * deck is therefore always one of these entries, and nothing else is.
+ * Where OOXML and ODF keep embedded artwork: every picture sits under `<part>/media/`
+ * or `Pictures/`, and the XML parts a converter reads carry references to them, never
+ * pixels. EPUB has no such rule, so its resources are matched by extension instead.
  */
 const MEDIA_ENTRY = /^(?:word|ppt|xl)\/media\/|^Pictures\//i;
+
+/** EPUB puts its resources wherever the manifest says: `OEBPS/images/`, `EPUB/`, root. */
+const IMAGE_ENTRY = /\.(?:jpe?g|png|gif|tiff?|bmp|webp|jp2|jpx|avif|heic|heif)$/i;
+
+/**
+ * Renderings of the document itself rather than content within it. Office writes
+ * `docProps/thumbnail.jpeg` and ODF `Thumbnails/thumbnail.png` whenever the "save
+ * preview" option is on, so treating them as artwork would send a large share of
+ * perfectly ordinary uploads to a paid OCR service for a picture of their own cover.
+ */
+const PREVIEW_ENTRY = /^(?:docProps|Thumbnails)\//i;
+
+function isMediaEntry(name: string): boolean {
+  if (MEDIA_ENTRY.test(name)) {
+    return true;
+  }
+  return IMAGE_ENTRY.test(name) && !PREVIEW_ENTRY.test(name);
+}
 
 /** Compound File Binary header, the container behind `.doc`, `.xls` and `.ppt`. */
 const CFB_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
@@ -44,7 +61,7 @@ function zipContainsMedia(buffer: Buffer): Promise<boolean> {
       };
 
       zipfile.on('entry', (entry: yauzl.Entry) => {
-        if (MEDIA_ENTRY.test(entry.fileName)) {
+        if (isMediaEntry(entry.fileName)) {
           finish(true);
           return;
         }
@@ -70,7 +87,8 @@ function zipContainsMedia(buffer: Buffer): Promise<boolean> {
  * Each container is answered as precisely as it can be:
  *
  * - Zip-backed (OOXML, ODF, EPUB): the central directory is walked for media entry
- *   names. No decompression, and a malformed archive reports `false` because the
+ *   names, by fixed path where the format defines one and by image extension where it
+ *   does not. No decompression, and a malformed archive reports `false` because the
  *   zip-bomb guard owns rejection and the parser owns the read error.
  * - RTF: plain text, so the `\pict` control word answers it exactly.
  * - Legacy Office (`.doc`, `.xls`, `.ppt`): pictures live in Escher records inside a

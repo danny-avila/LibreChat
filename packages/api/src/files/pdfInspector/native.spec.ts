@@ -39,6 +39,35 @@ describe('pdfInspector native', () => {
     await expect(extractTextIsolated(fixture('does-not-exist.pdf'))).rejects.toThrow();
   });
 
+  /**
+   * A page that converted to nothing weighs nothing, so a size cap alone waves through
+   * an arbitrarily long array of them. A page costs about 100 bytes to declare: the
+   * fixture below is 1MB for 10,001 pages, and the 15MB upload limit buys well over a
+   * hundred thousand, every one of which would otherwise be serialized through IPC and
+   * rebuilt as an object in the API process.
+   */
+  test('refuses a page-flooded document before returning its pages', async () => {
+    const flooded = path.join(__dirname, 'sample-flooded.pdf');
+    fs.writeFileSync(flooded, buildManyPagePdf(10_001));
+    try {
+      await expect(extractPagesMarkdownIsolated(flooded)).rejects.toThrow(
+        /returned 10001 pages, over the 10000-page limit/,
+      );
+    } finally {
+      fs.unlinkSync(flooded);
+    }
+  }, 30_000);
+
+  test('accepts a document just inside the page cap', async () => {
+    const wide = path.join(__dirname, 'sample-at-cap.pdf');
+    fs.writeFileSync(wide, buildManyPagePdf(10_000));
+    try {
+      await expect(extractPagesMarkdownIsolated(wide)).resolves.toHaveLength(10_000);
+    } finally {
+      fs.unlinkSync(wide);
+    }
+  }, 30_000);
+
   test('the event loop stays responsive while a parse runs', async () => {
     /* The whole point of the child. `extractPagesMarkdown` is a synchronous napi
      * call, so inline it pins the loop for the entire parse: measured on this shape
@@ -59,7 +88,9 @@ describe('pdfInspector native', () => {
 
       const start = Date.now();
       try {
-        await extractPagesMarkdownIsolated(wide);
+        /* The page cap refuses this document, but only after the synchronous napi call
+         * has run to completion in the child, which is the interval being measured. */
+        await expect(extractPagesMarkdownIsolated(wide)).rejects.toThrow(/page limit/);
         /* Let the timer observe the interval that just elapsed; without this the
          * gap spanning a blocking call would never be recorded. */
         await new Promise((resolve) => setTimeout(resolve, 30));

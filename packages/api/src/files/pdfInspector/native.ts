@@ -1,5 +1,10 @@
 import type { PageMarkdownResult } from '@firecrawl/pdf-inspector';
-import { MAX_PARSER_OUTPUT_BYTES, runNativeParserChild } from '../documents/nativeProcess';
+import {
+  MAX_PARSER_OUTPUT_BYTES,
+  MAX_PARSER_PAGES,
+  PARSER_PAGE_OVERHEAD_BYTES,
+  runNativeParserChild,
+} from '../documents/nativeProcess';
 
 /**
  * Runs pdf-inspector's native bindings in a child process.
@@ -35,12 +40,27 @@ process.once('message', (request) => {
       request.op === 'text'
         ? { text: native.extractText(data) }
         : { pages: native.extractPagesMarkdown(data).pages };
-    /* Measured here so an oversized extraction never crosses IPC into the API process. */
+    /* Bounded here so no oversized extraction crosses IPC into the API process. The
+     * page count is its own limit: pages that converted to nothing weigh nothing, so
+     * byte accounting alone would wave through an arbitrarily long array of them. */
+    if (request.op !== 'text' && result.pages.length > request.maxPages) {
+      process.send({
+        ok: false,
+        message:
+          'returned ' +
+          result.pages.length +
+          ' pages, over the ' +
+          request.maxPages +
+          '-page limit',
+      });
+      return;
+    }
     const bytes =
       request.op === 'text'
         ? Buffer.byteLength(result.text || '', 'utf8')
         : result.pages.reduce(
-            (total, page) => total + Buffer.byteLength(page.markdown || '', 'utf8'),
+            (total, page) =>
+              total + Buffer.byteLength(page.markdown || '', 'utf8') + request.pageOverheadBytes,
             0,
           );
     if (bytes > request.maxOutputBytes) {
@@ -74,7 +94,14 @@ function runPdfChild(op: PdfChildOp, filePath: string): Promise<PdfChildResult> 
   return runNativeParserChild<PdfChildResult>({
     childSource: CHILD_SOURCE,
     parserName: `pdf-inspector ${op}`,
-    request: { op, path: filePath, modulePath, maxOutputBytes: MAX_PARSER_OUTPUT_BYTES },
+    request: {
+      op,
+      path: filePath,
+      modulePath,
+      maxOutputBytes: MAX_PARSER_OUTPUT_BYTES,
+      maxPages: MAX_PARSER_PAGES,
+      pageOverheadBytes: PARSER_PAGE_OVERHEAD_BYTES,
+    },
     timeoutMs: PDF_CHILD_TIMEOUT_MS,
   });
 }
