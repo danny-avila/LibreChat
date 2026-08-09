@@ -54,7 +54,7 @@ function createConnectionWithListTools(listTools: jest.Mock): MCPConnection {
     serverConfig: { type: 'streamable-http', url: 'http://localhost/mcp' },
     useSSRFProtection: false,
   });
-  conn.client = { listTools } as unknown as MCPConnection['client'];
+  conn.client.listTools = listTools;
   return conn;
 }
 
@@ -81,6 +81,16 @@ describe('MCPConnection.fetchTools pagination', () => {
     mcpConfig.TOOLS_LIST_TIMEOUT_MS = 30000;
   });
 
+  it('does not queue tool-list retries when the server has no tools capability', async () => {
+    const listTools = jest.fn();
+    const conn = createConnectionWithListTools(listTools);
+    jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({ resources: {} });
+
+    await conn.refreshToolList();
+
+    expect(listTools).not.toHaveBeenCalled();
+  });
+
   it('returns the tools from a single page and makes one request when there is no nextCursor', async () => {
     const listTools = jest.fn().mockResolvedValue({ tools: [makeTool('a'), makeTool('b')] });
     const conn = createConnectionWithListTools(listTools);
@@ -91,6 +101,33 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(listTools).toHaveBeenCalledTimes(1);
     expectListToolsCall(listTools, 1, undefined);
     expect(mockLogger.warn).not.toHaveBeenCalled();
+  });
+
+  it('returns the notification snapshot when a request snapshot races list_changed', async () => {
+    let releaseStale: ((value: { tools: ReturnType<typeof makeTool>[] }) => void) | undefined;
+    const stale = new Promise<{ tools: ReturnType<typeof makeTool>[] }>((resolve) => {
+      releaseStale = resolve;
+    });
+    const listTools = jest
+      .fn()
+      .mockReturnValueOnce(stale)
+      .mockResolvedValueOnce({ tools: [makeTool('current')] });
+    const conn = createConnectionWithListTools(listTools);
+    Reflect.set(conn, 'connectionState', 'connected');
+    jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({
+      tools: { listChanged: true },
+    });
+
+    const requested = conn.fetchOrderedToolsSnapshot();
+    await Promise.resolve();
+    const notified = conn.refreshToolList();
+    await notified;
+    releaseStale?.({ tools: [makeTool('stale')] });
+
+    await expect(requested).resolves.toEqual({
+      tools: [makeTool('current')],
+      complete: true,
+    });
   });
 
   it('follows nextCursor across pages, concatenating every tool and passing the cursor back', async () => {
@@ -183,7 +220,7 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('size budget'));
   });
 
-  it('stops at the elapsed-time budget before requesting another page', async () => {
+  it('marks a time-truncated snapshot incomplete before requesting another page', async () => {
     mcpConfig.TOOLS_LIST_TIMEOUT_MS = 1;
     const listTools = jest.fn(async () => ({ tools: [makeTool('a')], nextCursor: 'c1' }));
     const conn = createConnectionWithListTools(listTools);
@@ -193,9 +230,10 @@ describe('MCPConnection.fetchTools pagination', () => {
       .mockReturnValueOnce(1000)
       .mockReturnValueOnce(1001);
 
-    const tools = await conn.fetchTools();
+    const snapshot = await conn.fetchToolsSnapshot();
 
-    expect(tools.map((t) => t.name)).toEqual(['a']);
+    expect(snapshot.tools.map((t) => t.name)).toEqual(['a']);
+    expect(snapshot.complete).toBe(false);
     expect(listTools).toHaveBeenCalledTimes(1);
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('time budget'));
     dateNow.mockRestore();
@@ -228,11 +266,12 @@ describe('MCPConnection.fetchTools pagination', () => {
     const listTools = jest.fn().mockResolvedValue({ tools: [makeTool('x')], nextCursor: 'same' });
     const conn = createConnectionWithListTools(listTools);
 
-    const tools = await conn.fetchTools();
+    const snapshot = await conn.fetchToolsSnapshot();
 
     expect(listTools).toHaveBeenCalledTimes(2);
     // The second page's tools are collected before the repeated cursor is detected, hence two copies.
-    expect(tools.map((t) => t.name)).toEqual(['x', 'x']);
+    expect(snapshot.tools.map((tool) => tool.name)).toEqual(['x', 'x']);
+    expect(snapshot.complete).toBe(false);
     expect(mockLogger.warn).toHaveBeenCalledWith(
       expect.stringContaining('repeated tools/list cursor'),
     );

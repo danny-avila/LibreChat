@@ -1166,6 +1166,12 @@ const getListAgentsHandler = async (req, res) => {
       requiredPermission = PermissionBits.VIEW;
     }
     const canReturnSkillConfig = hasEditBit(requiredPermission);
+    /**
+     * Derived from the same bit as `canReturnSkillConfig` but answering a different question:
+     * skill-config exposure versus edit-permission reporting. An EDIT-scoped request matches
+     * only editable agents, so it needs no second lookup to know which ones those are.
+     */
+    const needsEditableLookup = !hasEditBit(requiredPermission);
     // Base filter
     const filter = {};
 
@@ -1188,33 +1194,99 @@ const getListAgentsHandler = async (req, res) => {
       filter.$or = [{ name: regex }, { description: regex }];
     }
 
-    // Get agent IDs the user has VIEW access to via ACL
-    const accessibleIds = await findAccessibleResources({
-      userId,
-      role: req.user.role,
-      resourceType: ResourceType.AGENT,
-      requiredPermissions: requiredPermission,
-    });
+    const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
+    const refreshKey = `${userId}:agents_avatar_refresh`;
 
-    const publiclyAccessibleIds = await findPubliclyAccessibleResources({
-      resourceType: ResourceType.AGENT,
-      requiredPermissions: PermissionBits.VIEW,
-    });
+    /**
+     * These reads share no inputs, so they resolve together rather than chaining round
+     * trips ahead of the list query. The viewer skill scope and the editable set are only
+     * consumed when the page is non-empty; dispatching them here trades a wasted lookup on
+     * the (cheap) zero-agent path for one less serial hop on every populated page.
+     *
+     * `editableIds` lets a VIEW-scoped response mark which agents the caller may also edit,
+     * so consumers wanting just the editable subset can filter one shared VIEW fetch rather
+     * than issuing a second full paginated walk under an EDIT-scoped cache key. Requests
+     * that already ask for EDIT get it for free: everything they match is editable.
+     *
+     * `idOnTheSource` is forwarded so `getUserPrincipals` resolves identity without reading
+     * the user document; the auth strategies already normalize it to a value or null. Each
+     * omission would cost this handler another `User.findById`, once per lookup.
+     */
+    const { idOnTheSource } = req.user;
+    const [
+      accessibleIds,
+      publiclyAccessibleIds,
+      cachedRefreshEntry,
+      accessibleSkillIds,
+      editableIds,
+    ] = await Promise.all([
+      findAccessibleResources({
+        userId,
+        role: req.user.role,
+        idOnTheSource,
+        resourceType: ResourceType.AGENT,
+        requiredPermissions: requiredPermission,
+      }),
+      findPubliclyAccessibleResources({
+        resourceType: ResourceType.AGENT,
+        requiredPermissions: PermissionBits.VIEW,
+      }),
+      cache.get(refreshKey),
+      canReturnSkillConfig
+        ? null
+        : findAccessibleResources({
+            userId,
+            role: req.user.role,
+            idOnTheSource,
+            resourceType: ResourceType.SKILL,
+            requiredPermissions: PermissionBits.VIEW,
+          }),
+      needsEditableLookup
+        ? findAccessibleResources({
+            userId,
+            role: req.user.role,
+            idOnTheSource,
+            resourceType: ResourceType.AGENT,
+            requiredPermissions: PermissionBits.EDIT,
+          })
+        : null,
+    ]);
+
+    const isValidCachedRefresh =
+      cachedRefreshEntry != null &&
+      typeof cachedRefreshEntry === 'object' &&
+      cachedRefreshEntry.urlCache != null;
 
     /**
      * Refresh all S3 avatars for this user's accessible agent set (not only the current page)
-     * This addresses page-size limits preventing refresh of agents beyond the first page
+     * This addresses page-size limits preventing refresh of agents beyond the first page.
+     *
+     * Scoped to agents that actually carry an S3 avatar so the `MAX_AVATAR_REFRESH_AGENTS`
+     * budget is spent on agents that can do work. Unfiltered, that budget is the most
+     * recently updated accessible agents regardless of avatar, and because a refresh writes
+     * through `updateAgent` and advances `updatedAt`, the window is self-reinforcing: an
+     * S3-avatar agent ranked past the budget never enters it and its presigned URL is never
+     * regenerated. The predicate is not indexed (`avatar` is `Mixed`), so this trades docs
+     * examined for that coverage.
+     *
+     * Must settle BEFORE the list query below, and is deliberately not parallelized with
+     * it. `updateAgent` writes through `findOneAndUpdate` on a `timestamps: true` schema,
+     * so refreshing an avatar advances `updatedAt`, the very field
+     * `getListAgentsByAccess` sorts and cursors on. A refresh landing after the first
+     * page's snapshot would move that agent ahead of the returned cursor, dropping it
+     * from every later page and silently truncating the caller's flattened list.
+     * Serializing costs nothing on the common path: a cache hit returns below without
+     * issuing any query, so only the once-per-30-minutes miss pays for the ordering.
      */
-    const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
-    const refreshKey = `${userId}:agents_avatar_refresh`;
-    let cachedRefresh = await cache.get(refreshKey);
-    const isValidCachedRefresh =
-      cachedRefresh != null && typeof cachedRefresh === 'object' && cachedRefresh.urlCache != null;
-    if (!isValidCachedRefresh) {
+    const resolveAvatarRefresh = async () => {
+      if (isValidCachedRefresh) {
+        logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
+        return cachedRefreshEntry;
+      }
       try {
         const fullList = await db.getListAgentsByAccess({
           accessibleIds,
-          otherParams: {},
+          otherParams: { 'avatar.source': FileSources.s3 },
           limit: MAX_AVATAR_REFRESH_AGENTS,
           after: null,
         });
@@ -1224,14 +1296,16 @@ const getListAgentsHandler = async (req, res) => {
           refreshS3Url,
           updateAgent: db.updateAgent,
         });
-        cachedRefresh = { urlCache };
-        await cache.set(refreshKey, cachedRefresh, Time.THIRTY_MINUTES);
+        const refreshEntry = { urlCache };
+        await cache.set(refreshKey, refreshEntry, Time.THIRTY_MINUTES);
+        return refreshEntry;
       } catch (err) {
         logger.error('[/Agents] Error refreshing avatars for full list: %o', err);
+        return null;
       }
-    } else {
-      logger.debug('[/Agents] S3 avatar refresh already checked, skipping');
-    }
+    };
+
+    const cachedRefresh = await resolveAvatarRefresh();
 
     // Use the new ACL-aware function
     const data = await db.getListAgentsByAccess({
@@ -1247,20 +1321,13 @@ const getListAgentsHandler = async (req, res) => {
       return res.json(data);
     }
 
-    let accessibleSkillSet = null;
-    if (!canReturnSkillConfig) {
-      const accessibleSkillIds = await findAccessibleResources({
-        userId,
-        role: req.user.role,
-        resourceType: ResourceType.SKILL,
-        requiredPermissions: PermissionBits.VIEW,
-      });
-      accessibleSkillSet = new Set(
-        mergeDeploymentSkillIds(accessibleSkillIds).map((oid) => oid.toString()),
-      );
-    }
+    const accessibleSkillSet = canReturnSkillConfig
+      ? null
+      : new Set(mergeDeploymentSkillIds(accessibleSkillIds).map((oid) => oid.toString()));
 
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
+    /** Null for EDIT-scoped requests, where every matched agent is editable by definition. */
+    const editableSet = editableIds ? new Set(editableIds.map((oid) => oid.toString())) : null;
     const agentsWithContacts = await attachOwnerContacts(agents);
 
     const urlCache = cachedRefresh?.urlCache;
@@ -1272,6 +1339,7 @@ const getListAgentsHandler = async (req, res) => {
         if (agent?._id && publicSet.has(agent._id.toString())) {
           agent.isPublic = true;
         }
+        agent.isEditable = editableSet == null || editableSet.has(agent?._id?.toString());
         if (
           urlCache &&
           agent?.id &&
@@ -1280,9 +1348,8 @@ const getListAgentsHandler = async (req, res) => {
         ) {
           agent.avatar = { ...agent.avatar, filepath: urlCache[agent.id] };
         }
-      } catch (e) {
-        // Silently ignore mapping errors
-        void e;
+      } catch (err) {
+        logger.warn('[/Agents] Error mapping agent %s for list response: %o', agent?.id, err);
       }
       return agent;
     });

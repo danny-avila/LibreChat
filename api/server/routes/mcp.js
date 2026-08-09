@@ -46,6 +46,7 @@ const {
 } = require('~/server/services/MCP');
 const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { invalidateCachedTools } = require('~/server/services/Config');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { getLogStores } = require('~/cache');
@@ -542,13 +543,24 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           const oauthReconnectionManager = getOAuthReconnectionManager();
           oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
 
-          const tools = await userConnection.fetchTools();
-          await updateMCPServerTools({
-            userId: flowState.userId,
-            serverName,
-            tools,
-            serverConfig,
-          });
+          const snapshot =
+            typeof userConnection.fetchOrderedToolsSnapshot === 'function'
+              ? await userConnection.fetchOrderedToolsSnapshot()
+              : await userConnection.fetchToolsSnapshot();
+          if (snapshot.complete) {
+            const publicationGeneration = mcpManager.getToolPublicationGeneration?.(userConnection);
+            await updateMCPServerTools({
+              userId: flowState.userId,
+              serverName,
+              tools: snapshot.tools,
+              serverConfig,
+              publicationGeneration,
+            });
+          } else {
+            logger.warn(
+              `[MCP OAuth] Preserving cached tools for ${serverName} because tools/list returned an incomplete snapshot`,
+            );
+          }
         } else {
           logger.debug(`[MCP OAuth] System-level OAuth completed for ${serverName}`);
         }
@@ -791,7 +803,11 @@ router.post(
         });
       }
 
-      await mcpManager.disconnectUserConnection(user.id, serverName);
+      try {
+        await invalidateCachedTools({ userId: user.id, serverName });
+      } finally {
+        await mcpManager.disconnectUserConnection(user.id, serverName);
+      }
       logger.info(
         `[MCP Reinitialize] Disconnected existing user connection for server: ${serverName}`,
       );
