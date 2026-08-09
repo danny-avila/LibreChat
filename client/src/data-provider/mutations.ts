@@ -203,6 +203,7 @@ export const useCreateSharedLinkMutation = (
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
         queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
+        queryClient.invalidateQueries({ queryKey: [QueryKeys.sharedImages], exact: false });
 
         onSuccess?.(_data, vars, context);
       },
@@ -235,6 +236,7 @@ export const useUpdateSharedLinkMutation = (
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
         queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
+        queryClient.invalidateQueries({ queryKey: [QueryKeys.sharedImages], exact: false });
 
         onSuccess?.(_data, vars, context);
       },
@@ -303,6 +305,10 @@ export const useDeleteSharedLinkMutation = (
         queryKey: [QueryKeys.sharedLinks],
         exact: false,
       });
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.sharedImages],
+        exact: false,
+      });
     },
 
     onSuccess: (data, variables) => {
@@ -314,6 +320,24 @@ export const useDeleteSharedLinkMutation = (
         queryKey: [QueryKeys.sharedLinks],
         exact: true,
       });
+    },
+  });
+};
+
+export const useRevokeSharedImageMutation = (
+  options?: t.MutationOptions<t.TRevokeSharedImageResponse, { shareId: string; file_id: string }>,
+): UseMutationResult<
+  t.TRevokeSharedImageResponse,
+  unknown,
+  { shareId: string; file_id: string },
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((vars) => dataService.revokeSharedImage(vars.shareId, vars.file_id), {
+    ...(options || {}),
+    onSuccess: (...args) => {
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.sharedImages] });
+      options?.onSuccess?.(...args);
     },
   });
 };

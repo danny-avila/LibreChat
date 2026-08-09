@@ -98,6 +98,22 @@ function sanitizeSharedFiles(files: unknown): t.SharedFile[] | undefined {
   return sanitized.length > 0 ? sanitized : undefined;
 }
 
+function filterRevokedSharedFiles(
+  files: t.SharedFile[] | undefined,
+  revokedFileIds: Set<string>,
+): t.SharedFile[] | undefined {
+  if (!files || revokedFileIds.size === 0) {
+    return files;
+  }
+
+  const filtered = files.filter((file) => {
+    const fileId = file.file_id;
+    return typeof fileId !== 'string' || !revokedFileIds.has(fileId);
+  });
+
+  return filtered.length > 0 ? filtered : undefined;
+}
+
 /**
  * Sources backed by a durable stored object that the share-scoped routes can
  * stream with only `storageKey`/`filepath` + the request. Sources requiring
@@ -312,6 +328,7 @@ function anonymizeMessages(
   shareId: string,
   snapshotIds: Set<string>,
   includeFiles: boolean,
+  revokedFileIds: Set<string>,
 ): t.SharedMessage[] {
   if (!Array.isArray(messages)) {
     return [];
@@ -325,22 +342,23 @@ function anonymizeMessages(
     // When files are not shared for this link, omit files/attachments entirely so
     // viewers can't load them through the owner's original (e.g. static) paths.
     const attachments = includeFiles
-      ? sanitizeSharedFiles(message.attachments)?.map((attachment) =>
-          applyShareFileRoute(
-            {
-              ...attachment,
-              messageId: newMessageId,
-              conversationId: newConvoId,
-            },
-            shareId,
-            snapshotIds,
-          ),
+      ? filterRevokedSharedFiles(sanitizeSharedFiles(message.attachments), revokedFileIds)?.map(
+          (attachment) =>
+            applyShareFileRoute(
+              {
+                ...attachment,
+                messageId: newMessageId,
+                conversationId: newConvoId,
+              },
+              shareId,
+              snapshotIds,
+            ),
         )
       : undefined;
     // Persisted file records can carry the original conversation/message ids;
     // rewrite them to the anonymized ids so shared files don't expose them.
     const files = includeFiles
-      ? sanitizeSharedFiles(message.files)?.map((file) =>
+      ? filterRevokedSharedFiles(sanitizeSharedFiles(message.files), revokedFileIds)?.map((file) =>
           applyShareFileRoute(
             {
               ...file,
@@ -550,9 +568,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const adminEnabled = options?.snapshotFiles !== false;
       const perLinkEnabled = share.snapshotFiles !== false;
       const includeFiles = adminEnabled && perLinkEnabled;
+      const revokedFileIds = new Set<string>(share.revokedFileIds ?? []);
       let fileSnapshots = share.fileSnapshots;
       if (includeFiles && fileSnapshots === undefined && share._id) {
-        fileSnapshots = await buildFileSnapshots(mongoose, messagesToShare, share.user);
+        fileSnapshots = (await buildFileSnapshots(mongoose, messagesToShare, share.user)).filter(
+          (snapshot) => !revokedFileIds.has(snapshot.file_id),
+        );
         await SharedLink.updateOne({ _id: share._id }, { $set: { fileSnapshots } });
       }
       const snapshotIds = includeFiles
@@ -570,6 +591,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
           resolvedShareId,
           snapshotIds,
           includeFiles,
+          revokedFileIds,
         ),
       };
 
@@ -1019,8 +1041,8 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       shareId,
       ...activeExpirationFilter<t.ISharedLink>(),
     })
-      .select('fileSnapshots snapshotFiles')
-      .lean()) as Pick<t.ISharedLink, 'fileSnapshots' | 'snapshotFiles'> | null;
+      .select('fileSnapshots snapshotFiles revokedFileIds')
+      .lean()) as Pick<t.ISharedLink, 'fileSnapshots' | 'snapshotFiles' | 'revokedFileIds'> | null;
 
     if (!share) {
       return { file: null, hasSnapshots: false, optedOut: false };
@@ -1028,6 +1050,9 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
 
     const hasSnapshots = share.fileSnapshots !== undefined;
     const optedOut = share.snapshotFiles === false;
+    if (share.revokedFileIds?.includes(fileId)) {
+      return { file: null, hasSnapshots: true, optedOut };
+    }
     const file = share.fileSnapshots?.find((snapshot) => snapshot.file_id === fileId) ?? null;
     return { file, hasSnapshots, optedOut };
   }
@@ -1059,7 +1084,10 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         messages = getMessagesUpToTarget(messages, share.targetMessageId);
       }
 
-      const fileSnapshots = await buildFileSnapshots(mongoose, messages, share.user);
+      const revokedFileIds = new Set<string>(share.revokedFileIds ?? []);
+      const fileSnapshots = (await buildFileSnapshots(mongoose, messages, share.user)).filter(
+        (snapshot) => !revokedFileIds.has(snapshot.file_id),
+      );
       await SharedLink.updateOne({ shareId }, { $set: { fileSnapshots } });
 
       if (fileId) {

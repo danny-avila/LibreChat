@@ -49,6 +49,8 @@ export interface ISharedLink {
   snapshotFiles?: boolean;
   /** Per-share file snapshot referenced by the share-scoped file routes. */
   fileSnapshots?: SharedFileSnapshot[];
+  /** Original file IDs explicitly revoked from this share after it was created. */
+  revokedFileIds?: string[];
 }
 
 export interface ShareServiceError extends Error {
