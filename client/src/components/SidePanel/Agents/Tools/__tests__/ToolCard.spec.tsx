@@ -69,6 +69,7 @@ describe('ToolCard', () => {
     };
     render(<ToolCard item={mcp} selected={false} onToggle={jest.fn()} />);
     expect(screen.queryByText('com_ui_tools_count[count=14]')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_mcp_contact:')).not.toBeInTheDocument();
   });
 
   test('renders the configured support contact for MCP cards', () => {

@@ -208,6 +208,7 @@ export type AgentPanelProps = {
 
 export interface MCPServerInfo {
   serverName: string;
+  dbId?: string;
   tools: t.AgentToolType[];
   isConfigured: boolean;
   isConnected: boolean;

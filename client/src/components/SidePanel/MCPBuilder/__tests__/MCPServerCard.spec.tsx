@@ -31,13 +31,13 @@ const statusProps = {
 
 function renderCard(
   config: MCPServerDefinition['config'],
-  contact: Pick<MCPServerDefinition, 'support_contact' | 'owner_contact'> = {},
+  metadata: Pick<MCPServerDefinition, 'dbId' | 'support_contact' | 'owner_contact'> = {},
 ) {
   const server: MCPServerDefinition = {
     serverName: 'example',
     config,
     effectivePermissions: 1,
-    ...contact,
+    ...metadata,
   };
   return render(
     <MCPServerCard
@@ -76,5 +76,19 @@ describe('MCPServerCard contact', () => {
 
     expect(screen.getByText('Server Owner')).toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('renders nothing for a YAML server without a configured contact', () => {
+    renderCard({ type: 'sse', url: 'https://example.com/mcp' });
+
+    expect(screen.queryByText('Contact:')).not.toBeInTheDocument();
+    expect(screen.queryByText('No contact available')).not.toBeInTheDocument();
+  });
+
+  it('renders the unavailable state for a DB server without a resolvable contact', () => {
+    renderCard({ type: 'sse', url: 'https://example.com/mcp' }, { dbId: 'server-id' });
+
+    expect(screen.getByText('Contact:')).toBeInTheDocument();
+    expect(screen.getByText('No contact available')).toBeInTheDocument();
   });
 });

@@ -2,7 +2,7 @@ import { memo, useState } from 'react';
 import { BadgeCheck, Check, Globe, Info, Settings, Star, User } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentItem } from './items/types';
-import MCPServerContact from '~/components/MCP/MCPServerContact';
+import MCPServerContact, { shouldDisplayMCPServerContact } from '~/components/MCP/MCPServerContact';
 import { hasConfigurableSettings } from './items/configurable';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconForItem } from './items/icons';
@@ -102,6 +102,7 @@ function ToolCardImpl({
     item.id === 'web_search' &&
     !canConfigure &&
     onConfigure !== undefined;
+  const showMcpContact = item.kind === 'mcp' && shouldDisplayMCPServerContact(item.server);
   const DetailIcon = canConfigure ? Settings : Info;
 
   return (
@@ -119,7 +120,7 @@ function ToolCardImpl({
         aria-pressed={selected}
         className={cn(
           'flex h-full w-full cursor-pointer flex-col gap-2 rounded-2xl p-4 text-left',
-          item.kind === 'mcp' && 'pb-9',
+          showMcpContact && 'pb-9',
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
         )}
       >
@@ -192,7 +193,7 @@ function ToolCardImpl({
           </div>
         ) : null}
       </button>
-      {item.kind === 'mcp' && (
+      {showMcpContact && item.kind === 'mcp' && (
         <MCPServerContact
           server={item.server}
           className="pointer-events-none absolute bottom-3 left-4 right-20 z-10 text-xs [&_a]:pointer-events-auto [&_a]:font-normal [&_a]:!text-text-secondary"

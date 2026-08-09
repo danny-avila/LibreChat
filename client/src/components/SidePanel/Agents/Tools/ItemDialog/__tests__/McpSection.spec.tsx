@@ -172,6 +172,13 @@ describe('McpSection', () => {
     expect(screen.getByTestId('tool-mcp:srv:b')).toBeInTheDocument();
   });
 
+  test('does not render contact information for a YAML server without a configured contact', () => {
+    render(<McpSection item={item} />);
+
+    expect(screen.queryByText('com_ui_mcp_contact:')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_mcp_no_contact_available')).not.toBeInTheDocument();
+  });
+
   test('renders the server contact once above connection status', () => {
     mockMcpServersMap.mockReturnValue(
       new Map([
