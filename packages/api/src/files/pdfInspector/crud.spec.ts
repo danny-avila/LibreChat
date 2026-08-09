@@ -481,6 +481,36 @@ describe('pdf-inspector local parser', () => {
     }
   });
 
+  /**
+   * Opening a slow or malformed document is itself long work. Checking only in the page
+   * loop meant an abandoned parse held its admission slot for as long as the document
+   * took to open, which is exactly the case the artifact timeout gives up on.
+   */
+  test('stops while the document is still loading when the caller cancels', async () => {
+    const cancellation = new AbortController();
+    cancellation.abort();
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => {
+            throw new Error('native parser rejected the document');
+          },
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+
+        await expect(
+          uploadIsolated(context(pdfFile('sample.pdf')), cancellation.signal),
+        ).rejects.toThrow();
+        /** Never reached a page, because the load was never awaited. */
+        expect(mockPdfjs.requestedPages).toHaveLength(0);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
   test('stops the per-page recovery walk when the caller cancels', async () => {
     /* The recovery walk is the long half of a parse, so an abandoned one has to stop at
      * the next page rather than run to the cap. */
