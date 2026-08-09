@@ -210,6 +210,28 @@ jobs:
       BAN_VIOLATIONS: ${{ secrets.BAN_VIOLATIONS }}
       BAN_DURATION: ${{ secrets.BAN_DURATION }}
       BAN_INTERVAL: ${{ secrets.BAN_INTERVAL }}
+      # Consumed by api/server/routes/__tests__/search-wiring.spec.js — the one
+      # chat_search consumer under api/, and the reason this service exists.
+      # That spec throws instead of skipping when CI is true and this is unset,
+      # mirroring `describePg` in packages/api/src/search/pg.helper.ts, so
+      # dropping the service turns this job red rather than green-by-omission.
+      # A grep for chat_search under api/ that comes up empty is a stale
+      # checkout, not a reason to delete this.
+      CHAT_SEARCH_TEST_URL: postgres://postgres:postgres@localhost:5432/postgres
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v5
 

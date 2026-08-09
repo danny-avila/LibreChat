@@ -47,11 +47,19 @@ jest.mock('~/server/middleware/requireJwtAuth', () => {
  */
 const TEST_URL = process.env.CHAT_SEARCH_TEST_URL;
 
+/**
+ * `GITHUB_ACTIONS` rather than `CI`, which `api/test/jestSetup.js` sets to
+ * `'true'` unconditionally — including on a laptop. Reading `CI` here makes the
+ * developer branch below unreachable, so this suite fails for every contributor
+ * without a pgvector server instead of skipping for them. The runner this repo
+ * actually has is GitHub Actions, so keying on it keeps the property that
+ * matters: a workflow that loses the service turns red rather than green.
+ */
 function pgDescribe() {
   if (TEST_URL) {
     return describe;
   }
-  if (process.env.CI === 'true') {
+  if (process.env.GITHUB_ACTIONS === 'true') {
     throw new Error(
       'CHAT_SEARCH_TEST_URL is unset in CI. The PostgreSQL-backed suites would skip and ' +
         'report green without executing; start the pgvector service for this job.',

@@ -1,8 +1,24 @@
+/**
+ * Mirrors the real `isEnabled` rather than returning `undefined` for everything.
+ * A stub that answers `undefined` to `?isArchived=true` makes the archived
+ * filter unobservable, so every assertion about what the listing and the search
+ * were asked for passes whichever way the route reads the flag.
+ */
+const isEnabledImpl = (value) => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return value.toLowerCase().trim() === 'true';
+  }
+  return false;
+};
+
 module.exports = {
   agents: () => ({ sleep: jest.fn() }),
 
   api: (overrides = {}) => ({
-    isEnabled: jest.fn(),
+    isEnabled: jest.fn(isEnabledImpl),
     resolveImportMaxFileSize: jest.fn(() => 262144000),
     createAxiosInstance: jest.fn(() => ({
       get: jest.fn(),

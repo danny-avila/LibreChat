@@ -1,4 +1,4 @@
-import type { InternalHit, SearchSource } from './types';
+import type { ChatSearchHit, InternalHit, SearchSource } from './types';
 import type { ArmCandidate, ArmName } from './arms';
 import { CANDIDATE_CAP, RRF_K } from './constants';
 
@@ -87,7 +87,24 @@ export function fuseByRrf(
   return fused.slice(0, cap);
 }
 
-/** Strips the internal arbitration field before a hit leaves the module. */
-export function toPublicHits(hits: readonly InternalHit[]): readonly InternalHit[] {
-  return hits;
+/**
+ * Rebuilds each hit from the four public fields, so the arbitration field is
+ * dropped by construction rather than by deletion: a field added to
+ * `InternalHit` later is left behind too, and `ChatSearchHit` makes reading
+ * `projectionVersion` off the result a type error.
+ *
+ * The single place a hit becomes public: `PostgresChatSearch` calls this rather
+ * than stripping the field itself, so the guarantee has one implementation and
+ * the spec that proves it guards the shipped path instead of a spare copy.
+ *
+ * Proven by 'omits the arbitration field from every hit it returns' in
+ * `fusion.spec.ts`.
+ */
+export function toPublicHits(hits: readonly InternalHit[]): readonly ChatSearchHit[] {
+  return hits.map(({ recordId, conversationId, score, source }) => ({
+    recordId,
+    conversationId,
+    score,
+    source,
+  }));
 }

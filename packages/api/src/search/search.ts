@@ -31,9 +31,9 @@ import {
   TARGET_KIND,
 } from './constants';
 import { runLexicalArms, runVectorArmOrNull, shouldRunVectorArm } from './arms';
+import { fuseByRrf, toPublicHits } from './fusion';
 import { normalizeSearchText } from './hash';
 import { scopedQuery } from './scope';
-import { fuseByRrf } from './fusion';
 import { withScope } from './pool';
 
 const SNAPSHOT_TTL_MS = 600_000;
@@ -190,15 +190,6 @@ export class PostgresChatSearch implements ChatSearch {
     return { hits, degradations };
   }
 
-  private toPublic(hits: readonly InternalHit[]): readonly ChatSearchHit[] {
-    return hits.map(({ recordId, conversationId, score, source }) => ({
-      recordId,
-      conversationId,
-      score,
-      source,
-    }));
-  }
-
   async search(request: ChatSearchRequest): Promise<ChatSearchResult> {
     /**
      * Re-derived every call. The `scope` on the request is advisory only — an
@@ -252,7 +243,7 @@ export class PostgresChatSearch implements ChatSearch {
      * keystroke for the whole TTL window.
      */
     if (hits.length <= limit) {
-      return { hits: this.toPublic(page), nextCursor: null, degradations };
+      return { hits: toPublicHits(page), nextCursor: null, degradations };
     }
 
     const snapshotId = newSnapshotId();
@@ -270,7 +261,7 @@ export class PostgresChatSearch implements ChatSearch {
     );
 
     return {
-      hits: this.toPublic(page),
+      hits: toPublicHits(page),
       nextCursor: encodeCursor(
         { v: CURSOR_VERSION, snapshotId, offset: limit, queryHash },
         this.cursorSecret,

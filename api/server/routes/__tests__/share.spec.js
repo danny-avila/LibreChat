@@ -15,6 +15,11 @@ const mockGetAppConfig = jest.fn();
 const mockGetTenantId = jest.fn(() => undefined);
 const mockParseSharedLinksPageSize = jest.fn(() => 10);
 const mockIsValidSharedLinksCursor = jest.fn(() => true);
+const mockResolveCandidates = jest.fn();
+
+jest.mock('~/server/services/Search/candidates', () => ({
+  resolveCandidates: (...args) => mockResolveCandidates(...args),
+}));
 
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => true),
@@ -193,6 +198,11 @@ describe('share routes', () => {
       },
     });
     mockGrantCreationPermissions.mockResolvedValue(undefined);
+    mockResolveCandidates.mockResolvedValue({
+      recordIds: [],
+      conversationIds: [],
+      nextCursor: null,
+    });
   });
 
   it('serves shared startup config after shared-link access is granted', async () => {
@@ -243,9 +253,18 @@ describe('share routes', () => {
     expect(response.headers['cache-control']).toBe('private, no-store');
   });
 
+  /** The search term reaches the candidate resolver, and only the conversation ids it
+   * returns reach `getSharedLinks`. Express already percent-decodes `req.query`, so a
+   * second decode anywhere on this path would throw URIError on a bare `%` and turn
+   * `%xx`-looking text into a different query than the user typed. */
   it('normalizes shared-link list parameters without double-decoding search text', async () => {
     getSharedLinks.mockResolvedValue({ links: [], hasNextPage: false });
     mockParseSharedLinksPageSize.mockReturnValueOnce(100);
+    mockResolveCandidates.mockResolvedValue({
+      recordIds: ['link-1'],
+      conversationIds: ['convo-1'],
+      nextCursor: null,
+    });
     const cursor = '2030-01-01T00:00:00.000Z';
 
     const response = await request(buildApp()).get(
@@ -253,13 +272,28 @@ describe('share routes', () => {
     );
 
     expect(response.status).toBe(200);
+    expect(mockResolveCandidates).toHaveBeenCalledWith('shared-links', '100% ready');
+    expect(getSharedLinks).toHaveBeenCalledWith('user-123', cursor, 100, 'createdAt', 'asc', [
+      'convo-1',
+    ]);
+  });
+
+  /** `undefined` candidates mean "not a search"; `[]` means "searched, matched nothing"
+   * and would list nothing at all. Whitespace-only text must produce the former. */
+  it('treats a whitespace-only shared-link search as no search', async () => {
+    getSharedLinks.mockResolvedValue({ links: [], hasNextPage: false });
+
+    const response = await request(buildApp()).get('/api/share?search=%20%20');
+
+    expect(response.status).toBe(200);
+    expect(mockResolveCandidates).not.toHaveBeenCalled();
     expect(getSharedLinks).toHaveBeenCalledWith(
       'user-123',
-      cursor,
-      100,
+      undefined,
+      10,
       'createdAt',
-      'asc',
-      '100% ready',
+      'desc',
+      undefined,
     );
   });
 
