@@ -96,7 +96,7 @@ export interface ConcurrencyLimiterOptions {
 export function createConcurrencyLimiter(
   concurrency: number,
   options: ConcurrencyLimiterOptions = {},
-): <T>(task: () => Promise<T>) => Promise<T> {
+): <T>(task: () => Promise<T>, signal?: AbortSignal) => Promise<T> {
   if (!Number.isInteger(concurrency) || concurrency < 1) {
     throw new Error(
       `createConcurrencyLimiter: concurrency must be a positive integer (got ${concurrency})`,
@@ -120,8 +120,12 @@ export function createConcurrencyLimiter(
     }
   };
 
-  return <T>(task: () => Promise<T>): Promise<T> =>
+  return <T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> =>
     new Promise<T>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(abortReason(signal));
+        return;
+      }
       const run = (): void => {
         active++;
         Promise.resolve()
@@ -149,6 +153,26 @@ export function createConcurrencyLimiter(
         );
         return;
       }
-      queue.push(run);
+      /* Leaving an abandoned waiter in place would hold a share of the bound against
+       * callers who are still waiting: the queue exists to cap work in flight, and a
+       * caller that gave up has none. Removed on abort rather than skipped on dequeue,
+       * which frees the place immediately instead of when the queue finally reaches it. */
+      const entry = (): void => {
+        signal?.removeEventListener('abort', onAbort);
+        run();
+      };
+      const onAbort = (): void => {
+        const queued = queue.indexOf(entry);
+        if (queued >= 0) {
+          queue.splice(queued, 1);
+        }
+        reject(abortReason(signal as AbortSignal));
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      queue.push(entry);
     });
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error('Task was cancelled');
 }

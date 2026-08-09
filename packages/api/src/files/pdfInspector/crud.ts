@@ -190,9 +190,8 @@ export async function extractPdf(
     .filter((page) => !recovered.get(page.page)?.trim())
     .map((page) => page.page + 1);
   const unprobedPages = droppedPages.slice(recoverablePages.length).map((page) => page.page + 1);
-  const toPageList = (pages: number[]): number[] | undefined => (pages.length ? pages : undefined);
-  const probedResult = toPageList(probedMissingPages);
-  const ocrResult = toPageList([...probedMissingPages, ...unprobedPages]);
+  const missingPages = [...probedMissingPages, ...unprobedPages];
+  const ocrResult = missingPages.length ? missingPages : undefined;
 
   /* When most pages were dropped, the letter-spacing baked into this kind of OCR
    * layer makes item-level pdfjs assembly output mush ("m i s s i o n"): the word
@@ -200,16 +199,18 @@ export async function extractPdf(
    * plain-text extractor re-segments words from those positions, so with structure
    * available for only a sliver of pages, clean words for the whole document beat
    * markdown islands in a sea of mush. Page accounting stays empirical either way. */
-  if (droppedPages.length > pages.length * DROPPED_PAGE_MAJORITY) {
+  /* Whole-document text is only taken when every dropped page was actually probed.
+   * Past the recovery cap the accounting stops being knowable either way: the output
+   * proves some text exists somewhere, not that each unprobed page had a layer, so
+   * claiming they were omitted would be a false notice and staying silent would drop
+   * scanned pages without ever reaching OCR. Interleaving keeps the report true, since
+   * there an unprobed page really is missing from the text. */
+  const everyDroppedPageProbed = droppedPages.length === recoverablePages.length;
+  if (everyDroppedPageProbed && droppedPages.length > pages.length * DROPPED_PAGE_MAJORITY) {
     try {
       const plain = await extractTextIsolated(filePath, signal);
       if (plain.trim()) {
-        /* This output covers the whole document, including the pages past the recovery
-         * cap that the interleaved branch would have skipped. Reporting those as
-         * omitted would spend an OCR call on text already present, or annotate the
-         * document with a notice naming pages it does contain. Only the pages proven
-         * to hold no text layer are still missing here. */
-        return withMediaSignal({ text: plain, pagesNeedingOcr: probedResult });
+        return withMediaSignal({ text: plain, pagesNeedingOcr: ocrResult });
       }
     } catch {
       /* fall through to per-page interleaving */

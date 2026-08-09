@@ -61,10 +61,16 @@ process.once('message', (request) => {
        * rather than failing outright. */
       let scannedPages = [];
       if (Date.now() - startedAt < request.classifyBudgetMs) {
-        const detection = native.detectPdf(data);
-        scannedPages = (detection.ocrReasonsByPage || [])
-          .filter((entry) => (entry.reasons || []).some((r) => request.scanReasons.includes(r)))
-          .map((entry) => entry.page);
+        try {
+          const detection = native.detectPdf(data);
+          scannedPages = (detection.ocrReasonsByPage || [])
+            .filter((entry) => (entry.reasons || []).some((r) => request.scanReasons.includes(r)))
+            .map((entry) => entry.page);
+        } catch (classifyError) {
+          /* Optional means optional: a classifier that cannot read this document must not
+           * discard the extraction that already succeeded, which the parent would answer
+           * by falling back to a weaker engine or refusing the upload outright. */
+        }
       }
       result = { pages: extraction.pages, scannedPages };
     }
