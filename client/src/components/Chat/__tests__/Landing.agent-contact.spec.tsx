@@ -20,15 +20,11 @@ jest.mock('librechat-data-provider', () => ({
   },
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => ({
-    BirthdayIcon: () => <span data-testid="birthday-icon" />,
-    TooltipAnchor: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-    SplitText: ({ text }: { text: string }) => <span>{text}</span>,
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => ({
+  BirthdayIcon: () => <span data-testid="birthday-icon" />,
+  TooltipAnchor: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  SplitText: ({ text }: { text: string }) => <span>{text}</span>,
+}));
 
 jest.mock('~/Providers', () => ({
   useChatContext: () => ({ conversation: mockConversation }),
@@ -43,15 +39,11 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('~/hooks', () => ({
   useAuthContext: () => ({ user: undefined }),
+  useGreeting: () => 'Welcome',
   useLocalize: () => (key: string) => {
     const translations: Record<string, string> = {
       com_agents_contact: 'Contact',
       com_agents_no_contact_available: 'No contact available',
-      com_ui_good_morning: 'Good morning',
-      com_ui_good_afternoon: 'Good afternoon',
-      com_ui_good_evening: 'Good evening',
-      com_ui_late_night: 'Good evening',
-      com_ui_weekend_morning: 'Good morning',
     };
     return translations[key] || key;
   },

@@ -4,6 +4,7 @@ import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
 import { Permissions, SystemRoles, PermissionTypes } from 'librechat-data-provider';
 import {
+  Label,
   Button,
   Switch,
   OGDialog,
@@ -13,7 +14,7 @@ import {
   OGDialogTrigger,
   useToastContext,
 } from '@librechat/client';
-import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
+import type { Control } from 'react-hook-form';
 import { useUpdatePeoplePickerPermissionsMutation } from '~/data-provider';
 import { useLocalize, useAuthContext, useRoleSelector } from '~/hooks';
 
@@ -27,36 +28,20 @@ type LabelControllerProps = {
   label: string;
   peoplePickerPerm: Permissions.VIEW_USERS | Permissions.VIEW_GROUPS | Permissions.VIEW_ROLES;
   control: Control<FormValues, unknown, FormValues>;
-  setValue: UseFormSetValue<FormValues>;
-  getValues: UseFormGetValues<FormValues>;
 };
 
-const LabelController: React.FC<LabelControllerProps> = ({
-  control,
-  peoplePickerPerm,
-  label,
-  getValues,
-  setValue,
-}) => (
+const LabelController: React.FC<LabelControllerProps> = ({ control, peoplePickerPerm, label }) => (
   <div className="mb-4 flex items-center justify-between gap-2">
-    <button
-      className="cursor-pointer select-none"
-      type="button"
-      onClick={() =>
-        setValue(peoplePickerPerm, !getValues(peoplePickerPerm), {
-          shouldDirty: true,
-        })
-      }
-      tabIndex={0}
-    >
+    <Label htmlFor={peoplePickerPerm} className="w-auto cursor-pointer select-none break-normal">
       {label}
-    </button>
+    </Label>
     <Controller
       name={peoplePickerPerm}
       control={control}
       render={({ field }) => (
         <Switch
           {...field}
+          id={peoplePickerPerm}
           checked={field.value ?? false}
           onCheckedChange={field.onChange}
           value={(field.value ?? false).toString()}
@@ -93,8 +78,6 @@ const PeoplePickerAdminSettings = () => {
   const {
     reset,
     control,
-    setValue,
-    getValues,
     handleSubmit,
     formState: { isSubmitting },
   } = useForm<FormValues>({
@@ -140,7 +123,7 @@ const PeoplePickerAdminSettings = () => {
       <OGDialogTrigger asChild>
         <Button
           variant={'outline'}
-          className="btn btn-neutral border-token-border-light gap-1 rounded-lg font-medium"
+          className="gap-1 rounded-lg font-medium"
           aria-label={localize('com_ui_admin_settings')}
         >
           <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
@@ -179,14 +162,13 @@ const PeoplePickerAdminSettings = () => {
                     control={control}
                     peoplePickerPerm={peoplePickerPerm}
                     label={label}
-                    getValues={getValues}
-                    setValue={setValue}
                   />
                 </div>
               ))}
             </div>
             <div className="flex justify-end">
-              <button
+              <Button
+                variant="submit"
                 type="button"
                 onClick={handleSubmit(onSubmit)}
                 disabled={
@@ -194,10 +176,10 @@ const PeoplePickerAdminSettings = () => {
                   isLoading ||
                   (isSelectedCustomRole && (isCustomRoleLoading || isCustomRoleError))
                 }
-                className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
+                className="font-bold"
               >
                 {localize('com_ui_save')}
-              </button>
+              </Button>
             </div>
           </form>
         </div>

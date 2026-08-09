@@ -591,7 +591,14 @@ export const defaultAssistantsVersion = {
 };
 
 export const baseEndpointSchema = z.object({
-  streamRate: z.number().optional(),
+  /**
+   * Milliseconds between visible streamed chunks. Agents SDK-backed
+   * providers (openAI, custom, anthropic, google, bedrock, agents) smooth
+   * adaptively at 25ms by default; set to override the cadence, 0 to
+   * disable smoothing. Legacy Assistants and Ollama paths instead sleep
+   * this long per provider chunk (default 1ms), with no adaptive smoothing.
+   */
+  streamRate: z.number().min(0).optional(),
   baseURL: z.string().optional(),
   /**
    * Custom request headers forwarded to the provider on every request. Values
@@ -916,6 +923,15 @@ export const agentsEndpointSchema = baseEndpointSchema
       recursionLimit: z.number().optional(),
       disableBuilder: z.boolean().optional().default(false),
       maxRecursionLimit: z.number().optional(),
+      /** Max cumulative bytes a single streamed tool call's arguments may reach before the run
+       * aborts. Defaults to 64 KiB in the agents SDK; `0` disables the guard. */
+      maxToolCallArgBytes: z.number().optional(),
+      /** Max streamed chunk events per model generation before the run aborts. Off by default. */
+      maxDeltaEventsPerTurn: z.number().optional(),
+      /** Per-tool overrides of `maxToolCallArgBytes`, keyed by model-facing tool name; `0`
+       * disables the guard for that tool only. Merged over LibreChat's shipped default of
+       * `{ create_file: 131072 }`. */
+      maxToolCallArgBytesByTool: z.record(z.number()).optional(),
       maxCitations: z.number().min(1).max(50).optional().default(30),
       maxCitationsPerFile: z.number().min(1).max(10).optional().default(7),
       minRelevanceScore: z.number().min(0.0).max(1.0).optional().default(0.45),
@@ -1191,6 +1207,7 @@ const ttsLocalaiSchema = z.object({
 });
 
 const ttsSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenlabs: ttsElevenLabsSchema.optional(),
@@ -1213,6 +1230,7 @@ const sttAzureOpenAISchema = z.object({
 });
 
 const sttSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   openai: sttOpenaiSchema.optional(),
   azureOpenAI: sttAzureOpenAISchema.optional(),
 });
@@ -1579,6 +1597,8 @@ export type TStartupConfig = {
   emailEnabled: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
+  /** Admin panel link, only present for users with admin access */
+  adminPanelURL?: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
   modelDescriptions?: Record<string, Record<string, string>>;
@@ -1779,6 +1799,7 @@ export const webSearchSchema = z.object({
 export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 
 export const ocrSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   mistralModel: z.string().optional(),
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
   apiKeyPreview: apiKeyPreviewSchema,
@@ -1874,23 +1895,36 @@ export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
+/**
+ * Validates a messageFilter PII regex at config load. Defaults to native RegExp so browser
+ * builds add no extra engine; the server injects a check backed by the linear-time runtime
+ * engine (RE2) via setMessageFilterRegexValidator, so a pattern the runtime cannot compile
+ * (backreferences, lookaround, control escapes, and so on) is rejected at load rather than
+ * silently dropped at request time.
+ */
+let messageFilterRegexValidator: (pattern: string) => boolean = (value) => {
+  try {
+    new RegExp(value, 'g');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const setMessageFilterRegexValidator = (validate: (pattern: string) => boolean): void => {
+  messageFilterRegexValidator = validate;
+};
+
 const messageFilterPiiCustomPatternSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   regex: z
     .string()
     .min(1)
-    .refine(
-      (value) => {
-        try {
-          new RegExp(value, 'g');
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      { message: 'Invalid regex' },
-    ),
+    .refine((value) => messageFilterRegexValidator(value), {
+      message:
+        'Unsupported regex: not compatible with the RE2 engine (no backreferences, lookaround, or control escapes)',
+    }),
 });
 
 export const messageFilterPiiSchema = z.object({
@@ -2603,6 +2637,10 @@ export enum ErrorTypes {
    * Google provider could not process a linked video (most often longer than the model accepts)
    */
   GOOGLE_VIDEO_UNPROCESSABLE = 'google_video_unprocessable',
+  /**
+   * Required CodeAPI resources could not be restored before model invocation.
+   */
+  RESOURCE_RECOVERY_REQUIRED = 'resource_recovery_required',
   /**
    * Invalid Agent Provider (excluded by Admin)
    */

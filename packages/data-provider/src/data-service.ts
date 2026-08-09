@@ -251,6 +251,10 @@ export function cancelMCPOAuth(serverName: string): Promise<m.CancelMCPOAuthResp
   return request.post(endpoints.cancelMCPOAuth(serverName), {});
 }
 
+export function getMCPOAuthStatus(flowId: string): Promise<mcp.MCPOAuthStatusResponse> {
+  return request.get(endpoints.mcpOAuthStatus(flowId));
+}
+
 /* Config */
 
 export type StartupConfigOptions = {
@@ -840,8 +844,12 @@ export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkC
 export function forkSharedConversation(
   shareId: string,
   targetMessageIndex?: number,
+  shareRevision?: string,
 ): Promise<t.TForkConvoResponse> {
-  return request.post(endpoints.forkSharedMessages(shareId), { targetMessageIndex });
+  return request.post(endpoints.forkSharedMessages(shareId), {
+    targetMessageIndex,
+    shareRevision,
+  });
 }
 
 export function deleteConversation(payload: t.TDeleteConversationRequest) {

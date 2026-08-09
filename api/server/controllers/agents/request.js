@@ -3,6 +3,7 @@ const { v5: uuidv5 } = require('uuid');
 const {
   Constants,
   EModelEndpoint,
+  ErrorTypes,
   ViolationTypes,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
@@ -48,6 +49,18 @@ function sendGenerationJson(res, status, body, generationProtocolVersion) {
     res.setHeader(GENERATION_PROTOCOL_HEADER, String(generationProtocolVersion));
   }
   return res.status(status).json({ ...body, generationProtocolVersion });
+}
+
+function getResourceRecoveryFailure(error) {
+  if (error?.code !== ErrorTypes.RESOURCE_RECOVERY_REQUIRED) {
+    return null;
+  }
+
+  return {
+    status: 409,
+    code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+    error: error.message || 'Attached resources must be restored before retrying.',
+  };
 }
 
 function createCloseHandler(abortController) {
@@ -1837,6 +1850,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
+    const resourceRecoveryFailure = getResourceRecoveryFailure(error);
     try {
       if (!res.headersSent) {
         if (error?.code === 'GENERATION_PREDECESSOR_MISMATCH') {
@@ -1877,6 +1891,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             },
             generationProtocolVersion,
           );
+        } else if (resourceRecoveryFailure) {
+          sendGenerationJson(
+            res,
+            resourceRecoveryFailure.status,
+            resourceRecoveryFailure,
+            generationProtocolVersion,
+          );
         } else {
           sendGenerationJson(
             res,
@@ -1905,7 +1926,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // and the concurrency slot leaks — so swallow its error. (A failed completeJob did not
     // finalize anything, so releasing afterward can't let it abort a later replacement.)
     if (jobCreatedAt != null) {
-      const initializationError = error.message || 'Failed to start generation';
+      const initializationError = resourceRecoveryFailure
+        ? JSON.stringify(resourceRecoveryFailure)
+        : error.message || 'Failed to start generation';
       await GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt).catch(
         (completeErr) => {
           logger.warn(

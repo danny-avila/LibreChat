@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import type { GraphEdge } from 'librechat-data-provider';
+import type { AgentSubagentsConfig, GraphEdge } from 'librechat-data-provider';
 import type { Page } from '@playwright/test';
 import { MOCK_ENDPOINTS, NEW_CHAT_PATH, fetchJson, getAccessToken, requestJson } from './helpers';
 
@@ -35,6 +35,7 @@ export type AgentDetail = AgentSummary & {
   tools?: string[];
   mcpServerNames?: string[];
   edges?: GraphEdge[];
+  subagents?: AgentSubagentsConfig;
 };
 
 export const uniqueAgentName = (prefix: string) =>

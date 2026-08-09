@@ -12,4 +12,11 @@ describe('Experimental server configuration', () => {
     expect(timeoutConfigIndex).toBeGreaterThan(-1);
     expect(listenIndex).toBeLessThan(timeoutConfigIndex);
   });
+
+  it('runs cross-tenant startup work in the system context', () => {
+    expect(source).toContain('await runAsSystem(seedDatabase);');
+    expect(source).toMatch(
+      /await runAsSystem\(async \(\) => \{\s+await performStartupChecks\(appConfig\);\s+await updateInterfacePerms/,
+    );
+  });
 });

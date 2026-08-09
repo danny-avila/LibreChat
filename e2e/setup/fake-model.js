@@ -37,6 +37,9 @@ const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_MERMAID_ARTIFACT_REPLY';
+const LARGE_MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_LARGE_MERMAID_ARTIFACT_REPLY';
+const HTML_ARTIFACT_REPLY_MARKER = 'E2E_HTML_ARTIFACT_REPLY';
 const BACKGROUND_DISPATCH_MARKER = 'E2E_BACKGROUND_DISPATCH:';
 const BACKGROUND_COLLECT_MARKER = 'E2E_BACKGROUND_COLLECT:';
 const TOOL_APPROVAL_MARKER = 'E2E_TOOL_APPROVAL:';
@@ -45,6 +48,11 @@ const TOOL_APPROVAL_RESTRICTED_MARKER = 'E2E_TOOL_APPROVAL_RESTRICTED:';
 const TOOL_APPROVAL_REWRITE_MARKER = 'E2E_TOOL_APPROVAL_REWRITE:';
 const DEFERRED_HITL_MARKER = 'E2E_DEFERRED_HITL:';
 const HANDOFF_MARKER = 'E2E_HANDOFF:';
+const SUBAGENT_RESULT_MARKER = 'E2E_SUBAGENT_RESULT:';
+const SUBAGENT_CHILD_MARKER = 'E2E_SUBAGENT_CHILD:';
+const SUBAGENT_MODEL_OVERRIDE_ERROR =
+  '[e2e] Streamed subagent result coverage requires an @librechat/agents release with ' +
+  'StandardGraph.setSubagentModelOverride';
 const HANDOFF_TOOL_PREFIX = 'lc_transfer_to_';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
@@ -371,6 +379,37 @@ function quoteAssertionResponses({ messages, text }) {
 }
 
 function replyResponses(text) {
+  if (text.includes(LARGE_MERMAID_ARTIFACT_REPLY_MARKER)) {
+    const diagram = ['```mermaid', 'flowchart TB'];
+    for (let index = 0; index < 180; index++) {
+      diagram.push(`N${index}["Processing stage ${index} with representative content"]`);
+      if (index > 0) {
+        diagram.push(`N${index - 1} --> N${index}`);
+      }
+    }
+    diagram.push('```');
+
+    return { responses: [diagram.join('\n')], sleep: 0 };
+  }
+
+  if (text.includes(MERMAID_ARTIFACT_REPLY_MARKER)) {
+    return {
+      responses: [['```mermaid', 'flowchart LR', 'A[Start] --> B[Finish]', '```'].join('\n')],
+    };
+  }
+
+  if (text.includes(HTML_ARTIFACT_REPLY_MARKER)) {
+    return {
+      responses: [
+        [
+          ':::artifact{identifier="e2e-html" type="text/html" title="E2E HTML Artifact"}',
+          '<h1>HTML sandbox fixture</h1>',
+          ':::',
+        ].join('\n'),
+      ],
+    };
+  }
+
   if (text.includes(MARKDOWN_REPLY_MARKER)) {
     return {
       responses: [
@@ -482,7 +521,7 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
     this.streamSleep = sleep ?? CHUNK_DELAY_MS;
   }
 
-  async *streamScriptedResponseChunks({ response, toolCalls, runManager }) {
+  async *streamScriptedResponseChunks({ response, toolCalls, textDeltaBlocks, runManager }) {
     if (this.emitCustomEvent) {
       await runManager?.handleCustomEvent('some_test_event', {
         someval: true,
@@ -492,7 +531,14 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
     const chunks = response ? response.split(/(?<=\s+)|(?=\s+)/) : [];
     for await (const chunk of chunks) {
       await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
-      const responseChunk = this._createResponseChunk(chunk);
+      const responseChunk = textDeltaBlocks
+        ? new ChatGenerationChunk({
+            text: chunk,
+            message: new AIMessageChunk({
+              content: [{ type: 'text_delta', index: 0, text: chunk }],
+            }),
+          })
+        : this._createResponseChunk(chunk);
       yield responseChunk;
       void runManager?.handleLLMNewToken(chunk);
     }
@@ -544,6 +590,7 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
       chunkStream = this.streamScriptedResponseChunks({
         response: scriptedResponse.response ?? '',
         toolCalls: scriptedResponse.toolCalls,
+        textDeltaBlocks: scriptedResponse.textDeltaBlocks === true,
         runManager,
       });
     } else if (dynamicResponse) {
@@ -582,11 +629,22 @@ function overrideModel({
   sleep,
   toolCalls,
   thrownError,
+  overrideSubagentModel,
   resolveInvocation,
   resolveOnStream,
 }) {
+  if (overrideSubagentModel && typeof graph.setSubagentModelOverride !== 'function') {
+    overrideModel({
+      graph,
+      responses: [''],
+      sleep,
+      thrownError: SUBAGENT_MODEL_OVERRIDE_ERROR,
+    });
+    return;
+  }
+
   if (!thrownError) {
-    graph.overrideModel = new UsageEmittingFakeChatModel({
+    const model = new UsageEmittingFakeChatModel({
       responses,
       sleep: sleep ?? CHUNK_DELAY_MS,
       emitCustomEvent: true,
@@ -594,6 +652,10 @@ function overrideModel({
       resolveInvocation,
       resolveOnStream,
     });
+    graph.overrideModel = model;
+    if (overrideSubagentModel) {
+      graph.setSubagentModelOverride(model);
+    }
     return;
   }
 
@@ -607,12 +669,13 @@ function overrideModel({
     }
   }
 
-  graph.overrideModel = new ThrowingFakeChatModel({
+  const model = new ThrowingFakeChatModel({
     responses,
     sleep: sleep ?? CHUNK_DELAY_MS,
     emitCustomEvent: true,
     toolCalls,
   });
+  graph.overrideModel = model;
 }
 
 function parseSkillAssertion(text, agentId) {
@@ -1099,6 +1162,57 @@ function findLastToolMessageText(messages, requiredToken) {
   return '';
 }
 
+function parseSubagentResultMarker(text) {
+  const value = getMarkerValue(text, SUBAGENT_RESULT_MARKER);
+  const separator = value.indexOf(':');
+  if (separator <= 0 || separator === value.length - 1) {
+    return null;
+  }
+  return {
+    childId: value.slice(0, separator),
+    label: value.slice(separator + 1),
+  };
+}
+
+function subagentResultResponses(text) {
+  const marker = parseSubagentResultMarker(text);
+  if (!marker) {
+    return null;
+  }
+
+  const childPrompt = `${SUBAGENT_CHILD_MARKER}${marker.label}`;
+  const expectedResult = `E2E subagent streamed result ${marker.label}`;
+  return {
+    responses: [''],
+    overrideSubagentModel: true,
+    resolveInvocation: (messages) => {
+      const toolResult = findLastToolMessageText(messages, expectedResult);
+      if (toolResult) {
+        return { response: toolResult };
+      }
+
+      if (getLatestUserText(messages).includes(childPrompt)) {
+        return { response: expectedResult, textDeltaBlocks: true };
+      }
+
+      return {
+        response: '',
+        toolCalls: [
+          {
+            id: `call_e2e_subagent_${marker.label}`,
+            name: 'subagent',
+            args: {
+              description: childPrompt,
+              subagent_type: marker.childId,
+            },
+            type: 'tool_call',
+          },
+        ],
+      };
+    },
+  };
+}
+
 function approvalToolResponses(label, toolNames, review) {
   if (!toolNames.has(APPROVAL_TOOL_NAME)) {
     return {
@@ -1340,6 +1454,25 @@ function parseHandoffScript(text) {
         error: `script.routes[${index}].targetTools must be an array of non-empty strings`,
       };
     }
+    if (route.targetToolCall != null) {
+      const targetToolCall = route.targetToolCall;
+      if (
+        typeof targetToolCall !== 'object' ||
+        Array.isArray(targetToolCall) ||
+        typeof targetToolCall.id !== 'string' ||
+        targetToolCall.id === '' ||
+        typeof targetToolCall.name !== 'string' ||
+        targetToolCall.name === '' ||
+        typeof targetToolCall.args !== 'object' ||
+        targetToolCall.args == null ||
+        Array.isArray(targetToolCall.args) ||
+        typeof targetToolCall.outputIncludes !== 'string'
+      ) {
+        return {
+          error: `script.routes[${index}].targetToolCall must contain an id, name, args object, and outputIncludes`,
+        };
+      }
+    }
 
     const args = route.args ?? {};
     let inferredReceipt = null;
@@ -1358,6 +1491,7 @@ function parseHandoffScript(text) {
       receipt: route.receipt ?? inferredReceipt,
       targetInstructions: route.targetInstructions,
       targetTools: route.targetTools ?? [],
+      targetToolCall: route.targetToolCall,
     });
   }
 
@@ -1784,6 +1918,36 @@ function buildHandoffResponses(graph, parsed) {
               receptionFailures.join('; '),
           };
         }
+
+        const targetToolCall = incomingRoute.targetToolCall;
+        if (targetToolCall) {
+          const toolResult = findToolMessage(messages, targetToolCall.id);
+          if (!toolResult) {
+            return {
+              response: '',
+              toolCalls: [
+                {
+                  id: targetToolCall.id,
+                  name: targetToolCall.name,
+                  args: targetToolCall.args,
+                  type: 'tool_call',
+                },
+              ],
+            };
+          }
+
+          const output = getContentText(toolResult.content);
+          if (!output.includes(targetToolCall.outputIncludes)) {
+            return {
+              response:
+                `E2E handoff target tool failed ${script.label}: agent=${agentId}; ` +
+                `expected=${targetToolCall.outputIncludes}; received=${output || '(empty)'}`,
+            };
+          }
+          return {
+            response: `E2E handoff tool complete ${script.label}: agent=${agentId}`,
+          };
+        }
       }
 
       const outgoingRoutes = script.routes.filter((route) => route.from === agentId);
@@ -1809,6 +1973,11 @@ function buildHandoffResponses(graph, parsed) {
 }
 
 function resolveResponses({ graph, messages, text, toolNames }) {
+  const subagentResult = subagentResultResponses(text);
+  if (subagentResult) {
+    return subagentResult;
+  }
+
   const batchApprovalLabel = getMarkerValue(text, TOOL_APPROVAL_BATCH_MARKER);
   if (batchApprovalLabel) {
     return batchApprovalToolResponses(batchApprovalLabel, toolNames);
@@ -1969,21 +2138,29 @@ module.exports = function fakeModelHook(run, context) {
   const text = getLatestUserText(context?.messages);
   const toolNames = collectToolNames(context?.agents);
   const handoffScript = parseHandoffScript(text);
-  const { responses, sleep, toolCalls, thrownError, resolveInvocation, resolveOnStream } =
-    handoffScript
-      ? buildHandoffResponses(graph, handoffScript)
-      : resolveResponses({
-          graph,
-          messages: context?.messages,
-          text,
-          toolNames,
-        });
+  const {
+    responses,
+    sleep,
+    toolCalls,
+    thrownError,
+    overrideSubagentModel,
+    resolveInvocation,
+    resolveOnStream,
+  } = handoffScript
+    ? buildHandoffResponses(graph, handoffScript)
+    : resolveResponses({
+        graph,
+        messages: context?.messages,
+        text,
+        toolNames,
+      });
   overrideModel({
     graph,
     responses,
     sleep,
     toolCalls,
     thrownError,
+    overrideSubagentModel,
     resolveInvocation: async (streamMessages, streamOptions, runManager) =>
       deferredHitlInvocationResponse({
         graph,

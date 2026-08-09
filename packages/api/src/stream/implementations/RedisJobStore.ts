@@ -33,6 +33,11 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_MS,
   isPendingActionStale,
 } from '~/stream/interfaces/IJobStore';
+import {
+  MAX_COALESCED_BYTES,
+  MAX_COALESCED_EVENTS,
+  resolveCoalesceWindowMs,
+} from '~/stream/internal/coalescing';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 import { RecoveredSteerPayloadMismatchError } from '~/stream/SteerRecovery';
 
@@ -736,6 +741,50 @@ const CHUNK_APPEND_LUA =
   'if qt >= 0 and qt < target then redis.call("EXPIRE", KEYS[i], target) end end ' +
   'if receipt then receipt.item = delivered receipt.state = "delivered" ' +
   'redis.call("HSET", KEYS[3], ARGV[4], cjson.encode(receipt)) end ' +
+  'return 1';
+
+/**
+ * Batched CHUNK_APPEND_LUA for plain streaming deltas: identical generation/status/epoch
+ * guards and extend-only TTL housekeeping, evaluated once per batch, with one XADD per
+ * event. Steer-delivery settlement is deliberately absent — an append carrying a steer
+ * receipt is a barrier and stays on the per-event script.
+ *
+ *   KEYS: [chunks, job, steerReceipts, steerReceiptOrder, claimedSteers, steers,
+ *          parkedSteers, generationEpoch]
+ *   ARGV: [runningTtl, expectCreatedAt | "", nowMs, parkedSteersTtl,
+ *          generationEpochGraceTtl, eventJson...]
+ */
+const CHUNK_APPEND_BATCH_LUA =
+  'local currentCreatedAt = redis.call("HGET", KEYS[2], "createdAt") ' +
+  'if not currentCreatedAt then return 0 end ' +
+  'if ARGV[2] ~= "" and currentCreatedAt ~= ARGV[2] then return 0 end ' +
+  'local currentStatus = redis.call("HGET", KEYS[2], "status") ' +
+  'if currentStatus ~= "running" and currentStatus ~= "requires_action" then return 0 end ' +
+  'local retainedEpoch = redis.call("GET", KEYS[8]) ' +
+  'if retainedEpoch and retainedEpoch ~= currentCreatedAt then return 0 end ' +
+  'local run = tonumber(ARGV[1]) ' +
+  'local target = run ' +
+  'local jobTtl = redis.call("TTL", KEYS[2]) ' +
+  'if jobTtl < target then redis.call("EXPIRE", KEYS[2], target) ' +
+  'elseif jobTtl > target then target = jobTtl end ' +
+  'local recoveryTarget = target ' +
+  'if redis.call("HGET", KEYS[2], "recoveredSteerId") then ' +
+  'recoveryTarget = target + tonumber(ARGV[4]) ' +
+  'local pt = redis.call("TTL", KEYS[7]) ' +
+  'if pt >= 0 and pt < recoveryTarget then redis.call("EXPIRE", KEYS[7], recoveryTarget) end end ' +
+  'local epochTarget = target + tonumber(ARGV[5]) ' +
+  'if retainedEpoch then local epochTtl = redis.call("TTL", KEYS[8]) ' +
+  'if epochTtl >= 0 and epochTtl < epochTarget then redis.call("EXPIRE", KEYS[8], epochTarget) end ' +
+  'else redis.call("SET", KEYS[8], currentCreatedAt, "EX", epochTarget) end ' +
+  'for i = 6, #ARGV do redis.call("XADD", KEYS[1], "*", "event", ARGV[i]) end ' +
+  'if currentStatus == "running" then ' +
+  'redis.call("HSET", KEYS[2], "lastActiveAt", ARGV[3]) end ' +
+  'local cur = redis.call("TTL", KEYS[1]) ' +
+  'if cur < target then redis.call("EXPIRE", KEYS[1], target) end ' +
+  'for i = 3, 4 do local rt = redis.call("TTL", KEYS[i]) ' +
+  'if rt >= 0 and rt < recoveryTarget then redis.call("EXPIRE", KEYS[i], recoveryTarget) end end ' +
+  'for i = 5, 6 do local qt = redis.call("TTL", KEYS[i]) ' +
+  'if qt >= 0 and qt < target then redis.call("EXPIRE", KEYS[i], target) end end ' +
   'return 1';
 
 /**
@@ -1502,10 +1551,27 @@ interface LocalCacheEntry<T> {
   value: T;
 }
 
+/**
+ * Coalescable durable appends buffered for one stream. Events are
+ * pre-serialized at enqueue; a flush XADDs them in order under one guard pass.
+ * The whole batch shares one fate, so every resolver settles identically.
+ */
+interface PendingChunkAppendBatch {
+  expectedCreatedAt?: number;
+  events: string[];
+  settlers: Array<{ resolve: (appended: boolean) => void; reject: (err: unknown) => void }>;
+  bytes: number;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
 export class RedisJobStore implements IJobStoreV2 {
   private redis: Redis | Cluster;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private ttl: typeof DEFAULT_TTL;
+  /** Coalescable chunk appends awaiting their window flush, per stream */
+  private pendingAppends = new Map<string, PendingChunkAppendBatch>();
+  /** Durable-append coalescing window; 0 keeps every append on the per-event path */
+  private readonly coalesceWindowMs: number;
 
   /** Whether Redis client is in cluster mode (affects pipeline usage) */
   private isCluster: boolean;
@@ -1536,6 +1602,7 @@ export class RedisJobStore implements IJobStoreV2 {
 
   constructor(redis: Redis | Cluster, options?: RedisJobStoreOptions) {
     this.redis = instrumentIORedisClient(redis, RedisUseCases.GENERATION_STREAM);
+    this.coalesceWindowMs = resolveCoalesceWindowMs();
     this.ttl = {
       completed: options?.completedTtl ?? DEFAULT_TTL.completed,
       running: options?.runningTtl ?? DEFAULT_TTL.running,
@@ -2781,6 +2848,18 @@ export class RedisJobStore implements IJobStoreV2 {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
+    /** Shutdown terminals flushed per stream already; whatever remains did not
+     * commit, and resolving false lets the owning fence continuations settle. */
+    for (const [streamId, pending] of this.pendingAppends) {
+      this.pendingAppends.delete(streamId);
+      if (pending.timer != null) {
+        clearTimeout(pending.timer);
+        pending.timer = null;
+      }
+      for (const settler of pending.settlers) {
+        settler.resolve(false);
+      }
+    }
     // Clear local caches
     this.localGraphCache.clear();
     this.localContentParts.clear();
@@ -3528,7 +3607,17 @@ export class RedisJobStore implements IJobStoreV2 {
     event: unknown,
     expectedCreatedAt?: number,
     deliveredSteer?: SteerQueueItem,
+    options?: { coalesce?: boolean },
   ): Promise<boolean> {
+    if (options?.coalesce === true && deliveredSteer == null && this.coalesceWindowMs > 0) {
+      return this.enqueueCoalescedAppend(streamId, event, expectedCreatedAt);
+    }
+    /** The chunk log is replayed in XADD order, so a per-event append (durable
+     * control events, steer receipts) is a barrier: pending coalesced deltas
+     * must be issued first. Same connection, so issue order is land order. */
+    if (this.pendingAppends.has(streamId)) {
+      void this.flushCoalescedAppends(streamId);
+    }
     const key = KEYS.chunks(streamId);
     const jobKey = KEYS.job(streamId);
     // XADD + derive-and-extend-only EXPIRE in a single atomic eval. Refreshing the TTL on
@@ -3564,9 +3653,104 @@ export class RedisJobStore implements IJobStoreV2 {
   }
 
   /**
+   * Buffer a coalescable durable append for the current window. The whole batch
+   * settles together: `true` on commit, `false` under the generation/status
+   * fence, and a rejection on operational failure — mirroring the per-event
+   * appendChunk contract each caller's fence continuation already handles.
+   */
+  private enqueueCoalescedAppend(
+    streamId: string,
+    event: unknown,
+    expectedCreatedAt?: number,
+  ): Promise<boolean> {
+    let pending = this.pendingAppends.get(streamId);
+    if (pending && pending.expectedCreatedAt !== expectedCreatedAt) {
+      void this.flushCoalescedAppends(streamId);
+      pending = undefined;
+    }
+    if (!pending) {
+      pending = { expectedCreatedAt, events: [], settlers: [], bytes: 0, timer: null };
+      this.pendingAppends.set(streamId, pending);
+    }
+
+    const batch = pending;
+    const encoded = JSON.stringify(event);
+    batch.events.push(encoded);
+    batch.bytes += encoded.length;
+    const settled = new Promise<boolean>((resolve, reject) => {
+      batch.settlers.push({ resolve, reject });
+    });
+
+    if (batch.events.length >= MAX_COALESCED_EVENTS || batch.bytes >= MAX_COALESCED_BYTES) {
+      void this.flushCoalescedAppends(streamId);
+    } else if (batch.timer == null) {
+      batch.timer = setTimeout(() => {
+        void this.flushCoalescedAppends(streamId);
+      }, this.coalesceWindowMs);
+    }
+    return settled;
+  }
+
+  private flushCoalescedAppends(streamId: string): Promise<void> {
+    const pending = this.pendingAppends.get(streamId);
+    if (!pending) {
+      return Promise.resolve();
+    }
+    this.pendingAppends.delete(streamId);
+    if (pending.timer != null) {
+      clearTimeout(pending.timer);
+      pending.timer = null;
+    }
+
+    const { expectedCreatedAt, events, settlers } = pending;
+    return this.redis
+      .eval(
+        CHUNK_APPEND_BATCH_LUA,
+        8,
+        KEYS.chunks(streamId),
+        KEYS.job(streamId),
+        KEYS.steerReceipts(streamId),
+        KEYS.steerReceiptOrder(streamId),
+        KEYS.claimedSteers(streamId),
+        KEYS.steers(streamId),
+        KEYS.parkedSteers(streamId),
+        KEYS.generationEpoch(streamId),
+        String(this.runningStorageTtlSeconds()),
+        expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+        String(Date.now()),
+        String(this.parkedRecoveryTtlSeconds()),
+        String(GENERATION_EPOCH_GRACE_TTL_S),
+        ...events,
+      )
+      .then(
+        (appended) => {
+          const committed = appended === 1;
+          for (const settler of settlers) {
+            settler.resolve(committed);
+          }
+        },
+        (err) => {
+          for (const settler of settlers) {
+            settler.reject(err);
+          }
+        },
+      );
+  }
+
+  /** Persist a stream's pending coalesced appends now (pre-transition barrier). */
+  async flushPendingAppends(streamId: string): Promise<void> {
+    await this.flushCoalescedAppends(streamId);
+  }
+
+  /**
    * Get all chunks from Redis Stream.
    */
   private async getChunks(streamId: string, expectedCreatedAt?: number): Promise<unknown[]> {
+    /** A same-replica snapshot read must observe the appends this process has
+     * already accepted, or a resume during an active window reconstructs
+     * without the buffered tail. Cross-replica readers keep today's contract:
+     * the log may trail live emission by up to one window. */
+    await this.flushCoalescedAppends(streamId);
     const rawEntries =
       expectedCreatedAt == null
         ? await this.redis.xrange(KEYS.chunks(streamId), '-', '+')

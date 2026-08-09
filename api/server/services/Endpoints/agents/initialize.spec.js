@@ -7,6 +7,7 @@ const {
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_GRAPH_NODES,
   Constants,
+  ErrorTypes,
 } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -58,6 +59,8 @@ const mockLoadToolsForExecution = jest.fn();
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn(),
   loadToolsForExecution: (...args) => mockLoadToolsForExecution(...args),
+  isFatalAgentInitializationError: (error) =>
+    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
 }));
 
 jest.mock('~/server/controllers/ModelController', () => ({
@@ -82,6 +85,7 @@ jest.mock('~/cache', () => ({
 
 const { initializeClient } = require('./initialize');
 const { getSkillDbMethods, getSkillToolDeps } = require('./skillDeps');
+const { loadAgentTools } = require('~/server/services/ToolService');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logger } = require('@librechat/data-schemas');
 const { User, AclEntry } = require('~/db/models');
@@ -197,6 +201,83 @@ describe('initializeClient — processAgent ACL gate', () => {
         jobCreatedAt: 1234,
       }),
     );
+  });
+
+  it('propagates an expected-MCP-tools failure from the runtime tool loader', async () => {
+    const toolError = Object.assign(new Error('Expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    loadAgentTools.mockRejectedValueOnce(toolError);
+    mockInitializeAgent.mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+      await loadTools({
+        req,
+        res,
+        tools: ['run_query_mcp_warehouse'],
+        model: agent.model,
+        agentId: agent.id,
+        provider: agent.provider,
+      });
+      return makePrimaryConfig([]);
+    });
+
+    await expect(
+      initializeClient({
+        req: makeReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toBe(toolError);
+  });
+
+  it('aborts the run when a handoff target resolves none of its expected MCP tools', async () => {
+    const target = await createAgent({
+      id: AUTHORIZED_ID,
+      name: 'Target Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['run_query_mcp_warehouse'],
+    });
+    await AclEntry.create({
+      principalType: PrincipalType.USER,
+      principalId: testUser._id,
+      principalModel: PrincipalModel.USER,
+      resourceType: ResourceType.AGENT,
+      resourceId: target._id,
+      permBits: PermissionBits.VIEW,
+      grantedBy: testUser._id,
+    });
+
+    const toolError = Object.assign(new Error('Target Agent expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    loadAgentTools.mockRejectedValueOnce(toolError);
+    mockInitializeAgent
+      .mockResolvedValueOnce(
+        makePrimaryConfig([{ from: PRIMARY_ID, to: AUTHORIZED_ID, edgeType: 'handoff' }]),
+      )
+      .mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+        await loadTools({
+          req,
+          res,
+          tools: agent.tools,
+          model: agent.model,
+          agentId: agent.id,
+          provider: agent.provider,
+        });
+      });
+
+    await expect(
+      initializeClient({
+        req: makeReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toBe(toolError);
   });
 
   it('should skip handoff agent and filter its edge when user lacks VIEW access', async () => {
@@ -587,6 +668,83 @@ describe('initializeClient — subagent loading', () => {
     await grantView(agent);
     return agent;
   };
+
+  it('aborts the run when a pure subagent resolves none of its expected MCP tools', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Data Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['run_query_mcp_warehouse'],
+    });
+    await grantView(subAgent);
+
+    const toolError = Object.assign(new Error('Subagent expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    loadAgentTools.mockRejectedValueOnce(toolError);
+    mockInitializeAgent
+      .mockResolvedValueOnce(
+        makePrimaryConfig({
+          subagents: { enabled: true, allowSelf: true, agent_ids: [SUBAGENT_ID] },
+        }),
+      )
+      .mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+        await loadTools({
+          req,
+          res,
+          tools: agent.tools,
+          model: agent.model,
+          agentId: agent.id,
+          provider: agent.provider,
+        });
+      });
+
+    await expect(
+      initializeClient({
+        req: makeSubagentReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toBe(toolError);
+  });
+
+  it('aborts the run when a pure subagent requires CodeAPI resource recovery', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Code Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['execute_code'],
+    });
+    await grantView(subAgent);
+
+    const resourceRecoveryError = Object.assign(new Error('resource recovery required'), {
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      status: 409,
+      statusCode: 409,
+    });
+    mockInitializeAgent
+      .mockResolvedValueOnce(
+        makePrimaryConfig({
+          subagents: { enabled: true, allowSelf: true, agent_ids: [SUBAGENT_ID] },
+        }),
+      )
+      .mockRejectedValueOnce(resourceRecoveryError);
+
+    await expect(
+      initializeClient({
+        req: makeSubagentReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toBe(resourceRecoveryError);
+  });
 
   it('loads a configured subagent, populates `subagentAgentConfigs`, and keeps it out of `agentConfigs`', async () => {
     const subAgent = await createAgent({

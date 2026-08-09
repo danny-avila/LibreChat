@@ -68,6 +68,7 @@ import { InMemoryEventTransport } from './implementations/InMemoryEventTransport
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
 import { emitChunkWithReceipt } from './internal/chunkPublication';
+import { resolveCoalesceWindowMs } from './internal/coalescing';
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
@@ -78,6 +79,12 @@ const APPROVAL_EXPIRED_ERROR = 'Approval expired before a decision was made';
 
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
+
+/** Un-awaited coalesced publications allowed per stream before the emitter
+ * awaits a receipt. Healthy settlement keeps outstanding counts in the single
+ * digits; this trips only when Redis stalls, bounding buffered batches and
+ * queued commands by pacing the producer instead of growing without limit. */
+const MAX_OUTSTANDING_COALESCED_RECEIPTS = 256;
 
 /** Bounded completed-request replay horizon. It exceeds the default 24-hour
  * approval window; if a custom/live job outlasts it, `resumeClaimedGeneration`
@@ -323,6 +330,19 @@ function omitAlreadyAppliedSteers(items: SteerQueueItem[], content: unknown[]): 
   return items.filter((item) => !appliedIds.has(item.steerId));
 }
 
+/**
+ * Streaming deltas eligible for windowed publish/append coalescing. High-volume,
+ * order-preserved by per-event sequences, and consumed for the generation fence
+ * only — unlike control events, nothing awaits their publication for correctness.
+ */
+function isCoalescableDeltaEvent(eventType: string | undefined): boolean {
+  return (
+    eventType === 'on_message_delta' ||
+    eventType === 'on_reasoning_delta' ||
+    eventType === 'on_run_step_delta'
+  );
+}
+
 function getReplayStepId(event: t.ServerSentEvent): unknown {
   if (!('event' in event) || !event.data || typeof event.data !== 'object') {
     return undefined;
@@ -556,6 +576,8 @@ interface RuntimeJobState {
   >;
   /** Prevents later events from overtaking the initial `created` metadata write and publish. */
   createdEventPublication?: Promise<void>;
+  /** Coalesced delta publications emitted but not yet settled by a window flush. */
+  outstandingCoalescedReceipts?: number;
   hasSubscriber: boolean;
   /** Advances whenever every local SSE subscriber for one attachment generation leaves. */
   attachmentGeneration: number;
@@ -639,6 +661,10 @@ class GenerationJobManagerClass {
 
   /** Whether we're using Redis stores */
   private _isRedis = false;
+
+  /** Whether streaming-delta publish/append coalescing is enabled (Redis only).
+   * Off (the default) preserves the awaited per-event emitChunk contract exactly. */
+  private _deltaCoalescingEnabled = false;
 
   /** Whether to cleanup event transport immediately on job completion */
   private _cleanupOnComplete = true;
@@ -743,6 +769,17 @@ class GenerationJobManagerClass {
     this._steering = new SteeringLifecycle(this.jobStore);
     this.eventTransport = services.eventTransport;
     this._isRedis = services.isRedis ?? false;
+    /** Coalescing needs BOTH configured services to actually batch: the flush
+     * capabilities are how implementations advertise it. A custom transport
+     * without them would silently lose the awaited per-event ordering contract
+     * (its receipts are un-awaited on the coalescable path), and a batching
+     * transport over a per-event store would let the durable log trail the
+     * sequence counter by a full window, breaking the resume frontier. */
+    this._deltaCoalescingEnabled =
+      this._isRedis &&
+      resolveCoalesceWindowMs() > 0 &&
+      typeof services.eventTransport.flushPendingChunks === 'function' &&
+      typeof services.jobStore.flushPendingAppends === 'function';
     this._cleanupOnComplete = services.cleanupOnComplete ?? true;
     this.shuttingDown = false;
     this.syncRunningJobMetrics();
@@ -3009,6 +3046,22 @@ class GenerationJobManagerClass {
    * a terminal client event before this succeeds: abort, pause, and completion
    * can all race on the same generation epoch.
    */
+  /**
+   * Drain both delta coalescers ahead of a terminal status CAS. Coalesced
+   * deltas still buffered for a stream must land under its live status:
+   * flushed after the CAS they fence against the generation's own completion,
+   * and the false receipts retire a healthy runtime and error-close its
+   * subscribers ahead of the terminal frame. Every terminal transition that
+   * can interrupt a live emitter (claim, abort, shutdown) must call this
+   * before its CAS; no-op (two Map lookups) when coalescing is off or idle.
+   */
+  private async flushCoalescedStreamBuffers(streamId: string): Promise<void> {
+    await Promise.all([
+      this.jobStore.flushPendingAppends?.(streamId),
+      this.eventTransport.flushPendingChunks?.(streamId),
+    ]);
+  }
+
   async claimTerminalJob(
     streamId: string,
     status: TerminalJobClaim['status'],
@@ -3073,6 +3126,7 @@ class GenerationJobManagerClass {
     const createdAt = jobData.createdAt;
     const runtime = observedRuntime?.createdAt === createdAt ? observedRuntime : undefined;
     const terminalError = status === 'error' ? (error ?? 'Generation failed') : undefined;
+    await this.flushCoalescedStreamBuffers(streamId);
     const completedAt = Date.now();
     const drainedSteers = await this.jobStore.transitionStatusAndDrainSteers(streamId, {
       from: sourceStatus,
@@ -3539,6 +3593,10 @@ class GenerationJobManagerClass {
     }
 
     const runtime = observedRuntime?.createdAt === jobData.createdAt ? observedRuntime : undefined;
+    /** Abort claims terminal state through its own CAS loop below (not
+     * claimTerminalJob), so it must drain the coalescers itself — and ahead of
+     * the content snapshot, so a chunk-log reconstruction sees the window tail. */
+    await this.flushCoalescedStreamBuffers(streamId);
     /** Snapshot before claiming terminal state. This is non-destructive: if a
      * same-epoch approval resume wins the later CAS, its content and steer
      * queue remain fully owned by that resumed run. */
@@ -5159,6 +5217,19 @@ class GenerationJobManagerClass {
       this.saveRunStepFromEvent(streamId, eventData as Record<string, unknown>, runtime.createdAt);
     }
 
+    /**
+     * One decision drives both durable-log and publish batching: the append and
+     * the sequence allocation for an event must stay tightly coupled in time, or
+     * the resume frontier (chunk-log snapshot → sequence-counter sync) misreads
+     * a window's tail as already-delivered or as duplicates.
+     */
+    const coalescableDelta =
+      this._deltaCoalescingEnabled &&
+      !runtime.startupTelemetry &&
+      options?.durable !== true &&
+      options?.deliveredSteer == null &&
+      isCoalescableDeltaEvent(eventType);
+
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
       // The SSE event structure is { event: string, data: unknown, ... }
@@ -5170,6 +5241,7 @@ class GenerationJobManagerClass {
           { event: eventType, data: eventData },
           runtime.createdAt,
           options?.deliveredSteer,
+          coalescableDelta ? { coalesce: true } : undefined,
         );
 
         if (options?.durable === true) {
@@ -5233,6 +5305,60 @@ class GenerationJobManagerClass {
     if (detached && !this._isRedis) {
       if (runtime.startupTelemetry) {
         this.recordStartupEvent(runtime, event);
+      }
+      return;
+    }
+
+    /**
+     * Streaming deltas dominate publication volume, and their receipt is consumed
+     * only for the generation fence (`false` retires the runtime) — never awaited
+     * for content correctness. Marking them coalescable lets the Redis transport
+     * batch a window of them into one sequenced frame, and NOT awaiting here takes
+     * the per-delta publish round trip off the provider-stream consumption path.
+     * The fence continuation mirrors the fire-and-forget appendChunk fence above.
+     * Fenced emissions (durable, steer receipts, created) and telemetry-observed
+     * runs stay on the awaited per-event path below.
+     */
+    if (coalescableDelta) {
+      const publication = emitChunkWithReceipt(
+        this.eventTransport,
+        streamId,
+        event,
+        runtime.createdAt,
+        { coalesce: true },
+      );
+      if (buffered) {
+        runtime.earlyEventSequencePromises.push(
+          publication.then(
+            (published) => (typeof published === 'number' ? published : undefined),
+            () => undefined,
+          ),
+        );
+      }
+      runtime.outstandingCoalescedReceipts = (runtime.outstandingCoalescedReceipts ?? 0) + 1;
+      void publication.then(
+        (published) => {
+          runtime.outstandingCoalescedReceipts = (runtime.outstandingCoalescedReceipts ?? 1) - 1;
+          if (published === false) {
+            this.retireRuntimeAfterDurableFence(streamId, runtime);
+          }
+        },
+        (err) => {
+          runtime.outstandingCoalescedReceipts = (runtime.outstandingCoalescedReceipts ?? 1) - 1;
+          logger.error(`[GenerationJobManager] Failed to publish coalesced chunk:`, err);
+        },
+      );
+      /**
+       * Backpressure only under distress. Healthy settlement is one window plus
+       * a round trip (~30ms), so outstanding receipts sit in the single digits
+       * even at hundreds of deltas per second and this await never runs. If
+       * Redis stalls, the un-awaited path would otherwise accumulate batches,
+       * resolver closures, and queued commands without bound — awaiting one
+       * receipt paces the producer to Redis exactly like the flag-off path,
+       * with memory capped near the threshold instead of one delta.
+       */
+      if (runtime.outstandingCoalescedReceipts >= MAX_OUTSTANDING_COALESCED_RECEIPTS) {
+        await publication.catch(() => undefined);
       }
       return;
     }
@@ -5318,6 +5444,16 @@ class GenerationJobManagerClass {
    * runtime; a newer local successor may already occupy the same stream id. */
   private retireRuntimeAfterDurableFence(streamId: string, runtime: RuntimeJobState): void {
     if (this.runtimeState.get(streamId) !== runtime) {
+      return;
+    }
+    /** A runtime whose stop signal already landed (cross-replica abort,
+     * replacement handshake) observes this fence as a consequence of its own
+     * termination — most often a coalesced window draining after the abort
+     * CAS. Those flows own terminal delivery and cleanup; the forced teardown
+     * below would error-close local subscribers in a race with the FINAL
+     * frame they are about to receive. It remains the backstop for the
+     * lost-signal case, which is exactly a fence on a NOT-yet-aborted owner. */
+    if (runtime.abortController.signal.aborted) {
       return;
     }
     runtime.startupTelemetry?.end('replaced');
@@ -6655,6 +6791,9 @@ class GenerationJobManagerClass {
           runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
           await this.persistSubscriberCleanup(streamId, runtime);
         }
+        /** Shutdown interrupts live emitters, so their coalesced window must
+         * drain before the terminal CAS — same rule as claim/abort. */
+        await this.flushCoalescedStreamBuffers(streamId);
         const finalized = await this.jobStore.transitionStatus(streamId, {
           from: 'running',
           to: 'error',

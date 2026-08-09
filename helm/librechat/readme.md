@@ -7,7 +7,7 @@ In this Chart, LibreChat will only work with environment Variables. You can Spec
 ## Setup
 
 1. Generate Variables
-Generate `CREDS_KEY`, `JWT_SECRET`, `JWT_REFRESH_SECRET`  and `MEILI_MASTER_KEY`  using `openssl rand -hex 32` and `CREDS_IV` using openssl rand -hex 16.
+Generate unique values for `CREDS_KEY`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `MEILI_MASTER_KEY` using `openssl rand -hex 32`, and `CREDS_IV` using `openssl rand -hex 16`. Store them in the existing Kubernetes Secret so every replica uses the same values.
 place them in a secret like this (If you want to change the secret name, remember to change it in your helm values):
 ```yaml
 apiVersion: v1
@@ -18,6 +18,7 @@ metadata:
 type: Opaque
 stringData:
   CREDS_KEY: <generated value>
+  CREDS_IV: <generated value>
   JWT_SECRET: <generated value>
   JWT_REFRESH_SECRET: <generated value>
   MEILI_MASTER_KEY: <generated value>

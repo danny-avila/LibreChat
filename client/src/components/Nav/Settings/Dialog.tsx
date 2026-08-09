@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { X, ChevronLeft } from 'lucide-react';
-import { useMediaQuery } from '@librechat/client';
+import { Button, useMediaQuery } from '@librechat/client';
 import { SettingsTabValues } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import type { TDialogProps } from '~/common';
@@ -63,7 +63,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
           <div className="fixed inset-0 flex w-screen items-center justify-center p-4">
             <DialogPanel
               className={cn(
-                'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-background shadow-2xl',
+                'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-surface-primary shadow-2xl',
                 'md:h-[85vh] md:w-[900px]',
               )}
             >
@@ -88,14 +88,15 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                     {localize('com_nav_settings')}
                   </h2>
                 )}
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => onOpenChange(false)}
-                  className="rounded-lg p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-border-xheavy"
+                  aria-label={localize('com_ui_close_settings')}
+                  className="h-auto w-auto rounded-lg p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-border-xheavy"
                 >
                   <X className="h-5 w-5" aria-hidden="true" />
-                  <span className="sr-only">{localize('com_ui_close_settings')}</span>
-                </button>
+                </Button>
               </DialogTitle>
               <Tabs.Root
                 value={effectiveTab}

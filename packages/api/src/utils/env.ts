@@ -10,6 +10,21 @@ import {
 } from './oidc';
 
 /**
+ * Provenance marker for MCP servers contributed by an Agent Plugins package.
+ * Applied by the plugin loader, never by a plugin-authored `mcp.json` — that
+ * schema is closed, so a package declaring this field is rejected outright.
+ */
+export const MCP_PLUGIN_SOURCE = 'plugin';
+
+/**
+ * True when a server configuration came from an Agent Plugins package, and so
+ * must reach the transport with every placeholder it declared left literal.
+ */
+export function isPluginSourced(config?: { source?: string } | null): boolean {
+  return config?.source === MCP_PLUGIN_SOURCE;
+}
+
+/**
  * List of allowed user fields that can be used in MCP environment variables.
  * These are non-sensitive string/boolean fields from the IUser interface.
  */
@@ -331,7 +346,7 @@ function processAdminValue(originalValue: string, dbSourced: boolean): string {
  * @returns - The processed object with environment variables replaced
  */
 export function processMCPEnv(params: {
-  options: Readonly<MCPOptions> & { dbId?: string };
+  options: Readonly<MCPOptions> & { dbId?: string; source?: string };
   user?: Partial<IUser>;
   customUserVars?: Record<string, string>;
   body?: RequestBody;
@@ -342,6 +357,19 @@ export function processMCPEnv(params: {
 
   if (options === null || options === undefined) {
     return options;
+  }
+
+  /**
+   * SECURITY INVARIANT — Agent Plugins configurations are returned verbatim.
+   * Plugin packages are portable third-party data, and the Agent Plugins
+   * specification (§7.2.1, §9.2) forbids resolving any placeholder a plugin
+   * declares. Without this gate a plugin could declare a header such as
+   * `Authorization: Bearer ${OPENAI_API_KEY}` and receive host credentials at
+   * its own origin. The check reads the config rather than a caller-supplied
+   * flag so no future call site can reintroduce the leak by omitting it.
+   */
+  if (isPluginSourced(options)) {
+    return structuredClone(options) as MCPOptions;
   }
 
   /** Derive dbSourced from explicit param OR from dbId on the options (failsafe for callers that forget the flag) */

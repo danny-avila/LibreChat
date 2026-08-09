@@ -40,6 +40,7 @@ const {
   loadAgentTools,
   loadToolsForExecution,
   getAccessibleMcpServerNames,
+  isFatalAgentInitializationError,
 } = require('~/server/services/ToolService');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const {
@@ -108,6 +109,9 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
         accessibleMcpServerNames,
       });
     } catch (error) {
+      if (isFatalAgentInitializationError(error)) {
+        throw error;
+      }
       logger.error('Error loading tools for agent ' + agentId, error);
     }
   };
@@ -800,6 +804,9 @@ const initializeClient = async ({
       agentToolContexts.set(agentId, buildAgentToolContext({ agent, config }));
       return config;
     } catch (err) {
+      if (isFatalAgentInitializationError(err)) {
+        throw err;
+      }
       logger.error(`[processAgent] Error processing subagent ${agentId}:`, err);
       skippedAgentIds.add(agentId);
       return null;

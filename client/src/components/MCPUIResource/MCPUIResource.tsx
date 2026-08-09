@@ -77,7 +77,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
 
   if (!uiResource) {
     return (
-      <span className="inline-flex items-center rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">
+      <span className="inline-flex items-center rounded bg-surface-tertiary px-2 py-1 text-xs font-medium text-text-secondary">
         {localize('com_ui_ui_resource_not_found', {
           0: resourceId ?? '',
         })}
@@ -142,7 +142,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   } catch (error) {
     logger.error('[MCPUIResource]', error);
     return (
-      <span className="inline-flex items-center rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-600">
+      <span className="inline-flex items-center rounded bg-status-error-subtle px-2 py-1 text-xs font-medium text-status-error">
         {localize('com_ui_ui_resource_error', { 0: uiResource.name || resourceId })}
       </span>
     );

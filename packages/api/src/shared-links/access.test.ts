@@ -75,6 +75,9 @@ function createRes(): Response & { _status: number; _json: unknown } {
       res._json = body;
       return res;
     },
+    end() {
+      return res;
+    },
   };
   return res as unknown as Response & { _status: number; _json: unknown };
 }
@@ -248,6 +251,7 @@ describe('canAccessSharedLink', () => {
       await canAccessSharedLink(req, res, next as unknown as NextFunction);
 
       expect(res._status).toBe(403);
+      expect(res._json).toBeNull();
       expect(next).not.toHaveBeenCalled();
     });
 
