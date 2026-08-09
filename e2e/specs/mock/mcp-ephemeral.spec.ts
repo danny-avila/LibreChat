@@ -20,7 +20,7 @@ const MCP_SERVER_TITLE = 'E2E Memory';
 const uniqueText = (prefix: string) => `${prefix} ${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
 const mcpBadge = (page: Page) =>
-  page.getByTestId('composer-active-mcp').filter({ hasText: MCP_SERVER_TITLE });
+  page.getByRole('listitem', { name: MCP_SERVER_TITLE, exact: true });
 
 /** Select the MCP server from the composer palette. */
 async function selectEphemeralMCP(page: Page) {
