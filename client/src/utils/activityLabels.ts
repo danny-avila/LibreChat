@@ -174,12 +174,14 @@ export function applyActivityLabelPart(message: TMessage, event: TActivityLabelE
   }
   const content = Array.isArray(message.content) ? message.content : [];
   const existing = getActivityLabelPart(content[index] as TMessageContentParts | undefined);
+  const incoming = part as ActivityLabelPart;
   if (
     existing != null &&
     existing[ContentTypes.ACTIVITY_LABEL] === part[ContentTypes.ACTIVITY_LABEL] &&
     existing.pending === part.pending &&
-    existing.activity_label_type ===
-      (part as TActivityLabelEvent['part'] & { activity_label_type?: 'phase' }).activity_label_type
+    existing.activity_label_type === incoming.activity_label_type &&
+    existing.activity_start_index === incoming.activity_start_index &&
+    existing.activity_count === incoming.activity_count
   ) {
     return message;
   }

@@ -36,6 +36,25 @@ describe('applyActivityLabelPart', () => {
     expect(updated).toBe(message);
   });
 
+  it('applies a bounds-only update to a completed phase', () => {
+    const existing = labelPart({ activity_label: 'Fixed the session', pending: false });
+    Object.assign(existing, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_count: 2,
+    });
+    const incoming = { ...existing, activity_start_index: 1 };
+    const message = buildMessage([existing as never]);
+
+    const updated = applyActivityLabelPart(message, { index: 0, part: incoming });
+
+    expect(updated).not.toBe(message);
+    expect((updated.content as unknown[])[0]).toMatchObject({
+      activity_start_index: 1,
+      activity_count: 2,
+    });
+  });
+
   it('never lets a stale pending placeholder overwrite a resolved label', () => {
     const resolved = labelPart({
       activity_label: 'Searched runtime release notes',

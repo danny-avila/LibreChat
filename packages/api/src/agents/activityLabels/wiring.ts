@@ -133,9 +133,9 @@ interface ActivityLabelGapEvent {
  * label publish is fire-and-forget and the sync payload carries only the
  * snapshot, so a label claimed or resolved in that window would otherwise
  * never reach the reconnecting client. Compares by index: a fresh label part
- * whose text or pending state differs from the snapshot's (or that has no
- * snapshot counterpart) is re-emitted. Idempotent - the client applier
- * ignores duplicates and refuses stale pending placeholders.
+ * whose text, pending state, or phase bounds differ from the snapshot's (or
+ * that has no snapshot counterpart) is re-emitted. Idempotent - the client
+ * applier ignores duplicates and refuses stale pending placeholders.
  */
 export function synthesizeActivityLabelGapEvents(
   snapshotContent: ReadonlyArray<LooseContentPart | null | undefined>,
@@ -153,6 +153,8 @@ export function synthesizeActivityLabelGapEvents(
       snapshot?.type === ContentTypes.ACTIVITY_LABEL &&
       snapshot[ContentTypes.ACTIVITY_LABEL] === part[ContentTypes.ACTIVITY_LABEL] &&
       snapshot.activity_label_type === part.activity_label_type &&
+      snapshot.activity_start_index === part.activity_start_index &&
+      snapshot.activity_count === part.activity_count &&
       snapshot.pending === part.pending;
     if (isSameLabel) {
       continue;
