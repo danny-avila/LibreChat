@@ -865,6 +865,46 @@ describe('Share Methods', () => {
       }
     });
 
+    test('should serve nothing when the target is cut off from the roots', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const rootId = `msg_${nanoid()}`;
+      const orphanId = `msg_${nanoid()}`;
+
+      await Conversation.create({ conversationId, title: 'Orphaned', user: userId });
+      const root = await Message.create({
+        messageId: rootId,
+        conversationId,
+        user: userId,
+        text: 'Private root turn',
+        isCreatedByUser: true,
+        parentMessageId: Constants.NO_PARENT,
+      });
+      // An import or a partial delete can leave a branch whose parent is gone.
+      const orphan = await Message.create({
+        messageId: orphanId,
+        conversationId,
+        user: userId,
+        text: 'Orphan branch',
+        isCreatedByUser: false,
+        parentMessageId: `msg_${nanoid()}`,
+      });
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [root._id, orphan._id],
+        targetMessageId: orphanId,
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+
+      // Failing open here would publish the whole conversation instead of the branch.
+      expect(result?.messages).toEqual([]);
+    });
+
     test('should exclude expired shares', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 
@@ -1548,6 +1588,80 @@ describe('Share Methods', () => {
       expect(result.targetMessageId).toBe(followUpId);
       expect(texts).toContain('Regenerated answer');
       expect(texts).toContain('Turn added after the regeneration');
+    });
+
+    test('should follow a regeneration further up the shared branch', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const questionId = `msg_${nanoid()}`;
+      const answerId = `msg_${nanoid()}`;
+      const sharedTailId = `msg_${nanoid()}`;
+      const regeneratedAnswerId = `msg_${nanoid()}`;
+      const newTailId = `msg_${nanoid()}`;
+
+      await Conversation.create({ conversationId, title: 'Deep regeneration', user: userId });
+      const question = await Message.create({
+        messageId: questionId,
+        conversationId,
+        user: userId,
+        text: 'Question',
+        isCreatedByUser: true,
+        parentMessageId: Constants.NO_PARENT,
+      });
+      const answer = await Message.create({
+        messageId: answerId,
+        conversationId,
+        user: userId,
+        text: 'Answer',
+        isCreatedByUser: false,
+        parentMessageId: questionId,
+        createdAt: new Date(Date.now() - 120_000),
+      });
+      const sharedTail = await Message.create({
+        messageId: sharedTailId,
+        conversationId,
+        user: userId,
+        text: 'Shared tail',
+        isCreatedByUser: true,
+        parentMessageId: answerId,
+        createdAt: new Date(Date.now() - 90_000),
+      });
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [question._id, answer._id, sharedTail._id],
+        targetMessageId: sharedTailId,
+      });
+
+      // The regeneration replaces the answer above the shared tail, so nothing below
+      // the stored target moves: the conversation continues under the replacement.
+      await Message.create({
+        messageId: regeneratedAnswerId,
+        conversationId,
+        user: userId,
+        text: 'Regenerated answer',
+        isCreatedByUser: false,
+        parentMessageId: questionId,
+        createdAt: new Date(),
+      });
+      await Message.create({
+        messageId: newTailId,
+        conversationId,
+        user: userId,
+        text: 'Turn on the replacement branch',
+        isCreatedByUser: true,
+        parentMessageId: regeneratedAnswerId,
+      });
+
+      const result = await shareMethods.updateSharedLink(userId, shareId);
+      const sharedMessages = await shareMethods.getSharedMessages(result.shareId);
+      const texts = sharedMessages?.messages.map((message) => message.text) ?? [];
+
+      expect(result.targetMessageId).toBe(newTailId);
+      expect(texts).toContain('Turn on the replacement branch');
     });
 
     test('should not allow user to update shared link they do not own', async () => {

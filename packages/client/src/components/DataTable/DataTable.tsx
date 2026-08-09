@@ -361,10 +361,15 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
   /* A new search or sort replaces the rows with a fresh first page, which can
      land on the same count the auto-fill guard already recorded. Clear it so a
-     still-unscrollable page keeps paging. */
+     still-unscrollable page keeps paging, and send the viewport back to the top:
+     the query keeps the previous rows while it refetches, so the container would
+     otherwise stay parked mid-list over an unrelated result set. */
   useEffect(() => {
     autoFillRowCountRef.current = -1;
     setAutoFillAttempt(0);
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollTop = 0;
+    }
   }, [filterValue, sortKey]);
 
   useEffect(() => {

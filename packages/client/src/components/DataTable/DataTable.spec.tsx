@@ -966,6 +966,33 @@ describe('DataTable', () => {
         expect(fetchNextPage).toHaveBeenCalledTimes(2);
       });
 
+      it('sends the viewport back to the top when the sort changes', () => {
+        stubLayout({ clientHeight: 600, scrollHeight: 1200 });
+        const props = {
+          columns: createTestColumns(),
+          data: createTestData(30),
+          onSortingChange: jest.fn(),
+        };
+
+        const { rerender, container } = render(
+          <TestWrapper>
+            <DataTable {...props} sorting={[{ id: 'name', desc: false }]} />
+          </TestWrapper>,
+        );
+
+        const scrollArea = container.querySelector('[aria-label="com_ui_data_table_scroll_area"]');
+        expect(scrollArea).not.toBeNull();
+        (scrollArea as HTMLElement).scrollTop = 400;
+
+        rerender(
+          <TestWrapper>
+            <DataTable {...props} sorting={[{ id: 'name', desc: true }]} />
+          </TestWrapper>,
+        );
+
+        expect((scrollArea as HTMLElement).scrollTop).toBe(0);
+      });
+
       it('stops after a page that adds no rows', () => {
         stubLayout({ clientHeight: 600, scrollHeight: 300 });
         const fetchNextPage = jest.fn().mockResolvedValue(undefined);

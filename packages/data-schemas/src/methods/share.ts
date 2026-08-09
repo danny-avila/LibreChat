@@ -303,6 +303,36 @@ function encodeSharedLinksCursor(link: t.ISharedLink, sortBy: string): string {
   return Buffer.from(JSON.stringify(composite)).toString('base64');
 }
 
+/**
+ * Commit a lazy snapshot backfill only while the link still has none. An owner can
+ * republish the same shareId while a viewer's first read is in flight, and an
+ * unconditional write would restore the snapshot that republish just replaced,
+ * re-authorizing the stable URL of a file they removed. The stored snapshot wins any
+ * race; `timestamps: false` keeps a migration from looking like a publication, since
+ * `updatedAt` is the revision a viewer's fork request is validated against.
+ */
+async function persistBackfilledSnapshots(
+  SharedLink: Model<t.ISharedLink>,
+  filter: FilterQuery<t.ISharedLink>,
+  fileSnapshots: t.SharedFileSnapshot[],
+): Promise<t.SharedFileSnapshot[]> {
+  const result = await SharedLink.updateOne(
+    { ...filter, fileSnapshots: { $exists: false }, snapshotFiles: { $ne: false } },
+    { $set: { fileSnapshots } },
+    { timestamps: false },
+  );
+
+  if (result.modifiedCount > 0) {
+    return fileSnapshots;
+  }
+
+  const current = await SharedLink.findOne(filter).select('fileSnapshots snapshotFiles').lean();
+  if (!current || current.snapshotFiles === false) {
+    return [];
+  }
+  return current.fileSnapshots ?? [];
+}
+
 /** Share-scoped file route that serves a snapshotted file independent of owner ACL. */
 function shareFileRoute(shareId: string, fileId: string): string {
   return `/api/share/${shareId}/files/${encodeURIComponent(fileId)}`;
@@ -545,6 +575,24 @@ function advanceTargetToBranchTail(messages: t.IMessage[], targetMessageId: stri
     return newestOf(continued);
   };
 
+  /** The regenerated message is not always the stored target: regenerating an answer
+   * further up leaves the whole stored branch childless while the conversation carries
+   * on under the replacement. Climb until a level offers one, so the walk resumes at
+   * the closest point where the branch actually diverged. */
+  const findBranchReplacement = (): t.IMessage | undefined => {
+    const climbed = new Set<string>();
+    let node: string | undefined = targetMessageId;
+    while (node && !climbed.has(node)) {
+      climbed.add(node);
+      const replacement = replacementFor(node);
+      if (replacement) {
+        return replacement;
+      }
+      node = messagesById.get(node)?.parentMessageId ?? undefined;
+    }
+    return undefined;
+  };
+
   let current = targetMessageId;
   const visited = new Set([current]);
   for (;;) {
@@ -553,7 +601,7 @@ function advanceTargetToBranchTail(messages: t.IMessage[], targetMessageId: stri
     if (children?.length) {
       next = newestOf(children);
     } else if (current === targetMessageId) {
-      next = replacementFor(current);
+      next = findBranchReplacement();
     }
 
     if (!next?.messageId || visited.has(next.messageId)) {
@@ -600,6 +648,7 @@ function getMessagesUpToTarget(messages: t.IMessage[], targetMessageId: string):
   const rootMessages = parentToChildrenMap.get(Constants.NO_PARENT) || [];
   let currentLevel = rootMessages.length > 0 ? [...rootMessages] : [targetMessage];
   const results = new Set<t.IMessage>(currentLevel);
+  let targetFound = currentLevel.some((msg) => msg.messageId === targetMessageId);
 
   // Check if the target message is at the root level
   if (
@@ -610,7 +659,6 @@ function getMessagesUpToTarget(messages: t.IMessage[], targetMessageId: string):
   }
 
   // Iterate level by level until the target is found
-  let targetFound = false;
   while (!targetFound && currentLevel.length > 0) {
     const nextLevel: t.IMessage[] = [];
     for (const node of currentLevel) {
@@ -631,6 +679,13 @@ function getMessagesUpToTarget(messages: t.IMessage[], targetMessageId: string):
       }
     }
     currentLevel = nextLevel;
+  }
+
+  // Fail closed: an orphaned target (an import or a partial delete broke its parent
+  // chain) is never reached from the roots, and returning the levels accumulated on
+  // the way would publish the whole conversation instead of the selected branch.
+  if (!targetFound) {
+    return [];
   }
 
   return Array.from(results);
@@ -738,14 +793,10 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const includeFiles = adminEnabled && perLinkEnabled;
       let fileSnapshots = share.fileSnapshots;
       if (includeFiles && fileSnapshots === undefined && share._id) {
-        fileSnapshots = await buildFileSnapshots(mongoose, messagesToShare, share.user);
-        // `timestamps: false`: this lazy migration is not a republish. `updatedAt` is the
-        // revision a viewer's fork request is validated against, so bumping it here would
-        // reject the Continue click that followed this very read.
-        await SharedLink.updateOne(
+        fileSnapshots = await persistBackfilledSnapshots(
+          SharedLink,
           { _id: share._id },
-          { $set: { fileSnapshots } },
-          { timestamps: false },
+          await buildFileSnapshots(mongoose, messagesToShare, share.user),
         );
       }
       const snapshotIds = includeFiles
@@ -1300,10 +1351,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         messages = getMessagesUpToTarget(messages, share.targetMessageId);
       }
 
-      const fileSnapshots = await buildFileSnapshots(mongoose, messages, share.user);
-      // Backfilling a legacy share is a migration, not a publication: leave `updatedAt`
-      // alone so it keeps identifying the revision viewers are holding.
-      await SharedLink.updateOne({ shareId }, { $set: { fileSnapshots } }, { timestamps: false });
+      const fileSnapshots = await persistBackfilledSnapshots(
+        SharedLink,
+        { shareId },
+        await buildFileSnapshots(mongoose, messages, share.user),
+      );
 
       if (fileId) {
         return fileSnapshots.find((snapshot) => snapshot.file_id === fileId) ?? null;
