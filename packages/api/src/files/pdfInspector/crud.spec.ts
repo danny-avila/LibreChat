@@ -301,6 +301,40 @@ describe('pdf-inspector local parser', () => {
     }
   });
 
+  /**
+   * The engine rejects a poor embedded OCR layer outright, so the page arrives with no
+   * markdown and recovery supplies its raw text. That text drops the page out of the
+   * omission report, and without the flag the upload reads as complete and keeps a
+   * garbled layer a configured OCR service could have replaced.
+   */
+  test('keeps the scan signal for a flagged page whose text came from recovery', async () => {
+    mockPdfjs.pageText = { 2: 'm u s h y r e c o v e r y' };
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => ({
+            pages: [
+              { page: 0, markdown: '# Cover' },
+              { page: 1, markdown: '' },
+            ],
+            scannedPages: [2],
+          }),
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+        const result = await uploadIsolated(context(pdfFile('sample.pdf')));
+
+        expect(result.text).toContain('m u s h y r e c o v e r y');
+        /** Recovered text means the page is no longer omitted, which is why the flag matters. */
+        expect(result.pagesNeedingOcr).toBeUndefined();
+        expect(result.mayEmbedMedia).toBe(true);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
   test('reports nothing extra when the engine flags only pages it could not read', async () => {
     /* Those pages are already accounted for empirically, so repeating them as a media
      * signal would escalate every ordinary scanned document twice. */
