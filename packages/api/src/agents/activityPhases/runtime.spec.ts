@@ -219,6 +219,82 @@ describe('createActivityPhaseWiring', () => {
     expect(parts.some((part) => part.activity_label_type === 'phase')).toBe(false);
   });
 
+  it('anchors parallel standalone reasoning to each lane content part', async () => {
+    const parts: LooseContentPart[] = [];
+    const stepIndexes = new Map([
+      ['reasoning-a', 0],
+      ['reasoning-b', 1],
+    ]);
+    const generatePhase = jest.fn(async () => ({ label: 'Reconciled both agent analyses' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => stepIndexes.get(stepId),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      [GraphEvents.ON_REASONING_DELTA]: { handle: jest.fn() },
+    });
+    const emitReasoning = (id: string, agentId: string, index: number, text: string) => {
+      handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id,
+          index,
+          agentId,
+          groupId: agentId,
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'think' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+      parts[index] = { type: ContentTypes.THINK, think: text, agentId, groupId: index + 1 };
+      handlers?.[GraphEvents.ON_REASONING_DELTA]?.handle(
+        GraphEvents.ON_REASONING_DELTA,
+        {
+          id,
+          delta: { content: { type: ContentTypes.THINK, think: text } },
+        },
+        undefined,
+        undefined,
+      );
+    };
+    emitReasoning('reasoning-a', 'agent-a', 0, 'Checked the first path.');
+    emitReasoning('reasoning-b', 'agent-b', 1, 'Checked the second path.');
+
+    expect(wiring.snapshot().pendingReasoning).toEqual([
+      expect.objectContaining({ key: 'agent-a', startIndex: 0 }),
+      expect.objectContaining({ key: 'agent-b', startIndex: 1 }),
+    ]);
+
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'root-final',
+        index: 2,
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+
+    await flushDetached();
+    expect(generatePhase).toHaveBeenCalledWith(
+      expect.objectContaining({ activities: expect.arrayContaining([expect.any(Object)]) }),
+    );
+    expect(generatePhase.mock.calls[0][0].activities).toHaveLength(2);
+    expect(parts[2]).toMatchObject({ activity_start_index: 0, activity_count: 2 });
+  });
+
   it('restores bounded activity state after a HITL pause', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TEXT, text: 'Hidden intermediate output' },
@@ -329,6 +405,46 @@ describe('createActivityPhaseWiring', () => {
     handler?.handle(
       GraphEvents.ON_RUN_STEP,
       { ...finalStep, id: 'root-final', groupId: undefined },
+      undefined,
+      undefined,
+    );
+    await flushDetached();
+    expect(generatePhase).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps unphased parallel text inside the run-wide fallback phase', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Combined both agent outcomes' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } });
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    const handler = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+    })?.[GraphEvents.ON_RUN_STEP];
+    const textStep = {
+      id: 'lane-text',
+      groupId: 'lane-a',
+      stepDetails: {
+        type: StepTypes.MESSAGE_CREATION,
+        message_creation: { message_id: 'm', content_type: 'text' },
+      },
+    };
+    handler?.handle(GraphEvents.ON_RUN_STEP, textStep, undefined, undefined);
+    await flushDetached();
+    expect(generatePhase).not.toHaveBeenCalled();
+
+    handler?.handle(
+      GraphEvents.ON_RUN_STEP,
+      { ...textStep, id: 'root-text', groupId: undefined },
       undefined,
       undefined,
     );

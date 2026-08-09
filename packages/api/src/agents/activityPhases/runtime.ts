@@ -39,7 +39,12 @@ export interface ActivityPhaseSnapshot {
   agentIds: string[];
   activities: TrackedActivity[];
   assistantContext: string[];
-  pendingReasoning: Array<{ key: string; text: string; agentId?: string }>;
+  pendingReasoning: Array<{
+    key: string;
+    text: string;
+    agentId?: string;
+    startIndex?: number;
+  }>;
 }
 
 export interface GenerateActivityPhasePayload {
@@ -67,6 +72,7 @@ export interface ActivityPhaseHostDeps {
   abortSignal?: AbortSignal;
   initialSnapshot?: ActivityPhaseSnapshot;
   getContentParts: () => Array<LooseContentPart | null | undefined>;
+  getStepIndex?: (stepId: string) => number | undefined;
   bumpIndexOffset: () => void;
   emitLabelEvent: (index: number, part: LooseContentPart) => Promise<unknown>;
   trackPendingFill: (fillDone: Promise<void>) => void;
@@ -209,6 +215,25 @@ function findTrackedStart(
   return Math.min(activity.startIndex, Math.max(0, parts.length - 1));
 }
 
+function findReasoningStart(
+  parts: ReadonlyArray<LooseContentPart | null | undefined>,
+  text: string,
+  startIndex?: number,
+): number {
+  const needle = text.trim().slice(0, 80);
+  const matches = (part: LooseContentPart | null | undefined) =>
+    part?.type === ContentTypes.THINK && textValue(part.think).includes(needle);
+  if (startIndex != null && matches(parts[startIndex])) {
+    return startIndex;
+  }
+  for (let index = 0; index < parts.length; index += 1) {
+    if (matches(parts[index])) {
+      return index;
+    }
+  }
+  return startIndex ?? findLastPartIndex(parts, ContentTypes.THINK);
+}
+
 /** Persists Open Responses text-phase metadata onto LibreChat text parts.
  *  Installed for existing batch labels too, so commentary can supply intent
  *  even when parent phase summaries are disabled. */
@@ -294,10 +319,14 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     activities.filter((activity) => activity.status === 'partial').length;
   const contributingAgentIds = new Set(initialSnapshot?.agentIds ?? []);
   let assistantContext = (initialSnapshot?.assistantContext ?? []).slice(-MAX_CONTEXT_ITEMS);
-  const pendingReasoning = new Map<string, { text: string; agentId?: string }>(
-    (initialSnapshot?.pendingReasoning ?? []).map(({ key, text, agentId }) => [
+  const pendingReasoning = new Map<string, { text: string; agentId?: string; startIndex?: number }>(
+    (initialSnapshot?.pendingReasoning ?? []).map(({ key, text, agentId, startIndex }) => [
       key,
-      { text: text.slice(-MAX_EXCERPT_CHARS), ...(agentId != null && { agentId }) },
+      {
+        text: text.slice(-MAX_EXCERPT_CHARS),
+        ...(agentId != null && { agentId }),
+        ...(startIndex != null && { startIndex }),
+      },
     ]),
   );
   const reasoningStepKeys = new Map<string, string>();
@@ -361,12 +390,13 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       key,
       text: reasoning.text.slice(-MAX_EXCERPT_CHARS),
       ...(reasoning.agentId != null && { agentId: reasoning.agentId }),
+      ...(reasoning.startIndex != null && { startIndex: reasoning.startIndex }),
     })),
   });
 
   const addPendingReasoning = (onlyKey?: string) => {
     let selected = [...pendingReasoning.entries()] as Array<
-      readonly [string, { text: string; agentId?: string }]
+      readonly [string, { text: string; agentId?: string; startIndex?: number }]
     >;
     if (onlyKey != null) {
       const reasoning = pendingReasoning.get(onlyKey);
@@ -380,7 +410,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           thinkingExcerpts: [text.slice(0, MAX_EXCERPT_CHARS)],
           ...(reasoning.agentId != null && { agentId: reasoning.agentId }),
           status: 'success',
-          startIndex: findLastPartIndex(parts, ContentTypes.THINK),
+          startIndex: findReasoningStart(parts, text, reasoning.startIndex),
         });
       }
       pendingReasoning.delete(key);
@@ -596,12 +626,16 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
               stepKinds.set(step.id, { kind });
               const reasoningKey = step.agentId ?? 'root';
               reasoningStepKeys.set(step.id, reasoningKey);
+              const result = runStepHandler.handle(event, data, metadata, graph);
               if (!pendingReasoning.has(reasoningKey)) {
+                const startIndex = deps.getStepIndex?.(step.id);
                 pendingReasoning.set(reasoningKey, {
                   text: '',
                   ...(step.agentId != null && { agentId: step.agentId }),
+                  ...(startIndex != null && { startIndex }),
                 });
               }
+              return result;
             } else {
               if (phase === 'final_answer' && step.groupId == null) {
                 addPendingReasoning(step.agentId ?? 'root');
@@ -611,7 +645,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
                 if (phase == null) {
                   addPendingReasoning(step.agentId ?? 'root');
                 }
-                const closesPhase = phase == null && activityCount >= MIN_ACTIVITIES;
+                const closesPhase =
+                  phase == null && step.groupId == null && activityCount >= MIN_ACTIVITIES;
                 stepKinds.set(step.id, {
                   kind,
                   ...(phase != null && { phase }),

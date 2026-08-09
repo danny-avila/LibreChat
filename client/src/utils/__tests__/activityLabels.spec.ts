@@ -134,4 +134,21 @@ describe('groupActivityPhases', () => {
     Object.assign(pending, { activity_label_type: 'phase', activity_start_index: 0 });
     expect(groupActivityPhases([tool, pending as never])).toBeUndefined();
   });
+
+  it('preserves a completed summary when every phase child was filtered out', () => {
+    const phase = labelPart({ activity_label: 'Reconciled both release paths', pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_count: 2,
+    });
+
+    expect(groupActivityPhases([phase as never])).toEqual([
+      expect.objectContaining({
+        type: 'phase',
+        labelIndex: 0,
+        hasContent: false,
+      }),
+    ]);
+  });
 });

@@ -45,6 +45,13 @@ jest.mock('../ToolCallGroup', () => ({
   default: () => <div data-testid="tool-call-group" />,
 }));
 
+jest.mock('../ActivityPhaseGroup', () => ({
+  __esModule: true,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="activity-phase-group">{children}</div>
+  ),
+}));
+
 jest.mock('../Container', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => (
@@ -258,5 +265,26 @@ describe('ContentParts — post-steer author re-attribution', () => {
     );
     expect(screen.getAllByTestId('author-header')).toHaveLength(1);
     expect(screen.queryByTestId('post-steer-agent-update')).toBeNull();
+  });
+
+  it('retains steer attribution when resumed content moves into a phase slice', () => {
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Reconciled both release paths',
+      activity_label_type: 'phase',
+      activity_start_index: 2,
+      activity_count: 2,
+      pending: false,
+    } as unknown as TMessageContentParts;
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[textPart('a'), steerPart, textPart('resumed'), phase]}
+        authorHeader={header}
+      />,
+    );
+
+    expect(screen.getByTestId('activity-phase-group')).toBeTruthy();
+    expect(screen.getAllByTestId('author-header')).toHaveLength(1);
   });
 });

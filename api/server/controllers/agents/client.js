@@ -1135,6 +1135,7 @@ class AgentClient extends BaseClient {
       abortSignal: scope.abort.signal,
       isClosed: () => scope.closed,
       getContentParts: () => this.contentParts,
+      getStepIndex: (stepId) => this.stepMap?.get(stepId)?.index,
       bumpIndexOffset: () => {
         this.steerOffsetState.offset += 1;
       },

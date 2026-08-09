@@ -162,12 +162,14 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
         return;
       }
       set.delete(toolCallId);
-      // Also drop any decision it held so a stale entry can't linger.
-      decisionsRef.current.get(actionId)?.delete(toolCallId);
       if (set.size === 0) {
         registeredRef.current.delete(actionId);
-        decisionsRef.current.delete(actionId);
       }
+      /** Keep the decision for the provider's message-scoped lifetime. A
+       *  phase label can resolve while an approval card is visible, moving
+       *  that card through a sparse render slice; its transient unmount must
+       *  not erase the user's selection. Unregistered decisions are excluded
+       *  from submit/readiness and disappear with this provider. */
       rerender();
     },
     [rerender],
@@ -202,10 +204,17 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
     [],
   );
 
-  const getDecisions = useCallback(
-    (actionId: string) => Array.from(decisionsRef.current.get(actionId)?.values() ?? []),
-    [],
-  );
+  const getDecisions = useCallback((actionId: string) => {
+    const registered = registeredRef.current.get(actionId);
+    const decisions = decisionsRef.current.get(actionId);
+    if (registered == null || decisions == null) {
+      return [];
+    }
+    return [...registered].flatMap((toolCallId) => {
+      const decision = decisions.get(toolCallId);
+      return decision == null ? [] : [decision];
+    });
+  }, []);
 
   const isReady = useCallback((actionId: string) => {
     const registered = registeredRef.current.get(actionId);

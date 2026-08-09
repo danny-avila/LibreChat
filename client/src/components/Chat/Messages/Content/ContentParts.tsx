@@ -151,6 +151,8 @@ type ContentPartsProps = {
     | undefined;
   /** Internal recursion guard for sparse phase slices. */
   nestedActivityPhase?: boolean;
+  /** Message-wide steer attribution retained across sparse phase slices. */
+  resumeAuthors?: ReadonlyMap<number, string | undefined>;
 };
 
 /**
@@ -177,6 +179,7 @@ const ContentParts = memo(function ContentParts({
   isLatestMessage,
   createdAt,
   nestedActivityPhase = false,
+  resumeAuthors,
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
@@ -336,11 +339,11 @@ const ContentParts = memo(function ContentParts({
    *  for the top-level `authorHeader`. Read BEFORE applying the current
    *  part's own handoff, so a resume point that IS an agent update keeps the
    *  pre-handoff author and lets the real marker announce the transition. */
-  const { sequentialParts, postSteerAuthors } = useMemo(() => {
+  const { sequentialParts, detectedResumeAuthors } = useMemo(() => {
     const parts: PartWithIndex[] = [];
     const authors = new Map<number, string | undefined>();
     if (!content) {
-      return { sequentialParts: parts, postSteerAuthors: authors };
+      return { sequentialParts: parts, detectedResumeAuthors: authors };
     }
     let prevType: string | undefined;
     let activeAgentId: string | undefined;
@@ -357,8 +360,9 @@ const ContentParts = memo(function ContentParts({
       prevType = part.type;
       parts.push({ part, idx });
     });
-    return { sequentialParts: parts, postSteerAuthors: authors };
+    return { sequentialParts: parts, detectedResumeAuthors: authors };
   }, [content]);
+  const postSteerAuthors = resumeAuthors ?? detectedResumeAuthors;
 
   const groupedParts = useMemo(
     () =>
@@ -461,6 +465,7 @@ const ContentParts = memo(function ContentParts({
           isSubmitting={isSubmitting}
           isLatestMessage={isLatestMessage}
           nestedActivityPhase
+          resumeAuthors={postSteerAuthors}
         />
       );
     };
@@ -478,6 +483,7 @@ const ContentParts = memo(function ContentParts({
               <ActivityPhaseGroup
                 key={`activity-phase-${messageId}-${segment.labelIndex}`}
                 labelPart={segment.labelPart}
+                hasContent={segment.hasContent}
               >
                 {renderSegment(segment.content, `phase-content-${index}`)}
               </ActivityPhaseGroup>

@@ -15,6 +15,7 @@ export type ActivityPhaseSegment =
       content: Array<TMessageContentParts | undefined>;
       labelPart: ActivityLabelPart;
       labelIndex: number;
+      hasContent: boolean;
     };
 
 export function isPhaseActivityLabel(part: ActivityLabelPart | undefined): boolean {
@@ -88,14 +89,14 @@ export function groupActivityPhases(
     if (start > cursor) {
       segments.push({ type: 'content', content: sliceSparse(cursor, start) });
     }
-    if (index > start) {
-      segments.push({
-        type: 'phase',
-        content: sliceSparse(start, index),
-        labelPart: part,
-        labelIndex: index,
-      });
-    }
+    const phaseContent = sliceSparse(start, index);
+    segments.push({
+      type: 'phase',
+      content: phaseContent,
+      labelPart: part,
+      labelIndex: index,
+      hasContent: phaseContent.some((child) => child != null),
+    });
     cursor = index + 1;
   }
   if (cursor < content.length) {

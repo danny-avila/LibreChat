@@ -95,6 +95,24 @@ describe('useResumeSubmit', () => {
     expect(mockApprovalMutate).toHaveBeenCalledTimes(2);
   });
 
+  test('retains a decision across a transient card unregister and re-register', () => {
+    const { result } = renderHook(() => useApprovalContext(), { wrapper });
+    const decision = { tool_call_id: 'call-1', decision: 'approve' } as const;
+
+    act(() => {
+      result.current.registerToolCall('action-1', 'call-1');
+      result.current.setDecision('action-1', 'call-1', decision);
+    });
+    act(() => result.current.unregisterToolCall('action-1', 'call-1'));
+
+    expect(result.current.getDecisions('action-1')).toEqual([]);
+    expect(result.current.getDecision('action-1', 'call-1')).toEqual(decision);
+
+    act(() => result.current.registerToolCall('action-1', 'call-1'));
+    expect(result.current.getDecisions('action-1')).toEqual([decision]);
+    expect(result.current.isReady('action-1')).toBe(true);
+  });
+
   test('keeps approval and ask-answer resume controls inert before the generation epoch exists', () => {
     const { result } = renderHook(
       () => ({
