@@ -1,4 +1,9 @@
 import DOMPurify from 'dompurify';
+import {
+  SVG_SANITIZE_CONFIG,
+  restrictSvgReferences,
+  restoreSvgTagCase,
+} from 'librechat-data-provider';
 
 /**
  * Decides whether a custom icon is a monochrome glyph that should be tinted to
@@ -116,42 +121,26 @@ export function detectMonochrome(src: string): Promise<boolean> {
 let svgPurifier: ReturnType<typeof DOMPurify> | null = null;
 
 /**
- * Dedicated DOMPurify instance for SVG icons, so the local-reference hook never
- * leaks into the app's shared default instance. It keeps same-document
- * `href="#id"` references on `<use>` and gradients while stripping external,
- * relative, or scheme-carrying hrefs.
+ * Dedicated DOMPurify instance for SVG icons, so the reference hook never leaks
+ * into the app's shared default instance.
  */
 function getSvgPurifier(): ReturnType<typeof DOMPurify> {
   if (svgPurifier) {
     return svgPurifier;
   }
   svgPurifier = DOMPurify(window);
-  svgPurifier.addHook('afterSanitizeAttributes', (node) => {
-    for (const attr of ['href', 'xlink:href']) {
-      const value = node.getAttribute(attr);
-      if (value != null && !value.trim().startsWith('#')) {
-        node.removeAttribute(attr);
-      }
-    }
-  });
+  svgPurifier.addHook('afterSanitizeAttributes', restrictSvgReferences);
   return svgPurifier;
 }
 
 /**
  * Strips active content from user-provided SVG markup, leaving safe drawing
- * elements and presentation attributes. The `svg`/`svgFilters` profiles restrict
- * the tag set and DOMPurify drops every `on*` handler by default; the forbidden
- * tags and attributes additionally remove embedded HTML, scripts, stylesheets,
- * links, animation, and inline CSS. `<use>` is re-allowed with hrefs restricted
- * to same-document fragments by the purifier hook.
+ * elements and presentation attributes. The policy is shared with the server
+ * sanitizer that re-checks the stored icon, so the preview rendered here matches
+ * what is persisted.
  */
 export function sanitizeSvg(svg: string): string {
-  return getSvgPurifier().sanitize(svg, {
-    USE_PROFILES: { svg: true, svgFilters: true },
-    ADD_TAGS: ['use'],
-    FORBID_TAGS: ['script', 'foreignObject', 'style', 'a', 'image', 'animate', 'set'],
-    FORBID_ATTR: ['style'],
-  });
+  return restoreSvgTagCase(getSvgPurifier().sanitize(svg, SVG_SANITIZE_CONFIG));
 }
 
 /**

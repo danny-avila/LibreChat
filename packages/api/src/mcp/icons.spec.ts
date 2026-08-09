@@ -121,16 +121,19 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).toContain('marker-end="url(#arrow)"');
   });
 
-  it('drops marker references that leave the document', () => {
-    for (const ref of [
-      'url(https://evil.example/m.svg#a)',
-      'url(//evil.example/m.svg#a)',
-      "url('/m.svg#a')",
-    ]) {
-      const raw = `<svg><line x1="0" y1="0" x2="9" y2="9" marker-end="${ref}"/></svg>`;
-      const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
-      expect(clean).not.toContain('marker-end');
-      expect(clean).toContain('line');
+  it('drops url() references that leave the document, whichever property carries them', () => {
+    for (const attribute of ['marker-end', 'fill', 'stroke', 'filter', 'mask', 'clip-path']) {
+      for (const ref of [
+        'url(https://evil.example/m.svg#a)',
+        'url(//evil.example/m.svg#a)',
+        "url('/m.svg#a')",
+      ]) {
+        const raw = `<svg><line x1="0" y1="0" x2="9" y2="9" ${attribute}="${ref}"/></svg>`;
+        const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml,${encodeURIComponent(raw)}`));
+        expect(clean).not.toContain('evil.example');
+        expect(clean).not.toContain(attribute);
+        expect(clean).toContain('line');
+      }
     }
   });
 

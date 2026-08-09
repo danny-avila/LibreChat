@@ -1,12 +1,22 @@
-import sanitizeHtml from 'sanitize-html';
-import { MAX_MCP_ICON_PATH_LENGTH } from 'librechat-data-provider';
+import { JSDOM } from 'jsdom';
+import createDOMPurify from 'dompurify';
+import {
+  MAX_MCP_ICON_PATH_LENGTH,
+  SVG_SANITIZE_CONFIG,
+  restrictSvgReferences,
+  restoreSvgTagCase,
+} from 'librechat-data-provider';
 
 /**
  * Server-side sanitization for user-provided MCP server icons. The client
- * sanitizes uploaded SVGs before encoding them as data URIs, but that runs in the browser
- * and is trivially bypassed by posting an `iconPath` straight to the API, so
- * every stored icon is re-sanitized here at the trust boundary before it is
+ * sanitizes uploaded SVGs before encoding them as data URIs, but that runs in the
+ * browser and is trivially bypassed by posting an `iconPath` straight to the API,
+ * so every stored icon is re-sanitized here at the trust boundary before it is
  * persisted and returned to other users in MCP configuration responses.
+ *
+ * Both sides run DOMPurify with the shared `SVG_SANITIZE_CONFIG`, so an icon that
+ * previews correctly is stored intact and neither side can drift into stripping
+ * what the other keeps.
  *
  * Only `data:image/svg+xml` values carry active content worth stripping; raster
  * data URIs, `http(s)` URLs, and relative paths render inertly through `<img>`
@@ -16,224 +26,21 @@ import { MAX_MCP_ICON_PATH_LENGTH } from 'librechat-data-provider';
 /** Matches an `image/svg+xml` data URI regardless of the encoding suffix. */
 const SVG_DATA_URI = /^data:image\/svg\+xml/i;
 
-/**
- * SVG elements safe to keep for an icon. Drawing, shape, gradient, clip, marker,
- * and filter primitives, plus `use` for self-contained `<defs>` references
- * (common exporter output). The filter set mirrors the client sanitizer's
- * DOMPurify `svgFilters` profile so an icon that previews with effects is stored
- * intact. `script`, `foreignObject`, `style`, `a`, `image`, `animate`, and `set`
- * are intentionally omitted so no active content, embedded HTML, or navigation
- * survives; hrefs are restricted to same-document fragments below.
- */
-const ALLOWED_SVG_TAGS = [
-  'svg',
-  'g',
-  'path',
-  'circle',
-  'ellipse',
-  'rect',
-  'line',
-  'polyline',
-  'polygon',
-  'text',
-  'tspan',
-  'textPath',
-  'defs',
-  'use',
-  'linearGradient',
-  'radialGradient',
-  'stop',
-  'clipPath',
-  'mask',
-  'pattern',
-  'marker',
-  'title',
-  'desc',
-  'filter',
-  'feBlend',
-  'feColorMatrix',
-  'feComponentTransfer',
-  'feComposite',
-  'feConvolveMatrix',
-  'feDiffuseLighting',
-  'feDisplacementMap',
-  'feDistantLight',
-  'feDropShadow',
-  'feFlood',
-  'feFuncA',
-  'feFuncB',
-  'feFuncG',
-  'feFuncR',
-  'feGaussianBlur',
-  'feImage',
-  'feMerge',
-  'feMergeNode',
-  'feMorphology',
-  'feOffset',
-  'fePointLight',
-  'feSpecularLighting',
-  'feSpotLight',
-  'feTile',
-  'feTurbulence',
-];
+let purifier: ReturnType<typeof createDOMPurify> | null = null;
 
 /**
- * Presentation and geometry attributes safe to keep. Gradient and pattern
- * coordinate-system attributes (`gradientUnits`, `patternUnits`, …) are included
- * so exporter artwork does not fall back to objectBoundingBox after save.
- * `href`/`xlink:href` are allowed but restricted to same-document fragments
- * (`#id`) by the tag transform below, so local `<use>`/gradient references
- * survive while external references and `javascript:` URLs are stripped; `on*`
- * handlers are never allowed.
+ * DOMPurify bound to a jsdom window, built on first use so a server that never
+ * saves an icon never pays for the window, and reused afterwards because the
+ * reference hook only needs to be registered once.
  */
-const ALLOWED_SVG_ATTRS = [
-  'viewBox',
-  'xmlns',
-  'xmlns:xlink',
-  'width',
-  'height',
-  'x',
-  'y',
-  'x1',
-  'y1',
-  'x2',
-  'y2',
-  'cx',
-  'cy',
-  'r',
-  'rx',
-  'ry',
-  'd',
-  'points',
-  'transform',
-  'gradientTransform',
-  'gradientUnits',
-  'patternTransform',
-  'patternUnits',
-  'patternContentUnits',
-  'offset',
-  'startOffset',
-  'color',
-  'fill',
-  'fill-rule',
-  'fill-opacity',
-  'stroke',
-  'stroke-width',
-  'stroke-linecap',
-  'stroke-linejoin',
-  'stroke-dasharray',
-  'stroke-opacity',
-  'opacity',
-  'stop-color',
-  'stop-opacity',
-  'clip-path',
-  'clip-rule',
-  'mask',
-  'marker-start',
-  'marker-mid',
-  'marker-end',
-  'markerWidth',
-  'markerHeight',
-  'markerUnits',
-  'refX',
-  'refY',
-  'orient',
-  'preserveAspectRatio',
-  'id',
-  'class',
-  'href',
-  'xlink:href',
-  'filter',
-  'filterUnits',
-  'primitiveUnits',
-  'color-interpolation-filters',
-  'in',
-  'in2',
-  'result',
-  'mode',
-  'type',
-  'values',
-  'operator',
-  'k1',
-  'k2',
-  'k3',
-  'k4',
-  'stdDeviation',
-  'dx',
-  'dy',
-  'flood-color',
-  'flood-opacity',
-  'lighting-color',
-  'surfaceScale',
-  'diffuseConstant',
-  'specularConstant',
-  'specularExponent',
-  'azimuth',
-  'elevation',
-  'pointsAtX',
-  'pointsAtY',
-  'pointsAtZ',
-  'limitingConeAngle',
-  'radius',
-  'scale',
-  'xChannelSelector',
-  'yChannelSelector',
-  'baseFrequency',
-  'numOctaves',
-  'seed',
-  'stitchTiles',
-  'order',
-  'kernelMatrix',
-  'divisor',
-  'bias',
-  'targetX',
-  'targetY',
-  'edgeMode',
-  'preserveAlpha',
-  'slope',
-  'intercept',
-  'amplitude',
-  'exponent',
-  'tableValues',
-];
-
-/** Matches a same-document `url(#id)` reference (optionally quoted) or `none`. */
-const LOCAL_URL_REFERENCE = /^(?:none|url\(\s*(['"]?)#[^'")]*\1\s*\))$/;
-
-/**
- * Drops `href`/`xlink:href` references that leave the document while preserving
- * same-document fragments used by `<use>` and gradients, and restricts
- * `marker-start`/`marker-mid`/`marker-end` to fragment-only `url(#id)` values.
- */
-function keepLocalReferences(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
-  for (const [name, value] of Object.entries(attribs)) {
-    if (name === 'href' || name === 'xlink:href') {
-      if (!value.trim().startsWith('#')) {
-        delete attribs[name];
-      }
-    } else if (name === 'marker-start' || name === 'marker-mid' || name === 'marker-end') {
-      if (!LOCAL_URL_REFERENCE.test(value.trim())) {
-        delete attribs[name];
-      }
-    }
+function getSvgPurifier(): ReturnType<typeof createDOMPurify> {
+  if (purifier) {
+    return purifier;
   }
-  return { tagName, attribs };
+  purifier = createDOMPurify(new JSDOM('').window);
+  purifier.addHook('afterSanitizeAttributes', restrictSvgReferences);
+  return purifier;
 }
-
-/**
- * `parser.lowerCaseTags`/`lowerCaseAttributeNames` are disabled so case-
- * sensitive SVG names (`viewBox`, `linearGradient`, `clipPath`, …) survive the
- * round-trip; lowercasing them would break rendering. `allowedSchemes` is empty
- * as a second layer behind the fragment-only href transform: a fragment carries
- * no scheme, so nothing legitimate is affected.
- */
-const SVG_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
-  allowedTags: ALLOWED_SVG_TAGS,
-  allowedAttributes: { '*': ALLOWED_SVG_ATTRS },
-  allowedSchemes: [],
-  transformTags: { '*': keepLocalReferences },
-  parser: { lowerCaseTags: false, lowerCaseAttributeNames: false },
-};
 
 /** Decode an `image/svg+xml` data URI body to its raw markup, or null when it
  *  is malformed. Handles both base64 and percent-encoded payloads. */
@@ -282,10 +89,10 @@ function normalizeIconValue(value: string): string {
 
 /**
  * Sanitize a user-provided MCP `iconPath`. SVG data URIs are decoded, stripped
- * of active content via an allowlist, and re-encoded as base64; a malformed SVG
- * data URI resolves to an empty string so a broken icon is stored rather than
- * raw markup. Other values (raster data URIs, URLs, relative paths) pass through
- * unchanged unless they exceed the length cap.
+ * of active content, and re-encoded as base64; a malformed SVG data URI resolves
+ * to an empty string so a broken icon is stored rather than raw markup. Other
+ * values (raster data URIs, URLs, relative paths) pass through unchanged unless
+ * they exceed the length cap.
  *
  * This is the single enforcement point for `MAX_MCP_ICON_PATH_LENGTH`: any value
  * still over the cap after sanitizing is dropped to an empty string. Enforcing it
@@ -303,7 +110,7 @@ export function sanitizeMcpIconPath(iconPath: string): string {
   if (svg == null) {
     return '';
   }
-  const clean = sanitizeHtml(svg, SVG_SANITIZE_OPTIONS);
+  const clean = restoreSvgTagCase(getSvgPurifier().sanitize(svg, SVG_SANITIZE_CONFIG));
   const encoded = `data:image/svg+xml;base64,${Buffer.from(clean, 'utf-8').toString('base64')}`;
   return encoded.length > MAX_MCP_ICON_PATH_LENGTH ? '' : encoded;
 }

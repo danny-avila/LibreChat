@@ -246,6 +246,39 @@ describe('sanitizeSvg', () => {
     expect(clean).not.toContain('javascript:');
     expect(clean.toLowerCase()).not.toContain('<animate');
   });
+
+  it('drops url() paint, filter, mask, and clip references that leave the document', () => {
+    for (const attribute of ['fill', 'stroke', 'filter', 'mask', 'clip-path', 'marker-end']) {
+      for (const reference of [
+        'url(https://evil.example/x.svg#a)',
+        'url(//evil.example/x.svg#a)',
+        "url('/x.svg#a')",
+      ]) {
+        const clean = sanitizeSvg(
+          `<svg><rect width="9" height="9" ${attribute}="${reference}" /></svg>`,
+        );
+        expect(clean).not.toContain('evil.example');
+        expect(clean).not.toContain(attribute);
+        expect(clean).toContain('<rect');
+      }
+    }
+  });
+
+  it('preserves feDropShadow casing so the stored SVG still parses as XML', () => {
+    const dirty =
+      '<svg><filter id="f"><feDropShadow dx="1" dy="1" stdDeviation="0.5" flood-color="#000" /></filter><rect width="9" height="9" filter="url(#f)" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('feDropShadow');
+    expect(clean).not.toContain('fedropshadow');
+    const parsed = new DOMParser().parseFromString(
+      clean.startsWith('<svg xmlns')
+        ? clean
+        : clean.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'),
+      'image/svg+xml',
+    );
+    expect(parsed.querySelector('parsererror')).toBeNull();
+    expect(parsed.querySelector('filter')?.children.length).toBe(1);
+  });
 });
 
 describe('svgToDataUri', () => {
