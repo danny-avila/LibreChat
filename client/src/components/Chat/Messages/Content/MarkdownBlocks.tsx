@@ -15,6 +15,7 @@ type MarkdownBlockProps = SharedProps & {
   content: string;
   codeBaseIndex: number;
   artifactBaseIndex: number;
+  mermaidBaseIndex: number;
 };
 
 /**
@@ -29,13 +30,14 @@ const MarkdownBlock = memo(
     content,
     codeBaseIndex,
     artifactBaseIndex,
+    mermaidBaseIndex,
     remarkPlugins,
     rehypePlugins,
     components,
   }: MarkdownBlockProps) {
     return (
       <ArtifactProvider baseIndex={artifactBaseIndex}>
-        <CodeBlockProvider baseIndex={codeBaseIndex}>
+        <CodeBlockProvider baseIndex={codeBaseIndex} mermaidBaseIndex={mermaidBaseIndex}>
           <ReactMarkdown
             /** @ts-ignore */
             remarkPlugins={remarkPlugins}
@@ -52,7 +54,8 @@ const MarkdownBlock = memo(
   (prev, next) =>
     prev.content === next.content &&
     prev.codeBaseIndex === next.codeBaseIndex &&
-    prev.artifactBaseIndex === next.artifactBaseIndex,
+    prev.artifactBaseIndex === next.artifactBaseIndex &&
+    prev.mermaidBaseIndex === next.mermaidBaseIndex,
 );
 MarkdownBlock.displayName = 'MarkdownBlock';
 
@@ -76,10 +79,12 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
   const blocks = useMemo(() => {
     let codeBaseIndex = 0;
     let artifactBaseIndex = 0;
+    let mermaidBaseIndex = 0;
     return splitMarkdownIntoBlocks(content).map((block) => {
-      const entry = { raw: block.raw, codeBaseIndex, artifactBaseIndex };
+      const entry = { raw: block.raw, codeBaseIndex, artifactBaseIndex, mermaidBaseIndex };
       codeBaseIndex += block.codeBlockCount;
       artifactBaseIndex += block.artifactCount;
+      mermaidBaseIndex += block.mermaidCount;
       return entry;
     });
   }, [content]);
@@ -93,10 +98,11 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
         // ref. During append-only streaming these stay constant, so completed
         // blocks keep a stable key and are not remounted.
         <MarkdownBlock
-          key={`${index}-${block.codeBaseIndex}-${block.artifactBaseIndex}`}
+          key={`${index}-${block.codeBaseIndex}-${block.artifactBaseIndex}-${block.mermaidBaseIndex}`}
           content={block.raw}
           codeBaseIndex={block.codeBaseIndex}
           artifactBaseIndex={block.artifactBaseIndex}
+          mermaidBaseIndex={block.mermaidBaseIndex}
           remarkPlugins={remarkPlugins}
           rehypePlugins={rehypePlugins}
           components={components}

@@ -37,6 +37,9 @@ const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_MERMAID_ARTIFACT_REPLY';
+const LARGE_MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_LARGE_MERMAID_ARTIFACT_REPLY';
+const HTML_ARTIFACT_REPLY_MARKER = 'E2E_HTML_ARTIFACT_REPLY';
 const BACKGROUND_DISPATCH_MARKER = 'E2E_BACKGROUND_DISPATCH:';
 const BACKGROUND_COLLECT_MARKER = 'E2E_BACKGROUND_COLLECT:';
 const TOOL_APPROVAL_MARKER = 'E2E_TOOL_APPROVAL:';
@@ -376,6 +379,37 @@ function quoteAssertionResponses({ messages, text }) {
 }
 
 function replyResponses(text) {
+  if (text.includes(LARGE_MERMAID_ARTIFACT_REPLY_MARKER)) {
+    const diagram = ['```mermaid', 'flowchart TB'];
+    for (let index = 0; index < 180; index++) {
+      diagram.push(`N${index}["Processing stage ${index} with representative content"]`);
+      if (index > 0) {
+        diagram.push(`N${index - 1} --> N${index}`);
+      }
+    }
+    diagram.push('```');
+
+    return { responses: [diagram.join('\n')], sleep: 0 };
+  }
+
+  if (text.includes(MERMAID_ARTIFACT_REPLY_MARKER)) {
+    return {
+      responses: [['```mermaid', 'flowchart LR', 'A[Start] --> B[Finish]', '```'].join('\n')],
+    };
+  }
+
+  if (text.includes(HTML_ARTIFACT_REPLY_MARKER)) {
+    return {
+      responses: [
+        [
+          ':::artifact{identifier="e2e-html" type="text/html" title="E2E HTML Artifact"}',
+          '<h1>HTML sandbox fixture</h1>',
+          ':::',
+        ].join('\n'),
+      ],
+    };
+  }
+
   if (text.includes(MARKDOWN_REPLY_MARKER)) {
     return {
       responses: [
