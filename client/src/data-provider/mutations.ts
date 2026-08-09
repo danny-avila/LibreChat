@@ -370,11 +370,9 @@ export const useDeleteSharedLinkMutation = (
       });
       /* A conversation can hold several links (one per target message), so clearing the
          badge optimistically is only a guess. Let the server, which derives `isShared`
-         from the links that are actually left, settle it. */
-      queryClient.invalidateQueries({
-        queryKey: [QueryKeys.allConversations],
-        refetchPage: (_, index) => index === 0,
-      });
+         from the links that are actually left, settle it. Every cached page refetches:
+         the affected conversation is as likely to sit on page three as on page one. */
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
     },
 
     onSuccess: (data, variables) => {
