@@ -225,7 +225,11 @@ describe('createActivityPhaseWiring', () => {
       ['reasoning-a', 0],
       ['reasoning-b', 1],
     ]);
-    const generatePhase = jest.fn(async () => ({ label: 'Reconciled both agent analyses' }));
+    let generatedActivities: GenerateActivityPhasePayload['activities'] | undefined;
+    const generatePhase = jest.fn(async (payload: GenerateActivityPhasePayload) => {
+      generatedActivities = payload.activities;
+      return { label: 'Reconciled both agent analyses' };
+    });
     const wiring = createActivityPhaseWiring({
       getContentParts: () => parts,
       getStepIndex: (stepId) => stepIndexes.get(stepId),
@@ -291,7 +295,7 @@ describe('createActivityPhaseWiring', () => {
     expect(generatePhase).toHaveBeenCalledWith(
       expect.objectContaining({ activities: expect.arrayContaining([expect.any(Object)]) }),
     );
-    expect(generatePhase.mock.calls[0][0].activities).toHaveLength(2);
+    expect(generatedActivities).toHaveLength(2);
     expect(parts[2]).toMatchObject({ activity_start_index: 0, activity_count: 2 });
   });
 
