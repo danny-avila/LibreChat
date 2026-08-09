@@ -3,6 +3,7 @@ import { Constants, ContentTypes, FileSources } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
+import { isValidObjectIdString } from '~/utils/objectId';
 import { activeExpirationFilter } from '~/utils/retention';
 import logger from '~/config/winston';
 
@@ -223,6 +224,35 @@ async function buildFileSnapshots(
     });
   }
   return snapshots;
+}
+
+type SharedLinksCursor = { primary: string; id: string };
+
+/**
+ * The list cursor carries the sort value *and* the `_id` that broke its tie, base64
+ * encoded so callers treat it as opaque. Older plain-value cursors decode to null and
+ * fall back to the single-field boundary they were issued under.
+ */
+function decodeSharedLinksCursor(pageParam: Date | string): SharedLinksCursor | null {
+  if (typeof pageParam !== 'string') {
+    return null;
+  }
+  try {
+    const decoded = JSON.parse(Buffer.from(pageParam, 'base64').toString());
+    if (typeof decoded?.primary === 'string' && isValidObjectIdString(decoded?.id)) {
+      return decoded as SharedLinksCursor;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function encodeSharedLinksCursor(link: t.ISharedLink, sortBy: string): string {
+  const value = link[sortBy as keyof t.ISharedLink];
+  const primary = value instanceof Date ? value.toISOString() : String(value ?? '');
+  const composite: SharedLinksCursor = { primary, id: String(link._id) };
+  return Buffer.from(JSON.stringify(composite)).toString('base64');
 }
 
 /** Share-scoped file route that serves a snapshotted file independent of owner ACL. */
@@ -720,10 +750,26 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       };
 
       if (pageParam) {
-        if (sortDirection === 'desc') {
-          query[sortBy] = { $lt: pageParam };
+        const op = sortDirection === 'desc' ? '$lt' : '$gt';
+        const cursor = decodeSharedLinksCursor(pageParam);
+        if (cursor) {
+          const primaryValue = sortBy === 'createdAt' ? new Date(cursor.primary) : cursor.primary;
+          /* Titles repeat and createdAt can collide, so a single-field boundary drops
+             every row that ties with the last one on the previous page. `_id` breaks
+             the tie. Nested under `$and` because the expiration filter owns `$or`. */
+          query.$and = [
+            {
+              $or: [
+                { [sortBy]: { [op]: primaryValue } },
+                {
+                  [sortBy]: primaryValue,
+                  _id: { [op]: new mongoose.Types.ObjectId(cursor.id) },
+                },
+              ],
+            } as FilterQuery<t.ISharedLink>,
+          ];
         } else {
-          query[sortBy] = { $gt: pageParam };
+          query[sortBy] = { [op]: pageParam };
         }
       }
 
@@ -758,6 +804,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
 
       const sort: Record<string, 1 | -1> = {};
       sort[sortBy] = sortDirection === 'desc' ? -1 : 1;
+      sort._id = sort[sortBy];
 
       const sharedLinks = await SharedLink.find(query)
         .sort(sort)
@@ -769,7 +816,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const links = sharedLinks.slice(0, pageSize);
 
       const nextCursor = hasNextPage
-        ? (links[links.length - 1][sortBy as keyof t.ISharedLink] as Date | string)
+        ? encodeSharedLinksCursor(links[links.length - 1], sortBy)
         : undefined;
 
       return {

@@ -640,20 +640,29 @@ export function createConversationMethods(
     if (cursor) {
       try {
         const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString());
-        const { primary, secondary } = decoded;
+        const { primary, secondary, id } = decoded;
         const primaryValue = finalSortBy === 'title' ? primary : new Date(primary);
         const secondaryValue = new Date(secondary);
         const op = finalSortDirection === 'asc' ? '$gt' : '$lt';
+        const sortsByUpdatedAt = finalSortBy === 'updatedAt';
 
-        cursorFilter = {
-          $or: [
-            { [finalSortBy]: { [op]: primaryValue } },
-            {
-              [finalSortBy]: primaryValue,
-              updatedAt: { [op]: secondaryValue },
-            },
-          ],
-        } as FilterQuery<IConversation>;
+        /* One clause per sort level, so the page boundary is exact. Titles and
+           timestamps both repeat; `_id` is the only field guaranteed to break the
+           tie, and without that last clause every row sharing the boundary's
+           (sort field, updatedAt) pair is skipped instead of returned. */
+        const clauses: FilterQuery<IConversation>[] = [{ [finalSortBy]: { [op]: primaryValue } }];
+        if (!sortsByUpdatedAt) {
+          clauses.push({ [finalSortBy]: primaryValue, updatedAt: { [op]: secondaryValue } });
+        }
+        if (typeof id === 'string' && isValidObjectIdString(id)) {
+          clauses.push({
+            [finalSortBy]: primaryValue,
+            ...(sortsByUpdatedAt ? {} : { updatedAt: secondaryValue }),
+            _id: { [op]: new mongoose.Types.ObjectId(id) },
+          });
+        }
+
+        cursorFilter = { $or: clauses } as FilterQuery<IConversation>;
       } catch {
         logger.warn('[getConvosByCursor] Invalid cursor format, starting from beginning');
       }
@@ -672,6 +681,7 @@ export function createConversationMethods(
       if (finalSortBy !== 'updatedAt') {
         sortObj.updatedAt = sortOrder;
       }
+      sortObj._id = sortOrder;
 
       const convos = await Conversation.find(query)
         .select(
@@ -694,7 +704,11 @@ export function createConversationMethods(
         const primaryStr =
           finalSortBy === 'title' ? primaryValue : new Date(primaryValue ?? 0).toISOString();
         const secondaryStr = new Date(lastReturned.updatedAt ?? 0).toISOString();
-        const composite = { primary: primaryStr, secondary: secondaryStr };
+        const composite = {
+          primary: primaryStr,
+          secondary: secondaryStr,
+          id: String(lastReturned._id),
+        };
         nextCursor = Buffer.from(JSON.stringify(composite)).toString('base64');
       }
 

@@ -137,6 +137,30 @@ describe('ShareButton', () => {
     expect(screen.getByTestId('share-actions')).toHaveAttribute('data-snapshot-files', 'false');
   });
 
+  it('resets the file choice and link when the dialog moves to another conversation', () => {
+    mockShare = { success: true, shareId: 'share-1', snapshotFiles: false };
+    const { rerender } = renderShareButton();
+
+    expect(screen.getByRole('switch', { name: 'com_ui_share_files' })).not.toBeChecked();
+
+    mockShare = { success: true, shareId: null };
+    rerender(
+      <RecoilRoot
+        initializeState={({ set }: MutableSnapshot) => {
+          set(store.conversationByIndex(0), {
+            conversationId: ACTIVE_CONVERSATION_ID,
+          } as never);
+        }}
+      >
+        <ShareButton conversationId="conversation-2" open={true} onOpenChange={jest.fn()} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('switch', { name: 'com_ui_share_files' })).toBeChecked();
+    const sharedLinkInput = screen.queryByTestId('shared-link-url') as HTMLInputElement | null;
+    expect(sharedLinkInput?.value ?? '').not.toContain('/share/share-1');
+  });
+
   it('targets the active branch tail when sharing the open conversation', () => {
     renderShareButton();
 

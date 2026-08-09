@@ -50,6 +50,7 @@ const router = express.Router();
 const DEFAULT_SHARED_LINKS_PAGE_SIZE = 10;
 const MAX_SHARED_LINKS_PAGE_SIZE = 100;
 const MAX_SHARED_LINK_SEARCH_LENGTH = 256;
+const MAX_SHARED_LINK_CURSOR_LENGTH = 512;
 
 const SHARE_SERVICE_ERROR_STATUS = {
   INVALID_PARAMS: 400,
@@ -65,6 +66,28 @@ const sendShareServiceError = (res, error, fallbackMessage) => {
   const status = SHARE_SERVICE_ERROR_STATUS[error?.code] ?? 500;
   const message = status === 500 ? fallbackMessage : error.message;
   return res.status(status).json({ message });
+};
+
+/**
+ * The list cursor is opaque: base64 `{ primary, id }`, where `id` is the `_id` that
+ * breaks ties on a repeated title or timestamp. Links issued before that encoding
+ * carry the bare sort value, so a plain date still passes for a `createdAt` page.
+ */
+const isValidSharedLinksCursor = (cursor, sortBy) => {
+  if (cursor.length > MAX_SHARED_LINK_CURSOR_LENGTH) {
+    return false;
+  }
+
+  try {
+    const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString());
+    if (typeof decoded?.primary === 'string' && /^[a-f\d]{24}$/i.test(decoded?.id ?? '')) {
+      return sortBy !== 'createdAt' || !Number.isNaN(Date.parse(decoded.primary));
+    }
+  } catch {
+    /* Not a composite cursor; fall through to the legacy plain-value check. */
+  }
+
+  return sortBy !== 'createdAt' || !Number.isNaN(Date.parse(cursor));
 };
 
 const parseSharedLinksPageSize = (value) => {
@@ -495,8 +518,8 @@ router.get('/', requireJwtAuth, async (req, res) => {
       });
     }
 
-    if (cursor && sortBy === 'createdAt' && Number.isNaN(Date.parse(cursor))) {
-      return res.status(400).json({ message: 'cursor must be a valid date' });
+    if (cursor && !isValidSharedLinksCursor(cursor, sortBy)) {
+      return res.status(400).json({ message: 'cursor is not valid for this sort' });
     }
 
     const params = {

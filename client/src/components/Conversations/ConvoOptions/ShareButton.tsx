@@ -51,19 +51,22 @@ export default function ShareButton({
   const { data: share, isLoading } = useGetSharedLinkQuery(conversationId);
   const shareId = share?.shareId ?? '';
 
+  // Keyed on the conversation too: this dialog outlives a switch between conversations,
+  // so a link built for the previous one must not stay in the copy field.
   useEffect(() => {
-    if (shareId) {
-      setSharedLink(buildShareLinkUrl(shareId));
-    }
-  }, [shareId]);
+    setSharedLink(shareId ? buildShareLinkUrl(shareId) : '');
+  }, [conversationId, shareId]);
 
   // Reflect an existing link's stored "share files" choice so the control isn't
-  // misleading (legacy links have no stored choice → keep the default of enabled).
+  // misleading, and fall back to the enabled default for a conversation with no link
+  // or a legacy link that stored no choice, rather than inheriting the last one.
   useEffect(() => {
-    if (share?.success === true && typeof share.snapshotFiles === 'boolean') {
-      setSnapshotFiles(share.snapshotFiles);
-    }
-  }, [share?.success, share?.snapshotFiles]);
+    setSnapshotFiles(
+      share?.success === true && typeof share.snapshotFiles === 'boolean'
+        ? share.snapshotFiles
+        : true,
+    );
+  }, [conversationId, share?.success, share?.snapshotFiles]);
 
   const button =
     isLoading === true ? null : (

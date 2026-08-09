@@ -795,6 +795,36 @@ describe('Share Methods', () => {
       expect(result.links[9].title).toBe('Share 9');
     });
 
+    test('should page through titles that repeat', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const createdAt = new Date('2026-05-01T00:00:00.000Z');
+
+      await Promise.all(
+        Array.from({ length: 6 }, (_, i) =>
+          SharedLink.create({
+            shareId: `dupe_${i}`,
+            conversationId: `conv_dupe_${i}`,
+            user: userId,
+            title: 'Untitled',
+            createdAt,
+          }),
+        ),
+      );
+
+      const seen = new Set<string>();
+      let cursor: string | undefined;
+      for (let page = 0; page < 6; page++) {
+        const result = await shareMethods.getSharedLinks(userId, cursor, 2, 'title', 'asc');
+        result.links.forEach((link) => seen.add(link.shareId));
+        cursor = result.nextCursor as string | undefined;
+        if (!result.hasNextPage) {
+          break;
+        }
+      }
+
+      expect(seen.size).toBe(6);
+    });
+
     test('should exclude expired shares', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 
