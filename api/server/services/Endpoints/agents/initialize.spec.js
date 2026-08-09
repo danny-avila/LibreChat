@@ -90,7 +90,7 @@ const { loadAgentTools } = require('~/server/services/ToolService');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logger } = require('@librechat/data-schemas');
 const { User, AclEntry } = require('~/db/models');
-const { createAgent, createSkill } = require('~/models');
+const { createAgent, createSkill, updateAgent } = require('~/models');
 
 jest.spyOn(logger, 'warn').mockImplementation(() => {});
 
@@ -817,7 +817,7 @@ describe('initializeClient — subagent loading', () => {
   });
 
   it('fails closed when a selected subagent configuration changes after advertisement', async () => {
-    const subAgent = await createViewableAgent(SUBAGENT_ID);
+    await createViewableAgent(SUBAGENT_ID);
     const primaryConfig = makePrimaryConfig({
       subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
     });
@@ -829,7 +829,10 @@ describe('initializeClient — subagent loading', () => {
       signal: new AbortController().signal,
       endpointOption: makeEndpointOption(),
     });
-    await subAgent.updateOne({ $set: { instructions: 'Changed after descriptor creation.' } });
+    await updateAgent(
+      { id: SUBAGENT_ID },
+      { instructions: 'Changed after descriptor creation.' },
+    );
 
     await expect(
       agentClientArgs.agent.lazySubagentConfigs[0].resolve({
