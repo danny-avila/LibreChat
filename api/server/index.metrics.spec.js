@@ -4,6 +4,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
 jest.mock('~/server/services/Config', () => ({
+  syncStaticTools: jest.fn().mockResolvedValue(undefined),
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
   getAppConfig: jest.fn().mockResolvedValue({
     paths: {
@@ -17,7 +18,6 @@ jest.mock('~/server/services/Config', () => ({
   }),
   mergeAppTools: jest.fn().mockResolvedValue(undefined),
   setCachedTools: jest.fn(),
-  syncStaticTools: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('~/app/clients/tools', () => ({

@@ -64,6 +64,10 @@ module.exports = {
           from: { transform: 'rotate(0deg)' },
           to: { transform: 'rotate(360deg)' },
         },
+        'reset-spin': {
+          from: { transform: 'rotate(0deg)' },
+          to: { transform: 'rotate(-360deg)' },
+        },
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-out forwards',
@@ -76,6 +80,7 @@ module.exports = {
         'shortcut-shake': 'shortcut-shake 0.25s ease-in-out',
         'logo-blink': 'logo-blink 3s infinite',
         'refresh-link-spin': 'refresh-link-spin 650ms cubic-bezier(0.42, 0, 0.58, 1)',
+        'reset-spin': 'reset-spin 500ms cubic-bezier(0.22, 1, 0.36, 1)',
       },
       colors: createTailwindColors(),
       borderRadius: {

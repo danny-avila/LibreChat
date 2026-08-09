@@ -20,15 +20,11 @@ jest.mock('librechat-data-provider', () => ({
   },
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => ({
-    BirthdayIcon: () => <span data-testid="birthday-icon" />,
-    TooltipAnchor: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-    SplitText: ({ text }: { text: string }) => <span>{text}</span>,
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => ({
+  BirthdayIcon: () => <span data-testid="birthday-icon" />,
+  TooltipAnchor: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  SplitText: ({ text }: { text: string }) => <span>{text}</span>,
+}));
 
 jest.mock('~/Providers', () => ({
   useChatContext: () => ({ conversation: mockConversation }),
