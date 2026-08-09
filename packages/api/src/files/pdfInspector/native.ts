@@ -136,7 +136,11 @@ export const SCAN_OCR_REASONS = ['scanned'] as const;
 
 type PdfChildOp = 'pages' | 'text';
 
-function runPdfChild(op: PdfChildOp, filePath: string): Promise<PdfChildResult> {
+function runPdfChild(
+  op: PdfChildOp,
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<PdfChildResult> {
   const modulePath = require.resolve('@firecrawl/pdf-inspector');
   return runNativeParserChild<PdfChildResult>({
     childSource: CHILD_SOURCE,
@@ -152,12 +156,16 @@ function runPdfChild(op: PdfChildOp, filePath: string): Promise<PdfChildResult> 
       classifyBudgetMs: PDF_CHILD_TIMEOUT_MS * CLASSIFY_BUDGET_SHARE,
     },
     timeoutMs: PDF_CHILD_TIMEOUT_MS,
+    signal,
   });
 }
 
 /** Per-page markdown for a PDF, parsed outside the API process. */
-export async function extractPagesMarkdownIsolated(filePath: string): Promise<PdfPageExtraction> {
-  const { pages, scannedPages } = await runPdfChild('pages', filePath);
+export async function extractPagesMarkdownIsolated(
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<PdfPageExtraction> {
+  const { pages, scannedPages } = await runPdfChild('pages', filePath, signal);
   return { pages: pages ?? [], scannedPages: scannedPages ?? [] };
 }
 
@@ -167,7 +175,7 @@ export async function extractPagesMarkdownIsolated(filePath: string): Promise<Pd
  * Unlike the per-page markdown extractor, this one re-segments words from glyph
  * positions, which is what makes it readable on documents with a poor OCR layer.
  */
-export async function extractTextIsolated(filePath: string): Promise<string> {
-  const { text } = await runPdfChild('text', filePath);
+export async function extractTextIsolated(filePath: string, signal?: AbortSignal): Promise<string> {
+  const { text } = await runPdfChild('text', filePath, signal);
   return text ?? '';
 }

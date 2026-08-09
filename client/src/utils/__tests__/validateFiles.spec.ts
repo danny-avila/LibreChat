@@ -193,6 +193,37 @@ describe('validateFiles', () => {
     expect(setError).not.toHaveBeenCalled();
   });
 
+  /**
+   * An operator who adds a vendor alias to the parser allowlist has told the server to
+   * parse that type, and the server obeys the allowlist whether or not the type is one
+   * it ships with. Gating the client on the built-in list refuses an upload the server
+   * would have accepted.
+   */
+  it('accepts a vendor MIME alias the operator added to the parser allowlist', () => {
+    const vendorType = 'application/vnd.vendor.word';
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [] },
+      ocr: { supportedMimeTypes: [] },
+      documentParser: { supportedMimeTypes: [new RegExp(`^${vendorType}$`)] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('report.docx', vendorType, 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig: makeEndpointConfig({
+        supportedMimeTypes: [new RegExp(`^${vendorType}$`)],
+      }),
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+    });
+
+    expect(result).toBe(true);
+    expect(setError).not.toHaveBeenCalled();
+  });
+
   it('rejects a locally excluded document when no RAG service is configured', () => {
     const contextFileConfig = {
       text: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)] },

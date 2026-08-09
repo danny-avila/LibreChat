@@ -444,11 +444,14 @@ const isContextType = (
   fileConfig: FileConfig | null,
   allowConfiguredOcr = true,
 ): boolean => {
+  /* Checked before the built-in list, not inside it: an operator who adds a vendor MIME
+   * alias to `documentParser.supportedMimeTypes` has told the server to parse it, and
+   * the server obeys that allowlist whether or not the type is one it ships with. */
+  if (checkType(type, fileConfig?.documentParser?.supportedMimeTypes || documentParserMimeTypes)) {
+    return true;
+  }
+
   if (checkType(type, documentParserMimeTypes)) {
-    const localParserEnabled = checkType(
-      type,
-      fileConfig?.documentParser?.supportedMimeTypes || documentParserMimeTypes,
-    );
     const configuredOcrEnabled =
       allowConfiguredOcr &&
       fileConfig?.ocr?.enabled === true &&
@@ -460,7 +463,7 @@ const isContextType = (
       fileConfig?.text?.enabled === true &&
       !isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
       checkType(type, fileConfig.text?.supportedMimeTypes || []);
-    return localParserEnabled || configuredOcrEnabled || configuredTextEnabled;
+    return configuredOcrEnabled || configuredTextEnabled;
   }
 
   return checkType(type, [

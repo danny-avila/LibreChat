@@ -59,6 +59,34 @@ describe('pdfInspector child isolation', () => {
    * at the first child's exit would leave the recovery running outside the cap. The
    * burst is driven through that wrapper because it is what production holds.
    */
+  /**
+   * A caller that stops waiting has to stop the work too. The outer timeout in the code
+   * artifact path is far shorter than the child's own, so without this the abandoned
+   * parse keeps its admission slot while unrelated uploads are turned away.
+   */
+  test('kills the child and frees the slot when the caller aborts', async () => {
+    const child = new TestChild();
+    mockSpawn.mockReturnValue(child);
+    const cancellation = new AbortController();
+
+    const extraction = extractTextIsolated('/tmp/slow.pdf', cancellation.signal);
+    const failure = extraction.catch((error: Error) => error);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    cancellation.abort();
+
+    expect(await failure).toBeInstanceOf(Error);
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  test('never spawns when the caller has already aborted', async () => {
+    const cancellation = new AbortController();
+    cancellation.abort();
+
+    await expect(extractTextIsolated('/tmp/gone.pdf', cancellation.signal)).rejects.toThrow();
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
   test('limits native parser children across a concurrent burst', async () => {
     const children = [new TestChild(), new TestChild(), new TestChild()];
     children.forEach((child) => mockSpawn.mockReturnValueOnce(child));

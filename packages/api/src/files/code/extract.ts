@@ -175,6 +175,11 @@ const extractDocument = async (
   const canonicalMime = documentMimeFromExtension(name) ?? mimeType;
   const tempPath = path.join(os.tmpdir(), `code-artifact-${randomUUID()}`);
   await fs.writeFile(tempPath, buffer);
+  /* The timeout gives up on the result; the abort gives up on the work. Without it the
+   * parse keeps its admission slot for its own far longer budget after this caller has
+   * returned and deleted the file underneath it, and a handful of slow artifacts can
+   * hold every slot while unrelated uploads are turned away. */
+  const cancellation = new AbortController();
   try {
     const result = await withTimeout(
       parseDocument({
@@ -184,6 +189,7 @@ const extractDocument = async (
           mimetype: canonicalMime,
           originalname: path.basename(name),
         } as Express.Multer.File,
+        signal: cancellation.signal,
       }),
       DOCUMENT_PARSE_TIMEOUT_MS,
       `parseDocument exceeded ${DOCUMENT_PARSE_TIMEOUT_MS}ms`,
@@ -193,6 +199,7 @@ const extractDocument = async (
     }
     return truncate(result.text);
   } finally {
+    cancellation.abort();
     fs.unlink(tempPath).catch(() => {});
   }
 };

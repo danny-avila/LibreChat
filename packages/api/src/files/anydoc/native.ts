@@ -32,7 +32,11 @@ process.once('message', async (request) => {
 `;
 
 /** Parse an AnyDoc-supported document outside the API process. */
-export function extractMarkdownIsolated(filePath: string, format: string | null): Promise<string> {
+export function extractMarkdownIsolated(
+  filePath: string,
+  format: string | null,
+  signal?: AbortSignal,
+): Promise<string> {
   return runNativeParserChild<string>({
     childSource: CHILD_SOURCE,
     parserName: 'anydoc',
@@ -43,5 +47,6 @@ export function extractMarkdownIsolated(filePath: string, format: string | null)
       maxOutputBytes: MAX_PARSER_OUTPUT_BYTES,
     },
     timeoutMs: ANYDOC_CHILD_TIMEOUT_MS,
+    signal,
   });
 }
