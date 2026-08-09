@@ -389,6 +389,44 @@ describe('Multer Configuration', () => {
       },
     );
 
+    /**
+     * A client that types uploads by magic bytes calls a `.docx` an archive. Admission
+     * and routing have to read it the same way: resolving only downstream leaves a
+     * narrowed endpoint allowlist refusing a document the parser would have accepted.
+     */
+    it.each(['application/zip', 'application/x-zip-compressed'])(
+      'should canonicalize a document sent as %s before endpoint admission',
+      (archiveType) => {
+        const { mergeFileConfig } = require('librechat-data-provider');
+        const fileFilter = createFileFilter(mergeFileConfig());
+        const documentFile = {
+          ...mockFile,
+          originalname: 'report.docx',
+          mimetype: archiveType,
+        };
+        const cb = jest.fn();
+
+        fileFilter(mockReq, documentFile, cb);
+
+        expect(cb).toHaveBeenCalledWith(null, true);
+        expect(documentFile.mimetype).toBe(
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        );
+      },
+    );
+
+    it('should leave an ordinary archive as an archive', () => {
+      const { mergeFileConfig } = require('librechat-data-provider');
+      const fileFilter = createFileFilter(mergeFileConfig());
+      const archive = { ...mockFile, originalname: 'bundle.zip', mimetype: 'application/zip' };
+      const cb = jest.fn();
+
+      fileFilter(mockReq, archive, cb);
+
+      expect(cb).toHaveBeenCalledWith(null, true);
+      expect(archive.mimetype).toBe('application/zip');
+    });
+
 
     it('should use real mergeFileConfig function', async () => {
       const { mergeFileConfig, mbToBytes } = require('librechat-data-provider');

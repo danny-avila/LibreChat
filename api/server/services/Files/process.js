@@ -81,6 +81,14 @@ const hasCodeEnvRef = (file) =>
 const resolveUploadMimeType = (file) =>
   resolveEffectiveMimeType(file?.originalname ?? '', file?.mimetype ?? '');
 
+/**
+ * Document types the parser only reformats, whose raw bytes are already the content.
+ * Converting a dense CSV to a Markdown table adds pipes and padding to every cell, so a
+ * source file inside the storage limit can convert to one that is not.
+ */
+const delimitedTextTypes = /^(?:text|application)\/csv$/i;
+const isDelimitedTextType = (mimetype) => delimitedTextTypes.test(mimetype);
+
 const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';
 const isPdfPageLimitError = (err) =>
   err?.code === 'PDF_PAGE_LIMIT' || err?.name === 'PdfPageLimitError';
@@ -839,10 +847,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      * RAG `/text` instead of the built-in document parser. The permissive default catch-all is
      * excluded via `isPermissiveMimeConfig`, so RAG deployments that never customized text handling
      * keep the built-in parser introduced in #11900.
+     *
+     * Scoped by the built-in document list, not by `isDocumentParserEligible`: an admin who
+     * removes a type from `documentParser.supportedMimeTypes` while naming it in the text
+     * allowlist is asking for RAG to handle it, and reading local-parser eligibility here
+     * would turn that pair of settings into a refused upload.
      */
     const shouldUseConfiguredText =
       !!process.env.RAG_API_URL &&
-      isDocumentParserEligible &&
+      isKnownDocumentType &&
       !isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
       fileConfig.checkType(effectiveMimeType, fileConfig.text?.supportedMimeTypes || []);
 
@@ -968,6 +981,17 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
        * Persist the local text with its missing-page notice instead of discarding it. */
       if (hasLocalText) {
         return await createDocumentTextFile(localResult);
+      }
+
+      /* A delimited file is already text: the parser only reformats it as a table, and
+       * that table can outgrow the storage limit on a source file well inside it. Falling
+       * back to the bytes is what this path did before the parser claimed the type, and
+       * it is the whole document either way, so there is nothing to warn about. */
+      if (isDelimitedTextType(effectiveMimeType)) {
+        const { text, bytes } = await parseText({ req, file, file_id });
+        if (text?.trim()) {
+          return await createTextFile({ text, bytes, type: effectiveMimeType });
+        }
       }
 
       throw new Error(

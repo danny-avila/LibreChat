@@ -403,6 +403,51 @@ describe('processAgentFileUpload', () => {
       expect(parseText).toHaveBeenCalled();
     });
 
+    /**
+     * The parser only reformats a delimited file as a Markdown table, and the pipes and
+     * padding it adds to every cell can push a source file inside the storage limit past
+     * it. Failing the upload would lose a document whose bytes were readable all along.
+     */
+    test('stores the raw bytes when the parser cannot convert a delimited file', async () => {
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ textSupportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] }),
+      );
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest
+          .fn()
+          .mockRejectedValue(
+            new Error('anydoc failed: extracted 22MB of text, over the 15MB limit'),
+          ),
+      });
+      const { parseText } = require('@librechat/api');
+      parseText.mockResolvedValueOnce({ text: 'a,b\n1,2\n', bytes: 8 });
+      const req = makeReq({ mimetype: 'text/csv', originalname: 'rows.csv', ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(db.createFile.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ text: 'a,b\n1,2\n', type: 'text/csv' }),
+      );
+    });
+
+    test('still refuses a binary document the parser cannot read', async () => {
+      /* The counterpart: a DOCX has no readable raw form, so storing its bytes would
+       * hand the model an archive. The refusal is the honest outcome there. */
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ textSupportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] }),
+      );
+      getStrategyFunctions.mockReturnValue({
+        handleFileUpload: jest.fn().mockRejectedValue(new Error('anydoc failed')),
+      });
+      const { parseText } = require('@librechat/api');
+      const req = makeReq({ mimetype: DOCX_MIME, originalname: 'report.docx', ocrConfig: null });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toThrow(/Unable to extract text/);
+      expect(parseText).not.toHaveBeenCalled();
+    });
+
     test('does not check OCR capability when using automatic document_parser fallback', async () => {
       const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
 
@@ -994,6 +1039,31 @@ describe('processAgentFileUpload', () => {
         expect.objectContaining({ allowNativeFallback: false }),
       );
       expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.document_parser);
+    });
+
+    /**
+     * Naming a type in the text allowlist while removing it from the parser allowlist is
+     * how an admin says "RAG handles this one". Reading local-parser eligibility to decide
+     * the RAG route turned that pair of settings into a refused upload.
+     */
+    test('routes to RAG /text for a type the admin removed from the local parser', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({
+          textSupportedMimeTypes: DOCX_TEXT_REGEX,
+          documentParserSupportedMimeTypes: [/^application\/pdf$/],
+        }),
+      );
+      const { parseText } = require('@librechat/api');
+      parseText.mockResolvedValueOnce({ text: 'rag extracted', bytes: 13 });
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(parseText).toHaveBeenCalledWith(
+        expect.objectContaining({ allowNativeFallback: false }),
+      );
+      expect(db.createFile.mock.calls[0][0].text).toBe('rag extracted');
     });
 
     test('keeps the built-in document parser when text config is the permissive default', async () => {
