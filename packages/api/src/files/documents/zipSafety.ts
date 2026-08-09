@@ -37,9 +37,6 @@ const EOCD_SIGNATURE = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
 /** Fixed size of the EOCD record, before its variable-length comment. */
 const EOCD_RECORD_BYTES = 22;
 
-/** Largest legal EOCD tail: the fixed record plus a 65535-byte comment. */
-const EOCD_SCAN_BYTES = EOCD_RECORD_BYTES + 65535;
-
 /**
  * Tag-distinct error so callers (e.g. the office HTML producers and the
  * RAG document parser) can distinguish a refused zip-bomb from generic
@@ -228,6 +225,18 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
 const ZIP64_MARKER = 0xffff;
 
 /**
+ * Candidate EOCD signatures examined before the scan gives up and calls the buffer an
+ * archive anyway.
+ *
+ * A real file holds one, and random data holds none: 15MB has an expected 0.003 hits.
+ * Thousands means the signature was seeded deliberately, which is the shape of an
+ * attempt to make the scan expensive. Exhaustion resolves toward "archive" so the guard
+ * still runs, since the alternative is to skip every cap on a file built to look
+ * confusing.
+ */
+const MAX_EOCD_CANDIDATES = 4096;
+
+/**
  * Whether an EOCD candidate's own fields agree with each other and with the buffer.
  *
  * The comment-length test below cannot confirm a record followed by trailing bytes, so
@@ -236,20 +245,20 @@ const ZIP64_MARKER = 0xffff;
  * within the file. A false positive here costs a legitimate `.xls` its upload, since
  * detection and enforcement are welded together, so the checks stay strict.
  */
-function isCoherentEocd(tail: Buffer, index: number, fileBytes: number): boolean {
-  const thisDisk = tail.readUInt16LE(index + 4);
-  const centralDirectoryDisk = tail.readUInt16LE(index + 6);
-  const entriesOnDisk = tail.readUInt16LE(index + 8);
-  const totalEntries = tail.readUInt16LE(index + 10);
+function isCoherentEocd(buffer: Buffer, index: number): boolean {
+  const thisDisk = buffer.readUInt16LE(index + 4);
+  const centralDirectoryDisk = buffer.readUInt16LE(index + 6);
+  const entriesOnDisk = buffer.readUInt16LE(index + 8);
+  const totalEntries = buffer.readUInt16LE(index + 10);
   if (thisDisk !== 0 || centralDirectoryDisk !== 0) {
     return thisDisk === ZIP64_MARKER && centralDirectoryDisk === ZIP64_MARKER;
   }
   if (entriesOnDisk !== totalEntries) {
     return false;
   }
-  const centralDirectoryBytes = tail.readUInt32LE(index + 12);
-  const centralDirectoryOffset = tail.readUInt32LE(index + 16);
-  return centralDirectoryOffset + centralDirectoryBytes <= fileBytes;
+  const centralDirectoryBytes = buffer.readUInt32LE(index + 12);
+  const centralDirectoryOffset = buffer.readUInt32LE(index + 16);
+  return centralDirectoryOffset + centralDirectoryBytes <= buffer.length;
 }
 
 /**
@@ -257,32 +266,38 @@ function isCoherentEocd(tail: Buffer, index: number, fileBytes: number): boolean
  * End-Of-Central-Directory record from the tail.
  *
  * Testing the leading `PK` magic bytes is not enough. Real zip readers (anydoc's
- * Rust zip crate, SheetJS) seek the EOCD backwards from the end of the file and
- * tolerate arbitrary data on either side of the archive; that is how self-extracting
- * archives work. Padding a zip bomb therefore makes a magic-byte test report "not a
- * zip" while the parser still happily inflates it, and requiring the record's comment
- * to run exactly to the end of the buffer leaves the same hole open for a single
- * appended byte. A candidate is accepted when its comment ends the file or when its
- * own fields are internally coherent.
+ * Rust zip crate, SheetJS) seek the EOCD backwards and tolerate arbitrary data on
+ * either side of the archive; that is how self-extracting archives work. Padding a zip
+ * bomb therefore makes a magic-byte test report "not a zip" while the parser still
+ * happily inflates it, and requiring the record's comment to run exactly to the end of
+ * the buffer leaves the same hole open for a single appended byte. A candidate is
+ * accepted when its comment ends the file or when its own fields are internally
+ * coherent.
+ *
+ * The whole buffer is searched rather than the 65,557 bytes a comment may legally
+ * occupy: measured against anydoc, a DOCX with 100KB appended still has its entries
+ * read, so a window that small is a documented bypass rather than a saving. Uploads are
+ * capped at 15MB and each candidate costs a handful of reads, so the scan is bounded.
  */
 export function isZipArchive(buffer: Buffer): boolean {
   if (buffer.length < EOCD_RECORD_BYTES) {
     return false;
   }
-  const tail =
-    buffer.length > EOCD_SCAN_BYTES ? buffer.subarray(buffer.length - EOCD_SCAN_BYTES) : buffer;
 
-  let index = tail.lastIndexOf(EOCD_SIGNATURE, tail.length - EOCD_RECORD_BYTES);
-  while (index >= 0) {
+  let index = buffer.lastIndexOf(EOCD_SIGNATURE, buffer.length - EOCD_RECORD_BYTES);
+  for (let examined = 0; index >= 0; examined++) {
+    if (examined >= MAX_EOCD_CANDIDATES) {
+      return true;
+    }
     const commentEndsTheFile =
-      index + EOCD_RECORD_BYTES + tail.readUInt16LE(index + 20) === tail.length;
-    if (commentEndsTheFile || isCoherentEocd(tail, index, buffer.length)) {
+      index + EOCD_RECORD_BYTES + buffer.readUInt16LE(index + 20) === buffer.length;
+    if (commentEndsTheFile || isCoherentEocd(buffer, index)) {
       return true;
     }
     if (index === 0) {
       return false;
     }
-    index = tail.lastIndexOf(EOCD_SIGNATURE, index - 1);
+    index = buffer.lastIndexOf(EOCD_SIGNATURE, index - 1);
   }
   return false;
 }

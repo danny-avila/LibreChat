@@ -48,8 +48,11 @@ export function annotateMissingPages(text: string, pagesNeedingOcr?: number[]): 
  */
 export async function parseDocument({
   file,
+  signal,
 }: {
   file: Express.Multer.File;
+  /** Cancels the parse and frees its admission slot when the caller stops waiting. */
+  signal?: AbortSignal;
 }): Promise<ParsedDocumentUploadResult> {
   const fileSize = file.size ?? (file.path != null ? (await fs.promises.stat(file.path)).size : 0);
   if (fileSize > DOCUMENT_PARSER_MAX_FILE_SIZE) {
@@ -68,10 +71,12 @@ export async function parseDocument({
   /* Admission covers the whole parse. A PDF is a child process, then in-process pdfjs
    * recovery, then possibly a second child, and bounding only the children would leave
    * the recovery to pile up behind a cap that never counted it. */
-  const result = await withParserAdmission(() =>
-    mimetype === 'application/pdf'
-      ? parseWithPdfInspector(parserFile)
-      : parseWithAnydoc(parserFile),
+  const result = await withParserAdmission(
+    () =>
+      mimetype === 'application/pdf'
+        ? parseWithPdfInspector(parserFile, signal)
+        : parseWithAnydoc(parserFile, signal),
+    signal,
   );
 
   if (!result.text?.trim()) {

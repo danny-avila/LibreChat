@@ -86,8 +86,21 @@ const nativeParserLimit = createConcurrencyLimiter(NATIVE_PARSER_CONCURRENCY, {
  * recoveries up: the expensive half of the pipeline would run unbounded behind a cap
  * that only ever counted the cheap half.
  */
-export function withParserAdmission<T>(parse: () => Promise<T>): Promise<T> {
-  return nativeParserLimit(parse);
+export function withParserAdmission<T>(parse: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  return nativeParserLimit(() => {
+    /* A caller that gave up while queued releases the slot without starting: the point
+     * of the queue is to bound work in flight, and work nobody is waiting for is not
+     * work. */
+    if (signal?.aborted) {
+      return Promise.reject(abortError(signal));
+    }
+    return parse();
+  });
+}
+
+function abortError(signal: AbortSignal): Error {
+  const reason = signal.reason;
+  return reason instanceof Error ? reason : new Error('Document parsing was cancelled');
 }
 
 interface NativeParserResponse<T> {
@@ -103,6 +116,8 @@ interface NativeParserChildOptions {
   parserName: string;
   request: Record<string, unknown>;
   timeoutMs: number;
+  /** Kills the child when the caller stops waiting, so an abandoned parse frees its slot. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -116,7 +131,11 @@ export function runNativeParserChild<T>({
   parserName,
   request,
   timeoutMs,
+  signal,
 }: NativeParserChildOptions): Promise<T> {
+  if (signal?.aborted) {
+    return Promise.reject(abortError(signal));
+  }
   return new Promise<T>((resolve, reject) => {
     const child = spawn(process.execPath, ['-e', childSource], {
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
@@ -129,6 +148,7 @@ export function runNativeParserChild<T>({
       }
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       if (!child.killed) {
         child.kill('SIGKILL');
       }
@@ -144,6 +164,8 @@ export function runNativeParserChild<T>({
       timeoutMs,
     );
     timer.unref?.();
+    const onAbort = () => finish(abortError(signal as AbortSignal));
+    signal?.addEventListener('abort', onAbort, { once: true });
 
     child.on('message', (message: NativeParserResponse<T>) => {
       if (message.ok) {

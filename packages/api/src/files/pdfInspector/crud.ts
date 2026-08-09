@@ -51,13 +51,14 @@ export const pdfInspectorSupportedMimeTypes: RegExp[] = [/^application\/pdf$/];
  */
 export async function parseWithPdfInspector(
   file: Express.Multer.File,
+  signal?: AbortSignal,
 ): Promise<ParsedDocumentUploadResult> {
   assertSupportedMimeType(file);
 
   const data = await fs.promises.readFile(file.path);
   let parsed: ParsedDocument;
   try {
-    parsed = await extractPdf(file.path, data);
+    parsed = await extractPdf(file.path, data, signal);
   } catch (error) {
     /* Refusals are not "this engine could not read it", and pdfjs is not the answer to
      * any of them: it would run the walk inline for a request the limiter just refused,
@@ -119,8 +120,12 @@ function assertSupportedMimeType(file: Express.Multer.File): void {
  * @throws {Error} when pdf-inspector reports no pages at all, so the caller falls
  * back to pdfjs instead of returning the empty string a page-less join produces.
  */
-export async function extractPdf(filePath: string, data: Buffer): Promise<ParsedDocument> {
-  const extraction = await extractPagesMarkdownIsolated(filePath);
+export async function extractPdf(
+  filePath: string,
+  data: Buffer,
+  signal?: AbortSignal,
+): Promise<ParsedDocument> {
+  const extraction = await extractPagesMarkdownIsolated(filePath, signal);
   const pages = [...extraction.pages].sort((a, b) => a.page - b.page);
   if (!pages.length) {
     throw new Error('pdf-inspector returned no pages');
@@ -189,7 +194,7 @@ export async function extractPdf(filePath: string, data: Buffer): Promise<Parsed
    * markdown islands in a sea of mush. Page accounting stays empirical either way. */
   if (droppedPages.length > pages.length * DROPPED_PAGE_MAJORITY) {
     try {
-      const plain = await extractTextIsolated(filePath);
+      const plain = await extractTextIsolated(filePath, signal);
       if (plain.trim()) {
         /* This output covers the whole document, including the pages past the recovery
          * cap that the interleaved branch would have skipped. Reporting those as

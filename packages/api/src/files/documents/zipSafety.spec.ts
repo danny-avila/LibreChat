@@ -227,12 +227,44 @@ describe('isZipArchive', () => {
     },
   );
 
+  /**
+   * A comment may legally run 65,535 bytes, so a window that size looks like the natural
+   * bound. It is not the one that matters: measured against anydoc, a DOCX with 100KB
+   * appended still has its inner entries read, so anything the scan cannot see is a
+   * bypass of every decompression cap rather than a saving.
+   */
   test.each([
     ['a single appended byte', Buffer.from([0x00])],
     ['an appended block', Buffer.alloc(4096, 0x41)],
+    ['a suffix longer than a legal comment', Buffer.alloc(100 * 1024, 0x41)],
+    ['a suffix far past the comment window', Buffer.alloc(2 * megabyte, 0x41)],
   ])('detects an archive followed by %s', (_label, trailer) => {
     const padded = Buffer.concat([readFixture('sample.docx'), trailer]);
     expect(isZipArchive(padded)).toBe(true);
+  });
+
+  test('runs the decompression guard on a bomb hidden behind an overlong suffix', async () => {
+    const bomb = await buildBombArchive([
+      { name: 'document.xml', decompressedBytes: 40 * megabyte },
+    ]);
+    const padded = Buffer.concat([bomb, Buffer.alloc(100 * 1024, 0x41)]);
+
+    expect(isZipArchive(padded)).toBe(true);
+    await expect(assertSafeZipSizeIfArchive(padded, { name: 'suffixed.docx' })).rejects.toThrow();
+  });
+
+  test('resolves toward archive rather than spending the scan on seeded signatures', () => {
+    /* Random data holds an expected 0.003 of these in 15MB, so thousands means they were
+     * planted. Giving up toward "not an archive" would skip every cap on exactly the
+     * file built to look confusing, so the scan stops and lets the guard decide. */
+    const seeded = Buffer.alloc(2 * megabyte);
+    for (let offset = 0; offset + 4 <= seeded.length; offset += 4) {
+      seeded.write('PK\u0005\u0006', offset, 'latin1');
+    }
+
+    const started = Date.now();
+    expect(isZipArchive(seeded)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   test('detects an archive preceded by junk, as a self-extracting archive would be', () => {
