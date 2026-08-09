@@ -831,6 +831,7 @@ class AgentClient extends BaseClient {
           configurable: {
             thread_id: this.conversationId,
             user_id: this.user ?? this.options.req?.user?.id,
+            requestBody: { parentMessageId: this.parentMessageId },
           },
         },
       }));
