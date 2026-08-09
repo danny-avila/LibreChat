@@ -146,17 +146,25 @@ function QueueRow({
      anything claimed. A second click while one is open is refused rather than
      racing it. */
   const handOff = useCallback(
-    async (transfer: () => Promise<void>) => {
+    async (transfer: () => Promise<boolean>) => {
       if (!claimQueuedIntent(message.id)) {
         return;
       }
+      let handedOff = false;
       try {
-        await transfer();
+        handedOff = await transfer();
       } finally {
         releaseQueuedIntent(message.id);
+        /* The row is going back to the queue. A run end that landed while it was
+           claimed found nothing unclaimed to drain and spent its one-shot
+           signal on nothing, so put one back: otherwise these words sit here
+           until some later generation finishes. */
+        if (!handedOff) {
+          steering.rewakeDrain(conversationId);
+        }
       }
     },
-    [message.id],
+    [message.id, steering, conversationId],
   );
 
   const editToComposer = useCallback(
@@ -166,7 +174,7 @@ function QueueRow({
            through its durable receipt first, or the edited words would come
            back as a second message on the next reload. */
         if (!(await steering.discardQueued(message))) {
-          return;
+          return false;
         }
         /* Same order as the trash below: dropped only once the words are
            somewhere else. A paused question owns the composer, and removing
@@ -177,9 +185,10 @@ function QueueRow({
         });
         if (taken) {
           steering.removeQueued(message.id);
-          return;
+          return true;
         }
         showToast({ message: localize('com_ui_queue_edit_blocked'), status: 'warning' });
+        return false;
       }),
     [handOff, steering, message, onEditToComposer, showToast, localize],
   );
@@ -189,7 +198,7 @@ function QueueRow({
       handOff(async () => {
         /* Discard the parked server copy first, as on Edit above. */
         if (!(await steering.discardQueued(message))) {
-          return;
+          return false;
         }
         /* Only dropped once the words are somewhere else. The composer refuses
            when it is occupied or the user has moved to another chat, and
@@ -202,12 +211,13 @@ function QueueRow({
         );
         if (restored) {
           steering.removeQueued(message.id);
-          return;
+          return true;
         }
         /* Refusing silently reads as a dead button: the row stays, nothing
            moves, and the reason (a draft in the box, another chat on screen)
            is somewhere the click was not. */
         showToast({ message: localize('com_ui_queue_remove_blocked'), status: 'warning' });
+        return false;
       }),
     [handOff, steering, message, onRestoreToComposer, conversationId, showToast, localize],
   );

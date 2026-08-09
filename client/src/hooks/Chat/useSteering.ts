@@ -1588,6 +1588,23 @@ export default function useSteering({
     [index],
   );
 
+  /**
+   * Re-post the last completion this conversation saw, for the callers that put
+   * words back into the queue after a round-trip. The drain's signal is
+   * one-shot and may well have been spent while that round-trip was in flight,
+   * on a queue where every row was either absent or spoken for. Only a clean
+   * completion counts: an aborted or errored run never drains.
+   */
+  const rewakeDrain = useCallback(
+    (convoId: string) => {
+      const lastRunEnd = runEndsRef.current.get(convoId);
+      if (lastRunEnd?.outcome === 'completed') {
+        rearmDrain(convoId, lastRunEnd);
+      }
+    },
+    [rearmDrain],
+  );
+
   /** Restore a server-owned steer as the same queued follow-up and wake a
    * drain whose one-shot completion signal may already have been consumed
    * while the recovery request was in flight. Shared by reclaim and durable
@@ -1615,12 +1632,9 @@ export default function useSteering({
           generationProtocolVersion: steer.generationProtocolVersion,
         },
       );
-      const lastRunEnd = runEndsRef.current.get(conversationId);
-      if (lastRunEnd?.outcome === 'completed') {
-        rearmDrain(conversationId, lastRunEnd);
-      }
+      rewakeDrain(conversationId);
     },
-    [conversationId, convertSteersToQueued, rearmDrain],
+    [conversationId, convertSteersToQueued, rewakeDrain],
   );
 
   const armDrainAfterAbort = useRecoilCallback(
@@ -1711,10 +1725,7 @@ export default function useSteering({
         } else {
           enqueue(trimmed, { id: localId, createdAt, files, ...context });
         }
-        const lastRunEnd = runEndsRef.current.get(conversationId);
-        if (lastRunEnd?.outcome === 'completed') {
-          rearmDrain(conversationId, lastRunEnd);
-        }
+        rewakeDrain(conversationId);
       };
       if (opts?.queuedOrigin != null) {
         registerQueuedOrigin(opts.queuedOrigin);
@@ -1957,7 +1968,7 @@ export default function useSteering({
       sendNow,
       enqueue,
       restoreQueued,
-      rearmDrain,
+      rewakeDrain,
       registerQueuedOrigin,
       isSteerAcceptedOrSettled,
       showToast,
@@ -2070,12 +2081,9 @@ export default function useSteering({
           skipUsageMark: true,
         });
       }
-      const lastRunEnd = runEndsRef.current.get(conversationId);
-      if (lastRunEnd?.outcome === 'completed') {
-        rearmDrain(conversationId, lastRunEnd);
-      }
+      rewakeDrain(conversationId);
     },
-    [conversationId, enqueue, rearmDrain, restoreQueued],
+    [conversationId, enqueue, rewakeDrain, restoreQueued],
   );
 
   /** Convert a failed/unsent steer chip into a queued follow-up. */
@@ -2342,6 +2350,7 @@ export default function useSteering({
       enqueue,
       removeQueued,
       discardQueued,
+      rewakeDrain,
       reorderQueued,
       restoreQueuedOrder,
       sendQueuedNow,
@@ -2370,6 +2379,7 @@ export default function useSteering({
       enqueue,
       removeQueued,
       discardQueued,
+      rewakeDrain,
       reorderQueued,
       restoreQueuedOrder,
       sendQueuedNow,
