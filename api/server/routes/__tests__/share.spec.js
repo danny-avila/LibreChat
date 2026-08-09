@@ -260,6 +260,20 @@ describe('share routes', () => {
     expect(getSharedLinks).not.toHaveBeenCalled();
   });
 
+  it('accepts the composite cursor issued for a titleless page', async () => {
+    getSharedLinks.mockResolvedValue({ links: [], hasNextPage: false });
+    const cursor = Buffer.from(
+      JSON.stringify({ primary: null, id: '0123456789abcdef01234567' }),
+    ).toString('base64');
+
+    const response = await request(buildApp()).get(
+      `/api/share?sortBy=title&cursor=${encodeURIComponent(cursor)}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(getSharedLinks).toHaveBeenCalledWith('user-123', cursor, 10, 'title', 'desc', undefined);
+  });
+
   it('does not expose internal list errors in the response', async () => {
     getSharedLinks.mockRejectedValue(new Error('mongodb.internal:27017'));
 

@@ -641,25 +641,50 @@ export function createConversationMethods(
       try {
         const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString());
         const { primary, secondary, id } = decoded;
-        const primaryValue = finalSortBy === 'title' ? primary : new Date(primary);
         const secondaryValue = new Date(secondary);
-        const op = finalSortDirection === 'asc' ? '$gt' : '$lt';
+        const descending = finalSortDirection !== 'asc';
+        const op = descending ? '$lt' : '$gt';
         const sortsByUpdatedAt = finalSortBy === 'updatedAt';
+        const boundaryId =
+          typeof id === 'string' && isValidObjectIdString(id)
+            ? { [op]: new mongoose.Types.ObjectId(id) }
+            : null;
 
         /* One clause per sort level, so the page boundary is exact. Titles and
            timestamps both repeat; `_id` is the only field guaranteed to break the
            tie, and without that last clause every row sharing the boundary's
            (sort field, updatedAt) pair is skipped instead of returned. */
-        const clauses: FilterQuery<IConversation>[] = [{ [finalSortBy]: { [op]: primaryValue } }];
-        if (!sortsByUpdatedAt) {
-          clauses.push({ [finalSortBy]: primaryValue, updatedAt: { [op]: secondaryValue } });
-        }
-        if (typeof id === 'string' && isValidObjectIdString(id)) {
-          clauses.push({
-            [finalSortBy]: primaryValue,
-            ...(sortsByUpdatedAt ? {} : { updatedAt: secondaryValue }),
-            _id: { [op]: new mongoose.Types.ObjectId(id) },
-          });
+        const clauses: FilterQuery<IConversation>[] = [];
+
+        /* A title can be absent, and BSON orders a missing field before every
+           string while `$lt`/`$gt` never cross that type boundary. Titleless rows
+           therefore need clauses of their own: their own tail when the boundary is
+           one of them, and the whole group when a descending page runs past the
+           last title. */
+        if (primary == null) {
+          clauses.push({ [finalSortBy]: null, updatedAt: { [op]: secondaryValue } });
+          if (boundaryId) {
+            clauses.push({ [finalSortBy]: null, updatedAt: secondaryValue, _id: boundaryId });
+          }
+          if (!descending) {
+            clauses.push({ [finalSortBy]: { $ne: null } });
+          }
+        } else {
+          const primaryValue = finalSortBy === 'title' ? primary : new Date(primary);
+          clauses.push({ [finalSortBy]: { [op]: primaryValue } });
+          if (!sortsByUpdatedAt) {
+            clauses.push({ [finalSortBy]: primaryValue, updatedAt: { [op]: secondaryValue } });
+          }
+          if (boundaryId) {
+            clauses.push({
+              [finalSortBy]: primaryValue,
+              ...(sortsByUpdatedAt ? {} : { updatedAt: secondaryValue }),
+              _id: boundaryId,
+            });
+          }
+          if (descending && finalSortBy === 'title') {
+            clauses.push({ [finalSortBy]: null });
+          }
         }
 
         cursorFilter = { $or: clauses } as FilterQuery<IConversation>;
@@ -702,7 +727,9 @@ export function createConversationMethods(
           primaryValue = lastReturned.createdAt;
         }
         const primaryStr =
-          finalSortBy === 'title' ? primaryValue : new Date(primaryValue ?? 0).toISOString();
+          finalSortBy === 'title'
+            ? (primaryValue ?? null)
+            : new Date(primaryValue ?? 0).toISOString();
         const secondaryStr = new Date(lastReturned.updatedAt ?? 0).toISOString();
         const composite = {
           primary: primaryStr,

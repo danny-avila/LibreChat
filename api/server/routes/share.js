@@ -80,8 +80,17 @@ const isValidSharedLinksCursor = (cursor, sortBy) => {
 
   try {
     const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString());
-    if (typeof decoded?.primary === 'string' && /^[a-f\d]{24}$/i.test(decoded?.id ?? '')) {
-      return sortBy !== 'createdAt' || !Number.isNaN(Date.parse(decoded.primary));
+    const primary = decoded?.primary;
+    if (
+      (typeof primary === 'string' || primary === null) &&
+      /^[a-f\d]{24}$/i.test(decoded?.id ?? '')
+    ) {
+      // A titleless boundary encodes `primary: null`; a createdAt page never can,
+      // since the field is always stamped.
+      if (primary === null) {
+        return sortBy !== 'createdAt';
+      }
+      return sortBy !== 'createdAt' || !Number.isNaN(Date.parse(primary));
     }
   } catch {
     /* Not a composite cursor; fall through to the legacy plain-value check. */

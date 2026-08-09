@@ -1273,6 +1273,55 @@ describe('Conversation Operations', () => {
       await Conversation.deleteMany({ user: 'user123' });
     });
 
+    it('should page past conversations that have no title', async () => {
+      const sameTime = new Date('2026-04-15T00:00:00.000Z');
+      for (let index = 0; index < 3; index++) {
+        await Conversation.collection.insertOne({
+          conversationId: uuidv4(),
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: sameTime,
+          updatedAt: sameTime,
+        });
+        await Conversation.collection.insertOne({
+          conversationId: uuidv4(),
+          user: 'user123',
+          title: `Named ${index}`,
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: sameTime,
+          updatedAt: sameTime,
+        });
+      }
+
+      // Missing titles sort before every string, and comparison operators never cross
+      // that type boundary, so the group needs cursor clauses of its own.
+      for (const sortDirection of ['asc', 'desc']) {
+        const seen = new Set<string>();
+        let cursor: string | null = null;
+        for (let page = 0; page < 6; page++) {
+          const result = await methods.getConvosByCursor('user123', {
+            limit: 2,
+            sortBy: 'title',
+            sortDirection,
+            cursor,
+          });
+          result.conversations.forEach((convo) => seen.add(convo.conversationId));
+          cursor = result.nextCursor;
+          if (!cursor) {
+            break;
+          }
+        }
+
+        expect(seen.size).toBe(6);
+      }
+
+      await Conversation.deleteMany({ user: 'user123' });
+    });
+
     it('should not skip conversations at page boundaries', async () => {
       // Create 30 conversations to ensure pagination (limit is 25)
       const baseTime = new Date('2026-01-01T00:00:00.000Z');
