@@ -1,5 +1,11 @@
 import { Types } from 'mongoose';
-import { logger, encryptV2, decryptV2, createMethods } from '@librechat/data-schemas';
+import {
+  logger,
+  encryptV2,
+  decryptV2,
+  createMethods,
+  getMCPAuthorityConsistencyModule,
+} from '@librechat/data-schemas';
 import {
   ResourceType,
   AccessRoleIds,
@@ -206,6 +212,7 @@ function mergeObjectIds(...idGroups: readonly Types.ObjectId[][]): Types.ObjectI
 export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
   private _dbMethods: AllMethods;
   private _aclService: AccessControlService;
+  private _authority: ReturnType<typeof getMCPAuthorityConsistencyModule>;
 
   constructor(mongoose: typeof import('mongoose')) {
     if (!mongoose) {
@@ -213,6 +220,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     }
     this._dbMethods = createMethods(mongoose);
     this._aclService = new AccessControlService(mongoose);
+    this._authority = getMCPAuthorityConsistencyModule(mongoose);
   }
 
   /**
@@ -300,18 +308,21 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     const transformedConfig = this.transformUserApiKeyConfig(sanitizedConfig);
     /** Encrypted config before storing in database */
     const encryptedConfig = await this.encryptConfig(transformedConfig);
-    const createdServer = await this._dbMethods.createMCPServer({
-      config: encryptedConfig,
-      author: userId,
-      reservedServerNames,
-    });
-    await this._aclService.grantPermission({
-      principalType: PrincipalType.USER,
-      principalId: userId,
-      resourceType: ResourceType.MCPSERVER,
-      resourceId: createdServer._id,
-      accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
-      grantedBy: userId,
+    const { result: createdServer } = await this._authority.mutateMCPAuthority(async () => {
+      const server = await this._dbMethods.createMCPServer({
+        config: encryptedConfig,
+        author: userId,
+        reservedServerNames,
+      });
+      await this._aclService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: server._id,
+        accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
+        grantedBy: userId,
+      });
+      return server;
     });
     return {
       serverName: createdServer.serverName,

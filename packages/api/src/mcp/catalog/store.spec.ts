@@ -36,6 +36,30 @@ describe('createMCPCatalogStore Redis Cluster routing', () => {
     expect(targetEval).toHaveBeenCalledTimes(1);
   });
 
+  it('sends ASKING before retrying a Lua script on an ASK redirect node', async () => {
+    const targetEval = jest.fn().mockResolvedValue('1');
+    const sendCommand = jest.fn().mockResolvedValue('OK');
+    const targetClient = { eval: targetEval, sendCommand };
+    const targetNode = { client: targetClient };
+    const keyvRedisClient = {
+      eval: jest.fn().mockRejectedValueOnce(new Error('ASK 4083 127.0.0.1:7001')),
+      nodeByAddress: new Map([['127.0.0.1:7001', targetNode]]),
+      nodeClient: jest.fn().mockResolvedValue(targetClient),
+    };
+    const store = createMCPCatalogStore({
+      cacheConfig: {},
+      getCache: () => cache,
+      ioredisClient,
+      keyvRedisClient,
+    });
+
+    await expect(store.getNextAppToolsPublicationRevision('server', 'config')).resolves.toBe('1');
+    expect(sendCommand).toHaveBeenCalledWith(['ASKING']);
+    expect(sendCommand.mock.invocationCallOrder[0]).toBeLessThan(
+      targetEval.mock.invocationCallOrder[0],
+    );
+  });
+
   it('preserves a Redis script error when it is not a routable MOVED response', async () => {
     const failure = new Error('READONLY replica');
     const keyvRedisClient = {

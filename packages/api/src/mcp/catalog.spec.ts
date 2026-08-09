@@ -78,6 +78,20 @@ describe('MCP tool catalogs', () => {
     });
   });
 
+  it('accepts plugin-sourced catalog envelopes', () => {
+    const pluginScope = {
+      ...scope,
+      serverConfig: { ...serverConfig, source: 'plugin' as const },
+    };
+    const envelope = createMCPToolCatalogEnvelope(tools, pluginScope, 100);
+
+    expect(resolveMCPToolCatalog(envelope, pluginScope, 101)).toEqual({
+      status: 'ready',
+      tools,
+      metadata: envelope.metadata,
+    });
+  });
+
   it('binds the discovered authorization kind into catalog metadata and scope', () => {
     const oauthScope = { ...scope, authorizationKind: 'oauth' as const };
     const envelope = createMCPToolCatalogEnvelope(tools, oauthScope, 100);

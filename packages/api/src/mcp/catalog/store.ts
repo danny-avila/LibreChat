@@ -149,6 +149,7 @@ interface LockRedisClient {
 
 interface KeyvRedisClient {
   eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
+  sendCommand?(command: string[]): Promise<unknown>;
   nodeByAddress?: ReadonlyMap<string, KeyvRedisClusterNode>;
   nodeClient?: (node: KeyvRedisClusterNode) => KeyvRedisClient | Promise<KeyvRedisClient>;
 }
@@ -338,13 +339,19 @@ export function createMCPCatalogStore(deps: CatalogStoreDeps): MCPCatalogStore {
     try {
       return await redis.eval(script, { keys, arguments: args });
     } catch (error) {
-      const movedAddress =
-        error instanceof Error ? /^MOVED \d+ (\S+)$/.exec(error.message)?.[1] : undefined;
-      const node = movedAddress ? redis.nodeByAddress?.get(movedAddress) : undefined;
+      const redirect =
+        error instanceof Error ? /^(MOVED|ASK) \d+ (\S+)$/.exec(error.message) : undefined;
+      const node = redirect ? redis.nodeByAddress?.get(redirect[2]) : undefined;
       if (!node || !redis.nodeClient) {
         throw error;
       }
       const nodeClient = await redis.nodeClient(node);
+      if (redirect?.[1] === 'ASK') {
+        if (!nodeClient.sendCommand) {
+          throw error;
+        }
+        await nodeClient.sendCommand(['ASKING']);
+      }
       return nodeClient.eval(script, { keys, arguments: args });
     }
   };

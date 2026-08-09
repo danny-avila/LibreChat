@@ -593,6 +593,11 @@ const performEntraGroupMembershipSync = async (user, accessToken, session = null
 
     const consistency = getMCPAuthorityConsistencyModule(mongoose);
     const { result } = await consistency.mutateMCPAuthority(async () => {
+      const currentUser = await db.findUser({ _id: user._id }, '_id idOnTheSource');
+      if (!currentUser?.idOnTheSource) {
+        throw new Error('Entra user identity is no longer available');
+      }
+      const currentSourceId = currentUser.idOnTheSource;
       if (groupDetails.length > 0) {
         logger.info(
           `[PermissionService.syncUserEntraGroupMemberships] Creating ${groupDetails.length} new groups`,
@@ -617,18 +622,18 @@ const performEntraGroupMembershipSync = async (user, accessToken, session = null
         {
           idOnTheSource: { $in: allGroupIds },
           source: 'entra',
-          memberIds: { $ne: user.idOnTheSource },
+          memberIds: { $ne: currentSourceId },
         },
-        { $addToSet: { memberIds: user.idOnTheSource } },
+        { $addToSet: { memberIds: currentSourceId } },
         sessionOptions,
       );
       const removeResult = await db.bulkUpdateGroups(
         {
           source: 'entra',
-          memberIds: user.idOnTheSource,
+          memberIds: currentSourceId,
           idOnTheSource: { $nin: allGroupIds },
         },
-        { $pullAll: { memberIds: [user.idOnTheSource] } },
+        { $pullAll: { memberIds: [currentSourceId] } },
         sessionOptions,
       );
       return { addResult, removeResult };

@@ -2161,7 +2161,7 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
     entraIdPrincipalFeatureEnabled,
     getUserEntraGroups,
   } = require('~/server/services/GraphApiService');
-  const { Group } = require('~/db/models');
+  const { Group, User } = require('~/db/models');
 
   const userEntraId = 'entra-user-001';
   const user = {
@@ -2172,6 +2172,15 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
 
   beforeEach(async () => {
     await Group.deleteMany({});
+    await User.deleteMany({});
+    const storedUser = await User.create({
+      name: 'Entra Sync User',
+      email: 'entra-sync@example.com',
+      provider: 'openid',
+      openidId: user.openidId,
+      idOnTheSource: user.idOnTheSource,
+    });
+    user._id = storedUser._id;
     entraIdPrincipalFeatureEnabled.mockReturnValue(true);
   });
 
@@ -2205,6 +2214,42 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
     expect(groups[0].memberIds).toContain(userEntraId);
     expect(groups[1].memberIds).not.toContain(userEntraId);
     expect(groups[2].memberIds).toContain(userEntraId);
+  });
+
+  it('uses the current Entra identity after acquiring the authority fence', async () => {
+    const currentEntraId = 'entra-user-current';
+    await Group.create({
+      name: 'Current Identity Group',
+      source: 'entra',
+      idOnTheSource: 'entra-current-group',
+      memberIds: [],
+    });
+    getUserEntraGroups.mockResolvedValue(['entra-current-group']);
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    await consistency.initializeMCPAuthorityConsistency();
+    let releaseMutation;
+    let mutationStarted;
+    const started = new Promise((resolve) => {
+      mutationStarted = resolve;
+    });
+    const blocked = new Promise((resolve) => {
+      releaseMutation = resolve;
+    });
+    const writer = consistency.mutateMCPAuthority(async () => {
+      mutationStarted();
+      await blocked;
+    });
+    await started;
+
+    const sync = syncUserEntraGroupMemberships(user, 'fake-access-token');
+    await User.updateOne({ _id: user._id }, { $set: { idOnTheSource: currentEntraId } });
+    releaseMutation();
+    await writer;
+    await sync;
+
+    const group = await Group.findOne({ idOnTheSource: 'entra-current-group' }).lean();
+    expect(group.memberIds).toContain(currentEntraId);
+    expect(group.memberIds).not.toContain(userEntraId);
   });
 
   it('establishes the user tenant context for the sync when tenantId is present', async () => {

@@ -405,6 +405,46 @@ describe('User Methods - Database Tests', () => {
       expect(cache.delete).toHaveBeenCalledWith(indexKey);
     });
 
+    test('publishes authority updates before waiting for auth cache invalidation', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        name: 'Publication Order User',
+        email: 'publication-order@example.com',
+        provider: 'local',
+        role: 'USER',
+      });
+      await consistency.initializeMCPAuthorityConsistency();
+      const before = await consistency.getMCPAuthorityConsistencyStatus();
+      let releaseCacheRead!: (keys: string[]) => void;
+      let cacheReadStarted!: () => void;
+      const cacheRead = new Promise<void>((resolve) => {
+        cacheReadStarted = resolve;
+      });
+      const cache = {
+        get: jest.fn().mockImplementation(
+          async () =>
+            await new Promise<string[]>((resolve) => {
+              releaseCacheRead = resolve;
+              cacheReadStarted();
+            }),
+        ),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const methodsWithCache = createUserMethods(mongoose, {
+        getCache: jest.fn().mockReturnValue(cache),
+      });
+
+      const update = methodsWithCache.updateUser(user._id.toString(), { role: 'ADMIN' });
+      await cacheRead;
+
+      await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+        dirty: false,
+        generation: before.generation + 1,
+      });
+      releaseCacheRead([]);
+      await expect(update).resolves.toMatchObject({ role: 'ADMIN' });
+    });
+
     test('should invalidate cached auth user documents on delete', async () => {
       enableAuthUserDocCache();
       const user = await User.create({

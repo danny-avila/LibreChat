@@ -505,7 +505,7 @@ export function isMCPToolCatalogEnvelope(value: unknown): value is MCPToolCatalo
     typeof identity === 'string' && identity.length > 0;
   return (
     metadata?.version === MCP_TOOL_CATALOG_VERSION &&
-    ['yaml', 'config', 'user', 'unknown'].includes(metadata.source ?? '') &&
+    ['yaml', 'config', 'user', 'plugin', 'unknown'].includes(metadata.source ?? '') &&
     isScopeIdentity(metadata.revision) &&
     ['none', 'oauth', 'obo'].includes(metadata.authorizationKind ?? '') &&
     typeof metadata.cachedAt === 'number' &&
