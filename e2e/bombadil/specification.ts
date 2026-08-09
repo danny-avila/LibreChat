@@ -20,10 +20,11 @@ type NavigationStatus = {
   nextDisabled: boolean;
 };
 
-const LOGIN_EMAIL = 'testuser@example.com';
-const LOGIN_PASSWORD = 'securepassword123';
+const LOGIN_EMAIL = '__BOMBADIL_E2E_USER_EMAIL__';
+const LOGIN_PASSWORD = '__BOMBADIL_E2E_USER_PASSWORD__';
 const ENTER_KEY_CODE = 13;
-const RENAME_SUFFIX = ' — Bombadil';
+const RENAME_MARKER_PREFIX = ' — Bombadil:';
+const MAX_CONVERSATION_FINGERPRINT_LENGTH = 80;
 const PROMPT_VARIANTS = from([
   { name: 'short', suffix: '' },
   { name: 'unicode-雪-🙂', suffix: '' },
@@ -40,6 +41,10 @@ function generatePrompt(): string {
 
 function promptMarker(text: string): string {
   return text.match(/E2E_REPLY:[^\s]+/)?.[0] ?? '';
+}
+
+function conversationFingerprint(text: string): string {
+  return promptMarker(text).slice(0, MAX_CONVERSATION_FINGERPRINT_LENGTH);
 }
 
 function expectedReply(text: string): string {
@@ -107,14 +112,32 @@ function target(
   return null;
 }
 
-function targets(state: State, selector: string, name: string): Target[] {
-  return Array.from(state.document.querySelectorAll(selector)).flatMap((element, index) => {
-    if (element.matches(':disabled') || element.getAttribute('aria-disabled') === 'true') {
-      return [];
-    }
-    const point = visiblePoint(state, element);
-    return point ? [{ name: `${name} ${index + 1}`, point }] : [];
-  });
+function conversationTargets(state: State): Target[] {
+  return Array.from(state.document.querySelectorAll('[data-testid="convo-item"]')).flatMap(
+    (element, index) => {
+      if (element.querySelector('[aria-current="page"]')) {
+        return [];
+      }
+      const point = visiblePoint(state, element);
+      return point ? [{ name: `Open conversation ${index + 1}`, point }] : [];
+    },
+  );
+}
+
+function clickedConversationIndex(lastAction: unknown): number | null {
+  if (typeof lastAction !== 'object' || lastAction === null || !('Click' in lastAction)) {
+    return null;
+  }
+  const click = lastAction.Click;
+  if (typeof click !== 'object' || click === null || !('name' in click)) {
+    return null;
+  }
+  const match = String(click.name).match(/^Open conversation (\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+
+function isPersistedConversation(pathname: string): boolean {
+  return pathname.startsWith('/c/') && pathname !== '/c/new';
 }
 
 function inputValue(state: State, selector: string): string {
@@ -171,6 +194,15 @@ const ui = extract((state: State) => {
     state.document.querySelectorAll('.sibling-content-group'),
   ).map((group) => group.children.length);
   const modelTrigger = state.document.querySelector('button[aria-label="Select a model"]');
+  const conversationElements = Array.from(
+    state.document.querySelectorAll('[data-testid="convo-item"]'),
+  );
+  const activeConversationIndexes = conversationElements.flatMap((element, index) =>
+    element.querySelector('[aria-current="page"]') ? [index + 1] : [],
+  );
+  const activeConversation = conversationElements.find((element) =>
+    element.querySelector('[aria-current="page"]'),
+  );
 
   return {
     path: state.window.location.pathname,
@@ -188,6 +220,8 @@ const ui = extract((state: State) => {
     passwordValue: inputValue(state, '#password'),
     passwordFocused: isFocused(state, '#password'),
     modelLabel: modelTrigger?.textContent?.trim() ?? '',
+    activeConversationIndexes,
+    activeConversationTitle: activeConversation?.textContent?.trim() ?? '',
     modelOptionsOpen: state.document.querySelector('[role="option"]') !== null,
     hasAddedConversation:
       state.document.querySelector('button[aria-label="Close added conversation"]') !== null,
@@ -236,7 +270,7 @@ const ui = extract((state: State) => {
       true,
     ),
     newConversation: target(state, '[data-testid="new-chat-button"]', 'New conversation'),
-    conversationItems: targets(state, '[data-testid="convo-item"]', 'Open conversation'),
+    conversationItems: conversationTargets(state),
     conversationMenu: target(
       state,
       'button[aria-label="Conversation Menu Options"]',
@@ -273,8 +307,11 @@ export const libreChatActions = actions(() => {
     if (!state.renameFocused) {
       return clickAction(state.renameInput);
     }
-    if (!state.renameValue.includes(RENAME_SUFFIX.trim())) {
-      return [{ TypeText: { text: RENAME_SUFFIX, delayMillis: 0 } }];
+    if (!state.renameValue.includes(RENAME_MARKER_PREFIX.trim())) {
+      const fingerprint = conversationFingerprint(state.messageText);
+      return fingerprint === ''
+        ? ['Wait']
+        : [{ TypeText: { text: `${RENAME_MARKER_PREFIX}${fingerprint}`, delayMillis: 0 } }];
     }
     return clickOrWait(state.renameSave);
   }
@@ -312,8 +349,8 @@ export const libreChatActions = actions(() => {
     return ['Wait', ...clickAction(state.renameMenuItem)];
   }
 
-  const isPersistedConversation = state.path.startsWith('/c/') && state.path !== '/c/new';
-  if (!state.hasComposer || (isPersistedConversation && state.messageIds.length === 0)) {
+  const isPersisted = isPersistedConversation(state.path);
+  if (!state.hasComposer || (isPersisted && state.messageIds.length === 0)) {
     return ['Wait'];
   }
 
@@ -396,6 +433,39 @@ export const siblingNavigationRemainsValid = always(() =>
 
 export const multiConversationAlwaysRendersTwoColumns = always(() =>
   ui.current.parallelColumnCounts.every((count) => count === 2),
+);
+
+export const sidebarNavigationEventuallySelectsTarget = always(() => {
+  const expectedIndex = clickedConversationIndex(ui.current.lastAction);
+  return now(() => expectedIndex !== null).implies(
+    eventually(
+      () =>
+        expectedIndex !== null &&
+        isPersistedConversation(ui.current.path) &&
+        ui.current.activeConversationIndexes.length === 1 &&
+        ui.current.activeConversationIndexes[0] === expectedIndex &&
+        ui.current.messageIds.length > 0,
+    ).within(10, 'seconds'),
+  );
+});
+
+export const sidebarEventuallyMatchesRenderedConversation = always(() =>
+  now(
+    () =>
+      isPersistedConversation(ui.current.path) &&
+      ui.current.hasComposer &&
+      ui.current.messageIds.length > 0,
+  ).implies(
+    eventually(() => {
+      const state = ui.current;
+      const fingerprint = conversationFingerprint(state.activeConversationTitle);
+      return (
+        isPersistedConversation(state.path) &&
+        state.activeConversationIndexes.length === 1 &&
+        (fingerprint === '' || state.messageText.includes(fingerprint))
+      );
+    }).within(10, 'seconds'),
+  ),
 );
 
 export const loginEventuallySucceeds = eventually(() => ui.current.path !== '/login').within(

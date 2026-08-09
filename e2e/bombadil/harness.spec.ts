@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { expect, test } from '@playwright/test';
 import { getE2EBaseURL } from '../setup/env';
+import { getE2EUser } from '../setup/user';
 
 const rootPath = path.resolve(__dirname, '../..');
 const specificationPath = path.resolve(
@@ -18,6 +19,9 @@ const defaultOutputPath = path.resolve(
 );
 const defaultBinaryPath = path.resolve(rootPath, 'node_modules/.bin/bombadil');
 const MAX_CAPTURED_OUTPUT = 100_000;
+const DEFAULT_REPRODUCTION_TIMEOUT_MS = 30 * 60 * 1_000;
+const LOGIN_EMAIL_PLACEHOLDER = '__BOMBADIL_E2E_USER_EMAIL__';
+const LOGIN_PASSWORD_PLACEHOLDER = '__BOMBADIL_E2E_USER_PASSWORD__';
 
 function durationMillis(value: string): number | null {
   const match = value.match(/^(\d+)(s|m|h|d)$/);
@@ -26,6 +30,16 @@ function durationMillis(value: string): number | null {
   }
   const factors = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 };
   return Number(match[1]) * factors[match[2] as keyof typeof factors];
+}
+
+function positiveTimeoutMillis(value: string, variableName: string): number {
+  const timeout = Number(value);
+  if (!Number.isFinite(timeout) || timeout <= 0) {
+    throw new Error(
+      `${variableName} must be a positive number of milliseconds; received "${value}".`,
+    );
+  }
+  return timeout;
 }
 
 function archiveExistingOutput(outputPath: string): void {
@@ -42,8 +56,28 @@ function archiveExistingOutput(outputPath: string): void {
   fs.cpSync(outputPath, archivePath, { recursive: true });
 }
 
+function materializeSpecification(): string {
+  const user = getE2EUser();
+  const generatedPath = path.resolve(
+    rootPath,
+    'e2e/.generated/bombadil-specifications',
+    path.basename(specificationPath),
+  );
+  const replaceStringLiteral = (source: string, placeholder: string, value: string) =>
+    source
+      .replaceAll(`'${placeholder}'`, JSON.stringify(value))
+      .replaceAll(`"${placeholder}"`, JSON.stringify(value));
+  let source = fs.readFileSync(specificationPath, 'utf8');
+  source = replaceStringLiteral(source, LOGIN_EMAIL_PLACEHOLDER, user.email);
+  source = replaceStringLiteral(source, LOGIN_PASSWORD_PLACEHOLDER, user.password);
+  fs.mkdirSync(path.dirname(generatedPath), { recursive: true });
+  fs.writeFileSync(generatedPath, source);
+  return generatedPath;
+}
+
 function runBombadil(
   outputPath: string,
+  runtimeSpecificationPath: string,
   childTimeoutMillis: number,
 ): Promise<{ code: number | null; output: string }> {
   const binaryPath = process.env.BOMBADIL_BIN ?? defaultBinaryPath;
@@ -68,7 +102,7 @@ function runBombadil(
     args.push('--exit-on-violation', '--time-limit', timeLimit);
   }
 
-  args.push(getE2EBaseURL(), specificationPath);
+  args.push(getE2EBaseURL(), runtimeSpecificationPath);
 
   return new Promise((resolve, reject) => {
     const child = spawn(binaryPath, args, {
@@ -116,17 +150,24 @@ function runBombadil(
 test('Bombadil explores core, branching, multi-conversation, and lifecycle flows', async () => {
   const timeLimitMillis = durationMillis(process.env.BOMBADIL_TIME_LIMIT ?? '90s') ?? 90_000;
   const defaultHarnessTimeout = process.env.BOMBADIL_REPRODUCE
-    ? 240_000
+    ? DEFAULT_REPRODUCTION_TIMEOUT_MS
     : timeLimitMillis + 120_000;
-  const harnessTimeout = Number(process.env.BOMBADIL_HARNESS_TIMEOUT_MS ?? defaultHarnessTimeout);
+  const harnessTimeout = process.env.BOMBADIL_HARNESS_TIMEOUT_MS
+    ? positiveTimeoutMillis(process.env.BOMBADIL_HARNESS_TIMEOUT_MS, 'BOMBADIL_HARNESS_TIMEOUT_MS')
+    : defaultHarnessTimeout;
   test.setTimeout(harnessTimeout);
   const outputPath = process.env.BOMBADIL_REPRODUCE
     ? path.resolve(rootPath, 'e2e/.generated/bombadil-reproduction')
     : defaultOutputPath;
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   archiveExistingOutput(outputPath);
+  const runtimeSpecificationPath = materializeSpecification();
 
-  const result = await runBombadil(outputPath, Math.max(harnessTimeout - 10_000, 10_000));
+  const result = await runBombadil(
+    outputPath,
+    runtimeSpecificationPath,
+    Math.max(harnessTimeout - 10_000, 10_000),
+  );
 
   expect(
     result.code,

@@ -13,8 +13,8 @@ type Target = {
   point: Point;
 };
 
-const LOGIN_EMAIL = 'testuser@example.com';
-const LOGIN_PASSWORD = 'securepassword123';
+const LOGIN_EMAIL = '__BOMBADIL_E2E_USER_EMAIL__';
+const LOGIN_PASSWORD = '__BOMBADIL_E2E_USER_PASSWORD__';
 const ENTER_KEY_CODE = 13;
 const HITL_MODEL_SPEC = 'E2E HITL';
 const HITL_LABEL = 'bombadil-hitl';
