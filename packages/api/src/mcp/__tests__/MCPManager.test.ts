@@ -285,6 +285,82 @@ describe('MCPManager', () => {
     });
   });
 
+  describe('withUserConnectionLease', () => {
+    it('retains a public checkout until its metadata read completes', async () => {
+      const connection = {} as MCPConnection;
+      let finishRead: (() => void) | undefined;
+      const read = new Promise<void>((resolve) => {
+        finishRead = resolve;
+      });
+      mockAppConnections({});
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getUserConnection').mockResolvedValue(connection);
+      const lifecycle = manager as unknown as {
+        waitForConnectionBorrowersToDrain: (connection: MCPConnection) => Promise<void>;
+      };
+
+      const checkout = manager.withUserConnectionLease(
+        { serverName, user: { id: userId } as IUser },
+        async () => {
+          await read;
+          return 'snapshot';
+        },
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+
+      let drained = false;
+      const drain = lifecycle.waitForConnectionBorrowersToDrain(connection).then(() => {
+        drained = true;
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(drained).toBe(false);
+
+      finishRead?.();
+      await expect(checkout).resolves.toBe('snapshot');
+      await drain;
+      expect(drained).toBe(true);
+    });
+
+    it('rejoins recovery registered between public checkout and lease acquisition', async () => {
+      const staleConnection = {} as MCPConnection;
+      const recoveredConnection = {} as MCPConnection;
+      let finishCheckout: ((connection: MCPConnection) => void) | undefined;
+      const checkout = new Promise<MCPConnection>((resolve) => {
+        finishCheckout = resolve;
+      });
+      let finishRecovery: (() => void) | undefined;
+      const recovery = new Promise<void>((resolve) => {
+        finishRecovery = resolve;
+      });
+      mockAppConnections({});
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest
+        .spyOn(manager, 'getUserConnection')
+        .mockReturnValueOnce(checkout)
+        .mockResolvedValue(recoveredConnection);
+      const internals = manager as unknown as {
+        oauthRecoveries: WeakMap<MCPConnection, { promise: Promise<void> }>;
+      };
+      const operation = jest.fn().mockResolvedValue('snapshot');
+
+      const result = manager.withUserConnectionLease(
+        { serverName, user: { id: userId } as IUser },
+        operation,
+      );
+      finishCheckout?.(staleConnection);
+      internals.oauthRecoveries.set(staleConnection, { promise: recovery });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(operation).not.toHaveBeenCalled();
+
+      internals.oauthRecoveries.delete(staleConnection);
+      finishRecovery?.();
+
+      await expect(result).resolves.toBe('snapshot');
+      expect(operation).toHaveBeenCalledWith(recoveredConnection);
+    });
+  });
+
   describe('connectAppServers', () => {
     it('opens only operator app connections and refreshes their current catalogs', async () => {
       const connection = new MCPConnection({
@@ -1946,6 +2022,48 @@ describe('MCPManager', () => {
 
       await expect(ownerCall).rejects.toBe(abortReason);
       await lifecycle.disposeEvictedConnection(connection, '[MCP][evicted]');
+      expect(connection.dispose).not.toHaveBeenCalled();
+
+      connection.emit('oauthHandled');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(connection.connect).toHaveBeenCalledTimes(1);
+      expect(connection.dispose).toHaveBeenCalledTimes(1);
+      expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
+    });
+
+    it('defers ephemeral disposal until an aborted OAuth recovery settles', async () => {
+      const authError = new Error('Non-200 status code (401)');
+      const request = jest.fn().mockRejectedValueOnce(authError);
+      const connection = createConnection(request);
+      attachOAuthHandler(() => undefined);
+      const manager = await createManager(connection);
+      const ephemeralConfig: t.StreamableHTTPOptions = {
+        ...serverConfig,
+        url: 'https://mcp.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      };
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(ephemeralConfig);
+      mockProcessMCPEnv.mockReturnValue({
+        ...ephemeralConfig,
+        url: 'https://mcp.example.com/conversation-1',
+      });
+      const controller = new AbortController();
+      const abortReason = new Error('request aborted');
+
+      const toolCall = manager.callTool({
+        user: mockUser,
+        serverName,
+        toolName: 'oauth_tool',
+        provider: 'openai',
+        oauthStart: jest.fn(),
+        flowManager: mockFlowManager,
+        requestBody: { conversationId: 'conversation-1' },
+        options: { signal: controller.signal },
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      controller.abort(abortReason);
+
+      await expect(toolCall).rejects.toBe(abortReason);
       expect(connection.dispose).not.toHaveBeenCalled();
 
       connection.emit('oauthHandled');

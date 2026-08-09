@@ -913,7 +913,7 @@ export abstract class UserConnectionManager {
     };
   }
 
-  private async disposeEvictedConnection(
+  protected async disposeEvictedConnection(
     connection: MCPConnection,
     logPrefix: string,
   ): Promise<void> {

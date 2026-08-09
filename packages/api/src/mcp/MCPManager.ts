@@ -134,6 +134,29 @@ export class MCPManager extends UserConnectionManager {
     return super.getUserConnection(opts);
   }
 
+  /** Runs work against a user connection while preventing recovery from replacing its SDK client. */
+  public async withUserConnectionLease<TResult>(
+    opts: t.UserMCPConnectionOptions,
+    operation: (connection: MCPConnection) => Promise<TResult>,
+  ): Promise<TResult> {
+    while (true) {
+      const connection = await this.getUserConnection(opts);
+      this.retainConnection(connection);
+      const recovery = this.oauthRecoveries.get(connection)?.promise;
+      if (recovery) {
+        await this.releaseConnection(connection);
+        await this.waitForActiveRecovery(recovery, opts.signal);
+        continue;
+      }
+
+      try {
+        return await operation(connection);
+      } finally {
+        await this.releaseConnection(connection);
+      }
+    }
+  }
+
   private waitForActiveRecovery(recovery: Promise<void>, signal?: AbortSignal): Promise<void> {
     if (!signal) {
       return recovery;
@@ -1126,13 +1149,10 @@ Please follow these instructions when using tools from the respective MCP server
         // is the only cleanup needed; removing the map entry here could orphan a
         // still-connected cached connection from before a config change.
         if (disposeAfterCall && connection) {
-          try {
-            await connection.dispose();
-          } catch (disposeError) {
-            logger.warn(`${logPrefix}[${toolName}] Failed to dispose ephemeral connection`, {
-              error: disposeError,
-            });
-          }
+          await this.disposeEvictedConnection(
+            connection,
+            `${logPrefix}[${toolName}] Ephemeral connection`,
+          );
         }
       }
     }
