@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom';
+import type t from 'librechat-data-provider';
 import AgentDetailContent from '../AgentDetailContent';
 
 const mockIsFavoriteAgent = jest.fn(() => false);
@@ -87,13 +88,23 @@ const renderWithClient = (children: React.ReactNode) => {
   return render(<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>);
 };
 
-const baseAgent = {
+const baseAgent: t.Agent = {
   id: 'agent-1',
   name: 'Agent One',
   description: 'Agent description',
+  created_at: 0,
+  avatar: null,
   provider: 'openai',
   model: 'gpt-4',
-  model_parameters: {},
+  model_parameters: {
+    temperature: null,
+    maxContextTokens: null,
+    max_context_tokens: null,
+    max_output_tokens: null,
+    top_p: null,
+    frequency_penalty: null,
+    presence_penalty: null,
+  },
 };
 
 describe('AgentDetailContent', () => {
@@ -104,13 +115,11 @@ describe('AgentDetailContent', () => {
   it('renders support contact with mailto link', () => {
     renderWithClient(
       <AgentDetailContent
-        agent={
-          {
-            ...baseAgent,
-            support_contact: { name: 'Support Team', email: 'support@example.com' },
-            owner_contact: { name: 'Owner User' },
-          } as any
-        }
+        agent={{
+          ...baseAgent,
+          support_contact: { name: 'Support Team', email: 'support@example.com' },
+          owner_contact: { name: 'Owner User' },
+        }}
       />,
     );
 
@@ -125,12 +134,10 @@ describe('AgentDetailContent', () => {
   it('falls back to owner contact when support contact is missing', () => {
     renderWithClient(
       <AgentDetailContent
-        agent={
-          {
-            ...baseAgent,
-            owner_contact: { name: 'Owner User' },
-          } as any
-        }
+        agent={{
+          ...baseAgent,
+          owner_contact: { name: 'Owner User' },
+        }}
       />,
     );
 
@@ -139,13 +146,13 @@ describe('AgentDetailContent', () => {
   });
 
   it('shows pin icon when agent is not a favorite and pin-off when it is', () => {
-    const { unmount } = renderWithClient(<AgentDetailContent agent={baseAgent as any} />);
+    const { unmount } = renderWithClient(<AgentDetailContent agent={baseAgent} />);
     expect(screen.getByRole('button', { name: 'Pin' })).toBeInTheDocument();
     expect(screen.getByTestId('morph-icon')).toHaveAttribute('data-icon', 'pin');
     unmount();
 
     mockIsFavoriteAgent.mockReturnValue(true);
-    renderWithClient(<AgentDetailContent agent={baseAgent as any} />);
+    renderWithClient(<AgentDetailContent agent={baseAgent} />);
     expect(screen.getByRole('button', { name: 'Unpin' })).toBeInTheDocument();
     expect(screen.getByTestId('morph-icon')).toHaveAttribute('data-icon', 'pin-off');
   });
