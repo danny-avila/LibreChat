@@ -1,8 +1,12 @@
 import { GraphEvents } from '@librechat/agents';
 import { ContentTypes, StepTypes } from 'librechat-data-provider';
-import type { EventHandler, PostToolBatchHookInput } from '@librechat/agents';
+import type { PostToolBatchHookInput } from '@librechat/agents';
 import type { LooseContentPart } from '~/agents/activityLabels/wiring';
-import { createActivityPhaseWiring, createAssistantPhaseStampingHandlers } from './runtime';
+import {
+  ACTIVITY_PHASE_INSTRUCTION,
+  createActivityPhaseWiring,
+  createAssistantPhaseStampingHandlers,
+} from './runtime';
 
 const batch = (id: string): PostToolBatchHookInput =>
   ({
@@ -52,8 +56,10 @@ describe('createActivityPhaseWiring', () => {
 
     const handlers = wiring.handlers({
       [GraphEvents.ON_RUN_STEP]: {
-        handle: (_event, data) => forwarded.push(data),
-      } as EventHandler,
+        handle: (_event, data) => {
+          forwarded.push(data);
+        },
+      },
     });
     handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
       GraphEvents.ON_RUN_STEP,
@@ -86,7 +92,9 @@ describe('createActivityPhaseWiring', () => {
       expect.objectContaining({
         closingTextPhase: 'final_answer',
         phaseIndex: 0,
+        totalActivityCount: 2,
         activities: expect.any(Array),
+        prompt: ACTIVITY_PHASE_INSTRUCTION,
       }),
     );
     expect(parts[2]).toMatchObject({
@@ -110,7 +118,7 @@ describe('createActivityPhaseWiring', () => {
     });
     await wiring.hook(batch('tool-1'), new AbortController().signal);
     const handler = wiring.handlers({
-      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } as EventHandler,
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
     })?.[GraphEvents.ON_RUN_STEP];
     handler?.handle(
       GraphEvents.ON_RUN_STEP,
@@ -128,16 +136,210 @@ describe('createActivityPhaseWiring', () => {
     expect(generatePhase).not.toHaveBeenCalled();
     expect(parts).toHaveLength(1);
   });
+
+  it('restores bounded activity state after a HITL pause', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TEXT, text: 'Hidden intermediate output' },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+    ];
+    const first = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({})),
+    });
+    await first.hook(batch('tool-1'), new AbortController().signal);
+    /** `hide_sequential_outputs` reshapes the persisted prefix after the pause
+     *  snapshot, so restoration must re-anchor by tool id rather than index. */
+    parts.shift();
+
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the resumed investigation' }));
+    const resumed = createActivityPhaseWiring({
+      initialSnapshot: first.snapshot(),
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } });
+    await resumed.hook(batch('tool-2'), new AbortController().signal);
+    resumed.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+    })?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'final-step',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+
+    await flushDetached();
+    expect(generatePhase).toHaveBeenCalledWith(
+      expect.objectContaining({ activities: expect.arrayContaining([expect.any(Object)]) }),
+    );
+    expect(generatePhase.mock.calls[0][0].activities).toHaveLength(2);
+    expect(parts.at(-1)).toMatchObject({ activity_start_index: 0 });
+  });
+
+  it('bounds persisted evidence while preserving the full activity count', async () => {
+    const parts: LooseContentPart[] = [];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({})),
+    });
+    for (let index = 0; index < 20; index += 1) {
+      const id = `tool-${index}`;
+      parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id } });
+      await wiring.hook(batch(id), new AbortController().signal);
+    }
+
+    const snapshot = wiring.snapshot();
+    expect(snapshot.activityCount).toBe(20);
+    expect(snapshot.activities).toHaveLength(13);
+  });
+
+  it('keeps a parallel lane final inside the run-wide phase', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Combined both agent outcomes' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } });
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    const handler = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+    })?.[GraphEvents.ON_RUN_STEP];
+    const finalStep = {
+      id: 'lane-final',
+      groupId: 'lane-a',
+      stepDetails: {
+        type: StepTypes.MESSAGE_CREATION,
+        message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+      },
+    };
+    handler?.handle(GraphEvents.ON_RUN_STEP, finalStep, undefined, undefined);
+    await flushDetached();
+    expect(generatePhase).not.toHaveBeenCalled();
+
+    handler?.handle(
+      GraphEvents.ON_RUN_STEP,
+      { ...finalStep, id: 'root-final', groupId: undefined },
+      undefined,
+      undefined,
+    );
+    await flushDetached();
+    expect(generatePhase).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves mixed batch failures as a partial phase outcome', async () => {
+    const mixed = batch('tool-1');
+    mixed.entries.push({
+      toolName: 'web_search',
+      toolInput: { query: 'failed' },
+      toolUseId: 'tool-1b',
+      status: 'error',
+      error: 'unavailable',
+    });
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1b' } },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Recovered part of the search scope' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    await wiring.hook(mixed, new AbortController().signal);
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } });
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+    })?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'final-step',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+
+    await flushDetached();
+    expect(generatePhase).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'partial' }),
+    );
+    expect(parts.at(-1)).toMatchObject({ status: 'partial' });
+  });
+
+  it('collects usage after a committed blank phase result', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+    ];
+    const collectUsage = jest.fn(async () => undefined);
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ collectUsage })),
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } });
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+    })?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'final-step',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+
+    await flushDetached();
+    expect(collectUsage).toHaveBeenCalledWith(undefined);
+    expect(parts.at(-1)).toMatchObject({ activity_label: '', pending: false });
+  });
 });
 
 describe('createAssistantPhaseStampingHandlers', () => {
   it('stamps commentary onto persisted text deltas for child activity-label intent', () => {
     const received: unknown[] = [];
     const handlers = createAssistantPhaseStampingHandlers({
-      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } as EventHandler,
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
       [GraphEvents.ON_MESSAGE_DELTA]: {
-        handle: (_event, data) => received.push(data),
-      } as EventHandler,
+        handle: (_event, data) => {
+          received.push(data);
+        },
+      },
     });
     handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
       GraphEvents.ON_RUN_STEP,

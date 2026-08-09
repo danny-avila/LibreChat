@@ -59,7 +59,12 @@ type TStepEvent =
   | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent }
   | { event: StepEvents.ON_SANDBOX_STARTING; data: SandboxStartingEvent };
 
-type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
+type MessageDeltaUpdate = {
+  type: ContentTypes.TEXT;
+  text: string;
+  tool_call_ids?: string[];
+  phase?: 'commentary' | 'final_answer';
+};
 
 type ReasoningDeltaUpdate = { type: ContentTypes.THINK; think: string };
 
@@ -343,6 +348,7 @@ export default function useStepHandler({
       editPrefixOffset: number,
       incomingContentType: string,
       existingContent?: TMessageContentParts[],
+      incomingPhase?: 'commentary' | 'final_answer',
     ): number => {
       /** Only apply -1 adjustment for TEXT or THINK types when they match existing content */
       if (
@@ -350,8 +356,16 @@ export default function useStepHandler({
         (incomingContentType === ContentTypes.TEXT || incomingContentType === ContentTypes.THINK)
       ) {
         const targetIndex = serverIndex + editPrefixOffset - 1;
-        const existingType = existingContent?.[targetIndex]?.type;
-        if (existingType === incomingContentType) {
+        const existingPart = existingContent?.[targetIndex];
+        const existingType = existingPart?.type;
+        const existingPhase =
+          existingPart?.type === ContentTypes.TEXT ? existingPart.phase : undefined;
+        const phaseCompatible =
+          incomingContentType !== ContentTypes.TEXT ||
+          incomingPhase == null ||
+          existingPhase == null ||
+          incomingPhase === existingPhase;
+        if (existingType === incomingContentType && phaseCompatible) {
           return targetIndex;
         }
       }
@@ -438,6 +452,9 @@ export default function useStepHandler({
       const update: MessageDeltaUpdate = {
         type: ContentTypes.TEXT,
         text: (currentContent.text || '') + contentPart.text,
+        ...((contentPart.phase ?? currentContent.phase) != null && {
+          phase: contentPart.phase ?? currentContent.phase,
+        }),
       };
 
       if ('tool_call_ids' in contentPart && contentPart.tool_call_ids != null) {
@@ -961,6 +978,7 @@ export default function useStepHandler({
               editPrefixOffset,
               phasedContentPart.type || '',
               updatedResponse.content,
+              phase,
             );
             updatedResponse = updateContent(
               updatedResponse,

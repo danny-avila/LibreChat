@@ -2,6 +2,7 @@ import { GraphEvents } from '@librechat/agents';
 import { ContentTypes, StepTypes } from 'librechat-data-provider';
 import type { EventHandler, HookCallback, HookInputByEvent } from '@librechat/agents';
 import type { LooseContentPart } from '~/agents/activityLabels/wiring';
+import { stringifyActivityEvidence } from '~/agents/activityLabels/runtime';
 
 type PostToolBatchInput = HookInputByEvent['PostToolBatch'];
 type BatchEntry = PostToolBatchInput['entries'][number];
@@ -19,7 +20,26 @@ export interface ActivityPhaseEntry {
   }>;
   thinkingExcerpts?: string[];
   agentId?: string;
-  status?: 'success' | 'error';
+  status?: 'success' | 'partial' | 'error';
+}
+
+type TrackedActivity = ActivityPhaseEntry & {
+  startIndex: number;
+  childLabelIndex?: number;
+  /** Stable anchors survive content filtering and prepends across HITL resume. */
+  toolCallIds?: string[];
+};
+
+export interface ActivityPhaseSnapshot {
+  version: 1;
+  generated: number;
+  activityCount: number;
+  failedActivityCount: number;
+  partialActivityCount: number;
+  agentIds: string[];
+  activities: TrackedActivity[];
+  assistantContext: string[];
+  pendingReasoning: Array<{ key: string; text: string; agentId?: string }>;
 }
 
 export interface GenerateActivityPhasePayload {
@@ -27,7 +47,8 @@ export interface GenerateActivityPhasePayload {
   assistantContext?: string[];
   closingTextPhase?: AssistantTextPhase;
   phaseIndex: number;
-  status: 'completed' | 'failed';
+  totalActivityCount: number;
+  status: 'completed' | 'partial' | 'failed';
   agentIds: string[];
   charLimit: number;
   prompt?: string;
@@ -44,6 +65,7 @@ export interface ActivityPhaseHostDeps {
   charLimit?: number;
   prompt?: string;
   abortSignal?: AbortSignal;
+  initialSnapshot?: ActivityPhaseSnapshot;
   getContentParts: () => Array<LooseContentPart | null | undefined>;
   bumpIndexOffset: () => void;
   emitLabelEvent: (index: number, part: LooseContentPart) => Promise<unknown>;
@@ -59,12 +81,9 @@ export interface ActivityPhaseWiring {
   ) => Record<string, EventHandler> | undefined;
   /** A steer is a hard semantic boundary; incomplete evidence is discarded. */
   drop: () => void;
+  /** Bounded state needed to continue the same phase after a HITL pause. */
+  snapshot: () => ActivityPhaseSnapshot;
 }
-
-type TrackedActivity = ActivityPhaseEntry & {
-  startIndex: number;
-  childLabelIndex?: number;
-};
 
 const DEFAULT_MAX_PER_RUN = 5;
 const DEFAULT_CHAR_LIMIT = 600;
@@ -72,6 +91,34 @@ const MIN_ACTIVITIES = 2;
 const MAX_CONTEXT_ITEMS = 6;
 const MAX_EXCERPT_CHARS = 600;
 const OUTPUT_CHAR_LIMIT = 160;
+const PHASE_TIMEOUT_MS = 12_000;
+/** Twelve enter the SDK prompt; one extra preserves its omitted-activity row. */
+const MAX_RETAINED_ACTIVITIES = 13;
+const MAX_RETAINED_TOOL_ENTRIES = 6;
+
+export const ACTIVITY_PHASE_INSTRUCTION = `Summarize what this phase of an agent run accomplished. The result appears as the header of one collapsed parent group containing several activities.
+
+Rules:
+- One line, 8 to 18 words, past tense
+- Lead with the concrete outcome and name the most distinctive subject
+- Synthesize the phase; do not enumerate, count, or restate individual activities
+- Describe failures plainly when they are the phase's material outcome
+- Never mention tool names, calls, arguments, reasoning, commentary, or activity counts
+- Output only the summary — no quotes, no trailing punctuation, no preamble
+
+Examples:
+- Reconciled authentication behavior and fixed the failing session refresh path
+- Compared deployment options and documented the safest production rollout
+- Investigated database latency but could not confirm the suspected index regression
+
+Bad examples:
+- Used three tools to inspect files and run tests
+- Searched code, read configuration, and updated middleware`;
+
+interface DeltaPart {
+  text?: unknown;
+  think?: unknown;
+}
 
 function textValue(value: unknown): string {
   if (typeof value === 'string') {
@@ -97,7 +144,14 @@ function deltaText(data: unknown, key: 'text' | 'think'): string {
   } else if (raw != null) {
     parts = [raw];
   }
-  return parts.map((part) => textValue((part as Record<string, unknown> | null)?.[key])).join('');
+  return parts.map((part) => textValue((part as DeltaPart | null)?.[key])).join('');
+}
+
+function buildSignal(signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(PHASE_TIMEOUT_MS);
+  return signal != null && typeof AbortSignal.any === 'function'
+    ? AbortSignal.any([signal, timeout])
+    : timeout;
 }
 
 function findLastPartIndex(
@@ -128,6 +182,34 @@ function findBatchStart(
     }
   }
   return first >= 0 ? first : Math.max(0, parts.length - 1);
+}
+
+function findTrackedStart(
+  parts: ReadonlyArray<LooseContentPart | null | undefined>,
+  activity: TrackedActivity,
+): number {
+  if (activity.toolCallIds != null && activity.toolCallIds.length > 0) {
+    const toolStart = findBatchStart(parts, new Set(activity.toolCallIds));
+    if (
+      parts[toolStart]?.type === ContentTypes.TOOL_CALL &&
+      activity.toolCallIds.includes(String(parts[toolStart]?.tool_call?.id ?? ''))
+    ) {
+      return toolStart;
+    }
+  }
+  const excerpt = activity.thinkingExcerpts?.[0]?.trim();
+  if (excerpt) {
+    const needle = excerpt.slice(0, 80);
+    for (let i = 0; i < parts.length; i++) {
+      if (
+        parts[i]?.type === ContentTypes.THINK &&
+        textValue(parts[i]?.think).includes(needle)
+      ) {
+        return i;
+      }
+    }
+  }
+  return Math.min(activity.startIndex, Math.max(0, parts.length - 1));
 }
 
 /** Persists Open Responses text-phase metadata onto LibreChat text parts.
@@ -194,12 +276,33 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   const maxPerRun = deps.maxPerRun ?? DEFAULT_MAX_PER_RUN;
   const charLimit = deps.charLimit ?? DEFAULT_CHAR_LIMIT;
   const content = deps.getContentParts();
-  let generated = content.filter(
-    (part) => part?.type === ContentTypes.ACTIVITY_LABEL && part.activity_label_type === 'phase',
-  ).length;
-  let activities: TrackedActivity[] = [];
-  let assistantContext: string[] = [];
-  const pendingReasoning = new Map<string, { text: string; agentId?: string }>();
+  const initialSnapshot = deps.initialSnapshot?.version === 1 ? deps.initialSnapshot : undefined;
+  let generated = Math.max(
+    initialSnapshot?.generated ?? 0,
+    content.filter(
+      (part) => part?.type === ContentTypes.ACTIVITY_LABEL && part.activity_label_type === 'phase',
+    ).length,
+  );
+  let activities: TrackedActivity[] =
+    initialSnapshot?.activities.map((activity) => ({
+      ...activity,
+      startIndex: findTrackedStart(content, activity),
+    })) ?? [];
+  let activityCount = initialSnapshot?.activityCount ?? activities.length;
+  let failedActivityCount =
+    initialSnapshot?.failedActivityCount ??
+    activities.filter((activity) => activity.status === 'error').length;
+  let partialActivityCount =
+    initialSnapshot?.partialActivityCount ??
+    activities.filter((activity) => activity.status === 'partial').length;
+  const contributingAgentIds = new Set(initialSnapshot?.agentIds ?? []);
+  let assistantContext = (initialSnapshot?.assistantContext ?? []).slice(-MAX_CONTEXT_ITEMS);
+  const pendingReasoning = new Map<string, { text: string; agentId?: string }>(
+    (initialSnapshot?.pendingReasoning ?? []).map(({ key, text, agentId }) => [
+      key,
+      { text: text.slice(-MAX_EXCERPT_CHARS), ...(agentId != null && { agentId }) },
+    ]),
+  );
   const reasoningStepKeys = new Map<string, string>();
   const stepKinds = new Map<
     string,
@@ -212,7 +315,59 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     pendingReasoning.clear();
     reasoningStepKeys.clear();
     stepKinds.clear();
+    activityCount = 0;
+    failedActivityCount = 0;
+    partialActivityCount = 0;
+    contributingAgentIds.clear();
   };
+
+  const trackActivity = (activity: TrackedActivity) => {
+    activityCount += 1;
+    if (activity.status === 'error') {
+      failedActivityCount += 1;
+    } else if (activity.status === 'partial') {
+      partialActivityCount += 1;
+    }
+    if (activity.agentId != null) {
+      contributingAgentIds.add(activity.agentId);
+    }
+    if (activities.length < MAX_RETAINED_ACTIVITIES) {
+      activities.push(activity);
+    }
+  };
+
+  const snapshot = (): ActivityPhaseSnapshot => ({
+    version: 1,
+    generated,
+    activityCount,
+    failedActivityCount,
+    partialActivityCount,
+    agentIds: [...contributingAgentIds],
+    activities: activities.map((activity) => ({
+      ...activity,
+      ...(activity.entries != null && {
+        entries: activity.entries.slice(0, MAX_RETAINED_TOOL_ENTRIES).map((entry) => ({
+          ...entry,
+          toolInput: stringifyActivityEvidence(entry.toolInput, charLimit),
+          ...(entry.toolOutput != null && {
+            toolOutput: stringifyActivityEvidence(entry.toolOutput, charLimit),
+          }),
+          ...(entry.error != null && { error: entry.error.slice(0, charLimit) }),
+        })),
+      }),
+      ...(activity.thinkingExcerpts != null && {
+        thinkingExcerpts: activity.thinkingExcerpts.map((text) =>
+          text.slice(-MAX_EXCERPT_CHARS),
+        ),
+      }),
+    })),
+    assistantContext: assistantContext.slice(-MAX_CONTEXT_ITEMS),
+    pendingReasoning: [...pendingReasoning].map(([key, reasoning]) => ({
+      key,
+      text: reasoning.text.slice(-MAX_EXCERPT_CHARS),
+      ...(reasoning.agentId != null && { agentId: reasoning.agentId }),
+    })),
+  });
 
   const addPendingReasoning = (onlyKey?: string) => {
     let selected = [...pendingReasoning.entries()] as Array<
@@ -226,7 +381,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const text = reasoning.text.trim();
       if (text) {
         const parts = deps.getContentParts();
-        activities.push({
+        trackActivity({
           thinkingExcerpts: [text.slice(0, MAX_EXCERPT_CHARS)],
           ...(reasoning.agentId != null && { agentId: reasoning.agentId }),
           status: 'success',
@@ -239,19 +394,30 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
 
   const resolveActivities = (snapshot: TrackedActivity[]): ActivityPhaseEntry[] => {
     const parts = deps.getContentParts();
-    return snapshot.map(({ childLabelIndex, startIndex: _startIndex, ...activity }) => {
-      if (childLabelIndex == null) {
-        return activity;
-      }
-      const child = parts[childLabelIndex];
-      const label =
-        child?.type === ContentTypes.ACTIVITY_LABEL &&
-        child.activity_label_type !== 'phase' &&
-        child.pending !== true
-          ? textValue(child[ContentTypes.ACTIVITY_LABEL]).trim()
-          : '';
-      return label ? { ...activity, label, entries: undefined } : activity;
-    });
+    return snapshot.map(
+      ({ childLabelIndex, toolCallIds, startIndex: _startIndex, ...activity }) => {
+        const matchesToolIds = (part: LooseContentPart | null | undefined): boolean => {
+          if (part?.type !== ContentTypes.ACTIVITY_LABEL || part.activity_label_type === 'phase') {
+            return false;
+          }
+          if (toolCallIds == null || toolCallIds.length === 0) {
+            return true;
+          }
+          const childIds = Array.isArray(part.tool_call_ids) ? part.tool_call_ids : [];
+          return childIds.some((id) => typeof id === 'string' && toolCallIds.includes(id));
+        };
+        let child = childLabelIndex == null ? undefined : parts[childLabelIndex];
+        if (!matchesToolIds(child) && toolCallIds != null && toolCallIds.length > 0) {
+          child = parts.find(matchesToolIds);
+        }
+        if (!matchesToolIds(child)) {
+          return activity;
+        }
+        const label =
+          child?.pending !== true ? textValue(child?.[ContentTypes.ACTIVITY_LABEL]).trim() : '';
+        return label ? { ...activity, label, entries: undefined } : activity;
+      },
+    );
   };
 
   const close = (closingTextPhase?: AssistantTextPhase, hardBoundary = false) => {
@@ -260,7 +426,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       clear();
       return;
     }
-    if (activities.length < MIN_ACTIVITIES) {
+    if (activityCount < MIN_ACTIVITIES) {
       if (hardBoundary) clear();
       return;
     }
@@ -269,6 +435,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     const phaseIndex = generated - 1;
     const snapshot = [...activities];
     const contextSnapshot = [...assistantContext];
+    const totalActivityCount = activityCount;
+    const failedCount = failedActivityCount;
+    const partialCount = partialActivityCount;
     let startIndex = Math.min(...snapshot.map((activity) => activity.startIndex));
     const currentParts = deps.getContentParts();
     /** Pull leading commentary/reasoning into the parent card. A prior phase
@@ -285,14 +454,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       }
       startIndex = i;
     }
-    const agentIds = [
-      ...new Set(snapshot.flatMap((activity) => (activity.agentId ? [activity.agentId] : []))),
-    ];
-    const failedCount = snapshot.filter((activity) => activity.status === 'error').length;
+    const agentIds = [...contributingAgentIds];
     let phaseStatus: 'ok' | 'partial' | 'failed' = 'ok';
-    if (failedCount === snapshot.length) {
+    if (failedCount === totalActivityCount) {
       phaseStatus = 'failed';
-    } else if (failedCount > 0) {
+    } else if (failedCount > 0 || partialCount > 0) {
       phaseStatus = 'partial';
     }
     const index = deps.getContentParts().length;
@@ -301,7 +467,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       [ContentTypes.ACTIVITY_LABEL]: '',
       activity_label_type: 'phase',
       activity_start_index: startIndex,
-      activity_count: snapshot.length,
+      activity_count: totalActivityCount,
       ...(agentIds.length > 0 && { agent_ids: agentIds }),
       status: phaseStatus,
       pending: true,
@@ -319,11 +485,17 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           ...(contextSnapshot.length > 0 && { assistantContext: contextSnapshot }),
           ...(closingTextPhase != null && { closingTextPhase }),
           phaseIndex,
-          status: failedCount === snapshot.length ? 'failed' : 'completed',
+          totalActivityCount,
+          status:
+            failedCount === totalActivityCount
+              ? 'failed'
+              : failedCount > 0 || partialCount > 0
+                ? 'partial'
+                : 'completed',
           agentIds,
           charLimit,
-          ...(deps.prompt != null && { prompt: deps.prompt }),
-          signal: deps.abortSignal ?? new AbortController().signal,
+          prompt: deps.prompt ?? ACTIVITY_PHASE_INSTRUCTION,
+          signal: buildSignal(deps.abortSignal),
         });
       } catch {
         generatedPhase = {};
@@ -340,11 +512,16 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       try {
         await deps.emitLabelEvent(index, next);
         Object.assign(part, next);
-        if (label && generatedPhase.collectUsage != null) {
-          await generatedPhase.collectUsage(label);
-        }
       } catch {
         // A failed durable fill leaves the pending marker invisible and unbilled.
+        return;
+      }
+      try {
+        if (generatedPhase.collectUsage != null) {
+          await generatedPhase.collectUsage(label || undefined);
+        }
+      } catch {
+        // The committed UI projection must not regress when accounting fails.
       }
     })();
     deps.trackPendingFill(task);
@@ -378,12 +555,14 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       status: entry.status,
     }));
     const failures = entries.filter((entry) => entry.status === 'error').length;
-    activities.push({
+    trackActivity({
       entries,
       ...(reasoning ? { thinkingExcerpts: [reasoning.slice(0, MAX_EXCERPT_CHARS)] } : {}),
       ...(input.executingAgentId != null && { agentId: input.executingAgentId }),
-      status: failures === entries.length ? 'error' : 'success',
+      status:
+        failures === 0 ? 'success' : failures === entries.length ? 'error' : 'partial',
       startIndex: findBatchStart(parts, ids),
+      toolCallIds: [...ids],
       ...(childLabelIndex != null && { childLabelIndex }),
     });
     pendingReasoning.delete(reasoningKey);
@@ -405,6 +584,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           const step = data as {
             id?: string;
             agentId?: string;
+            groupId?: string | number;
             stepDetails?: {
               type?: string;
               message_creation?: { content_type?: string; phase?: string };
@@ -428,12 +608,12 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
                 });
               }
             } else {
-              addPendingReasoning();
-              if (phase === 'final_answer') {
+              addPendingReasoning(step.agentId ?? 'root');
+              if (phase === 'final_answer' && step.groupId == null) {
                 stepKinds.set(step.id, { kind, phase, captureContext: false });
                 close(phase, true);
               } else {
-                const closesPhase = phase == null && activities.length >= MIN_ACTIVITIES;
+                const closesPhase = phase == null && activityCount >= MIN_ACTIVITIES;
                 stepKinds.set(step.id, {
                   kind,
                   ...(phase != null && { phase }),
@@ -495,5 +675,5 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     return wrapped;
   };
 
-  return { hook, handlers: wrapHandlers, drop: clear };
+  return { hook, handlers: wrapHandlers, drop: clear, snapshot };
 }

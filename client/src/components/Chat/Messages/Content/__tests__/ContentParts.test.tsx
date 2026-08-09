@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import type { TMessageContentParts } from 'librechat-data-provider';
 
 jest.mock('~/utils', () => ({
+  cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
   mapAttachments: () => ({}),
   filterAttachmentsForPart: (attachments: unknown) => attachments,
   groupSequentialToolCalls: (parts: Array<{ part: unknown; idx: number }>) =>

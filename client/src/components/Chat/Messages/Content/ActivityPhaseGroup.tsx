@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
 import { ChevronDown, ListTree } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import { getActivityLabelText } from '~/utils/activityLabels';
+import { cn } from '~/utils';
 
 type ActivityPhasePart = Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }> & {
   activity_label_type?: 'phase';
@@ -17,6 +18,7 @@ export default function ActivityPhaseGroup({
   children: ReactNode;
 }) {
   const label = getActivityLabelText(labelPart);
+  const hasFailure = labelPart.status === 'failed' || labelPart.status === 'partial';
   if (!label) {
     return <>{children}</>;
   }
@@ -27,8 +29,20 @@ export default function ActivityPhaseGroup({
         aria-label={label}
         title={label}
       >
-        <ListTree className="size-4 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium" role="status">
+        <ListTree
+          className={cn(
+            'size-4 shrink-0',
+            hasFailure && 'text-amber-600 dark:text-amber-400',
+          )}
+          aria-hidden="true"
+        />
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate text-sm font-medium',
+            hasFailure && 'text-amber-600 dark:text-amber-400',
+          )}
+          role="status"
+        >
           {label}
         </span>
         <ChevronDown

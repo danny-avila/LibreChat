@@ -3,6 +3,7 @@ export {
   buildPrompt,
   classifyBatch,
   createActivityLabelHook,
+  stringifyActivityEvidence,
 } from './runtime';
 export type {
   ActivityLabelBatchMeta,

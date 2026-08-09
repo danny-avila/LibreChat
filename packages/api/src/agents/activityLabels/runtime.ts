@@ -318,7 +318,7 @@ function stringifyBounded(value: unknown, limit: number): string {
   return out.join('').slice(0, limit + 1);
 }
 
-function stringifyUnknown(value: unknown, limit: number): string {
+export function stringifyActivityEvidence(value: unknown, limit: number): string {
   if (value == null) {
     return '';
   }
@@ -427,11 +427,11 @@ export function buildPrompt(
       omitted += 1;
       continue;
     }
-    const input = truncate(stringifyUnknown(entry.toolInput, charLimit), charLimit);
+    const input = truncate(stringifyActivityEvidence(entry.toolInput, charLimit), charLimit);
     const outcome =
       entry.status === 'error'
         ? `ERROR: ${truncate(entry.error ?? 'unknown error', charLimit)}`
-        : truncate(stringifyUnknown(entry.toolOutput, charLimit), charLimit);
+        : truncate(stringifyActivityEvidence(entry.toolOutput, charLimit), charLimit);
     const line = `- ${entry.toolName}(${input}) → ${outcome}`;
     lines.push(line);
     used += line.length;

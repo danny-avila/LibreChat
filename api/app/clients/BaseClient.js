@@ -1268,10 +1268,16 @@ class BaseClient {
     const lastIndex = existingContent.length - 1;
     const lastExisting = existingContent[lastIndex];
     const firstNew = newCompletion[0];
+    const textPhaseCompatible =
+      editedType !== ContentTypes.TEXT ||
+      lastExisting?.phase == null ||
+      firstNew?.phase == null ||
+      lastExisting.phase === firstNew.phase;
     const mergesFirstPart =
       (editedType === ContentTypes.TEXT || editedType === ContentTypes.THINK) &&
       lastExisting?.type === firstNew?.type &&
-      firstNew?.type === editedType;
+      firstNew?.type === editedType &&
+      textPhaseCompatible;
     /** Phase bounds are completion-local while the run streams. Persist them
      *  in the same absolute index space as the edited response assembled
      *  here. When the first new text/think part merges into the retained tail,
@@ -1304,6 +1310,7 @@ class BaseClient {
     if (editedType === ContentTypes.TEXT) {
       mergedContent[lastIndex] = {
         ...mergedContent[lastIndex],
+        ...(firstNew.phase != null && { phase: firstNew.phase }),
         [ContentTypes.TEXT]:
           (mergedContent[lastIndex][ContentTypes.TEXT] || '') +
           (adjustedCompletion[0][ContentTypes.TEXT] || ''),

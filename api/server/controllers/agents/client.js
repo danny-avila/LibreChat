@@ -65,6 +65,7 @@ const {
   mapCollectedMetadataToUsage,
   resolveActivityLabelModel,
   resolveActivityPhaseLabelModel,
+  traceIdForMessage,
   settlePendingLabelFills,
   stripActivityLabelParts,
   getRequestMemories,
@@ -773,6 +774,7 @@ class AgentClient extends BaseClient {
     assistantContext,
     closingTextPhase,
     phaseIndex,
+    totalActivityCount,
     status,
     agentIds,
     charLimit,
@@ -805,29 +807,38 @@ class AgentClient extends BaseClient {
         }
       },
     };
-    const { label } = await this.run.generateActivityPhaseLabel({
-      provider,
-      clientOptions,
-      activities,
-      assistantContext,
-      closingTextPhase,
-      phaseIndex,
-      status,
-      agentIds,
-      charLimit,
-      ...(prompt != null && { prompt }),
-      sourceRunId: this.responseMessageId,
-      responseId: this.responseMessageId,
-      traceSeed: `${this.responseMessageId}-activity-phase-${phaseIndex}`,
-      chainOptions: {
-        signal,
-        callbacks: [{ handleLLMEnd, ...capturePrompt }],
-        configurable: {
-          thread_id: this.conversationId,
-          user_id: this.user ?? this.options.req?.user?.id,
+    let label;
+    try {
+      ({ label } = await this.run.generateActivityPhaseLabel({
+        provider,
+        clientOptions,
+        activities,
+        assistantContext,
+        closingTextPhase,
+        phaseIndex,
+        totalActivityCount,
+        status,
+        agentIds,
+        charLimit,
+        prompt,
+        sourceRunId: this.responseMessageId,
+        sourceTraceId: traceIdForMessage(this.responseMessageId),
+        responseId: this.responseMessageId,
+        traceSeed: `${this.responseMessageId}-activity-phase-${phaseIndex}`,
+        chainOptions: {
+          signal,
+          callbacks: [{ handleLLMEnd, ...capturePrompt }],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req?.user?.id,
+          },
         },
-      },
-    });
+      }));
+    } catch (error) {
+      if (!signal?.aborted) {
+        logger.warn('[AgentClient] Activity phase generation failed', error);
+      }
+    }
     return {
       label,
       collectUsage: async (completionText) =>
@@ -1064,7 +1075,7 @@ class AgentClient extends BaseClient {
   }
 
   /** Builds the independently opt-in parent activity-phase collector. */
-  buildActivityPhaseWiring(streamId, abortSignal) {
+  buildActivityPhaseWiring(streamId, abortSignal, initialSnapshot) {
     if (!streamId || typeof Run?.prototype?.generateActivityPhaseLabel !== 'function') {
       return undefined;
     }
@@ -1119,6 +1130,7 @@ class AgentClient extends BaseClient {
       maxPerRun: phaseConfig.maxPerRun,
       charLimit: phaseConfig.charLimit,
       prompt: phaseConfig.prompt,
+      initialSnapshot,
       abortSignal: scope.abort.signal,
       isClosed: () => scope.closed,
       getContentParts: () => this.contentParts,
@@ -2363,6 +2375,9 @@ class AgentClient extends BaseClient {
     const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction, {
       expectedCreatedAt: this.jobCreatedAt,
       ...(discoveredTools.length > 0 ? { discoveredTools } : {}),
+      ...(this.activityPhaseWiring?.snapshot != null && {
+        activityPhaseSnapshot: this.activityPhaseWiring.snapshot(),
+      }),
       persistencePending: true,
     });
     if (!paused) {
@@ -2994,6 +3009,7 @@ class AgentClient extends BaseClient {
    * @param {Agents.ToolApprovalDecisionMap | { answer: string }} params.resumeValue
    * @param {Array} [params.seedContent] - content aggregated before the pause
    * @param {Array<import('@librechat/agents').RunStep>} [params.runSteps] - run steps emitted before the pause
+   * @param {import('@librechat/api').ActivityPhaseSnapshot} [params.activityPhaseSnapshot]
    * @param {AbortController} [params.abortController]
    * @param {Pick<import('@langchain/langgraph').Command, 'update' | 'goto'>} [params.commandOptions]
    */
@@ -3005,6 +3021,7 @@ class AgentClient extends BaseClient {
     commandOptions,
     userMCPAuthMap,
     discoveredToolNames,
+    activityPhaseSnapshot,
   }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
@@ -3085,7 +3102,11 @@ class AgentClient extends BaseClient {
 
       const streamId = this.options.req?._resumableStreamId;
       const activityLabel = this.buildActivityLabelWiring(streamId, abortController.signal);
-      const activityPhase = this.buildActivityPhaseWiring(streamId, abortController.signal);
+      const activityPhase = this.buildActivityPhaseWiring(
+        streamId,
+        abortController.signal,
+        activityPhaseSnapshot,
+      );
       const offsetHandlers = createSteerIndexOffsetHandlers(
         createContentIndexOffsetHandlers(
           this.options.eventHandlers,

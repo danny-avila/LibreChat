@@ -1374,6 +1374,7 @@ export default function useResumableSSE(
              *  occupy the ordinary +prefix slot, so only fold back across the
              *  recognizable empty merge slot. */
             if (
+              phasePart.activity_start_index === 0 &&
               activityStartIndex > 0 &&
               targetContent?.[activityStartIndex] == null &&
               targetContent?.[activityStartIndex - 1] != null
