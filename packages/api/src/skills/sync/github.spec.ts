@@ -1863,6 +1863,47 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.deleteSkill).not.toHaveBeenCalled();
   });
 
+  it('keeps a moved skill mirror when the name it moves into turns out to be duplicated', async () => {
+    /* Both discovered paths claim the same name, so neither publishes. The
+       mirror the move would have reused is still live and must survive. */
+    const existing = makeSkill({
+      name: 'duplicate',
+      description: 'Old description',
+      author: makeSourceAuthorId(),
+      authorName: 'GitHub Sync',
+      frontmatter: {},
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/old-duplicate',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/old-duplicate',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const deps = createDeps({
+      fetchFn: multiSkillFetch([
+        { dir: 'first', markdown: '---\nname: duplicate\ndescription: First\n---\nBody' },
+        { dir: 'second', markdown: '---\nname: duplicate\ndescription: Second\n---\nBody' },
+      ]),
+      findSkillBySourceIdentity: jest.fn(async () => null),
+      listSkillsBySource: jest.fn(async () => [existing]),
+      getSkillById: jest.fn(async () => existing),
+      updateSkill: jest.fn(),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.deleteSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deletedSkillCount: 0, skippedSkillCount: 2 }),
+    );
+  });
+
   it('keeps a moved skill mirror when its move fails part way through', async () => {
     /* The mirror still carries the old upstream id until the update lands, so
        a failed move must not leave the reconcile pass reading it as stale. */

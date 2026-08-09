@@ -375,8 +375,18 @@ export function validateSkillFrontmatter(frontmatter: unknown): ValidationIssue[
         field: `frontmatter.${key}`,
         code: 'UNKNOWN_KEY',
         severity: 'warning',
-        message: `"${key}" is not a recognized frontmatter key and is stored without validation`,
+        message: `"${key}" is not a recognized frontmatter key and is stored as-is`,
       });
+      /* The key is tolerated, its value still is not: an unrecognized key is
+         persisted, so it stays inside the same depth, array and string bounds
+         every structured key is held to. */
+      if (!isJsonSafe(value, 0)) {
+        issues.push({
+          field: `frontmatter.${key}`,
+          code: 'INVALID_SHAPE',
+          message: `"${key}" must be a JSON-safe value (max depth ${FRONTMATTER_MAX_DEPTH}, max string ${FRONTMATTER_MAX_STRING}, max array ${FRONTMATTER_MAX_ARRAY})`,
+        });
+      }
       continue;
     }
 

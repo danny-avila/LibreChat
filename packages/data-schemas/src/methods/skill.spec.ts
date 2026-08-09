@@ -283,6 +283,20 @@ describe('skill validation helpers', () => {
       expect(partitionIssues(issues).errors).toEqual([]);
     });
 
+    it('still bounds the value of an unknown key', () => {
+      /* The key is tolerated, the payload is not: an unrecognized key is
+         persisted, so it stays inside the same limits as every other key. */
+      const deep = { a: { b: { c: { d: { e: { f: 'too deep' } } } } } };
+      const issues = validateSkillFrontmatter({ 'not-a-real-key': deep });
+
+      expect(issues.some((i) => i.code === 'UNKNOWN_KEY' && i.severity === 'warning')).toBe(true);
+      expect(
+        partitionIssues(issues).errors.some(
+          (i) => i.code === 'INVALID_SHAPE' && i.field === 'frontmatter.not-a-real-key',
+        ),
+      ).toBe(true);
+    });
+
     it('accepts the references key in every shape real SKILL.md files use', () => {
       expect(validateSkillFrontmatter({ references: ['workers', 'pages', 'd1'] })).toEqual([]);
       expect(validateSkillFrontmatter({ references: 'references/api.md' })).toEqual([]);

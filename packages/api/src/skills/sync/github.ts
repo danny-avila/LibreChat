@@ -1612,9 +1612,40 @@ async function syncSource(params: {
       }
     }
 
+    /**
+     * A moved skill's mirror still carries its old upstream id until the update
+     * lands, and only the new path is marked as seen. Marking the old id keeps
+     * the published copy in place whenever the new one does not replace it, so
+     * the reconcile pass cannot read it as stale.
+     */
+    const markMovedMirrorAsSeen = async (
+      prepared: PreparedRemoteSkill,
+    ): Promise<(ISkill & { _id: Types.ObjectId }) | null> => {
+      if (prepared.existing) {
+        return null;
+      }
+      const movedExisting = findMovedSourceSkill({
+        source,
+        prepared,
+        existingSyncedSkills: await getExistingSyncedSkills(),
+        excludedUpstreamIds: discoveredUpstreamIds,
+      });
+      const movedUpstreamId = movedExisting
+        ? getSourceMetadataString(movedExisting, 'upstreamId')
+        : undefined;
+      if (movedUpstreamId) {
+        seenUpstreamIds.add(movedUpstreamId);
+      }
+      return movedExisting;
+    };
+
     const { unique, duplicates } = partitionDuplicatePreparedSkillNames(source, preparedSkills);
     for (const { discovered, prepared } of duplicates) {
       seenUpstreamIds.add(makeUpstreamId(source, discovered.rootPath));
+      /* A duplicate never reaches `syncPreparedSkill`, so without this its
+         moved mirror goes unmarked and is reconciled away even though nothing
+         was published to replace it. */
+      await markMovedMirrorAsSeen(prepared);
       recordSkippedSkill({
         path: discovered.rootPath,
         name: prepared.createInput.name,
@@ -1632,24 +1663,7 @@ async function syncSource(params: {
       discovered,
       prepared,
     }: PreparedDiscoveredSkill): Promise<void> => {
-      const movedExisting = prepared.existing
-        ? null
-        : findMovedSourceSkill({
-            source,
-            prepared,
-            existingSyncedSkills: await getExistingSyncedSkills(),
-            excludedUpstreamIds: discoveredUpstreamIds,
-          });
-      if (movedExisting) {
-        /* A moved skill's mirror still carries its old upstream id until the
-           update lands, and only the new path was marked as seen. Mark the old
-           id too, so a failure here leaves the copy in place for the next run
-           to move rather than letting the reconcile pass read it as stale. */
-        const movedUpstreamId = getSourceMetadataString(movedExisting, 'upstreamId');
-        if (movedUpstreamId) {
-          seenUpstreamIds.add(movedUpstreamId);
-        }
-      }
+      const movedExisting = await markMovedMirrorAsSeen(prepared);
       const effectivePrepared: PreparedRemoteSkill = movedExisting
         ? { ...prepared, existing: movedExisting }
         : prepared;
