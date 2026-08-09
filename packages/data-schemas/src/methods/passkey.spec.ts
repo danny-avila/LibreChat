@@ -179,6 +179,31 @@ describe('recordPasskeyUse', () => {
   it('does not throw when the credential is gone', async () => {
     await expect(methods.recordPasskeyUse('missing', 1)).resolves.toBe(false);
   });
+
+  describe('when the counter write fails', () => {
+    const failWrite = () =>
+      jest.spyOn(mongoose.models.Passkey, 'updateOne').mockReturnValue({
+        exec: () => Promise.reject(new Error('write failed')),
+      } as unknown as ReturnType<typeof mongoose.models.Passkey.updateOne>);
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('fails closed for a counter-capable credential', async () => {
+      await methods.createPasskey(passkeyData({ counter: 5 }));
+      failWrite();
+
+      await expect(methods.recordPasskeyUse('credential-one', 6)).resolves.toBe(false);
+    });
+
+    it('lets a counterless credential through, since it carries no clone signal', async () => {
+      await methods.createPasskey(passkeyData({ counter: 0 }));
+      failWrite();
+
+      await expect(methods.recordPasskeyUse('credential-one', 0)).resolves.toBe(true);
+    });
+  });
 });
 
 describe('renamePasskey', () => {
