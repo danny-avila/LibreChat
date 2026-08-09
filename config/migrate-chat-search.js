@@ -1,5 +1,10 @@
 const path = require('path');
-const { migrate, applyRolePasswords, createSearchPool } = require('@librechat/api');
+const {
+  migrate,
+  applyRolePasswords,
+  assertRoleSeparation,
+  createSearchPool,
+} = require('@librechat/api');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
@@ -61,6 +66,19 @@ async function main() {
           'reached the server in the clear or could be written to its statement log.',
       );
     }
+
+    /**
+     * Read back what the database actually looks like rather than trusting that
+     * the files above did what they say. This throws, so a run that reaches this
+     * point and returns is a run whose separation held at the moment it finished
+     * — nothing keeps it holding afterwards.
+     */
+    await assertRoleSeparation(pool);
+    console.log(
+      'Role separation verified: no application role is a superuser or BYPASSRLS, every\n' +
+        'relation in chat_search is owned by chat_search_owner, and the request reader holds\n' +
+        'nothing beyond SELECT on documents and embeddings.',
+    );
   } finally {
     await pool.end().catch(() => undefined);
   }

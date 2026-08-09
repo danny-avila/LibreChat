@@ -104,9 +104,9 @@ type ExtensionPlacement = {
  * Provisioning is privileged work and the privileges are not obvious, so each one
  * is named here rather than discovered halfway through a file:
  *
- *  - `002_roles.sql` creates the three application roles and then asserts
- *    `NOSUPERUSER NOBYPASSRLS` on each of them on every run. Only a superuser may
- *    set those attributes at all, in either direction.
+ *  - `002_roles.sql` creates the three application roles and asserts
+ *    `NOSUPERUSER NOBYPASSRLS` on each of them when it is applied. Only a
+ *    superuser may set those attributes at all, in either direction.
  *  - It also cannot be applied *as* one of the roles it manages. Connected as
  *    `chat_search_owner`, the run strips its own role privileges partway through
  *    the file and every remaining `ALTER ROLE` fails, leaving the writer and
@@ -344,6 +344,30 @@ const SCRAM_ITERATIONS = 4096;
 const SCRAM_SALT_BYTES = 16;
 const SHA256_BYTES = 32;
 
+/** RFC 3454 Table C.1.2, the non-ASCII spaces SASLprep folds onto U+0020. */
+const NON_ASCII_SPACE = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
+/**
+ * RFC 3454 Table B.1, "commonly mapped to nothing". The set contains zero-width
+ * joiners and variation selectors on purpose — they combine with their
+ * neighbours, which is precisely why the RFC strips them.
+ */
+const MAPPED_TO_NOTHING =
+  // eslint-disable-next-line no-misleading-character-class
+  /[\u00AD\u034F\u1806\u180B\u180C\u180D\u200C\u200D\u2060\uFE00-\uFE0F\uFEFF]/g;
+
+/**
+ * The three SASLprep (RFC 4013) steps that change a password's bytes, in the
+ * order `pg` applies them in `lib/crypto/sasl.js` and PostgreSQL applies them in
+ * `pg_saslprep`: non-ASCII space to U+0020, Table B.1 removed, then NFKC.
+ *
+ * The prohibition and bidi checks are deliberately absent, because `pg` omits
+ * them too and this has to agree with `pg` byte for byte. `assertUsablePassword`
+ * refuses the one prohibited class that reaches an env var by accident instead.
+ */
+function saslprep(password: string): string {
+  return password.replace(NON_ASCII_SPACE, ' ').replace(MAPPED_TO_NOTHING, '').normalize('NFKC');
+}
+
 /**
  * Derives the SCRAM-SHA-256 verifier PostgreSQL stores for a role.
  *
@@ -356,14 +380,25 @@ const SHA256_BYTES = 32;
  * stores it verbatim instead of deriving one, which is what `psql \password`
  * does for the same reason.
  *
- * The password bytes are hashed as supplied, matching the SCRAM client in `pg`
- * that every consumer here authenticates with. A password that SASLprep would
- * rewrite — non-ASCII whitespace, an unnormalised composition — hashes
- * differently under libpq and would not authenticate from `psql`.
+ * Deriving the verifier here also takes over a step the server used to perform:
+ * `PASSWORD '<cleartext>'` ran the cleartext through `pg_saslprep` first, and a
+ * verifier is stored exactly as given. So the SASLprep has to happen above,
+ * because every client does it before PBKDF2 — `pg` in `lib/crypto/sasl.js`,
+ * libpq in `fe-auth-scram.c`. Hashing the supplied bytes instead stores a
+ * verifier no client can reproduce, and the role is left with LOGIN, a password,
+ * and no way to authenticate. `migrate.spec.ts` proves the two agree by logging
+ * in over TCP with a password SASLprep rewrites, in 'authenticates over TCP with
+ * a password every client rewrites before hashing'.
  */
 export function scramSha256Verifier(password: string): string {
   const salt = randomBytes(SCRAM_SALT_BYTES);
-  const saltedPassword = pbkdf2Sync(password, salt, SCRAM_ITERATIONS, SHA256_BYTES, 'sha256');
+  const saltedPassword = pbkdf2Sync(
+    saslprep(password),
+    salt,
+    SCRAM_ITERATIONS,
+    SHA256_BYTES,
+    'sha256',
+  );
   const clientKey = createHmac('sha256', saltedPassword).update('Client Key').digest();
   const storedKey = createHash('sha256').update(clientKey).digest();
   const serverKey = createHmac('sha256', saltedPassword).update('Server Key').digest();
@@ -371,6 +406,40 @@ export function scramSha256Verifier(password: string): string {
     `SCRAM-SHA-256$${SCRAM_ITERATIONS}:${salt.toString('base64')}` +
     `$${storedKey.toString('base64')}:${serverKey.toString('base64')}`
   );
+}
+
+/** RFC 4013 §2.3 prohibits every one of these outright. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/;
+
+/**
+ * Refuses the two passwords that cannot be provisioned into a working login,
+ * before a verifier no client will ever match is stored for one of them.
+ *
+ * A control character is where `pg` and libpq part company: libpq's SASLprep
+ * rejects the string and falls back to hashing it unchanged, while `pg` has no
+ * prohibition check and normalizes it anyway, so no single verifier satisfies
+ * both clients. The class is also the one an operator hits by accident — a
+ * secret read from a file arrives with the trailing newline attached.
+ *
+ * A password made entirely of characters SASLprep deletes preps to the empty
+ * string, which `pg` refuses to send at all.
+ */
+function assertUsablePassword(envKey: string, password: string): void {
+  if (CONTROL_CHARACTERS.test(password)) {
+    throw new Error(
+      `[chatSearch] ${envKey} contains a control character (U+0000-U+001F, U+007F-U+009F). ` +
+        'SASLprep prohibits them and PostgreSQL clients disagree over what to do about it, so ' +
+        'no stored password can satisfy all of them; a trailing newline from a secrets file is ' +
+        'the usual cause.',
+    );
+  }
+  if (saslprep(password) === '') {
+    throw new Error(
+      `[chatSearch] ${envKey} is empty once SASLprep removes its zero-width and ` +
+        'commonly-mapped-to-nothing characters, and an empty password cannot authenticate.',
+    );
+  }
 }
 
 /**
@@ -391,6 +460,7 @@ export async function applyRolePasswords(pool: SearchPool): Promise<readonly str
       if (!password) {
         continue;
       }
+      assertUsablePassword(envKey, password);
       const { rows } = await client.query<{ statement: string }>(
         'SELECT format($1, $2::text, $3::text) AS statement',
         ['ALTER ROLE %I WITH LOGIN PASSWORD %L', role, scramSha256Verifier(password)],
@@ -413,11 +483,23 @@ export async function applyRolePasswords(pool: SearchPool): Promise<readonly str
  * compose files and a Helm chart.
  */
 export function assertRoleCredentialsConfigured(): void {
-  const missing = Object.values(ROLE_PASSWORD_ENV).filter((envKey) => !process.env[envKey]);
+  const missing: string[] = [];
+  const supplied: [envKey: string, password: string][] = [];
+  for (const envKey of Object.values(ROLE_PASSWORD_ENV)) {
+    const password = process.env[envKey];
+    if (!password) {
+      missing.push(envKey);
+      continue;
+    }
+    supplied.push([envKey, password]);
+  }
   if (missing.length > 0) {
     throw new Error(
       `[chatSearch] missing required role credentials: ${missing.join(', ')} ` +
         '(operator-supplied, no defaults)',
     );
+  }
+  for (const [envKey, password] of supplied) {
+    assertUsablePassword(envKey, password);
   }
 }

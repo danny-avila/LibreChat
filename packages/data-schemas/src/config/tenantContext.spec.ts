@@ -6,6 +6,7 @@ import {
   createScope,
   getRequestId,
   runAsSystem,
+  resolveScope,
   scopedCacheKey,
   normalizeTenantId,
   isReservedTenantId,
@@ -77,6 +78,47 @@ describe('scope brand', () => {
 
   it('freezes the value it hands back', () => {
     expect(Object.isFrozen(createScope({ tenantId: 'acme', userId: 'alice' }))).toBe(true);
+  });
+});
+
+/**
+ * The two refusals the JSDoc on `resolveScope` describes, asserted rather than
+ * promised: no active context fails in `resolveScope` itself, and a
+ * `runAsSystem()` context fails inside `createScope` because `__SYSTEM__` is a
+ * query-time wildcard and never a scope. Neither path widens to "all tenants".
+ */
+describe('resolveScope', () => {
+  it('refuses to build a scope with no request context active', () => {
+    expect(() => resolveScope()).toThrow(UnscopedAccessError);
+    expect(() => resolveScope()).toThrow(/no request context is active/);
+  });
+
+  it('refuses the system tenant inside runAsSystem', async () => {
+    await tenantStorage.run({ tenantId: 'acme', userId: 'alice' }, async () => {
+      await runAsSystem(async () => {
+        expect(() => resolveScope()).toThrow(/system tenant is a query-time wildcard/);
+      });
+    });
+  });
+
+  it('returns the active context as a branded scope', async () => {
+    await tenantStorage.run({ tenantId: 'acme', userId: 'alice' }, async () => {
+      const scope = resolveScope();
+      expect(assertScope(scope)).toBe(scope);
+      expect(scope).toMatchObject({ tenantId: 'acme', userId: 'alice' });
+    });
+  });
+
+  it('resolves a context with no tenant onto the base tenant rather than failing', async () => {
+    await tenantStorage.run({ userId: 'alice' }, async () => {
+      expect(resolveScope()).toMatchObject({ tenantId: BASE_TENANT_ID, userId: 'alice' });
+    });
+  });
+
+  it('refuses a context carrying a tenant but no user', async () => {
+    await tenantStorage.run({ tenantId: 'acme' }, async () => {
+      expect(() => resolveScope()).toThrow(/userId is missing or empty/);
+    });
   });
 });
 

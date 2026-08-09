@@ -19,7 +19,11 @@ CREATE TABLE IF NOT EXISTS chat_search.poll_cursor (
   CONSTRAINT poll_cursor_kind_check CHECK (kind IN ('message', 'conversation', 'shared-link'))
 );
 
+-- Ownership is the one thing not implied by anything else: the provisioning
+-- connection creates the table, and the separation gate requires every relation
+-- in this schema to be owned by chat_search_owner.
+--
+-- No grant and no revoke belongs here. The writer's DML arrives from the default
+-- privileges 002 installs for this creator, and the reader is left with nothing
+-- because a new table starts out granted to its owner alone.
 ALTER TABLE chat_search.poll_cursor OWNER TO chat_search_owner;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON chat_search.poll_cursor TO chat_search_writer;
-REVOKE ALL ON chat_search.poll_cursor FROM chat_search_reader;

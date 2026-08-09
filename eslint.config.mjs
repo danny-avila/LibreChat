@@ -22,6 +22,34 @@ const compat = new FlatCompat({
   allConfig: js.configs.all,
 });
 
+const mongoRestrictions = [
+  {
+    selector: "CallExpression[callee.property.name='bulkWrite']",
+    message:
+      'Use tenantSafeBulkWrite() instead of Model.bulkWrite() — Mongoose middleware does not fire for bulkWrite, so the tenant isolation plugin cannot intercept it.',
+  },
+  {
+    selector: "MemberExpression[property.name='collection'][parent.type='MemberExpression']",
+    message:
+      'Avoid Model.collection.* — raw driver calls bypass all Mongoose middleware including tenant isolation. Use Mongoose model methods or tenantSafeBulkWrite() instead.',
+  },
+];
+
+const typeSafetyRestrictions = [
+  {
+    selector:
+      'TSAsExpression[expression.type="TSAsExpression"][expression.typeAnnotation.type="TSUnknownKeyword"]',
+    message:
+      'Avoid `as unknown as T` — laundering a value through `unknown` discards every check the compiler could still make. Use a single assertion, or declare the value with the type it actually has.',
+  },
+  {
+    selector:
+      'TSTypeReference[typeName.name="Record"] > TSTypeParameterInstantiation > TSUnknownKeyword',
+    message:
+      'Avoid `Record<string, unknown>` — it stands in for a shape nobody wrote down. Declare an explicit type or interface for the object, reusing one from data-provider or data-schemas where it already exists.',
+  },
+];
+
 export default [
   {
     ignores: [
@@ -378,19 +406,29 @@ export default [
     files: ['./packages/data-schemas/**/*.ts'],
     ignores: ['**/*.spec.ts', '**/*.test.ts', '**/utils/tenantBulkWrite.ts'],
     rules: {
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: "CallExpression[callee.property.name='bulkWrite']",
-          message:
-            'Use tenantSafeBulkWrite() instead of Model.bulkWrite() — Mongoose middleware does not fire for bulkWrite, so the tenant isolation plugin cannot intercept it.',
-        },
-        {
-          selector: "MemberExpression[property.name='collection'][parent.type='MemberExpression']",
-          message:
-            'Avoid Model.collection.* — raw driver calls bypass all Mongoose middleware including tenant isolation. Use Mongoose model methods or tenantSafeBulkWrite() instead.',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...mongoRestrictions],
+    },
+  },
+  {
+    // **Chat search — enforce the CLAUDE.md type-safety conventions**
+    // Scoped to new code only: the rest of the repo predates the convention and
+    // is not being rewritten. `no-restricted-syntax` options replace rather than
+    // merge across blocks, so the Mongo restrictions above are re-listed for the
+    // data-schemas paths this block also matches.
+    //
+    // The tenant middleware is named file by file rather than by directory: the
+    // rest of `packages/api/src/middleware` predates the convention too, and a
+    // `**` glob there would fail the build on files this work does not touch.
+    files: [
+      './packages/api/src/search/**/*.ts',
+      './packages/api/src/history/**/*.ts',
+      './packages/api/src/middleware/tenant.ts',
+      './packages/api/src/middleware/preAuthTenant.ts',
+      './packages/api/src/middleware/__tests__/**/*.ts',
+      './packages/data-schemas/src/search/**/*.ts',
+    ],
+    rules: {
+      'no-restricted-syntax': ['error', ...mongoRestrictions, ...typeSafetyRestrictions],
     },
   },
 ];

@@ -10,6 +10,8 @@ import {
   logger,
 } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
+import type { IUser } from '@librechat/data-schemas';
+import type { IncomingHttpHeaders } from 'http';
 import type { ServerRequest } from '~/types/http';
 // Import directly from source file — _resetTenantMiddlewareStrictCache is intentionally
 // excluded from the public barrel export (index.ts).
@@ -27,27 +29,46 @@ jest.mock('fs/promises', () => ({
 
 const unlinkMock = unlink as jest.MockedFunction<typeof unlink>;
 
-function mockReq(user?: Record<string, unknown>): ServerRequest {
-  return { headers: {}, user } as unknown as ServerRequest;
+/** The subset of `req.user` these middlewares read, typed from the real user. */
+type MockUser = Partial<Pick<IUser, 'id' | 'tenantId' | 'role'>>;
+
+/**
+ * A request carrying only the fields the middleware reads. `user` is widened to a
+ * partial because a test never has a hydrated Mongoose document, and `tenantId`
+ * is named explicitly because `ServerRequest` does not declare it — the server
+ * resolver assigns it, and `resolveRequestTenantId` prefers it over the user's.
+ * A real `ServerRequest` satisfies this type, which is what makes the single
+ * assertion below legitimate rather than a laundering step.
+ */
+type MockRequest = Omit<Partial<ServerRequest>, 'user'> & {
+  user?: MockUser;
+  tenantId?: string;
+};
+
+function mockReq(user?: MockUser): ServerRequest {
+  const req: MockRequest = { headers: {}, user };
+  return req as ServerRequest;
 }
 
-function mockTenantReq(user?: Record<string, unknown>, tenantId?: string): ServerRequest {
-  return { headers: {}, user, tenantId } as unknown as ServerRequest;
+function mockTenantReq(user?: MockUser, tenantId?: string): ServerRequest {
+  const req: MockRequest = { headers: {}, user, tenantId };
+  return req as ServerRequest;
 }
 
 function mockReqWithHeaders(
-  user: Record<string, unknown> | undefined,
-  headers: Record<string, string>,
+  user: MockUser | undefined,
+  headers: IncomingHttpHeaders,
 ): ServerRequest {
-  return { headers, user } as unknown as ServerRequest;
+  const req: MockRequest = { headers, user };
+  return req as ServerRequest;
 }
 
 function mockRes(): Response {
-  const res = {
+  const res: Partial<Response> = {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
   };
-  return res as unknown as Response;
+  return res as Response;
 }
 
 /** Runs the middleware and returns a Promise that resolves when next() is called. */
