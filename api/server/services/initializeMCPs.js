@@ -122,6 +122,26 @@ function withPluginServers(configured) {
   return merged;
 }
 
+function withPluginAuthorityConfig(appConfig, mcpServers) {
+  const immutableConfig = appConfig?.config ?? {};
+  const pluginServers = Object.fromEntries(
+    Object.entries(mcpServers ?? {}).filter(([, config]) => config?.source === 'plugin'),
+  );
+  if (Object.keys(pluginServers).length === 0) {
+    return appConfig;
+  }
+  return {
+    ...appConfig,
+    config: {
+      ...immutableConfig,
+      mcpServers: {
+        ...(immutableConfig.mcpServers ?? {}),
+        ...pluginServers,
+      },
+    },
+  };
+}
+
 /**
  * Initialize MCP servers
  */
@@ -146,7 +166,7 @@ async function initializeMCPs(options = {}) {
   }
   const appConfig = await getAppConfig({ baseOnly: true });
   const mcpServers = withPluginServers(appConfig.mcpConfig);
-  initializeMCPAuthority(appConfig);
+  initializeMCPAuthority(withPluginAuthorityConfig(appConfig, mcpServers));
 
   try {
     createMCPServersRegistry(

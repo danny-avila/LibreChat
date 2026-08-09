@@ -606,7 +606,10 @@ export function createUserGroupMethods(
     const mutation = await authorityMutationGate.mutateMCPAuthority(async () => {
       try {
         await group.save(session ? { session } : undefined);
-        await invalidateMemberGroupsCache(groupData.memberIds ?? []);
+        const memberIds = [...(groupData.memberIds ?? [])];
+        authorityMutationGate.scheduleMCPAuthorityPostPublication(
+          async () => await invalidateMemberGroupsCache(memberIds),
+        );
         return { kind: 'created', group } as const;
       } catch (error) {
         if (!isDuplicateKeyError(error)) {
@@ -656,10 +659,10 @@ export function createUserGroupMethods(
         { $set: updateData },
         { ...options, new: false },
       ).lean<IGroup>();
-      await invalidateMemberGroupsCache([
-        ...(previous?.memberIds ?? []),
-        ...(updateData.memberIds ?? []),
-      ]);
+      const affectedMemberIds = [...(previous?.memberIds ?? []), ...(updateData.memberIds ?? [])];
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache(affectedMemberIds),
+      );
       return await findGroupByExternalId(idOnTheSource, source, {}, session);
     });
   }
@@ -698,7 +701,9 @@ export function createUserGroupMethods(
         { $addToSet: { memberIds: userIdOnTheSource } },
         options,
       ).lean<IGroup>();
-      await invalidateMemberGroupsCache([userIdOnTheSource]);
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache([userIdOnTheSource]),
+      );
       return { user: user as IUser, group: updatedGroup };
     });
     if (!result) {
@@ -741,7 +746,9 @@ export function createUserGroupMethods(
         { $pullAll: { memberIds: [userIdOnTheSource] } },
         options,
       ).lean<IGroup>();
-      await invalidateMemberGroupsCache([userIdOnTheSource]);
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache([userIdOnTheSource]),
+      );
       return { user: user as IUser, group: updatedGroup };
     });
     if (!result) {
@@ -1190,7 +1197,9 @@ export function createUserGroupMethods(
     await runMCPAuthorityMutation(authorityMutationGate, async () => {
       const Group = mongoose.models.Group as Model<IGroup>;
       await Group.updateMany({ memberIds: userId }, { $pullAll: { memberIds: [userId] } });
-      await invalidateMemberGroupsCache([userId]);
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache([userId]),
+      );
     });
   }
 
@@ -1241,7 +1250,10 @@ export function createUserGroupMethods(
               typeof memberId === 'string' || memberId instanceof Types.ObjectId,
           )
         : [];
-      await invalidateMemberGroupsCache([...(previous?.memberIds ?? []), ...nextMemberIds]);
+      const affectedMemberIds = [...(previous?.memberIds ?? []), ...nextMemberIds];
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache(affectedMemberIds),
+      );
       return previous ? await findGroupById(groupId, {}, session) : null;
     });
   }
@@ -1266,9 +1278,11 @@ export function createUserGroupMethods(
       }
       const { memberIds, indeterminate } = collectMemberIdsFromGroupUpdate(update);
       if (indeterminate) {
-        await clearMemberGroupsCache();
+        authorityMutationGate.scheduleMCPAuthorityPostPublication(clearMemberGroupsCache);
       } else if (memberIds.length > 0) {
-        await invalidateMemberGroupsCache(memberIds);
+        authorityMutationGate.scheduleMCPAuthorityPostPublication(
+          async () => await invalidateMemberGroupsCache(memberIds),
+        );
       }
       return result;
     });
@@ -1344,7 +1358,10 @@ export function createUserGroupMethods(
       const Group = mongoose.models.Group as Model<IGroup>;
       const options = session ? { session } : {};
       const group = await Group.findByIdAndDelete(groupId, options).lean<IGroup>();
-      await invalidateMemberGroupsCache(group?.memberIds ?? []);
+      const memberIds = [...(group?.memberIds ?? [])];
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache(memberIds),
+      );
       return group;
     });
   }
@@ -1370,7 +1387,9 @@ export function createUserGroupMethods(
         { $pull: { memberIds: memberId } },
         options,
       ).lean<IGroup>();
-      await invalidateMemberGroupsCache([memberId]);
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache([memberId]),
+      );
       return group;
     });
   }

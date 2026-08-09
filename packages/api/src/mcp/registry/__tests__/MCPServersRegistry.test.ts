@@ -184,6 +184,46 @@ describe('MCPServersRegistry', () => {
   });
 
   describe('addServer', () => {
+    it('preserves plugin provenance through inspection and cache storage', async () => {
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+
+      const result = await registry.addServer(
+        'plugin_runtime_server',
+        {
+          type: 'streamable-http',
+          url: 'https://plugin.example.com/mcp',
+          source: 'plugin',
+        } as t.ParsedServerConfig,
+        'CACHE',
+      );
+
+      expect(inspectSpy).toHaveBeenCalledWith(
+        'plugin_runtime_server',
+        expect.objectContaining({ source: 'plugin' }),
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(result.config.source).toBe('plugin');
+      await expect(registry.getServerConfig('plugin_runtime_server')).resolves.toMatchObject({
+        source: 'plugin',
+      });
+    });
+
+    it('preserves plugin provenance in recovery stubs', async () => {
+      const result = await registry.addServerStub(
+        'plugin_recovery_server',
+        {
+          type: 'streamable-http',
+          url: 'https://plugin.example.com/mcp',
+          source: 'plugin',
+        } as t.ParsedServerConfig,
+        'CACHE',
+      );
+
+      expect(result.config).toMatchObject({ source: 'plugin', inspectionFailed: true });
+    });
+
     it('should pass user source to inspector before storing DB servers', async () => {
       const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
 

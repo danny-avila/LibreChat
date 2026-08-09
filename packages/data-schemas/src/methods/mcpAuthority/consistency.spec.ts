@@ -336,6 +336,73 @@ describe('Mongo-wire MCP authority consistency', () => {
     expect(ownerCount).toBe(1);
   });
 
+  test('runs nested post-publication work only after the generation is clean', async () => {
+    const consistency = createMCPAuthorityConsistencyModule({
+      collection: client.db('authority').collection<MCPAuthorityConsistencyFence>('consistency'),
+      now: () => new Date('2026-08-07T12:00:00.000Z'),
+      createOwnerId: () => 'owner-1',
+    });
+    const observedStatuses: Array<{ dirty: boolean; generation: number }> = [];
+
+    await consistency.mutateMCPAuthority(async () => {
+      consistency.scheduleMCPAuthorityPostPublication(async () => {
+        const status = await consistency.getMCPAuthorityConsistencyStatus();
+        observedStatuses.push({ dirty: status.dirty, generation: status.generation });
+      });
+      await consistency.mutateMCPAuthority(async () => {
+        consistency.scheduleMCPAuthorityPostPublication(async () => {
+          const status = await consistency.getMCPAuthorityConsistencyStatus();
+          observedStatuses.push({ dirty: status.dirty, generation: status.generation });
+        });
+      });
+      expect(observedStatuses).toHaveLength(0);
+    });
+
+    expect(observedStatuses).toEqual([
+      { dirty: false, generation: 1 },
+      { dirty: false, generation: 1 },
+    ]);
+  });
+
+  test('does not run post-publication work when the authority mutation fails', async () => {
+    const consistency = createMCPAuthorityConsistencyModule({
+      collection: client.db('authority').collection<MCPAuthorityConsistencyFence>('consistency'),
+      now: () => new Date('2026-08-07T12:00:00.000Z'),
+      createOwnerId: () => 'owner-1',
+    });
+    const postPublication = jest.fn(async () => undefined);
+
+    await expect(
+      consistency.mutateMCPAuthority(async () => {
+        consistency.scheduleMCPAuthorityPostPublication(postPublication);
+        throw new Error('authority write failed');
+      }),
+    ).rejects.toThrow('authority write failed');
+    expect(postPublication).not.toHaveBeenCalled();
+  });
+
+  test('preserves a clean published generation when post-publication work fails', async () => {
+    const consistency = createMCPAuthorityConsistencyModule({
+      collection: client.db('authority').collection<MCPAuthorityConsistencyFence>('consistency'),
+      now: () => new Date('2026-08-07T12:00:00.000Z'),
+      createOwnerId: () => 'owner-1',
+    });
+    const postPublicationError = new Error('cache invalidation failed');
+
+    await expect(
+      consistency.mutateMCPAuthority(async () => {
+        consistency.scheduleMCPAuthorityPostPublication(async () => {
+          throw postPublicationError;
+        });
+        return 'published';
+      }),
+    ).rejects.toBe(postPublicationError);
+    await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+      dirty: false,
+      generation: 1,
+    });
+  });
+
   test('keeps the fence dirty when an outer mutation catches a nested write failure', async () => {
     const consistency = createMCPAuthorityConsistencyModule({
       collection: client.db('authority').collection<MCPAuthorityConsistencyFence>('consistency'),

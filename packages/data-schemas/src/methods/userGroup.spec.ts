@@ -783,6 +783,52 @@ describe('userGroup methods', () => {
       expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
     });
 
+    it('publishes a nested Entra membership sync before invalidating the principals cache', async () => {
+      const user = await createTestUser({ idOnTheSource: 'post-publish-ext' });
+      const group = await Group.create({
+        name: 'Post-publish Team',
+        source: 'entra',
+        idOnTheSource: 'post-publish-group',
+        memberIds: [],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'post-publish-ext',
+      };
+      await cachedMethods.getUserPrincipals(params);
+      let releaseInvalidation!: () => void;
+      let invalidationStarted!: () => void;
+      const invalidationReady = new Promise<void>((resolve) => {
+        invalidationStarted = resolve;
+      });
+      const invalidationRelease = new Promise<void>((resolve) => {
+        releaseInvalidation = resolve;
+      });
+      cache.delete.mockImplementation(async (cacheKey: string) => {
+        invalidationStarted();
+        await invalidationRelease;
+        return cache.store.delete(cacheKey);
+      });
+
+      const pendingSync = cachedMethods.syncUserEntraGroups(user._id, [
+        { id: 'post-publish-group', name: 'Post-publish Team' },
+      ]);
+      await invalidationReady;
+
+      await expect(
+        getMCPAuthorityConsistencyModule(mongoose).getMCPAuthorityConsistencyStatus(),
+      ).resolves.toMatchObject({ dirty: false });
+      await expect(Group.findById(group._id).lean()).resolves.toMatchObject({
+        memberIds: ['post-publish-ext'],
+      });
+
+      releaseInvalidation();
+      await expect(pendingSync).resolves.toMatchObject({ addedGroups: [expect.any(Object)] });
+    });
+
     it('invalidates member keys extracted from bulk membership updates', async () => {
       const user = await createTestUser({ idOnTheSource: 'bulk-ext-1' });
       const group = await Group.create({

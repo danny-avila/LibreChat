@@ -77,6 +77,16 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return true;
 }
 
+function storedServerSource(
+  config: t.MCPOptions,
+  storageLocation: 'CACHE' | 'DB',
+): t.MCPServerSource {
+  if (storageLocation === 'DB') {
+    return 'user';
+  }
+  return 'source' in config && config.source === 'plugin' ? 'plugin' : 'yaml';
+}
+
 const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
   const raw = process.env.MCP_INIT_TIMEOUT_MS;
   if (raw == null) {
@@ -479,12 +489,13 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
+    const source = storedServerSource(config, storageLocation);
     const stubConfig: t.ParsedServerConfig = {
       ...serializeMCPToolCatalogConfigContext(
         withMCPToolCatalogConfigContext(config as t.ParsedServerConfig),
       ),
       inspectionFailed: true,
-      source: 'yaml',
+      source,
     };
     const result = await configRepo.add(serverName, stubConfig, userId);
     await this.invalidateServerReadCaches(result.serverName, userId);
@@ -500,7 +511,7 @@ export class MCPServersRegistry {
     reservedServerNames?: Iterable<string>,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
+    const source = storedServerSource(config, storageLocation);
     const configForInspection = { ...config, source } as t.ParsedServerConfig;
     const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
@@ -599,7 +610,7 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
+    const source = storedServerSource(config, storageLocation);
 
     // Merge existing admin API key if not provided in update (needed for inspection)
     let configForInspection = { ...config };

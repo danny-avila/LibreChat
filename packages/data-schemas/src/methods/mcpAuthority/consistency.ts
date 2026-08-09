@@ -51,6 +51,7 @@ export interface MCPAuthorityMutationGate {
   mutateMCPAuthority<Result>(
     action: () => Promise<Result>,
   ): Promise<MCPAuthorityMutationResult<Result>>;
+  scheduleMCPAuthorityPostPublication(action: () => Promise<void>): void;
 }
 
 export interface MCPAuthorityConsistencyStatus extends MCPAuthorityGeneration {
@@ -126,6 +127,7 @@ export function getMCPAuthorityConsistencyModule(
 interface MCPAuthorityMutationContext {
   readonly marker: object;
   readonly startingGeneration: number;
+  readonly postPublicationActions: Array<() => Promise<void>>;
   active: boolean;
   failed: boolean;
   failure?: unknown;
@@ -412,6 +414,17 @@ export function createMCPAuthorityConsistencyModule(
     return requireIdentifier(options.createOwnerId(), 'mutation owner');
   }
 
+  function scheduleMCPAuthorityPostPublication(action: () => Promise<void>): void {
+    const current = mutationStorage.getStore();
+    if (current?.marker !== mutationMarker || !current.active) {
+      throw new MCPAuthorityConsistencyError(
+        'mutation_failed',
+        'MCP authority post-publication work must be scheduled inside an active mutation',
+      );
+    }
+    current.postPublicationActions.push(action);
+  }
+
   async function mutateMCPAuthority<Result>(
     action: () => Promise<Result>,
   ): Promise<MCPAuthorityMutationResult<Result>> {
@@ -492,6 +505,7 @@ export function createMCPAuthorityConsistencyModule(
     const context: MCPAuthorityMutationContext = {
       marker: mutationMarker,
       startingGeneration: acquired.generation,
+      postPublicationActions: [],
       active: true,
       failed: false,
     };
@@ -536,6 +550,15 @@ export function createMCPAuthorityConsistencyModule(
         'MCP authority mutation could not publish its generation',
       );
     }
+    const postPublicationResults = await Promise.allSettled(
+      context.postPublicationActions.map(async (action) => await action()),
+    );
+    const failedPostPublicationAction = postPublicationResults.find(
+      (postPublicationResult) => postPublicationResult.status === 'rejected',
+    );
+    if (failedPostPublicationAction?.status === 'rejected') {
+      throw failedPostPublicationAction.reason;
+    }
     return Object.freeze({ generation: published.generation, result });
   }
 
@@ -546,6 +569,7 @@ export function createMCPAuthorityConsistencyModule(
     reconcileMCPAuthorityConsistency,
     readStableSnapshot,
     assertGeneration,
+    scheduleMCPAuthorityPostPublication,
     mutateMCPAuthority,
   });
 }
