@@ -1,12 +1,11 @@
 import * as fs from 'fs';
 import { megabyte } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
+import { anydocFormatFromType, parseWithAnydoc } from '~/files/anydoc';
 import { parseWithPdfInspector } from '~/files/pdfInspector';
 import { withParserAdmission } from './nativeProcess';
-import { parseWithAnydoc } from '~/files/anydoc';
 
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
-const GENERIC_BINARY_MIME_TYPES = new Set(['application/octet-stream', 'binary/octet-stream']);
 /** Cap on pages named in the omission notice, so a mostly-scanned document cannot
  * turn the notice itself into hundreds of KB of text persisted on every turn. */
 const MAX_LISTED_MISSING_PAGES = 20;
@@ -64,18 +63,21 @@ export async function parseDocument({
   }
 
   const declaredMimeType = (file.mimetype ?? '').split(';')[0].trim().toLowerCase();
-  const isGenericPdf =
-    GENERIC_BINARY_MIME_TYPES.has(declaredMimeType) && /\.pdf$/i.test(file.originalname);
-  const mimetype = isGenericPdf ? 'application/pdf' : declaredMimeType;
+  /* A `.pdf` whose declared type names no anydoc format is a PDF, whatever that type
+   * says. That covers the browser's `application/octet-stream` and equally a PDF alias
+   * an operator added to the parser allowlist: admission accepts those now, and sending
+   * one to anydoc would only reach the refusal it raises for `.pdf`. */
+  const namesAnydocFormat = anydocFormatFromType(declaredMimeType) != null;
+  const isPdf =
+    declaredMimeType === 'application/pdf' ||
+    (!namesAnydocFormat && /\.pdf$/i.test(file.originalname));
+  const mimetype = isPdf ? 'application/pdf' : declaredMimeType;
   const parserFile = mimetype === file.mimetype ? file : { ...file, mimetype };
   /* Admission covers the whole parse. A PDF is a child process, then in-process pdfjs
    * recovery, then possibly a second child, and bounding only the children would leave
    * the recovery to pile up behind a cap that never counted it. */
   const result = await withParserAdmission(
-    () =>
-      mimetype === 'application/pdf'
-        ? parseWithPdfInspector(parserFile, signal)
-        : parseWithAnydoc(parserFile, signal),
+    () => (isPdf ? parseWithPdfInspector(parserFile, signal) : parseWithAnydoc(parserFile, signal)),
     signal,
   );
 

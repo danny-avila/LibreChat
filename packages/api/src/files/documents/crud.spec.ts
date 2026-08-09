@@ -79,6 +79,39 @@ describe('Document Parser', () => {
     expect(document.bytes).toBe(Buffer.byteLength(document.text, 'utf8'));
   });
 
+  /**
+   * Admission accepts a PDF alias an operator names in the parser allowlist, so dispatch
+   * has to recognize it too: anydoc refuses a `.pdf` outright, so an alias that reached
+   * it would be accepted at the door and then rejected by the only engine offered it.
+   */
+  test.each([
+    ['a vendor PDF alias', 'application/x-pdf'],
+    ['a generic binary type', 'application/octet-stream'],
+    ['no type at all', ''],
+  ])('routes a .pdf declared as %s through pdf-inspector', async (_label, mimetype) => {
+    const document = await parseDocument({ file: fixture('sample.pdf', mimetype) });
+
+    expect(document.filepath).toBe('pdf_inspector');
+    expect(document.text).toContain('# Quarterly Report');
+  });
+
+  test('keeps a supported anydoc type on anydoc even when named .pdf', async () => {
+    /* The other direction: a declared type that names an anydoc format describes the
+     * bytes, and the name does not. */
+    const document = await parseDocument({
+      file: {
+        ...fixture(
+          'structured.docx',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ),
+        originalname: 'report.pdf',
+      },
+    });
+
+    expect(document.filepath).toBe('anydoc');
+    expect(document.text).toContain('# Quarterly Report');
+  });
+
   test('routes PowerPoint through AnyDoc and preserves table structure', async () => {
     const document = await parseDocument({
       file: fixture(

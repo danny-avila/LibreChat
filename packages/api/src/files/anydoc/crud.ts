@@ -99,6 +99,17 @@ const ANYDOC_EXTENSION_FORMATS: Readonly<Record<string, string>> = {
   pdf: 'pdf',
 };
 
+/**
+ * The anydoc format a declared MIME type names, if any.
+ *
+ * Exported so the dispatcher can ask the same question before choosing an engine: a
+ * type this table does not know is not anydoc's, which is what lets a configured PDF
+ * alias reach pdf-inspector instead of arriving here to be refused.
+ */
+export function anydocFormatFromType(mimetype?: string): string | null {
+  return ANYDOC_MIME_FORMATS[normalizeType(mimetype)] ?? null;
+}
+
 /** Strips any `; charset=` parameter and folds case, so lookups match the table. */
 function normalizeType(mimetype?: string): string {
   return (mimetype ?? '').split(';')[0].trim().toLowerCase();

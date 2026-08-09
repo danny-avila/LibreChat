@@ -61,11 +61,18 @@ export async function extractPageText(
   const texts = new Map<number, string>();
   let textBytes = 0;
   let loadingTask: PDFDocumentLoadingTask | undefined;
+  let stopLoading: (() => void) | undefined;
   try {
+    throwIfAborted(signal);
     // Imported inline so that Jest can test other routes without failing due to loading ESM
     const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
     loadingTask = getDocument({ data: new Uint8Array(data) });
+    stopLoading = watchForAbort(loadingTask, signal);
     const pdf: PDFDocumentProxy = await loadingTask.promise;
+    /* Loading a slow or malformed document is itself long work, so the wait for it has
+     * to be interruptible too: checking only in the page loop below would let an
+     * abandoned parse hold its admission slot for as long as the document takes to open. */
+    throwIfAborted(signal);
 
     for (const pageIndex of pageIndexes) {
       /* Checked per page rather than once: this walk is the long half of the parse, and
@@ -95,6 +102,7 @@ export async function extractPageText(
     }
     logger.warn('[pdfjs] unavailable for page recovery:', error);
   } finally {
+    stopLoading?.();
     /* pdfjs holds the decoded document and its worker until the loading task is
      * destroyed; without this the buffer stays reachable for the whole request. */
     await loadingTask?.destroy();
@@ -123,8 +131,10 @@ export async function extractDocumentTextWithPages(
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
   const loadingTask = getDocument({ data: new Uint8Array(data) });
+  const stopLoading = watchForAbort(loadingTask, signal);
   try {
     const pdf: PDFDocumentProxy = await loadingTask.promise;
+    throwIfAborted(signal);
     if (pdf.numPages > maxPages) {
       throw new PdfPageLimitError(pdf.numPages, maxPages);
     }
@@ -154,6 +164,7 @@ export async function extractDocumentTextWithPages(
       pagesNeedingOcr: pagesNeedingOcr.length ? pagesNeedingOcr : undefined,
     };
   } finally {
+    stopLoading();
     await loadingTask.destroy();
   }
 }
@@ -177,6 +188,24 @@ class PdfExtractionAbortError extends Error {
 
 function isAbort(error: unknown): boolean {
   return (error as { code?: string } | null)?.code === 'PARSE_ABORTED';
+}
+
+/**
+ * Tears the document down as soon as the caller gives up, so the wait for a slow or
+ * malformed one ends with them rather than outliving them. Returns the unsubscribe,
+ * which callers run in their `finally` so a completed parse leaves no listener behind.
+ */
+function watchForAbort(loadingTask: PDFDocumentLoadingTask, signal?: AbortSignal): () => void {
+  if (!signal) {
+    return () => {};
+  }
+  const onAbort = () => {
+    void loadingTask.destroy().catch(() => {
+      /* Already torn down or never opened; the rejection the caller sees is the abort. */
+    });
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
+  return () => signal.removeEventListener('abort', onAbort);
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
