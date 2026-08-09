@@ -5,7 +5,7 @@ const skillSyncCredentialSchema: Schema<ISkillSyncCredentialDocument> = new Sche
   {
     provider: {
       type: String,
-      enum: ['github'],
+      enum: ['github', 'gitlab'],
       required: true,
       index: true,
     },

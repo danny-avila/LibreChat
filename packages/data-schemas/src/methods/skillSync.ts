@@ -36,6 +36,8 @@ export type SkillSyncStatusInput = {
   credentialKey?: string;
   owner?: string;
   repo?: string;
+  baseUrl?: string;
+  projectId?: string;
   ref?: string;
   paths?: string[];
   startedAt?: Date;
@@ -223,6 +225,8 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')): Ski
       credentialKey: input.credentialKey,
       owner: input.owner,
       repo: input.repo,
+      baseUrl: input.baseUrl,
+      projectId: input.projectId,
       ref: input.ref,
       paths: input.paths,
       startedAt: input.startedAt,

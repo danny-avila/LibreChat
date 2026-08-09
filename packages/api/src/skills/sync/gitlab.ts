@@ -21,39 +21,37 @@ import type {
   SkillSyncCredentialSummary,
   SkillSyncStatusInput,
 } from '@librechat/data-schemas';
-import type { SkillSyncConfig, SkillSyncGitHubSourceConfig } from 'librechat-data-provider';
+import type { SkillSyncConfig, SkillSyncGitLabSourceConfig } from 'librechat-data-provider';
 import type { RepoTreeEntry, RepoCommit } from './adapters/types';
 import { RepoAdapterError } from './adapters/types';
-import { createGitHubRepoAdapter } from './adapters/github';
+import { createGitLabRepoAdapter, GITLAB_TOKEN_RECOMMENDATION } from './adapters/gitlab';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { parseSkillMarkdown } from '../parse';
 
 const SYSTEM_AUTHOR_ID = new Types.ObjectId('000000000000000000000000');
-const SYSTEM_AUTHOR_NAME = 'GitHub Sync';
-const PROVIDER: SkillSyncProvider = 'github';
+const SYSTEM_AUTHOR_NAME = 'GitLab Sync';
+const PROVIDER: SkillSyncProvider = 'gitlab';
 const LOCK_LEASE_MS = 30 * 60 * 1000;
 
-export const GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION =
-  'Use a GitHub fine-grained personal access token scoped to the selected repository with read-only Contents and Metadata permissions.';
+export { GITLAB_TOKEN_RECOMMENDATION };
 
 type FetchFn = typeof fetch;
 
-type GitHubTreeEntry = {
+/**
+ * `sha` here is the GitLab tree/blob `id` (opaque outside the adapter), kept
+ * under this name to match `sourceMetadata.blobSha`/`skillBlobSha` written by
+ * the shared discovery and skill-package-manifest logic mirrored from GitHub.
+ */
+type GitLabTreeEntryShape = {
   path: string;
-  mode: string;
-  type: 'blob' | 'tree' | 'commit';
+  type: 'blob' | 'tree';
   sha: string;
   size?: number;
-  url: string;
 };
 
-type GitHubCommitResponse = {
+type GitLabCommitResponseShape = {
   sha: string;
-  commit: {
-    tree: {
-      sha: string;
-    };
-  };
+  commit: { tree: { sha: string } };
 };
 
 type SyncCounters = {
@@ -67,8 +65,8 @@ type AssertNotCancelled = () => void;
 
 type DiscoveredSkill = {
   rootPath: string;
-  skillMd: GitHubTreeEntry;
-  files: GitHubTreeEntry[];
+  skillMd: GitLabTreeEntryShape;
+  files: GitLabTreeEntryShape[];
 };
 
 type UpsertRemoteSkillResult = {
@@ -122,7 +120,7 @@ type SyncSkillFilesResult = Pick<SyncCounters, 'syncedFileCount' | 'deletedFileC
 
 type MaybePromise<T> = T | Promise<T>;
 
-export type GitHubSkillSyncDeps = {
+export type GitLabSkillSyncDeps = {
   getConfig: () => MaybePromise<SkillSyncConfig | undefined>;
   getCredentialToken: (
     provider: SkillSyncProvider,
@@ -210,13 +208,13 @@ export type GitHubSkillSyncDeps = {
   allowServerCredentials?: boolean;
 };
 
-export type GitHubSkillSyncRunResult = {
+export type GitLabSkillSyncRunResult = {
   status: 'started' | 'skipped' | 'completed' | 'failed';
   message?: string;
   sources: Array<ISkillSyncStatus & { credentialPresent?: boolean }>;
 };
 
-export type GitHubSkillSyncStatus = {
+export type GitLabSkillSyncStatus = {
   enabled: boolean;
   intervalMinutes: number;
   runOnStartup: boolean;
@@ -225,9 +223,9 @@ export type GitHubSkillSyncStatus = {
   fineGrainedTokenRecommendation: string;
 };
 
-export type GitHubSkillSyncRunner = {
-  getStatus: () => Promise<GitHubSkillSyncStatus>;
-  runOnce: () => Promise<GitHubSkillSyncRunResult>;
+export type GitLabSkillSyncRunner = {
+  getStatus: () => Promise<GitLabSkillSyncStatus>;
+  runOnce: () => Promise<GitLabSkillSyncRunResult>;
 };
 
 class SkillSyncError extends Error {
@@ -255,7 +253,7 @@ function isSafeRelativePath(value: string): boolean {
   return value.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
 }
 
-function makeUpstreamId(source: SkillSyncGitHubSourceConfig, rootPath: string): string {
+function makeUpstreamId(source: SkillSyncGitLabSourceConfig, rootPath: string): string {
   // Identity is keyed on the stable, admin-controlled source id and the skill's
   // root path only — never owner/repo/ref. Repointing a source to a renamed or
   // replacement repository (or rotating its ref) keeps the same upstream id, so
@@ -264,7 +262,7 @@ function makeUpstreamId(source: SkillSyncGitHubSourceConfig, rootPath: string): 
   return `${source.id}:${rootPath}`;
 }
 
-function makeSourceAuthorId(source: SkillSyncGitHubSourceConfig): Types.ObjectId {
+function makeSourceAuthorId(source: SkillSyncGitLabSourceConfig): Types.ObjectId {
   // Fold the tenant into the synthetic author so the same source mirrored into
   // different tenants gets distinct author ids (clearer audits, no cross-tenant
   // author collisions). The tenant suffix is omitted when absent so single-tenant
@@ -282,7 +280,7 @@ function toSkillName(value: string): string {
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/^-+|-+$/g, '')
     .replace(/-{2,}/g, '-');
-  return normalized || 'github-skill';
+  return normalized || 'gitlab-skill';
 }
 
 function getFilename(relativePath: string): string {
@@ -349,17 +347,17 @@ function getLimitMegabytes(bytes: number): number {
   return Math.round(bytes / 1024 / 1024);
 }
 
-function assertGitHubBlobSize(entry: GitHubTreeEntry, relativePath: string): number {
+function assertGitLabBlobSize(entry: GitLabTreeEntryShape, relativePath: string): number {
   if (typeof entry.size !== 'number' || !Number.isFinite(entry.size) || entry.size < 0) {
     throw new SkillSyncError(
-      'GITHUB_BLOB_SIZE_UNKNOWN',
-      `GitHub file "${relativePath}" did not include a valid blob size`,
+      'GITLAB_BLOB_SIZE_UNKNOWN',
+      `GitLab file "${relativePath}" did not include a valid blob size`,
     );
   }
   if (entry.size > DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes) {
     throw new SkillSyncError(
-      'GITHUB_BLOB_TOO_LARGE',
-      `GitHub file "${relativePath}" exceeds the ${getLimitMegabytes(
+      'GITLAB_BLOB_TOO_LARGE',
+      `GitLab file "${relativePath}" exceeds the ${getLimitMegabytes(
         DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes,
       )}MB per-file skill import limit`,
     );
@@ -367,38 +365,38 @@ function assertGitHubBlobSize(entry: GitHubTreeEntry, relativePath: string): num
   return entry.size;
 }
 
-function assertGitHubBufferSize(buffer: Buffer, relativePath: string): void {
+function assertGitLabBufferSize(buffer: Buffer, relativePath: string): void {
   if (buffer.length <= DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes) {
     return;
   }
   throw new SkillSyncError(
-    'GITHUB_BLOB_TOO_LARGE',
-    `GitHub file "${relativePath}" exceeds the ${getLimitMegabytes(
+    'GITLAB_BLOB_TOO_LARGE',
+    `GitLab file "${relativePath}" exceeds the ${getLimitMegabytes(
       DEFAULT_SKILL_IMPORT_LIMITS.maxSingleFileBytes,
     )}MB per-file skill import limit`,
   );
 }
 
-function assertCumulativeGitHubFileSize(totalBytes: number): void {
+function assertCumulativeGitLabFileSize(totalBytes: number): void {
   if (totalBytes <= DEFAULT_SKILL_IMPORT_LIMITS.maxDecompressedBytes) {
     return;
   }
   throw new SkillSyncError(
-    'GITHUB_PACKAGE_TOO_LARGE',
-    `GitHub skill files exceed the ${getLimitMegabytes(
+    'GITLAB_PACKAGE_TOO_LARGE',
+    `GitLab skill files exceed the ${getLimitMegabytes(
       DEFAULT_SKILL_IMPORT_LIMITS.maxDecompressedBytes,
     )}MB cumulative skill import limit`,
   );
 }
 
-function assertGitHubEntryCount(discovered: DiscoveredSkill): void {
+function assertGitLabEntryCount(discovered: DiscoveredSkill): void {
   const entryCount = discovered.files.length + 1;
   if (entryCount <= DEFAULT_SKILL_IMPORT_LIMITS.maxEntries) {
     return;
   }
   throw new SkillSyncError(
-    'GITHUB_TOO_MANY_FILES',
-    `GitHub skill "${discovered.rootPath}" exceeds the ${DEFAULT_SKILL_IMPORT_LIMITS.maxEntries} file skill import limit`,
+    'GITLAB_TOO_MANY_FILES',
+    `GitLab skill "${discovered.rootPath}" exceeds the ${DEFAULT_SKILL_IMPORT_LIMITS.maxEntries} file skill import limit`,
   );
 }
 
@@ -406,23 +404,26 @@ function getSkillMdPath(discovered: DiscoveredSkill): string {
   return discovered.rootPath ? `${discovered.rootPath}/SKILL.md` : 'SKILL.md';
 }
 
-function getDiscoveredRelativePath(discovered: DiscoveredSkill, entry: GitHubTreeEntry): string {
+function getDiscoveredRelativePath(
+  discovered: DiscoveredSkill,
+  entry: GitLabTreeEntryShape,
+): string {
   const prefix = discovered.rootPath ? `${discovered.rootPath}/` : '';
   const normalized = normalizeRepoPath(entry.path);
   return prefix ? normalized.slice(prefix.length) : normalized;
 }
 
-function assertGitHubSkillPackageManifest(discovered: DiscoveredSkill): void {
-  assertGitHubEntryCount(discovered);
-  assertGitHubBlobSize(discovered.skillMd, getSkillMdPath(discovered));
+function assertGitLabSkillPackageManifest(discovered: DiscoveredSkill): void {
+  assertGitLabEntryCount(discovered);
+  assertGitLabBlobSize(discovered.skillMd, getSkillMdPath(discovered));
   let totalFileBytes = 0;
   for (const entry of discovered.files) {
     const relativePath = getDiscoveredRelativePath(discovered, entry);
     if (!isSafeRelativePath(relativePath) || relativePath.toUpperCase() === 'SKILL.MD') {
       continue;
     }
-    totalFileBytes += assertGitHubBlobSize(entry, relativePath);
-    assertCumulativeGitHubFileSize(totalFileBytes);
+    totalFileBytes += assertGitLabBlobSize(entry, relativePath);
+    assertCumulativeGitLabFileSize(totalFileBytes);
   }
 }
 
@@ -472,40 +473,44 @@ async function withAdapterErrors<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-function toGitHubTreeEntry(entry: RepoTreeEntry): GitHubTreeEntry {
-  return { path: entry.path, mode: '', type: entry.type, sha: entry.id, size: entry.size, url: '' };
+function toGitLabTreeEntryShape(entry: RepoTreeEntry): GitLabTreeEntryShape {
+  return { path: entry.path, type: entry.type, sha: entry.id, size: entry.size };
+}
+
+function makeAdapter(params: {
+  fetchFn: FetchFn;
+  token: string;
+  source: SkillSyncGitLabSourceConfig;
+}) {
+  return createGitLabRepoAdapter({
+    baseUrl: params.source.baseUrl,
+    projectId: params.source.projectId,
+    token: params.token,
+    fetchFn: params.fetchFn,
+  });
 }
 
 async function fetchCommit(params: {
   fetchFn: FetchFn;
   token: string;
-  source: SkillSyncGitHubSourceConfig;
-}): Promise<GitHubCommitResponse> {
-  const adapter = createGitHubRepoAdapter({
-    owner: params.source.owner,
-    repo: params.source.repo,
-    token: params.token,
-    fetchFn: params.fetchFn,
-  });
+  source: SkillSyncGitLabSourceConfig;
+}): Promise<GitLabCommitResponseShape> {
+  const adapter = makeAdapter(params);
   const commit = await withAdapterErrors(() => adapter.resolveCommit(params.source.ref));
+  // GitLab has no separate tree object — `treeId` equals the commit id itself.
   return { sha: commit.id, commit: { tree: { sha: commit.treeId } } };
 }
 
 async function fetchConfiguredTreeEntries(params: {
   fetchFn: FetchFn;
   token: string;
-  source: SkillSyncGitHubSourceConfig;
+  source: SkillSyncGitLabSourceConfig;
   rootTreeSha: string;
   assertNotCancelled: AssertNotCancelled;
-}): Promise<GitHubTreeEntry[]> {
-  const adapter = createGitHubRepoAdapter({
-    owner: params.source.owner,
-    repo: params.source.repo,
-    token: params.token,
-    fetchFn: params.fetchFn,
-  });
+}): Promise<GitLabTreeEntryShape[]> {
+  const adapter = makeAdapter(params);
   const commit: RepoCommit = { id: params.rootTreeSha, treeId: params.rootTreeSha };
-  const entriesByPath = new Map<string, GitHubTreeEntry>();
+  const entriesByPath = new Map<string, GitLabTreeEntryShape>();
   for (const repoPath of params.source.paths) {
     const entries = await withAdapterErrors(() =>
       adapter.fetchTreeEntries(commit, {
@@ -516,7 +521,7 @@ async function fetchConfiguredTreeEntries(params: {
     );
     for (const entry of entries) {
       const normalizedPath = normalizeRepoPath(entry.path);
-      entriesByPath.set(normalizedPath, toGitHubTreeEntry({ ...entry, path: normalizedPath }));
+      entriesByPath.set(normalizedPath, toGitLabTreeEntryShape({ ...entry, path: normalizedPath }));
     }
   }
   return [...entriesByPath.values()];
@@ -525,19 +530,15 @@ async function fetchConfiguredTreeEntries(params: {
 async function fetchBlob(params: {
   fetchFn: FetchFn;
   token: string;
-  source: SkillSyncGitHubSourceConfig;
+  source: SkillSyncGitLabSourceConfig;
   sha: string;
+  ref: string;
 }): Promise<Buffer> {
-  const adapter = createGitHubRepoAdapter({
-    owner: params.source.owner,
-    repo: params.source.repo,
-    token: params.token,
-    fetchFn: params.fetchFn,
-  });
+  const adapter = makeAdapter(params);
   return withAdapterErrors(() =>
     adapter.fetchFileContent(
-      { id: '', treeId: '' },
-      { ref: params.source.ref, entry: { path: '', type: 'blob', id: params.sha } },
+      { id: params.ref, treeId: params.ref },
+      { ref: params.ref, entry: { path: '', type: 'blob', id: params.sha } },
     ),
   );
 }
@@ -561,12 +562,12 @@ function isSkillRootWithinDiscoveryDepth(
 }
 
 function discoverSkills(
-  tree: GitHubTreeEntry[],
-  source: SkillSyncGitHubSourceConfig,
+  tree: GitLabTreeEntryShape[],
+  source: SkillSyncGitLabSourceConfig,
 ): DiscoveredSkill[] {
   const basePaths = source.paths.map(normalizeRepoPath);
   const skillDiscoveryDepth = source.skillDiscoveryDepth ?? SKILL_SYNC_DEFAULT_DISCOVERY_DEPTH;
-  const skillMdByRoot = new Map<string, GitHubTreeEntry>();
+  const skillMdByRoot = new Map<string, GitLabTreeEntryShape>();
   for (const entry of tree) {
     if (entry.type !== 'blob') {
       continue;
@@ -612,8 +613,8 @@ function discoverSkills(
 }
 
 function assertConfiguredPathsExist(
-  tree: GitHubTreeEntry[],
-  source: SkillSyncGitHubSourceConfig,
+  tree: GitLabTreeEntryShape[],
+  source: SkillSyncGitLabSourceConfig,
 ): void {
   for (const configuredPath of source.paths.map(normalizeRepoPath)) {
     if (configuredPath === '') {
@@ -625,15 +626,15 @@ function assertConfiguredPathsExist(
     });
     if (!exists) {
       throw new SkillSyncError(
-        'GITHUB_PATH_NOT_FOUND',
-        `Configured GitHub skill path "${configuredPath}" was not found`,
+        'GITLAB_PATH_NOT_FOUND',
+        `Configured GitLab skill path "${configuredPath}" was not found`,
       );
     }
   }
 }
 
 function makeStatusInput(params: {
-  source: SkillSyncGitHubSourceConfig;
+  source: SkillSyncGitLabSourceConfig;
   status: SkillSyncStatusInput['status'];
   startedAt?: Date;
   finishedAt?: Date;
@@ -647,8 +648,8 @@ function makeStatusInput(params: {
     tenantId: params.source.tenantId,
     status: params.status,
     credentialKey: params.source.credentialKey,
-    owner: params.source.owner,
-    repo: params.source.repo,
+    baseUrl: params.source.baseUrl,
+    projectId: params.source.projectId,
     ref: params.source.ref,
     paths: params.source.paths,
     startedAt: params.startedAt,
@@ -667,7 +668,7 @@ function makeStatusKey(sourceId: string, tenantId?: string): string {
 }
 
 async function ensurePublicViewer(
-  deps: GitHubSkillSyncDeps,
+  deps: GitLabSkillSyncDeps,
   skillId: Types.ObjectId,
 ): Promise<void> {
   await deps.grantPermission({
@@ -681,8 +682,8 @@ async function ensurePublicViewer(
 }
 
 async function prepareRemoteSkill(params: {
-  deps: GitHubSkillSyncDeps;
-  source: SkillSyncGitHubSourceConfig;
+  deps: GitLabSkillSyncDeps;
+  source: SkillSyncGitLabSourceConfig;
   discovered: DiscoveredSkill;
   skillMdContent: string;
   commitSha: string;
@@ -708,8 +709,8 @@ async function prepareRemoteSkill(params: {
     provider: PROVIDER,
     sourceId: source.id,
     upstreamId,
-    owner: source.owner,
-    repo: source.repo,
+    baseUrl: source.baseUrl,
+    projectId: source.projectId,
     ref: source.ref,
     skillPath: discovered.rootPath,
     commitSha,
@@ -749,7 +750,7 @@ async function prepareRemoteSkill(params: {
 }
 
 async function commitRemoteSkill(
-  deps: GitHubSkillSyncDeps,
+  deps: GitLabSkillSyncDeps,
   prepared: PreparedRemoteSkill,
 ): Promise<UpsertRemoteSkillResult> {
   if (prepared.existing) {
@@ -794,7 +795,7 @@ function hasExternalSkillEdit(before: ISkill, after: ISkill): boolean {
 }
 
 async function commitExistingRemoteSkillAfterFileSync(
-  deps: GitHubSkillSyncDeps,
+  deps: GitLabSkillSyncDeps,
   prepared: PreparedExistingRemoteSkill,
   options: { forceCommit?: boolean } = {},
 ): Promise<UpsertRemoteSkillResult> {
@@ -817,7 +818,7 @@ async function commitExistingRemoteSkillAfterFileSync(
   return commitRemoteSkill(deps, { ...prepared, existing: refreshed });
 }
 
-async function cleanupFile(deps: GitHubSkillSyncDeps, file: StoredSkillFileRef): Promise<void> {
+async function cleanupFile(deps: GitLabSkillSyncDeps, file: StoredSkillFileRef): Promise<void> {
   if (!deps.deleteFile) {
     return;
   }
@@ -900,7 +901,7 @@ function getStoredFileKey(file: StoredSkillFileRef): string {
 }
 
 async function cleanupStoredFiles(params: {
-  deps: GitHubSkillSyncDeps;
+  deps: GitLabSkillSyncDeps;
   files: StoredSkillFileRef[];
   logMessage: string;
 }): Promise<void> {
@@ -918,7 +919,7 @@ async function cleanupStoredFiles(params: {
 }
 
 async function restoreExistingSkillFiles(params: {
-  deps: GitHubSkillSyncDeps;
+  deps: GitLabSkillSyncDeps;
   skill: ISkill & { _id: Types.ObjectId };
   previousFiles: Array<ISkillFile & { _id: Types.ObjectId }>;
   savedFiles: StoredSkillFileRef[];
@@ -939,12 +940,12 @@ async function restoreExistingSkillFiles(params: {
   await cleanupStoredFiles({
     deps,
     files: savedFiles,
-    logMessage: '[GitHubSkillSync] Failed to clean up rolled-back synced file:',
+    logMessage: '[GitLabSkillSync] Failed to clean up rolled-back synced file:',
   });
 }
 
 async function deleteSyncedSkillForRestore(
-  deps: GitHubSkillSyncDeps,
+  deps: GitLabSkillSyncDeps,
   skill: ISkill & { _id: Types.ObjectId },
 ): Promise<{ deletedFileCount: number; deletedSkill: DeletedSyncedSkillJournal }> {
   const files = await deps.listSkillFiles(skill._id);
@@ -956,7 +957,7 @@ async function deleteSyncedSkillForRestore(
 }
 
 async function restoreDeletedSyncedSkill(
-  deps: GitHubSkillSyncDeps,
+  deps: GitLabSkillSyncDeps,
   deleted: DeletedSyncedSkillJournal,
 ): Promise<void> {
   const restored = await deps.createSkill(toCreateSkillInput(deleted.skill));
@@ -970,13 +971,13 @@ async function restoreDeletedSyncedSkill(
 }
 
 async function cleanupDeletedSyncedSkillFiles(
-  deps: GitHubSkillSyncDeps,
+  deps: GitLabSkillSyncDeps,
   deleted: DeletedSyncedSkillJournal,
 ): Promise<void> {
   await cleanupStoredFiles({
     deps,
     files: deleted.files.map(toStoredFileRefFromSkillFile),
-    logMessage: '[GitHubSkillSync] Failed to clean up deleted stale mirrored skill file:',
+    logMessage: '[GitLabSkillSync] Failed to clean up deleted stale mirrored skill file:',
   });
 }
 
@@ -998,7 +999,7 @@ function hasRemoteSkillDefinitionChanged(update: UpdateSkillInput, existing: ISk
 }
 
 function findMovedSourceSkill(params: {
-  source: SkillSyncGitHubSourceConfig;
+  source: SkillSyncGitLabSourceConfig;
   prepared: PreparedRemoteSkill;
   existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }>;
   excludedUpstreamIds: Set<string>;
@@ -1025,7 +1026,7 @@ function findMovedSourceSkill(params: {
 }
 
 function hasNameConflictingStaleSkill(params: {
-  source: SkillSyncGitHubSourceConfig;
+  source: SkillSyncGitLabSourceConfig;
   prepared: PreparedDiscoveredSkill;
   existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }>;
   discoveredUpstreamIds: Set<string>;
@@ -1041,7 +1042,7 @@ function hasNameConflictingStaleSkill(params: {
 }
 
 function orderPreparedSkillsForSafeStaleDeletes(params: {
-  source: SkillSyncGitHubSourceConfig;
+  source: SkillSyncGitLabSourceConfig;
   preparedSkills: PreparedDiscoveredSkill[];
   existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }>;
   discoveredUpstreamIds: Set<string>;
@@ -1075,7 +1076,7 @@ function getMirrorNameKey(params: {
 }
 
 function assertNoDuplicatePreparedSkillNames(
-  source: SkillSyncGitHubSourceConfig,
+  source: SkillSyncGitLabSourceConfig,
   preparedSkills: PreparedDiscoveredSkill[],
 ): void {
   const sourceTenantId = source.tenantId ?? undefined;
@@ -1089,7 +1090,7 @@ function assertNoDuplicatePreparedSkillNames(
     if (seen.has(key)) {
       throw new SkillSyncError(
         'DUPLICATE_SKILL_NAME',
-        `GitHub source "${source.id}" contains multiple skills named "${prepared.createInput.name}"`,
+        `GitLab source "${source.id}" contains multiple skills named "${prepared.createInput.name}"`,
       );
     }
     seen.set(key, discovered.rootPath);
@@ -1097,8 +1098,8 @@ function assertNoDuplicatePreparedSkillNames(
 }
 
 async function deleteNameConflictingStaleSkill(params: {
-  deps: GitHubSkillSyncDeps;
-  source: SkillSyncGitHubSourceConfig;
+  deps: GitLabSkillSyncDeps;
+  source: SkillSyncGitLabSourceConfig;
   prepared: PreparedRemoteSkill;
   existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }>;
   discoveredUpstreamIds: Set<string>;
@@ -1141,9 +1142,9 @@ async function deleteNameConflictingStaleSkill(params: {
 }
 
 async function syncSkillFiles(params: {
-  deps: GitHubSkillSyncDeps;
+  deps: GitLabSkillSyncDeps;
   token: string;
-  source: SkillSyncGitHubSourceConfig;
+  source: SkillSyncGitLabSourceConfig;
   skill: ISkill & { _id: Types.ObjectId };
   discovered: DiscoveredSkill;
   commitSha: string;
@@ -1164,16 +1165,16 @@ async function syncSkillFiles(params: {
     if (!isSafeRelativePath(relativePath) || relativePath.toUpperCase() === 'SKILL.MD') {
       continue;
     }
-    totalFileBytes += assertGitHubBlobSize(entry, relativePath);
-    assertCumulativeGitHubFileSize(totalFileBytes);
+    totalFileBytes += assertGitLabBlobSize(entry, relativePath);
+    assertCumulativeGitLabFileSize(totalFileBytes);
     remotePaths.add(relativePath);
     const existing = await deps.getSkillFileByPath(skill._id, relativePath);
     if (existing && getSourceMetadataString(existing, 'blobSha') === entry.sha) {
       continue;
     }
-    const buffer = await fetchBlob({ fetchFn, token, source, sha: entry.sha });
+    const buffer = await fetchBlob({ fetchFn, token, source, sha: entry.sha, ref: source.ref });
     assertNotCancelled();
-    assertGitHubBufferSize(buffer, relativePath);
+    assertGitLabBufferSize(buffer, relativePath);
     const fileId = crypto.randomUUID();
     const filename = getFilename(relativePath);
     const mimeType = guessMimeType(filename);
@@ -1212,7 +1213,7 @@ async function syncSkillFiles(params: {
       });
     } catch (error) {
       await cleanupFile(deps, savedFile).catch((cleanupError) =>
-        logger.error('[GitHubSkillSync] Failed to clean up orphaned synced file:', cleanupError),
+        logger.error('[GitLabSkillSync] Failed to clean up orphaned synced file:', cleanupError),
       );
       throw error;
     }
@@ -1239,14 +1240,14 @@ async function syncSkillFiles(params: {
 }
 
 async function deleteSyncedSkill(
-  deps: GitHubSkillSyncDeps,
+  deps: GitLabSkillSyncDeps,
   skill: ISkill & { _id: Types.ObjectId },
 ): Promise<number> {
   const files = await deps.listSkillFiles(skill._id);
   let deletedFiles = 0;
   for (const file of files) {
     await cleanupFile(deps, file).catch((cleanupError) =>
-      logger.error('[GitHubSkillSync] Failed to clean up mirrored skill file:', cleanupError),
+      logger.error('[GitLabSkillSync] Failed to clean up mirrored skill file:', cleanupError),
     );
     deletedFiles++;
   }
@@ -1259,9 +1260,9 @@ function getTokenEnvVarName(tokenReference: string | undefined): string | null {
   return match?.[1] ?? null;
 }
 
-async function resolveGitHubToken(
-  deps: GitHubSkillSyncDeps,
-  source: SkillSyncGitHubSourceConfig,
+async function resolveGitLabToken(
+  deps: GitLabSkillSyncDeps,
+  source: SkillSyncGitLabSourceConfig,
 ): Promise<string | null> {
   if (deps.allowServerCredentials === false) {
     return null;
@@ -1277,22 +1278,22 @@ async function resolveGitHubToken(
 }
 
 function getMissingCredentialMessage(
-  source: SkillSyncGitHubSourceConfig,
+  source: SkillSyncGitLabSourceConfig,
   allowServerCredentials: boolean,
 ): string {
   if (!allowServerCredentials) {
-    return 'Server GitHub credentials are not available for this skill sync config';
+    return 'Server GitLab credentials are not available for this skill sync config';
   }
   const tokenEnvVar = getTokenEnvVarName(source.token);
   if (tokenEnvVar) {
-    return `Missing GitHub token environment variable "${tokenEnvVar}"`;
+    return `Missing GitLab token environment variable "${tokenEnvVar}"`;
   }
-  return `Missing GitHub credential "${source.credentialKey ?? source.id}"`;
+  return `Missing GitLab credential "${source.credentialKey ?? source.id}"`;
 }
 
 async function syncSource(params: {
-  deps: GitHubSkillSyncDeps;
-  source: SkillSyncGitHubSourceConfig;
+  deps: GitLabSkillSyncDeps;
+  source: SkillSyncGitLabSourceConfig;
   fetchFn: FetchFn;
   assertNotCancelled: AssertNotCancelled;
 }): Promise<ISkillSyncStatus> {
@@ -1302,7 +1303,7 @@ async function syncSource(params: {
   try {
     assertNotCancelled();
     const allowServerCredentials = deps.allowServerCredentials !== false;
-    const token = await resolveGitHubToken(deps, source);
+    const token = await resolveGitLabToken(deps, source);
     assertNotCancelled();
     if (!token) {
       throw new SkillSyncError(
@@ -1343,16 +1344,17 @@ async function syncSource(params: {
 
     for (const discovered of discoveredSkills) {
       assertNotCancelled();
-      assertGitHubSkillPackageManifest(discovered);
+      assertGitLabSkillPackageManifest(discovered);
       const skillMdPath = getSkillMdPath(discovered);
       const skillMdBuffer = await fetchBlob({
         fetchFn,
         token,
         source,
         sha: discovered.skillMd.sha,
+        ref: source.ref,
       });
       assertNotCancelled();
-      assertGitHubBufferSize(skillMdBuffer, skillMdPath);
+      assertGitLabBufferSize(skillMdBuffer, skillMdPath);
       const prepared = await prepareRemoteSkill({
         deps,
         source,
@@ -1455,7 +1457,7 @@ async function syncSource(params: {
             savedFiles: journal.savedFiles,
           }).catch((cleanupError) =>
             logger.error(
-              '[GitHubSkillSync] Failed to restore existing skill files after sync failure:',
+              '[GitLabSkillSync] Failed to restore existing skill files after sync failure:',
               cleanupError,
             ),
           );
@@ -1463,7 +1465,7 @@ async function syncSource(params: {
             await restoreDeletedSyncedSkill(deps, staleConflictCleanup.deletedSkill).catch(
               (cleanupError) =>
                 logger.error(
-                  '[GitHubSkillSync] Failed to restore stale mirrored skill after sync failure:',
+                  '[GitLabSkillSync] Failed to restore stale mirrored skill after sync failure:',
                   cleanupError,
                 ),
             );
@@ -1473,7 +1475,7 @@ async function syncSource(params: {
         await cleanupStoredFiles({
           deps,
           files: fileCounts.staleFiles,
-          logMessage: '[GitHubSkillSync] Failed to clean up replaced synced file:',
+          logMessage: '[GitLabSkillSync] Failed to clean up replaced synced file:',
         });
         if (staleConflictCleanup?.deletedSkill) {
           await cleanupDeletedSyncedSkillFiles(deps, staleConflictCleanup.deletedSkill);
@@ -1504,7 +1506,7 @@ async function syncSource(params: {
       } catch (error) {
         await deleteSyncedSkill(deps, skill).catch((cleanupError) =>
           logger.error(
-            '[GitHubSkillSync] Failed to roll back partially synced skill:',
+            '[GitLabSkillSync] Failed to roll back partially synced skill:',
             cleanupError,
           ),
         );
@@ -1518,7 +1520,7 @@ async function syncSource(params: {
     });
     // Only mirror-delete skills owned by this source's tenant. With no
     // configured tenantId under non-strict isolation, listSkillsBySource can
-    // return github skills across tenants, so without this guard an ambient sync
+    // return gitlab skills across tenants, so without this guard an ambient sync
     // could delete another tenant's mirrored skills. Absent tenantId is its own
     // (ambient) bucket.
     const sourceTenantId = source.tenantId ?? undefined;
@@ -1549,7 +1551,7 @@ async function syncSource(params: {
     );
   } catch (error) {
     const sanitized = sanitizeError(error);
-    logger.error(`[GitHubSkillSync] Source "${source.id}" failed: ${sanitized.message}`);
+    logger.error(`[GitLabSkillSync] Source "${source.id}" failed: ${sanitized.message}`);
     return deps.upsertStatus(
       makeStatusInput({
         source,
@@ -1574,8 +1576,8 @@ async function syncSource(params: {
  * propagates across every awaited Mongoose operation in `syncSource`.
  */
 function syncSourceInTenantContext(params: {
-  deps: GitHubSkillSyncDeps;
-  source: SkillSyncGitHubSourceConfig;
+  deps: GitLabSkillSyncDeps;
+  source: SkillSyncGitLabSourceConfig;
   fetchFn: FetchFn;
   assertNotCancelled: AssertNotCancelled;
 }): Promise<ISkillSyncStatus> {
@@ -1585,30 +1587,30 @@ function syncSourceInTenantContext(params: {
   return tenantStorage.run({ tenantId: params.source.tenantId }, async () => syncSource(params));
 }
 
-function getGithubConfig(config: SkillSyncConfig | undefined): {
+function getGitlabConfig(config: SkillSyncConfig | undefined): {
   enabled: boolean;
   intervalMinutes: number;
   runOnStartup: boolean;
-  sources: SkillSyncGitHubSourceConfig[];
+  sources: SkillSyncGitLabSourceConfig[];
 } {
   return {
-    enabled: config?.github?.enabled ?? false,
-    intervalMinutes: config?.github?.intervalMinutes ?? 60,
-    runOnStartup: config?.github?.runOnStartup ?? false,
+    enabled: config?.gitlab?.enabled ?? false,
+    intervalMinutes: config?.gitlab?.intervalMinutes ?? 60,
+    runOnStartup: config?.gitlab?.runOnStartup ?? false,
     sources:
-      config?.github?.sources.map((source) => ({
+      config?.gitlab?.sources.map((source) => ({
         ...source,
         skillDiscoveryDepth: source.skillDiscoveryDepth ?? SKILL_SYNC_DEFAULT_DISCOVERY_DEPTH,
       })) ?? [],
   };
 }
 
-export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSkillSyncRunner {
+export function createGitLabSkillSyncRunner(deps: GitLabSkillSyncDeps): GitLabSkillSyncRunner {
   const fetchFn = deps.fetchFn ?? fetch;
   const lockOwnerPrefix = deps.lockOwner ?? `${process.pid}`;
 
-  async function getStatus(): Promise<GitHubSkillSyncStatus> {
-    const github = getGithubConfig(await deps.getConfig());
+  async function getStatus(): Promise<GitLabSkillSyncStatus> {
+    const gitlab = getGitlabConfig(await deps.getConfig());
     const allowServerCredentials = deps.allowServerCredentials !== false;
     const [storedStatuses, credentials] = await Promise.all([
       deps.listStatuses(PROVIDER),
@@ -1620,7 +1622,7 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
     const credentialByKey = new Map(
       credentials.map((credential) => [credential.credentialKey, credential]),
     );
-    const sources = github.sources.map((source) => {
+    const sources = gitlab.sources.map((source) => {
       const stored = statusBySourceId.get(makeStatusKey(source.id, source.tenantId));
       const credential =
         allowServerCredentials && source.credentialKey
@@ -1636,8 +1638,8 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
         status: stored?.status ?? 'idle',
         credentialKey: source.credentialKey,
         credentialPresent: envTokenPresent || Boolean(credential),
-        owner: source.owner,
-        repo: source.repo,
+        baseUrl: source.baseUrl,
+        projectId: source.projectId,
         ref: source.ref,
         paths: source.paths,
         startedAt: stored?.startedAt,
@@ -1655,19 +1657,19 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
       } satisfies ISkillSyncStatus & { credentialPresent: boolean };
     });
     return {
-      enabled: github.enabled,
-      intervalMinutes: github.intervalMinutes,
-      runOnStartup: github.runOnStartup,
+      enabled: gitlab.enabled,
+      intervalMinutes: gitlab.intervalMinutes,
+      runOnStartup: gitlab.runOnStartup,
       sources,
       credentials,
-      fineGrainedTokenRecommendation: GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION,
+      fineGrainedTokenRecommendation: GITLAB_TOKEN_RECOMMENDATION,
     };
   }
 
-  async function runOnce(): Promise<GitHubSkillSyncRunResult> {
-    const github = getGithubConfig(await deps.getConfig());
-    if (!github.enabled || github.sources.length === 0) {
-      return { status: 'skipped', message: 'GitHub skill sync is disabled', sources: [] };
+  async function runOnce(): Promise<GitLabSkillSyncRunResult> {
+    const gitlab = getGitlabConfig(await deps.getConfig());
+    if (!gitlab.enabled || gitlab.sources.length === 0) {
+      return { status: 'skipped', message: 'GitLab skill sync is disabled', sources: [] };
     }
     const allowServerCredentials = deps.allowServerCredentials !== false;
     if (!allowServerCredentials) {
@@ -1675,7 +1677,7 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
       if (!status.sources.some((source) => source.credentialPresent)) {
         return {
           status: 'skipped',
-          message: 'GitHub skill sync credentials are not available for this runner',
+          message: 'GitLab skill sync credentials are not available for this runner',
           sources: status.sources,
         };
       }
@@ -1690,14 +1692,14 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
       const status = await getStatus();
       return {
         status: 'skipped',
-        message: 'GitHub skill sync is already running',
+        message: 'GitLab skill sync is already running',
         sources: status.sources,
       };
     }
     let lockLost = false;
     const assertNotCancelled = () => {
       if (lockLost) {
-        throw new SkillSyncError('SYNC_LOCK_LOST', 'GitHub skill sync lock was lost');
+        throw new SkillSyncError('SYNC_LOCK_LOST', 'GitLab skill sync lock was lost');
       }
     };
     const refreshTimer = setInterval(
@@ -1711,12 +1713,12 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
           .then((refreshed) => {
             if (!refreshed) {
               lockLost = true;
-              logger.warn('[GitHubSkillSync] Failed to refresh active sync lock');
+              logger.warn('[GitLabSkillSync] Failed to refresh active sync lock');
             }
           })
           .catch((error) => {
             lockLost = true;
-            logger.error('[GitHubSkillSync] Failed to refresh active sync lock:', error);
+            logger.error('[GitLabSkillSync] Failed to refresh active sync lock:', error);
           });
       },
       Math.max(60_000, Math.floor(LOCK_LEASE_MS / 3)),
@@ -1724,7 +1726,7 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
     refreshTimer.unref?.();
     try {
       const sources: ISkillSyncStatus[] = [];
-      for (const source of github.sources) {
+      for (const source of gitlab.sources) {
         if (lockLost) {
           break;
         }
@@ -1735,7 +1737,7 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
       const failed = sources.some((source) => source.status === 'failed');
       return {
         status: failed || lockLost ? 'failed' : 'completed',
-        message: lockLost ? 'GitHub skill sync lock was lost' : undefined,
+        message: lockLost ? 'GitLab skill sync lock was lost' : undefined,
         sources,
       };
     } finally {

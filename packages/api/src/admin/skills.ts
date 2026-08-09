@@ -95,7 +95,9 @@ function serializeCredential(
   credential: SkillSyncCredentialSummary,
 ): TGitHubSkillSyncCredentialSummary {
   return {
-    provider: credential.provider,
+    // This admin surface is GitHub-only; see serializeSourceStatus for why the
+    // literal is asserted instead of passed through.
+    provider: 'github',
     credentialKey: credential.credentialKey,
     credentialPresent: credential.credentialPresent,
     tokenFingerprint: credential.tokenFingerprint,
@@ -129,7 +131,10 @@ function serializeSourceStatus(
 ): TGitHubSkillSyncSourceStatus {
   const includePrivateSourceMetadata = includeCredentialMetadata;
   return {
-    provider: status.provider,
+    // This admin surface is GitHub-only; `status.provider` is asserted rather
+    // than passed through so a future generic-provider status object cannot
+    // silently widen this response's wire contract.
+    provider: 'github',
     sourceId: status.sourceId,
     tenantId: status.tenantId,
     status: status.status,

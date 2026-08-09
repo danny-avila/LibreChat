@@ -5,7 +5,7 @@ const skillSyncStatusSchema: Schema<ISkillSyncStatusDocument> = new Schema(
   {
     provider: {
       type: String,
-      enum: ['github'],
+      enum: ['github', 'gitlab'],
       required: true,
       index: true,
     },
@@ -32,6 +32,12 @@ const skillSyncStatusSchema: Schema<ISkillSyncStatusDocument> = new Schema(
       type: String,
     },
     repo: {
+      type: String,
+    },
+    baseUrl: {
+      type: String,
+    },
+    projectId: {
       type: String,
     },
     ref: {
