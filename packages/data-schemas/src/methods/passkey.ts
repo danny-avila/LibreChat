@@ -10,7 +10,7 @@ export interface PasskeyMethods {
   findPasskeysByUser: (userId: string) => Promise<IPasskey[]>;
   findPasskeyByCredentialId: (credentialId: string) => Promise<IPasskey | null>;
   countPasskeysByUser: (userId: string) => Promise<number>;
-  recordPasskeyUse: (credentialId: string, counter: number) => Promise<void>;
+  recordPasskeyUse: (credentialId: string, counter: number) => Promise<boolean>;
   renamePasskey: (passkeyId: string, userId: string, name: string) => Promise<IPasskey | null>;
   deletePasskey: (passkeyId: string, userId: string) => Promise<DeleteResult>;
   deletePasskeysByUser: (userId: string) => Promise<DeleteResult>;
@@ -76,22 +76,32 @@ export function createPasskeyMethods(mongoose: typeof import('mongoose')): Passk
 
   /**
    * Persists the authenticator's signature counter after a successful assertion.
-   * Only advances when the new counter is greater than or equal to the stored
-   * value ($lte filter): greater for normal increments, equal for platform
-   * authenticators that stay at 0 (still stamps lastUsedAt). A lower counter
-   * does not match, so clones cannot regress the stored value.
-   * A failure here must not block the sign-in that already verified, so it logs
-   * rather than throws.
+   *
+   * For counter-capable authenticators this is the compare-and-swap that makes
+   * clone detection meaningful: the update only matches while the stored counter
+   * is still strictly below the asserted one, so of two assertions that verified
+   * concurrently against the same stored value exactly one can commit. The caller
+   * must reject the losing assertion. Authenticators that do not implement a
+   * counter report 0 forever and carry no clone signal, so they only restamp
+   * `lastUsedAt`.
+   *
+   * Returns whether this assertion won the transition. A storage error returns
+   * `true` so an infrastructure fault cannot lock out a verified sign-in.
    */
-  async function recordPasskeyUse(credentialId: string, counter: number): Promise<void> {
+  async function recordPasskeyUse(credentialId: string, counter: number): Promise<boolean> {
     try {
       const Passkey = mongoose.models.Passkey;
-      await Passkey.updateOne(
-        { credentialId, counter: { $lte: counter } },
-        { $set: { counter, lastUsedAt: new Date() } },
-      ).exec();
+      const filter =
+        counter > 0
+          ? { credentialId, counter: { $lt: counter } }
+          : { credentialId, counter: { $lte: 0 } };
+      const result = await Passkey.updateOne(filter, {
+        $set: { counter, lastUsedAt: new Date() },
+      }).exec();
+      return result.matchedCount > 0;
     } catch (error) {
       logger.error('[recordPasskeyUse] Failed to persist passkey counter', error);
+      return true;
     }
   }
 

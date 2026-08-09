@@ -87,6 +87,7 @@ beforeEach(() => {
   mockCreatePasskeyRegistrationOptions.mockResolvedValue({ challenge: 'chal' });
   mockCheckBan.mockImplementation(async () => {});
   mockGetUserById.mockResolvedValue({ _id: 'u1', password: PASSWORD_HASH });
+  mockRecordPasskeyUse.mockResolvedValue(true);
 });
 
 describe('passkey registration provider enforcement', () => {
@@ -291,6 +292,20 @@ describe('passkey authentication provider enforcement', () => {
     expect(req.user).toBe(user);
     expect(mockRecordPasskeyUse).toHaveBeenCalledWith('cred-1', 1);
   });
+
+  it('rejects an assertion that loses the signature counter transition', async () => {
+    mockGetUserById.mockResolvedValue({ _id: 'u1', provider: 'local', emailVerified: true });
+    mockRecordPasskeyUse.mockResolvedValue(false);
+    const res = buildRes();
+    const next = jest.fn();
+    const req = loginReq();
+
+    await authenticatePasskey(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(req.user).toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
 });
 
 describe('passkey authentication ban enforcement', () => {
@@ -318,7 +333,7 @@ describe('passkey authentication ban enforcement', () => {
     });
     mockVerifyPasskeyAuthentication.mockResolvedValue({ newCounter: 1 });
     mockGetUserById.mockResolvedValue(LOCAL_USER);
-    mockRecordPasskeyUse.mockResolvedValue(undefined);
+    mockRecordPasskeyUse.mockResolvedValue(true);
   });
 
   it('hands off to the next handler when the account is not banned', async () => {

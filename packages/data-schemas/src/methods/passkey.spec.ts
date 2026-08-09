@@ -126,7 +126,7 @@ describe('recordPasskeyUse', () => {
   it('advances the signature counter and stamps last use', async () => {
     await methods.createPasskey(passkeyData());
 
-    await methods.recordPasskeyUse('credential-one', 7);
+    await expect(methods.recordPasskeyUse('credential-one', 7)).resolves.toBe(true);
 
     const updated = await methods.findPasskeyByCredentialId('credential-one');
     expect(updated?.counter).toBe(7);
@@ -136,25 +136,48 @@ describe('recordPasskeyUse', () => {
   it('does not regress the counter when the new value is lower', async () => {
     await methods.createPasskey(passkeyData({ counter: 5 }));
 
-    await methods.recordPasskeyUse('credential-one', 3);
+    await expect(methods.recordPasskeyUse('credential-one', 3)).resolves.toBe(false);
 
     const updated = await methods.findPasskeyByCredentialId('credential-one');
     expect(updated?.counter).toBe(5);
     expect(updated?.lastUsedAt).toBeNull();
   });
 
-  it('stamps last use when the counter is unchanged (including 0 to 0)', async () => {
+  it('stamps last use when a counterless authenticator stays at 0', async () => {
     await methods.createPasskey(passkeyData({ counter: 0 }));
 
-    await methods.recordPasskeyUse('credential-one', 0);
+    await expect(methods.recordPasskeyUse('credential-one', 0)).resolves.toBe(true);
 
     const updated = await methods.findPasskeyByCredentialId('credential-one');
     expect(updated?.counter).toBe(0);
     expect(updated?.lastUsedAt).toBeInstanceOf(Date);
   });
 
+  /**
+   * Two assertions that verified against the same stored counter must not both
+   * commit, otherwise a cloned authenticator is indistinguishable from the real one.
+   */
+  it('lets only one of two assertions at the same counter win', async () => {
+    await methods.createPasskey(passkeyData({ counter: 5 }));
+
+    const [first, second] = await Promise.all([
+      methods.recordPasskeyUse('credential-one', 6),
+      methods.recordPasskeyUse('credential-one', 6),
+    ]);
+
+    expect([first, second].filter(Boolean)).toHaveLength(1);
+    const updated = await methods.findPasskeyByCredentialId('credential-one');
+    expect(updated?.counter).toBe(6);
+  });
+
+  it('reports a replay that repeats the stored counter', async () => {
+    await methods.createPasskey(passkeyData({ counter: 5 }));
+
+    await expect(methods.recordPasskeyUse('credential-one', 5)).resolves.toBe(false);
+  });
+
   it('does not throw when the credential is gone', async () => {
-    await expect(methods.recordPasskeyUse('missing', 1)).resolves.toBeUndefined();
+    await expect(methods.recordPasskeyUse('missing', 1)).resolves.toBe(false);
   });
 });
 

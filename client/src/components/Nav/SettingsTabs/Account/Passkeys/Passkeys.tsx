@@ -55,9 +55,11 @@ function Passkeys() {
    * Removing a passkey is password-confirmed, but an account provisioned by an
    * identity provider has no password to confirm with. The server waives the
    * check for those accounts so a credential enrolled before the provider check
-   * existed stays removable, and the form must not demand one either.
+   * existed stays removable, and the form must not demand one either. Those same
+   * accounts cannot enroll new credentials, so the panel stays reachable for
+   * cleanup while the add control is hidden.
    */
-  const requiresPassword = user?.provider === 'local';
+  const isLocalAccount = user?.provider === 'local';
 
   /** Callback ref so the field takes focus the moment the step-up form appears. */
   const bindPasswordField = useCallback((input: HTMLInputElement | null) => {
@@ -189,7 +191,7 @@ function Passkeys() {
                       passkey={passkey}
                       isRenaming={renamingId === passkey.id}
                       isBusy={pendingId === passkey.id}
-                      requiresPassword={requiresPassword}
+                      requiresPassword={isLocalAccount}
                       onStartRename={setRenamingId}
                       onRename={handleRename}
                       onDelete={handleDelete}
@@ -201,24 +203,26 @@ function Passkeys() {
           )}
         </div>
 
-        <div className="mt-6 flex flex-col items-end gap-2">
-          <Button
-            ref={addButtonRef}
-            variant="submit"
-            onClick={handleAdd}
-            disabled={isRegistering || atLimit || isLoading}
-            aria-expanded={isConfirming}
-            aria-controls={isConfirming ? PASSWORD_FORM_ID : undefined}
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            {localize('com_ui_passkey_add')}
-          </Button>
-          {atLimit && (
-            <p className="text-xs text-text-secondary">
-              {localize('com_ui_passkey_limit_reached')}
-            </p>
-          )}
-        </div>
+        {isLocalAccount && (
+          <div className="mt-6 flex flex-col items-end gap-2">
+            <Button
+              ref={addButtonRef}
+              variant="submit"
+              onClick={handleAdd}
+              disabled={isRegistering || atLimit || isLoading}
+              aria-expanded={isConfirming}
+              aria-controls={isConfirming ? PASSWORD_FORM_ID : undefined}
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              {localize('com_ui_passkey_add')}
+            </Button>
+            {atLimit && (
+              <p className="text-xs text-text-secondary">
+                {localize('com_ui_passkey_limit_reached')}
+              </p>
+            )}
+          </div>
+        )}
 
         {isConfirming && (
           <form
