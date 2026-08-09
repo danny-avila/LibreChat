@@ -445,6 +445,48 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('GET / search handling', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    beforeEach(() => {
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+    });
+
+    /** Express already percent-decodes `req.query`, so decoding a second time in the route
+     * threw URIError on any term containing a bare `%` and mangled `%xx`-looking text. */
+    it('accepts a search term containing a literal percent sign', async () => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query({ isArchived: 'true', search: '100% ready' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ search: '100% ready' }),
+      );
+    });
+
+    it('passes percent-escape-looking text through without decoding it', async () => {
+      const response = await request(app).get('/api/convos').query({ search: 'a%41b' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ search: 'a%41b' }),
+      );
+    });
+
+    it('treats a whitespace-only search as no search', async () => {
+      const response = await request(app).get('/api/convos').query({ search: '   ' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ search: undefined }),
+      );
+    });
+  });
+
   describe('POST /archive', () => {
     it('should archive a conversation successfully', async () => {
       const mockConversationId = 'conv-123';

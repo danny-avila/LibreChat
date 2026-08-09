@@ -63,7 +63,7 @@ function ChatGroupItem({
         isStatus: true,
       });
       if (!isChatRoute && params.promptId === group._id) {
-        navigate(`${PROMPT_PATH}/new`, { replace: true });
+        navigate(PROMPT_PATH, { replace: true });
       }
     },
     onError: () => {

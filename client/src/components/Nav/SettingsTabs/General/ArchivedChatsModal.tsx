@@ -36,7 +36,7 @@ export function ArchivedChatsModal({
         <OGDialogHeader>
           <OGDialogTitle>{localize('com_nav_archived_chats')}</OGDialogTitle>
         </OGDialogHeader>
-        <ArchivedChatsTable onOpenChange={onOpenChange} />
+        <ArchivedChatsTable />
       </OGDialogContent>
     </OGDialog>
   );

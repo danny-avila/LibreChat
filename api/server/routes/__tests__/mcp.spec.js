@@ -20,6 +20,8 @@ const mockRegistryInstance = {
   getAllServerConfigs: jest.fn(),
   ensureConfigServers: jest.fn().mockResolvedValue({}),
   addServer: jest.fn(),
+  inspectServerUpdate: jest.fn(),
+  commitServerUpdate: jest.fn(),
   updateServer: jest.fn(),
   removeServer: jest.fn(),
   getAllowedDomains: jest.fn().mockReturnValue(null),
@@ -128,6 +130,9 @@ jest.mock('~/models', () => ({
 jest.mock('~/server/services/Config', () => ({
   setCachedTools: jest.fn(),
   getCachedTools: jest.fn(),
+  cacheMCPServerTools: jest.fn(),
+  getMCPToolsCacheGeneration: jest.fn().mockResolvedValue('test-generation'),
+  invalidateCachedTools: jest.fn(),
   getMCPServerTools: jest.fn(),
   loadCustomConfig: jest.fn(),
   getAppConfig: jest.fn().mockResolvedValue({ mcpConfig: {} }),
@@ -272,8 +277,15 @@ describe('MCP Routes', () => {
      */
     mockRegistryInstance.getServerConfig.mockReset().mockResolvedValue(undefined);
     mockRegistryInstance.addServer.mockReset();
+    mockRegistryInstance.inspectServerUpdate.mockReset();
+    mockRegistryInstance.commitServerUpdate.mockReset();
     mockRegistryInstance.updateServer.mockReset();
     mockRegistryInstance.removeServer.mockReset();
+    const cacheService = require('~/server/services/Config');
+    cacheService.getMCPServerTools.mockReset().mockResolvedValue(null);
+    cacheService.getMCPToolsCacheGeneration.mockReset().mockResolvedValue('test-generation');
+    cacheService.cacheMCPServerTools.mockReset().mockResolvedValue(undefined);
+    cacheService.invalidateCachedTools.mockReset().mockResolvedValue(undefined);
   });
 
   describe('GET /:serverName/oauth/initiate', () => {
@@ -843,7 +855,7 @@ describe('MCP Routes', () => {
 
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -905,7 +917,7 @@ describe('MCP Routes', () => {
 
         const mockMcpManager = {
           getUserConnection: jest.fn().mockResolvedValue({
-            fetchTools: jest.fn().mockResolvedValue([]),
+            fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
           }),
         };
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -958,9 +970,12 @@ describe('MCP Routes', () => {
         mockRegistryInstance.getServerConfig.mockResolvedValue({});
         mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'test-server': mergedServerConfig });
 
+        const fetchOrderedToolsSnapshot = jest
+          .fn()
+          .mockResolvedValue({ tools: fetchedTools, complete: true });
         const mockMcpManager = {
           getUserConnection: jest.fn().mockResolvedValue({
-            fetchTools: jest.fn().mockResolvedValue(fetchedTools),
+            fetchOrderedToolsSnapshot,
           }),
         };
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -976,6 +991,7 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(302);
         expect(mockResolveAllMcpConfigs).toHaveBeenCalledWith('test-user-id');
+        expect(fetchOrderedToolsSnapshot).toHaveBeenCalledTimes(1);
         expect(mockMcpManager.getUserConnection).toHaveBeenCalledWith(
           expect.objectContaining({ serverConfig: mergedServerConfig }),
         );
@@ -1030,7 +1046,9 @@ describe('MCP Routes', () => {
 
         const mockMcpManager = {
           getUserConnection: jest.fn().mockResolvedValue({
-            fetchTools: jest.fn().mockResolvedValue(fetchedTools),
+            fetchToolsSnapshot: jest
+              .fn()
+              .mockResolvedValue({ tools: fetchedTools, complete: true }),
           }),
         };
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -1093,7 +1111,9 @@ describe('MCP Routes', () => {
 
         const mockMcpManager = {
           getUserConnection: jest.fn().mockResolvedValue({
-            fetchTools: jest.fn().mockResolvedValue(fetchedTools),
+            fetchToolsSnapshot: jest
+              .fn()
+              .mockResolvedValue({ tools: fetchedTools, complete: true }),
           }),
         };
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -1209,13 +1229,16 @@ describe('MCP Routes', () => {
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
       const mockUserConnection = {
-        fetchTools: jest.fn().mockResolvedValue([
-          {
-            name: 'test-tool',
-            description: 'A test tool',
-            inputSchema: { type: 'object' },
-          },
-        ]),
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({
+          tools: [
+            {
+              name: 'test-tool',
+              description: 'A test tool',
+              inputSchema: { type: 'object' },
+            },
+          ],
+          complete: true,
+        }),
       };
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue(mockUserConnection),
@@ -1310,7 +1333,7 @@ describe('MCP Routes', () => {
       });
       require('~/config').getMCPManager.mockReturnValue({
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       });
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
@@ -1385,7 +1408,7 @@ describe('MCP Routes', () => {
       });
       require('~/config').getMCPManager.mockReturnValue({
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       });
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
@@ -1443,7 +1466,7 @@ describe('MCP Routes', () => {
       });
       require('~/config').getMCPManager.mockReturnValue({
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       });
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
@@ -1497,7 +1520,7 @@ describe('MCP Routes', () => {
       });
       require('~/config').getMCPManager.mockReturnValue({
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       });
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
@@ -1730,7 +1753,7 @@ describe('MCP Routes', () => {
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
       const mockUserConnection = {
-        fetchTools: jest.fn().mockResolvedValue([]),
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
       };
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue(mockUserConnection),
@@ -2389,10 +2412,13 @@ describe('MCP Routes', () => {
 
     it('should successfully reinitialize server and cache tools', async () => {
       const mockUserConnection = {
-        fetchTools: jest.fn().mockResolvedValue([
-          { name: 'tool1', description: 'Test tool 1', inputSchema: { type: 'object' } },
-          { name: 'tool2', description: 'Test tool 2', inputSchema: { type: 'object' } },
-        ]),
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({
+          tools: [
+            { name: 'tool1', description: 'Test tool 1', inputSchema: { type: 'object' } },
+            { name: 'tool2', description: 'Test tool 2', inputSchema: { type: 'object' } },
+          ],
+          complete: true,
+        }),
       };
 
       const mockMcpManager = {
@@ -2435,11 +2461,18 @@ describe('MCP Routes', () => {
         'test-user-id',
         'test-server',
       );
+      expect(require('~/server/services/Config').invalidateCachedTools).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        serverName: 'test-server',
+      });
+      expect(
+        require('~/server/services/Config').invalidateCachedTools.mock.invocationCallOrder[0],
+      ).toBeLessThan(mockMcpManager.disconnectUserConnection.mock.invocationCallOrder[0]);
     });
 
     it('should handle server with custom user variables', async () => {
       const mockUserConnection = {
-        fetchTools: jest.fn().mockResolvedValue([]),
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
       };
 
       const mockMcpManager = {
@@ -2896,7 +2929,7 @@ describe('MCP Routes', () => {
 
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest.fn().mockResolvedValue([]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
@@ -2949,10 +2982,12 @@ describe('MCP Routes', () => {
 
       const mockMcpManager = {
         getUserConnection: jest.fn().mockResolvedValue({
-          fetchTools: jest
-            .fn()
-            .mockResolvedValue([{ name: 'test-tool', description: 'Test tool' }]),
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({
+            tools: [{ name: 'test-tool', description: 'Test tool' }],
+            complete: true,
+          }),
         }),
+        getToolPublicationGeneration: jest.fn().mockReturnValue('oauth-connection-generation'),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
@@ -2967,6 +3002,60 @@ describe('MCP Routes', () => {
       const basePath = getBasePath();
 
       expect(response.headers.location).toContain(`${basePath}/oauth/success`);
+      expect(require('~/server/services/Config/mcp').updateMCPServerTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'test-user-id',
+          serverName: 'test-server',
+          tools: [{ name: 'test-tool', description: 'Test tool' }],
+          publicationGeneration: 'oauth-connection-generation',
+        }),
+      );
+    });
+
+    it('preserves cached tools when the post-OAuth snapshot is incomplete', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
+      const mockTokens = {
+        access_token: 'edge-access-token',
+        refresh_token: 'edge-refresh-token',
+      };
+      const mockFlowManager = {
+        getFlowState: jest.fn(),
+        completeFlow: jest.fn(),
+      };
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: 'test-user-id:test-server',
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        metadata: { serverUrl: 'https://example.com', oauth: {} },
+        clientInfo: {},
+        codeVerifier: 'test-verifier',
+      });
+      mockOAuthCompletion(mockTokens);
+      MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockRegistryInstance.getServerConfig.mockResolvedValue({});
+      require('~/config').getMCPManager.mockReturnValue({
+        getUserConnection: jest.fn().mockResolvedValue({
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({
+            tools: [{ name: 'partial-tool', description: 'Only the first page' }],
+            complete: false,
+          }),
+        }),
+        getToolPublicationGeneration: jest.fn().mockReturnValue('oauth-connection-generation'),
+      });
+
+      const flowId = 'test-user-id:test-server';
+      const csrfToken = generateTestCsrfToken(flowId);
+      await request(app)
+        .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .expect(302);
+
+      expect(require('~/server/services/Config/mcp').updateMCPServerTools).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[MCP OAuth] Preserving cached tools for test-server because tools/list returned an incomplete snapshot',
+      );
     });
   });
 
@@ -3064,6 +3153,68 @@ describe('MCP Routes', () => {
       expect(mockResolveAllMcpConfigs).not.toHaveBeenCalled();
     });
 
+    it('caches a live user snapshot with its connection-bound publication generation', async () => {
+      const { Constants } = require('librechat-data-provider');
+      const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+      const pluginKey = `search${Constants.mcp_delimiter}user-server`;
+      const serverTools = {
+        [pluginKey]: {
+          type: 'function',
+          function: {
+            name: pluginKey,
+            description: 'Search',
+            parameters: { type: 'object' },
+          },
+        },
+      };
+      const serverConfig = { type: 'sse', url: 'https://user.example.com/sse' };
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'user-server': serverConfig });
+      getMCPServerTools.mockResolvedValueOnce(null);
+      cacheMCPServerTools.mockResolvedValueOnce();
+      require('~/config').getMCPManager.mockReturnValue({
+        getServerToolFunctionsSnapshot: jest.fn().mockResolvedValue({
+          tools: serverTools,
+          publicationGeneration: 'connection-generation',
+        }),
+      });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(cacheMCPServerTools).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        serverName: 'user-server',
+        serverTools,
+        serverConfig,
+        publicationGeneration: 'connection-generation',
+      });
+    });
+
+    it('re-caches an authoritative empty live snapshot after a cache miss', async () => {
+      const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+      const serverConfig = { type: 'sse', url: 'https://empty.example.com/sse' };
+      mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'empty-server': serverConfig });
+      getMCPServerTools.mockResolvedValueOnce(null);
+      cacheMCPServerTools.mockResolvedValueOnce();
+      const getServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({
+        tools: {},
+        publicationGeneration: undefined,
+      });
+      require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctionsSnapshot });
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(200);
+      expect(response.body.servers['empty-server'].tools).toEqual([]);
+      expect(cacheMCPServerTools).toHaveBeenCalledWith({
+        userId: 'test-user-id',
+        serverName: 'empty-server',
+        serverTools: {},
+        serverConfig,
+        publicationGeneration: undefined,
+      });
+    });
+
     it('should continue returning MCP tools when one server cache lookup fails', async () => {
       const { Constants } = require('librechat-data-provider');
       const { logger } = require('@librechat/data-schemas');
@@ -3095,9 +3246,12 @@ describe('MCP Routes', () => {
           },
         });
 
-      const mockGetServerToolFunctions = jest.fn().mockResolvedValue(null);
+      const mockGetServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({
+        tools: null,
+        publicationGeneration: 'test-generation',
+      });
       require('~/config').getMCPManager.mockReturnValue({
-        getServerToolFunctions: mockGetServerToolFunctions,
+        getServerToolFunctionsSnapshot: mockGetServerToolFunctionsSnapshot,
       });
 
       const response = await request(app).get('/api/mcp/tools');
@@ -3107,7 +3261,14 @@ describe('MCP Routes', () => {
         '[getMCPTools] Error fetching cached tools for bad-server:',
         expect.any(Error),
       );
-      expect(mockGetServerToolFunctions).toHaveBeenCalledWith('test-user-id', 'bad-server');
+      expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledWith(
+        'test-user-id',
+        'bad-server',
+        {
+          type: 'sse',
+          url: 'https://bad.example.com/sse',
+        },
+      );
       expect(response.body.servers['good-server']).toMatchObject({
         name: 'good-server',
         icon: '/icons/good.svg',
@@ -3142,9 +3303,12 @@ describe('MCP Routes', () => {
 
       getMCPServerTools.mockRejectedValue(new Error('cache unavailable'));
 
-      const mockGetServerToolFunctions = jest.fn().mockResolvedValue(null);
+      const mockGetServerToolFunctionsSnapshot = jest.fn().mockResolvedValue({
+        tools: null,
+        publicationGeneration: 'test-generation',
+      });
       require('~/config').getMCPManager.mockReturnValue({
-        getServerToolFunctions: mockGetServerToolFunctions,
+        getServerToolFunctionsSnapshot: mockGetServerToolFunctionsSnapshot,
       });
 
       const response = await request(app).get('/api/mcp/tools');
@@ -3159,7 +3323,7 @@ describe('MCP Routes', () => {
         tools: [],
       });
       expect(logger.error).toHaveBeenCalledTimes(2);
-      expect(mockGetServerToolFunctions).toHaveBeenCalledTimes(2);
+      expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -3567,7 +3731,7 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(403);
         expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
-        expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+        expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
       });
 
       it('allows PATCH without CONFIGURE_OBO when OBO is unchanged', async () => {
@@ -3589,10 +3753,11 @@ describe('MCP Routes', () => {
           ...oboConfig,
           obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
         });
-        mockRegistryInstance.updateServer.mockResolvedValue({
+        mockRegistryInstance.inspectServerUpdate.mockResolvedValue({
           ...oboConfig,
           title: 'Renamed OBO Server',
         });
+        mockRegistryInstance.commitServerUpdate.mockResolvedValue(undefined);
 
         const response = await request(app)
           .patch('/api/mcp/servers/obo-server')
@@ -3605,7 +3770,7 @@ describe('MCP Routes', () => {
           });
 
         expect(response.status).toBe(200);
-        expect(mockRegistryInstance.updateServer).toHaveBeenCalled();
+        expect(mockRegistryInstance.commitServerUpdate).toHaveBeenCalled();
       });
 
       it('rejects PATCH that removes OBO from an existing OBO server without CONFIGURE_OBO', async () => {
@@ -3639,7 +3804,7 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(403);
         expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
-        expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+        expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
       });
 
       it('rejects PATCH that redirects the URL of an existing OBO server without CONFIGURE_OBO', async () => {
@@ -3676,7 +3841,7 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(403);
         expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
-        expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+        expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
       });
     });
 
@@ -3772,7 +3937,11 @@ describe('MCP Routes', () => {
         description: 'Updated description',
       };
 
-      mockRegistryInstance.updateServer.mockResolvedValue({ ...updatedConfig, source: 'user' });
+      mockRegistryInstance.inspectServerUpdate.mockResolvedValue({
+        ...updatedConfig,
+        source: 'user',
+      });
+      mockRegistryInstance.commitServerUpdate.mockResolvedValue(undefined);
 
       const response = await request(app)
         .patch('/api/mcp/servers/test-server')
@@ -3782,7 +3951,7 @@ describe('MCP Routes', () => {
       expect(response.body.type).toBe('sse');
       expect(response.body.url).toBe('https://updated-mcp-server.example.com/sse');
       expect(response.body.title).toBe('Updated Server');
-      expect(mockRegistryInstance.updateServer).toHaveBeenCalledWith(
+      expect(mockRegistryInstance.inspectServerUpdate).toHaveBeenCalledWith(
         'test-server',
         expect.objectContaining({
           type: 'sse',
@@ -3800,13 +3969,14 @@ describe('MCP Routes', () => {
         title: 'Updated Server',
       };
 
-      mockRegistryInstance.updateServer.mockResolvedValue({
+      mockRegistryInstance.inspectServerUpdate.mockResolvedValue({
         ...validConfig,
         apiKey: { source: 'admin', authorization_type: 'bearer', key: 'preserved-admin-key' },
         oauth: { client_id: 'cid', client_secret: 'preserved-oauth-secret' },
         headers: { Authorization: 'Bearer internal-token' },
         env: { DATABASE_URL: 'postgres://admin:pass@localhost/db' },
       });
+      mockRegistryInstance.commitServerUpdate.mockResolvedValue(undefined);
 
       const response = await request(app)
         .patch('/api/mcp/servers/test-server')
@@ -3832,7 +4002,7 @@ describe('MCP Routes', () => {
           statusCode: 400,
         },
       );
-      mockRegistryInstance.updateServer.mockRejectedValue(error);
+      mockRegistryInstance.inspectServerUpdate.mockRejectedValue(error);
 
       const response = await request(app)
         .patch('/api/mcp/servers/test-server')
@@ -3884,7 +4054,7 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toBe('Invalid configuration');
-      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+      expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
     });
 
     it('should reject streamable-http URL containing env variable references', async () => {
@@ -3899,7 +4069,7 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toBe('Invalid configuration');
-      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+      expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
     });
 
     it('should reject websocket URL containing env variable references', async () => {
@@ -3914,7 +4084,7 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toBe('Invalid configuration');
-      expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+      expect(mockRegistryInstance.inspectServerUpdate).not.toHaveBeenCalled();
     });
 
     it('should return 500 when registry throws error', async () => {
@@ -3924,7 +4094,7 @@ describe('MCP Routes', () => {
         title: 'Test Server',
       };
 
-      mockRegistryInstance.updateServer.mockRejectedValue(new Error('Update failed'));
+      mockRegistryInstance.inspectServerUpdate.mockRejectedValue(new Error('Update failed'));
 
       const response = await request(app)
         .patch('/api/mcp/servers/test-server')

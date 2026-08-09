@@ -24,8 +24,15 @@ export const DEPLOYMENT_SKILL_SOURCE = 'deployment';
 export const DEPLOYMENT_SKILL_FILE_SOURCE = 'deployment';
 
 const SKILL_MD = 'SKILL.md';
-const DEPLOYMENT_AUTHOR_ID = new Types.ObjectId('de9100000000000000000000');
 const MAX_CACHED_TEXT_BYTES = 512 * 1024;
+
+let deploymentAuthorId: Types.ObjectId | undefined;
+
+/** Constructed on demand so importing this module never depends on a live mongoose binding. */
+function getDeploymentAuthorId(): Types.ObjectId {
+  deploymentAuthorId ??= new Types.ObjectId('de9100000000000000000000');
+  return deploymentAuthorId;
+}
 
 type SkillId = Types.ObjectId | string;
 
@@ -64,7 +71,7 @@ export type DeploymentSkill = {
   authorName: string;
   version: number;
   source: typeof DEPLOYMENT_SKILL_SOURCE;
-  sourceMetadata: { deployment: true; directory: string };
+  sourceMetadata: { deployment: true; directory: string; plugin?: string };
   fileCount: number;
   alwaysApply: boolean;
   isPublic: true;
@@ -189,6 +196,8 @@ type CollisionFilterResult<T> = {
 type LoadDeploymentSkillsOptions = {
   projectRoot?: string;
   env?: NodeJS.ProcessEnv;
+  /** Skills contributed by Agent Plugins packages, which yield to the deployment directory on a name conflict. */
+  additionalSkills?: DeploymentSkill[];
 };
 
 type DirectoryResolution = {
@@ -196,9 +205,16 @@ type DirectoryResolution = {
   explicitlyConfigured: boolean;
 };
 
-type LoadedSkillDirectory = {
+export type LoadedSkillDirectory = {
   directory: string;
   relativeDirectory: string;
+};
+
+export type SkillIdentity = {
+  /** Namespace for the deterministic skill id; keeps same-named skills from different sources distinct. */
+  idNamespace?: string;
+  /** Agent Plugins package that contributed the skill, when it came from one. */
+  plugin?: string;
 };
 
 export class DeploymentSkillRegistry {
@@ -409,6 +425,7 @@ export async function initializeDeploymentSkills(
   registry = await loadDeploymentSkillsFromDirectory(resolved.directory, {
     projectRoot: options.projectRoot ?? process.cwd(),
     explicitlyConfigured: resolved.explicitlyConfigured,
+    ...(options.additionalSkills !== undefined && { additionalSkills: options.additionalSkills }),
   });
   const count = registry.list().length;
   if (count > 0) {
@@ -421,10 +438,39 @@ export async function initializeDeploymentSkills(
   return registry;
 }
 
+/**
+ * Plugin-contributed skills yield to the deployment directory on a name
+ * conflict: the operator's own `skill/` tree is the more specific source, and a
+ * conflict must not fail startup the way a duplicate inside that tree does.
+ */
+function appendPluginSkills(
+  skills: DeploymentSkill[],
+  additionalSkills: DeploymentSkill[],
+): DeploymentSkill[] {
+  const claimed = new Set(skills.map((skill) => skill.name));
+  const accepted: DeploymentSkill[] = [];
+  for (const skill of additionalSkills) {
+    if (claimed.has(skill.name)) {
+      logger.warn(
+        `[deploymentSkills] Plugin skill "${skill.name}" conflicts with a deployment skill and was skipped`,
+      );
+      continue;
+    }
+    claimed.add(skill.name);
+    accepted.push(skill);
+  }
+  return accepted;
+}
+
 export async function loadDeploymentSkillsFromDirectory(
   directory: string,
-  options: { projectRoot?: string; explicitlyConfigured?: boolean } = {},
+  options: {
+    projectRoot?: string;
+    explicitlyConfigured?: boolean;
+    additionalSkills?: DeploymentSkill[];
+  } = {},
 ): Promise<DeploymentSkillRegistry> {
+  const additionalSkills = options.additionalSkills ?? [];
   let rootStat: fs.Stats;
   try {
     rootStat = await fs.promises.stat(directory);
@@ -433,7 +479,7 @@ export async function loadDeploymentSkillsFromDirectory(
       (error as NodeJS.ErrnoException).code === 'ENOENT' &&
       options.explicitlyConfigured !== true
     ) {
-      return new DeploymentSkillRegistry(directory, []);
+      return new DeploymentSkillRegistry(directory, additionalSkills);
     }
     throw new Error(`Deployment skills directory not found: ${directory}`);
   }
@@ -443,10 +489,11 @@ export async function loadDeploymentSkillsFromDirectory(
 
   const skillDirectories = await findSkillDirectories(directory, options.projectRoot ?? directory);
   const skills = await Promise.all(
-    skillDirectories.map((skillDirectory) => loadDeploymentSkill(skillDirectory, directory)),
+    skillDirectories.map((skillDirectory) => loadSkillFromDirectory(skillDirectory, directory)),
   );
   validateUniqueNames(skills);
-  return new DeploymentSkillRegistry(directory, skills.sort(compareBySkillCursor));
+  const merged = [...skills, ...appendPluginSkills(skills, additionalSkills)];
+  return new DeploymentSkillRegistry(directory, merged.sort(compareBySkillCursor));
 }
 
 export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethods>(
@@ -615,9 +662,15 @@ async function findSkillDirectories(
   return directories;
 }
 
-async function loadDeploymentSkill(
+/**
+ * Loads one `SKILL.md` directory into a deployment skill. Shared by the
+ * deployment skills directory and Agent Plugins packages, which differ only in
+ * how the skill is identified and attributed.
+ */
+export async function loadSkillFromDirectory(
   skillDirectory: LoadedSkillDirectory,
   rootDirectory: string,
+  identity: SkillIdentity = {},
 ): Promise<DeploymentSkill> {
   const skillMdPath = path.join(skillDirectory.directory, SKILL_MD);
   const [content, stat] = await Promise.all([
@@ -665,7 +718,7 @@ async function loadDeploymentSkill(
   }
 
   const derived = deriveStructuredFrontmatterFields(frontmatter);
-  const skillId = stableObjectId(`deployment-skill:${name}`);
+  const skillId = stableObjectId(`${identity.idNamespace ?? 'deployment-skill'}:${name}`);
   const files = await loadDeploymentSkillFiles({
     skillId,
     skillName: name,
@@ -679,13 +732,14 @@ async function loadDeploymentSkill(
     body: content,
     frontmatter,
     category: '',
-    author: DEPLOYMENT_AUTHOR_ID,
+    author: getDeploymentAuthorId(),
     authorName: 'Deployment',
     version: 1,
     source: DEPLOYMENT_SKILL_SOURCE,
     sourceMetadata: {
       deployment: true,
       directory: skillDirectory.relativeDirectory,
+      ...(identity.plugin !== undefined && { plugin: identity.plugin }),
     },
     fileCount: files.length,
     alwaysApply: parsed.alwaysApply ?? false,
@@ -736,7 +790,7 @@ async function loadDeploymentSkillFiles({
         bytes: stat.size,
         category: inferSkillFileCategory(relativePath),
         isExecutable: false,
-        author: DEPLOYMENT_AUTHOR_ID,
+        author: getDeploymentAuthorId(),
         createdAt: stat.birthtime,
         updatedAt: stat.mtime,
         ...cache,
