@@ -1612,6 +1612,8 @@ export type TStartupConfig = {
   openidReuseTokens?: boolean;
   allowAccountDeletion: boolean;
   minPasswordLength?: number;
+  /** Whether the instance requires every account to complete TOTP setup. */
+  mandatoryTwoFactorEnabled: boolean;
   webSearch?: {
     searchProvider?: SearchProviders;
     scraperProvider?: ScraperProviders;
@@ -1981,6 +1983,8 @@ export const configSchema = z.object({
     .object({
       socialLogins: z.array(z.string()).optional(),
       allowedDomains: z.array(z.string()).optional(),
+      /** When `true`, every account must complete TOTP setup before using the app. */
+      mandatoryTwoFactor: z.boolean().optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),

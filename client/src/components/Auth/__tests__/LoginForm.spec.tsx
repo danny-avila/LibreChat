@@ -40,6 +40,7 @@ const mockStartupConfig: TStartupConfig = {
   sharedLinksEnabled: true,
   publicSharedLinksEnabled: true,
   allowAccountDeletion: true,
+  mandatoryTwoFactorEnabled: false,
 };
 
 const setup = ({
