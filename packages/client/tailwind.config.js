@@ -5,10 +5,10 @@ module.exports = {
   content: ['./src/**/*.{js,jsx,ts,tsx}'],
   darkMode: ['class'],
   theme: {
-    fontFamily: {
-      'theme-ui': ['var(--theme-font-family, Inter, sans-serif)'],
-    },
     extend: {
+      fontFamily: {
+        'theme-ui': ['var(--theme-font-family, Inter, sans-serif)'],
+      },
       colors: createTailwindColors(),
       height: {
         'theme-control': 'var(--theme-control-height, 2.25rem)',

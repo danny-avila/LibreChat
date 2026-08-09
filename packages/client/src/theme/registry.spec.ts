@@ -1,6 +1,7 @@
 import type { ThemeDefinition } from './types';
 import {
   defaultAppearance,
+  fromLegacyTheme,
   resolveTheme,
   themeColorTokens,
   validateThemeDefinition,
@@ -72,5 +73,36 @@ describe('theme registry', () => {
       'Unknown appearance token: unknownSpacing',
     ]);
     expect(() => resolveTheme(invalidTheme, 'light')).toThrow(TypeError);
+  });
+
+  it('sanitizes malformed legacy colors without weakening definition validation', () => {
+    const legacyTheme = fromLegacyTheme(
+      {
+        'rgb-accent-primary': '1 2 3',
+        'rgb-text-primary': 'invalid',
+      },
+      ' ',
+    );
+
+    expect(legacyTheme.name).toBe('custom');
+    expect(legacyTheme.modes.light?.colors).toEqual({
+      'rgb-accent-primary': '1 2 3',
+    });
+
+    const invalidTheme = {
+      version: 1,
+      name: 'invalid',
+      modes: {
+        light: {
+          colors: { 'rgb-text-primary': null as never },
+          appearance: { fontFamily: 42 as never },
+        },
+      },
+    } as ThemeDefinition;
+
+    expect(validateThemeDefinition(invalidTheme)).toEqual([
+      'Invalid RGB value for rgb-text-primary: null',
+      'Invalid appearance value for fontFamily: 42',
+    ]);
   });
 });

@@ -71,6 +71,52 @@ describe('ThemeProvider', () => {
     );
   });
 
+  it('keeps theme definition identity authoritative over legacy naming', async () => {
+    render(
+      <ThemeProvider
+        initialTheme="light"
+        themeName="legacy-name"
+        themeDefinition={{
+          version: 1,
+          name: 'definition-name',
+          modes: { light: { colors: { 'rgb-accent-primary': '1 2 3' } } },
+        }}
+      >
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('definition-name');
+    });
+    expect(screen.getByText('definition-name')).toBeInTheDocument();
+    expect(localStorage.getItem('theme-name')).toBe('definition-name');
+  });
+
+  it('keeps valid legacy overrides when another token is malformed', async () => {
+    render(
+      <ThemeProvider
+        initialTheme="light"
+        themeRGB={{
+          'rgb-accent-primary': '1 2 3',
+          'rgb-text-primary': 'invalid',
+        }}
+      >
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
+    });
+    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe(
+      defaultTheme['rgb-text-primary'],
+    );
+    expect(JSON.parse(localStorage.getItem('theme-colors') ?? '{}')).toEqual({
+      'rgb-accent-primary': '1 2 3',
+    });
+  });
+
   it('resets only theme-owned properties', async () => {
     document.documentElement.style.setProperty('--markdown-font-size', '18px');
     render(

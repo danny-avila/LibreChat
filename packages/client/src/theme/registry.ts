@@ -57,15 +57,20 @@ const rgbPattern = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/;
 const cssLengthPattern = /^(0|\d*\.?\d+(px|rem|em))$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
 
-const isRGB = (value: string): boolean => {
+const isRGB = (value: unknown): value is string => {
+  if (typeof value !== 'string') {
+    return false;
+  }
   const match = value.match(rgbPattern);
   return match !== null && match.slice(1).every((channel) => Number(channel) <= 255);
 };
 
-const isLength = (value: string): boolean => cssLengthPattern.test(value);
-const isDuration = (value: string): boolean => cssDurationPattern.test(value);
+const isLength = (value: unknown): value is string =>
+  typeof value === 'string' && cssLengthPattern.test(value);
+const isDuration = (value: unknown): value is string =>
+  typeof value === 'string' && cssDurationPattern.test(value);
 
-const appearanceValidators: Record<keyof IThemeAppearance, (value: string) => boolean> = {
+const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => boolean> = {
   controlRadius: isLength,
   roundControlRadius: isLength,
   surfaceRadius: isLength,
@@ -73,8 +78,10 @@ const appearanceValidators: Record<keyof IThemeAppearance, (value: string) => bo
   controlHeight: isLength,
   spaceCompact: isLength,
   spaceNormal: isLength,
-  fontFamily: (value) => value.trim().length > 0 && !/[;{}]/.test(value),
-  elevationSurface: (value) => value.trim().length > 0 && !/[;{}]|url\s*\(/i.test(value),
+  fontFamily: (value) =>
+    typeof value === 'string' && value.trim().length > 0 && !/[;{}]/.test(value),
+  elevationSurface: (value) =>
+    typeof value === 'string' && value.trim().length > 0 && !/[;{}]|url\s*\(/i.test(value),
   motionFast: isDuration,
   motionNormal: isDuration,
 };
@@ -85,8 +92,12 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
   if (theme.version !== THEME_VERSION) {
     errors.push(`Unsupported theme version: ${theme.version}`);
   }
-  if (!theme.name.trim()) {
+  if (typeof theme.name !== 'string' || !theme.name.trim()) {
     errors.push('Theme name is required');
+  }
+  if (typeof theme.modes !== 'object' || theme.modes === null) {
+    errors.push('Theme modes must be an object');
+    return errors;
   }
 
   (['light', 'dark'] as const).forEach((mode) => {
@@ -140,12 +151,21 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
 }
 
 export function fromLegacyTheme(colors: IThemeRGB, name = 'custom'): ThemeDefinition {
+  const legacyName = name.trim() || 'custom';
+  const sanitizedColors = themeColorTokens.reduce<IThemeRGB>((result, token) => {
+    const value = colors[token];
+    if (isRGB(value)) {
+      result[token] = value;
+    }
+    return result;
+  }, {});
+
   return {
     version: THEME_VERSION,
-    name,
+    name: legacyName,
     modes: {
-      light: { colors },
-      dark: { colors },
+      light: { colors: sanitizedColors },
+      dark: { colors: sanitizedColors },
     },
   };
 }

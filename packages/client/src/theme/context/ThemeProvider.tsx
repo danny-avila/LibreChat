@@ -175,7 +175,7 @@ export function ThemeProvider({
     return getStoredThemeDefinition();
   });
   const [themeName, setThemeNameState] = useState<string | undefined>(
-    propThemeName ?? themeDefinition?.name ?? getInitialThemeName,
+    themeDefinition?.name ?? propThemeName ?? getInitialThemeName,
   );
   const persistedInitialProps = useRef(false);
 
@@ -189,11 +189,12 @@ export function ThemeProvider({
       writeStorage(THEME_KEY, initialTheme);
     }
 
-    const definition =
-      propThemeDefinition ??
-      (propThemeRGB ? fromLegacyTheme(propThemeRGB, propThemeName) : undefined);
+    const legacyDefinition = propThemeRGB
+      ? fromLegacyTheme(propThemeRGB, propThemeName)
+      : undefined;
+    const definition = propThemeDefinition ?? legacyDefinition;
     if (!definition) {
-      if (propThemeName) {
+      if (propThemeName && !themeDefinition) {
         writeStorage(THEME_NAME_KEY, propThemeName);
       }
       return;
@@ -201,8 +202,13 @@ export function ThemeProvider({
 
     writeStorage(THEME_DEFINITION_KEY, JSON.stringify(definition));
     writeStorage(THEME_NAME_KEY, definition.name);
-    writeStorage(THEME_COLORS_KEY, propThemeRGB ? JSON.stringify(propThemeRGB) : undefined);
-  }, [initialTheme, propThemeDefinition, propThemeName, propThemeRGB]);
+    writeStorage(
+      THEME_COLORS_KEY,
+      !propThemeDefinition && legacyDefinition
+        ? JSON.stringify(legacyDefinition.modes.light?.colors ?? {})
+        : undefined,
+    );
+  }, [initialTheme, propThemeDefinition, propThemeName, propThemeRGB, themeDefinition]);
 
   const setTheme = useCallback((newTheme: string) => {
     if (!isAppearanceMode(newTheme)) {
@@ -230,7 +236,10 @@ export function ThemeProvider({
     (colors?: IThemeRGB) => {
       const definition = colors ? fromLegacyTheme(colors, themeName) : undefined;
       setThemeDefinition(definition);
-      writeStorage(THEME_COLORS_KEY, colors ? JSON.stringify(colors) : undefined);
+      writeStorage(
+        THEME_COLORS_KEY,
+        definition ? JSON.stringify(definition.modes.light?.colors ?? {}) : undefined,
+      );
     },
     [setThemeDefinition, themeName],
   );

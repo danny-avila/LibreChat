@@ -73,9 +73,9 @@ The theme system operates in three layers:
 
 ### Custom Theme Behavior
 
-- Only applies when `themeRGB` prop is provided
+- Prefer the versioned `themeDefinition` prop; the legacy `themeRGB` prop remains supported
 - Overrides CSS variables with bare `R G B` channel triplets
-- Maintains compatibility with existing CSS
+- Resolves missing values against the bundled light/dark defaults
 
 ## Basic Usage
 
@@ -420,7 +420,7 @@ This format allows Tailwind to apply opacity modifiers like `bg-surface-primary/
 #### 1. Colors Not Applying
 
 - **Issue**: Custom theme colors aren't showing
-- **Solution**: Ensure you're passing the `themeRGB` prop to ThemeProvider
+- **Solution**: Pass a valid `themeDefinition`, or use the legacy `themeRGB` prop for color-only overrides
 - **Check**: CSS variables in DevTools should show a bare `R G B` triplet
 
 #### 2. Circular Reference Errors
