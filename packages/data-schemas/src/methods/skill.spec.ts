@@ -9,6 +9,7 @@ import {
   PermissionBits,
 } from 'librechat-data-provider';
 import {
+  partitionIssues,
   validateSkillName,
   validateSkillDescription,
   validateSkillFrontmatter,
@@ -270,9 +271,38 @@ describe('skill validation helpers', () => {
       expect(validateSkillFrontmatter([]).some((i) => i.code === 'INVALID_TYPE')).toBe(true);
     });
 
-    it('rejects unknown keys in strict mode', () => {
+    it('warns about unknown keys instead of rejecting them', () => {
       const issues = validateSkillFrontmatter({ 'not-a-real-key': 'value' });
-      expect(issues.some((i) => i.code === 'UNKNOWN_KEY')).toBe(true);
+      expect(issues).toEqual([
+        expect.objectContaining({
+          field: 'frontmatter.not-a-real-key',
+          code: 'UNKNOWN_KEY',
+          severity: 'warning',
+        }),
+      ]);
+      expect(partitionIssues(issues).errors).toEqual([]);
+    });
+
+    it('accepts the references key in every shape real SKILL.md files use', () => {
+      expect(validateSkillFrontmatter({ references: ['workers', 'pages', 'd1'] })).toEqual([]);
+      expect(validateSkillFrontmatter({ references: 'references/api.md' })).toEqual([]);
+      expect(
+        validateSkillFrontmatter({
+          references: [{ path: 'references/api.md', description: 'API surface' }],
+        }),
+      ).toEqual([]);
+      expect(
+        validateSkillFrontmatter({ references: { workers: 'references/workers.md' } }),
+      ).toEqual([]);
+    });
+
+    it('rejects a references value with excessive nesting', () => {
+      const deep = { a: { b: { c: { d: { e: { f: 'too deep' } } } } } };
+      expect(
+        validateSkillFrontmatter({ references: deep }).some(
+          (i) => i.code === 'INVALID_SHAPE' && i.field === 'frontmatter.references',
+        ),
+      ).toBe(true);
     });
 
     it('accepts known keys with correct types', () => {
@@ -469,12 +499,64 @@ describe('Skill CRUD methods', () => {
     ]);
   });
 
-  it('rejects frontmatter with unknown keys (strict mode)', async () => {
+  it('creates the skill and warns when frontmatter carries an unknown key', async () => {
+    /* One unrecognized key in one SKILL.md must not fail the skill: the GitHub
+       sync runner marks the whole source failed on a validation error, so a
+       stray key used to block every other skill in the repository. */
+    const { skill, warnings } = await methods.createSkill(
+      makeSkillInput({
+        name: 'unknown-key-frontmatter',
+        frontmatter: { name: 'unknown-key-frontmatter', 'bogus-key': 'nope' },
+      }),
+    );
+    expect(skill._id).toBeDefined();
+    expect(skill.frontmatter).toMatchObject({ 'bogus-key': 'nope' });
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        field: 'frontmatter.bogus-key',
+        code: 'UNKNOWN_KEY',
+        severity: 'warning',
+      }),
+    ]);
+  });
+
+  it('creates a skill whose frontmatter carries a references list', async () => {
+    const { skill, warnings } = await methods.createSkill(
+      makeSkillInput({
+        name: 'references-frontmatter',
+        frontmatter: {
+          name: 'references-frontmatter',
+          description: 'A small demo skill used in tests.',
+          references: ['workers', 'pages', 'd1'],
+        },
+      }),
+    );
+    expect(skill.frontmatter).toMatchObject({ references: ['workers', 'pages', 'd1'] });
+    expect(warnings).toEqual([]);
+  });
+
+  it('still rejects malformed frontmatter', async () => {
     await expect(
       methods.createSkill(
         makeSkillInput({
-          name: 'strict-frontmatter',
-          frontmatter: { 'bogus-key': 'nope' },
+          name: 'malformed-frontmatter',
+          frontmatter: { 'user-invocable': 'yes' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+    await expect(
+      methods.createSkill(
+        makeSkillInput({
+          name: 'non-object-frontmatter',
+          frontmatter: 'not an object',
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+    await expect(
+      methods.createSkill(
+        makeSkillInput({
+          name: 'deep-hooks-frontmatter',
+          frontmatter: { hooks: { a: { b: { c: { d: { e: { f: 'too deep' } } } } } } },
         }),
       ),
     ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });

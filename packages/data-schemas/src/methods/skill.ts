@@ -236,10 +236,12 @@ export function validateAlwaysApply(alwaysApply: unknown): ValidationIssue[] {
 
 /**
  * Known fields allowed inside a skill's YAML frontmatter. Anything else is
- * rejected in strict mode. The list is derived from Anthropic's Agent Skills
- * spec plus the fields LibreChat needs to pass through (`name`/`description`
- * are duplicated from the top-level columns because real `SKILL.md` files
- * include them in their frontmatter block).
+ * reported as a warning (see `validateSkillFrontmatter`) rather than rejected:
+ * the frontmatter convention keeps growing, and a single unrecognized key in
+ * one `SKILL.md` used to fail its whole GitHub sync source. The list is derived
+ * from Anthropic's Agent Skills spec plus the fields LibreChat needs to pass
+ * through (`name`/`description` are duplicated from the top-level columns
+ * because real `SKILL.md` files include them in their frontmatter block).
  */
 const ALLOWED_FRONTMATTER_KEYS = new Set<string>([
   'name',
@@ -263,6 +265,7 @@ const ALLOWED_FRONTMATTER_KEYS = new Set<string>([
   'license',
   'compatibility',
   'metadata',
+  'references',
 ]);
 
 const FRONTMATTER_MAX_STRING = 2000;
@@ -344,11 +347,12 @@ function isJsonSafe(value: unknown, depth: number): boolean {
 }
 
 /**
- * Validate a skill's structured YAML frontmatter. Strict mode: unknown keys
- * are rejected so any expansion of the allowed set is an intentional code
- * change. Known keys are type-checked against `FRONTMATTER_KIND`; `hooks` and
- * `metadata` fall back to a shallow JSON-safety check because their full
- * schemas live outside this module.
+ * Validate a skill's structured YAML frontmatter. Known keys are type-checked
+ * against `FRONTMATTER_KIND`; `hooks`, `metadata` and `references` fall back to
+ * a shallow JSON-safety check because their full schemas live outside this
+ * module. Unknown keys are reported as warnings, not errors: authors regularly
+ * carry keys from other tooling, and failing the skill for one of them takes
+ * down every other skill in the same GitHub sync source.
  */
 export function validateSkillFrontmatter(frontmatter: unknown): ValidationIssue[] {
   if (frontmatter === undefined || frontmatter === null) {
@@ -370,8 +374,20 @@ export function validateSkillFrontmatter(frontmatter: unknown): ValidationIssue[
       issues.push({
         field: `frontmatter.${key}`,
         code: 'UNKNOWN_KEY',
-        message: `"${key}" is not a recognized frontmatter key`,
+        severity: 'warning',
+        message: `"${key}" is not a recognized frontmatter key and is stored without validation`,
       });
+      continue;
+    }
+
+    if (key === 'references') {
+      if (!isJsonSafe(value, 0)) {
+        issues.push({
+          field: 'frontmatter.references',
+          code: 'INVALID_SHAPE',
+          message: `"references" must be a JSON-safe value (max depth ${FRONTMATTER_MAX_DEPTH}, max string ${FRONTMATTER_MAX_STRING})`,
+        });
+      }
       continue;
     }
 

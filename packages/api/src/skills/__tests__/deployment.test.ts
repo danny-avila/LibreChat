@@ -159,7 +159,34 @@ describe('loadDeploymentSkillsFromDirectory', () => {
     });
   });
 
-  it('validates SKILL.md frontmatter at startup', async () => {
+  it('loads a skill with an unrecognized frontmatter key and warns about it', async () => {
+    const root = await makeTempRoot();
+    await writeDeploymentSkill(root, {
+      name: 'unknown-key-frontmatter',
+      frontmatter: [
+        '---',
+        'name: unknown-key-frontmatter',
+        `description: ${DESCRIPTION}`,
+        'unknown-key: nope',
+        'references:',
+        '  - references/guide.txt',
+        '---',
+        '',
+        'Body',
+      ].join('\n'),
+    });
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    const registry = await loadDeploymentSkillsFromDirectory(path.join(root, 'skill'), {
+      projectRoot: root,
+    });
+
+    expect(registry.list().map((skill) => skill.name)).toEqual(['unknown-key-frontmatter']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('frontmatter.unknown-key'));
+    warn.mockRestore();
+  });
+
+  it('rejects malformed SKILL.md frontmatter at startup', async () => {
     const root = await makeTempRoot();
     await writeDeploymentSkill(root, {
       name: 'bad-frontmatter',
@@ -167,7 +194,7 @@ describe('loadDeploymentSkillsFromDirectory', () => {
         '---',
         'name: bad-frontmatter',
         `description: ${DESCRIPTION}`,
-        'unknown-key: nope',
+        'user-invocable: maybe',
         '---',
         '',
         'Body',
@@ -176,7 +203,7 @@ describe('loadDeploymentSkillsFromDirectory', () => {
 
     await expect(
       loadDeploymentSkillsFromDirectory(path.join(root, 'skill'), { projectRoot: root }),
-    ).rejects.toThrow(/frontmatter\.unknown-key/);
+    ).rejects.toThrow(/frontmatter\.user-invocable/);
   });
 
   it('validates bundled file paths at startup', async () => {
