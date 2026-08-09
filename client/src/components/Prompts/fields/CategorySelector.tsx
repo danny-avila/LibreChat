@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useTranslation } from 'react-i18next';
 import { DropdownPopup } from '@librechat/client';
@@ -24,6 +24,8 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
   className = '',
   portal = true,
 }) => {
+  const instanceId = useId();
+  const menuId = `${instanceId}-category-menu`;
   const { t } = useTranslation();
   const formContext = useFormContext();
   const [isOpen, setIsOpen] = useState(false);
@@ -59,7 +61,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
     if (!categories) return [];
 
     return categories.map((category) => ({
-      id: category.value,
+      id: `${menuId}-item-${category.value}`,
       label: category.label,
       icon: 'icon' in category ? category.icon : undefined,
       onClick: () => {
@@ -72,7 +74,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
         setIsOpen(false);
       },
     }));
-  }, [categories, formContext, setValue, onValueChange]);
+  }, [categories, formContext, menuId, setValue, onValueChange]);
 
   const trigger = (
     <Ariakit.MenuButton
@@ -104,7 +106,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
           items={menuItems}
           isOpen={isOpen}
           setIsOpen={setIsOpen}
-          menuId="category-selector-menu"
+          menuId={menuId}
           className="mt-2"
           portal={portal}
         />
@@ -116,7 +118,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
       items={menuItems}
       isOpen={isOpen}
       setIsOpen={setIsOpen}
-      menuId="category-selector-menu"
+      menuId={menuId}
       className="mt-2"
       portal={portal}
     />

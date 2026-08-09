@@ -27,6 +27,7 @@ export default function VariablesDropdown({
   portal = true,
 }: VariablesDropdownProps) {
   const menuId = useId();
+  const triggerId = `${menuId}-button`;
   const localize = useLocalize();
   const methods = useFormContext();
   const { setValue, getValues, watch } = methods;
@@ -116,7 +117,7 @@ export default function VariablesDropdown({
         setIsOpen={setIsMenuOpen}
         trigger={
           <Menu.MenuButton
-            id="variables-menu-button"
+            id={triggerId}
             onMouseDown={(e) => e.preventDefault()}
             aria-label={localize('com_ui_add_special_variables')}
             className={`group flex h-8 items-center gap-1.5 rounded-lg bg-transparent px-2 text-sm ${buttonClass}`}
