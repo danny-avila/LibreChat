@@ -111,6 +111,37 @@ interface NativeParserResponse<T> {
   code?: string;
 }
 
+/**
+ * Injected ahead of every child body so both parsers measure the same thing.
+ *
+ * `process.send` serializes as JSON, and that is what actually crosses the pipe and is
+ * rebuilt in the API process. Measuring the raw string instead undercounts it: a newline
+ * doubles, a quote or backslash doubles, and any other control character becomes a
+ * six-byte escape, so a document sitting just inside the cap can serialize to several
+ * times it. Counted in a single pass rather than by stringifying, because building the
+ * escaped copy to measure it would allocate the very thing the cap exists to refuse.
+ */
+const CHILD_PRELUDE = `
+function __serializedBytes(text) {
+  let bytes = 2;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code === 0x22 || code === 0x5c) {
+      bytes += 2;
+    } else if (code < 0x20) {
+      bytes += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 2 : 6;
+    } else if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+`;
+
 interface NativeParserChildOptions {
   childSource: string;
   parserName: string;
@@ -137,7 +168,7 @@ export function runNativeParserChild<T>({
     return Promise.reject(abortError(signal));
   }
   return new Promise<T>((resolve, reject) => {
-    const child = spawn(process.execPath, ['-e', childSource], {
+    const child = spawn(process.execPath, ['-e', CHILD_PRELUDE + childSource], {
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     });
 

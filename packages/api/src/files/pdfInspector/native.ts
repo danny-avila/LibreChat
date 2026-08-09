@@ -86,10 +86,10 @@ process.once('message', (request) => {
     }
     const bytes =
       request.op === 'text'
-        ? Buffer.byteLength(result.text || '', 'utf8')
+        ? __serializedBytes(result.text || '')
         : result.pages.reduce(
             (total, page) =>
-              total + Buffer.byteLength(page.markdown || '', 'utf8') + request.pageOverheadBytes,
+              total + __serializedBytes(page.markdown || '') + request.pageOverheadBytes,
             0,
           );
     if (bytes > request.maxOutputBytes) {

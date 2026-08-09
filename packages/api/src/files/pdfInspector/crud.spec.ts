@@ -340,7 +340,10 @@ describe('pdf-inspector local parser', () => {
         await expect(uploadIsolated(context(pdfFile('sample.pdf')))).rejects.toMatchObject({
           name: 'PdfPageLimitError',
           code: 'PDF_PAGE_LIMIT',
-          message: 'PDF contains 4000 pages, exceeding the 250-page fallback limit',
+          /* The fallback answers to the parser's ceiling, not the recovery walk's: the
+           * two bound different work, and a PDF this parser accepts with a good xref
+           * should not be refused with a damaged one. */
+          message: 'PDF contains 4000 pages, exceeding the 1000-page fallback limit',
         });
         expect(mockPdfjs.requestedPages).toHaveLength(0);
         expect(mockPdfjs.destroy).toHaveBeenCalled();

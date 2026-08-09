@@ -2784,6 +2784,42 @@ describe('Share Methods', () => {
       expect(byId.get(docId)).toEqual(expect.objectContaining({ hasTextPreview: true }));
     });
 
+    /**
+     * A configured RAG extraction stores the document's own MIME type and the temporary
+     * upload path, which is gone by the time anyone opens the share. Keying only on the
+     * local parser's marker left those links reporting no preview while the text sat in
+     * MongoDB, which is the one thing the snapshot exists to make available.
+     */
+    test('snapshots a document extracted by a configured RAG service', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId, {
+        source: FileSources.text,
+        filepath: `/tmp/uploads/${userId}/upload-uuid.bin`,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'report.docx',
+        text: '# Extracted by RAG',
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'rag document',
+        isCreatedByUser: true,
+        files: [{ file_id: docId }],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      const saved = await SharedLink.findOne({ shareId }).lean();
+
+      expect(saved?.fileSnapshots?.[0]).toEqual(
+        expect.objectContaining({ file_id: docId, hasTextPreview: true }),
+      );
+      /** The dead temporary path never reaches a viewer. */
+      expect(saved?.fileSnapshots?.[0].filepath).toBeUndefined();
+    });
+
     test('leaves a current snapshot alone when a referenced file is unsnapshottable', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
@@ -2982,10 +3018,17 @@ describe('Share Methods', () => {
     });
 
     test('does not snapshot transient text-source files', async () => {
+      /* A `text` record whose type is not a document the parser reads holds no preview
+       * worth serving: the durable text belongs to parsed documents, and this one's
+       * upload path is gone. The parsed cases are covered above. */
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
       await seedConversation(userId, conversationId);
-      const textId = await createFile(userId, { source: 'text' });
+      const textId = await createFile(userId, {
+        source: 'text',
+        type: 'text/plain',
+        filename: 'context.txt',
+      });
       await Message.create({
         messageId: `msg_${nanoid()}`,
         conversationId,

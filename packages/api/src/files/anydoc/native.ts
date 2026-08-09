@@ -10,7 +10,7 @@ process.once('message', async (request) => {
     const anydoc = require(request.modulePath);
     const data = fs.readFileSync(request.path);
     const markdown = await anydoc.toMarkdownBytes(new Uint8Array(data), request.format);
-    const bytes = Buffer.byteLength(markdown, 'utf8');
+    const bytes = __serializedBytes(markdown);
     if (bytes > request.maxOutputBytes) {
       process.send({
         ok: false,
