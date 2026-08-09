@@ -167,7 +167,7 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => [],
+          extractPagesMarkdownIsolated: async () => ({ pages: [], flaggedPages: [] }),
           extractTextIsolated: async () => '',
         }));
 
@@ -198,6 +198,92 @@ describe('pdf-inspector local parser', () => {
         const result = await uploadIsolated(context(pdfFile('sample.pdf')));
 
         expect(result.text).toBe('Recovered text page\n\n');
+        expect(result.pagesNeedingOcr).toEqual([2]);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
+  /**
+   * Past the recovery cap, unprobed pages are reported as needing OCR, which asks the
+   * upload path to send the whole document to a configured provider. A page costs about
+   * 100 bytes to declare, so without a ceiling a 1MB upload buys a ten-thousand-page
+   * OCR job on someone else's bill.
+   */
+  test('refuses a document past the page ceiling before anything can hand it to OCR', async () => {
+    const flooded = Array.from({ length: 1001 }, (_, page) => ({ page, markdown: '' }));
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, flaggedPages: [] }),
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+
+        await expect(uploadIsolated(context(pdfFile('sample.pdf')))).rejects.toMatchObject({
+          name: 'PdfPageLimitError',
+          code: 'PDF_PAGE_LIMIT',
+        });
+        expect(mockPdfjs.requestedPages).toHaveLength(0);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
+  /**
+   * A page with a header above a scanned body comes back with text, so no probe calls it
+   * missing and PDFs have no media manifest to consult. The engine's own flag on a page
+   * it did extract is the only thing left that can say more may be sitting there.
+   */
+  test('reports a page the engine flagged despite extracting text from it', async () => {
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => ({
+            pages: [
+              { page: 0, markdown: '# Invoice header' },
+              { page: 1, markdown: '# Terms' },
+            ],
+            flaggedPages: [1],
+          }),
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+        const result = await uploadIsolated(context(pdfFile('sample.pdf')));
+
+        expect(result.mayEmbedMedia).toBe(true);
+        expect(result.pagesNeedingOcr).toBeUndefined();
+        expect(result.text).toContain('# Invoice header');
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
+  test('reports nothing extra when the engine flags only pages it could not read', async () => {
+    /* Those pages are already accounted for empirically, so repeating them as a media
+     * signal would escalate every ordinary scanned document twice. */
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => ({
+            pages: [
+              { page: 0, markdown: '# Cover' },
+              { page: 1, markdown: '' },
+            ],
+            flaggedPages: [2],
+          }),
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+        const result = await uploadIsolated(context(pdfFile('sample.pdf')));
+
+        expect(result.mayEmbedMedia).toBeUndefined();
         expect(result.pagesNeedingOcr).toEqual([2]);
       });
     } finally {
@@ -273,7 +359,7 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => flooded,
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, flaggedPages: [] }),
           extractTextIsolated: async () => '',
         }));
 
@@ -307,7 +393,7 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => pages,
+          extractPagesMarkdownIsolated: async () => ({ pages: pages, flaggedPages: [] }),
           extractTextIsolated: async () => '',
         }));
 
@@ -357,16 +443,16 @@ describe('pdf-inspector local parser', () => {
      * object costs an attacker ~110 bytes, so an unbounded walk turns a single
      * upload into hours of CPU on the request path. Past the cap the pages are
      * reported as needing OCR instead of probed. */
-    const flooded = Array.from({ length: 4000 }, (_, page) => ({ page, markdown: '' }));
+    const flooded = Array.from({ length: 900 }, (_, page) => ({ page, markdown: '' }));
     /* Every page carries a readable layer, so an unbounded walk would recover all
-     * 4000 and report none. What the cap costs is visible in the assertions below. */
+     * 900 and report none. What the cap costs is visible in the assertions below. */
     mockPdfjs.pageText = Object.fromEntries(
-      Array.from({ length: 4000 }, (_, i) => [i + 1, 'recovered line']),
+      Array.from({ length: 900 }, (_, i) => [i + 1, 'recovered line']),
     );
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => flooded,
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, flaggedPages: [] }),
           extractTextIsolated: async () => '',
         }));
 
@@ -376,7 +462,7 @@ describe('pdf-inspector local parser', () => {
         expect(mockPdfjs.requestedPages).toHaveLength(250);
         /* Unprobed pages are reported rather than silently dropped, so the count
          * still accounts for the whole document. */
-        expect(result.pagesNeedingOcr).toHaveLength(3750);
+        expect(result.pagesNeedingOcr).toHaveLength(650);
         /** The pages that were probed still contribute their text. */
         expect(result.text).toContain('recovered line');
       });
@@ -392,14 +478,14 @@ describe('pdf-inspector local parser', () => {
    * with a notice naming pages it contains.
    */
   test('drops unprobed pages from the report when whole-document text ships', async () => {
-    const flooded = Array.from({ length: 4000 }, (_, page) => ({ page, markdown: '' }));
+    const flooded = Array.from({ length: 900 }, (_, page) => ({ page, markdown: '' }));
     mockPdfjs.pageText = Object.fromEntries(
       Array.from({ length: 250 }, (_, i) => [i + 1, 'recovered line']),
     );
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => flooded,
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, flaggedPages: [] }),
           extractTextIsolated: async () => 'clean whole document text',
         }));
 
@@ -417,14 +503,14 @@ describe('pdf-inspector local parser', () => {
   test('keeps probed pages in the report when whole-document text ships', async () => {
     /* The counterpart: a page both engines found nothing on holds no text layer at
      * all, so the whole-document extractor cannot have included it either. */
-    const flooded = Array.from({ length: 4000 }, (_, page) => ({ page, markdown: '' }));
+    const flooded = Array.from({ length: 900 }, (_, page) => ({ page, markdown: '' }));
     mockPdfjs.pageText = Object.fromEntries(
       Array.from({ length: 250 }, (_, i) => [i + 1, i === 4 ? '' : 'recovered line']),
     );
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => flooded,
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, flaggedPages: [] }),
           extractTextIsolated: async () => 'clean whole document text',
         }));
 
@@ -448,11 +534,14 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => [
-            { page: 0, markdown: '# Only structured page' },
-            { page: 1, markdown: '' },
-            { page: 2, markdown: '' },
-          ],
+          extractPagesMarkdownIsolated: async () => ({
+            pages: [
+              { page: 0, markdown: '# Only structured page' },
+              { page: 1, markdown: '' },
+              { page: 2, markdown: '' },
+            ],
+            flaggedPages: [],
+          }),
           extractTextIsolated: async () => 'clean whole document text',
         }));
         mockPdfjs.pageText = { 2: 'm u s h y r e c o v e r y' };
@@ -477,10 +566,13 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => [
-            { page: 0, markdown: '# Structured page' },
-            { page: 1, markdown: '' },
-          ],
+          extractPagesMarkdownIsolated: async () => ({
+            pages: [
+              { page: 0, markdown: '# Structured page' },
+              { page: 1, markdown: '' },
+            ],
+            flaggedPages: [],
+          }),
           extractTextIsolated: async () => 'WHOLE_DOCUMENT_SENTINEL',
         }));
         mockPdfjs.pageText = { 2: 'recovered second page' };
@@ -502,11 +594,14 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => [
-            { page: 0, markdown: '# Only structured page' },
-            { page: 1, markdown: '' },
-            { page: 2, markdown: '' },
-          ],
+          extractPagesMarkdownIsolated: async () => ({
+            pages: [
+              { page: 0, markdown: '# Only structured page' },
+              { page: 1, markdown: '' },
+              { page: 2, markdown: '' },
+            ],
+            flaggedPages: [],
+          }),
           extractTextIsolated: async () => {
             throw new Error('plain-text extraction failed');
           },

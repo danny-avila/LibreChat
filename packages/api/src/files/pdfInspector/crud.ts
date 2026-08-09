@@ -2,17 +2,34 @@ import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
+import {
+  extractDocumentTextWithPages,
+  extractPageText,
+  PdfPageLimitError,
+} from '../documents/pdfjs';
 import { MAX_PARSER_OUTPUT_BYTES, isParserOutputLimit } from '../documents/nativeProcess';
-import { extractDocumentTextWithPages, extractPageText } from '../documents/pdfjs';
 import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
 import { ConcurrencyLimitError } from '~/utils/promise';
 
-type ParsedDocument = Pick<ParsedDocumentUploadResult, 'text' | 'pagesNeedingOcr'>;
+type ParsedDocument = Pick<
+  ParsedDocumentUploadResult,
+  'text' | 'pagesNeedingOcr' | 'mayEmbedMedia'
+>;
 
 /** Above this share of dropped pages, whole-document plain text replaces interleaving. */
 const DROPPED_PAGE_MAJORITY = 0.5;
 /** Cap on pages either pdfjs recovery path will read; see `extractPdf`. */
 const MAX_RECOVERED_PAGES = 250;
+/**
+ * Most pages this parser will accept at all.
+ *
+ * Past the recovery cap, unprobed pages are reported as needing OCR, which is a request
+ * to send the whole document to a configured provider. A page costs about 100 bytes to
+ * declare, so without this a 1MB upload buys a ten-thousand-page OCR job on someone
+ * else's bill. The cap sits at what OCR services accept anyway, so it refuses nothing
+ * that would have succeeded downstream.
+ */
+const MAX_PDF_PAGES = 1000;
 
 /**
  * pdf-inspector reads PDF and nothing else: every export and type in its typings is
@@ -42,11 +59,15 @@ export async function parseWithPdfInspector(
   try {
     parsed = await extractPdf(file.path, data);
   } catch (error) {
-    /* Neither shed load nor an oversized extraction is a document this engine cannot
-     * read, and pdfjs is not the answer to either: it would run the walk inline for a
-     * request the limiter just refused, or rebuild in the API process the very string
-     * the child declined to send. */
-    if (error instanceof ConcurrencyLimitError || isParserOutputLimit(error)) {
+    /* Refusals are not "this engine could not read it", and pdfjs is not the answer to
+     * any of them: it would run the walk inline for a request the limiter just refused,
+     * rebuild in the API process the string the child declined to send, or accept a page
+     * count this parser has already decided not to hand onward. */
+    if (
+      error instanceof ConcurrencyLimitError ||
+      error instanceof PdfPageLimitError ||
+      isParserOutputLimit(error)
+    ) {
       throw error;
     }
     logger.warn(
@@ -55,7 +76,7 @@ export async function parseWithPdfInspector(
     );
     parsed = await extractDocumentTextWithPages(data, MAX_RECOVERED_PAGES);
   }
-  const { text, pagesNeedingOcr } = parsed;
+  const { text, pagesNeedingOcr, mayEmbedMedia } = parsed;
 
   return {
     filename: file.originalname,
@@ -64,6 +85,7 @@ export async function parseWithPdfInspector(
     text,
     images: [],
     pagesNeedingOcr,
+    ...(mayEmbedMedia && { mayEmbedMedia }),
   };
 }
 
@@ -98,14 +120,28 @@ function assertSupportedMimeType(file: Express.Multer.File): void {
  * back to pdfjs instead of returning the empty string a page-less join produces.
  */
 export async function extractPdf(filePath: string, data: Buffer): Promise<ParsedDocument> {
-  const pages = [...(await extractPagesMarkdownIsolated(filePath))].sort((a, b) => a.page - b.page);
+  const extraction = await extractPagesMarkdownIsolated(filePath);
+  const pages = [...extraction.pages].sort((a, b) => a.page - b.page);
   if (!pages.length) {
     throw new Error('pdf-inspector returned no pages');
   }
+  if (pages.length > MAX_PDF_PAGES) {
+    throw new PdfPageLimitError(pages.length, MAX_PDF_PAGES);
+  }
+
+  /* The engine flags pages whose text it considers unreliable. Where it produced no
+   * markdown the empirical probe below is the better judge, but a page that came back
+   * with text and a flag is the one case nothing else can see: selectable text next to
+   * a scan holding more of it. PDFs have no media manifest to consult, so this is the
+   * signal that a configured OCR service may still have something to recover. */
+  const flagged = new Set(extraction.flaggedPages);
+  const mayEmbedMedia = pages.some((page) => !!page.markdown?.trim() && flagged.has(page.page + 1));
+  const withMediaSignal = (parsed: ParsedDocument): ParsedDocument =>
+    mayEmbedMedia ? { ...parsed, mayEmbedMedia } : parsed;
 
   const droppedPages = pages.filter((page) => !page.markdown?.trim());
   if (!droppedPages.length) {
-    return { text: pages.map((page) => page.markdown).join('\n\n') };
+    return withMediaSignal({ text: pages.map((page) => page.markdown).join('\n\n') });
   }
 
   /* Recovery reads one page at a time and cannot be batched, so its cost is linear
@@ -160,7 +196,7 @@ export async function extractPdf(filePath: string, data: Buffer): Promise<Parsed
          * omitted would spend an OCR call on text already present, or annotate the
          * document with a notice naming pages it does contain. Only the pages proven
          * to hold no text layer are still missing here. */
-        return { text: plain, pagesNeedingOcr: probedResult };
+        return withMediaSignal({ text: plain, pagesNeedingOcr: probedResult });
       }
     } catch {
       /* fall through to per-page interleaving */
@@ -179,8 +215,8 @@ export async function extractPdf(filePath: string, data: Buffer): Promise<Parsed
     }
   }
 
-  return {
+  return withMediaSignal({
     text: parts.join('\n\n'),
     pagesNeedingOcr: ocrResult,
-  };
+  });
 }
