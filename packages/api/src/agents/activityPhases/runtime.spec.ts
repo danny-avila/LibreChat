@@ -138,6 +138,87 @@ describe('createActivityPhaseWiring', () => {
     expect(parts).toHaveLength(1);
   });
 
+  it('keeps reasoning attached to a tool batch across commentary', async () => {
+    const parts: LooseContentPart[] = [];
+    const generatePhase = jest.fn(async () => ({ label: 'unused' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      [GraphEvents.ON_REASONING_DELTA]: { handle: jest.fn() },
+    });
+
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'reasoning-step',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'think' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    handlers?.[GraphEvents.ON_REASONING_DELTA]?.handle(
+      GraphEvents.ON_REASONING_DELTA,
+      {
+        id: 'reasoning-step',
+        delta: { content: { type: ContentTypes.THINK, think: 'Compared both auth paths.' } },
+      },
+      undefined,
+      undefined,
+    );
+    parts.push({ type: ContentTypes.THINK, think: 'Compared both auth paths.' });
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'commentary-step',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text', phase: 'commentary' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+
+    expect(wiring.snapshot()).toMatchObject({
+      activityCount: 0,
+      pendingReasoning: [{ key: 'root', text: 'Compared both auth paths.' }],
+    });
+
+    parts.push({ type: ContentTypes.TEXT, text: 'I will verify the middleware.' });
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    expect(wiring.snapshot()).toMatchObject({
+      activityCount: 1,
+      activities: [expect.objectContaining({ thinkingExcerpts: ['Compared both auth paths.'] })],
+      pendingReasoning: [],
+    });
+
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'final-step',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    await flushDetached();
+    expect(generatePhase).not.toHaveBeenCalled();
+    expect(parts.some((part) => part.activity_label_type === 'phase')).toBe(false);
+  });
+
   it('restores bounded activity state after a HITL pause', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TEXT, text: 'Hidden intermediate output' },

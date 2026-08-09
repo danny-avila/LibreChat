@@ -603,11 +603,14 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
                 });
               }
             } else {
-              addPendingReasoning(step.agentId ?? 'root');
               if (phase === 'final_answer' && step.groupId == null) {
+                addPendingReasoning(step.agentId ?? 'root');
                 stepKinds.set(step.id, { kind, phase, captureContext: false });
                 close(phase, true);
               } else {
+                if (phase == null) {
+                  addPendingReasoning(step.agentId ?? 'root');
+                }
                 const closesPhase = phase == null && activityCount >= MIN_ACTIVITIES;
                 stepKinds.set(step.id, {
                   kind,
