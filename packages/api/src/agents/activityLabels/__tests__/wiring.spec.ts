@@ -193,9 +193,7 @@ describe('synthesizeActivityLabelGapEvents', () => {
     ];
     const fresh: LooseContentPart[] = [{ ...snapshot[0], activity_start_index: 1 }];
 
-    expect(synthesizeActivityLabelGapEvents(snapshot, fresh, meta)).toHaveLength(
-      1,
-    );
+    expect(synthesizeActivityLabelGapEvents(snapshot, fresh, meta)).toHaveLength(1);
   });
 });
 
