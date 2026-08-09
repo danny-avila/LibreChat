@@ -30,10 +30,7 @@ export default function ActivityPhaseGroup({
         title={label}
       >
         <ListTree
-          className={cn(
-            'size-4 shrink-0',
-            hasFailure && 'text-amber-600 dark:text-amber-400',
-          )}
+          className={cn('size-4 shrink-0', hasFailure && 'text-amber-600 dark:text-amber-400')}
           aria-hidden="true"
         />
         <span

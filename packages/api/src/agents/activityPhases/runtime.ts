@@ -201,10 +201,7 @@ function findTrackedStart(
   if (excerpt) {
     const needle = excerpt.slice(0, 80);
     for (let i = 0; i < parts.length; i++) {
-      if (
-        parts[i]?.type === ContentTypes.THINK &&
-        textValue(parts[i]?.think).includes(needle)
-      ) {
+      if (parts[i]?.type === ContentTypes.THINK && textValue(parts[i]?.think).includes(needle)) {
         return i;
       }
     }
@@ -356,9 +353,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         })),
       }),
       ...(activity.thinkingExcerpts != null && {
-        thinkingExcerpts: activity.thinkingExcerpts.map((text) =>
-          text.slice(-MAX_EXCERPT_CHARS),
-        ),
+        thinkingExcerpts: activity.thinkingExcerpts.map((text) => text.slice(-MAX_EXCERPT_CHARS)),
       }),
     })),
     assistantContext: assistantContext.slice(-MAX_CONTEXT_ITEMS),

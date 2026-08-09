@@ -170,20 +170,22 @@ describe('createActivityPhaseWiring', () => {
     });
     parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } });
     await resumed.hook(batch('tool-2'), new AbortController().signal);
-    resumed.handlers({
-      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
-    })?.[GraphEvents.ON_RUN_STEP]?.handle(
-      GraphEvents.ON_RUN_STEP,
-      {
-        id: 'final-step',
-        stepDetails: {
-          type: StepTypes.MESSAGE_CREATION,
-          message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+    resumed
+      .handlers({
+        [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'final-step',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+          },
         },
-      },
-      undefined,
-      undefined,
-    );
+        undefined,
+        undefined,
+      );
 
     await flushDetached();
     expect(generatePhase).toHaveBeenCalledWith(
@@ -277,25 +279,25 @@ describe('createActivityPhaseWiring', () => {
     await wiring.hook(mixed, new AbortController().signal);
     parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } });
     await wiring.hook(batch('tool-2'), new AbortController().signal);
-    wiring.handlers({
-      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
-    })?.[GraphEvents.ON_RUN_STEP]?.handle(
-      GraphEvents.ON_RUN_STEP,
-      {
-        id: 'final-step',
-        stepDetails: {
-          type: StepTypes.MESSAGE_CREATION,
-          message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+    wiring
+      .handlers({
+        [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'final-step',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+          },
         },
-      },
-      undefined,
-      undefined,
-    );
+        undefined,
+        undefined,
+      );
 
     await flushDetached();
-    expect(generatePhase).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'partial' }),
-    );
+    expect(generatePhase).toHaveBeenCalledWith(expect.objectContaining({ status: 'partial' }));
     expect(parts[parts.length - 1]).toMatchObject({ status: 'partial' });
   });
 
@@ -314,20 +316,22 @@ describe('createActivityPhaseWiring', () => {
     await wiring.hook(batch('tool-1'), new AbortController().signal);
     parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } });
     await wiring.hook(batch('tool-2'), new AbortController().signal);
-    wiring.handlers({
-      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
-    })?.[GraphEvents.ON_RUN_STEP]?.handle(
-      GraphEvents.ON_RUN_STEP,
-      {
-        id: 'final-step',
-        stepDetails: {
-          type: StepTypes.MESSAGE_CREATION,
-          message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+    wiring
+      .handlers({
+        [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'final-step',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+          },
         },
-      },
-      undefined,
-      undefined,
-    );
+        undefined,
+        undefined,
+      );
 
     await flushDetached();
     expect(collectUsage).toHaveBeenCalledWith(undefined);
