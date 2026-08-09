@@ -26,10 +26,41 @@ describe('mayEmbedMedia', () => {
   });
 
   it('ignores parts that merely reference artwork', async () => {
+    const archive = await buildArchive(['word/document.xml', 'word/_rels/document.xml.rels']);
+    expect(await mayEmbedMedia(archive)).toBe(false);
+  });
+
+  /**
+   * A preview rendering of the document itself carries no text the converter missed,
+   * and both Office and ODF write one whenever the "save preview" option is on, so
+   * counting it would send a large share of ordinary uploads to a paid OCR service.
+   */
+  it.each([
+    ['an Office thumbnail', 'docProps/thumbnail.jpeg'],
+    ['an ODF thumbnail', 'Thumbnails/thumbnail.png'],
+  ])('ignores %s', async (_label, entryName) => {
+    expect(await mayEmbedMedia(await buildArchive([entryName]))).toBe(false);
+  });
+
+  /**
+   * EPUB defines no media directory: resources sit wherever the manifest points, so a
+   * fixed-path rule sees none of them, and EPUB is in the default OCR MIME list.
+   */
+  it.each([
+    ['an OEBPS image', 'OEBPS/images/page012.jpg'],
+    ['an EPUB3 image', 'EPUB/images/cover.png'],
+    ['an image at the archive root', 'scan-001.tiff'],
+  ])('reports %s', async (_label, entryName) => {
+    const archive = await buildArchive(['mimetype', 'META-INF/container.xml', entryName]);
+    expect(await mayEmbedMedia(archive)).toBe(true);
+  });
+
+  it('reports no media for a text-only EPUB', async () => {
     const archive = await buildArchive([
-      'word/document.xml',
-      'word/_rels/document.xml.rels',
-      'docProps/thumbnail.jpeg',
+      'mimetype',
+      'META-INF/container.xml',
+      'OEBPS/content.opf',
+      'OEBPS/chapter1.xhtml',
     ]);
     expect(await mayEmbedMedia(archive)).toBe(false);
   });

@@ -19,6 +19,25 @@ const NATIVE_PARSER_CONCURRENCY = 2;
 export const MAX_PARSER_OUTPUT_BYTES = 15 * megabyte;
 
 /**
+ * Per-page envelope charged on top of a page's own text, so a result is measured by
+ * what crosses IPC rather than by its content alone. A page object that converted to
+ * nothing still costs its keys, its number and its braces in both processes.
+ */
+export const PARSER_PAGE_OVERHEAD_BYTES = 64;
+
+/**
+ * Most pages a page-oriented parser may return.
+ *
+ * Byte accounting alone does not bound this: a page that produced no text contributes
+ * almost nothing, so a document declaring hundreds of thousands of empty pages passes
+ * the size cap while serializing an object array that large through IPC and rebuilding
+ * it in the API process. A page costs an attacker roughly 110 bytes on disk, so the
+ * 15MB upload limit buys well over a hundred thousand of them. The cap sits far above
+ * any real document, and the pdfjs fallback refuses anything past 250 pages anyway.
+ */
+export const MAX_PARSER_PAGES = 10_000;
+
+/**
  * Uploads waiting for one of those slots. Each waiter is a separate request that has
  * already read its document into memory (up to the parser's 15MB cap) and holds it for
  * the whole wait, and the timeout below only starts once a slot frees, so an unbounded
