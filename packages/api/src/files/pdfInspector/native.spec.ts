@@ -10,8 +10,17 @@ import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
 describe('pdfInspector native', () => {
   const fixture = (name: string) => path.join(__dirname, '..', 'documents', name);
 
+  test("reports the engine's own page flags alongside the markdown", async () => {
+    /* A page the engine produced text for and still flagged is the only signal that
+     * selectable text may be sitting next to a scan holding more of it. */
+    const { pages, flaggedPages } = await extractPagesMarkdownIsolated(fixture('sample-mixed.pdf'));
+
+    expect(pages).toHaveLength(2);
+    expect(flaggedPages).toEqual([2]);
+  });
+
   test('extracts per-page markdown outside the API process', async () => {
-    const pages = await extractPagesMarkdownIsolated(fixture('sample.pdf'));
+    const { pages } = await extractPagesMarkdownIsolated(fixture('sample.pdf'));
 
     expect(pages.length).toBeGreaterThan(0);
     const markdown = pages.map((page) => page.markdown).join('\n');
@@ -62,7 +71,8 @@ describe('pdfInspector native', () => {
     const wide = path.join(__dirname, 'sample-at-cap.pdf');
     fs.writeFileSync(wide, buildManyPagePdf(10_000));
     try {
-      await expect(extractPagesMarkdownIsolated(wide)).resolves.toHaveLength(10_000);
+      const { pages } = await extractPagesMarkdownIsolated(wide);
+      expect(pages).toHaveLength(10_000);
     } finally {
       fs.unlinkSync(wide);
     }

@@ -36,10 +36,18 @@ process.once('message', (request) => {
   try {
     const native = require(request.modulePath);
     const data = fs.readFileSync(request.path);
-    const result =
-      request.op === 'text'
-        ? { text: native.extractText(data) }
-        : { pages: native.extractPagesMarkdown(data).pages };
+    let result;
+    if (request.op === 'text') {
+      result = { text: native.extractText(data) };
+    } else {
+      const extraction = native.extractPagesMarkdown(data);
+      /* The engine's own per-page suspicion travels with the pages: it is the only
+       * thing that can say a page it did produce text for may still hold more. */
+      result = {
+        pages: extraction.pages,
+        flaggedPages: extraction.pagesNeedingOcr || [],
+      };
+    }
     /* Bounded here so no oversized extraction crosses IPC into the API process. The
      * page count is its own limit: pages that converted to nothing weigh nothing, so
      * byte accounting alone would wave through an arbitrarily long array of them. */
@@ -86,7 +94,14 @@ process.once('message', (request) => {
 
 interface PdfChildResult {
   pages?: PageMarkdownResult[];
+  /** 1-indexed pages the engine considers unreliable, whether or not it produced text. */
+  flaggedPages?: number[];
   text?: string;
+}
+
+export interface PdfPageExtraction {
+  pages: PageMarkdownResult[];
+  flaggedPages: number[];
 }
 
 type PdfChildOp = 'pages' | 'text';
@@ -109,11 +124,9 @@ function runPdfChild(op: PdfChildOp, filePath: string): Promise<PdfChildResult> 
 }
 
 /** Per-page markdown for a PDF, parsed outside the API process. */
-export async function extractPagesMarkdownIsolated(
-  filePath: string,
-): Promise<PageMarkdownResult[]> {
-  const { pages } = await runPdfChild('pages', filePath);
-  return pages ?? [];
+export async function extractPagesMarkdownIsolated(filePath: string): Promise<PdfPageExtraction> {
+  const { pages, flaggedPages } = await runPdfChild('pages', filePath);
+  return { pages: pages ?? [], flaggedPages: flaggedPages ?? [] };
 }
 
 /**
