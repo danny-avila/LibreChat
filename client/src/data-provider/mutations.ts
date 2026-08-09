@@ -347,7 +347,7 @@ export const useDeleteSharedLinkMutation = (
         setConversationSharedFlag(queryClient, conversationId, false);
       }
 
-      return { previousQueries };
+      return { previousQueries, unsharedConversationIds };
     },
 
     onError: (_err, _vars, context) => {
@@ -356,12 +356,24 @@ export const useDeleteSharedLinkMutation = (
           queryClient.setQueryData(prevQueryKey as string[], prevData);
         });
       }
+      // The badge lives on the conversation caches, which the snapshot above does not
+      // cover, so a failed delete would leave the conversation looking unshared.
+      context?.unsharedConversationIds?.forEach((conversationId) => {
+        setConversationSharedFlag(queryClient, conversationId, true);
+      });
     },
 
     onSettled: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.sharedLinks],
         exact: false,
+      });
+      /* A conversation can hold several links (one per target message), so clearing the
+         badge optimistically is only a guess. Let the server, which derives `isShared`
+         from the links that are actually left, settle it. */
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.allConversations],
+        refetchPage: (_, index) => index === 0,
       });
     },
 

@@ -107,6 +107,28 @@ describe('shared-link mutation cache updates', () => {
     queryClient.clear();
   });
 
+  it('restores the sidebar shared flag when deleting a link fails', async () => {
+    const queryClient = createQueryClient();
+    seedConversationList(queryClient, true);
+    queryClient.setQueryData<TSharedLinkGetResponse>([QueryKeys.sharedLinks, 'conversation-1'], {
+      shareId: 'share-1',
+      conversationId: 'conversation-1',
+      success: true,
+    });
+    mockDeleteSharedLink.mockRejectedValue(new Error('network'));
+    const { result } = renderHook(() => useDeleteSharedLinkMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ shareId: 'share-1' }).catch(() => undefined);
+    });
+
+    // The link is still live, so the badge has to come back with it.
+    expect(readSharedFlag(queryClient)).toBe(true);
+    queryClient.clear();
+  });
+
   it('updates the active conversation link query after creating a link', async () => {
     const queryClient = createQueryClient();
     mockCreateSharedLink.mockResolvedValue({
