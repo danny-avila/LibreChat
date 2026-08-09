@@ -444,7 +444,11 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       // Trigger infinite scroll pagination
       scrollTimeoutRef.current = window.setTimeout(() => {
         const loaderContainer = tableContainerRef.current;
-        if (!loaderContainer || !fetchNextPage || !hasNextPage || isFetchingNextPage) return;
+        // `isFetching`: a search or sort swap scrolls the viewport back to the top while
+        // the replacement page is still loading, and this handler must not answer that
+        // programmatic scroll with a competing fetch on the same infinite query.
+        if (!loaderContainer || !fetchNextPage || !hasNextPage || isFetchingNextPage || isFetching)
+          return;
 
         const { scrollTop, scrollHeight, clientHeight } = loaderContainer;
         if (scrollTop + clientHeight >= scrollHeight - 200) {
@@ -466,6 +470,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   }, [
     fetchNextPage,
     hasNextPage,
+    isFetching,
     isFetchingNextPage,
     overscan,
     fastOverscanMultiplier,

@@ -843,6 +843,39 @@ describe('DataTable', () => {
       expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
     });
 
+    it('does not paginate on scroll while the replacement page is loading', () => {
+      const fetchNextPage = jest.fn().mockResolvedValue(undefined);
+      const clientHeight = jest
+        .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+        .mockReturnValue(600);
+      const scrollHeight = jest
+        .spyOn(HTMLElement.prototype, 'scrollHeight', 'get')
+        .mockReturnValue(700);
+
+      const { container } = render(
+        <TestWrapper>
+          <DataTable
+            columns={createTestColumns()}
+            data={createTestData(30)}
+            hasNextPage={true}
+            isFetching={true}
+            isFetchingNextPage={false}
+            fetchNextPage={fetchNextPage}
+          />
+        </TestWrapper>,
+      );
+
+      const scrollArea = container.querySelector(
+        '[aria-label="com_ui_data_table_scroll_area"]',
+      ) as HTMLElement;
+      fireEvent.scroll(scrollArea);
+      jest.advanceTimersByTime(200);
+
+      expect(fetchNextPage).not.toHaveBeenCalled();
+      clientHeight.mockRestore();
+      scrollHeight.mockRestore();
+    });
+
     describe('auto-fill when the first page cannot scroll', () => {
       const stubLayout = ({
         clientHeight,
