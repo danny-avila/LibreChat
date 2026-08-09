@@ -62,8 +62,10 @@ describe('isValidSharedLinksCursor', () => {
     expect(isValidSharedLinksCursor('Some Title', 'title')).toBe(true);
   });
 
-  it('rejects an oversized cursor', () => {
-    expect(isValidSharedLinksCursor('a'.repeat(513), 'title')).toBe(false);
+  it('accepts a cursor carrying a long title but rejects an absurd one', () => {
+    const longTitle = 'T'.repeat(1024);
+    expect(isValidSharedLinksCursor(encodeCursor({ primary: longTitle, id }), 'title')).toBe(true);
+    expect(isValidSharedLinksCursor('a'.repeat(8193), 'title')).toBe(false);
   });
 });
 

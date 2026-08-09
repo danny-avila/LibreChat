@@ -534,6 +534,12 @@ export function createConversationMethods(
     if (!SharedLink || conversations.length === 0) {
       return;
     }
+    /* A deployment with shared links off serves no links and renders no badge, so the
+       extra round trip on the sidebar's first page would buy nothing. */
+    const allowSharedLinks = process.env.ALLOW_SHARED_LINKS;
+    if (allowSharedLinks !== undefined && allowSharedLinks.toLowerCase().trim() !== 'true') {
+      return;
+    }
 
     try {
       const shares = await SharedLink.find({

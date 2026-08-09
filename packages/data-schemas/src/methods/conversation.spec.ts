@@ -1235,6 +1235,32 @@ describe('Conversation Operations', () => {
       await Conversation.deleteMany({ user: 'user123' });
     });
 
+    it('should skip the shared lookup when shared links are disabled', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<{
+        conversationId: string;
+        user: string;
+        shareId: string;
+      }>;
+      const baseTime = new Date('2026-03-02T00:00:00.000Z');
+      const shared = await createConvoWithTimestamps(1, baseTime, baseTime);
+      await SharedLink.create({
+        conversationId: shared!.conversationId,
+        user: 'user123',
+        shareId: `share-${uuidv4()}`,
+      });
+
+      process.env.ALLOW_SHARED_LINKS = 'false';
+      try {
+        const result = await methods.getConvosByCursor('user123', { limit: 25 });
+        expect(result.conversations[0].isShared).toBeUndefined();
+      } finally {
+        delete process.env.ALLOW_SHARED_LINKS;
+      }
+
+      await SharedLink.deleteMany({ user: 'user123' });
+      await Conversation.deleteMany({ user: 'user123' });
+    });
+
     it('should page through titles that share a timestamp', async () => {
       // Imports land with identical titles and timestamps, so (title, updatedAt)
       // alone cannot mark where the previous page stopped.

@@ -3,7 +3,10 @@ import { createHash } from 'crypto';
 export const DEFAULT_SHARED_LINKS_PAGE_SIZE: number = 10;
 export const MAX_SHARED_LINKS_PAGE_SIZE: number = 100;
 export const MAX_SHARED_LINK_SEARCH_LENGTH: number = 256;
-export const MAX_SHARED_LINK_CURSOR_LENGTH: number = 512;
+/* A title cursor carries the boundary row's title, and a conversation title can run to
+   about a thousand characters (more once multi-byte). The cap is only here to reject
+   absurd input, so it sits well clear of anything the server can issue. */
+export const MAX_SHARED_LINK_CURSOR_LENGTH: number = 8192;
 
 /** Clamp a requested page size, falling back to the default for anything unparseable. */
 export function parseSharedLinksPageSize(value: unknown): number {

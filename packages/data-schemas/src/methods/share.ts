@@ -565,12 +565,20 @@ function advanceTargetToBranchTail(messages: t.IMessage[], targetMessageId: stri
   };
 
   const replacementFor = (messageId: string): t.IMessage | undefined => {
-    const parentMessageId = messagesById.get(messageId)?.parentMessageId;
+    const node = messagesById.get(messageId);
+    const parentMessageId = node?.parentMessageId;
     if (!parentMessageId) {
       return undefined;
     }
+    /* Only a sibling created after this one can be its replacement. An older sibling
+       that happens to have follow-ups is the branch this one was regenerated away
+       from, and resuming there would publish turns the target deliberately excluded. */
+    const nodeTime = node?.createdAt?.getTime() ?? 0;
     const continued = (childrenByParent.get(parentMessageId) ?? []).filter(
-      (sibling) => sibling.messageId !== messageId && childrenByParent.has(sibling.messageId),
+      (sibling) =>
+        sibling.messageId !== messageId &&
+        childrenByParent.has(sibling.messageId) &&
+        (sibling.createdAt?.getTime() ?? 0) > nodeTime,
     );
     return newestOf(continued);
   };

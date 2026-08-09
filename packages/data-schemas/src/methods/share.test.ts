@@ -1664,6 +1664,69 @@ describe('Share Methods', () => {
       expect(texts).toContain('Turn on the replacement branch');
     });
 
+    test('should not resume down an older sibling branch', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const questionId = `msg_${nanoid()}`;
+      const abandonedId = `msg_${nanoid()}`;
+      const abandonedFollowUpId = `msg_${nanoid()}`;
+      const keptId = `msg_${nanoid()}`;
+
+      await Conversation.create({ conversationId, title: 'Regenerated tail', user: userId });
+      const question = await Message.create({
+        messageId: questionId,
+        conversationId,
+        user: userId,
+        text: 'Question',
+        isCreatedByUser: true,
+        parentMessageId: Constants.NO_PARENT,
+      });
+      await Message.create({
+        messageId: abandonedId,
+        conversationId,
+        user: userId,
+        text: 'Abandoned answer',
+        isCreatedByUser: false,
+        parentMessageId: questionId,
+        createdAt: new Date(Date.now() - 120_000),
+      });
+      await Message.create({
+        messageId: abandonedFollowUpId,
+        conversationId,
+        user: userId,
+        text: 'Turn on the abandoned branch',
+        isCreatedByUser: true,
+        parentMessageId: abandonedId,
+        createdAt: new Date(Date.now() - 90_000),
+      });
+      // The shared target is the regeneration itself: newest, and with nothing under it.
+      const kept = await Message.create({
+        messageId: keptId,
+        conversationId,
+        user: userId,
+        text: 'Kept answer',
+        isCreatedByUser: false,
+        parentMessageId: questionId,
+        createdAt: new Date(),
+      });
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [question._id, kept._id],
+        targetMessageId: keptId,
+      });
+
+      const result = await shareMethods.updateSharedLink(userId, shareId);
+      const sharedMessages = await shareMethods.getSharedMessages(result.shareId);
+      const texts = sharedMessages?.messages.map((message) => message.text) ?? [];
+
+      expect(result.targetMessageId).toBe(keptId);
+      expect(texts).not.toContain('Turn on the abandoned branch');
+    });
+
     test('should not allow user to update shared link they do not own', async () => {
       const ownerUserId = new mongoose.Types.ObjectId().toString();
       const otherUserId = new mongoose.Types.ObjectId().toString();
