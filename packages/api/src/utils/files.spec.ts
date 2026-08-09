@@ -4,6 +4,7 @@ import {
   flattenArtifactPath,
   resolveUploadErrorMessage,
 } from './files';
+import { ConcurrencyLimitError } from './promise';
 
 jest.mock('node:crypto', () => {
   const actualModule = jest.requireActual('node:crypto');
@@ -542,6 +543,27 @@ describe('resolveUploadErrorMessage', () => {
   test('surfaces "Unable to extract text from" errors', () => {
     const msg = 'Unable to extract text from "doc.pdf". The document may be image-based.';
     expect(resolveUploadErrorMessage({ message: msg })).toBe(msg);
+  });
+
+  /**
+   * A refusal the caller can act on is worth surfacing; "Error processing file" tells
+   * them to retry a document that will fail the same way, or not to retry one that
+   * would have succeeded a moment later.
+   */
+  test('surfaces the shed-load refusal, which is retryable', () => {
+    const limit = new ConcurrencyLimitError(
+      'Too many document parsing requests are already waiting (2 running, 6 queued).',
+    );
+
+    expect(resolveUploadErrorMessage(limit)).toBe(limit.message);
+    expect(limit.userErrorStatusCode).toBe(503);
+  });
+
+  test.each([
+    ['an oversized extraction', 'anydoc extracted 22MB of text, over the 15MB limit'],
+    ['a refused archive', 'report.docx: archive could not be read safely (bad central directory)'],
+  ])('surfaces %s', (_label, message) => {
+    expect(resolveUploadErrorMessage({ message })).toBe(message);
   });
 
   test('accepts a custom default message', () => {

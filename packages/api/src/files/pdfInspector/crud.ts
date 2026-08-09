@@ -2,9 +2,9 @@ import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
+import { MAX_PARSER_OUTPUT_BYTES, isParserOutputLimit } from '../documents/nativeProcess';
 import { extractDocumentTextWithPages, extractPageText } from '../documents/pdfjs';
 import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
-import { isParserOutputLimit } from '../documents/nativeProcess';
 import { ConcurrencyLimitError } from '~/utils/promise';
 
 type ParsedDocument = Pick<ParsedDocumentUploadResult, 'text' | 'pagesNeedingOcr'>;
@@ -122,9 +122,17 @@ export async function extractPdf(filePath: string, data: Buffer): Promise<Parsed
     );
   }
 
+  /* Recovery shares the document's budget rather than getting a fresh one: its text is
+   * joined with the native markdown below, so two independent caps would let the pair
+   * reach twice the limit before anything downstream could refuse it. */
+  const nativeBytes = pages.reduce(
+    (total, page) => total + Buffer.byteLength(page.markdown ?? '', 'utf8'),
+    0,
+  );
   const recovered = await extractPageText(
     data,
     recoverablePages.map((page) => page.page),
+    Math.max(0, MAX_PARSER_OUTPUT_BYTES - nativeBytes),
   );
   /* Probed pages were empirically shown to hold no text layer at all. Pages past the
    * cap were never read, so they are only missing from output that skips them. Kept

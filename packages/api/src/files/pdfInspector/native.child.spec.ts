@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { withParserAdmission } from '../documents/nativeProcess';
 import { extractTextIsolated } from './native';
 
 jest.mock('child_process', () => ({ spawn: jest.fn() }));
@@ -52,14 +53,20 @@ describe('pdfInspector child isolation', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
   });
 
+  /**
+   * Admission wraps the whole document parse, not the child spawn: a PDF is a child,
+   * then in-process pdfjs recovery, then possibly a second child, and a slot released
+   * at the first child's exit would leave the recovery running outside the cap. The
+   * burst is driven through that wrapper because it is what production holds.
+   */
   test('limits native parser children across a concurrent burst', async () => {
     const children = [new TestChild(), new TestChild(), new TestChild()];
     children.forEach((child) => mockSpawn.mockReturnValueOnce(child));
 
     const extractions = [
-      extractTextIsolated('/tmp/one.pdf'),
-      extractTextIsolated('/tmp/two.pdf'),
-      extractTextIsolated('/tmp/three.pdf'),
+      withParserAdmission(() => extractTextIsolated('/tmp/one.pdf')),
+      withParserAdmission(() => extractTextIsolated('/tmp/two.pdf')),
+      withParserAdmission(() => extractTextIsolated('/tmp/three.pdf')),
     ];
     await new Promise((resolve) => setImmediate(resolve));
 

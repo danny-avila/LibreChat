@@ -90,6 +90,11 @@ const delimitedTextTypes = /^(?:text|application)\/csv$/i;
 const isDelimitedTextType = (mimetype) => delimitedTextTypes.test(mimetype);
 
 const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';
+/* An archive the guard identified and then could not walk. Past detection there is no
+ * third answer, so forwarding it to a configured OCR provider would hand the same bytes
+ * the guard refused to someone else's parser. */
+const isArchiveRefusal = (err) =>
+  err?.code === 'ARCHIVE_INVALID' || err?.name === 'ArchiveValidationError';
 const isPdfPageLimitError = (err) =>
   err?.code === 'PDF_PAGE_LIMIT' || err?.name === 'PdfPageLimitError';
 /* Shed load, not an unreadable document. Surfaced to the caller so a retry is the
@@ -105,6 +110,7 @@ const isParserOutputLimitError = (err) =>
 
 const isDocumentParserRefusal = (err) =>
   isZipBombError(err) ||
+  isArchiveRefusal(err) ||
   isPdfPageLimitError(err) ||
   isParserBusyError(err) ||
   isParserOutputLimitError(err);

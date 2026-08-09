@@ -75,6 +75,19 @@ const nativeParserLimit = createConcurrencyLimiter(NATIVE_PARSER_CONCURRENCY, {
   label: 'document parsing',
 });
 
+/**
+ * Admits one whole document parse, not one child spawn.
+ *
+ * A PDF parse is a child, then up to 250 pdfjs page reads in this process, then possibly
+ * a second child. Holding the slot only for the children would release it while the
+ * in-process recovery is still decoding, letting fresh parses start and pile those
+ * recoveries up: the expensive half of the pipeline would run unbounded behind a cap
+ * that only ever counted the cheap half.
+ */
+export function withParserAdmission<T>(parse: () => Promise<T>): Promise<T> {
+  return nativeParserLimit(parse);
+}
+
 interface NativeParserResponse<T> {
   ok: boolean;
   result?: T;
@@ -91,10 +104,10 @@ interface NativeParserChildOptions {
 }
 
 /**
- * Run one synchronous native parser operation behind a shared child-process cap.
+ * Run one synchronous native parser operation in a child process.
  *
- * The timeout begins only after a concurrency slot is available. This prevents a
- * queued request from consuming most of its execution budget before it is spawned.
+ * Admission is the caller's, via {@link withParserAdmission} around the whole parse, so
+ * the timeout here measures only the work it bounds and never a wait for a slot.
  */
 export function runNativeParserChild<T>({
   childSource,
@@ -102,67 +115,64 @@ export function runNativeParserChild<T>({
   request,
   timeoutMs,
 }: NativeParserChildOptions): Promise<T> {
-  return nativeParserLimit(
-    () =>
-      new Promise<T>((resolve, reject) => {
-        const child = spawn(process.execPath, ['-e', childSource], {
-          stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-        });
+  return new Promise<T>((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', childSource], {
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+    });
 
-        let settled = false;
-        const finish = (error: Error | null, value?: T) => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          clearTimeout(timer);
-          if (!child.killed) {
-            child.kill('SIGKILL');
-          }
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve(value as T);
-        };
+    let settled = false;
+    const finish = (error: Error | null, value?: T) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      if (!child.killed) {
+        child.kill('SIGKILL');
+      }
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(value as T);
+    };
 
-        const timer = setTimeout(
-          () => finish(new Error(`${parserName} timed out after ${timeoutMs}ms`)),
-          timeoutMs,
-        );
-        timer.unref?.();
+    const timer = setTimeout(
+      () => finish(new Error(`${parserName} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+    timer.unref?.();
 
-        child.on('message', (message: NativeParserResponse<T>) => {
-          if (message.ok) {
-            finish(null, message.result);
-            return;
-          }
-          const failure = message.message ?? `${parserName} failed`;
-          finish(
-            message.code === 'PARSER_OUTPUT_LIMIT'
-              ? new ParserOutputLimitError(`${parserName} ${failure}`)
-              : new Error(failure),
-          );
-        });
-        child.on('error', (error: Error) => finish(error));
-        child.on('exit', (code: number | null, signal: NodeJS.Signals | null) =>
-          finish(
-            new Error(
-              signal
-                ? `${parserName} child exited from signal ${signal}`
-                : `${parserName} child exited with code ${code}`,
-            ),
-          ),
-        );
-        try {
-          child.send(request, (error) => {
-            if (error) {
-              finish(error);
-            }
-          });
-        } catch (error) {
-          finish(error instanceof Error ? error : new Error(String(error)));
+    child.on('message', (message: NativeParserResponse<T>) => {
+      if (message.ok) {
+        finish(null, message.result);
+        return;
+      }
+      const failure = message.message ?? `${parserName} failed`;
+      finish(
+        message.code === 'PARSER_OUTPUT_LIMIT'
+          ? new ParserOutputLimitError(`${parserName} ${failure}`)
+          : new Error(failure),
+      );
+    });
+    child.on('error', (error: Error) => finish(error));
+    child.on('exit', (code: number | null, signal: NodeJS.Signals | null) =>
+      finish(
+        new Error(
+          signal
+            ? `${parserName} child exited from signal ${signal}`
+            : `${parserName} child exited with code ${code}`,
+        ),
+      ),
+    );
+    try {
+      child.send(request, (error) => {
+        if (error) {
+          finish(error);
         }
-      }),
-  );
+      });
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
 }

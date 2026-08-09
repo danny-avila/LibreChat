@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import JSZip from 'jszip';
 import { megabyte } from 'librechat-data-provider';
 import {
+  ArchiveValidationError,
   assertSafeZipSize,
   assertSafeZipSizeIfArchive,
   isZipArchive,
@@ -273,5 +274,50 @@ describe('isZipArchive', () => {
 
     expect(isZipArchive(padded)).toBe(true);
     await expect(assertSafeZipSizeIfArchive(padded, { name: 'padded.docx' })).rejects.toThrow();
+  });
+});
+
+describe('assertSafeZipSizeIfArchive', () => {
+  test('passes a real office document through', async () => {
+    await expect(
+      assertSafeZipSizeIfArchive(readFixture('structured.docx'), { name: 'structured.docx' }),
+    ).resolves.toBeUndefined();
+  });
+
+  test('ignores a buffer the tail does not identify as an archive', async () => {
+    await expect(assertSafeZipSizeIfArchive(readFixture('sample.xls'))).resolves.toBeUndefined();
+  });
+
+  /**
+   * Past detection there are only two honest answers, validated or refused. An ordinary
+   * Error is neither: callers treat it as "this reader could not manage it" and hand the
+   * same bytes to the next one, which for a configured OCR provider means paying to send
+   * it exactly what the guard refused.
+   */
+  test('tags a malformed detected archive as a refusal, not a parse failure', async () => {
+    const bomb = await buildBombArchive([
+      { name: 'document.xml', decompressedBytes: 40 * megabyte },
+    ]);
+    const padded = Buffer.concat([Buffer.from('JUNKJUNK'), bomb]);
+
+    const failure = await assertSafeZipSizeIfArchive(padded, { name: 'padded.docx' }).catch(
+      (error: Error) => error,
+    );
+
+    expect(failure).toBeInstanceOf(ArchiveValidationError);
+    expect(failure).toMatchObject({ code: 'ARCHIVE_INVALID' });
+    expect((failure as Error).message).toMatch(/padded\.docx: archive could not be read safely/);
+    /** The underlying reason is kept, so logs still say what yauzl objected to. */
+    expect((failure as Error).message).toMatch(/central directory/i);
+  });
+
+  test('keeps a cap violation reported as a zip bomb', async () => {
+    const bomb = await buildBombArchive([
+      { name: 'document.xml', decompressedBytes: 40 * megabyte },
+    ]);
+
+    await expect(assertSafeZipSizeIfArchive(bomb, { name: 'bomb.docx' })).rejects.toBeInstanceOf(
+      ZipBombError,
+    );
   });
 });
