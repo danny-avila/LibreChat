@@ -1,9 +1,9 @@
+import type { InputItem } from '../types';
 import {
   convertInputToMessages,
   createAggregatorEventHandlers,
   createResponseAggregator,
 } from '../service';
-import type { InputItem } from '../types';
 
 describe('response usage aggregation', () => {
   it('accumulates usage across parent and subagent model calls', () => {
