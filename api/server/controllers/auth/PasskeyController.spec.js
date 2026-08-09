@@ -2,6 +2,7 @@ const mockLogger = { warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
 const mockGetPasskeyConfig = jest.fn();
 const mockIsPasskeyEnabled = jest.fn();
 const mockIsEnabled = jest.fn();
+const mockCheckEmailConfig = jest.fn();
 const mockCreatePasskeyRegistrationOptions = jest.fn();
 const mockVerifyPasskeyRegistration = jest.fn();
 const mockVerifyPasskeyAuthentication = jest.fn();
@@ -32,6 +33,7 @@ jest.mock('@librechat/api', () => ({
   /** Real helper: the step-up gate must run a genuine bcrypt comparison. */
   comparePassword: jest.requireActual('@librechat/api').comparePassword,
   isEnabled: (...args) => mockIsEnabled(...args),
+  checkEmailConfig: (...args) => mockCheckEmailConfig(...args),
   getPasskeyConfig: (...args) => mockGetPasskeyConfig(...args),
   isPasskeyEnabled: (...args) => mockIsPasskeyEnabled(...args),
   defaultPasskeyName: () => 'Passkey',
@@ -88,6 +90,8 @@ beforeEach(() => {
   mockCheckBan.mockImplementation(async () => {});
   mockGetUserById.mockResolvedValue({ _id: 'u1', password: PASSWORD_HASH });
   mockRecordPasskeyUse.mockResolvedValue(true);
+  /** Email configured by default, so the legacy grandfather path stays out of the way. */
+  mockCheckEmailConfig.mockReturnValue(true);
 });
 
 describe('passkey registration provider enforcement', () => {
@@ -291,6 +295,30 @@ describe('passkey authentication provider enforcement', () => {
     expect(next).toHaveBeenCalled();
     expect(req.user).toBe(user);
     expect(mockRecordPasskeyUse).toHaveBeenCalledWith('cred-1', 1);
+  });
+
+  /**
+   * Matches `localStrategy`: an account predating mandatory verification, on a
+   * deployment with no email configured, is verified as it signs in. Diverging here
+   * would let the password factor in and lock the passkey factor out.
+   */
+  it('grandfathers a legacy unverified account the way the password flow does', async () => {
+    mockIsEnabled.mockReturnValue(false);
+    mockCheckEmailConfig.mockReturnValue(false);
+    const user = {
+      _id: 'u1',
+      provider: 'local',
+      emailVerified: false,
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+    };
+    mockGetUserById.mockResolvedValue(user);
+    const res = buildRes();
+    const next = jest.fn();
+
+    await authenticatePasskey(loginReq(), res, next);
+
+    expect(mockUpdateUser).toHaveBeenCalledWith('u1', { emailVerified: true });
+    expect(next).toHaveBeenCalled();
   });
 
   it('rejects an assertion that loses the signature counter transition', async () => {
