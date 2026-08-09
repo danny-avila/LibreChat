@@ -2,6 +2,7 @@ import { GraphEvents } from '@librechat/agents';
 import { ContentTypes, StepTypes } from 'librechat-data-provider';
 import type { PostToolBatchHookInput } from '@librechat/agents';
 import type { LooseContentPart } from '~/agents/activityLabels/wiring';
+import type { GenerateActivityPhasePayload } from './runtime';
 import {
   ACTIVITY_PHASE_INSTRUCTION,
   createActivityPhaseWiring,
@@ -154,7 +155,11 @@ describe('createActivityPhaseWiring', () => {
      *  snapshot, so restoration must re-anchor by tool id rather than index. */
     parts.shift();
 
-    const generatePhase = jest.fn(async () => ({ label: 'Completed the resumed investigation' }));
+    let generatedActivities: GenerateActivityPhasePayload['activities'] | undefined;
+    const generatePhase = jest.fn(async (payload: GenerateActivityPhasePayload) => {
+      generatedActivities = payload.activities;
+      return { label: 'Completed the resumed investigation' };
+    });
     const resumed = createActivityPhaseWiring({
       initialSnapshot: first.snapshot(),
       getContentParts: () => parts,
@@ -184,8 +189,8 @@ describe('createActivityPhaseWiring', () => {
     expect(generatePhase).toHaveBeenCalledWith(
       expect.objectContaining({ activities: expect.arrayContaining([expect.any(Object)]) }),
     );
-    expect(generatePhase.mock.calls[0][0].activities).toHaveLength(2);
-    expect(parts.at(-1)).toMatchObject({ activity_start_index: 0 });
+    expect(generatedActivities).toHaveLength(2);
+    expect(parts[parts.length - 1]).toMatchObject({ activity_start_index: 0 });
   });
 
   it('bounds persisted evidence while preserving the full activity count', async () => {
@@ -291,7 +296,7 @@ describe('createActivityPhaseWiring', () => {
     expect(generatePhase).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'partial' }),
     );
-    expect(parts.at(-1)).toMatchObject({ status: 'partial' });
+    expect(parts[parts.length - 1]).toMatchObject({ status: 'partial' });
   });
 
   it('collects usage after a committed blank phase result', async () => {
@@ -326,7 +331,7 @@ describe('createActivityPhaseWiring', () => {
 
     await flushDetached();
     expect(collectUsage).toHaveBeenCalledWith(undefined);
-    expect(parts.at(-1)).toMatchObject({ activity_label: '', pending: false });
+    expect(parts[parts.length - 1]).toMatchObject({ activity_label: '', pending: false });
   });
 });
 

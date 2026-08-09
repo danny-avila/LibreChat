@@ -449,12 +449,12 @@ export default function useStepHandler({
       typeof contentPart.text === 'string'
     ) {
       const currentContent = updatedContent[index] as MessageDeltaUpdate;
+      const incomingContent = contentPart as MessageDeltaUpdate;
+      const phase = incomingContent.phase ?? currentContent.phase;
       const update: MessageDeltaUpdate = {
         type: ContentTypes.TEXT,
-        text: (currentContent.text || '') + contentPart.text,
-        ...((contentPart.phase ?? currentContent.phase) != null && {
-          phase: contentPart.phase ?? currentContent.phase,
-        }),
+        text: (currentContent.text || '') + incomingContent.text,
+        ...(phase != null && { phase }),
       };
 
       if ('tool_call_ids' in contentPart && contentPart.tool_call_ids != null) {
