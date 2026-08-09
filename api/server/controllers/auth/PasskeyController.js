@@ -480,7 +480,20 @@ const authenticatePasskey = async (req, res, next) => {
 
     req.user = user;
 
-    await checkBan(req, res);
+    /**
+     * `checkBan` defaults `next` to a no-op, so calling it bare would swallow an
+     * internal failure and leave `req.banned` unset: the request would go on to be
+     * issued tokens. Capture the error the middleware chain would have propagated
+     * and refuse instead, so a ban check that cannot complete never admits anyone.
+     */
+    let banError;
+    await checkBan(req, res, (err) => {
+      banError = err;
+    });
+    if (banError) {
+      logger.error('[authenticatePasskey] Ban check failed to complete', banError);
+      return res.headersSent ? undefined : failure();
+    }
     if (req.banned) {
       return;
     }
