@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Types } from 'mongoose';
-import { getTenantId } from '@librechat/data-schemas';
+import { logger, getTenantId } from '@librechat/data-schemas';
 import type {
   ISkill,
   ISkillFile,
@@ -541,6 +541,40 @@ describe('createGitHubSkillSyncRunner', () => {
         ],
       }),
     );
+  });
+
+  it('logs the validation warnings of a synced skill instead of swallowing them', async () => {
+    /* An unrecognized frontmatter key no longer fails the skill, so the log is
+       the only place a maintainer learns the upstream SKILL.md carries one:
+       a background run has no user-facing surface to report it on. */
+    const deps = createDeps({
+      createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+        return {
+          skill: makeSkill(input),
+          warnings: [
+            {
+              field: 'frontmatter.references',
+              code: 'UNKNOWN_KEY',
+              severity: 'warning',
+              message: '"references" is not a recognized frontmatter key',
+            },
+          ],
+        };
+      }),
+    });
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    try {
+      const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+      expect(result.status).toBe('completed');
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('frontmatter.references: "references" is not a recognized'),
+      );
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('research'));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('keeps the previously synced mirror of a skipped skill instead of reconciling it away', async () => {
