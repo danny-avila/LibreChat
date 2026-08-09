@@ -993,6 +993,30 @@ describe('DataTable', () => {
         expect((scrollArea as HTMLElement).scrollTop).toBe(0);
       });
 
+      it('retries when the fetch resolves with a failed result', async () => {
+        stubLayout({ clientHeight: 600, scrollHeight: 300 });
+        // React Query hands back a failed result instead of rejecting.
+        const fetchNextPage = jest
+          .fn()
+          .mockResolvedValue({ isError: true, error: new Error('offline') });
+
+        render(
+          <TestWrapper>
+            <DataTable
+              columns={createTestColumns()}
+              data={createTestData(3)}
+              hasNextPage={true}
+              isFetchingNextPage={false}
+              fetchNextPage={fetchNextPage}
+            />
+          </TestWrapper>,
+        );
+
+        await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(3));
+        await Promise.resolve();
+        expect(fetchNextPage).toHaveBeenCalledTimes(3);
+      });
+
       it('stops after a page that adds no rows', () => {
         stubLayout({ clientHeight: 600, scrollHeight: 300 });
         const fetchNextPage = jest.fn().mockResolvedValue(undefined);

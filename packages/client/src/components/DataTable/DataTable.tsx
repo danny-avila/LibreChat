@@ -25,6 +25,11 @@ import { Spinner } from '~/svgs';
 
 const MAX_AUTO_FILL_ATTEMPTS = 3;
 
+const isFailedFetchResult = (result: unknown): result is { isError: true; error?: unknown } =>
+  typeof result === 'object' &&
+  result !== null &&
+  (result as { isError?: unknown }).isError === true;
+
 function DataTable<TData extends Record<string, unknown>, TValue>({
   columns,
   data,
@@ -496,11 +501,22 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     }
 
     autoFillRowCountRef.current = data.length;
-    void fetchNextPage().catch((error) => {
+    const rearmAfterFailure = (error?: unknown) => {
       logger.error('DataTable: Unable to fetch the next page', error);
       autoFillRowCountRef.current = -1;
       setAutoFillAttempt((attempt) => attempt + 1);
-    });
+    };
+
+    /* React Query resolves `fetchNextPage` with a failed result rather than rejecting,
+       so a rejection handler alone would leave the guard armed on the unchanged row
+       count and strand the table on this page. */
+    void fetchNextPage()
+      .then((result) => {
+        if (isFailedFetchResult(result)) {
+          rearmAfterFailure(result.error);
+        }
+      })
+      .catch(rearmAfterFailure);
   }, [
     data.length,
     sortKey,
