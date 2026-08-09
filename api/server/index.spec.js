@@ -7,7 +7,6 @@ const mongoose = require('mongoose');
 jest.mock('~/server/services/Config', () => ({
   syncStaticTools: jest.fn().mockResolvedValue(undefined),
   mergeAppTools: jest.fn().mockResolvedValue(undefined),
-  syncStaticTools: jest.fn().mockResolvedValue(undefined),
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
   getAppConfig: jest.fn().mockResolvedValue({
     paths: {

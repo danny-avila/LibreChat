@@ -17,7 +17,6 @@ jest.mock('~/server/services/Config', () => ({
     imageOutputType: 'PNG',
   }),
   mergeAppTools: jest.fn().mockResolvedValue(undefined),
-  syncStaticTools: jest.fn().mockResolvedValue(undefined),
   setCachedTools: jest.fn(),
 }));
 
