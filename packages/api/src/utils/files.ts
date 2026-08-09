@@ -7,6 +7,10 @@ const USER_FACING_UPLOAD_ERRORS = [
   ['Invalid file format', 'Invalid file format'],
   ['exceeds token limit', 'File content exceeds token limit'],
   ['Unable to extract text from', 'Unable to extract text from file'],
+  /** Shed load and the parser's own refusals: each names something the caller can act on. */
+  ['requests are already waiting', 'Too many document parsing requests are already waiting'],
+  ['over the 15MB limit', 'Extracted document text exceeds the 15MB limit'],
+  ['archive could not be read safely', 'Archive could not be read safely'],
 ] as const;
 
 const ASCII_FILENAME_SAFE_PATTERN = /^[a-zA-Z0-9._-]$/;

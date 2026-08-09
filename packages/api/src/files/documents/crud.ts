@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import { megabyte } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
 import { parseWithPdfInspector } from '~/files/pdfInspector';
+import { withParserAdmission } from './nativeProcess';
 import { parseWithAnydoc } from '~/files/anydoc';
 
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
@@ -64,10 +65,14 @@ export async function parseDocument({
     GENERIC_BINARY_MIME_TYPES.has(declaredMimeType) && /\.pdf$/i.test(file.originalname);
   const mimetype = isGenericPdf ? 'application/pdf' : declaredMimeType;
   const parserFile = mimetype === file.mimetype ? file : { ...file, mimetype };
-  const result =
+  /* Admission covers the whole parse. A PDF is a child process, then in-process pdfjs
+   * recovery, then possibly a second child, and bounding only the children would leave
+   * the recovery to pile up behind a cap that never counted it. */
+  const result = await withParserAdmission(() =>
     mimetype === 'application/pdf'
-      ? await parseWithPdfInspector(parserFile)
-      : await parseWithAnydoc(parserFile);
+      ? parseWithPdfInspector(parserFile)
+      : parseWithAnydoc(parserFile),
+  );
 
   if (!result.text?.trim()) {
     throw new Error('No text found in document');

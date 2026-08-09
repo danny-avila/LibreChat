@@ -291,6 +291,39 @@ describe('pdf-inspector local parser', () => {
     }
   }, 30_000);
 
+  /**
+   * Recovered pages are joined with the native markdown, so giving recovery its own
+   * full-size budget would let the pair reach twice the limit before anything
+   * downstream could refuse the combined result.
+   */
+  test('charges page recovery against the budget the native pages already spent', async () => {
+    const pages = [
+      { page: 0, markdown: 'y'.repeat(14 * megabyte) },
+      ...Array.from({ length: 10 }, (_, i) => ({ page: i + 1, markdown: '' })),
+    ];
+    mockPdfjs.pageText = Object.fromEntries(
+      Array.from({ length: 11 }, (_, i) => [i + 1, 'x'.repeat(megabyte)]),
+    );
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => pages,
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+
+        await expect(uploadIsolated(context(pdfFile('sample.pdf')))).rejects.toMatchObject({
+          code: 'PARSER_OUTPUT_LIMIT',
+        });
+        /** 14MB of markdown leaves room for about one recovered page, not ten. */
+        expect(mockPdfjs.requestedPages.length).toBeLessThanOrEqual(2);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  }, 30_000);
+
   test('bounds the whole-document pdfjs walk by output size', async () => {
     /* Page count says nothing about how much text a page holds, and this walk runs in
      * the API process where the string is built before any caller can reject it. */

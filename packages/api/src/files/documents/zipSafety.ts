@@ -54,6 +54,22 @@ export class ZipBombError extends Error {
   }
 }
 
+/**
+ * A buffer the tail identified as an archive that the validator could not walk.
+ *
+ * Distinct from a plain parse error because of where it happens: past detection, the
+ * only honest answers are "validated" and "refused". Reporting it as an ordinary
+ * failure lets a caller's fallback chain hand the same bytes to another reader, which
+ * is the outcome the guard exists to prevent.
+ */
+export class ArchiveValidationError extends Error {
+  readonly code = 'ARCHIVE_INVALID';
+  constructor(message: string) {
+    super(message);
+    this.name = 'ArchiveValidationError';
+  }
+}
+
 export interface ZipSafetyOptions {
   /** Per-archive total decompressed-byte cap. */
   maxTotalBytes?: number;
@@ -285,5 +301,14 @@ export async function assertSafeZipSizeIfArchive(
   if (!isZipArchive(buffer)) {
     return;
   }
-  await assertSafeZipSize(buffer, options);
+  try {
+    await assertSafeZipSize(buffer, options);
+  } catch (error) {
+    if (error instanceof ZipBombError) {
+      throw error;
+    }
+    const label = options.name ?? 'archive';
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new ArchiveValidationError(`${label}: archive could not be read safely (${reason})`);
+  }
 }

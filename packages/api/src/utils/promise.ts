@@ -47,6 +47,8 @@ export async function withTimeout<T>(
  */
 export class ConcurrencyLimitError extends Error {
   readonly code = 'CONCURRENCY_LIMIT';
+  /** Shed load is temporary, so the upload route answers it as retryable, not as a fault. */
+  readonly userErrorStatusCode = 503;
   constructor(message: string) {
     super(message);
     this.name = 'ConcurrencyLimitError';
