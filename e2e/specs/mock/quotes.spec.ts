@@ -58,11 +58,13 @@ async function selectMessageText(page: Page, needle: string, emitMouseUp = true)
 }
 
 /**
- * Viewport coordinates of the first character of `needle` inside the most
+ * Viewport coordinates of the first word of `needle` inside the most
  * recent message containing it. Measuring the `needle` text node itself (not
  * the first text node in `.message-render`, which may be a `select-none`
  * screen-reader/model-label header) keeps the gesture on the actual reply word,
- * not metadata or whitespace.
+ * not metadata or whitespace. The first whole word (not a one-character
+ * caret-edge range) keeps the click inside a glyph across font and layout
+ * differences.
  */
 function measureNeedle(page: Page, needle: string) {
   return page.evaluate((text) => {
@@ -80,10 +82,14 @@ function measureNeedle(page: Page, needle: string) {
       throw new Error(`No text node contains: ${text}`);
     }
     const index = (node.nodeValue ?? '').indexOf(text);
+    const firstWord = text.match(/^\S+/)?.[0] ?? text;
     const range = document.createRange();
     range.setStart(node, index);
-    range.setEnd(node, index + 1);
-    const r = range.getBoundingClientRect();
+    range.setEnd(node, index + firstWord.length);
+    const r = [...range.getClientRects()].find((rect) => rect.width > 0 && rect.height > 0);
+    if (!r) {
+      throw new Error(`No visible text rect contains: ${text}`);
+    }
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }, needle);
 }

@@ -115,11 +115,17 @@ describe('useAttachExisting', () => {
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 
-  /* The shared record is the fresher of the two when both exist. */
-  it('prefers the shared file map over the row it was handed', () => {
-    mockFileMap = { f1: file({ filename: 'renamed.pdf' }) };
-    attach(file({ filename: 'stale.pdf' }));
-    expect(mockAddFile).toHaveBeenCalledWith(expect.objectContaining({ filename: 'renamed.pdf' }));
+  /* The recent-files request refreshes signed S3 URLs independently of the
+     full file-map query, so the visible row can be fresher than that cache. */
+  it('prefers the freshly signed row over a stale shared file-map record', () => {
+    mockFileMap = { f1: file({ filepath: 'https://s3.example/expired' }) };
+    attach(file({ filepath: 'https://s3.example/refreshed' }));
+    expect(mockAddFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filepath: 'https://s3.example/refreshed',
+        preview: 'https://s3.example/refreshed',
+      }),
+    );
   });
 
   describe('refusals', () => {
@@ -143,8 +149,7 @@ describe('useAttachExisting', () => {
     });
 
     it('refuses OpenAI-stored files outside the assistants endpoint', () => {
-      mockFileMap = { f1: file({ source: FileSources.openai }) };
-      attach();
+      attach(file({ source: FileSources.openai }));
       refused('com_ui_attach_error_openai');
     });
 
@@ -165,14 +170,12 @@ describe('useAttachExisting', () => {
     });
 
     it('refuses a file bigger than the endpoint takes', () => {
-      mockFileMap = { f1: file({ bytes: 6 * MB }) };
-      attach();
+      attach(file({ bytes: 6 * MB }));
       refused('com_ui_attach_error_size');
     });
 
     it('refuses a type the endpoint does not accept', () => {
       const zip = file({ type: 'application/zip' });
-      mockFileMap = { f1: zip };
       attach(zip);
       refused('com_ui_attach_error_type');
     });
@@ -187,7 +190,6 @@ describe('useAttachExisting', () => {
   /* Re-attaching a file that is already staged replaces it, so its own size
      must come out of the running total before the check. */
   it('counts a file it is replacing out of the total', () => {
-    mockFileMap = { f1: file({ bytes: 6 * MB }) };
     mockFileConfig = {
       endpoints: {
         [EModelEndpoint.openAI]: {
@@ -198,7 +200,7 @@ describe('useAttachExisting', () => {
       },
     };
     mockStaged = new Map([['f1', staged({ file_id: 'f1', size: 6 * MB })]]);
-    attach();
+    attach(file({ bytes: 6 * MB }));
     expect(mockAddFile).toHaveBeenCalled();
   });
 

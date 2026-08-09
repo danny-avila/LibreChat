@@ -86,6 +86,7 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
       <Ariakit.PopoverDisclosure
         ref={disclosureRef}
         data-testid="composer-thinking-button"
+        onClick={(event) => event.stopPropagation()}
         aria-label={localize('com_ui_composer_thinking_value', { 0: display })}
         render={
           <TooltipAnchor
@@ -148,6 +149,7 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
         portal
         gutter={8}
         unmountOnHide
+        onClick={(event) => event.stopPropagation()}
         /* Without this the trigger could not close the popup: mousedown on it
            counts as "outside", so Ariakit hid the popup and the button's own
            click immediately re-opened it. Excluding the trigger leaves a single

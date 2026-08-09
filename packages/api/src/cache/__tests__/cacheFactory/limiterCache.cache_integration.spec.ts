@@ -56,8 +56,18 @@ describe('limiterCache', () => {
     // Verify it returns a RedisStore instance
     expect(testStore).toBeDefined();
     expect(testStore!.constructor.name).toBe('RedisStore');
-    expect(testStore!.prefix).toBe('test-limiter:');
+    expect(testStore!.prefix).toBe('Cache-Integration-Test::test-limiter:');
     expect(typeof testStore!.sendCommand).toBe('function');
+
+    // RedisStore uses raw commands, so its own prefix must isolate Lua-script
+    // increments instead of relying on ioredis's keyPrefix option.
+    const limiterKey = 'rate-limit-user:123';
+    testStore!.init({ windowMs: 60_000 } as Parameters<RedisStore['init']>[0]);
+    await expect(testStore!.increment(limiterKey)).resolves.toMatchObject({ totalHits: 1 });
+    expect(await ioredisClient!.call('GET', `${testStore!.prefix}${limiterKey}`)).toBe('1');
+    expect(await ioredisClient!.call('GET', `test-limiter:${limiterKey}`)).toBeNull();
+    await testStore!.resetKey(limiterKey);
+    expect(await ioredisClient!.call('GET', `${testStore!.prefix}${limiterKey}`)).toBeNull();
 
     const testKey = 'user:123';
 

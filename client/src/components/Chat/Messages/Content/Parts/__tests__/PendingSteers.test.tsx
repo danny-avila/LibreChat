@@ -48,11 +48,12 @@ function renderPending(steers: PendingSteer[], messages?: TMessage[]) {
      which is route-scoped: the same providers the chat view supplies around
      this row in the app. */
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, staleTime: Infinity },
+      mutations: { retry: false },
+    },
   });
-  if (messages) {
-    queryClient.setQueryData([QueryKeys.messages, CONVO_ID], messages);
-  }
+  queryClient.setQueryData([QueryKeys.messages, CONVO_ID], messages ?? []);
   return render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>

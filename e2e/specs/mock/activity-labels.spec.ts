@@ -60,9 +60,7 @@ async function selectEphemeralMCP(page: Page) {
   await serverItem.click();
   await expect(serverItem).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
-  await expect(
-    page.getByTestId('composer-active-mcp').filter({ hasText: MCP_SERVER_TITLE }),
-  ).toBeVisible();
+  await expect(page.getByRole('listitem', { name: MCP_SERVER_TITLE, exact: true })).toBeVisible();
 }
 
 /** Run one labeled turn: two parallel tool calls => exactly one PostToolBatch. */
