@@ -758,9 +758,9 @@ describe('MCPManager', () => {
     it('propagates stable MCP-unavailable state before any manager effect', async () => {
       const manager = new MCPManager();
       const getConnection = jest.spyOn(manager, 'getConnection');
-      const unavailable = Object.assign(new Error('snapshot transactions are unavailable'), {
+      const unavailable = Object.assign(new Error('authority consistency is unavailable'), {
         code: 'MCP_UNAVAILABLE',
-        reason: 'snapshot_transactions_unavailable',
+        reason: 'authority_consistency_unavailable',
         status: 503,
       });
 
@@ -778,7 +778,7 @@ describe('MCPManager', () => {
         }),
       ).rejects.toMatchObject({
         code: 'MCP_UNAVAILABLE',
-        reason: 'snapshot_transactions_unavailable',
+        reason: 'authority_consistency_unavailable',
         status: 503,
       });
 

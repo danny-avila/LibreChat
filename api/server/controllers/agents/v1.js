@@ -75,24 +75,22 @@ const getSafeModelParameters = (modelParameters) => {
 const hasEditBit = (permission) => (permission & PermissionBits.EDIT) === PermissionBits.EDIT;
 
 const grantAgentOwnerPermissions = async (agent, userId) => {
-  await Promise.all([
-    grantPermission({
-      principalType: PrincipalType.USER,
-      principalId: userId,
-      resourceType: ResourceType.AGENT,
-      resourceId: agent._id,
-      accessRoleId: AccessRoleIds.AGENT_OWNER,
-      grantedBy: userId,
-    }),
-    grantPermission({
-      principalType: PrincipalType.USER,
-      principalId: userId,
-      resourceType: ResourceType.REMOTE_AGENT,
-      resourceId: agent._id,
-      accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
-      grantedBy: userId,
-    }),
-  ]);
+  await grantPermission({
+    principalType: PrincipalType.USER,
+    principalId: userId,
+    resourceType: ResourceType.AGENT,
+    resourceId: agent._id,
+    accessRoleId: AccessRoleIds.AGENT_OWNER,
+    grantedBy: userId,
+  });
+  await grantPermission({
+    principalType: PrincipalType.USER,
+    principalId: userId,
+    resourceType: ResourceType.REMOTE_AGENT,
+    resourceId: agent._id,
+    accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
+    grantedBy: userId,
+  });
 };
 
 const createAgentWithOwnerPermissions = async (agentData, userId, logPrefix) => {

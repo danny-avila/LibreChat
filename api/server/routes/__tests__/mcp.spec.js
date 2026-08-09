@@ -769,8 +769,8 @@ describe('MCP Routes', () => {
     it('returns stable 503 and performs zero catalog effects', async () => {
       mockMCPAvailability = {
         available: false,
-        reason: 'snapshot_transactions_unavailable',
-        message: 'snapshot transactions are unavailable',
+        reason: 'authority_consistency_unavailable',
+        message: 'authority consistency is unavailable',
         retryable: false,
       };
 
@@ -780,7 +780,7 @@ describe('MCP Routes', () => {
       expect(response.body).toEqual(
         expect.objectContaining({
           error: 'MCP_UNAVAILABLE',
-          reason: 'snapshot_transactions_unavailable',
+          reason: 'authority_consistency_unavailable',
         }),
       );
       expect(mockResolveCurrentMCPAuthoritySnapshot).not.toHaveBeenCalled();
@@ -791,8 +791,8 @@ describe('MCP Routes', () => {
     it('returns stable 503 before any OAuth flow side effect', async () => {
       mockMCPAvailability = {
         available: false,
-        reason: 'snapshot_transactions_unavailable',
-        message: 'snapshot transactions are unavailable',
+        reason: 'authority_consistency_unavailable',
+        message: 'authority consistency is unavailable',
         retryable: false,
       };
       const { MCPOAuthHandler } = require('@librechat/api');
@@ -803,7 +803,7 @@ describe('MCP Routes', () => {
       expect(response.body).toEqual(
         expect.objectContaining({
           error: 'MCP_UNAVAILABLE',
-          reason: 'snapshot_transactions_unavailable',
+          reason: 'authority_consistency_unavailable',
         }),
       );
       expect(require('~/config').getFlowStateManager).not.toHaveBeenCalled();
