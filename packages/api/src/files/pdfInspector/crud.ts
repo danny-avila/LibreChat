@@ -134,8 +134,8 @@ export async function extractPdf(filePath: string, data: Buffer): Promise<Parsed
    * with text and a flag is the one case nothing else can see: selectable text next to
    * a scan holding more of it. PDFs have no media manifest to consult, so this is the
    * signal that a configured OCR service may still have something to recover. */
-  const flagged = new Set(extraction.flaggedPages);
-  const mayEmbedMedia = pages.some((page) => !!page.markdown?.trim() && flagged.has(page.page + 1));
+  const scanned = new Set(extraction.scannedPages);
+  const mayEmbedMedia = pages.some((page) => !!page.markdown?.trim() && scanned.has(page.page + 1));
   const withMediaSignal = (parsed: ParsedDocument): ParsedDocument =>
     mayEmbedMedia ? { ...parsed, mayEmbedMedia } : parsed;
 

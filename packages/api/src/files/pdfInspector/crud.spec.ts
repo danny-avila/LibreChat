@@ -167,7 +167,7 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => ({ pages: [], flaggedPages: [] }),
+          extractPagesMarkdownIsolated: async () => ({ pages: [], scannedPages: [] }),
           extractTextIsolated: async () => '',
         }));
 
@@ -216,7 +216,7 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => ({ pages: flooded, flaggedPages: [] }),
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, scannedPages: [] }),
           extractTextIsolated: async () => '',
         }));
 
@@ -234,11 +234,42 @@ describe('pdf-inspector local parser', () => {
   });
 
   /**
-   * A page with a header above a scanned body comes back with text, so no probe calls it
-   * missing and PDFs have no media manifest to consult. The engine's own flag on a page
-   * it did extract is the only thing left that can say more may be sitting there.
+   * The case the whole signal exists for, against the real binding: one page holding
+   * selectable text and an image. The extraction reports the page as fine, so only the
+   * classifier's `scanned` reason can say a scan may hold more text than was read.
    */
-  test('reports a page the engine flagged despite extracting text from it', async () => {
+  test('reports a real page that carries both text and an image', async () => {
+    const mixed = path.join(__dirname, 'sample-text-and-image.pdf');
+    fs.writeFileSync(mixed, buildTextAndImagePdf());
+    try {
+      const result = await parseWithPdfInspector(
+        context({
+          originalname: 'invoice.pdf',
+          path: mixed,
+          mimetype: 'application/pdf',
+        } as Express.Multer.File),
+      );
+
+      expect(result.text).toContain('Invoice');
+      expect(result.pagesNeedingOcr).toBeUndefined();
+      expect(result.mayEmbedMedia).toBe(true);
+    } finally {
+      fs.unlinkSync(mixed);
+    }
+  });
+
+  test('reports nothing for a text-only document', async () => {
+    const result = await parseWithPdfInspector(context(pdfFile('sample.pdf')));
+
+    expect(result.mayEmbedMedia).toBeUndefined();
+  });
+
+  /**
+   * A page with a header above a scanned body comes back with text, so no probe calls it
+   * missing and PDFs have no media manifest to consult. The classifier's scan reason on
+   * a page that did extract is the only thing left that can say more may be sitting there.
+   */
+  test('reports a page the classifier attributes to a scan despite extracting text', async () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
@@ -247,7 +278,7 @@ describe('pdf-inspector local parser', () => {
               { page: 0, markdown: '# Invoice header' },
               { page: 1, markdown: '# Terms' },
             ],
-            flaggedPages: [1],
+            scannedPages: [1],
           }),
           extractTextIsolated: async () => '',
         }));
@@ -275,7 +306,7 @@ describe('pdf-inspector local parser', () => {
               { page: 0, markdown: '# Cover' },
               { page: 1, markdown: '' },
             ],
-            flaggedPages: [2],
+            scannedPages: [2],
           }),
           extractTextIsolated: async () => '',
         }));
@@ -359,7 +390,7 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => ({ pages: flooded, flaggedPages: [] }),
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, scannedPages: [] }),
           extractTextIsolated: async () => '',
         }));
 
@@ -393,7 +424,7 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => ({ pages: pages, flaggedPages: [] }),
+          extractPagesMarkdownIsolated: async () => ({ pages: pages, scannedPages: [] }),
           extractTextIsolated: async () => '',
         }));
 
@@ -452,7 +483,7 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => ({ pages: flooded, flaggedPages: [] }),
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, scannedPages: [] }),
           extractTextIsolated: async () => '',
         }));
 
@@ -485,7 +516,7 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => ({ pages: flooded, flaggedPages: [] }),
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, scannedPages: [] }),
           extractTextIsolated: async () => 'clean whole document text',
         }));
 
@@ -510,7 +541,7 @@ describe('pdf-inspector local parser', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         jest.doMock('./native', () => ({
-          extractPagesMarkdownIsolated: async () => ({ pages: flooded, flaggedPages: [] }),
+          extractPagesMarkdownIsolated: async () => ({ pages: flooded, scannedPages: [] }),
           extractTextIsolated: async () => 'clean whole document text',
         }));
 
@@ -540,7 +571,7 @@ describe('pdf-inspector local parser', () => {
               { page: 1, markdown: '' },
               { page: 2, markdown: '' },
             ],
-            flaggedPages: [],
+            scannedPages: [],
           }),
           extractTextIsolated: async () => 'clean whole document text',
         }));
@@ -571,7 +602,7 @@ describe('pdf-inspector local parser', () => {
               { page: 0, markdown: '# Structured page' },
               { page: 1, markdown: '' },
             ],
-            flaggedPages: [],
+            scannedPages: [],
           }),
           extractTextIsolated: async () => 'WHOLE_DOCUMENT_SENTINEL',
         }));
@@ -600,7 +631,7 @@ describe('pdf-inspector local parser', () => {
               { page: 1, markdown: '' },
               { page: 2, markdown: '' },
             ],
-            flaggedPages: [],
+            scannedPages: [],
           }),
           extractTextIsolated: async () => {
             throw new Error('plain-text extraction failed');
@@ -628,3 +659,34 @@ describe('pdf-inspector local parser', () => {
     expect(mockPdfjs.destroy).toHaveBeenCalled();
   });
 });
+
+/** One page holding selectable text and an embedded image, the mixed-content case. */
+function buildTextAndImagePdf(): Buffer {
+  const imageBytes = Buffer.alloc(8 * 8, 0x40).toString('latin1');
+  const content =
+    'BT /F1 18 Tf 72 700 Td (Invoice Header Total Due) Tj ET\n' +
+    'q 200 0 0 200 72 400 cm /Im1 Do Q\n';
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Count 1 /Kids [3 0 R] >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> /XObject << /Im1 5 0 R >> >> /Contents 6 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Type /XObject /Subtype /Image /Width 8 /Height 8 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length ${imageBytes.length} >>\nstream\n${imageBytes}\nendstream`,
+    `<< /Length ${content.length} >>\nstream\n${content}endstream`,
+  ];
+
+  let body = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((object, index) => {
+    offsets.push(body.length);
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) {
+    body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  }
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+
+  return Buffer.from(body, 'latin1');
+}
