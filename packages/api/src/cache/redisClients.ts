@@ -14,7 +14,7 @@ const ca = cacheConfig.REDIS_CA;
 
 let resolveKeyvRedisClientReady: (() => void) | undefined;
 let rejectKeyvRedisClientReady: ((reason?: unknown) => void) | undefined;
-const keyvRedisClientReady = cacheConfig.USE_REDIS
+const keyvRedisClientReady: Promise<void> | null = cacheConfig.USE_REDIS
   ? new Promise<void>((resolve, reject) => {
       resolveKeyvRedisClientReady = resolve;
       rejectKeyvRedisClientReady = reject;
