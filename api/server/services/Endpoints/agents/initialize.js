@@ -877,6 +877,12 @@ const initializeClient = async ({
     }
     const subagentIds = getExplicitSubagentIds(agent);
     if (subagentIds.length > 0 && depth >= MAX_SUBAGENT_DEPTH) {
+      logger.warn('[initializeClient] Subagent graph depth limit exceeded', {
+        agentId: agent.id,
+        primaryAgentId: primaryConfig.id,
+        depth,
+        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+      });
       throw new Error(
         `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${agent.id}.`,
       );

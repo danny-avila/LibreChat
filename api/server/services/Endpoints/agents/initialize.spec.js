@@ -1040,6 +1040,15 @@ describe('initializeClient — subagent loading', () => {
         endpointOption: makeEndpointOption(),
       }),
     ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[initializeClient] Subagent graph depth limit exceeded',
+      expect.objectContaining({
+        agentId: ids[MAX_SUBAGENT_DEPTH - 1],
+        primaryAgentId: PRIMARY_ID,
+        depth: MAX_SUBAGENT_DEPTH,
+        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+      }),
+    );
     expect(agentClientArgs).toBeUndefined();
   });
 
