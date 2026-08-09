@@ -26,6 +26,7 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   sanitizeFilename,
   parseText,
+  parseTextNative,
   processAudioFile,
   sendUploadSuccess,
   getStorageMetadata,
@@ -969,9 +970,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      * Stores a delimited file as the bytes it already was, when conversion cannot ship.
      * Reports whether it did, since the creators here answer the request rather than
      * return a value.
+     *
+     * Reads the file directly rather than through `parseText`: with a RAG service
+     * configured that would spend a health check and an extraction request before
+     * reaching the bytes, and could come back with transformed content, or with another
+     * extraction too large for the same limit that sent us here. The point of this path
+     * is the bytes themselves.
      */
     const storeDelimitedTextAsIs = async () => {
-      const { text, bytes } = await parseText({ req, file, file_id });
+      const { text, bytes } = await parseTextNative(file);
       if (!text?.trim()) {
         return false;
       }

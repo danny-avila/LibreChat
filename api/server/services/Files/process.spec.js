@@ -40,6 +40,7 @@ jest.mock('@librechat/api', () => {
   return {
     sanitizeFilename: jest.fn((n) => n),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
+    parseTextNative: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
     sendUploadSuccess: jest.fn((res, sseStream, message, result) => {
       if (sseStream) {
@@ -419,8 +420,8 @@ describe('processAgentFileUpload', () => {
             new Error('anydoc failed: extracted 22MB of text, over the 15MB limit'),
           ),
       });
-      const { parseText } = require('@librechat/api');
-      parseText.mockResolvedValueOnce({ text: 'a,b\n1,2\n', bytes: 8 });
+      const { parseText, parseTextNative } = require('@librechat/api');
+      parseTextNative.mockResolvedValueOnce({ text: 'a,b\n1,2\n', bytes: 8 });
       const req = makeReq({ mimetype: 'text/csv', originalname: 'rows.csv', ocrConfig: null });
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
@@ -428,6 +429,9 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile.mock.calls[0][0]).toEqual(
         expect.objectContaining({ text: 'a,b\n1,2\n', type: 'text/csv' }),
       );
+      /* Read straight from disk: routing through the RAG path would spend a health check
+       * and an extraction request to arrive back at the bytes, or return something else. */
+      expect(parseText).not.toHaveBeenCalled();
     });
 
     /**
@@ -446,13 +450,14 @@ describe('processAgentFileUpload', () => {
       getStrategyFunctions.mockReturnValue({
         handleFileUpload: jest.fn().mockRejectedValue(refusal),
       });
-      const { parseText } = require('@librechat/api');
-      parseText.mockResolvedValueOnce({ text: 'a,b\n1,2\n', bytes: 8 });
+      const { parseText, parseTextNative } = require('@librechat/api');
+      parseTextNative.mockResolvedValueOnce({ text: 'a,b\n1,2\n', bytes: 8 });
       const req = makeReq({ mimetype: 'text/csv', originalname: 'rows.csv', ocrConfig: null });
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
 
       expect(db.createFile.mock.calls[0][0].text).toBe('a,b\n1,2\n');
+      expect(parseText).not.toHaveBeenCalled();
     });
 
     test('surfaces a size refusal for a document with no readable raw form', async () => {
