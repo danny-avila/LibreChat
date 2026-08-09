@@ -2405,6 +2405,8 @@ describe('Share Methods', () => {
         messages: [message._id],
       });
 
+      const published = await SharedLink.findOne({ shareId }).lean();
+
       const result = await shareMethods.getSharedMessages(shareId);
       const file = (result?.messages[0].files?.[0] ?? {}) as Record<string, unknown>;
       expect(file.filepath).toBe(`/api/share/${shareId}/files/${docId}`);
@@ -2412,6 +2414,10 @@ describe('Share Methods', () => {
       // snapshot persisted by the lazy backfill
       const saved = await SharedLink.findOne({ shareId }).lean();
       expect(saved?.fileSnapshots).toHaveLength(1);
+      // The migration must not look like a republish: `updatedAt` is the revision a
+      // viewer's fork is validated against.
+      expect(saved?.updatedAt?.getTime()).toBe(published?.updatedAt?.getTime());
+      expect(result?.updatedAt?.getTime()).toBe(published?.updatedAt?.getTime());
     });
 
     test('does not snapshot transient text-source files', async () => {

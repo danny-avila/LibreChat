@@ -661,7 +661,14 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       let fileSnapshots = share.fileSnapshots;
       if (includeFiles && fileSnapshots === undefined && share._id) {
         fileSnapshots = await buildFileSnapshots(mongoose, messagesToShare, share.user);
-        await SharedLink.updateOne({ _id: share._id }, { $set: { fileSnapshots } });
+        // `timestamps: false`: this lazy migration is not a republish. `updatedAt` is the
+        // revision a viewer's fork request is validated against, so bumping it here would
+        // reject the Continue click that followed this very read.
+        await SharedLink.updateOne(
+          { _id: share._id },
+          { $set: { fileSnapshots } },
+          { timestamps: false },
+        );
       }
       const snapshotIds = includeFiles
         ? new Set<string>((fileSnapshots ?? []).map((snapshot) => snapshot.file_id))
@@ -1206,7 +1213,9 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       }
 
       const fileSnapshots = await buildFileSnapshots(mongoose, messages, share.user);
-      await SharedLink.updateOne({ shareId }, { $set: { fileSnapshots } });
+      // Backfilling a legacy share is a migration, not a publication: leave `updatedAt`
+      // alone so it keeps identifying the revision viewers are holding.
+      await SharedLink.updateOne({ shareId }, { $set: { fileSnapshots } }, { timestamps: false });
 
       if (fileId) {
         return fileSnapshots.find((snapshot) => snapshot.file_id === fileId) ?? null;

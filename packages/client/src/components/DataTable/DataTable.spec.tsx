@@ -582,6 +582,37 @@ describe('DataTable', () => {
       expect(mockOnSortingChange).toHaveBeenCalled();
     });
 
+    it('should toggle direction rather than clearing the sort', () => {
+      const mockOnSortingChange = jest.fn();
+      const columns: TableColumn<TestData, string>[] = [
+        {
+          accessorKey: 'name',
+          header: 'Name',
+          enableSorting: true,
+        },
+      ];
+
+      render(
+        <TestWrapper>
+          <DataTable
+            columns={columns}
+            data={createTestData(5)}
+            sorting={[{ id: 'name', desc: true }]}
+            onSortingChange={mockOnSortingChange}
+          />
+        </TestWrapper>,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Name' }));
+
+      const updater = mockOnSortingChange.mock.calls[0][0];
+      const next =
+        typeof updater === 'function'
+          ? updater([{ id: 'name', desc: true }] as SortingState)
+          : updater;
+      expect(next).toEqual([{ id: 'name', desc: false }]);
+    });
+
     it('should expose sorting through a native button', () => {
       const columns: TableColumn<TestData, string>[] = [
         {
@@ -904,6 +935,35 @@ describe('DataTable', () => {
         await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(3));
         await Promise.resolve();
         expect(fetchNextPage).toHaveBeenCalledTimes(3);
+      });
+
+      it('re-arms when the sort changes under a same-sized page', () => {
+        stubLayout({ clientHeight: 600, scrollHeight: 300 });
+        const fetchNextPage = jest.fn().mockResolvedValue(undefined);
+        const props = {
+          columns: createTestColumns(),
+          data: createTestData(3),
+          hasNextPage: true,
+          isFetchingNextPage: false,
+          fetchNextPage,
+          onSortingChange: jest.fn(),
+        };
+
+        const { rerender } = render(
+          <TestWrapper>
+            <DataTable {...props} sorting={[{ id: 'name', desc: false }]} />
+          </TestWrapper>,
+        );
+
+        expect(fetchNextPage).toHaveBeenCalledTimes(1);
+
+        rerender(
+          <TestWrapper>
+            <DataTable {...props} sorting={[{ id: 'name', desc: true }]} />
+          </TestWrapper>,
+        );
+
+        expect(fetchNextPage).toHaveBeenCalledTimes(2);
       });
 
       it('stops after a page that adds no rows', () => {

@@ -124,6 +124,10 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
   const debouncedTerm = useDebounced(searchTerm, debounceDelay);
   const finalSorting = sorting ?? internalSorting;
+  const sortKey = useMemo(
+    () => finalSorting.map((sort) => `${sort.id}:${sort.desc ? 'desc' : 'asc'}`).join(','),
+    [finalSorting],
+  );
 
   // Mobile column visibility: columns with desktopOnly meta are hidden via CSS on mobile
   // but remain in DOM for accessibility. CSS classes handle visual hiding.
@@ -258,6 +262,10 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     enableMultiRowSelection: true,
     manualSorting: true,
     manualFiltering: true,
+    /* Header clicks toggle direction instead of cycling through "unsorted". A
+       server-paginated table always sorts by something, so the removal step
+       reads as a dead click and leaves one direction unreachable. */
+    enableSortingRemoval: false,
     state: {
       sorting: finalSorting,
       columnVisibility,
@@ -349,9 +357,15 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
   useEffect(() => {
     setSearchTerm(filterValue);
+  }, [filterValue]);
+
+  /* A new search or sort replaces the rows with a fresh first page, which can
+     land on the same count the auto-fill guard already recorded. Clear it so a
+     still-unscrollable page keeps paging. */
+  useEffect(() => {
     autoFillRowCountRef.current = -1;
     setAutoFillAttempt(0);
-  }, [filterValue]);
+  }, [filterValue, sortKey]);
 
   useEffect(() => {
     if (debouncedTerm !== filterValue && onFilterChange) {
@@ -471,7 +485,15 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       autoFillRowCountRef.current = -1;
       setAutoFillAttempt((attempt) => attempt + 1);
     });
-  }, [data.length, autoFillAttempt, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading]);
+  }, [
+    data.length,
+    sortKey,
+    autoFillAttempt,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  ]);
 
   return (
     <div
