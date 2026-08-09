@@ -67,6 +67,14 @@ function PasskeyItem({
   const [isConfirming, setIsConfirming] = useState(false);
   const [password, setPassword] = useState('');
   const [hasPasswordError, setHasPasswordError] = useState(false);
+  /**
+   * The server waives the step-up only for accounts carrying no password hash, which the
+   * client cannot see: an account moved to an identity provider without its old hash
+   * cleared still has to prove it. Reveal the field when the server actually asks, so
+   * those credentials stay removable instead of failing on every attempt.
+   */
+  const [serverDemandedPassword, setServerDemandedPassword] = useState(false);
+  const showPasswordField = requiresPassword || serverDemandedPassword;
   const passwordRef = useRef<HTMLInputElement | null>(null);
   /**
    * Leaving a mode unmounts the control that opened it, so focus cannot be
@@ -142,7 +150,12 @@ function PasskeyItem({
       if (result === 'removed') {
         return;
       }
-      setHasPasswordError(result === 'incorrect-password');
+      if (result === 'incorrect-password') {
+        setHasPasswordError(true);
+        setServerDemandedPassword(true);
+      } else {
+        setHasPasswordError(false);
+      }
       /** Put focus back on the field the error describes so it can be corrected. */
       passwordRef.current?.focus();
     },
@@ -222,7 +235,7 @@ function PasskeyItem({
             {localize('com_ui_passkey_remove_confirm', { name: passkey.name })}
           </p>
 
-          {requiresPassword && (
+          {showPasswordField && (
             <>
               <Label htmlFor={passwordFieldId} className="text-xs font-medium text-text-primary">
                 {localize('com_ui_passkey_confirm_password')}
@@ -252,7 +265,7 @@ function PasskeyItem({
 
           <div className="flex justify-end gap-2">
             <Button
-              ref={requiresPassword ? undefined : focusButtonOnMount}
+              ref={showPasswordField ? undefined : focusButtonOnMount}
               type="button"
               variant="outline"
               size="sm"
@@ -264,7 +277,7 @@ function PasskeyItem({
               type="submit"
               variant="destructive"
               size="sm"
-              disabled={isBusy || (requiresPassword && password === '')}
+              disabled={isBusy || (showPasswordField && password === '')}
             >
               {isBusy ? <Spinner className="h-4 w-4" /> : localize('com_ui_delete')}
             </Button>

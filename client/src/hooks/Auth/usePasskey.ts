@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToastContext } from '@librechat/client';
 import { dataService } from 'librechat-data-provider';
 import type {
@@ -95,10 +96,17 @@ function resolvePostLoginHref(): string {
  * `signIn` runs the modal ceremony from an explicit user action. Separately, if
  * the browser supports conditional mediation, an autofill ceremony is started
  * once on mount so a passkey is offered inline from the login form's email
- * field. Both paths finish with a full navigation, matching the 2FA screen.
+ * field.
+ *
+ * A completed sign-in navigates the whole document so the app boots against the
+ * new session. The 2FA handoff must not: no refresh cookie exists yet, so a
+ * remount of `AuthContextProvider` would silent-refresh, find nothing and bounce
+ * back to login before the code can be entered. That step stays inside the
+ * router, matching the password flow in `AuthContext`.
  */
 export function usePasskeySignIn({ enabled }: { enabled: boolean }) {
   const localize = useLocalize();
+  const navigate = useNavigate();
   const { showToast } = useToastContext();
   const [isSigningIn, setIsSigningIn] = useState(false);
   /** Guards against a second autofill ceremony on React 18 double-invoked effects. */
@@ -110,14 +118,12 @@ export function usePasskeySignIn({ enabled }: { enabled: boolean }) {
     async (credential: TPasskeyAuthenticationResponse, sessionId: string) => {
       const result = await dataService.verifyPasskeyLogin({ credential, sessionId });
       if (result.twoFAPending === true && result.tempToken != null) {
-        window.location.href = withBasePath(
-          `/login/2fa?tempToken=${encodeURIComponent(result.tempToken)}`,
-        );
+        navigate(`/login/2fa?tempToken=${encodeURIComponent(result.tempToken)}`, { replace: true });
         return;
       }
       window.location.href = resolvePostLoginHref();
     },
-    [],
+    [navigate],
   );
 
   const signIn = useCallback(async () => {

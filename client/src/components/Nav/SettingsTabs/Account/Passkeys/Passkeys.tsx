@@ -137,8 +137,27 @@ function Passkeys() {
     [deleteMutate, localize, showToast],
   );
 
+  /**
+   * Escape, the backdrop and the close button all route through here. The step-up form
+   * holds the account password, so closing must drop it rather than leave it staged to
+   * reappear the next time the dialog opens.
+   */
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      setDialogOpen(open);
+      if (open) {
+        return;
+      }
+      setPassword('');
+      setIsConfirming(false);
+      setRenamingId(null);
+      clearPasswordError();
+    },
+    [clearPasswordError],
+  );
+
   return (
-    <OGDialog open={isDialogOpen} onOpenChange={setDialogOpen}>
+    <OGDialog open={isDialogOpen} onOpenChange={handleOpenChange}>
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <Label className="font-light">{localize('com_ui_passkeys')}</Label>
