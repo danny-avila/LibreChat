@@ -28,7 +28,7 @@ jobs:
   static-checks:
     name: Static checks
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -38,8 +38,9 @@ jobs:
 
       - name: Detect affected checks
         id: paths
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
+          predicate-quantifier: 'some-with-excludes'
           filters: |
             eslint:
               - 'api/**'
