@@ -427,6 +427,50 @@ describe('Multer Configuration', () => {
       expect(archive.mimetype).toBe('application/zip');
     });
 
+    /**
+     * An admin who names a type in `documentParser.supportedMimeTypes` has said the
+     * server parses it, and both the client's upload options and the routing act on
+     * that. Admission was the only place that did not, so a vendor alias was offered to
+     * the user and then refused at the door.
+     */
+    it('should admit a vendor MIME the document-parser allowlist names', () => {
+      const { mergeFileConfig } = require('librechat-data-provider');
+      const fileFilter = createFileFilter(
+        mergeFileConfig({
+          documentParser: { supportedMimeTypes: ['^application/vnd\\.vendor\\.word$'] },
+        }),
+      );
+      const documentFile = {
+        ...mockFile,
+        originalname: 'report.docx',
+        mimetype: 'application/vnd.vendor.word',
+      };
+      const cb = jest.fn();
+
+      fileFilter(mockReq, documentFile, cb);
+
+      expect(cb).toHaveBeenCalledWith(null, true);
+    });
+
+    it('should still reject a type no allowlist names', () => {
+      const { mergeFileConfig } = require('librechat-data-provider');
+      const fileFilter = createFileFilter(
+        mergeFileConfig({
+          documentParser: { supportedMimeTypes: ['^application/vnd\\.vendor\\.word$'] },
+        }),
+      );
+      const unknownFile = {
+        ...mockFile,
+        originalname: 'data.xyz',
+        mimetype: 'application/x-unknown',
+      };
+      const cb = jest.fn();
+
+      fileFilter(mockReq, unknownFile, cb);
+
+      expect(cb).toHaveBeenCalledWith(expect.any(Error), false);
+    });
+
 
     it('should use real mergeFileConfig function', async () => {
       const { mergeFileConfig, mbToBytes } = require('librechat-data-provider');

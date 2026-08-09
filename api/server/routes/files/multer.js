@@ -80,7 +80,16 @@ const createFileFilter = (customFileConfig) => {
       endpointType,
     });
 
-    if (!defaultFileConfig.checkType(mimeType, endpointFileConfig.supportedMimeTypes)) {
+    /* An admin who names a type in `documentParser.supportedMimeTypes` has said the
+     * server parses it, and both the client's upload options and the routing below act
+     * on that. Admission is the only place that did not, so a vendor MIME alias was
+     * offered to the user and then refused at the door. */
+    const parserTypes = customFileConfig?.documentParser?.supportedMimeTypes;
+    const admitted =
+      defaultFileConfig.checkType(mimeType, endpointFileConfig.supportedMimeTypes) ||
+      (parserTypes != null && defaultFileConfig.checkType(mimeType, parserTypes));
+
+    if (!admitted) {
       return cb(
         createCustomError(415, 'Unsupported file type: ' + (file.mimetype || mimeType)),
         false,

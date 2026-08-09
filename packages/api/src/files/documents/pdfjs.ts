@@ -56,6 +56,7 @@ export async function extractPageText(
   data: Buffer,
   pageIndexes: number[],
   maxBytes = MAX_PARSER_OUTPUT_BYTES,
+  signal?: AbortSignal,
 ): Promise<Map<number, string>> {
   const texts = new Map<number, string>();
   let textBytes = 0;
@@ -67,6 +68,9 @@ export async function extractPageText(
     const pdf: PDFDocumentProxy = await loadingTask.promise;
 
     for (const pageIndex of pageIndexes) {
+      /* Checked per page rather than once: this walk is the long half of the parse, and
+       * a caller that gave up should stop paying for it at the next page, not the last. */
+      throwIfAborted(signal);
       try {
         const page = await pdf.getPage(pageIndex + 1);
         const textContent = await page.getTextContent();
@@ -79,14 +83,14 @@ export async function extractPageText(
         }
         texts.set(pageIndex, pageText);
       } catch (error) {
-        if (isParserOutputLimit(error)) {
+        if (isParserOutputLimit(error) || isAbort(error)) {
           throw error;
         }
         /* An unreadable page is reported in pagesNeedingOcr rather than failing the document. */
       }
     }
   } catch (error) {
-    if (isParserOutputLimit(error)) {
+    if (isParserOutputLimit(error) || isAbort(error)) {
       throw error;
     }
     logger.warn('[pdfjs] unavailable for page recovery:', error);
@@ -113,6 +117,7 @@ export async function extractDocumentTextWithPages(
   data: Buffer,
   maxPages = Number.POSITIVE_INFINITY,
   maxBytes = MAX_PARSER_OUTPUT_BYTES,
+  signal?: AbortSignal,
 ): Promise<ExtractedDocumentText> {
   // Imported inline so that Jest can test other routes without failing due to loading ESM
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -128,6 +133,7 @@ export async function extractDocumentTextWithPages(
     let textBytes = 0;
     const pagesNeedingOcr: number[] = [];
     for (let i = 1; i <= pdf.numPages; i++) {
+      throwIfAborted(signal);
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
       const pageText = joinTextItems(textContent.items);
@@ -158,6 +164,25 @@ export async function extractDocumentText(
   maxPages = Number.POSITIVE_INFINITY,
 ): Promise<string> {
   return (await extractDocumentTextWithPages(data, maxPages)).text;
+}
+
+/** Tagged so the page loops can tell a cancellation apart from an unreadable page. */
+class PdfExtractionAbortError extends Error {
+  readonly code = 'PARSE_ABORTED';
+  constructor() {
+    super('PDF extraction was cancelled');
+    this.name = 'PdfExtractionAbortError';
+  }
+}
+
+function isAbort(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === 'PARSE_ABORTED';
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new PdfExtractionAbortError();
+  }
 }
 
 /** Marked content items carry no `str`, so only genuine text items contribute. */
