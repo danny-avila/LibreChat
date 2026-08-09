@@ -142,6 +142,12 @@ router.get('/config', async (req, res) => {
         ...appConfig.fileConfig?.ocr,
         enabled: appConfig.ocr != null,
       },
+      /* Whether a RAG text service exists to route documents to. The client mirrors the
+       * upload path's routing, and that decision reads the environment, not the config. */
+      text: {
+        ...appConfig.fileConfig?.text,
+        enabled: !!process.env.RAG_API_URL,
+      },
     });
   } catch (error) {
     logger.error('[/files] Error getting fileConfig', error);

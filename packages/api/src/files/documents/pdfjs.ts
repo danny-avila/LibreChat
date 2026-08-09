@@ -6,7 +6,11 @@ import type {
   TextMarkedContent,
   PDFDocumentLoadingTask,
 } from 'pdfjs-dist/types/src/display/api';
-import { MAX_PARSER_OUTPUT_BYTES, ParserOutputLimitError } from './nativeProcess';
+import {
+  MAX_PARSER_OUTPUT_BYTES,
+  ParserOutputLimitError,
+  isParserOutputLimit,
+} from './nativeProcess';
 
 export type ExtractedDocumentText = {
   text: string;
@@ -39,12 +43,20 @@ export class PdfPageLimitError extends Error {
  * Failure here must not fail the document: pages that cannot be recovered are
  * reported in `pagesNeedingOcr` instead, so an unavailable or broken pdfjs
  * degrades to a visible omission notice rather than a parse error.
+ *
+ * The aggregate is the exception. A page cap says nothing about how much text a page
+ * holds, and these strings are retained together in the API process, so passing the
+ * bound every other extraction path enforces would leave this one able to spend it.
+ * That refusal propagates: unlike an unreadable page, it is not something an omission
+ * notice can honestly describe.
  */
 export async function extractPageText(
   data: Buffer,
   pageIndexes: number[],
+  maxBytes = MAX_PARSER_OUTPUT_BYTES,
 ): Promise<Map<number, string>> {
   const texts = new Map<number, string>();
+  let textBytes = 0;
   let loadingTask: PDFDocumentLoadingTask | undefined;
   try {
     // Imported inline so that Jest can test other routes without failing due to loading ESM
@@ -56,12 +68,25 @@ export async function extractPageText(
       try {
         const page = await pdf.getPage(pageIndex + 1);
         const textContent = await page.getTextContent();
-        texts.set(pageIndex, joinTextItems(textContent.items));
-      } catch {
+        const pageText = joinTextItems(textContent.items);
+        textBytes += Buffer.byteLength(pageText, 'utf8');
+        if (textBytes > maxBytes) {
+          throw new ParserOutputLimitError(
+            `pdfjs recovered over the ${Math.round(maxBytes / megabyte)}MB limit by page ${pageIndex + 1}`,
+          );
+        }
+        texts.set(pageIndex, pageText);
+      } catch (error) {
+        if (isParserOutputLimit(error)) {
+          throw error;
+        }
         /* An unreadable page is reported in pagesNeedingOcr rather than failing the document. */
       }
     }
   } catch (error) {
+    if (isParserOutputLimit(error)) {
+      throw error;
+    }
     logger.warn('[pdfjs] unavailable for page recovery:', error);
   } finally {
     /* pdfjs holds the decoded document and its worker until the loading task is

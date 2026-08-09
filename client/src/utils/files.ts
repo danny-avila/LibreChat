@@ -433,8 +433,12 @@ const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean =
   return type.startsWith('image/');
 };
 
-/** Known document formats prefer the local parser allowlist. A deployment-supplied
- * OCR override may provide the route when local parsing deliberately excludes one. */
+/**
+ * Known document formats prefer the local parser allowlist. A deployment-supplied OCR
+ * or RAG text override may provide the route when local parsing deliberately excludes
+ * one, so all three are checked here for the same reason the upload path checks all
+ * three: a file the server would accept must not be refused before it is sent.
+ */
 const isContextType = (
   type: string,
   fileConfig: FileConfig | null,
@@ -449,7 +453,14 @@ const isContextType = (
       allowConfiguredOcr &&
       fileConfig?.ocr?.enabled === true &&
       checkType(type, fileConfig.ocr.supportedMimeTypes || []);
-    return localParserEnabled || configuredOcrEnabled;
+    /* Mirrors `shouldUseConfiguredText`: a RAG service exists, and the admin named this
+     * type in a text allowlist they actually narrowed. The permissive default means
+     * "everything", which is not a request to route documents away from the parser. */
+    const configuredTextEnabled =
+      fileConfig?.text?.enabled === true &&
+      !isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
+      checkType(type, fileConfig.text?.supportedMimeTypes || []);
+    return localParserEnabled || configuredOcrEnabled || configuredTextEnabled;
   }
 
   return checkType(type, [
