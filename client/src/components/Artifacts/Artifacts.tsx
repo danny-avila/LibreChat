@@ -5,15 +5,17 @@ import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
 import { Code, Maximize2, Minimize2, Play, RefreshCw, X } from 'lucide-react';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react';
+import type { ProcessedMermaidSvg } from '~/utils/diagram/export';
+import { TOOL_ARTIFACT_TYPES, isCodeOnlyArtifact, isPreviewOnlyArtifact } from '~/utils/artifacts';
 import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
-import { isCodeOnlyArtifact, isPreviewOnlyArtifact } from '~/utils/artifacts';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
+import { useFocusTrap, useLocalize } from '~/hooks';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
+import MermaidExport from './Mermaid/Export';
 import ArtifactTabs from './ArtifactTabs';
-import { useLocalize } from '~/hooks';
 import { cn, logger } from '~/utils';
 import store from '~/store';
 
@@ -25,9 +27,12 @@ export default function Artifacts() {
   const { isMutating } = useMutationState();
   const { isSharedConvo } = useShareContext();
   const isMobile = useMediaQuery('(max-width: 868px)');
+  const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const previewRef = useRef<SandpackPreviewRef>();
   const artifactContainerRef = useRef<HTMLDivElement>(null);
   const fullscreenPortalRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -37,6 +42,10 @@ export default function Artifacts() {
   const [isDragging, setIsDragging] = useState(false);
   const [blurAmount, setBlurAmount] = useState(0);
   const [isCopied, setIsCopied] = useState(false);
+  const [mermaidExportState, setMermaidExportState] = useState<{
+    artifactId: string;
+    data: ProcessedMermaidSvg | null;
+  } | null>(null);
   const dragStartY = useRef(0);
   const dragStartHeight = useRef(90);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
@@ -59,6 +68,10 @@ export default function Artifacts() {
   );
 
   useEffect(() => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && activeElement !== document.body) {
+      openerRef.current = activeElement;
+    }
     setIsMounted(true);
     const delay = isMobile ? 50 : 30;
     const timer = setTimeout(() => setIsVisible(true), delay);
@@ -105,6 +118,70 @@ export default function Artifacts() {
     orderedArtifactIds,
     setCurrentArtifactId,
   } = useArtifacts();
+
+  const restoreArtifactTriggerFocus = useCallback(() => {
+    const opener = openerRef.current;
+    const artifactId = currentArtifact?.id;
+    requestAnimationFrame(() => {
+      if (opener?.isConnected) {
+        opener.focus();
+        return;
+      }
+
+      const trigger = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-artifact-trigger]'),
+      ).find((element) => element.dataset.artifactTrigger === artifactId);
+      trigger?.focus();
+    });
+  }, [currentArtifact?.id]);
+
+  const handleMermaidExportReady = useCallback(
+    (data: ProcessedMermaidSvg | null) => {
+      if (currentArtifact?.id == null) {
+        return;
+      }
+      setMermaidExportState({ artifactId: currentArtifact.id, data });
+    },
+    [currentArtifact?.id],
+  );
+
+  const mermaidExportData =
+    mermaidExportState != null && mermaidExportState.artifactId === currentArtifact?.id
+      ? mermaidExportState.data
+      : null;
+  const isMermaidArtifact = currentArtifact?.type === TOOL_ARTIFACT_TYPES.MERMAID;
+
+  const closeArtifacts = useCallback(() => {
+    if (isMobile) {
+      setIsClosing(true);
+      setIsVisible(false);
+      const finishClose = () => {
+        resetCurrentArtifactId();
+        setArtifactsVisible(false);
+        setIsClosing(false);
+        setHeight(90);
+        restoreArtifactTriggerFocus();
+      };
+      if (prefersReducedMotion) {
+        finishClose();
+      } else {
+        setTimeout(finishClose, 250);
+      }
+      return;
+    }
+
+    resetCurrentArtifactId();
+    setArtifactsVisible(false);
+    restoreArtifactTriggerFocus();
+  }, [
+    isMobile,
+    prefersReducedMotion,
+    resetCurrentArtifactId,
+    restoreArtifactTriggerFocus,
+    setArtifactsVisible,
+  ]);
+
+  useFocusTrap(panelRef, isMobile && isVisible && !isClosing, closeArtifacts);
 
   /* Office artifacts have no source view, and source-code artifacts have
    * no useful rendered preview. Filter each down to the only meaningful
@@ -186,6 +263,24 @@ export default function Artifacts() {
     }
   };
 
+  const handleDragKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    let nextHeight = height;
+    if (e.key === 'ArrowUp') {
+      nextHeight = Math.min(100, height + 10);
+    } else if (e.key === 'ArrowDown') {
+      nextHeight = Math.max(10, height - 10);
+    } else if (e.key === 'Home') {
+      nextHeight = 10;
+    } else if (e.key === 'End') {
+      nextHeight = 100;
+    } else {
+      return;
+    }
+
+    e.preventDefault();
+    setHeight(nextHeight);
+  };
+
   if (!currentArtifact || !isMounted) {
     return null;
   }
@@ -216,21 +311,6 @@ export default function Artifacts() {
     }
   };
 
-  const closeArtifacts = () => {
-    if (isMobile) {
-      setIsClosing(true);
-      setIsVisible(false);
-      setTimeout(() => {
-        setArtifactsVisible(false);
-        setIsClosing(false);
-        setHeight(90);
-      }, 250);
-    } else {
-      resetCurrentArtifactId();
-      setArtifactsVisible(false);
-    }
-  };
-
   const backdropOpacity =
     blurAmount > 0
       ? (Math.min(blurAmount, MAX_BLUR_AMOUNT) / MAX_BLUR_AMOUNT) * MAX_BACKDROP_OPACITY
@@ -243,7 +323,7 @@ export default function Artifacts() {
         {isMobile && (
           <div
             className={cn(
-              'fixed inset-0 z-[99] bg-black will-change-[opacity,backdrop-filter]',
+              'fixed inset-0 z-[99] bg-black will-change-[opacity,backdrop-filter] motion-reduce:transition-none',
               isVisible && !isClosing
                 ? 'transition-all duration-300'
                 : 'pointer-events-none opacity-0 backdrop-blur-none transition-opacity duration-150',
@@ -259,8 +339,13 @@ export default function Artifacts() {
           />
         )}
         <div
+          ref={panelRef}
+          id="artifact-viewer"
+          role={isMobile ? 'dialog' : 'region'}
+          aria-modal={isMobile || undefined}
+          aria-label={currentArtifact.title ?? localize('com_ui_artifacts')}
           className={cn(
-            'flex w-full flex-col bg-surface-primary text-xl text-text-primary',
+            'flex w-full flex-col bg-surface-primary text-xl text-text-primary motion-reduce:transition-none',
             isMobile
               ? cn(
                   'fixed z-[100] shadow-[0_-10px_60px_rgba(0,0,0,0.35)]',
@@ -283,27 +368,35 @@ export default function Artifacts() {
         >
           {isMobile && !isFullscreen && (
             <div
-              className="flex flex-shrink-0 cursor-grab items-center justify-center bg-surface-primary-alt pb-1.5 pt-2.5 active:cursor-grabbing"
+              role="separator"
+              tabIndex={0}
+              aria-label={localize('com_ui_resize_artifact_panel')}
+              aria-orientation="horizontal"
+              aria-valuemin={10}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(height)}
+              className="flex flex-shrink-0 cursor-grab items-center justify-center bg-surface-primary-alt pb-1.5 pt-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-heavy active:cursor-grabbing"
               onPointerDown={handleDragStart}
               onPointerMove={handleDragMove}
               onPointerUp={handleDragEnd}
               onPointerCancel={handleDragEnd}
+              onKeyDown={handleDragKeyDown}
             >
-              <div className="h-1 w-12 rounded-full bg-border-xheavy opacity-40 transition-all duration-200 active:opacity-60" />
+              <div className="h-1 w-12 rounded-full bg-border-xheavy opacity-40 transition-all duration-200 active:opacity-60 motion-reduce:transition-none" />
             </div>
           )}
 
           {/* Header */}
           <div
             className={cn(
-              'flex h-[52px] flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt p-2 transition-all duration-300',
+              'flex h-[52px] flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt p-2 transition-all duration-300 motion-reduce:transition-none',
               isMobile ? 'justify-center' : 'overflow-hidden',
             )}
           >
             {!isMobile && (
               <div
                 className={cn(
-                  'flex items-center transition-all duration-500',
+                  'flex items-center transition-all duration-500 motion-reduce:transition-none',
                   isVisible && !isClosing
                     ? 'translate-x-0 opacity-100'
                     : '-translate-x-2 opacity-0',
@@ -321,12 +414,15 @@ export default function Artifacts() {
 
             <div
               className={cn(
-                'flex items-center gap-2 transition-all duration-500',
+                'flex items-center gap-2 transition-all duration-500 motion-reduce:transition-none',
                 isMobile ? 'min-w-max' : '',
                 isVisible && !isClosing ? 'translate-x-0 opacity-100' : 'translate-x-2 opacity-0',
               )}
             >
-              {displayedTab === 'preview' && (
+              {/* Refresh drives the Sandpack preview client; the Mermaid
+                  renderer has no such client and offers its own retry, so the
+                  action would spin over an unchanged diagram. */}
+              {displayedTab === 'preview' && !isMermaidArtifact && (
                 <Button
                   size="icon"
                   variant="ghost"
@@ -340,7 +436,7 @@ export default function Artifacts() {
                   ) : (
                     <RefreshCw
                       size={16}
-                      className="transition-transform duration-200"
+                      className="transition-transform duration-200 motion-reduce:transition-none"
                       aria-hidden="true"
                     />
                   )}
@@ -385,6 +481,13 @@ export default function Artifacts() {
                 portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
                 onClick={handleCopyArtifact}
               />
+              {isMermaidArtifact && displayedTab === 'preview' && (
+                <MermaidExport
+                  artifact={currentArtifact}
+                  exportData={mermaidExportData}
+                  portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
+                />
+              )}
               <DownloadArtifact artifact={currentArtifact} />
               <Button
                 size="icon"
@@ -404,6 +507,7 @@ export default function Artifacts() {
                 artifact={currentArtifact}
                 previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
                 isSharedConvo={isSharedConvo}
+                onMermaidExportReady={handleMermaidExportReady}
               />
             </div>
 
