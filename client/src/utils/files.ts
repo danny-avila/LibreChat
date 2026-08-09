@@ -314,6 +314,7 @@ export const validateFiles = ({
   toolResource,
   fileConfig,
   skipSizeValidation = false,
+  ocrEnabled = true,
 }: {
   fileList: File[];
   files: Map<string, ExtendedFile>;
@@ -322,6 +323,8 @@ export const validateFiles = ({
   toolResource?: string;
   fileConfig: FileConfig | null;
   skipSizeValidation?: boolean;
+  /** Whether the agent may use OCR, which decides if a configured OCR route counts. */
+  ocrEnabled?: boolean;
 }) => {
   const { fileLimit, supportedMimeTypes, disabled } = endpointFileConfig;
   /** Block all uploads if the endpoint is explicitly disabled */
@@ -359,7 +362,7 @@ export const validateFiles = ({
 
     const isSupported =
       toolResource === EToolResources.context
-        ? isContextType(originalFile.type, fileConfig)
+        ? isContextType(originalFile.type, fileConfig, ocrEnabled)
         : checkType(originalFile.type, supportedMimeTypes);
 
     if (!isSupported) {
