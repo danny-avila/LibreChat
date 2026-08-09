@@ -50,7 +50,14 @@ describe('shared component color guardrail', () => {
 });
 
 describe('dark dialog surface', () => {
-  it('matches the rendered dialog background from before the semantic token migration', () => {
+  it('matches the legacy rendered background in CSS and the runtime theme', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+
+    expect(appStyles).toMatch(/--gray-875:\s*18 18 18;/);
+    expect(appStyles).toMatch(/--surface-dialog:\s*var\(--gray-875\);/);
     expect(darkTheme['rgb-surface-dialog']).toBe('18 18 18');
   });
 });

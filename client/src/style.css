@@ -22,6 +22,7 @@
   --gray-700: 47 47 47;
   --gray-800: 33 33 33;
   --gray-850: 23 23 23;
+  --gray-875: 18 18 18;
   --gray-900: 13 13 13;
   --green-50: 236 253 245;
   --green-100: 209 250 229;
@@ -263,7 +264,7 @@ html {
   --surface-secondary-alt: var(--gray-800);
   --surface-tertiary: var(--gray-700);
   --surface-tertiary-alt: var(--gray-700);
-  --surface-dialog: var(--gray-850);
+  --surface-dialog: var(--gray-875);
   --surface-overlay: 0 0 0;
   --surface-submit: var(--green-700);
   --surface-submit-hover: var(--green-800);
