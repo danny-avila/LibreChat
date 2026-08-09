@@ -110,6 +110,72 @@ describe('parseWithAnydoc', () => {
     });
   });
 
+  /**
+   * A declared type that names a format anydoc supports describes the bytes; an
+   * extension only describes what the file was called. Reading the extension first meant
+   * DOCX bytes renamed `report.csv` went to the CSV reader, and the same bytes named
+   * `.pdf` were refused as another engine's problem.
+   */
+  describe('format resolution', () => {
+    test('reads a supported MIME type over a conflicting extension', async () => {
+      const toMarkdownBytes = jest.fn().mockResolvedValue('# Quarterly Report');
+
+      await withAnydocSpy(toMarkdownBytes, async (run) => {
+        await run({
+          originalname: 'report.csv',
+          path: path.join(fixtures, 'structured.docx'),
+          mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+
+        expect(toMarkdownBytes).toHaveBeenCalledWith(expect.any(String), 'docx', undefined);
+      });
+    });
+
+    test('accepts a supported MIME type on a file named like a PDF', async () => {
+      const toMarkdownBytes = jest.fn().mockResolvedValue('# Quarterly Report');
+
+      await withAnydocSpy(toMarkdownBytes, async (run) => {
+        const result = await run({
+          originalname: 'report.pdf',
+          path: path.join(fixtures, 'structured.docx'),
+          mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+
+        expect(result.text).toBe('# Quarterly Report');
+        expect(toMarkdownBytes).toHaveBeenCalledWith(expect.any(String), 'docx', undefined);
+      });
+    });
+
+    test('still refuses a PDF that nothing else identifies as an anydoc format', async () => {
+      const toMarkdownBytes = jest.fn();
+
+      await withAnydocSpy(toMarkdownBytes, async (run) => {
+        await expect(
+          run({
+            originalname: 'paper.pdf',
+            path: path.join(fixtures, 'sample.pdf'),
+            mimetype: 'application/octet-stream',
+          }),
+        ).rejects.toThrow(/handled by pdf-inspector/);
+        expect(toMarkdownBytes).not.toHaveBeenCalled();
+      });
+    });
+
+    test('falls back to the extension when the type says nothing useful', async () => {
+      const toMarkdownBytes = jest.fn().mockResolvedValue('# Quarterly Report');
+
+      await withAnydocSpy(toMarkdownBytes, async (run) => {
+        await run({
+          originalname: 'structured.docx',
+          path: path.join(fixtures, 'structured.docx'),
+          mimetype: 'application/octet-stream',
+        });
+
+        expect(toMarkdownBytes).toHaveBeenCalledWith(expect.any(String), 'docx', undefined);
+      });
+    });
+  });
+
   describe('zip decompression guard', () => {
     test('rejects a zip bomb without handing it to anydoc', async () => {
       /* anydoc applies no decompression cap of its own: measured on this fixture it

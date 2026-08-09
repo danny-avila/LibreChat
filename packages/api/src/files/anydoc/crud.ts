@@ -45,6 +45,36 @@ const foldedMimeTypes: ReadonlySet<string> = new Set<string>(
   [...anydocMimeTypes].map((type) => type.toLowerCase()),
 );
 
+const ANYDOC_MIME_FORMATS: Readonly<Record<string, string>> = {
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-word.document.macroenabled.12': 'docx',
+  'application/vnd.oasis.opendocument.text': 'odt',
+  'application/rtf': 'rtf',
+  'text/rtf': 'rtf',
+  'application/epub+zip': 'epub',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/vnd.openxmlformats-officedocument.presentationml.slideshow': 'pptx',
+  'application/vnd.ms-powerpoint.presentation.macroenabled.12': 'pptx',
+  'application/vnd.ms-powerpoint.slideshow.macroenabled.12': 'pptx',
+  'application/vnd.oasis.opendocument.presentation': 'odp',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-excel': 'xlsx',
+  'application/msexcel': 'xlsx',
+  'application/x-msexcel': 'xlsx',
+  'application/x-ms-excel': 'xlsx',
+  'application/x-excel': 'xlsx',
+  'application/x-dos_ms_excel': 'xlsx',
+  'application/xls': 'xlsx',
+  'application/x-xls': 'xlsx',
+  'application/vnd.ms-excel.sheet.macroenabled.12': 'xlsx',
+  'application/vnd.ms-excel.sheet.binary.macroenabled.12': 'xlsx',
+  'application/vnd.oasis.opendocument.spreadsheet': 'ods',
+  'text/csv': 'csv',
+  'application/csv': 'csv',
+};
+
 const ANYDOC_EXTENSION_FORMATS: Readonly<Record<string, string>> = {
   doc: 'doc',
   docx: 'docx',
@@ -85,6 +115,20 @@ function formatFromPath(name: string): string | null {
 }
 
 /**
+ * The format anydoc should read the file as.
+ *
+ * A declared type that names a format it supports is the stronger signal, because it
+ * describes the bytes; an extension only describes what the file was called. Reading
+ * the extension first meant DOCX bytes renamed `report.csv` were handed to the CSV
+ * reader, and the same bytes named `.pdf` were refused as belonging to another engine.
+ * The extension still decides when the type says nothing useful, which is the ordinary
+ * case of a browser sending `application/octet-stream`.
+ */
+function resolveFormat(name: string, type: string): string | null {
+  return ANYDOC_MIME_FORMATS[type] ?? formatFromPath(name);
+}
+
+/**
  * Refuses types anydoc cannot read, before the file is loaded from disk.
  *
  * Only the combination of an undeclared MIME type and an extension anydoc does not
@@ -97,7 +141,12 @@ function formatFromPath(name: string): string | null {
  * @throws {Error} when neither the MIME type nor the extension names a supported format.
  */
 function assertSupportedType(name: string, type: string, extensionFormat: string | null): void {
-  if (type === 'application/pdf' || extensionFormat === 'pdf') {
+  /* A supported type outranks the name here too: only a file nothing else identifies as
+   * an anydoc format is refused for looking like a PDF. */
+  if (
+    type === 'application/pdf' ||
+    (ANYDOC_MIME_FORMATS[type] == null && extensionFormat === 'pdf')
+  ) {
     throw new Error(`PDF files are handled by pdf-inspector, not anydoc ("${name}").`);
   }
   if (foldedMimeTypes.has(type)) {
@@ -141,8 +190,8 @@ export async function parseWithAnydoc(
   const name = file.originalname ?? file.path;
   const type = normalizeType(file.mimetype);
 
-  const format = formatFromPath(name);
-  assertSupportedType(name, type, format);
+  const format = resolveFormat(name, type);
+  assertSupportedType(name, type, formatFromPath(name));
 
   const buffer = await fs.promises.readFile(file.path);
   await assertSafeZipSizeIfArchive(buffer, { name });

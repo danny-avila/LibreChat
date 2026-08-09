@@ -5,6 +5,7 @@ const multer = require('multer');
 const { sanitizeFilename, createCustomError } = require('@librechat/api');
 const {
   mergeFileConfig,
+  EToolResources,
   resolveEffectiveMimeType,
   getEndpointFileConfig,
   fileConfig: defaultFileConfig,
@@ -81,13 +82,17 @@ const createFileFilter = (customFileConfig) => {
     });
 
     /* An admin who names a type in `documentParser.supportedMimeTypes` has said the
-     * server parses it, and both the client's upload options and the routing below act
-     * on that. Admission is the only place that did not, so a vendor MIME alias was
-     * offered to the user and then refused at the door. */
+     * server parses it, and both the client's upload options and the routing act on
+     * that. Scoped to context uploads, which is the only path that reaches the parser:
+     * widening every route would let a caller past an endpoint's MIME restriction and
+     * hand the file to a provider that was never meant to see it. */
     const parserTypes = customFileConfig?.documentParser?.supportedMimeTypes;
+    const isContextUpload = req.body.tool_resource === EToolResources.context;
     const admitted =
       defaultFileConfig.checkType(mimeType, endpointFileConfig.supportedMimeTypes) ||
-      (parserTypes != null && defaultFileConfig.checkType(mimeType, parserTypes));
+      (isContextUpload &&
+        parserTypes != null &&
+        defaultFileConfig.checkType(mimeType, parserTypes));
 
     if (!admitted) {
       return cb(
