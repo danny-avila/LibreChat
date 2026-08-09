@@ -1,5 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
+import { QueryKeys } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
@@ -57,8 +58,11 @@ function renderPart(
    *  silently test the signed-in state instead of the anonymous share route. */
   user: { name: string; username: string } | null = SEEDED_USER,
 ) {
+  const queryClient = new QueryClient();
+  queryClient.setQueryData([QueryKeys.endpoints], {});
+
   return render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <RecoilRoot initializeState={({ set }) => user && set(store.user, user as never)}>
         <SteerPart steer="steered words" steerId="s1" createdAt={1} files={files} />
       </RecoilRoot>

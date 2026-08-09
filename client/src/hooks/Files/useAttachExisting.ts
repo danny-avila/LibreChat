@@ -11,7 +11,6 @@ import {
 import type { TFile, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useGetFileConfig } from '~/data-provider';
-import { useFileMapContext } from '~/Providers';
 import useLocalize from '~/hooks/useLocalize';
 import useUpdateFiles from './useUpdateFiles';
 
@@ -35,7 +34,6 @@ export interface AttachExistingContext {
  */
 export default function useAttachExisting(context: AttachExistingContext): (file: TFile) => void {
   const localize = useLocalize();
-  const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
   const { files, setFiles, conversation } = context;
   const { data: fileConfig = null } = useGetFileConfig({
@@ -45,13 +43,11 @@ export default function useAttachExisting(context: AttachExistingContext): (file
 
   return useCallback(
     (file: TFile) => {
-      /* The palette's recent page is a small, separate request that regularly
-         resolves before the unbounded file-map query behind it, so a row can be
-         on screen while `fileMap` is still empty. Prefer the shared record when
-         it is there and fall back to the row's own, which came from the same
-         endpoint; `source` is what tells a real server file apart from one we
-         know nothing about. */
-      const fileData = fileMap?.[file.file_id] ?? file;
+      /* The selected row is authoritative. Recent files use a separate query
+         that can refresh an S3 signed URL after the full file-map cache was
+         populated, so consulting that cache here can replace a valid row with
+         an expired path. */
+      const fileData = file;
 
       if (!fileData.source || !conversation?.endpoint) {
         showToast({ message: localize('com_ui_attach_error'), status: 'error' });
@@ -137,6 +133,6 @@ export default function useAttachExisting(context: AttachExistingContext): (file
         metadata: fileData.metadata,
       });
     },
-    [addFile, files, fileMap, conversation, localize, showToast, fileConfig],
+    [addFile, files, conversation, localize, showToast, fileConfig],
   );
 }

@@ -154,10 +154,15 @@ export const limiterCache = (prefix: string): RedisStore | undefined => {
   if (!cacheConfig.USE_REDIS) {
     return undefined;
   }
-  // Note: The `prefix` is applied by RedisStore internally to its key operations.
-  // The global REDIS_KEY_PREFIX is applied by ioredisClient's keyPrefix setting.
-  // Combined key format: `{REDIS_KEY_PREFIX}::{prefix}{identifier}`
+  // RedisStore sends raw commands through `call()`, which bypasses ioredis's
+  // configured keyPrefix, including for the Lua scripts used by increment().
+  // Include the deployment prefix here so rate limits stay inside the same
+  // keyspace as every other cache.
   prefix = prefix.endsWith(':') ? prefix : `${prefix}:`;
+  const deploymentPrefix = cacheConfig.REDIS_KEY_PREFIX
+    ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}`
+    : '';
+  const limiterPrefix = `${deploymentPrefix}${prefix}`;
 
   try {
     const sendCommand: SendCommandFn = (async (...args: string[]) => {
@@ -174,7 +179,7 @@ export const limiterCache = (prefix: string): RedisStore | undefined => {
         throw err;
       }
     }) as SendCommandFn;
-    return new RedisStore({ sendCommand, prefix });
+    return new RedisStore({ sendCommand, prefix: limiterPrefix });
   } catch (err) {
     logger.error(`Failed to create Redis rate limiter for prefix ${prefix}:`, err);
     return undefined;
