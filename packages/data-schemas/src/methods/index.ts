@@ -73,9 +73,11 @@ import { createPromptMethods, type PromptMethods, type PromptDeps } from './prom
 import {
   createSkillMethods,
   partitionIssues,
+  SKILL_BOOLEAN_FLAGS,
   validateSkillName,
   validateSkillBody,
   validateRelativePath,
+  pickValidFrontmatter,
   validateSkillFrontmatter,
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
@@ -90,6 +92,8 @@ import {
   type ListSkillsByAccessResult,
   type UpdateSkillResult,
   type ValidationIssue,
+  type SkillBooleanFlag,
+  type SkillBooleanColumn,
 } from './skill';
 import { createSkillSyncMethods, type SkillSyncMethods } from './skillSync';
 import type {
@@ -131,10 +135,12 @@ export {
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
 export { permissionBitSupersets };
 export {
+  SKILL_BOOLEAN_FLAGS,
   partitionIssues,
   validateSkillName,
   validateSkillBody,
   validateRelativePath,
+  pickValidFrontmatter,
   validateSkillFrontmatter,
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
@@ -366,6 +372,8 @@ export type {
   ListSkillsByAccessResult,
   UpdateSkillResult,
   ValidationIssue,
+  SkillBooleanFlag,
+  SkillBooleanColumn,
   SkillSyncStatusInput,
   SkillSyncCredentialSummary,
   UpsertSkillSyncCredentialInput,
