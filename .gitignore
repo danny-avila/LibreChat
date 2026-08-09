@@ -184,3 +184,7 @@ CLAUDE.md
 .gsd
 codedb.snapshot
 scripts/activity-labels/results/
+
+# BAML: the generated SDK source (baml_ts/baml_sdk) IS committed so consumers
+# don't need the toolchain; its tsc output is not.
+baml_ts/dist/

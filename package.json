@@ -216,5 +216,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "@boundaryml/baml-bridge": "^0.15.0"
   }
 }
