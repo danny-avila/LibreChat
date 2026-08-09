@@ -655,6 +655,32 @@ describe('Conversation Utilities', () => {
         expect(data!.pages[0].conversations[0].model).toBe('gpt-4');
       });
 
+      it('updateConvoInAllQueries keeps the derived isShared flag when a caller replaces the convo', () => {
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, isShared: true }));
+        // Rename/pin swap in a server payload that has no `isShared` field.
+        updateConvoInAllQueries(
+          queryClient,
+          'a',
+          () =>
+            ({
+              conversationId: 'a',
+              title: 'Renamed',
+            }) as TConversation,
+        );
+
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages[0].conversations[0].title).toBe('Renamed');
+        expect(data!.pages[0].conversations[0].isShared).toBe(true);
+      });
+
+      it('updateConvoInAllQueries lets an explicit isShared value win over the cached one', () => {
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, isShared: true }));
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({ ...c, isShared: false }));
+
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages[0].conversations[0].isShared).toBe(false);
+      });
+
       it('updateConvoInAllQueries with moveToTop moves convo to front and updates updatedAt', () => {
         // Add more conversations so 'a' is not at position 0
         const convoC = { conversationId: 'c', updatedAt: '2024-01-03T12:00:00Z' } as TConversation;

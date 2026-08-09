@@ -57,3 +57,12 @@ export { default as ControlCombobox } from './ControlCombobox';
 export { default as OGDialogTemplate } from './OGDialogTemplate';
 export { default as InputWithDropdown } from './InputWithDropDown';
 export { default as AnimatedSearchInput } from './AnimatedSearchInput';
+export { default as VirtualizedDataTable } from './DataTable/DataTable';
+export type {
+  TableColumn,
+  TableColumnDef,
+  DataTableConfig,
+  ProcessedDataRow,
+  DataTableSearchProps,
+  DataTableProps as VirtualizedDataTableProps,
+} from './DataTable/DataTable.types';

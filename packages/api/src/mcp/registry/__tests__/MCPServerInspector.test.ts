@@ -410,6 +410,9 @@ describe('MCPServerInspector', () => {
 
       // Mock server with no tools
       mockConnection.fetchTools = jest.fn().mockResolvedValue([]);
+      mockConnection.fetchOrderedToolsSnapshot = jest
+        .fn()
+        .mockResolvedValue({ tools: [], complete: true });
 
       const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
 
@@ -495,27 +498,30 @@ describe('MCPServerInspector', () => {
 
   describe('getToolFunctions()', () => {
     it('should convert MCP tools to LibreChat tool functions format', async () => {
-      mockConnection.fetchTools = jest.fn().mockResolvedValue([
-        {
-          name: 'file_read',
-          description: 'Read a file',
-          inputSchema: {
-            type: 'object',
-            properties: { path: { type: 'string' } },
-          },
-        },
-        {
-          name: 'file_write',
-          description: 'Write a file',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              path: { type: 'string' },
-              content: { type: 'string' },
+      mockConnection.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
+        complete: true,
+        tools: [
+          {
+            name: 'file_read',
+            description: 'Read a file',
+            inputSchema: {
+              type: 'object',
+              properties: { path: { type: 'string' } },
             },
           },
-        },
-      ]);
+          {
+            name: 'file_write',
+            description: 'Write a file',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                path: { type: 'string' },
+                content: { type: 'string' },
+              },
+            },
+          },
+        ],
+      });
 
       const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
 
@@ -549,7 +555,9 @@ describe('MCPServerInspector', () => {
     });
 
     it('should handle empty tools list', async () => {
-      mockConnection.fetchTools = jest.fn().mockResolvedValue([]);
+      mockConnection.fetchOrderedToolsSnapshot = jest
+        .fn()
+        .mockResolvedValue({ tools: [], complete: true });
 
       const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
 
@@ -557,19 +565,33 @@ describe('MCPServerInspector', () => {
     });
 
     it('builds keys with the normalized server name (model-facing contract)', async () => {
-      mockConnection.fetchTools = jest.fn().mockResolvedValue([
-        {
-          name: 'file_read',
-          description: 'Read a file',
-          inputSchema: { type: 'object', properties: {} },
-        },
-      ]);
+      mockConnection.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
+        complete: true,
+        tools: [
+          {
+            name: 'file_read',
+            description: 'Read a file',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ],
+      });
 
       const result = await MCPServerInspector.getToolFunctions('My Server', mockConnection);
 
       const key = 'file_read_mcp_My_Server';
       expect(Object.keys(result)).toEqual([key]);
       expect(result[key]['function'].name).toBe(key);
+    });
+
+    it('rejects an incomplete snapshot before it can replace cached tools', async () => {
+      mockConnection.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
+        tools: [{ name: 'partial', inputSchema: { type: 'object' } }],
+        complete: false,
+      });
+
+      await expect(
+        MCPServerInspector.getToolFunctions('my_server', mockConnection),
+      ).rejects.toThrow('Incomplete tools/list snapshot for MCP server my_server');
     });
   });
 });
