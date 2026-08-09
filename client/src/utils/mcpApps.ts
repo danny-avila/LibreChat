@@ -111,16 +111,58 @@ export function decodeBase64Utf8(b64: string): string {
   return new TextDecoder('utf-8').decode(bytes);
 }
 
-const APP_LINK_HOST_PATTERN =
-  /^(?:(?:https?|wss?):\/\/)?(\*\.)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::\d{1,5})?$/;
+/**
+ * Upper bound for an app-requested iframe height. The size comes from the sandboxed app, so an
+ * unclamped value would let it impose multi-million-pixel layout on the host conversation.
+ */
+export const MAX_APP_VIEW_HEIGHT = 4000;
 
-function hostMatchesDeclaredDomain(hostname: string, entry: string): boolean {
+/** Clamps an app-reported height, returning undefined when it is not a usable positive number. */
+export function clampAppViewHeight(height?: number): number | undefined {
+  if (typeof height !== 'number' || !Number.isFinite(height) || height <= 0) {
+    return undefined;
+  }
+  return Math.min(Math.round(height), MAX_APP_VIEW_HEIGHT);
+}
+
+const APP_LINK_HOST_PATTERN =
+  /^(?:(https?|wss?):\/\/)?(\*\.)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::(\d{1,5}))?$/;
+
+const DEFAULT_PORTS: Record<string, string> = { 'http:': '80', 'https:': '443' };
+
+function effectivePort(url: URL): string {
+  return url.port || DEFAULT_PORTS[url.protocol] || '';
+}
+
+/**
+ * Matches a URL against one declared CSP source. A declared scheme or port narrows the match the
+ * same way it would inside the sandbox CSP, so `https://api.example.com:443` must not authorize
+ * `http://api.example.com:8080`. An entry with no scheme/port matches either scheme and any port,
+ * mirroring CSP host-source semantics.
+ */
+function urlMatchesDeclaredSource(url: URL, entry: string): boolean {
   const match = APP_LINK_HOST_PATTERN.exec(entry.trim());
   if (!match) {
     return false;
   }
-  const [, wildcard, declaredHost] = match;
-  const host = hostname.toLowerCase();
+  const [, declaredScheme, wildcard, declaredHost, declaredPort] = match;
+
+  if (declaredScheme) {
+    const scheme = declaredScheme.toLowerCase();
+    // ws(s) declarations are for sockets, not navigable links.
+    if (scheme !== 'http' && scheme !== 'https') {
+      return false;
+    }
+    if (url.protocol !== `${scheme}:`) {
+      return false;
+    }
+  }
+
+  if (declaredPort && effectivePort(url) !== declaredPort) {
+    return false;
+  }
+
+  const host = url.hostname.toLowerCase();
   const target = declaredHost.toLowerCase();
   return wildcard ? host === target || host.endsWith(`.${target}`) : host === target;
 }
@@ -147,7 +189,7 @@ export function isAllowedAppLink(url: string, csp: UIResource['csp']): boolean {
     ...(csp?.frameDomains ?? []),
   ];
   return declared.some(
-    (entry) => typeof entry === 'string' && hostMatchesDeclaredDomain(parsed.hostname, entry),
+    (entry) => typeof entry === 'string' && urlMatchesDeclaredSource(parsed, entry),
   );
 }
 
@@ -179,9 +221,23 @@ export async function fetchMCPResourceHtml(
   permissions?: ResourceUiMeta['permissions'];
 }> {
   const result = (await readMCPResource(serverName, uri)) as {
-    contents?: Array<{ text?: string; blob?: string; _meta?: { ui?: ResourceUiMeta } }>;
+    contents?: Array<{
+      uri?: string;
+      mimeType?: string;
+      text?: string;
+      blob?: string;
+      _meta?: { ui?: ResourceUiMeta };
+    }>;
   };
-  const item = result?.contents?.[0];
+  const contents = result?.contents ?? [];
+  // A server may return auxiliary items alongside the app document, in any order, so pick the entry
+  // for the requested URI (preferring the MCP App profile) rather than trusting response order;
+  // otherwise the wrong document renders under the wrong CSP and permissions.
+  const item =
+    contents.find((c) => c.uri === uri && (c.mimeType ?? '').includes('profile=mcp-app')) ??
+    contents.find((c) => c.uri === uri) ??
+    contents.find((c) => (c.mimeType ?? '').includes('profile=mcp-app')) ??
+    contents[0];
   const uiMeta = item?._meta?.ui;
   let html = item?.text ?? '';
   if (!html && typeof item?.blob === 'string' && item.blob) {

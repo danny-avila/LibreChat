@@ -16,6 +16,7 @@ import {
   buildAppToolResult,
   isMcpAppResource,
   getInlineResourceHtml,
+  clampAppViewHeight,
 } from '~/utils/mcpApps';
 import { useMCPIconMap, useAppBridge, useMCPServerNames } from '~/hooks/MCP';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
@@ -64,8 +65,9 @@ const MCPAppView = React.memo(function MCPAppView({
   const toolResult = useMemo(() => buildAppToolResult(app), [app]);
 
   const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
-    if (params.height && params.height > 0) {
-      setHeight(params.height);
+    const clamped = clampAppViewHeight(params.height);
+    if (clamped != null) {
+      setHeight(clamped);
       setLoaded(true);
     }
   }, []);

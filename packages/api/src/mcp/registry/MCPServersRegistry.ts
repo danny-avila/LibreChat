@@ -252,7 +252,7 @@ export class MCPServersRegistry {
     let allowedDomains = this.allowedDomains;
     let allowedAddresses = this.allowedAddresses;
     // Apps are tenant/principal-scoped, so honor a per-request override of `mcpSettings.apps`,
-    // falling back to the YAML base when the resolver omits it, is absent, or fails.
+    // falling back to the YAML base when the resolver omits it or is absent.
     let appsEnabled = this.getAppsEnabled();
     if (this.allowlistResolver) {
       try {
@@ -264,9 +264,13 @@ export class MCPServersRegistry {
         }
       } catch (error) {
         logger.warn(
-          '[MCPServersRegistry] Allowlist resolver failed; falling back to YAML base allowlists',
+          '[MCPServersRegistry] Allowlist resolver failed; falling back to YAML base allowlists and disabling apps',
           error,
         );
+        // Allowlists fall back to the operator baseline, but apps fail CLOSED: a scope that disabled
+        // them would otherwise get inline app HTML persisted and rendered, and the gated endpoints
+        // cannot retract HTML that already reached the transcript.
+        appsEnabled = false;
       }
     }
     return {

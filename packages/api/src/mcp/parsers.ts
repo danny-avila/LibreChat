@@ -173,6 +173,34 @@ export function isRenderableUiResource(item: t.ToolContentPart): boolean {
   return mimeType.includes('html');
 }
 
+/**
+ * The shared tool result is attached to each app resource for the App Bridge. Embedded resource
+ * bodies are dropped from that copy: otherwise N app resources each persist every resource's HTML or
+ * blob, so a result with several large views grows quadratically and can exceed the document size
+ * limit. Every app still carries its own `text`/`blob`, and the URI/mime of siblings is preserved.
+ */
+function stripEmbeddedResourceBodies(
+  content?: t.ToolContentPart[],
+): t.ToolContentPart[] | undefined {
+  if (!Array.isArray(content)) {
+    return content;
+  }
+  let stripped = false;
+  const next = content.map((item) => {
+    if (item.type !== 'resource') {
+      return item;
+    }
+    const resource = item.resource as Record<string, unknown>;
+    if (typeof resource.text !== 'string' && typeof resource.blob !== 'string') {
+      return item;
+    }
+    stripped = true;
+    const { text: _text, blob: _blob, ...rest } = resource;
+    return { ...item, resource: rest } as t.ToolContentPart;
+  });
+  return stripped ? next : content;
+}
+
 export function resultHasRenderableUiResource(result: t.MCPToolCallResponse): boolean {
   const content = result?.content;
   if (!Array.isArray(content)) {
@@ -217,6 +245,8 @@ export function formatToolContent(
   const imageUrls: t.FormattedContent[] = [];
   const uiResources: UIResource[] = [];
   let currentTextBlock = '';
+  /** Built once and shared by every app resource rather than per-resource. */
+  const sharedResultContent = stripEmbeddedResourceBodies(result?.content);
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
@@ -279,7 +309,7 @@ export function formatToolContent(
                 serverName: metadata?.serverName,
                 toolName: metadata?.toolName,
                 structuredContent: result?.structuredContent,
-                content: result?.content,
+                content: sharedResultContent,
                 isError: result?.isError,
                 resultMeta: (result as { _meta?: Record<string, unknown> })?._meta,
                 toolArgs: metadata?.toolArgs,

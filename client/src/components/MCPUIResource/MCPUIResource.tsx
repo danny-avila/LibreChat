@@ -4,6 +4,7 @@ import {
   buildAppToolResult,
   isMcpAppResource,
   getInlineResourceHtml,
+  clampAppViewHeight,
 } from '~/utils/mcpApps';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
 import { useOptionalMessagesConversation, useIsMessagesViewReadOnly } from '~/Providers';
@@ -55,8 +56,9 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   );
 
   const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
-    if (params.height && params.height > 0) {
-      setHeight(params.height);
+    const clamped = clampAppViewHeight(params.height);
+    if (clamped != null) {
+      setHeight(clamped);
       setLoaded(true);
     }
   }, []);

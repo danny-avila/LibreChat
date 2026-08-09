@@ -7,6 +7,7 @@ import {
   buildAppToolResult,
   isMcpAppResource,
   getInlineResourceHtml,
+  clampAppViewHeight,
 } from '~/utils/mcpApps';
 import { useIsMessagesViewReadOnly } from '~/Providers';
 import { useAppBridge } from '~/hooks/MCP';
@@ -46,9 +47,10 @@ function MCPAppCard({
 
   const handleSizeChanged = React.useCallback(
     (params: { height?: number; width?: number }) => {
-      if (params.height && params.height > 0) {
+      const clamped = clampAppViewHeight(params.height);
+      if (clamped != null) {
         setLoaded(true);
-        onHeightChange?.(params.height);
+        onHeightChange?.(clamped);
       }
     },
     [onHeightChange],

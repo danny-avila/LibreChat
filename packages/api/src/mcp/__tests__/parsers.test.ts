@@ -329,7 +329,12 @@ describe('formatToolContent', () => {
         toolName: 'do_thing',
         structuredContent: { count: 3 },
       });
-      expect(uiResourceArtifact?.content).toEqual(result.content);
+      // The shared result snapshot keeps the resource reference but not its body (see the
+      // no-duplication test below); the app's own html stays on the resource itself.
+      expect(uiResourceArtifact?.content).toEqual([
+        { type: 'resource', resource: { uri: 'ui://app', mimeType: 'text/html;profile=mcp-app' } },
+      ]);
+      expect(uiResourceArtifact?.text).toBe('<p>hi</p>');
     });
 
     it('renders a plain text/html ui:// resource statically without app-bridge metadata', () => {
@@ -400,6 +405,42 @@ describe('formatToolContent', () => {
 
       const uris = (artifacts?.ui_resources?.data ?? []).map((r) => r.uri);
       expect(uris).toEqual(['ui://app']);
+    });
+
+    it('does not copy every embedded app body into each app resource result', () => {
+      const bigA = 'A'.repeat(5000);
+      const bigB = 'B'.repeat(5000);
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://a', mimeType: 'text/html;profile=mcp-app', text: bigA },
+          },
+          {
+            type: 'resource',
+            resource: { uri: 'ui://b', mimeType: 'text/html;profile=mcp-app', text: bigB },
+          },
+        ],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+      });
+
+      const data = artifacts?.ui_resources?.data ?? [];
+      expect(data).toHaveLength(2);
+      // Each app keeps its OWN html...
+      expect(data[0].text).toBe(bigA);
+      expect(data[1].text).toBe(bigB);
+      // ...but the shared result snapshot carries no resource bodies, so N apps do not persist N
+      // copies of every app's html.
+      for (const resource of data) {
+        const snapshot = JSON.stringify(resource.content ?? []);
+        expect(snapshot).not.toContain(bigA);
+        expect(snapshot).not.toContain(bigB);
+        expect(snapshot).toContain('ui://a');
+      }
     });
 
     it('suppresses embedded ui:// resources when apps are disabled for the scope', () => {
