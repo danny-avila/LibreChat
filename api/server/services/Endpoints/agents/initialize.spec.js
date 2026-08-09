@@ -829,10 +829,7 @@ describe('initializeClient — subagent loading', () => {
       signal: new AbortController().signal,
       endpointOption: makeEndpointOption(),
     });
-    await updateAgent(
-      { id: SUBAGENT_ID },
-      { instructions: 'Changed after descriptor creation.' },
-    );
+    await updateAgent({ id: SUBAGENT_ID }, { instructions: 'Changed after descriptor creation.' });
 
     await expect(
       agentClientArgs.agent.lazySubagentConfigs[0].resolve({
