@@ -92,6 +92,8 @@ export type FileConfig = {
   };
   text?: {
     supportedMimeTypes?: RegexLike[];
+    /** Server-derived signal that a RAG text service is configured. */
+    enabled?: boolean;
   };
   stt?: {
     supportedMimeTypes?: RegexLike[];
@@ -123,6 +125,7 @@ export type FileConfigInput = {
   };
   text?: {
     supportedMimeTypes?: string[];
+    enabled?: boolean;
   };
   stt?: {
     supportedMimeTypes?: string[];

@@ -263,6 +263,34 @@ describe('pdf-inspector local parser', () => {
     }
   });
 
+  test('bounds the per-page pdfjs recovery by aggregate output size', async () => {
+    /* Recovery is capped at 250 pages, which says nothing about how much text a page
+     * holds, and every recovered string is retained together in the API process. */
+    const flooded = Array.from({ length: 40 }, (_, page) => ({ page, markdown: '' }));
+    mockPdfjs.pageText = Object.fromEntries(
+      Array.from({ length: 40 }, (_, i) => [i + 1, 'x'.repeat(megabyte)]),
+    );
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => flooded,
+          extractTextIsolated: async () => '',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+
+        await expect(uploadIsolated(context(pdfFile('sample.pdf')))).rejects.toMatchObject({
+          name: 'ParserOutputLimitError',
+          code: 'PARSER_OUTPUT_LIMIT',
+        });
+        /* Refused partway through rather than after reading all 40. */
+        expect(mockPdfjs.requestedPages.length).toBeLessThan(40);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  }, 30_000);
+
   test('bounds the whole-document pdfjs walk by output size', async () => {
     /* Page count says nothing about how much text a page holds, and this walk runs in
      * the API process where the string is built before any caller can reject it. */

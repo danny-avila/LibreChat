@@ -166,6 +166,76 @@ describe('validateFiles', () => {
     expect(setError).not.toHaveBeenCalled();
   });
 
+  /**
+   * The upload path routes a document to RAG when the admin names it in a narrowed text
+   * allowlist and a RAG service exists, whether or not the local parser still claims the
+   * type. Refusing it here would reject a file the server accepts.
+   */
+  it('accepts a locally excluded document that configured RAG text handles', () => {
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)], enabled: true },
+      ocr: { supportedMimeTypes: [] },
+      documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('report.docx', DOCX, 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig,
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+    });
+
+    expect(result).toBe(true);
+    expect(setError).not.toHaveBeenCalled();
+  });
+
+  it('rejects a locally excluded document when no RAG service is configured', () => {
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [new RegExp(`^${DOCX}$`)] },
+      ocr: { supportedMimeTypes: [] },
+      documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('report.docx', DOCX, 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig,
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+    });
+
+    expect(result).toBe(false);
+    expect(setError).toHaveBeenCalledWith(`Unsupported file type: ${DOCX}`);
+  });
+
+  it('rejects a locally excluded document when the text allowlist is the permissive default', () => {
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/], enabled: true },
+      ocr: { supportedMimeTypes: [] },
+      documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('report.docx', DOCX, 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig,
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+    });
+
+    expect(result).toBe(false);
+  });
+
   it('rejects a locally excluded document when OCR only has default type metadata', () => {
     const contextFileConfig = {
       text: { supportedMimeTypes: [/^[\w.-]+\/[\w.-]+$/] },
