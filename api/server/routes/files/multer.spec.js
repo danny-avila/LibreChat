@@ -434,13 +434,12 @@ describe('Multer Configuration', () => {
      * the user and then refused at the door.
      */
     it('should admit a vendor MIME the document-parser allowlist names', () => {
-      const { mergeFileConfig, EToolResources } = require('librechat-data-provider');
+      const { mergeFileConfig } = require('librechat-data-provider');
       const fileFilter = createFileFilter(
         mergeFileConfig({
           documentParser: { supportedMimeTypes: ['^application/vnd\\.vendor\\.word$'] },
         }),
       );
-      mockReq.body.tool_resource = EToolResources.context;
       const documentFile = {
         ...mockFile,
         originalname: 'report.docx',
@@ -454,32 +453,36 @@ describe('Multer Configuration', () => {
     });
 
     /**
-     * The parser only runs on the context path. Admitting its allowlist everywhere would
-     * let a caller past an endpoint's own MIME restriction and hand the file to a
-     * provider that was never meant to see it.
+     * This filter runs while the file part is still streaming, so a field a multipart
+     * client sends after the file is not there yet. Reading the tool resource here would
+     * refuse a valid upload from any client that orders its fields differently;
+     * `filterFile` applies that scope a moment later on a complete body.
      */
     it.each([
       ['a different tool resource', 'file_search'],
       ['no tool resource at all', undefined],
-    ])('should not admit a parser-only MIME for %s', (_label, toolResource) => {
-      const { mergeFileConfig } = require('librechat-data-provider');
-      const fileFilter = createFileFilter(
-        mergeFileConfig({
-          documentParser: { supportedMimeTypes: ['^application/vnd\\.vendor\\.word$'] },
-        }),
-      );
-      mockReq.body.tool_resource = toolResource;
-      const documentFile = {
-        ...mockFile,
-        originalname: 'report.docx',
-        mimetype: 'application/vnd.vendor.word',
-      };
-      const cb = jest.fn();
+    ])(
+      'should admit a parser-named MIME regardless of field order, given %s',
+      (_l, toolResource) => {
+        const { mergeFileConfig } = require('librechat-data-provider');
+        const fileFilter = createFileFilter(
+          mergeFileConfig({
+            documentParser: { supportedMimeTypes: ['^application/vnd\\.vendor\\.word$'] },
+          }),
+        );
+        mockReq.body.tool_resource = toolResource;
+        const documentFile = {
+          ...mockFile,
+          originalname: 'report.docx',
+          mimetype: 'application/vnd.vendor.word',
+        };
+        const cb = jest.fn();
 
-      fileFilter(mockReq, documentFile, cb);
+        fileFilter(mockReq, documentFile, cb);
 
-      expect(cb).toHaveBeenCalledWith(expect.any(Error), false);
-    });
+        expect(cb).toHaveBeenCalledWith(null, true);
+      },
+    );
 
     it('should still reject a type no allowlist names', () => {
       const { mergeFileConfig } = require('librechat-data-provider');

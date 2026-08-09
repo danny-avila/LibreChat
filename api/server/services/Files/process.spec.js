@@ -166,6 +166,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadVectors } = require('./VectorDB/crud');
 const db = require('~/models');
 const {
+  filterFile,
   processAgentFileUpload,
   processDeleteRequest,
   processFileURL,
@@ -2173,5 +2174,43 @@ describe('startExpiredFileSweep', () => {
       }),
     );
     expect(interval).toBe('sweep-interval');
+  });
+});
+
+/**
+ * The authoritative MIME gate. Multer's filter runs while the file part is still
+ * streaming, so it cannot read a `tool_resource` sent after the file; this one has the
+ * complete body and runs before any provider is handed the upload.
+ */
+describe('filterFile', () => {
+  const VENDOR_MIME = 'application/vnd.vendor.word';
+
+  const makeFilterReq = (toolResource) => ({
+    file: { size: 1024, mimetype: VENDOR_MIME, originalname: 'report.docx' },
+    body: {
+      endpoint: 'agents',
+      file_id: '11111111-1111-4111-8111-111111111111',
+      ...(toolResource ? { tool_resource: toolResource } : {}),
+    },
+    config: { fileConfig: {} },
+  });
+
+  beforeEach(() => {
+    mergeFileConfig.mockReturnValue({
+      ...makeFileConfig(),
+      documentParser: { supportedMimeTypes: [new RegExp(`^${VENDOR_MIME}$`)] },
+      endpoints: { default: { supportedMimeTypes: [/^application\/pdf$/] } },
+    });
+  });
+
+  it('admits a parser-named MIME for a context upload', () => {
+    expect(() => filterFile({ req: makeFilterReq(EToolResources.context) })).not.toThrow();
+  });
+
+  it.each([
+    ['a different tool resource', 'file_search'],
+    ['no tool resource at all', undefined],
+  ])('refuses a parser-named MIME for %s', (_label, toolResource) => {
+    expect(() => filterFile({ req: makeFilterReq(toolResource) })).toThrow('Unsupported file type');
   });
 });
