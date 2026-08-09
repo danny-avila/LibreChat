@@ -486,7 +486,21 @@ const SOURCE_FATAL_ERROR_CODES = new Set([
   'SYNC_LOCK_LOST',
   'GITHUB_AUTH_FAILED',
   'GITHUB_RATE_LIMITED',
+  'SYNC_ROLLBACK_FAILED',
 ]);
+
+/**
+ * A skill that fails and rolls back cleanly is just a skipped skill. One whose
+ * rollback also fails leaves a half-written mirror behind, and reporting that
+ * as `partial` alongside the skills that did publish would bury it, so it ends
+ * the source instead.
+ */
+function makeRollbackFailure(error: unknown): SkillSyncError {
+  return new SkillSyncError(
+    'SYNC_ROLLBACK_FAILED',
+    `Rollback failed after: ${sanitizeError(error).message}`,
+  );
+}
 
 function isSourceFatalError(error: unknown): boolean {
   return error instanceof SkillSyncError && SOURCE_FATAL_ERROR_CODES.has(error.code);
@@ -1726,17 +1740,19 @@ async function syncSource(params: {
             { forceCommit: fileCounts.syncedFileCount > 0 || fileCounts.deletedFileCount > 0 },
           );
         } catch (error) {
+          let rollbackFailed = false;
           await restoreExistingSkillFiles({
             deps,
             skill: effectivePrepared.existing,
             previousFiles,
             savedFiles: journal.savedFiles,
-          }).catch((cleanupError) =>
+          }).catch((cleanupError) => {
+            rollbackFailed = true;
             logger.error(
               '[GitHubSkillSync] Failed to restore existing skill files after sync failure:',
               cleanupError,
-            ),
-          );
+            );
+          });
           if (staleConflictCleanup?.deletedSkill) {
             const restored = await restoreDeletedSyncedSkill(
               deps,
@@ -1756,9 +1772,11 @@ async function syncSource(params: {
             if (restored) {
               counts.deletedSkillCount -= staleConflictCleanup.deletedSkillCount;
               counts.deletedFileCount -= staleConflictCleanup.deletedFileCount;
+            } else {
+              rollbackFailed = true;
             }
           }
-          throw error;
+          throw rollbackFailed ? makeRollbackFailure(error) : error;
         }
         await cleanupStoredFiles({
           deps,
@@ -1792,13 +1810,16 @@ async function syncSource(params: {
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;
       } catch (error) {
-        await deleteSyncedSkill(deps, skill).catch((cleanupError) =>
-          logger.error(
-            '[GitHubSkillSync] Failed to roll back partially synced skill:',
-            cleanupError,
-          ),
-        );
-        throw error;
+        const rolledBack = await deleteSyncedSkill(deps, skill)
+          .then(() => true)
+          .catch((cleanupError) => {
+            logger.error(
+              '[GitHubSkillSync] Failed to roll back partially synced skill:',
+              cleanupError,
+            );
+            return false;
+          });
+        throw rolledBack ? error : makeRollbackFailure(error);
       }
     };
 

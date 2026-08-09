@@ -1863,6 +1863,31 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.deleteSkill).not.toHaveBeenCalled();
   });
 
+  it('fails the source when a skill rollback leaves a half-written mirror', async () => {
+    /* A clean rollback is just a skipped skill. A failed one leaves the mirror
+       inconsistent, which must not be reported as a partial success next to
+       the skills that did publish. */
+    const deps = createDeps({
+      saveBuffer: jest.fn(async () => {
+        throw new Error('storage unavailable');
+      }),
+      deleteSkill: jest.fn(async () => {
+        throw new Error('rollback unavailable');
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'SYNC_ROLLBACK_FAILED',
+        errorMessage: expect.stringContaining('storage unavailable'),
+      }),
+    );
+  });
+
   it('keeps a moved skill mirror when the name it moves into turns out to be duplicated', async () => {
     /* Both discovered paths claim the same name, so neither publishes. The
        mirror the move would have reused is still live and must survive. */
