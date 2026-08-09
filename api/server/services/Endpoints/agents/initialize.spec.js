@@ -1074,12 +1074,10 @@ describe('initializeClient — subagent loading', () => {
     });
     const initialization = deferred();
     const initializationStarted = deferred();
-    mockInitializeAgent
-      .mockResolvedValueOnce(primaryConfig)
-      .mockImplementationOnce((params) => {
-        initializationStarted.resolve(params);
-        return initialization.promise;
-      });
+    mockInitializeAgent.mockResolvedValueOnce(primaryConfig).mockImplementationOnce((params) => {
+      initializationStarted.resolve(params);
+      return initialization.promise;
+    });
 
     await initializeClient({
       req: makeSubagentReq(),
