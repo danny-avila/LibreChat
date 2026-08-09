@@ -85,8 +85,11 @@ export function createPasskeyMethods(mongoose: typeof import('mongoose')): Passk
    * counter report 0 forever and carry no clone signal, so they only restamp
    * `lastUsedAt`.
    *
-   * Returns whether this assertion won the transition. A storage error returns
-   * `true` so an infrastructure fault cannot lock out a verified sign-in.
+   * Returns whether this assertion won the transition. A storage error fails closed
+   * for counter-capable credentials: letting the sign-in through would forfeit the
+   * clone signal exactly when the transition cannot be proven, and a database that
+   * cannot take this write cannot mint the session either. A counterless credential
+   * has no signal to forfeit, so it is not held to the same bar.
    */
   async function recordPasskeyUse(credentialId: string, counter: number): Promise<boolean> {
     try {
@@ -101,7 +104,7 @@ export function createPasskeyMethods(mongoose: typeof import('mongoose')): Passk
       return result.matchedCount > 0;
     } catch (error) {
       logger.error('[recordPasskeyUse] Failed to persist passkey counter', error);
-      return true;
+      return counter === 0;
     }
   }
 
