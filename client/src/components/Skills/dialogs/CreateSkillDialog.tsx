@@ -202,6 +202,7 @@ export default function CreateSkillDialog({
             </Button>
             <Button
               type="submit"
+              variant="submit"
               disabled={submitDisabled}
               className={cn(submitDisabled && 'opacity-50')}
             >
