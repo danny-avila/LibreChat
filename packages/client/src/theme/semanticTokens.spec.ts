@@ -102,6 +102,12 @@ describe('dark destructive text', () => {
   });
 });
 
+describe('light brand text', () => {
+  it('uses the contrasting purple foreground in the default theme', () => {
+    expect(defaultTheme['rgb-brand-purple']).toBe('126 34 206');
+  });
+});
+
 describe('shared field and dropdown interaction styles', () => {
   it('keeps text fields visually stable on focus', () => {
     ['Input.tsx', 'Textarea.tsx'].forEach((component) => {

@@ -68,7 +68,7 @@
   --blue-800: 30 64 175;
   --blue-900: 30 58 138;
   --blue-950: 23 37 84;
-  --brand-purple: 171 104 255;
+  --brand-purple: 126 34 206;
   --gizmo-gray-500: 153 153 153;
   --gizmo-gray-600: 102 102 102;
   --gizmo-gray-950: 15 15 15;
@@ -147,7 +147,7 @@
 }
 
 html {
-  --brand-purple: 171 104 255;
+  --brand-purple: 126 34 206;
   --presentation: var(--white);
   --text-primary: var(--gray-800);
   --text-secondary: var(--gray-600);

@@ -16,6 +16,7 @@ const semanticProperties = [
   '--status-success-border',
   '--status-success-strong',
   '--surface-overlay',
+  '--surface-hover',
   '--surface-composer-hover',
   '--text-on-status',
   '--status-error',
@@ -53,6 +54,17 @@ describe('applyTheme', () => {
 
     expect(document.documentElement.style.getPropertyValue('--surface-composer-hover')).toBe(
       '66 66 66',
+    );
+  });
+
+  it('keeps existing custom hover colors on composer controls', () => {
+    applyTheme({
+      'rgb-surface-hover': '44 45 46',
+    });
+
+    expect(document.documentElement.style.getPropertyValue('--surface-hover')).toBe('44 45 46');
+    expect(document.documentElement.style.getPropertyValue('--surface-composer-hover')).toBe(
+      '44 45 46',
     );
   });
 

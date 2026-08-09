@@ -86,7 +86,7 @@ export const defaultTheme: IThemeRGB = {
   'rgb-text-on-status': '255 255 255', // #fff (white)
 
   // Brand colors
-  'rgb-brand-purple': '171 104 255', // #ab68ff
+  'rgb-brand-purple': '126 34 206', // #7e22ce (purple-700)
 
   // Presentation
   'rgb-presentation': '255 255 255', // #fff (white)
