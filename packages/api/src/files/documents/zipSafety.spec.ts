@@ -305,7 +305,7 @@ describe('assertSafeZipSizeIfArchive', () => {
     );
 
     expect(failure).toBeInstanceOf(ArchiveValidationError);
-    expect(failure).toMatchObject({ code: 'ARCHIVE_INVALID' });
+    expect(failure).toMatchObject({ code: 'ARCHIVE_INVALID', userErrorStatusCode: 422 });
     expect((failure as Error).message).toMatch(/padded\.docx: archive could not be read safely/);
     /** The underlying reason is kept, so logs still say what yauzl objected to. */
     expect((failure as Error).message).toMatch(/central directory/i);

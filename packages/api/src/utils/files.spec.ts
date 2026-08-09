@@ -559,11 +559,29 @@ describe('resolveUploadErrorMessage', () => {
     expect(limit.userErrorStatusCode).toBe(503);
   });
 
+  /**
+   * Each of these is permanent for the document that caused it: the caller has to send a
+   * smaller or different one, and "Error processing file" invites them to retry the
+   * same bytes instead. Matched on the code, so rewording a message cannot quietly turn
+   * one back into a generic failure.
+   */
   test.each([
-    ['an oversized extraction', 'anydoc extracted 22MB of text, over the 15MB limit'],
-    ['a refused archive', 'report.docx: archive could not be read safely (bad central directory)'],
-  ])('surfaces %s', (_label, message) => {
-    expect(resolveUploadErrorMessage({ message })).toBe(message);
+    ['an oversized extraction', 'PARSER_OUTPUT_LIMIT', 'anydoc extracted 22MB of text'],
+    ['a refused archive', 'ARCHIVE_INVALID', 'report.docx: archive could not be read safely'],
+    ['a zip bomb', 'ZIP_BOMB', 'evil.docx: entry count (9000) exceeds the 4096-entry cap'],
+    [
+      'a page-flooded PDF',
+      'PDF_PAGE_LIMIT',
+      'PDF contains 4000 pages, exceeding the 1000-page limit',
+    ],
+  ])('surfaces %s', (_label, code, message) => {
+    expect(resolveUploadErrorMessage({ message, code })).toBe(message);
+  });
+
+  test('still hides an untagged internal failure', () => {
+    expect(resolveUploadErrorMessage({ message: 'ECONNREFUSED 127.0.0.1:6379' })).toBe(
+      'Error processing file',
+    );
   });
 
   test('accepts a custom default message', () => {

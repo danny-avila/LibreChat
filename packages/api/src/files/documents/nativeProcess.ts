@@ -45,6 +45,8 @@ export const MAX_PARSER_PAGES = 10_000;
  */
 export class ParserOutputLimitError extends Error {
   readonly code = 'PARSER_OUTPUT_LIMIT';
+  /** The document itself is the problem, so the caller is told to send a smaller one. */
+  readonly userErrorStatusCode = 413;
   constructor(message: string) {
     super(message);
     this.name = 'ParserOutputLimitError';

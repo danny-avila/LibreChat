@@ -7,11 +7,21 @@ const USER_FACING_UPLOAD_ERRORS = [
   'Invalid file format',
   'exceeds token limit',
   'Unable to extract text from',
-  /** Shed load and the parser's own refusals: each names something the caller can act on. */
-  'requests are already waiting',
-  'over the 15MB limit',
-  'archive could not be read safely',
 ] as const;
+
+/**
+ * Refusals that name something the caller can act on: reduce the document, replace it,
+ * or try again later. Matched on the code rather than the message so a wording change
+ * cannot silently turn one back into a generic 500, and so each refusal keeps a single
+ * definition alongside the status it answers with.
+ */
+const USER_FACING_UPLOAD_ERROR_CODES: ReadonlySet<string> = new Set([
+  'ZIP_BOMB',
+  'ARCHIVE_INVALID',
+  'PDF_PAGE_LIMIT',
+  'PARSER_OUTPUT_LIMIT',
+  'CONCURRENCY_LIMIT',
+]);
 
 const ASCII_FILENAME_SAFE_PATTERN = /^[a-zA-Z0-9._-]$/;
 const UNSAFE_UNICODE_FILENAME_PATTERN = /[^\p{L}\p{M}\p{N}\p{Emoji}\u200d._-]/gu;
@@ -73,12 +83,16 @@ function truncateLeafWithSuffix(leaf: string, suffix: string, maxBytes: number):
  * otherwise returns the default message.
  */
 export function resolveUploadErrorMessage(
-  error: { message?: string } | null | undefined,
+  error: { message?: string; code?: string } | null | undefined,
   defaultMessage = 'Error processing file',
 ): string {
   const errorMessage = error?.message;
   if (!errorMessage) {
     return defaultMessage;
+  }
+
+  if (error?.code != null && USER_FACING_UPLOAD_ERROR_CODES.has(error.code)) {
+    return errorMessage;
   }
 
   if (errorMessage.includes('file_ids')) {
