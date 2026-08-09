@@ -2,16 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToastContext } from '@librechat/client';
 import { dataService } from 'librechat-data-provider';
 import type {
-  PublicKeyCredentialCreationOptionsJSON,
-  PublicKeyCredentialRequestOptionsJSON,
-} from '@simplewebauthn/browser';
-import type {
   TPasskey,
+  TPasskeyTransport,
   TPasskeyAuthenticationResponse,
   TPasskeyRegistrationResponse,
 } from 'librechat-data-provider';
+import type {
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+} from '@simplewebauthn/browser';
 import type { TranslationKeys } from '~/hooks/useLocalize';
-import { SESSION_KEY, isSafeRedirect, REDIRECT_PARAM } from '~/utils/redirect';
+import { SESSION_KEY, withBasePath, isSafeRedirect, REDIRECT_PARAM } from '~/utils/redirect';
 import { useRegisterPasskeyMutation } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
 
@@ -44,6 +45,24 @@ const ceremonyErrorKey = (error: unknown): TranslationKeys => {
   return 'com_auth_passkey_error';
 };
 
+/**
+ * Mirrors the server's `defaultPasskeyName` transport mapping. The chosen label is
+ * persisted verbatim and rendered back to the user, so it is resolved here where a
+ * locale is available rather than falling back to the server's English default.
+ */
+const defaultNameKey = (transports: TPasskeyTransport[] = []): TranslationKeys => {
+  if (transports.includes('hybrid')) {
+    return 'com_ui_passkey_default_phone';
+  }
+  if (transports.includes('usb') || transports.includes('nfc')) {
+    return 'com_ui_passkey_default_security_key';
+  }
+  if (transports.includes('internal')) {
+    return 'com_ui_passkey_default_this_device';
+  }
+  return 'com_ui_passkey_default_generic';
+};
+
 /** Sync capability check without loading the WebAuthn browser package. */
 export const passkeysSupported = (): boolean =>
   typeof window !== 'undefined' && typeof window.PublicKeyCredential !== 'undefined';
@@ -62,12 +81,12 @@ function resolvePostLoginHref(): string {
     }
     const target = fromQuery ?? fromSession;
     if (target && isSafeRedirect(target)) {
-      return target;
+      return withBasePath(target);
     }
   } catch {
     /* ignore storage / URL access failures */
   }
-  return '/';
+  return withBasePath('/');
 }
 
 /**
@@ -91,7 +110,9 @@ export function usePasskeySignIn({ enabled }: { enabled: boolean }) {
     async (credential: TPasskeyAuthenticationResponse, sessionId: string) => {
       const result = await dataService.verifyPasskeyLogin({ credential, sessionId });
       if (result.twoFAPending === true && result.tempToken != null) {
-        window.location.href = `/login/2fa?tempToken=${encodeURIComponent(result.tempToken)}`;
+        window.location.href = withBasePath(
+          `/login/2fa?tempToken=${encodeURIComponent(result.tempToken)}`,
+        );
         return;
       }
       window.location.href = resolvePostLoginHref();
@@ -229,7 +250,11 @@ export function usePasskeyRegistration() {
         const credential = (await startRegistration({
           optionsJSON: options as PublicKeyCredentialCreationOptionsJSON,
         })) as TPasskeyRegistrationResponse;
-        const { passkey } = await verifyRegistration({ credential, password });
+        const { passkey } = await verifyRegistration({
+          credential,
+          password,
+          name: localize(defaultNameKey(credential.response?.transports)),
+        });
         showToast({ message: localize('com_ui_passkey_added'), status: 'success' });
         return passkey;
       } catch (error) {

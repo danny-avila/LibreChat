@@ -2,8 +2,45 @@ import {
   persistRedirectToSession,
   getPostLoginRedirect,
   isSafeRedirect,
+  withBasePath,
   SESSION_KEY,
 } from '../redirect';
+
+describe('withBasePath', () => {
+  afterEach(() => {
+    document.querySelector('base')?.remove();
+  });
+
+  const setBaseHref = (href: string) => {
+    const base = document.createElement('base');
+    base.setAttribute('href', href);
+    document.head.appendChild(base);
+  };
+
+  it('returns the path unchanged when no base element is present', () => {
+    expect(withBasePath('/c/new')).toBe('/c/new');
+  });
+
+  it('returns the path unchanged for a root base href', () => {
+    setBaseHref('/');
+    expect(withBasePath('/c/new')).toBe('/c/new');
+  });
+
+  it('prefixes a subdirectory base href', () => {
+    setBaseHref('/librechat/');
+    expect(withBasePath('/c/new')).toBe('/librechat/c/new');
+  });
+
+  it('prefixes a subdirectory base href without a trailing slash', () => {
+    setBaseHref('/librechat');
+    expect(withBasePath('/')).toBe('/librechat/');
+  });
+
+  it('uses only the pathname of an absolute base href', () => {
+    setBaseHref('https://example.com/librechat/');
+    expect(withBasePath('/login/2fa?tempToken=abc')).toBe('/librechat/login/2fa?tempToken=abc');
+  });
+});
 
 describe('isSafeRedirect', () => {
   it('accepts a simple relative path', () => {

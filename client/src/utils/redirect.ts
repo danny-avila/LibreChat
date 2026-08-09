@@ -67,6 +67,28 @@ export function getPostLoginRedirect(searchParams: URLSearchParams): string | nu
   return target;
 }
 
+/**
+ * Prefixes an app-relative path with the deployment's `<base href>` so installs served
+ * from a subdirectory navigate inside the router instead of to the host root. Reads the
+ * same source the router uses for its basename, keeping full-page navigations aligned
+ * with router navigations.
+ */
+export function withBasePath(path: string): string {
+  if (typeof document === 'undefined') {
+    return path;
+  }
+  const href = document.querySelector('base')?.getAttribute('href');
+  if (href == null || href === '') {
+    return path;
+  }
+  try {
+    const base = new URL(href, window.location.origin).pathname.replace(/\/+$/, '');
+    return base ? `${base}${path}` : path;
+  } catch {
+    return path;
+  }
+}
+
 export function persistRedirectToSession(value: string): void {
   if (isSafeRedirect(value)) {
     sessionStorage.setItem(SESSION_KEY, value);
