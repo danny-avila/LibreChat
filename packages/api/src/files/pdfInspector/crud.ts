@@ -18,7 +18,7 @@ type ParsedDocument = Pick<
 
 /** Above this share of dropped pages, whole-document plain text replaces interleaving. */
 const DROPPED_PAGE_MAJORITY = 0.5;
-/** Cap on pages either pdfjs recovery path will read; see `extractPdf`. */
+/** Cap on the per-page pdfjs recovery walk; see `extractPdf`. */
 const MAX_RECOVERED_PAGES = 250;
 /**
  * Most pages this parser will accept at all.
@@ -75,7 +75,11 @@ export async function parseWithPdfInspector(
       `[pdfInspector] Native extraction failed for "${file.originalname}", falling back to pdfjs:`,
       error,
     );
-    parsed = await extractDocumentTextWithPages(data, MAX_RECOVERED_PAGES);
+    /* The whole-document fallback answers to the parser's own ceiling, not the recovery
+     * walk's: they bound different work, and reusing the smaller one meant a PDF this
+     * parser accepts with a good xref was refused with a damaged one, or on a platform
+     * with no native binding at all. */
+    parsed = await extractDocumentTextWithPages(data, MAX_PDF_PAGES);
   }
   const { text, pagesNeedingOcr, mayEmbedMedia } = parsed;
 

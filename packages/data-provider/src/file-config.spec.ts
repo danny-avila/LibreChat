@@ -192,6 +192,37 @@ describe('inferMimeType', () => {
   });
 });
 
+describe('defaultOCRMimeTypes coverage of parser-supported containers', () => {
+  /**
+   * The local parser reads these containers, and a scan inside one is exactly what it
+   * escalates to OCR. Leaving a macro-enabled variant out means the same scanned page is
+   * recovered in a DOCX and silently kept as partial text in a DOCM.
+   */
+  it.each([
+    ['DOCM', 'application/vnd.ms-word.document.macroEnabled.12'],
+    ['PPTM', 'application/vnd.ms-powerpoint.presentation.macroEnabled.12'],
+    ['PPSM', 'application/vnd.ms-powerpoint.slideshow.macroEnabled.12'],
+    ['PPSX', 'application/vnd.openxmlformats-officedocument.presentationml.slideshow'],
+    ['XLSM', 'application/vnd.ms-excel.sheet.macroEnabled.12'],
+    ['XLSB', 'application/vnd.ms-excel.sheet.binary.macroEnabled.12'],
+  ])('covers %s, which the local parser also reads', (_label, mimeType) => {
+    expect(baseFileConfig.checkType(mimeType, defaultOCRMimeTypes)).toBe(true);
+  });
+
+  it.each([
+    ['DOCX', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['PPTX', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+    ['XLSX', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['PDF', 'application/pdf'],
+  ])('still covers %s', (_label, mimeType) => {
+    expect(baseFileConfig.checkType(mimeType, defaultOCRMimeTypes)).toBe(true);
+  });
+
+  it('leaves delimited text out, which OCR has nothing to add to', () => {
+    expect(baseFileConfig.checkType('text/csv', defaultOCRMimeTypes)).toBe(false);
+  });
+});
+
 describe('applicationMimeTypes', () => {
   const odfTypes = [
     'application/vnd.oasis.opendocument.text',

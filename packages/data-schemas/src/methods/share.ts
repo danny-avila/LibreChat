@@ -5,6 +5,7 @@ import {
   ContentTypes,
   FileSources,
   Tools,
+  isParsedDocument,
   documentParserSources,
 } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
@@ -281,8 +282,15 @@ async function buildFileSnapshots(
   const snapshots: t.SharedFileSnapshot[] = [];
   for (const file of files) {
     const source = file.source ?? FileSources.local;
+    /* Two shapes of parsed record. The local parser leaves its engine name as the
+     * filepath; a configured RAG `/text` extraction leaves the temporary upload path,
+     * which is gone by the time anyone views the share. Recognizing the second by its
+     * type the way the owner's own preview does is what keeps a shared DOCX from
+     * reporting no preview while its text sits in MongoDB. */
     const hasTextPreview =
-      source === FileSources.text && documentParserSources.has(file.filepath ?? '');
+      source === FileSources.text &&
+      (documentParserSources.has(file.filepath ?? '') ||
+        isParsedDocument(file.type, file.filename));
     if (!SNAPSHOT_STREAMABLE_SOURCES.has(source) && !hasTextPreview) {
       continue;
     }

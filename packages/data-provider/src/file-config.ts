@@ -233,9 +233,15 @@ export const defaultOCRMimeTypes = [
   imageMimeTypes,
   excelMimeTypes,
   /^application\/pdf$/,
-  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)$/,
-  /^application\/vnd\.openxmlformats-officedocument\.presentationml\.template$/,
+  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.(presentation|slideshow|template))$/,
   /^application\/vnd\.ms-(word|powerpoint)$/,
+  /* The same document families in their macro-enabled and binary containers. The local
+   * parser reads these, and a scan inside one is exactly what it hands to OCR, so
+   * leaving them out would mean a DOCM's scanned page is silently kept as partial text
+   * where the same content in a DOCX is recovered. */
+  /^application\/vnd\.ms-word\.document\.macroenabled\.12$/i,
+  /^application\/vnd\.ms-powerpoint\.(presentation|slideshow)\.macroenabled\.12$/i,
+  /^application\/vnd\.ms-excel\.sheet\.(macroenabled|binary\.macroenabled)\.12$/i,
   /^application\/epub\+zip$/,
   /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
 ];
