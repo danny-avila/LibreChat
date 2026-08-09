@@ -23,6 +23,7 @@ const {
   countPasskeysByUser,
   findPasskeyByCredentialId,
 } = require('~/models');
+const { grandfatherLegacyEmailVerification } = require('~/strategies/verification');
 const { checkBan } = require('~/server/middleware');
 const { getLogStores } = require('~/cache');
 
@@ -451,6 +452,9 @@ const authenticatePasskey = async (req, res, next) => {
       );
       return failure();
     }
+
+    /** Shared with the password strategy so both factors apply one account policy. */
+    await grandfatherLegacyEmailVerification(user);
 
     const unverifiedAllowed = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
     if (user.expiresAt && unverifiedAllowed) {
