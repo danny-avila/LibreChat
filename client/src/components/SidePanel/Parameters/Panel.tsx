@@ -208,7 +208,7 @@ export default function Parameters() {
       </div>
       <div className="mt-2 flex justify-center">
         <Button
-          variant="submit"
+          variant="default"
           onClick={openDialog}
           className="flex w-full items-center justify-center px-4 py-2 font-semibold"
           type="button"

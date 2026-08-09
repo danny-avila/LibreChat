@@ -86,7 +86,7 @@ export default function MCPToolItem({
               pressed={isDeferred}
               label={localize('com_ui_mcp_defer_loading')}
               tooltip={localize('com_ui_mcp_click_to_defer')}
-              activeClass="text-amber-500"
+              activeClass="text-text-warning"
               onToggle={onToggleDefer}
             />
           )}

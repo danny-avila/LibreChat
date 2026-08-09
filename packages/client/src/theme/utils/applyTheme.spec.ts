@@ -16,6 +16,7 @@ const semanticProperties = [
   '--status-success-border',
   '--status-success-strong',
   '--surface-overlay',
+  '--surface-composer-hover',
   '--text-on-status',
   '--status-error',
   '--status-neutral-border',
@@ -42,6 +43,16 @@ describe('applyTheme', () => {
     expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('10 11 12');
     expect(document.documentElement.style.getPropertyValue('--accent-primary-hover')).toBe(
       '13 14 15',
+    );
+  });
+
+  it('applies the composer hover surface from runtime themes', () => {
+    applyTheme({
+      'rgb-surface-composer-hover': '66 66 66',
+    });
+
+    expect(document.documentElement.style.getPropertyValue('--surface-composer-hover')).toBe(
+      '66 66 66',
     );
   });
 

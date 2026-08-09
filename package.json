@@ -97,8 +97,8 @@
     "test:all": "npm run test:client && npm run test:api && npm run test:packages:api && npm run test:packages:data-provider && npm run test:packages:data-schemas",
     "e2e:update": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts --update-snapshots",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
-    "lint:fix": "eslint --fix \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
-    "lint": "eslint \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
+    "lint:fix": "eslint . --fix",
+    "lint": "eslint .",
     "sort-imports": "node scripts/sort-imports.mts",
     "sort-imports:check": "node scripts/sort-imports.mts --check",
     "format": "npx prettier --write \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
@@ -153,6 +153,7 @@
     "@eslint/js": "^9.20.0",
     "@playwright/test": "^1.56.1",
     "@types/react-virtualized": "^9.22.0",
+    "brace-expansion": "^2.1.2",
     "caniuse-lite": "^1.0.30001741",
     "cross-env": "^7.0.3",
     "elliptic": "^6.6.1",
@@ -177,7 +178,18 @@
     "typescript-eslint": "^8.60.1"
   },
   "overrides": {
-    "brace-expansion": "^5.0.8",
+    "minimatch@3": {
+      "brace-expansion": "^1.1.16"
+    },
+    "minimatch@5": {
+      "brace-expansion": "^2.1.2"
+    },
+    "minimatch@9": {
+      "brace-expansion": "^2.1.2"
+    },
+    "minimatch@10": {
+      "brace-expansion": "^5.0.8"
+    },
     "@xmldom/xmldom": "^0.8.13",
     "elliptic": "^6.6.1",
     "form-data": "^4.0.6",

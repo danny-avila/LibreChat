@@ -11,7 +11,7 @@ export const darkTheme: IThemeRGB = {
   'rgb-text-secondary-alt': '153 150 150', // #999696 (gray-400)
   'rgb-text-tertiary': '153 150 150', // #999696 (gray-400)
   'rgb-text-warning': '245 158 11', // #f59e0b (amber-500)
-  'rgb-text-destructive': '252 165 165', // #fca5a5 (red-300, matches status-error)
+  'rgb-text-destructive': '248 113 113', // #f87171 (red-400)
 
   // Link and accent colors
   'rgb-link': '96 165 250', // #60a5fa (blue-400)
@@ -31,8 +31,9 @@ export const darkTheme: IThemeRGB = {
   // Surface colors
   'rgb-surface-active': '89 89 89', // #595959 (gray-500)
   'rgb-surface-active-alt': '47 47 47', // #2f2f2f (gray-700)
-  'rgb-surface-hover': '66 66 66', // #424242 (gray-600)
+  'rgb-surface-hover': '57 57 57', // #393939 (gray-650)
   'rgb-surface-hover-alt': '66 66 66', // #424242 (gray-600)
+  'rgb-surface-composer-hover': '66 66 66', // #424242 (gray-600)
   'rgb-surface-primary': '13 13 13', // #0d0d0d (gray-900)
   'rgb-surface-primary-alt': '23 23 23', // #171717 (gray-850)
   'rgb-surface-primary-contrast': '23 23 23', // #171717 (gray-850)
@@ -40,7 +41,7 @@ export const darkTheme: IThemeRGB = {
   'rgb-surface-secondary-alt': '33 33 33', // #212121 (gray-800)
   'rgb-surface-tertiary': '47 47 47', // #2f2f2f (gray-700)
   'rgb-surface-tertiary-alt': '47 47 47', // #2f2f2f (gray-700)
-  'rgb-surface-dialog': '23 23 23', // #171717 (gray-850)
+  'rgb-surface-dialog': '18 18 18', // #121212 (legacy dark dialog)
   'rgb-surface-overlay': '0 0 0', // #000 (black)
   'rgb-surface-submit': '4 120 87', // #047857 (green-700)
   'rgb-surface-submit-hover': '6 95 70', // #065f46 (green-800)

@@ -130,7 +130,7 @@ const PeoplePickerAdminSettings = () => {
           {localize('com_ui_admin_settings')}
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="w-full border-border-light bg-surface-primary text-text-primary lg:w-1/4">
+      <OGDialogContent className="w-full border-border-light bg-surface-dialog text-text-primary lg:w-1/4">
         <OGDialogTitle>
           {localize('com_ui_admin_settings_section', { section: localize('com_ui_people_picker') })}
         </OGDialogTitle>

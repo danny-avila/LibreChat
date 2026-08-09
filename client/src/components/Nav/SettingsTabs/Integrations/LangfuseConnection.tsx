@@ -81,11 +81,11 @@ function getConnectionTestErrorLabelKey(
 function getConnectionStatusDotClass(state: ConnectionTestState): string {
   switch (state) {
     case 'connected':
-      return 'bg-green-500';
+      return 'bg-status-success';
     case 'failed':
-      return 'bg-red-500';
+      return 'bg-status-error';
     case 'checking':
-      return 'bg-yellow-500';
+      return 'bg-status-warning';
     case 'idle':
     default:
       return 'border border-border-medium';
@@ -249,7 +249,7 @@ export default function LangfuseConnection() {
       : localize(getConnectionStatusLabelKey(connectionTestState));
   const connectionStatusDotClass = getConnectionStatusDotClass(connectionTestState);
   const connectionStatusTextClass =
-    connectionTestState === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-text-secondary';
+    connectionTestState === 'failed' ? 'text-text-destructive' : 'text-text-secondary';
   const connectionStatusTitle =
     connectionTestState === 'failed' ? localize('com_ui_langfuse_status_failed_hover') : undefined;
 
@@ -279,49 +279,6 @@ export default function LangfuseConnection() {
         showToast({ message: localize('com_ui_langfuse_save_error'), status: 'error' });
       },
     });
-  };
-
-  const handleCancel = () => {
-    const storedDestination = connectionStatus?.destination;
-    setDestination(storedDestination ?? '');
-    setPublicKey(connectionStatus?.publicKey ?? '');
-    setSecretKey('');
-    setIsEditingPublicKey(false);
-    setIsEditingSecretKey(false);
-
-    if (!storedDestination || !connectionStatus?.publicKey) {
-      setConnectionTestState('idle');
-      setConnectionTestMessage('');
-      return;
-    }
-
-    if (!connectionStatus.destinations?.some(({ key }) => key === storedDestination)) {
-      connectionTestRequestRef.current += 1;
-      setConnectionTestState('failed');
-      setConnectionTestMessage(localize('com_ui_langfuse_destination_removed'));
-      return;
-    }
-
-    const requestId = ++connectionTestRequestRef.current;
-    setConnectionTestState('checking');
-    setConnectionTestMessage('');
-    testMutation.mutate(
-      { destination: storedDestination, publicKey: connectionStatus.publicKey },
-      {
-        onSuccess: (result) => {
-          if (requestId !== connectionTestRequestRef.current) return;
-          setConnectionTestState(result.success ? 'connected' : 'failed');
-          setConnectionTestMessage(
-            result.success ? '' : localize(getConnectionTestErrorLabelKey(result.errorCode)),
-          );
-        },
-        onError: () => {
-          if (requestId !== connectionTestRequestRef.current) return;
-          setConnectionTestState('failed');
-          setConnectionTestMessage(localize('com_ui_langfuse_test_error'));
-        },
-      },
-    );
   };
 
   const handleDestinationChange = (nextDestination: string) => {
@@ -441,32 +398,32 @@ export default function LangfuseConnection() {
   return (
     <div className="flex flex-col gap-4">
       <HoverCard openDelay={50}>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-start gap-4">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="font-medium">{localize('com_ui_langfuse_title')}</div>
-                <div className="rounded-full border border-purple-600/40 bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-700/10 dark:text-purple-400">
-                  {localize('com_ui_beta')}
-                </div>
-                <HoverCardTrigger>
-                  <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
-                </HoverCardTrigger>
-              </div>
-              <div className="mt-1 max-w-md text-xs text-text-secondary">
-                {localize('com_ui_langfuse_description')}
-              </div>
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <div className="font-medium">{localize('com_ui_langfuse_title')}</div>
+            <div className="rounded-full border border-brand-purple/40 bg-brand-purple/10 px-2 py-0.5 text-xs font-medium text-brand-purple">
+              {localize('com_ui_beta')}
             </div>
+            <HoverCardTrigger asChild>
+              <button
+                type="button"
+                aria-label={localize('com_ui_more_info')}
+                className="inline-flex size-6 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+              >
+                <CircleHelpIcon className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </HoverCardTrigger>
           </div>
           <div
-            className={`flex items-center gap-1.5 text-xs ${connectionStatusTextClass}`}
+            data-testid="langfuse-connection-status"
+            className={`ml-auto flex max-w-full shrink-0 items-start justify-end gap-1.5 text-right text-xs sm:max-w-[50%] ${connectionStatusTextClass}`}
             aria-live="polite"
             title={connectionStatusTitle}
           >
             {connectionTestState === 'checking' ? (
               <Spinner className="h-3 w-3" />
             ) : (
-              <span className={`h-2 w-2 rounded-full ${connectionStatusDotClass}`} />
+              <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${connectionStatusDotClass}`} />
             )}
             <span>{connectionStatusLabel}</span>
           </div>
@@ -577,21 +534,16 @@ export default function LangfuseConnection() {
 
       <div className="flex min-h-9 items-center justify-end gap-2">
         {isEditing ? (
-          <>
-            <Button variant="outline" disabled={busy} onClick={handleCancel}>
-              {localize('com_ui_cancel')}
-            </Button>
-            <Button disabled={!canSubmit || busy} onClick={handleSave}>
-              {testMutation.isLoading ? (
-                <span className="flex items-center gap-2">
-                  <Spinner className="h-4 w-4" />
-                  {localize('com_ui_langfuse_testing')}
-                </span>
-              ) : (
-                localize('com_ui_langfuse_save_and_enable')
-              )}
-            </Button>
-          </>
+          <Button variant="submit" disabled={!canSubmit || busy} onClick={handleSave}>
+            {testMutation.isLoading ? (
+              <span className="flex items-center gap-2">
+                <Spinner className="h-4 w-4" />
+                {localize('com_ui_langfuse_testing')}
+              </span>
+            ) : (
+              localize('com_ui_save')
+            )}
+          </Button>
         ) : (
           <Button
             variant={connectionStatus?.enabled === true ? 'outline' : 'submit'}
