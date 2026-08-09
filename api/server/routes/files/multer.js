@@ -74,8 +74,15 @@ const createFileFilter = (customFileConfig) => {
 
     const endpoint = req.body.endpoint;
     const endpointType = req.body.endpointType;
+    /* The principal-merged config, which `configMiddleware` puts on the request before
+     * this route runs. The instance-level one was resolved once at startup, so a tenant,
+     * role or user override would be invisible here and the upload refused before the
+     * post-upload gate could apply the configuration that actually governs it. */
+    const effectiveFileConfig = req.config?.fileConfig
+      ? mergeFileConfig(req.config.fileConfig)
+      : customFileConfig;
     const endpointFileConfig = getEndpointFileConfig({
-      fileConfig: customFileConfig,
+      fileConfig: effectiveFileConfig,
       endpoint,
       endpointType,
     });
@@ -87,7 +94,7 @@ const createFileFilter = (customFileConfig) => {
      * `tool_resource` after the file. `filterFile` applies that scope on a complete body
      * a moment later, before any provider is handed the upload, so the only thing this
      * admits is a temporary file that the next gate deletes. */
-    const parserTypes = customFileConfig?.documentParser?.supportedMimeTypes;
+    const parserTypes = effectiveFileConfig?.documentParser?.supportedMimeTypes;
     const admitted =
       defaultFileConfig.checkType(mimeType, endpointFileConfig.supportedMimeTypes) ||
       (parserTypes != null && defaultFileConfig.checkType(mimeType, parserTypes));

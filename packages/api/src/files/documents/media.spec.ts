@@ -25,6 +25,26 @@ describe('mayEmbedMedia', () => {
     expect(await mayEmbedMedia(await buildArchive([entryName]))).toBe(true);
   });
 
+  /**
+   * The media directories hold sound and video too, and a deck with a soundtrack has
+   * nothing for OCR to read. Escalating on one spends a paid request and replaces the
+   * structured local extraction with whatever OCR returns.
+   */
+  it.each([
+    ['a slide video', 'ppt/media/media1.mp4'],
+    ['a slide sound', 'ppt/media/audio2.wav'],
+    ['an embedded font', 'word/fonts/font1.odttf'],
+  ])('ignores %s', async (_label, entryName) => {
+    expect(await mayEmbedMedia(await buildArchive([entryName]))).toBe(false);
+  });
+
+  it.each([
+    ['a Windows metafile, which Office wraps scans in', 'word/media/image1.wmf'],
+    ['an enhanced metafile', 'ppt/media/image2.emf'],
+  ])('reports %s', async (_label, entryName) => {
+    expect(await mayEmbedMedia(await buildArchive([entryName]))).toBe(true);
+  });
+
   it('ignores parts that merely reference artwork', async () => {
     const archive = await buildArchive(['word/document.xml', 'word/_rels/document.xml.rels']);
     expect(await mayEmbedMedia(archive)).toBe(false);

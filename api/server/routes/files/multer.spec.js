@@ -433,6 +433,32 @@ describe('Multer Configuration', () => {
      * that. Admission was the only place that did not, so a vendor alias was offered to
      * the user and then refused at the door.
      */
+    /**
+     * The instance-level config is resolved once at startup, so a tenant, role or user
+     * override lives only on the request. Reading the startup copy refused the upload
+     * before the post-upload gate could apply the configuration that governs it.
+     */
+    it('should admit a vendor MIME a per-request config override names', () => {
+      const { mergeFileConfig } = require('librechat-data-provider');
+      const fileFilter = createFileFilter(mergeFileConfig());
+      mockReq.config = {
+        ...mockReq.config,
+        fileConfig: {
+          documentParser: { supportedMimeTypes: ['^application/vnd\\.tenant\\.word$'] },
+        },
+      };
+      const documentFile = {
+        ...mockFile,
+        originalname: 'report.docx',
+        mimetype: 'application/vnd.tenant.word',
+      };
+      const cb = jest.fn();
+
+      fileFilter(mockReq, documentFile, cb);
+
+      expect(cb).toHaveBeenCalledWith(null, true);
+    });
+
     it('should admit a vendor MIME the document-parser allowlist names', () => {
       const { mergeFileConfig } = require('librechat-data-provider');
       const fileFilter = createFileFilter(
