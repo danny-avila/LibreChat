@@ -265,7 +265,9 @@ function Bar({
      lives here rather than in the palette so dismissing the popover mid-config
      does not unmount the dialog. */
   const mcpConfigProps = context?.mcpServerManager?.getConfigDialogProps();
-  const entries = showTools ? allEntries : EMPTY_ENTRIES;
+  /* `usePaletteEntries` already returns nothing once `enabled` is false, so the
+     gate lives in one place rather than being re-applied to its result here. */
+  const entries = allEntries;
 
   const manager = context?.mcpServerManager;
   const pinnedMcpEntry = useMemo<PaletteEntry | undefined>(() => {
