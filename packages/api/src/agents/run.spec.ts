@@ -381,6 +381,13 @@ describe('anyAgentReplaysReasoningContent', () => {
     expect(anyAgentReplaysReasoningContent([primary])).toBe(true);
   });
 
+  it('returns true when an inert lazy descriptor opts in', () => {
+    const primary = plainAgent('root', {
+      lazySubagentConfigs: [plainAgent('lazy-child', { includeReasoningHistory: true })],
+    });
+    expect(anyAgentReplaysReasoningContent([primary])).toBe(true);
+  });
+
   it('returns false when no reachable agent opts in', () => {
     const primary = plainAgent('root', {
       subagentAgentConfigs: [plainAgent('child')],
