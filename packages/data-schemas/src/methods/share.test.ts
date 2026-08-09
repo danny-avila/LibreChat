@@ -825,6 +825,46 @@ describe('Share Methods', () => {
       expect(seen.size).toBe(6);
     });
 
+    test('should page past links that have no title', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await Promise.all([
+        ...Array.from({ length: 3 }, (_, i) =>
+          SharedLink.create({
+            shareId: `untitled_${i}`,
+            conversationId: `conv_untitled_${i}`,
+            user: userId,
+          }),
+        ),
+        ...Array.from({ length: 3 }, (_, i) =>
+          SharedLink.create({
+            shareId: `titled_${i}`,
+            conversationId: `conv_titled_${i}`,
+            user: userId,
+            title: `Title ${i}`,
+          }),
+        ),
+      ]);
+
+      // BSON orders missing titles before every string, so the boundary between the
+      // two groups is the case a value-only cursor cannot express.
+      for (const direction of ['asc', 'desc'] as const) {
+        const seen: string[] = [];
+        let cursor: string | undefined;
+        for (let page = 0; page < 6; page++) {
+          const result = await shareMethods.getSharedLinks(userId, cursor, 2, 'title', direction);
+          result.links.forEach((link) => seen.push(link.shareId));
+          cursor = result.nextCursor as string | undefined;
+          if (!result.hasNextPage) {
+            break;
+          }
+        }
+
+        expect(seen).toHaveLength(6);
+        expect(new Set(seen).size).toBe(6);
+      }
+    });
+
     test('should exclude expired shares', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 

@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { Types } from 'mongoose';
 import { Constants, ContentTypes, FileSources } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
@@ -226,7 +227,7 @@ async function buildFileSnapshots(
   return snapshots;
 }
 
-type SharedLinksCursor = { primary: string; id: string };
+type SharedLinksCursor = { primary: string | null; id: string };
 
 /**
  * The list cursor carries the sort value *and* the `_id` that broke its tie, base64
@@ -239,7 +240,8 @@ function decodeSharedLinksCursor(pageParam: Date | string): SharedLinksCursor | 
   }
   try {
     const decoded = JSON.parse(Buffer.from(pageParam, 'base64').toString());
-    if (typeof decoded?.primary === 'string' && isValidObjectIdString(decoded?.id)) {
+    const hasPrimary = typeof decoded?.primary === 'string' || decoded?.primary === null;
+    if (hasPrimary && isValidObjectIdString(decoded?.id)) {
       return decoded as SharedLinksCursor;
     }
   } catch {
@@ -248,9 +250,55 @@ function decodeSharedLinksCursor(pageParam: Date | string): SharedLinksCursor | 
   return null;
 }
 
+/**
+ * Clauses that resume exactly after the boundary row. `title` is optional on a share,
+ * and BSON orders null/missing before every string, so a titleless boundary cannot be
+ * expressed as a comparison against `''`: ascending would skip the remaining titleless
+ * rows and descending would re-admit all of them.
+ */
+function buildSharedLinksCursorClauses(
+  cursor: SharedLinksCursor,
+  sortBy: string,
+  descending: boolean,
+): FilterQuery<t.ISharedLink>[] {
+  const op = descending ? '$lt' : '$gt';
+  const boundaryId = { [op]: new Types.ObjectId(cursor.id) };
+
+  if (cursor.primary === null) {
+    /* Descending puts the titleless rows last, so only their own tail remains;
+       ascending puts them first, so every titled row still follows. */
+    return descending
+      ? [{ [sortBy]: null, _id: boundaryId } as FilterQuery<t.ISharedLink>]
+      : [
+          { [sortBy]: null, _id: boundaryId } as FilterQuery<t.ISharedLink>,
+          { [sortBy]: { $ne: null } } as FilterQuery<t.ISharedLink>,
+        ];
+  }
+
+  const primaryValue = sortBy === 'createdAt' ? new Date(cursor.primary) : cursor.primary;
+  const clauses: FilterQuery<t.ISharedLink>[] = [
+    { [sortBy]: { [op]: primaryValue } } as FilterQuery<t.ISharedLink>,
+    { [sortBy]: primaryValue, _id: boundaryId } as FilterQuery<t.ISharedLink>,
+  ];
+
+  /* `$lt`/`$gt` are type-bracketed: compared against a string they never match a
+     missing field. Descending sorts those rows after every title, so they need a
+     clause of their own or the page after the last title comes back empty. */
+  if (descending && typeof primaryValue === 'string') {
+    clauses.push({ [sortBy]: null } as FilterQuery<t.ISharedLink>);
+  }
+
+  return clauses;
+}
+
 function encodeSharedLinksCursor(link: t.ISharedLink, sortBy: string): string {
   const value = link[sortBy as keyof t.ISharedLink];
-  const primary = value instanceof Date ? value.toISOString() : String(value ?? '');
+  let primary: string | null = null;
+  if (value instanceof Date) {
+    primary = value.toISOString();
+  } else if (value != null) {
+    primary = String(value);
+  }
   const composite: SharedLinksCursor = { primary, id: String(link._id) };
   return Buffer.from(JSON.stringify(composite)).toString('base64');
 }
@@ -753,19 +801,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         const op = sortDirection === 'desc' ? '$lt' : '$gt';
         const cursor = decodeSharedLinksCursor(pageParam);
         if (cursor) {
-          const primaryValue = sortBy === 'createdAt' ? new Date(cursor.primary) : cursor.primary;
           /* Titles repeat and createdAt can collide, so a single-field boundary drops
              every row that ties with the last one on the previous page. `_id` breaks
              the tie. Nested under `$and` because the expiration filter owns `$or`. */
           query.$and = [
             {
-              $or: [
-                { [sortBy]: { [op]: primaryValue } },
-                {
-                  [sortBy]: primaryValue,
-                  _id: { [op]: new mongoose.Types.ObjectId(cursor.id) },
-                },
-              ],
+              $or: buildSharedLinksCursorClauses(cursor, sortBy, sortDirection === 'desc'),
             } as FilterQuery<t.ISharedLink>,
           ];
         } else {
