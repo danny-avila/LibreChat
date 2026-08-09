@@ -263,6 +263,60 @@ describe('pdf-inspector local parser', () => {
     }
   });
 
+  /**
+   * The recovery cap reports unprobed pages as needing OCR because the interleaved
+   * output skips them. Whole-document text does not skip them, so carrying that list
+   * over would spend an OCR call on text already present, or annotate the document
+   * with a notice naming pages it contains.
+   */
+  test('drops unprobed pages from the report when whole-document text ships', async () => {
+    const flooded = Array.from({ length: 4000 }, (_, page) => ({ page, markdown: '' }));
+    mockPdfjs.pageText = Object.fromEntries(
+      Array.from({ length: 250 }, (_, i) => [i + 1, 'recovered line']),
+    );
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => flooded,
+          extractTextIsolated: async () => 'clean whole document text',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+        const result = await uploadIsolated(context(pdfFile('sample.pdf')));
+
+        expect(result.text).toBe('clean whole document text');
+        expect(result.pagesNeedingOcr).toBeUndefined();
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
+  test('keeps probed pages in the report when whole-document text ships', async () => {
+    /* The counterpart: a page both engines found nothing on holds no text layer at
+     * all, so the whole-document extractor cannot have included it either. */
+    const flooded = Array.from({ length: 4000 }, (_, page) => ({ page, markdown: '' }));
+    mockPdfjs.pageText = Object.fromEntries(
+      Array.from({ length: 250 }, (_, i) => [i + 1, i === 4 ? '' : 'recovered line']),
+    );
+    try {
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('./native', () => ({
+          extractPagesMarkdownIsolated: async () => flooded,
+          extractTextIsolated: async () => 'clean whole document text',
+        }));
+
+        const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
+        const result = await uploadIsolated(context(pdfFile('sample.pdf')));
+
+        expect(result.text).toBe('clean whole document text');
+        expect(result.pagesNeedingOcr).toEqual([5]);
+      });
+    } finally {
+      jest.dontMock('./native');
+    }
+  });
+
   test('ships whole-document plain text when most pages are dropped', async () => {
     /* Letter-spacing in poor OCR layers lives inside the item strings, so pdfjs
      * assembly outputs mush ("m i s s i o n"). pdf-inspector's plain-text extractor

@@ -511,6 +511,34 @@ export function inferMimeType(fileName: string, currentType: string): string {
   return currentType;
 }
 
+/**
+ * Zip containers a client may report in place of the document's own type. OOXML, ODF
+ * and EPUB documents are archives, so a client that types uploads by magic bytes calls
+ * an ordinary `.docx` one; Windows reports the `x-zip-compressed` alias for both.
+ */
+const archiveMimeTypes = new Set(['application/zip', 'application/x-zip-compressed']);
+
+/**
+ * The MIME type an upload should be routed by. Extends {@link inferMimeType} with the
+ * archive case, where the declared type is real but says only "zip" about a document
+ * the parser reads, and normalizes the rest so casing and `; charset=` parameters
+ * cannot decide a route.
+ *
+ * Shared by the client's upload validation and the server's routing: a file offered
+ * the extracted-text affordance on one side and stored as raw bytes on the other is
+ * the failure this exists to prevent.
+ */
+export function resolveEffectiveMimeType(fileName: string, currentType: string): string {
+  const declared = (currentType ?? '').split(';')[0].trim().toLowerCase();
+  if (!declared || genericMimeTypes.has(declared)) {
+    return inferMimeType(fileName, currentType);
+  }
+  if (archiveMimeTypes.has(declared) && isParsedDocument(null, fileName)) {
+    return inferMimeType(fileName, '') || declared;
+  }
+  return mimeTypeAliases[declared] ?? declared;
+}
+
 export const retrievalMimeTypes = [
   /^(text\/(x-c|x-c\+\+|x-h|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|vtt|xml))$/,
   /^(application\/(json|pdf|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.(presentation|template))))$/,

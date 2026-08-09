@@ -527,7 +527,7 @@ describe('processAgentFileUpload', () => {
         text: 'text layer only',
         bytes: 15,
         filepath: FileSources.anydoc,
-        hasEmbeddedMedia: true,
+        mayEmbedMedia: true,
       });
       const remoteOCR = jest.fn().mockResolvedValue({
         text: 'text layer plus the scanned page',
@@ -555,7 +555,7 @@ describe('processAgentFileUpload', () => {
           text: 'text layer only',
           bytes: 15,
           filepath: FileSources.anydoc,
-          hasEmbeddedMedia: true,
+          mayEmbedMedia: true,
         }),
       });
       const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });

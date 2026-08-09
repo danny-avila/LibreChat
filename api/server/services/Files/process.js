@@ -19,8 +19,7 @@ const {
   getEndpointFileConfig,
   documentParserSources,
   documentParserMimeTypes,
-  isParsedDocument,
-  inferMimeType,
+  resolveEffectiveMimeType,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -86,35 +85,21 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
 const hasCodeEnvRef = (file) =>
   file?.metadata?.codeEnvRef != null || file?.metadata?.codeEnvRefs != null;
 
-const genericMimeTypes = new Set(['application/octet-stream', 'binary/octet-stream']);
-
-/**
- * OOXML, ODF and EPUB documents are zip containers, so a client that types uploads by
- * magic bytes announces an ordinary `.docx` as an archive, as does the Windows
- * `application/x-zip-compressed` alias. That is not a generic type, so extension
- * inference alone would leave it alone, and the file would miss every parser check and
- * be stored as raw archive bytes. `isParsedDocument` is already what the client trusts
- * to offer extracted text for these, so routing resolves them the same way.
- */
-const archiveMimeTypes = new Set(['application/zip', 'application/x-zip-compressed']);
-
-const resolveEffectiveMimeType = (file) => {
-  const declared = (file?.mimetype ?? '').split(';')[0].trim().toLowerCase();
-  const filename = file?.originalname ?? '';
-  if (genericMimeTypes.has(declared)) {
-    return inferMimeType(filename, declared);
-  }
-  if (archiveMimeTypes.has(declared) && isParsedDocument(null, filename)) {
-    return inferMimeType(filename, '') || declared;
-  }
-  return declared;
-};
+/** Same resolution the client validates and offers upload options with. */
+const resolveUploadMimeType = (file) =>
+  resolveEffectiveMimeType(file?.originalname ?? '', file?.mimetype ?? '');
 
 const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';
 const isPdfPageLimitError = (err) =>
   err?.code === 'PDF_PAGE_LIMIT' || err?.name === 'PdfPageLimitError';
+/* Shed load, not an unreadable document. Surfaced to the caller so a retry is the
+ * obvious next step, rather than swallowed into a fallback that would bill a
+ * configured OCR service, or into "no text found" for a perfectly readable file. */
+const isParserBusyError = (err) =>
+  err?.code === 'CONCURRENCY_LIMIT' || err?.name === 'ConcurrencyLimitError';
 
-const isDocumentParserRefusal = (err) => isZipBombError(err) || isPdfPageLimitError(err);
+const isDocumentParserRefusal = (err) =>
+  isZipBombError(err) || isPdfPageLimitError(err) || isParserBusyError(err);
 
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -885,7 +870,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     };
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
-    const effectiveMimeType = resolveEffectiveMimeType(file);
+    const effectiveMimeType = resolveUploadMimeType(file);
     const extractedTextPlan = getUploadExtractedTextPlan({
       endpoint: metadata.endpoint,
       toolResource: tool_resource,
@@ -963,11 +948,26 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      * @param {MistralOCRUploadResult} result
      * @return {Promise<void>}
      */
-    const createDocumentTextFile = async ({ text, bytes, filepath, pagesNeedingOcr }) => {
+    const createDocumentTextFile = async ({
+      text,
+      bytes,
+      filepath,
+      pagesNeedingOcr,
+      mayEmbedMedia,
+    }) => {
       if (pagesNeedingOcr?.length) {
         const pageSummary = summarizeMissingPages(pagesNeedingOcr);
         logger.warn(
           `[processAgentFileUpload] "${file.originalname}" has no extractable text on page(s) ${pageSummary}; those pages were omitted.`,
+        );
+      }
+      /* Logged rather than written into the text: unlike an omitted page, embedded
+       * artwork is not evidence that anything was lost. Most documents that carry it
+       * carry a logo, so a notice in the model's copy would assert an omission that
+       * usually did not happen, on the majority of office uploads. */
+      if (mayEmbedMedia === true) {
+        logger.warn(
+          `[processAgentFileUpload] "${file.originalname}" embeds images the local parser reads no text from; configure an OCR service to recover any text they hold.`,
         );
       }
       const annotated = annotateMissingPages(text, pagesNeedingOcr);
@@ -990,7 +990,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           const localNeedsOCR =
             !hasLocalText ||
             !!localResult?.pagesNeedingOcr?.length ||
-            localResult?.hasEmbeddedMedia === true;
+            localResult?.mayEmbedMedia === true;
 
           if (hasLocalText && !localNeedsOCR) {
             return localResult;

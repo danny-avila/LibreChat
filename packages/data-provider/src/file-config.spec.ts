@@ -20,9 +20,48 @@ import {
   fileConfigSchema,
   mergeFileConfig,
   inferMimeType,
+  resolveEffectiveMimeType,
   textMimeTypes,
 } from './file-config';
 import { EModelEndpoint } from './schemas';
+
+describe('resolveEffectiveMimeType', () => {
+  /**
+   * OOXML, ODF and EPUB documents are zip containers, so a client that types uploads by
+   * magic bytes calls an ordinary `.docx` an archive. Nothing else re-infers it, and the
+   * type decides both what the client offers and how the server routes: disagree and a
+   * file is offered extracted text on one side and stored as raw bytes on the other.
+   */
+  it.each([
+    ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['slides.pptm', 'application/vnd.ms-powerpoint.presentation.macroEnabled.12'],
+    ['book.epub', 'application/epub+zip'],
+    ['sheet.ods', 'application/vnd.oasis.opendocument.spreadsheet'],
+  ])('resolves zip-typed %s to its document type', (fileName, expected) => {
+    expect(resolveEffectiveMimeType(fileName, 'application/zip')).toBe(expected);
+    expect(resolveEffectiveMimeType(fileName, 'application/x-zip-compressed')).toBe(expected);
+  });
+
+  it('leaves an ordinary archive as an archive', () => {
+    expect(resolveEffectiveMimeType('bundle.zip', 'application/zip')).toBe('application/zip');
+    expect(resolveEffectiveMimeType('bundle', 'application/zip')).toBe('application/zip');
+  });
+
+  it('still infers from the extension for a generic or absent type', () => {
+    expect(resolveEffectiveMimeType('report.docx', 'application/octet-stream')).toBe(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    expect(resolveEffectiveMimeType('test.py', '')).toBe('text/x-python');
+  });
+
+  it('normalizes casing and parameters so neither can decide a route', () => {
+    expect(resolveEffectiveMimeType('doc.pdf', 'Application/PDF')).toBe('application/pdf');
+    expect(resolveEffectiveMimeType('data.csv', 'text/csv; charset=utf-8')).toBe('text/csv');
+    expect(resolveEffectiveMimeType('archive.zip', 'application/x-zip-compressed')).toBe(
+      'application/zip',
+    );
+  });
+});
 
 describe('inferMimeType', () => {
   it('should normalize text/x-python-script to text/x-python', () => {
