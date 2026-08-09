@@ -2269,6 +2269,48 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Rebase parent activity bounds after completion-time content reshaping.
+   * Object identity links retained parts back to their pre-reshape positions,
+   * so prepended skill cards cannot enter a phase and a filtered-away leading
+   * reasoning part advances the bound to the first retained child.
+   *
+   * @param {Array<import('librechat-data-provider').ContentPart | null | undefined>} previousParts
+   */
+  rebaseActivityPhaseBounds(previousParts) {
+    if (!Array.isArray(previousParts) || !Array.isArray(this.contentParts)) {
+      return;
+    }
+    const retainedIndexes = new Map(this.contentParts.map((part, index) => [part, index]));
+    for (let markerIndex = 0; markerIndex < this.contentParts.length; markerIndex += 1) {
+      const marker = this.contentParts[markerIndex];
+      if (
+        marker?.type !== ContentTypes.ACTIVITY_LABEL ||
+        marker.activity_label_type !== 'phase' ||
+        typeof marker.activity_start_index !== 'number'
+      ) {
+        continue;
+      }
+      const previousMarkerIndex = previousParts.indexOf(marker);
+      if (previousMarkerIndex < 0) {
+        continue;
+      }
+      const previousStartIndex = Math.min(
+        previousMarkerIndex,
+        Math.max(0, marker.activity_start_index),
+      );
+      let nextStartIndex = markerIndex;
+      for (let index = previousStartIndex; index < previousMarkerIndex; index += 1) {
+        const retainedIndex = retainedIndexes.get(previousParts[index]);
+        if (retainedIndex != null && retainedIndex < markerIndex) {
+          nextStartIndex = retainedIndex;
+          break;
+        }
+      }
+      marker.activity_start_index = nextStartIndex;
+    }
+  }
+
+  /**
    * Surface any human-in-the-loop interrupt the SDK captured during the most
    * recent `processStream` / `resume`. When the run paused for tool approval (or
    * an ask-user question), mark the job `requires_action`, persist the pending
@@ -2884,6 +2926,7 @@ class AgentClient extends BaseClient {
        */
       await this.settleActivityLabels();
 
+      const contentBeforeReshape = [...this.contentParts];
       const manualPrimed = this.options.agent?.manualSkillPrimes ?? [];
       if (manualPrimed.length > 0) {
         const runId = this.responseMessageId ?? 'skill-prime';
@@ -2892,6 +2935,7 @@ class AgentClient extends BaseClient {
       }
 
       this.applyHideSequentialOutputsFilter();
+      this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
       if (abortController.signal.aborted) {
         logger.debug(
@@ -3214,7 +3258,9 @@ class AgentClient extends BaseClient {
       // before resume finalize/re-pause persistence reads `this.contentParts`, so a
       // resumed sequential chain doesn't persist/emit outputs hide_sequential_outputs
       // is meant to hide.
+      const contentBeforeReshape = [...this.contentParts];
       this.applyHideSequentialOutputsFilter();
+      this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
       if (abortController.signal.aborted) {
         logger.debug(
