@@ -48,6 +48,23 @@ describe('theme registry', () => {
     expect(dark.appearance).toEqual(defaultAppearance);
   });
 
+  it('preserves hover overrides from themes created before the composer hover token', () => {
+    const storedTheme: ThemeDefinition = {
+      version: 1,
+      name: 'stored-theme',
+      modes: {
+        dark: {
+          colors: { 'rgb-surface-hover': '44 45 46' },
+        },
+      },
+    };
+
+    const dark = resolveTheme(storedTheme, 'dark');
+
+    expect(dark.colors['rgb-surface-hover']).toBe('44 45 46');
+    expect(dark.colors['rgb-surface-composer-hover']).toBe('44 45 46');
+  });
+
   it('reports invalid and unknown values before a definition reaches the DOM', () => {
     const invalidTheme = {
       version: 1,

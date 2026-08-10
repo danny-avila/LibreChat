@@ -97,6 +97,7 @@ export default function AccessRolesPicker({
         }
         items={dropdownItems}
         className="w-[280px]"
+        portal={true}
       />
     </div>
   );
