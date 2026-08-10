@@ -92,8 +92,8 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
   }
 
   return (
-    <div className="mt-4 space-y-6">
-      <p className="text-center text-sm text-text-secondary">
+    <div className="mt-4 space-y-6 text-text-primary">
+      <p className="text-center text-sm text-text-primary">
         {localize('com_auth_two_factor_setup_required_description')}
       </p>
       {error && <ErrorMessage>{error}</ErrorMessage>}

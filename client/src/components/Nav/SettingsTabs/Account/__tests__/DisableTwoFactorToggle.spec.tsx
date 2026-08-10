@@ -13,7 +13,7 @@ describe('DisableTwoFactorToggle', () => {
   it('shows a non-interactive policy status when 2FA is required', () => {
     render(<DisableTwoFactorToggle enabled={true} required={true} onChange={jest.fn()} />);
 
-    expect(screen.getByText('com_ui_2fa_required')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_2fa_required')).toHaveClass('text-text-primary');
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 

@@ -23,7 +23,7 @@ export const QRPhase: React.FC<QRPhaseProps> = ({ secret, otpauthUrl, onNext }) 
   const localize = useLocalize();
 
   return (
-    <motion.div {...fadeAnimation} className="space-y-6">
+    <motion.div {...fadeAnimation} className="space-y-6 text-text-primary">
       <div className="flex flex-col items-center space-y-6">
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
@@ -33,14 +33,14 @@ export const QRPhase: React.FC<QRPhaseProps> = ({ secret, otpauthUrl, onNext }) 
           <QRCodeSVG value={otpauthUrl} size={240} title={localize('com_ui_2fa_scan_qr')} />
         </motion.div>
         <div className="w-full space-y-3">
-          <p className="text-sm font-medium text-text-secondary">{localize('com_ui_secret_key')}</p>
+          <p className="text-sm font-medium text-text-primary">{localize('com_ui_secret_key')}</p>
           <SecretInput
             value={secret}
             readOnly
             showCopy
             controlsOnHover
             aria-label={localize('com_ui_secret_key')}
-            className="font-mono text-lg tracking-wider"
+            className="font-mono text-lg tracking-wider text-text-primary"
           />
         </div>
       </div>

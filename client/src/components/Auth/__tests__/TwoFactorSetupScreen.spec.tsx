@@ -83,6 +83,10 @@ describe('TwoFactorSetupScreen', () => {
   it('enrolls, confirms, and requires backup-code download before completion', () => {
     renderScreen();
 
+    expect(screen.getByText('com_auth_two_factor_setup_required_description')).toHaveClass(
+      'text-text-primary',
+    );
+
     fireEvent.click(screen.getByTestId('generate'));
     expect(mockEnableMutate).toHaveBeenCalledWith(
       { tempToken: 'setup-token' },

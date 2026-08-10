@@ -22,9 +22,9 @@ export const SetupPhase: React.FC<SetupPhaseProps> = ({ isGenerating, onGenerate
   const localize = useLocalize();
 
   return (
-    <motion.div {...fadeAnimation} className="space-y-6">
+    <motion.div {...fadeAnimation} className="space-y-6 text-text-primary">
       <div className="rounded-xl bg-surface-secondary p-6">
-        <h3 className="mb-4 flex justify-center text-lg font-medium">
+        <h3 className="mb-4 flex justify-center text-lg font-medium text-text-primary">
           {localize('com_ui_2fa_account_security')}
         </h3>
         <Button

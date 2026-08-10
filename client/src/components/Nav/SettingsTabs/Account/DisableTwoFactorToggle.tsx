@@ -26,7 +26,7 @@ export const DisableTwoFactorToggle: React.FC<DisableTwoFactorToggleProps> = ({
       </div>
       <div className="flex items-center gap-3">
         {required && enabled ? (
-          <span className="rounded-full bg-status-info-subtle px-3 py-1 text-sm font-medium text-status-info">
+          <span className="rounded-full bg-status-info-subtle px-3 py-1 text-sm font-medium text-text-primary">
             {localize('com_ui_2fa_required')}
           </span>
         ) : (

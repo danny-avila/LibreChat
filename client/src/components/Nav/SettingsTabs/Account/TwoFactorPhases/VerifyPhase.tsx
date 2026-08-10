@@ -34,7 +34,7 @@ export const VerifyPhase: React.FC<VerifyPhaseProps> = ({
   const localize = useLocalize();
 
   return (
-    <motion.div {...fadeAnimation} className="space-y-8">
+    <motion.div {...fadeAnimation} className="space-y-8 text-text-primary">
       <div className="flex justify-center">
         <InputOTP
           aria-label={localize('com_ui_2fa_verification_required')}
@@ -42,7 +42,7 @@ export const VerifyPhase: React.FC<VerifyPhaseProps> = ({
           onChange={onTokenChange}
           maxLength={6}
           pattern={REGEXP_ONLY_DIGITS}
-          className="gap-2"
+          className="gap-2 text-text-primary"
         >
           <InputOTPGroup>
             {Array.from({ length: 3 }).map((_, i) => (

@@ -216,7 +216,7 @@ const TwoFactorAuthentication: React.FC = () => {
         buttonRef={buttonRef}
       />
 
-      <OGDialogContent className="w-11/12 max-w-lg p-6">
+      <OGDialogContent className="w-11/12 max-w-lg p-6 text-text-primary">
         <AnimatePresence mode="wait">
           <motion.div
             id="two-factor-authentication-dialog"
@@ -228,7 +228,7 @@ const TwoFactorAuthentication: React.FC = () => {
             className="space-y-6"
           >
             <OGDialogHeader>
-              <OGDialogTitle className="mb-2 flex items-center gap-3 text-2xl font-bold">
+              <OGDialogTitle className="mb-2 flex items-center gap-3 text-2xl font-bold text-text-primary">
                 <SmartphoneIcon className="h-6 w-6 text-text-primary" aria-hidden="true" />
                 {user?.twoFactorEnabled
                   ? localize('com_ui_2fa_disable')
@@ -240,17 +240,12 @@ const TwoFactorAuthentication: React.FC = () => {
                     value={(currentStep / (steps.length - 1)) * 100}
                     className="h-2 rounded-full"
                   />
-                  <div className="flex justify-between text-sm">
+                  <div className="flex justify-between text-sm text-text-primary">
                     {steps.map((step, index) => (
                       <motion.span
                         key={step}
-                        animate={{
-                          color:
-                            currentStep >= index
-                              ? 'rgb(var(--text-primary))'
-                              : 'rgb(var(--text-tertiary))',
-                        }}
-                        className="font-medium"
+                        animate={{ opacity: currentStep >= index ? 1 : 0.7 }}
+                        className="font-medium text-text-primary"
                       >
                         {step}
                       </motion.span>

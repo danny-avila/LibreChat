@@ -28,7 +28,7 @@ export const BackupPhase: React.FC<BackupPhaseProps> = ({
   const localize = useLocalize();
 
   return (
-    <motion.div {...fadeAnimation} className="space-y-6">
+    <motion.div {...fadeAnimation} className="space-y-6 text-text-primary">
       <p className="break-keep text-sm text-text-primary">
         {localize('com_ui_download_backup_tooltip')}
       </p>
@@ -42,8 +42,8 @@ export const BackupPhase: React.FC<BackupPhaseProps> = ({
             className="rounded-lg bg-surface-tertiary p-3"
           >
             <div className="flex items-center justify-between">
-              <span className="hidden text-sm text-text-secondary sm:inline">#{index + 1}</span>
-              <span className="font-mono text-lg">{code}</span>
+              <span className="hidden text-sm text-text-primary sm:inline">#{index + 1}</span>
+              <span className="font-mono text-lg text-text-primary">{code}</span>
             </div>
           </motion.div>
         ))}
