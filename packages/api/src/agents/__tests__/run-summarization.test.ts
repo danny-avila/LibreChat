@@ -1191,6 +1191,66 @@ describe('subagentConfigs', () => {
     expect(memberInput.toolDefinitions).toEqual([{ name: 'tool_search' }]);
   });
 
+  it('builds lazy graph inputs from initialized members instead of capability metadata', async () => {
+    const memberId = 'agent_lazy_capability_member';
+    const metadata = makeAgent({ id: memberId, codeEnvAvailable: true });
+    const initializedMember = makeAgent({
+      id: memberId,
+      codeEnvAvailable: true,
+      toolDefinitions: [{ name: 'initialized_tool' }],
+      toolRegistry: new Map([['initialized_tool', { name: 'initialized_tool' }]]),
+    });
+    const definition = {
+      type: 'capability_team',
+      name: 'Capability team',
+      description: 'Uses the initialized member runtime',
+      agent_ids: [memberId],
+      edges: [],
+      entry_agent_id: memberId,
+      result_agent_id: memberId,
+    };
+    const resolve = jest.fn().mockResolvedValue(
+      makeAgent({
+        id: 'agent_lazy_capability_parent',
+        subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+        subagentGraphConfigs: [{ definition, memberConfigs: [initializedMember] }],
+      }),
+    );
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          id: 'agent_parent',
+          subagents: {
+            enabled: true,
+            allowSelf: false,
+            agent_ids: ['agent_lazy_capability_parent'],
+          },
+          lazySubagentConfigs: [
+            {
+              id: 'agent_lazy_capability_parent',
+              name: 'Lazy capability parent',
+              description: 'Resolves its team on selection',
+              configId: 'agent_lazy_capability_parent:1:fingerprint',
+              subagentGraphMemberMetadata: [metadata],
+              resolve,
+            },
+          ],
+        }),
+      ],
+    });
+    const lazyConfig = (agents[0].subagentConfigs as Array<Record<string, unknown>>)[0];
+    const resolvedInputs = await (
+      lazyConfig.resolveAgentInputs as (context: never) => Promise<Record<string, unknown>>
+    )({ signal: new AbortController().signal } as never);
+    const graphConfig = (resolvedInputs.subagentConfigs as Array<Record<string, unknown>>)[0];
+    const memberInput = (graphConfig.agents as Array<Record<string, unknown>>)[0];
+
+    expect(memberInput.toolDefinitions).toEqual([{ name: 'initialized_tool' }]);
+    expect(memberInput.toolRegistry).toEqual(
+      new Map([['initialized_tool', { name: 'initialized_tool' }]]),
+    );
+  });
+
   it('builds an explicit saved-agent team as one graph subagent config', async () => {
     const researcher = makeAgent({
       id: 'agent_researcher',

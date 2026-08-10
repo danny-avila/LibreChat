@@ -860,6 +860,7 @@ function enqueueSubagentChildren(
   agent: SubagentTreeNode,
   pending: Array<SubagentTreeNode | null | undefined>,
   visited: ReadonlySet<string>,
+  includeCapabilityMetadata = true,
 ): void {
   for (const child of agent.subagentAgentConfigs ?? []) {
     if (child != null && !visited.has(child.id)) {
@@ -871,9 +872,11 @@ function enqueueSubagentChildren(
       pending.push(child);
     }
   }
-  for (const member of agent.subagentGraphMemberMetadata ?? []) {
-    if (!visited.has(member.id)) {
-      pending.push(member);
+  if (includeCapabilityMetadata) {
+    for (const member of agent.subagentGraphMemberMetadata ?? []) {
+      if (!visited.has(member.id)) {
+        pending.push(member);
+      }
     }
   }
   for (const graph of agent.subagentGraphConfigs ?? []) {
@@ -1577,7 +1580,7 @@ export async function createRun({
         }
       }
     }
-    enqueueSubagentChildren(config, pendingConfigs, visitedConfigIds);
+    enqueueSubagentChildren(config, pendingConfigs, visitedConfigIds, false);
   }
   for (const agent of agents) {
     const agentInput = buildAgentInput(agent);
