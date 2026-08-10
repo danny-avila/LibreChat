@@ -58,6 +58,50 @@ describe('bedrockEndpointSchema', () => {
   });
 });
 
+describe('speechTab schema', () => {
+  it.each(['browser', 'external', 'openai', 'azureOpenAI'])(
+    'accepts the speech-to-text engine "%s"',
+    (engineSTT) => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { speechTab: { speechToText: { engineSTT } } },
+      });
+
+      expect(result.success).toBe(true);
+    },
+  );
+
+  it('rejects an unknown speech-to-text engine', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      speech: { speechTab: { speechToText: { engineSTT: 'unknown' } } },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it.each(['browser', 'external', 'openai', 'azureOpenAI', 'elevenlabs', 'localai'])(
+    'accepts the text-to-speech engine "%s"',
+    (engineTTS) => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: { speechTab: { textToSpeech: { engineTTS } } },
+      });
+
+      expect(result.success).toBe(true);
+    },
+  );
+
+  it('rejects an unknown text-to-speech engine', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      speech: { speechTab: { textToSpeech: { engineTTS: 'unknown' } } },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('resolveEndpointType', () => {
   describe('non-agents endpoints', () => {
     it('returns the config type for a custom endpoint', () => {

@@ -1,5 +1,6 @@
-import useSpeechToTextBrowser from './useSpeechToTextBrowser';
+import { useEffect } from 'react';
 import useSpeechToTextExternal from './useSpeechToTextExternal';
+import useSpeechToTextBrowser from './useSpeechToTextBrowser';
 import useGetAudioSettings from './useGetAudioSettings';
 
 const useSpeechToText = (
@@ -37,6 +38,25 @@ const useSpeechToText = (
   const stopRecording = externalSpeechToText
     ? stopSpeechRecordingExternal
     : stopSpeechRecordingBrowser;
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!event.shiftKey || !event.altKey || event.code !== 'KeyL') {
+        return;
+      }
+
+      if (isListening) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+
+      event.preventDefault();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isListening, startRecording, stopRecording]);
 
   return {
     isLoading,
